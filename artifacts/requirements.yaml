@@ -150,3 +150,30 @@ artifacts:
     fields:
       priority: must
       category: non-functional
+
+  - id: REQ-013
+    type: requirement
+    title: Performance benchmarks with KPI baselines
+    status: approved
+    description: >
+      Criterion benchmarks for core operations (store, link graph, validation,
+      matrix) at multiple artifact scales (100, 1000, 10000). Results serve
+      as performance KPI baselines and regression detection.
+    tags: [testing, performance]
+    fields:
+      priority: must
+      category: non-functional
+
+  - id: REQ-014
+    type: requirement
+    title: ASPICE SWE.4/5/6 test structure
+    status: approved
+    description: >
+      Test suite organized to mirror ASPICE verification levels.
+      SWE.4 unit verification (proptest, Miri), SWE.5 integration
+      verification (cross-module tests), SWE.6 qualification testing
+      (full pipeline validation, benchmark KPIs).
+    tags: [testing, aspice]
+    fields:
+      priority: must
+      category: non-functional

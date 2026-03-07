@@ -108,7 +108,7 @@ artifacts:
     title: Flat crate structure
     status: approved
     description: >
-      Use a flat module structure (trace-core, trace-cli) rather than
+      Use a flat module structure (rivet-core, rivet-cli) rather than
       deeply nested module trees. Follow modern Rust AST-style patterns.
     tags: [architecture]
     links:
@@ -120,6 +120,72 @@ artifacts:
         Rust projects favor fewer nesting levels with clear module
         boundaries at the crate level.
       alternatives: >
-        Deep module hierarchy (trace-core/src/domain/stpa/model/...).
+        Deep module hierarchy (rivet-core/src/domain/stpa/model/...).
         Rejected because it adds navigation overhead without benefit
         at this project scale.
+
+  - id: DD-007
+    type: design-decision
+    title: Test results tied to GitHub releases
+    status: approved
+    description: >
+      Test execution results (JUnit XML, coverage LCOV) are packaged
+      and uploaded as GitHub release assets. The CI release-results job
+      creates a tar.gz with test-results, coverage, and metadata JSON.
+    tags: [testing, ci, evidence]
+    links:
+      - type: satisfies
+        target: REQ-009
+    fields:
+      rationale: >
+        GitHub releases are immutable, versioned, and fetchable via API.
+        Tying test evidence to releases creates append-only per-version
+        records. No separate artifact server needed.
+      alternatives: >
+        Separate S3/GCS bucket for test evidence. Rejected because it
+        adds infrastructure and GitHub releases are already available.
+
+  - id: DD-008
+    type: design-decision
+    title: Rust edition 2024 with comprehensive CI
+    status: approved
+    description: >
+      Use Rust edition 2024 with MSRV 1.85. CI enforces fmt, clippy
+      -D warnings, tests, RustSec audit, cargo-deny, code coverage,
+      Miri, proptest, cargo-vet supply chain, and MSRV check.
+    tags: [toolchain, ci]
+    links:
+      - type: satisfies
+        target: REQ-011
+      - type: satisfies
+        target: REQ-012
+    fields:
+      rationale: >
+        Edition 2024 brings the latest language features. The CI pipeline
+        mirrors ASPICE SWE.4-6 verification levels: unit tests (proptest,
+        Miri), integration tests (cargo test), and qualification gates
+        (security audit, supply chain, coverage thresholds).
+      alternatives: >
+        Minimal CI with just tests. Rejected because safety-critical
+        tooling requires the same rigor it enforces on its users.
+
+  - id: DD-009
+    type: design-decision
+    title: Criterion benchmarks as KPI baselines
+    status: approved
+    description: >
+      Use criterion.rs for performance benchmarks. Benchmark store
+      operations, link graph building, validation, and matrix computation
+      at 100/1000/10000 artifact scales to establish KPI baselines.
+    tags: [testing, performance]
+    links:
+      - type: satisfies
+        target: REQ-013
+    fields:
+      rationale: >
+        Criterion provides statistical analysis, regression detection,
+        and HTML reports. Benchmarks at multiple scales catch O(n^2)
+        regressions. Results serve as SWE.4/5 performance evidence.
+      alternatives: >
+        Manual timing with std::time::Instant. Rejected because it
+        lacks statistical rigor and regression detection.

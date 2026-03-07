@@ -39,3 +39,6 @@ tower-http = { version = "0.6", features = ["cors", "fs"] }
 
 # XML (ReqIF)
 quick-xml = { version = "0.37", features = ["serialize"] }
+
+# Benchmarking
+criterion = { version = "0.5", features = ["html_reports"] }

@@ -1,0 +1,646 @@
+//! Integration tests (SWE.5 level) — cross-module integration verification.
+//!
+//! These tests exercise the full pipeline: loading schemas, importing artifacts,
+//! building the store and link graph, validating, computing matrices, and querying.
+
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+
+use rivet_core::adapter::{Adapter, AdapterConfig, AdapterSource};
+use rivet_core::formats::generic::GenericYamlAdapter;
+use rivet_core::links::LinkGraph;
+use rivet_core::matrix::{self, Direction};
+use rivet_core::model::{Artifact, Link};
+use rivet_core::query::{self, Query};
+use rivet_core::schema::{Schema, Severity};
+use rivet_core::store::Store;
+use rivet_core::validate;
+
+/// Project root — two levels up from rivet-core/tests/.
+fn project_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..")
+}
+
+fn load_schema_files(names: &[&str]) -> Schema {
+    let schemas_dir = project_root().join("schemas");
+    let mut files = Vec::new();
+    for name in names {
+        let path = schemas_dir.join(format!("{name}.yaml"));
+        assert!(path.exists(), "schema file must exist: {}", path.display());
+        files.push(Schema::load_file(&path).expect("load schema"));
+    }
+    Schema::merge(&files)
+}
+
+fn make_artifact(id: &str, art_type: &str, title: &str) -> Artifact {
+    Artifact {
+        id: id.into(),
+        artifact_type: art_type.into(),
+        title: title.into(),
+        description: None,
+        status: None,
+        tags: vec![],
+        links: vec![],
+        fields: BTreeMap::new(),
+        source_file: None,
+    }
+}
+
+fn make_artifact_full(
+    id: &str,
+    art_type: &str,
+    title: &str,
+    status: Option<&str>,
+    tags: &[&str],
+    links: Vec<Link>,
+    fields: BTreeMap<String, serde_yaml::Value>,
+) -> Artifact {
+    Artifact {
+        id: id.into(),
+        artifact_type: art_type.into(),
+        title: title.into(),
+        description: Some(format!("Description for {id}")),
+        status: status.map(|s| s.to_string()),
+        tags: tags.iter().map(|t| t.to_string()).collect(),
+        links,
+        fields,
+        source_file: None,
+    }
+}
+
+// ── Dogfood validation ──────────────────────────────────────────────────
+
+/// Load the project's own rivet.yaml, schemas, and artifacts, then validate.
+/// The project should pass validation (no errors, only warnings are acceptable).
+#[test]
+fn test_dogfood_validate() {
+    let root = project_root();
+    let config =
+        rivet_core::load_project_config(&root.join("rivet.yaml")).expect("load rivet.yaml");
+
+    assert_eq!(config.project.name, "rivet");
+
+    let schema =
+        rivet_core::load_schemas(&config.project.schemas, &root.join("schemas")).expect("schemas");
+
+    let mut store = Store::new();
+    for source in &config.sources {
+        let artifacts = rivet_core::load_artifacts(source, &root).expect("load artifacts");
+        for a in artifacts {
+            store.upsert(a);
+        }
+    }
+
+    assert!(
+        !store.is_empty(),
+        "dogfood store must have at least one artifact"
+    );
+
+    let graph = LinkGraph::build(&store, &schema);
+    let diagnostics = validate::validate(&store, &schema, &graph);
+
+    let errors: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Error)
+        .collect();
+
+    if !errors.is_empty() {
+        for e in &errors {
+            eprintln!("{e}");
+        }
+    }
+    assert!(
+        errors.is_empty(),
+        "dogfood validation must pass with no errors (found {})",
+        errors.len()
+    );
+}
+
+// ── Generic YAML roundtrip ──────────────────────────────────────────────
+
+/// Create artifacts, export to generic YAML, reimport, verify identical content.
+#[test]
+fn test_generic_yaml_roundtrip() {
+    let original = vec![
+        make_artifact_full(
+            "RT-001",
+            "requirement",
+            "Roundtrip test requirement",
+            Some("approved"),
+            &["roundtrip", "test"],
+            vec![],
+            {
+                let mut f = BTreeMap::new();
+                f.insert("priority".into(), serde_yaml::Value::String("must".into()));
+                f
+            },
+        ),
+        make_artifact_full(
+            "RT-002",
+            "design-decision",
+            "Roundtrip test decision",
+            Some("draft"),
+            &["test"],
+            vec![Link {
+                link_type: "satisfies".into(),
+                target: "RT-001".into(),
+            }],
+            {
+                let mut f = BTreeMap::new();
+                f.insert(
+                    "rationale".into(),
+                    serde_yaml::Value::String("For testing".into()),
+                );
+                f
+            },
+        ),
+    ];
+
+    let adapter = GenericYamlAdapter::new();
+    let config = AdapterConfig::default();
+
+    // Export
+    let yaml_bytes = adapter.export(&original, &config).expect("export");
+    let yaml_str = std::str::from_utf8(&yaml_bytes).expect("valid utf-8");
+    assert!(yaml_str.contains("RT-001"));
+    assert!(yaml_str.contains("RT-002"));
+
+    // Reimport
+    let reimported = adapter
+        .import(&AdapterSource::Bytes(yaml_bytes), &config)
+        .expect("reimport");
+
+    assert_eq!(reimported.len(), original.len());
+
+    for (orig, re) in original.iter().zip(reimported.iter()) {
+        assert_eq!(orig.id, re.id);
+        assert_eq!(orig.artifact_type, re.artifact_type);
+        assert_eq!(orig.title, re.title);
+        assert_eq!(orig.description, re.description);
+        assert_eq!(orig.status, re.status);
+        assert_eq!(orig.tags, re.tags);
+        assert_eq!(orig.links.len(), re.links.len());
+        for (ol, rl) in orig.links.iter().zip(re.links.iter()) {
+            assert_eq!(ol.link_type, rl.link_type);
+            assert_eq!(ol.target, rl.target);
+        }
+        assert_eq!(orig.fields, re.fields);
+    }
+}
+
+// ── Schema merge preserves types ────────────────────────────────────────
+
+/// Load common + stpa + aspice, verify all types from each are present.
+#[test]
+fn test_schema_merge_preserves_types() {
+    let schema = load_schema_files(&["common", "stpa", "aspice"]);
+
+    // STPA types
+    let stpa_types = [
+        "loss",
+        "hazard",
+        "sub-hazard",
+        "system-constraint",
+        "controller",
+        "controlled-process",
+        "control-action",
+        "uca",
+        "controller-constraint",
+        "loss-scenario",
+    ];
+    for t in &stpa_types {
+        assert!(
+            schema.artifact_type(t).is_some(),
+            "merged schema must contain STPA type '{t}'"
+        );
+    }
+
+    // ASPICE types
+    let aspice_types = [
+        "stakeholder-req",
+        "system-req",
+        "system-arch-component",
+        "sw-req",
+        "sw-arch-component",
+        "sw-detail-design",
+        "unit-test",
+        "integration-test",
+        "sw-qual-test",
+        "sys-integration-test",
+        "sys-qual-test",
+        "test-execution",
+        "test-verdict",
+    ];
+    for t in &aspice_types {
+        assert!(
+            schema.artifact_type(t).is_some(),
+            "merged schema must contain ASPICE type '{t}'"
+        );
+    }
+
+    // Common link types
+    let common_links = [
+        "traces-to",
+        "satisfies",
+        "refines",
+        "verifies",
+        "implements",
+        "derives-from",
+    ];
+    for l in &common_links {
+        assert!(
+            schema.link_type(l).is_some(),
+            "merged schema must contain common link type '{l}'"
+        );
+    }
+
+    // STPA link types
+    assert!(schema.link_type("leads-to-loss").is_some());
+    assert!(schema.link_type("prevents").is_some());
+    assert!(schema.link_type("leads-to-hazard").is_some());
+
+    // ASPICE link types
+    assert!(schema.link_type("result-of").is_some());
+    assert!(schema.link_type("part-of-execution").is_some());
+
+    // Verify inverse mappings survive merge
+    assert_eq!(schema.inverse_of("verifies"), Some("verified-by"));
+    assert_eq!(schema.inverse_of("leads-to-loss"), Some("loss-caused-by"));
+    assert_eq!(schema.inverse_of("result-of"), Some("has-result"));
+}
+
+// ── Traceability matrix ─────────────────────────────────────────────────
+
+/// Build a store with known artifacts and links, compute matrix, verify coverage.
+#[test]
+fn test_traceability_matrix() {
+    let schema = load_schema_files(&["common", "stpa"]);
+    let mut store = Store::new();
+
+    // Two losses
+    store
+        .insert(make_artifact("L-1", "loss", "Loss 1"))
+        .unwrap();
+    store
+        .insert(make_artifact("L-2", "loss", "Loss 2"))
+        .unwrap();
+
+    // Three hazards: two link to L-1, one links to L-2
+    for (id, target) in [("H-1", "L-1"), ("H-2", "L-1"), ("H-3", "L-2")] {
+        let mut h = make_artifact(id, "hazard", &format!("Hazard {id}"));
+        h.links.push(Link {
+            link_type: "leads-to-loss".into(),
+            target: target.into(),
+        });
+        store.insert(h).unwrap();
+    }
+
+    let graph = LinkGraph::build(&store, &schema);
+
+    // Forward: hazard -> loss via "leads-to-loss"
+    let matrix = matrix::compute_matrix(
+        &store,
+        &graph,
+        "hazard",
+        "loss",
+        "leads-to-loss",
+        Direction::Forward,
+    );
+    assert_eq!(matrix.total, 3, "3 hazards total");
+    assert_eq!(matrix.covered, 3, "all 3 hazards link to a loss");
+    assert!((matrix.coverage_pct() - 100.0).abs() < f64::EPSILON);
+
+    // Backward: loss <- hazard via "leads-to-loss"
+    let back_matrix = matrix::compute_matrix(
+        &store,
+        &graph,
+        "loss",
+        "hazard",
+        "leads-to-loss",
+        Direction::Backward,
+    );
+    assert_eq!(back_matrix.total, 2, "2 losses total");
+    assert_eq!(back_matrix.covered, 2, "both losses have backlinks");
+    assert!((back_matrix.coverage_pct() - 100.0).abs() < f64::EPSILON);
+
+    // Partial coverage: add a loss with no hazard link
+    store
+        .insert(make_artifact("L-3", "loss", "Uncovered loss"))
+        .unwrap();
+    let graph2 = LinkGraph::build(&store, &schema);
+    let matrix2 = matrix::compute_matrix(
+        &store,
+        &graph2,
+        "loss",
+        "hazard",
+        "leads-to-loss",
+        Direction::Backward,
+    );
+    assert_eq!(matrix2.total, 3);
+    assert_eq!(matrix2.covered, 2); // L-3 has no backlinks
+    let expected_pct = (2.0 / 3.0) * 100.0;
+    assert!(
+        (matrix2.coverage_pct() - expected_pct).abs() < 0.01,
+        "coverage should be ~66.67%, got {}",
+        matrix2.coverage_pct()
+    );
+}
+
+/// Empty matrix has 100% coverage (vacuously true).
+#[test]
+fn test_traceability_matrix_empty() {
+    let schema = load_schema_files(&["common"]);
+    let store = Store::new();
+    let graph = LinkGraph::build(&store, &schema);
+
+    let matrix = matrix::compute_matrix(
+        &store,
+        &graph,
+        "loss",
+        "hazard",
+        "leads-to-loss",
+        Direction::Forward,
+    );
+    assert_eq!(matrix.total, 0);
+    assert_eq!(matrix.covered, 0);
+    assert!((matrix.coverage_pct() - 100.0).abs() < f64::EPSILON);
+}
+
+// ── Query filters ───────────────────────────────────────────────────────
+
+/// Insert diverse artifacts and test filtering by type, status, tag,
+/// has_link_type, and missing_link_type.
+#[test]
+fn test_query_filters() {
+    let mut store = Store::new();
+
+    store
+        .insert(make_artifact_full(
+            "A-1",
+            "requirement",
+            "Req 1",
+            Some("approved"),
+            &["safety"],
+            vec![Link {
+                link_type: "satisfies".into(),
+                target: "A-3".into(),
+            }],
+            BTreeMap::new(),
+        ))
+        .unwrap();
+    store
+        .insert(make_artifact_full(
+            "A-2",
+            "requirement",
+            "Req 2",
+            Some("draft"),
+            &["feature"],
+            vec![],
+            BTreeMap::new(),
+        ))
+        .unwrap();
+    store
+        .insert(make_artifact_full(
+            "A-3",
+            "design-decision",
+            "Decision 1",
+            Some("approved"),
+            &["safety"],
+            vec![],
+            BTreeMap::new(),
+        ))
+        .unwrap();
+    store
+        .insert(make_artifact_full(
+            "A-4",
+            "feature",
+            "Feature 1",
+            None,
+            &["feature", "safety"],
+            vec![Link {
+                link_type: "implements".into(),
+                target: "A-3".into(),
+            }],
+            BTreeMap::new(),
+        ))
+        .unwrap();
+
+    // Filter by type
+    let q = Query {
+        artifact_type: Some("requirement".into()),
+        ..Default::default()
+    };
+    let results = query::execute(&store, &q);
+    assert_eq!(results.len(), 2);
+    assert!(results.iter().all(|a| a.artifact_type == "requirement"));
+
+    // Filter by status
+    let q = Query {
+        status: Some("approved".into()),
+        ..Default::default()
+    };
+    let results = query::execute(&store, &q);
+    assert_eq!(results.len(), 2); // A-1 and A-3
+    assert!(
+        results
+            .iter()
+            .all(|a| a.status.as_deref() == Some("approved"))
+    );
+
+    // Filter by tag
+    let q = Query {
+        tag: Some("safety".into()),
+        ..Default::default()
+    };
+    let results = query::execute(&store, &q);
+    assert_eq!(results.len(), 3); // A-1, A-3, A-4
+
+    // Filter by has_link_type
+    let q = Query {
+        has_link_type: Some("satisfies".into()),
+        ..Default::default()
+    };
+    let results = query::execute(&store, &q);
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].id, "A-1");
+
+    // Filter by missing_link_type
+    let q = Query {
+        missing_link_type: Some("satisfies".into()),
+        ..Default::default()
+    };
+    let results = query::execute(&store, &q);
+    assert_eq!(results.len(), 3); // A-2, A-3, A-4
+
+    // Combine filters: type + status
+    let q = Query {
+        artifact_type: Some("requirement".into()),
+        status: Some("approved".into()),
+        ..Default::default()
+    };
+    let results = query::execute(&store, &q);
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].id, "A-1");
+
+    // Combine filters: tag + has_link_type
+    let q = Query {
+        tag: Some("safety".into()),
+        has_link_type: Some("implements".into()),
+        ..Default::default()
+    };
+    let results = query::execute(&store, &q);
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].id, "A-4");
+}
+
+// ── Link graph integration ──────────────────────────────────────────────
+
+/// Verify backlinks, orphans, and reachability across a multi-type graph.
+#[test]
+fn test_link_graph_integration() {
+    let schema = load_schema_files(&["common", "stpa"]);
+    let mut store = Store::new();
+
+    store
+        .insert(make_artifact("L-1", "loss", "Loss 1"))
+        .unwrap();
+
+    let mut h = make_artifact("H-1", "hazard", "Hazard 1");
+    h.links.push(Link {
+        link_type: "leads-to-loss".into(),
+        target: "L-1".into(),
+    });
+    store.insert(h).unwrap();
+
+    let mut sc = make_artifact("SC-1", "system-constraint", "Constraint 1");
+    sc.links.push(Link {
+        link_type: "prevents".into(),
+        target: "H-1".into(),
+    });
+    store.insert(sc).unwrap();
+
+    // Orphan — no links in or out
+    store
+        .insert(make_artifact("ORPHAN-1", "loss", "Orphan loss"))
+        .unwrap();
+
+    let graph = LinkGraph::build(&store, &schema);
+
+    // Forward links
+    assert_eq!(graph.links_from("H-1").len(), 1);
+    assert_eq!(graph.links_from("SC-1").len(), 1);
+    assert_eq!(graph.links_from("L-1").len(), 0);
+
+    // Backlinks
+    let bl = graph.backlinks_to("L-1");
+    assert_eq!(bl.len(), 1);
+    assert_eq!(bl[0].source, "H-1");
+    assert_eq!(bl[0].link_type, "leads-to-loss");
+    assert_eq!(bl[0].inverse_type.as_deref(), Some("loss-caused-by"));
+
+    let bl_h = graph.backlinks_to("H-1");
+    assert_eq!(bl_h.len(), 1);
+    assert_eq!(bl_h[0].source, "SC-1");
+
+    // Orphans
+    let orphans = graph.orphans(&store);
+    assert_eq!(orphans.len(), 1);
+    assert_eq!(orphans[0], "ORPHAN-1");
+
+    // No broken links
+    assert!(graph.broken.is_empty());
+
+    // Reachability
+    let reachable = graph.reachable("SC-1", "prevents");
+    assert_eq!(reachable, vec!["H-1".to_string()]);
+}
+
+// ── Validation of ASPICE types ──────────────────────────────────────────
+
+/// Verify that ASPICE traceability rules fire correctly.
+#[test]
+fn test_aspice_traceability_rules() {
+    let schema = load_schema_files(&["common", "aspice"]);
+    let mut store = Store::new();
+
+    // Create a minimal ASPICE chain: stakeholder-req -> system-req -> sw-req
+    store
+        .insert(make_artifact(
+            "STKH-1",
+            "stakeholder-req",
+            "Stakeholder need",
+        ))
+        .unwrap();
+
+    let mut sys_req = make_artifact("SYSREQ-1", "system-req", "System requirement");
+    sys_req.links.push(Link {
+        link_type: "derives-from".into(),
+        target: "STKH-1".into(),
+    });
+    store.insert(sys_req).unwrap();
+
+    let mut sw_req = make_artifact("SWREQ-1", "sw-req", "Software requirement");
+    sw_req.links.push(Link {
+        link_type: "derives-from".into(),
+        target: "SYSREQ-1".into(),
+    });
+    store.insert(sw_req).unwrap();
+
+    // SW req without derives-from (should trigger error)
+    store
+        .insert(make_artifact("SWREQ-BAD", "sw-req", "Missing derivation"))
+        .unwrap();
+
+    let graph = LinkGraph::build(&store, &schema);
+    let diagnostics = validate::validate(&store, &schema, &graph);
+
+    let errors: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Error)
+        .collect();
+
+    // SWREQ-BAD should have an error for missing derives-from
+    let swreq_bad_errors: Vec<_> = errors
+        .iter()
+        .filter(|d| d.artifact_id.as_deref() == Some("SWREQ-BAD"))
+        .collect();
+    assert!(
+        !swreq_bad_errors.is_empty(),
+        "SWREQ-BAD must have validation errors for missing derives-from"
+    );
+}
+
+// ── Store upsert ────────────────────────────────────────────────────────
+
+/// Verify that upsert correctly overwrites an existing artifact.
+#[test]
+fn test_store_upsert_overwrites() {
+    let mut store = Store::new();
+
+    store
+        .insert(make_artifact("U-1", "loss", "Original"))
+        .unwrap();
+    assert_eq!(store.get("U-1").unwrap().title, "Original");
+
+    store.upsert(make_artifact("U-1", "loss", "Updated"));
+    assert_eq!(store.get("U-1").unwrap().title, "Updated");
+    assert_eq!(store.len(), 1);
+    assert_eq!(store.by_type("loss").len(), 1);
+}
+
+/// Verify that upsert with type change updates the by_type index.
+#[test]
+fn test_store_upsert_type_change() {
+    let mut store = Store::new();
+
+    store
+        .insert(make_artifact("TC-1", "loss", "Was a loss"))
+        .unwrap();
+    assert_eq!(store.by_type("loss").len(), 1);
+    assert_eq!(store.by_type("hazard").len(), 0);
+
+    store.upsert(make_artifact("TC-1", "hazard", "Now a hazard"));
+    assert_eq!(store.by_type("loss").len(), 0);
+    assert_eq!(store.by_type("hazard").len(), 1);
+    assert_eq!(store.len(), 1);
+}

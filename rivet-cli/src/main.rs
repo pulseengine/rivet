@@ -10,10 +10,12 @@ use rivet_core::schema::Severity;
 use rivet_core::store::Store;
 use rivet_core::validate;
 
+mod serve;
+
 #[derive(Parser)]
 #[command(name = "rivet", about = "SDLC artifact traceability and validation")]
 struct Cli {
-    /// Path to the project directory (containing trace.yaml)
+    /// Path to the project directory (containing rivet.yaml)
     #[arg(short, long, default_value = ".")]
     project: PathBuf,
 
@@ -67,7 +69,7 @@ enum Command {
         direction: String,
     },
 
-    /// Load and validate STPA files directly (without trace.yaml)
+    /// Load and validate STPA files directly (without rivet.yaml)
     Stpa {
         /// Path to STPA directory
         path: PathBuf,
@@ -75,6 +77,13 @@ enum Command {
         /// Path to STPA schema
         #[arg(long)]
         schema: Option<PathBuf>,
+    },
+
+    /// Start the HTMX-powered dashboard server
+    Serve {
+        /// Port to listen on
+        #[arg(short = 'P', long, default_value = "3000")]
+        port: u16,
     },
 }
 
@@ -117,6 +126,13 @@ fn run(cli: Cli) -> Result<bool> {
             link,
             direction,
         } => cmd_matrix(&cli, from, to, link.as_deref(), direction),
+        Command::Serve { port } => {
+            let port = *port;
+            let (store, schema, graph) = load_project(&cli)?;
+            let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
+            rt.block_on(serve::run(store, schema, graph, port))?;
+            Ok(true)
+        }
     }
 }
 
@@ -192,7 +208,7 @@ fn cmd_stpa(
     }
 }
 
-/// Validate a full project (with trace.yaml).
+/// Validate a full project (with rivet.yaml).
 fn cmd_validate(cli: &Cli) -> Result<bool> {
     let (store, schema, graph) = load_project(cli)?;
     let diagnostics = validate::validate(&store, &schema, &graph);

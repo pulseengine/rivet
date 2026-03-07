@@ -178,3 +178,49 @@ artifacts:
         target: DD-004
     fields:
       phase: phase-3
+
+  - id: FEAT-013
+    type: feature
+    title: Property-based tests (proptest)
+    status: approved
+    description: >
+      Proptest strategies for store, schema, link graph, and validation.
+      Covers SWE.4 unit verification with randomized inputs.
+    tags: [testing, phase-1]
+    links:
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-1
+
+  - id: FEAT-014
+    type: feature
+    title: Integration test suite
+    status: approved
+    description: >
+      Cross-module integration tests: dogfood validation, generic YAML
+      roundtrip, schema merge, traceability matrix, query filters.
+      Covers SWE.5 integration verification.
+    tags: [testing, phase-1]
+    links:
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-1
+
+  - id: FEAT-015
+    type: feature
+    title: Criterion benchmarks
+    status: approved
+    description: >
+      Performance benchmarks for store insert/lookup, schema loading,
+      link graph build, validation, and matrix computation at
+      100/1000/10000 artifact scales.
+    tags: [testing, performance, phase-1]
+    links:
+      - type: satisfies
+        target: REQ-013
+      - type: implements
+        target: DD-009
+    fields:
+      phase: phase-1

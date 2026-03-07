@@ -17,3 +17,8 @@ log = { workspace = true }
 
 [dev-dependencies]
 proptest = "1.5"
+criterion = { workspace = true }
+
+[[bench]]
+name = "core_benchmarks"
+harness = false
