@@ -1,0 +1,52 @@
+# cargo-deny configuration
+# https://embarkstudios.github.io/cargo-deny/
+
+[advisories]
+# Lint level for crates with known security vulnerabilities
+vulnerability = "deny"
+# Lint level for crates that have been yanked
+yanked = "warn"
+
+[licenses]
+# Confidence threshold for license detection
+confidence-threshold = 0.8
+# List of allowed licenses
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Zlib",
+    "0BSD",
+    "BSL-1.0",
+    "CC0-1.0",
+]
+# Deny copyleft licenses
+deny = [
+    "GPL-2.0",
+    "GPL-3.0",
+    "AGPL-1.0",
+    "AGPL-3.0",
+]
+
+[bans]
+# Lint level for multiple versions of the same crate
+multiple-versions = "warn"
+# Lint level for wildcard dependencies
+wildcards = "allow"
+# Deny specific crates known to be problematic
+deny = [
+    # Use rustls instead of openssl for TLS
+    # { name = "openssl-sys" },
+]
+
+[sources]
+# Lint level for crates not from crates.io
+unknown-registry = "deny"
+unknown-git = "warn"
+# Allow crates from these registries
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

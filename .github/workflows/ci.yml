@@ -1,0 +1,195 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  # ── Fast checks ───────────────────────────────────────────────────────
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-targets -- -D warnings
+
+  yaml-lint:
+    name: YAML Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install yamllint
+      - run: yamllint -c .yamllint.yaml schemas/ artifacts/ rivet.yaml .github/
+
+  # ── Tests ─────────────────────────────────────────────────────────────
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run tests (JUnit XML output)
+        run: |
+          cargo install cargo-nextest --locked 2>/dev/null || true
+          if command -v cargo-nextest &>/dev/null; then
+            cargo nextest run --all --profile ci
+          else
+            cargo test --all
+          fi
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: target/nextest/ci/junit.xml
+          if-no-files-found: ignore
+
+  # ── Security audits ──────────────────────────────────────────────────
+  audit:
+    name: Security Audit (RustSec)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  deny:
+    name: Cargo Deny (licenses, bans, sources, advisories)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+
+  # ── Code coverage (Rust nightly for source-based instrumentation) ───
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Generate coverage (LCOV + HTML)
+        run: |
+          cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+          cargo llvm-cov --all-features --workspace --html --output-dir coverage-html
+      - name: Upload LCOV to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: lcov.info
+          fail_ci_if_error: false
+      - name: Upload HTML coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html
+          path: coverage-html/
+
+  # ── Miri (undefined behavior, pointer provenance) ───────────────────
+  miri:
+    name: Miri
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - uses: Swatinem/rust-cache@v2
+      - name: Run Miri
+        run: cargo miri test --all
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance"
+
+  # ── Property-based testing (extended) ───────────────────────────────
+  proptest:
+    name: Proptest (extended)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run proptest with 10x cases
+        run: cargo test --all
+        env:
+          PROPTEST_CASES: "1000"
+
+  # ── Supply chain verification ───────────────────────────────────────
+  supply-chain:
+    name: Supply Chain (cargo-vet)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-vet
+        uses: taiki-e/install-action@cargo-vet
+      - name: Check supply chain
+        run: cargo vet --locked || echo "::warning::cargo-vet not yet configured — run 'cargo vet init'"
+
+  # ── MSRV check ──────────────────────────────────────────────────────
+  msrv:
+    name: MSRV (1.85)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.85.0
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --all
+
+  # ── Attach test results to releases ─────────────────────────────────
+  release-results:
+    name: Publish Test Results on Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [test, coverage, miri, proptest]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-llvm-cov and cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov,cargo-nextest
+      - name: Run tests with JUnit output
+        run: cargo nextest run --all --profile ci
+      - name: Generate coverage
+        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+      - name: Package results
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/}"
+          mkdir -p release-results
+          cp target/nextest/ci/junit.xml release-results/test-results-${VERSION}.xml 2>/dev/null || true
+          cp lcov.info release-results/coverage-${VERSION}.lcov
+          TSTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          jq -n --arg v "$VERSION" --arg c "$GITHUB_SHA" --arg t "$TSTAMP" \
+            '{version: $v, commit: $c, timestamp: $t}' \
+            > release-results/metadata.json
+          tar czf release-results-${VERSION}.tar.gz release-results/
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-results-*.tar.gz

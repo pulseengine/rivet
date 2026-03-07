@@ -1,0 +1,41 @@
+[workspace]
+resolver = "2"
+members = [
+    "rivet-core",
+    "rivet-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+authors = ["PulseEngine <https://github.com/pulseengine>"]
+edition = "2024"
+license = "Apache-2.0"
+rust-version = "1.85"
+
+[workspace.dependencies]
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+serde_json = "1"
+
+# Error handling
+anyhow = "1"
+thiserror = "2"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Graph
+petgraph = "0.6"
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# HTTP / serve
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+tower-http = { version = "0.6", features = ["cors", "fs"] }
+
+# XML (ReqIF)
+quick-xml = { version = "0.37", features = ["serialize"] }

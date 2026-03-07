@@ -1,0 +1,152 @@
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: Text-file-first artifact management
+    status: approved
+    description: >
+      All lifecycle artifacts are stored as YAML files in git repositories.
+      No database or external service required for core operation.
+    tags: [core]
+    fields:
+      priority: must
+      category: functional
+
+  - id: REQ-002
+    type: requirement
+    title: STPA artifact support
+    status: approved
+    description: >
+      Support STPA methodology artifacts: losses, hazards, sub-hazards,
+      system constraints, control structure, UCAs, controller constraints,
+      and loss scenarios with proper link semantics.
+    tags: [stpa, safety]
+    fields:
+      priority: must
+      category: functional
+
+  - id: REQ-003
+    type: requirement
+    title: Automotive SPICE V-model traceability
+    status: approved
+    description: >
+      Support full ASPICE V-model artifact types from stakeholder requirements
+      through system/software requirements, architecture, design, and testing
+      with bidirectional traceability rules.
+    tags: [aspice, automotive]
+    fields:
+      priority: must
+      category: functional
+
+  - id: REQ-004
+    type: requirement
+    title: Validation engine
+    status: approved
+    description: >
+      Validate link integrity, coverage completeness, required fields,
+      allowed values, and traceability rules. Report diagnostics with
+      severity levels (error, warning, info).
+    tags: [core, validation]
+    fields:
+      priority: must
+      category: functional
+
+  - id: REQ-005
+    type: requirement
+    title: ReqIF 1.2 import/export
+    status: draft
+    description: >
+      Support OMG ReqIF 1.2 XML format for cross-organization requirements
+      interchange. Import ReqIF into trace artifacts, export trace artifacts
+      to ReqIF.
+    tags: [interchange, reqif]
+    fields:
+      priority: should
+      category: interface
+
+  - id: REQ-006
+    type: requirement
+    title: OSLC-based tool synchronization
+    status: draft
+    description: >
+      Bidirectional sync with Polarion, DOORS, and codebeamer via OSLC
+      (Open Services for Lifecycle Collaboration) rather than per-tool
+      REST adapters. Support RM, QM, CM domains.
+    tags: [oslc, sync, interchange]
+    fields:
+      priority: should
+      category: interface
+
+  - id: REQ-007
+    type: requirement
+    title: CLI and serve pattern
+    status: approved
+    description: >
+      Provide a CLI binary for validation, querying, and reporting.
+      Support an HTTP serve mode (axum + HTMX) for dashboard visualization.
+      No Tauri or desktop GUI.
+    tags: [core, ui]
+    fields:
+      priority: must
+      category: functional
+
+  - id: REQ-008
+    type: requirement
+    title: WASM component adapters
+    status: approved
+    description: >
+      Support pluggable adapters as WASM components via WIT interface.
+      Adapters can import/export artifacts for custom formats.
+    tags: [extensibility, wasm]
+    fields:
+      priority: should
+      category: functional
+
+  - id: REQ-009
+    type: requirement
+    title: Test results as release evidence
+    status: draft
+    description: >
+      Tie test execution results (JUnit XML, coverage reports) to
+      GitHub releases as per-version evidence. Support fetching and
+      caching from release assets.
+    tags: [testing, evidence]
+    fields:
+      priority: should
+      category: functional
+
+  - id: REQ-010
+    type: requirement
+    title: Schema-driven validation
+    status: approved
+    description: >
+      Artifact types, fields, link constraints, and traceability rules
+      are defined in mergeable YAML schemas. The tool validates artifacts
+      against loaded schemas.
+    tags: [core, schema]
+    fields:
+      priority: must
+      category: functional
+
+  - id: REQ-011
+    type: requirement
+    title: Rust edition 2024 with MSRV 1.85
+    status: approved
+    description: >
+      Use Rust edition 2024. Maintain minimum supported Rust version of 1.85.
+    tags: [toolchain]
+    fields:
+      priority: must
+      category: constraint
+
+  - id: REQ-012
+    type: requirement
+    title: Comprehensive CI quality gates
+    status: approved
+    description: >
+      CI pipeline must include fmt, clippy -D warnings, tests, security audit,
+      cargo-deny, code coverage, Miri, proptest, supply chain verification,
+      and MSRV check.
+    tags: [ci, quality]
+    fields:
+      priority: must
+      category: non-functional

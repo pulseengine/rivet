@@ -1,0 +1,125 @@
+artifacts:
+  - id: DD-001
+    type: design-decision
+    title: OSLC over per-tool REST adapters
+    status: approved
+    description: >
+      Use OSLC (Open Services for Lifecycle Collaboration) as the integration
+      protocol for Polarion, DOORS, and codebeamer instead of writing
+      per-tool REST adapters.
+    tags: [architecture, oslc]
+    links:
+      - type: satisfies
+        target: REQ-006
+    fields:
+      rationale: >
+        OSLC is an OASIS standard that Polarion, DOORS, and codebeamer
+        already support natively. One adapter handles all tools. Per-tool
+        adapters would multiply maintenance burden and break on API changes.
+      alternatives: >
+        Per-tool REST adapters (Polarion REST, DOORS DNG API). Rejected
+        because each requires separate auth, pagination, and schema mapping.
+
+  - id: DD-002
+    type: design-decision
+    title: petgraph for link graph operations
+    status: approved
+    description: >
+      Use the petgraph crate for building and querying the artifact link graph
+      (cycle detection, reachability, orphan detection).
+    tags: [architecture]
+    links:
+      - type: satisfies
+        target: REQ-004
+    fields:
+      rationale: >
+        petgraph is a mature, well-tested Rust graph library. It provides
+        efficient algorithms for cycle detection, topological sort, and
+        reachability queries that we need for link validation.
+      alternatives: >
+        Custom adjacency list implementation. Rejected because graph
+        algorithms are subtle and petgraph is well-proven.
+
+  - id: DD-003
+    type: design-decision
+    title: Mergeable YAML schemas
+    status: approved
+    description: >
+      Schemas are YAML files that can be merged (common + stpa, common + aspice).
+      Each schema file defines artifact types, link types, and traceability rules.
+    tags: [architecture, schema]
+    links:
+      - type: satisfies
+        target: REQ-010
+      - type: satisfies
+        target: REQ-002
+      - type: satisfies
+        target: REQ-003
+    fields:
+      rationale: >
+        Merging allows a base common schema to be extended by domain-specific
+        schemas without duplication. Projects pick which schemas they need.
+      alternatives: >
+        Single monolithic schema. Rejected because different projects need
+        different subsets (STPA-only, ASPICE-only, or both).
+
+  - id: DD-004
+    type: design-decision
+    title: WIT-based WASM adapter interface
+    status: approved
+    description: >
+      Define the adapter interface using WIT (WASM Interface Types) so that
+      adapters can be compiled as WASM components and loaded at runtime.
+    tags: [architecture, wasm]
+    links:
+      - type: satisfies
+        target: REQ-008
+    fields:
+      rationale: >
+        WIT provides a language-agnostic interface definition. Adapters can
+        be written in any language that compiles to WASM components, not
+        just Rust. The same trait is mirrored as a native Rust trait.
+      alternatives: >
+        Plugin via dynamic libraries (.so/.dylib). Rejected due to ABI
+        fragility and platform-specific builds.
+
+  - id: DD-005
+    type: design-decision
+    title: axum + HTMX serve pattern
+    status: approved
+    description: >
+      Use axum HTTP server with HTMX for the dashboard, following the
+      temper project's pattern. No Tauri or SPA framework.
+    tags: [architecture, ui]
+    links:
+      - type: satisfies
+        target: REQ-007
+    fields:
+      rationale: >
+        axum is already a workspace dependency. HTMX keeps the frontend
+        simple (server-rendered HTML fragments). No JS build toolchain
+        needed. Follows the proven temper/probot pattern.
+      alternatives: >
+        Tauri desktop app. Rejected per user preference — CLI + serve
+        is simpler and works over SSH.
+
+  - id: DD-006
+    type: design-decision
+    title: Flat crate structure
+    status: approved
+    description: >
+      Use a flat module structure (trace-core, trace-cli) rather than
+      deeply nested module trees. Follow modern Rust AST-style patterns.
+    tags: [architecture]
+    links:
+      - type: satisfies
+        target: REQ-001
+    fields:
+      rationale: >
+        Flat structures are easier to navigate and understand. Modern
+        Rust projects favor fewer nesting levels with clear module
+        boundaries at the crate level.
+      alternatives: >
+        Deep module hierarchy (trace-core/src/domain/stpa/model/...).
+        Rejected because it adds navigation overhead without benefit
+        at this project scale.

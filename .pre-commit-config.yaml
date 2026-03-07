@@ -1,0 +1,71 @@
+repos:
+  # ── Generic file hygiene ──────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: ['--allow-multiple-documents']
+      - id: check-toml
+      - id: check-json
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: check-case-conflict
+      - id: check-symlinks
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+
+  # ── YAML lint ─────────────────────────────────────────────────────────
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.37.0
+    hooks:
+      - id: yamllint
+        args: ['-c', '.yamllint.yaml']
+
+  # ── Rust checks ──────────────────────────────────────────────────────
+  - repo: local
+    hooks:
+      # ── Formatting ─────────────────────────────────────────────────
+      - id: cargo-fmt
+        name: cargo fmt
+        entry: cargo fmt --all -- --check
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      # ── Linting ────────────────────────────────────────────────────
+      - id: cargo-clippy
+        name: cargo clippy -D warnings
+        entry: cargo clippy --all-targets -- -D warnings
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      # ── Tests ──────────────────────────────────────────────────────
+      - id: cargo-test
+        name: cargo test
+        entry: cargo test --all
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      # ── Security: known vulnerabilities (RustSec advisory DB) ──────
+      - id: cargo-audit
+        name: cargo audit
+        entry: cargo audit
+        language: system
+        pass_filenames: false
+        files: '(Cargo\.toml|Cargo\.lock)$'
+        stages: [pre-push]
+
+      # ── Security: license compliance, bans, sources, advisories ────
+      - id: cargo-deny
+        name: cargo deny check
+        entry: cargo deny check
+        language: system
+        pass_filenames: false
+        files: '(Cargo\.toml|Cargo\.lock|deny\.toml)$'
+        stages: [pre-push]

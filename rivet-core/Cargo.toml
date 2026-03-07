@@ -1,0 +1,19 @@
+[package]
+name = "rivet-core"
+description = "Core library for SDLC artifact traceability — model, links, validation, schemas"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_yaml = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+petgraph = { workspace = true }
+log = { workspace = true }
+
+[dev-dependencies]
+proptest = "1.5"

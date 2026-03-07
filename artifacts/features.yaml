@@ -1,0 +1,180 @@
+artifacts:
+  - id: FEAT-001
+    type: feature
+    title: STPA YAML adapter
+    status: approved
+    description: >
+      Import artifacts from meld's STPA YAML format (losses, hazards,
+      system-constraints, control-structure, ucas, controller-constraints).
+    tags: [stpa, adapter, phase-1]
+    links:
+      - type: satisfies
+        target: REQ-002
+      - type: satisfies
+        target: REQ-001
+    fields:
+      phase: phase-1
+
+  - id: FEAT-002
+    type: feature
+    title: Generic YAML adapter
+    status: approved
+    description: >
+      Import/export artifacts in canonical generic YAML format with
+      explicit type, links array, and fields map.
+    tags: [adapter, phase-1]
+    links:
+      - type: satisfies
+        target: REQ-001
+    fields:
+      phase: phase-1
+
+  - id: FEAT-003
+    type: feature
+    title: Schema loading and merging
+    status: approved
+    description: >
+      Load schema files from YAML, merge multiple schemas, and provide
+      lookup for artifact types, link types, and inverse mappings.
+    tags: [schema, phase-1]
+    links:
+      - type: satisfies
+        target: REQ-010
+    fields:
+      phase: phase-1
+
+  - id: FEAT-004
+    type: feature
+    title: Link graph with petgraph
+    status: approved
+    description: >
+      Build directed graph from artifact links, compute forward/backward
+      links, detect broken links, find orphans, check cycles.
+    tags: [validation, phase-1]
+    links:
+      - type: satisfies
+        target: REQ-004
+      - type: implements
+        target: DD-002
+    fields:
+      phase: phase-1
+
+  - id: FEAT-005
+    type: feature
+    title: Validation engine
+    status: approved
+    description: >
+      Validate artifacts against schema: known types, required fields,
+      allowed values, link cardinality, link target types, traceability
+      rules (forward and backward).
+    tags: [validation, phase-1]
+    links:
+      - type: satisfies
+        target: REQ-004
+    fields:
+      phase: phase-1
+
+  - id: FEAT-006
+    type: feature
+    title: Traceability matrix computation
+    status: approved
+    description: >
+      Compute source-to-target traceability matrices with coverage
+      percentages. Support forward and backward directions.
+    tags: [reporting, phase-1]
+    links:
+      - type: satisfies
+        target: REQ-004
+    fields:
+      phase: phase-1
+
+  - id: FEAT-007
+    type: feature
+    title: CLI validate command
+    status: approved
+    description: >
+      Full project validation from trace.yaml — load schemas, import
+      artifacts from all sources, build link graph, run validation.
+    tags: [cli, phase-1]
+    links:
+      - type: satisfies
+        target: REQ-007
+    fields:
+      phase: phase-1
+
+  - id: FEAT-008
+    type: feature
+    title: CLI stpa command
+    status: approved
+    description: >
+      Direct STPA validation without trace.yaml — point at an STPA
+      directory and validate against STPA schema.
+    tags: [cli, stpa, phase-1]
+    links:
+      - type: satisfies
+        target: REQ-007
+      - type: satisfies
+        target: REQ-002
+    fields:
+      phase: phase-1
+
+  - id: FEAT-009
+    type: feature
+    title: HTTP serve with HTMX dashboard
+    status: draft
+    description: >
+      axum HTTP server serving an HTMX-powered dashboard for browsing
+      artifacts, viewing traceability matrices, and validation results.
+    tags: [ui, phase-2]
+    links:
+      - type: satisfies
+        target: REQ-007
+      - type: implements
+        target: DD-005
+    fields:
+      phase: phase-2
+
+  - id: FEAT-010
+    type: feature
+    title: ReqIF 1.2 adapter
+    status: draft
+    description: >
+      Import/export adapter for OMG ReqIF 1.2 XML format.
+    tags: [interchange, phase-2]
+    links:
+      - type: satisfies
+        target: REQ-005
+    fields:
+      phase: phase-2
+
+  - id: FEAT-011
+    type: feature
+    title: OSLC client for bidirectional sync
+    status: draft
+    description: >
+      OSLC RM/QM client for syncing artifacts with Polarion, DOORS,
+      and codebeamer. Support TRS for incremental sync.
+    tags: [oslc, sync, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-006
+      - type: implements
+        target: DD-001
+    fields:
+      phase: phase-3
+
+  - id: FEAT-012
+    type: feature
+    title: WASM adapter runtime
+    status: draft
+    description: >
+      Load and execute WASM component adapters at runtime using
+      the WIT-defined interface.
+    tags: [wasm, extensibility, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-008
+      - type: implements
+        target: DD-004
+    fields:
+      phase: phase-3

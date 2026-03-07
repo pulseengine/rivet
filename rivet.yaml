@@ -1,0 +1,10 @@
+project:
+  name: rivet
+  version: "0.1.0"
+  schemas:
+    - common
+    - dev
+
+sources:
+  - path: artifacts
+    format: generic-yaml

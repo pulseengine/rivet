@@ -1,0 +1,334 @@
+# STPA (Systems-Theoretic Process Analysis) schema
+#
+# Defines artifact types and link types for a complete STPA analysis.
+# Based on the STPA Handbook (Leveson & Thomas, 2018).
+#
+# Steps covered:
+#   1a  Losses
+#   1b  Hazards (and sub-hazards)
+#   1c  System-level constraints
+#   2   Control structure (controllers, controlled processes, control actions)
+#   3   Unsafe Control Actions (UCAs)
+#   3b  Controller constraints
+#   4   Loss scenarios and causal factors
+#
+# This schema is reusable across any project performing STPA — it is not
+# specific to any single product.
+
+schema:
+  name: stpa
+  version: "0.1.0"
+  namespace: "http://pulseengine.dev/ns/stpa#"
+  extends: [common]
+  description: >
+    STPA artifact types for systems-theoretic safety analysis.
+
+# ──────────────────────────────────────────────────────────────────────────
+# Artifact types
+# ──────────────────────────────────────────────────────────────────────────
+artifact-types:
+
+  # ── Step 1a ─────────────────────────────────────────────────────────────
+  - name: loss
+    description: >
+      An undesired or unplanned event involving something of value to
+      stakeholders.  Losses define what the analysis aims to prevent.
+    fields:
+      - name: stakeholders
+        type: list<string>
+        required: false
+        description: Stakeholder groups affected by this loss
+    link-fields: []
+
+  # ── Step 1b ─────────────────────────────────────────────────────────────
+  - name: hazard
+    description: >
+      A system state or set of conditions that, together with worst-case
+      environmental conditions, will lead to a loss.
+    fields:
+      - name: severity
+        type: string
+        required: false
+        allowed-values: [catastrophic, critical, marginal, negligible]
+    link-fields:
+      - name: losses
+        link-type: leads-to-loss
+        target-types: [loss]
+        required: true
+        cardinality: one-or-many
+
+  - name: sub-hazard
+    description: >
+      A refinement of a hazard into a more specific unsafe condition.
+    fields: []
+    link-fields:
+      - name: parent
+        link-type: refines
+        target-types: [hazard]
+        required: true
+        cardinality: exactly-one
+
+  # ── Step 1c ─────────────────────────────────────────────────────────────
+  - name: system-constraint
+    description: >
+      A condition or behavior that must be satisfied to prevent a hazard.
+      Each constraint is the inversion of a hazard.
+    fields:
+      - name: spec-baseline
+        type: string
+        required: false
+        description: Reference to the specification baseline this constraint targets
+    link-fields:
+      - name: hazards
+        link-type: prevents
+        target-types: [hazard, sub-hazard]
+        required: true
+        cardinality: one-or-many
+
+  # ── Step 2 ──────────────────────────────────────────────────────────────
+  - name: controller
+    description: >
+      A system component (human or automated) responsible for issuing
+      control actions.  Each controller has a process model — its internal
+      beliefs about the state of the controlled process.
+    fields:
+      - name: controller-type
+        type: string
+        required: false
+        allowed-values: [human, automated, human-and-automated]
+      - name: source-file
+        type: string
+        required: false
+        description: Source file implementing this controller
+      - name: process-model
+        type: list<string>
+        required: false
+        description: Assumptions the controller holds about the process state
+    link-fields: []
+
+  - name: controlled-process
+    description: >
+      A process being controlled — the physical or data transformation
+      acted upon by controllers.
+    fields: []
+    link-fields: []
+
+  - name: control-action
+    description: >
+      An action issued by a controller to a controlled process or another
+      controller.
+    fields:
+      - name: action
+        type: string
+        required: true
+        description: Description of the control action
+    link-fields:
+      - name: source
+        link-type: issued-by
+        target-types: [controller]
+        required: true
+        cardinality: exactly-one
+      - name: target
+        link-type: acts-on
+        target-types: [controlled-process, controller]
+        required: true
+        cardinality: exactly-one
+
+  # ── Step 3 ──────────────────────────────────────────────────────────────
+  - name: uca
+    description: >
+      An Unsafe Control Action — a control action that, in a particular
+      context and worst-case environment, leads to a hazard.
+      Four types (provably complete):
+        1. Not providing the control action leads to a hazard
+        2. Providing the control action leads to a hazard
+        3. Providing too early, too late, or in the wrong order
+        4. Control action stopped too soon or applied too long
+    fields:
+      - name: uca-type
+        type: string
+        required: true
+        allowed-values: [not-providing, providing, too-early-too-late, stopped-too-soon]
+      - name: context
+        type: text
+        required: false
+        description: The context in which this control action is unsafe
+      - name: rationale
+        type: text
+        required: false
+        description: Why this UCA leads to the linked hazards
+    link-fields:
+      - name: controller
+        link-type: issued-by
+        target-types: [controller]
+        required: true
+        cardinality: exactly-one
+      - name: hazards
+        link-type: leads-to-hazard
+        target-types: [hazard, sub-hazard]
+        required: true
+        cardinality: one-or-many
+
+  # ── Step 3b ─────────────────────────────────────────────────────────────
+  - name: controller-constraint
+    description: >
+      A constraint on a controller's behavior derived by inverting a UCA.
+      Specifies what the controller must or must not do.
+    fields:
+      - name: constraint
+        type: text
+        required: true
+        description: The required behavior (inversion of the UCA)
+    link-fields:
+      - name: controller
+        link-type: constrains-controller
+        target-types: [controller]
+        required: true
+        cardinality: exactly-one
+      - name: ucas
+        link-type: inverts-uca
+        target-types: [uca]
+        required: true
+        cardinality: one-or-many
+      - name: hazards
+        link-type: prevents
+        target-types: [hazard, sub-hazard]
+        required: true
+        cardinality: one-or-many
+
+  # ── Step 4 ──────────────────────────────────────────────────────────────
+  - name: loss-scenario
+    description: >
+      A causal pathway describing how a UCA could occur or how the control
+      action could be improperly executed, leading to a hazard.
+    fields:
+      - name: scenario-type
+        type: string
+        required: false
+        allowed-values:
+          - controller-failure
+          - inadequate-feedback
+          - process-model-flaw
+          - coordination-failure
+          - actuator-failure
+          - sensor-failure
+      - name: causal-factors
+        type: list<string>
+        required: false
+        description: Contributing causes identified in this scenario
+    link-fields:
+      - name: uca
+        link-type: caused-by-uca
+        target-types: [uca]
+        required: true
+        cardinality: one-or-many
+      - name: hazards
+        link-type: leads-to-hazard
+        target-types: [hazard, sub-hazard]
+        required: true
+        cardinality: one-or-many
+
+# ──────────────────────────────────────────────────────────────────────────
+# STPA-specific link types
+# ──────────────────────────────────────────────────────────────────────────
+link-types:
+  - name: leads-to-loss
+    inverse: loss-caused-by
+    description: Hazard leads to a specific loss
+    source-types: [hazard, sub-hazard]
+    target-types: [loss]
+
+  - name: prevents
+    inverse: prevented-by
+    description: Constraint prevents a hazard
+    source-types: [system-constraint, controller-constraint]
+    target-types: [hazard, sub-hazard]
+
+  - name: leads-to-hazard
+    inverse: hazard-caused-by
+    description: UCA or loss scenario leads to a hazard
+    source-types: [uca, loss-scenario]
+    target-types: [hazard, sub-hazard]
+
+  - name: inverts-uca
+    inverse: inverted-by
+    description: Controller constraint inverts (is derived from) an UCA
+    source-types: [controller-constraint]
+    target-types: [uca]
+
+  - name: issued-by
+    inverse: issues
+    description: Control action or UCA is issued by a controller
+    source-types: [uca, control-action]
+    target-types: [controller]
+
+  - name: constrains-controller
+    inverse: controller-constrained-by
+    description: Constraint applies to a specific controller
+    source-types: [controller-constraint]
+    target-types: [controller]
+
+  - name: acts-on
+    inverse: acted-on-by
+    description: Control action acts on a process or controller
+    source-types: [control-action]
+    target-types: [controlled-process, controller]
+
+  - name: caused-by-uca
+    inverse: causes-scenario
+    description: Loss scenario is caused by an unsafe control action
+    source-types: [loss-scenario]
+    target-types: [uca]
+
+# ──────────────────────────────────────────────────────────────────────────
+# STPA completeness rules
+# ──────────────────────────────────────────────────────────────────────────
+traceability-rules:
+  - name: hazard-has-loss
+    description: Every hazard must link to at least one loss
+    source-type: hazard
+    required-link: leads-to-loss
+    target-types: [loss]
+    severity: error
+
+  - name: constraint-has-hazard
+    description: Every system constraint must link to at least one hazard
+    source-type: system-constraint
+    required-link: prevents
+    target-types: [hazard, sub-hazard]
+    severity: error
+
+  - name: uca-has-hazard
+    description: Every UCA must link to at least one hazard
+    source-type: uca
+    required-link: leads-to-hazard
+    target-types: [hazard, sub-hazard]
+    severity: error
+
+  - name: uca-has-controller
+    description: Every UCA must link to a controller
+    source-type: uca
+    required-link: issued-by
+    target-types: [controller]
+    severity: error
+
+  - name: controller-constraint-has-uca
+    description: Every controller constraint must link to at least one UCA
+    source-type: controller-constraint
+    required-link: inverts-uca
+    target-types: [uca]
+    severity: error
+
+  - name: hazard-has-constraint
+    description: Every hazard should be addressed by at least one system constraint
+    source-type: hazard
+    required-backlink: prevents
+    from-types: [system-constraint, controller-constraint]
+    severity: warning
+
+  - name: uca-has-controller-constraint
+    description: Every UCA should be addressed by at least one controller constraint
+    source-type: uca
+    required-backlink: inverts-uca
+    from-types: [controller-constraint]
+    severity: warning

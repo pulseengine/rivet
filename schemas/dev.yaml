@@ -1,0 +1,83 @@
+# Development tracking schema for dogfooding trace on itself.
+#
+# Lightweight artifact types for tracking requirements, design decisions,
+# and features of a software project.
+
+schema:
+  name: dev
+  version: "0.1.0"
+  extends: [common]
+  description: >
+    Software development tracking types. Used to manage requirements,
+    design decisions, and feature tracking within a project.
+
+artifact-types:
+  - name: requirement
+    description: A functional or non-functional requirement
+    fields:
+      - name: priority
+        type: string
+        required: false
+        allowed-values: [must, should, could, wont]
+      - name: category
+        type: string
+        required: false
+        allowed-values: [functional, non-functional, constraint, interface]
+    link-fields:
+      - name: satisfies
+        link-type: satisfies
+        cardinality: zero-or-many
+      - name: derives-from
+        link-type: derives-from
+        cardinality: zero-or-many
+
+  - name: design-decision
+    description: An architectural or design decision with rationale
+    fields:
+      - name: rationale
+        type: text
+        required: true
+      - name: alternatives
+        type: text
+        required: false
+    link-fields:
+      - name: satisfies
+        link-type: satisfies
+        target-types: [requirement]
+        required: true
+        cardinality: one-or-many
+
+  - name: feature
+    description: A user-visible capability or feature
+    fields:
+      - name: phase
+        type: string
+        required: false
+        allowed-values: [phase-1, phase-2, phase-3, future]
+    link-fields:
+      - name: satisfies
+        link-type: satisfies
+        cardinality: one-or-many
+      - name: implements
+        link-type: implements
+        cardinality: zero-or-many
+
+link-types:
+  - name: depends-on
+    inverse: depended-on-by
+    description: Source depends on target being completed first
+
+traceability-rules:
+  - name: requirement-coverage
+    description: Every requirement should be satisfied by at least one design decision or feature
+    source-type: requirement
+    required-backlink: satisfies
+    from-types: [design-decision, feature]
+    severity: warning
+
+  - name: decision-justification
+    description: Every design decision must link to at least one requirement
+    source-type: design-decision
+    required-link: satisfies
+    target-types: [requirement]
+    severity: error
