@@ -4,9 +4,10 @@ use std::process::ExitCode;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
+use rivet_core::diff::{ArtifactDiff, DiagnosticDiff};
 use rivet_core::links::LinkGraph;
 use rivet_core::matrix::{self, Direction};
-use rivet_core::schema::{SchemaFile, Severity};
+use rivet_core::schema::Severity;
 use rivet_core::store::Store;
 use rivet_core::validate;
 
@@ -77,6 +78,17 @@ enum Command {
         /// Path to STPA schema
         #[arg(long)]
         schema: Option<PathBuf>,
+    },
+
+    /// Compare two versions of artifacts and show what changed
+    Diff {
+        /// Path to the base artifact directory (older version)
+        #[arg(long)]
+        base: Option<PathBuf>,
+
+        /// Path to the head artifact directory (newer version)
+        #[arg(long)]
+        head: Option<PathBuf>,
     },
 
     /// Export artifacts to a specified format
@@ -153,12 +165,13 @@ fn run(cli: Cli) -> Result<bool> {
             link,
             direction,
         } => cmd_matrix(&cli, from, to, link.as_deref(), direction),
+        Command::Diff { base, head } => cmd_diff(&cli, base.as_deref(), head.as_deref()),
         Command::Export { format, output } => cmd_export(&cli, format, output.as_deref()),
         Command::Serve { port } => {
             let port = *port;
-            let (store, schema, schema_files, graph) = load_project_with_files(&cli)?;
+            let (store, schema, graph) = load_project(&cli)?;
             let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
-            rt.block_on(serve::run(store, schema, schema_files, graph, port))?;
+            rt.block_on(serve::run(store, schema, graph, port))?;
             Ok(true)
         }
         #[cfg(feature = "wasm")]
@@ -404,6 +417,161 @@ fn cmd_export(cli: &Cli, format: &str, output: Option<&std::path::Path>) -> Resu
     Ok(true)
 }
 
+/// Compare two artifact sets and display the differences.
+fn cmd_diff(
+    cli: &Cli,
+    base_path: Option<&std::path::Path>,
+    head_path: Option<&std::path::Path>,
+) -> Result<bool> {
+    let (base_store, base_schema, base_graph, head_store, head_schema, head_graph) =
+        match (base_path, head_path) {
+            (Some(bp), Some(hp)) => {
+                // Explicit --base and --head directories: load each as a
+                // standalone project.
+                let base_cli = Cli {
+                    project: bp.to_path_buf(),
+                    schemas: cli.schemas.clone(),
+                    verbose: cli.verbose,
+                    command: Command::Validate,
+                };
+                let head_cli = Cli {
+                    project: hp.to_path_buf(),
+                    schemas: cli.schemas.clone(),
+                    verbose: cli.verbose,
+                    command: Command::Validate,
+                };
+                let (bs, bsc, bg) = load_project(&base_cli)?;
+                let (hs, hsc, hg) = load_project(&head_cli)?;
+                (bs, bsc, bg, hs, hsc, hg)
+            }
+            _ => {
+                // Default: load the project twice (same working tree). This
+                // is a placeholder — a future version will compare against
+                // the last clean git state.
+                let (s1, sc1, g1) = load_project(cli)?;
+                let (s2, sc2, g2) = load_project(cli)?;
+                (s1, sc1, g1, s2, sc2, g2)
+            }
+        };
+
+    // Compute artifact diff
+    let diff = ArtifactDiff::compute(&base_store, &head_store);
+
+    // Compute diagnostic diff
+    let base_diags = validate::validate(&base_store, &base_schema, &base_graph);
+    let head_diags = validate::validate(&head_store, &head_schema, &head_graph);
+    let diag_diff = DiagnosticDiff::compute(&base_diags, &head_diags);
+
+    // ── Display ──────────────────────────────────────────────────────
+
+    let use_color = std::io::IsTerminal::is_terminal(&std::io::stdout());
+
+    let green = |s: &str| {
+        if use_color {
+            format!("\x1b[32m{s}\x1b[0m")
+        } else {
+            format!("+ {s}")
+        }
+    };
+    let red = |s: &str| {
+        if use_color {
+            format!("\x1b[31m{s}\x1b[0m")
+        } else {
+            format!("- {s}")
+        }
+    };
+    let yellow = |s: &str| {
+        if use_color {
+            format!("\x1b[33m{s}\x1b[0m")
+        } else {
+            format!("~ {s}")
+        }
+    };
+
+    // Added
+    for id in &diff.added {
+        let title = head_store
+            .get(id)
+            .map(|a| a.title.as_str())
+            .unwrap_or("");
+        println!("{}", green(&format!("{id}  {title}")));
+    }
+
+    // Removed
+    for id in &diff.removed {
+        let title = base_store
+            .get(id)
+            .map(|a| a.title.as_str())
+            .unwrap_or("");
+        println!("{}", red(&format!("{id}  {title}")));
+    }
+
+    // Modified
+    for change in &diff.modified {
+        println!("{}", yellow(&change.id));
+
+        if let Some((old, new)) = &change.title_changed {
+            println!("  title: {} -> {}", red(old), green(new));
+        }
+        if change.description_changed {
+            println!("  description: changed");
+        }
+        if let Some((old, new)) = &change.status_changed {
+            let old_s = old.as_deref().unwrap_or("(none)");
+            let new_s = new.as_deref().unwrap_or("(none)");
+            println!("  status: {} -> {}", red(old_s), green(new_s));
+        }
+        if let Some((old, new)) = &change.type_changed {
+            println!("  type: {} -> {}", red(old), green(new));
+        }
+        for tag in &change.tags_added {
+            println!("  tag: {}", green(tag));
+        }
+        for tag in &change.tags_removed {
+            println!("  tag: {}", red(tag));
+        }
+        for link in &change.links_added {
+            println!(
+                "  link: {}",
+                green(&format!("{} -> {}", link.link_type, link.target))
+            );
+        }
+        for link in &change.links_removed {
+            println!(
+                "  link: {}",
+                red(&format!("{} -> {}", link.link_type, link.target))
+            );
+        }
+        for field in &change.fields_changed {
+            println!("  field changed: {field}");
+        }
+    }
+
+    // Summary
+    println!();
+    println!("{}", diff.summary());
+
+    // Diagnostic diff
+    if !diag_diff.is_empty() {
+        println!();
+        for d in &diag_diff.new_errors {
+            println!("{}", red(&format!("NEW  {d}")));
+        }
+        for d in &diag_diff.resolved_errors {
+            println!("{}", green(&format!("RESOLVED  {d}")));
+        }
+        for d in &diag_diff.new_warnings {
+            println!("{}", yellow(&format!("NEW  {d}")));
+        }
+        for d in &diag_diff.resolved_warnings {
+            println!("{}", green(&format!("RESOLVED  {d}")));
+        }
+        println!("{}", diag_diff.summary());
+    }
+
+    Ok(true)
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────
 
 fn resolve_schemas_dir(cli: &Cli) -> PathBuf {
@@ -458,46 +626,7 @@ fn load_project(cli: &Cli) -> Result<(Store, rivet_core::schema::Schema, LinkGra
     Ok((store, schema, graph))
 }
 
-/// Like `load_project`, but also returns the raw `SchemaFile` list (used by
-/// the serve command to display per-schema grouping in the dashboard).
-fn load_project_with_files(
-    cli: &Cli,
-) -> Result<(
-    Store,
-    rivet_core::schema::Schema,
-    Vec<SchemaFile>,
-    LinkGraph,
-)> {
-    let config_path = cli.project.join("rivet.yaml");
-    let config = rivet_core::load_project_config(&config_path)
-        .with_context(|| format!("loading {}", config_path.display()))?;
 
-    let schemas_dir = resolve_schemas_dir(cli);
-
-    // Load individual schema files so we can keep provenance info.
-    let mut schema_files = Vec::new();
-    for name in &config.project.schemas {
-        let path = schemas_dir.join(format!("{name}.yaml"));
-        if path.exists() {
-            let file = rivet_core::schema::Schema::load_file(&path)
-                .with_context(|| format!("loading schema {}", path.display()))?;
-            schema_files.push(file);
-        }
-    }
-    let schema = rivet_core::schema::Schema::merge(&schema_files);
-
-    let mut store = Store::new();
-    for source in &config.sources {
-        let artifacts = rivet_core::load_artifacts(source, &cli.project)
-            .with_context(|| format!("loading source '{}'", source.path))?;
-        for artifact in artifacts {
-            store.upsert(artifact);
-        }
-    }
-
-    let graph = LinkGraph::build(&store, &schema);
-    Ok((store, schema, schema_files, graph))
-}
 
 fn print_stats(store: &Store) {
     println!("Artifact summary:");

@@ -845,6 +845,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "etch"
+version = "0.1.0"
+dependencies = [
+ "petgraph",
+]
+
+[[package]]
 name = "fastrand"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2259,7 +2266,9 @@ dependencies = [
  "axum",
  "clap",
  "env_logger",
+ "etch",
  "log",
+ "petgraph",
  "rivet-core",
  "serde",
  "serde_json",

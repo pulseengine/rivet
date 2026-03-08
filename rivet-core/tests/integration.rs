@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use rivet_core::adapter::{Adapter, AdapterConfig, AdapterSource};
+use rivet_core::diff::{ArtifactDiff, DiagnosticDiff};
 use rivet_core::formats::generic::GenericYamlAdapter;
 use rivet_core::links::LinkGraph;
 use rivet_core::matrix::{self, Direction};
@@ -867,4 +868,226 @@ fn test_reqif_store_integration() {
     assert_eq!(sw.links.len(), 1);
     assert_eq!(sw.links[0].link_type, "derives-from");
     assert_eq!(sw.links[0].target, "SYS-001");
+}
+
+// ── Diff: identical stores ──────────────────────────────────────────────
+
+/// Two identical stores should produce an empty diff.
+#[test]
+fn test_diff_identical_stores() {
+    let mut base = Store::new();
+    base.insert(make_artifact("D-1", "loss", "Loss one"))
+        .unwrap();
+    base.insert(make_artifact("D-2", "hazard", "Hazard one"))
+        .unwrap();
+
+    let mut head = Store::new();
+    head.insert(make_artifact("D-1", "loss", "Loss one"))
+        .unwrap();
+    head.insert(make_artifact("D-2", "hazard", "Hazard one"))
+        .unwrap();
+
+    let diff = ArtifactDiff::compute(&base, &head);
+    assert!(diff.is_empty(), "identical stores must produce empty diff");
+    assert_eq!(diff.unchanged, 2);
+    assert_eq!(diff.summary(), "0 added, 0 removed, 0 modified, 2 unchanged");
+}
+
+// ── Diff: added artifact ────────────────────────────────────────────────
+
+/// An artifact present in head but not in base should appear as added.
+#[test]
+fn test_diff_added_artifact() {
+    let mut base = Store::new();
+    base.insert(make_artifact("D-1", "loss", "Loss one"))
+        .unwrap();
+
+    let mut head = Store::new();
+    head.insert(make_artifact("D-1", "loss", "Loss one"))
+        .unwrap();
+    head.insert(make_artifact("D-2", "hazard", "Hazard new"))
+        .unwrap();
+
+    let diff = ArtifactDiff::compute(&base, &head);
+    assert!(!diff.is_empty());
+    assert_eq!(diff.added, vec!["D-2".to_string()]);
+    assert!(diff.removed.is_empty());
+    assert!(diff.modified.is_empty());
+    assert_eq!(diff.unchanged, 1);
+}
+
+// ── Diff: removed artifact ──────────────────────────────────────────────
+
+/// An artifact present in base but not in head should appear as removed.
+#[test]
+fn test_diff_removed_artifact() {
+    let mut base = Store::new();
+    base.insert(make_artifact("D-1", "loss", "Loss one"))
+        .unwrap();
+    base.insert(make_artifact("D-2", "hazard", "Hazard one"))
+        .unwrap();
+
+    let mut head = Store::new();
+    head.insert(make_artifact("D-1", "loss", "Loss one"))
+        .unwrap();
+
+    let diff = ArtifactDiff::compute(&base, &head);
+    assert!(!diff.is_empty());
+    assert!(diff.added.is_empty());
+    assert_eq!(diff.removed, vec!["D-2".to_string()]);
+    assert!(diff.modified.is_empty());
+    assert_eq!(diff.unchanged, 1);
+}
+
+// ── Diff: modified artifact (title, status, links, fields) ──────────────
+
+/// Artifacts that exist in both stores but differ structurally should appear
+/// as modified with all changed fields recorded.
+#[test]
+fn test_diff_modified_artifact() {
+    let mut base = Store::new();
+    base.insert(make_artifact_full(
+        "M-1",
+        "requirement",
+        "Old title",
+        Some("draft"),
+        &["safety"],
+        vec![Link {
+            link_type: "satisfies".into(),
+            target: "M-2".into(),
+        }],
+        {
+            let mut f = BTreeMap::new();
+            f.insert(
+                "priority".into(),
+                serde_yaml::Value::String("should".into()),
+            );
+            f
+        },
+    ))
+    .unwrap();
+
+    let mut head = Store::new();
+    head.insert(make_artifact_full(
+        "M-1",
+        "requirement",
+        "New title",
+        Some("approved"),
+        &["safety", "core"],
+        vec![
+            Link {
+                link_type: "satisfies".into(),
+                target: "M-2".into(),
+            },
+            Link {
+                link_type: "derives-from".into(),
+                target: "M-3".into(),
+            },
+        ],
+        {
+            let mut f = BTreeMap::new();
+            f.insert(
+                "priority".into(),
+                serde_yaml::Value::String("must".into()),
+            );
+            f
+        },
+    ))
+    .unwrap();
+
+    let diff = ArtifactDiff::compute(&base, &head);
+    assert!(!diff.is_empty());
+    assert!(diff.added.is_empty());
+    assert!(diff.removed.is_empty());
+    assert_eq!(diff.modified.len(), 1);
+
+    let change = &diff.modified[0];
+    assert_eq!(change.id, "M-1");
+
+    // Title changed
+    assert_eq!(
+        change.title_changed,
+        Some(("Old title".into(), "New title".into()))
+    );
+
+    // Status changed
+    assert_eq!(
+        change.status_changed,
+        Some((Some("draft".into()), Some("approved".into())))
+    );
+
+    // Tags: "core" added, nothing removed
+    assert_eq!(change.tags_added, vec!["core".to_string()]);
+    assert!(change.tags_removed.is_empty());
+
+    // Links: derives-from -> M-3 added, nothing removed
+    assert_eq!(change.links_added.len(), 1);
+    assert_eq!(change.links_added[0].link_type, "derives-from");
+    assert_eq!(change.links_added[0].target, "M-3");
+    assert!(change.links_removed.is_empty());
+
+    // Fields: priority changed
+    assert_eq!(change.fields_changed, vec!["priority".to_string()]);
+
+    // Description unchanged (both have one via make_artifact_full)
+    assert!(!change.description_changed);
+}
+
+// ── Diff: diagnostic changes ────────────────────────────────────────────
+
+/// Diagnostics that appear only in head are "new"; those only in base are
+/// "resolved".
+#[test]
+fn test_diff_diagnostic_changes() {
+    let base_diags = vec![
+        validate::Diagnostic {
+            severity: Severity::Error,
+            artifact_id: Some("X-1".into()),
+            rule: "broken-link".into(),
+            message: "link target missing".into(),
+        },
+        validate::Diagnostic {
+            severity: Severity::Warning,
+            artifact_id: Some("X-2".into()),
+            rule: "allowed-values".into(),
+            message: "bad value".into(),
+        },
+    ];
+
+    let head_diags = vec![
+        // The error on X-1 is resolved (not present in head)
+        // A new error appears on X-3
+        validate::Diagnostic {
+            severity: Severity::Error,
+            artifact_id: Some("X-3".into()),
+            rule: "required-field".into(),
+            message: "missing field".into(),
+        },
+        // The warning on X-2 persists
+        validate::Diagnostic {
+            severity: Severity::Warning,
+            artifact_id: Some("X-2".into()),
+            rule: "allowed-values".into(),
+            message: "bad value".into(),
+        },
+    ];
+
+    let ddiff = DiagnosticDiff::compute(&base_diags, &head_diags);
+
+    assert_eq!(ddiff.new_errors.len(), 1);
+    assert_eq!(ddiff.new_errors[0].artifact_id.as_deref(), Some("X-3"));
+
+    assert_eq!(ddiff.resolved_errors.len(), 1);
+    assert_eq!(
+        ddiff.resolved_errors[0].artifact_id.as_deref(),
+        Some("X-1")
+    );
+
+    assert!(ddiff.new_warnings.is_empty());
+    assert!(ddiff.resolved_warnings.is_empty());
+
+    assert_eq!(
+        ddiff.summary(),
+        "1 new errors, 1 resolved errors, 0 new warnings, 0 resolved warnings"
+    );
 }

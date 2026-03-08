@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -5,10 +6,15 @@ use axum::Router;
 use axum::extract::{Path, Query, State};
 use axum::response::Html;
 use axum::routing::get;
+use petgraph::graph::{Graph, NodeIndex};
+use petgraph::visit::EdgeRef;
 
+use etch::filter::ego_subgraph;
+use etch::layout::{self as pgv_layout, EdgeInfo, LayoutOptions, NodeInfo};
+use etch::svg::{SvgOptions, render_svg};
 use rivet_core::links::LinkGraph;
 use rivet_core::matrix::{self, Direction};
-use rivet_core::schema::{Schema, SchemaFile, Severity};
+use rivet_core::schema::{Schema, Severity};
 use rivet_core::store::Store;
 use rivet_core::validate;
 
@@ -16,22 +22,14 @@ use rivet_core::validate;
 struct AppState {
     store: Store,
     schema: Schema,
-    schema_files: Vec<SchemaFile>,
     graph: LinkGraph,
 }
 
 /// Start the axum HTTP server on the given port.
-pub async fn run(
-    store: Store,
-    schema: Schema,
-    schema_files: Vec<SchemaFile>,
-    graph: LinkGraph,
-    port: u16,
-) -> Result<()> {
+pub async fn run(store: Store, schema: Schema, graph: LinkGraph, port: u16) -> Result<()> {
     let state = Arc::new(AppState {
         store,
         schema,
-        schema_files,
         graph,
     });
 
@@ -39,10 +37,11 @@ pub async fn run(
         .route("/", get(index))
         .route("/artifacts", get(artifacts_list))
         .route("/artifacts/{id}", get(artifact_detail))
+        .route("/artifacts/{id}/graph", get(artifact_graph))
         .route("/validate", get(validate_view))
         .route("/matrix", get(matrix_view))
+        .route("/graph", get(graph_view))
         .route("/stats", get(stats_view))
-        .route("/schemas", get(schemas_view))
         .with_state(state);
 
     let addr = format!("0.0.0.0:{port}");
@@ -51,6 +50,57 @@ pub async fn run(
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+// ── Color palette ────────────────────────────────────────────────────────
+
+fn type_color_map() -> HashMap<String, String> {
+    let pairs: &[(&str, &str)] = &[
+        // STPA
+        ("loss", "#dc3545"),
+        ("hazard", "#fd7e14"),
+        ("system-constraint", "#20c997"),
+        ("controller", "#6f42c1"),
+        ("uca", "#e83e8c"),
+        ("control-action", "#17a2b8"),
+        ("feedback", "#6610f2"),
+        ("causal-factor", "#d63384"),
+        ("safety-constraint", "#20c997"),
+        ("loss-scenario", "#e83e8c"),
+        // ASPICE
+        ("stakeholder-req", "#0d6efd"),
+        ("system-req", "#0dcaf0"),
+        ("system-architecture", "#198754"),
+        ("sw-req", "#198754"),
+        ("sw-architecture", "#0d6efd"),
+        ("sw-detailed-design", "#6610f2"),
+        ("sw-unit", "#6f42c1"),
+        ("system-verification", "#6610f2"),
+        ("sw-verification", "#6610f2"),
+        ("system-integration-verification", "#6610f2"),
+        ("sw-integration-verification", "#6610f2"),
+        ("sw-unit-verification", "#6610f2"),
+        ("qualification-verification", "#6610f2"),
+        // Dev
+        ("requirement", "#0d6efd"),
+        ("design-decision", "#198754"),
+        ("feature", "#6f42c1"),
+        // Cybersecurity
+        ("asset", "#ffc107"),
+        ("threat", "#dc3545"),
+        ("cybersecurity-req", "#fd7e14"),
+        ("vulnerability", "#e83e8c"),
+        ("attack-path", "#dc3545"),
+        ("cybersecurity-goal", "#0d6efd"),
+        ("cybersecurity-control", "#198754"),
+        ("security-verification", "#6610f2"),
+        ("risk-assessment", "#fd7e14"),
+        ("security-event", "#e83e8c"),
+    ];
+    pairs
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect()
 }
 
 // ── CSS ──────────────────────────────────────────────────────────────────
@@ -98,37 +148,64 @@ dl{margin:.5rem 0}
 dt{font-weight:600;font-size:.85rem;color:#495057;margin-top:.5rem}
 dd{margin-left:0;margin-bottom:.25rem}
 .meta{color:#6c757d;font-size:.85rem}
-.nav-badge{display:inline-block;padding:.1rem .4rem;border-radius:10px;font-size:.7rem;font-weight:700;
-           background:#3a3a5e;color:#c0c0d0;margin-left:.35rem;min-width:1.2rem;text-align:center}
-.nav-badge-error{background:#c62828;color:#fff}
-.nav-badge-warn{background:#e6a700;color:#1a1a2e}
-.nav-badge-ok{background:#2e7d32;color:#fff}
-.schema-group{margin-bottom:1.5rem}
-.schema-group h3{border-bottom:2px solid #dee2e6;padding-bottom:.35rem}
+.nav-icon{display:inline-block;width:1.1rem;text-align:center;margin-right:.3rem;font-size:.85rem}
+.graph-container{border:1px solid #dee2e6;border-radius:8px;overflow:hidden;background:#fff;cursor:grab}
+.graph-container:active{cursor:grabbing}
+.graph-container svg{display:block;width:100%;height:auto}
+.filter-grid{display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:.75rem}
+.filter-grid label{font-size:.82rem;display:flex;align-items:center;gap:.25rem}
+.filter-grid input[type="checkbox"]{margin:0}
+"#;
+
+// ── Pan/zoom JS ──────────────────────────────────────────────────────────
+
+const GRAPH_JS: &str = r#"
+<script>
+(function(){
+  document.addEventListener('htmx:afterSwap', initPanZoom);
+  document.addEventListener('DOMContentLoaded', initPanZoom);
+  function initPanZoom(){
+    document.querySelectorAll('.graph-container').forEach(function(c){
+      if(c._pz) return;
+      c._pz=true;
+      var svg=c.querySelector('svg');
+      if(!svg) return;
+      var vb=svg.viewBox.baseVal;
+      var drag=false, sx=0, sy=0, ox=0, oy=0;
+      c.addEventListener('mousedown',function(e){
+        drag=true; sx=e.clientX; sy=e.clientY;
+        ox=vb.x; oy=vb.y; e.preventDefault();
+      });
+      c.addEventListener('mousemove',function(e){
+        if(!drag) return;
+        var scale=vb.width/c.clientWidth;
+        vb.x=ox-(e.clientX-sx)*scale;
+        vb.y=oy-(e.clientY-sy)*scale;
+      });
+      c.addEventListener('mouseup',function(){ drag=false; });
+      c.addEventListener('mouseleave',function(){ drag=false; });
+      c.addEventListener('wheel',function(e){
+        e.preventDefault();
+        var f=e.deltaY>0?1.15:1/1.15;
+        var r=c.getBoundingClientRect();
+        var mx=(e.clientX-r.left)/r.width;
+        var my=(e.clientY-r.top)/r.height;
+        var nx=vb.width*f, ny=vb.height*f;
+        vb.x+=( vb.width-nx)*mx;
+        vb.y+=(vb.height-ny)*my;
+        vb.width=nx; vb.height=ny;
+      },{passive:false});
+    });
+  }
+})();
+</script>
 "#;
 
 // ── Layout ───────────────────────────────────────────────────────────────
 
-fn layout(state: &AppState, content: &str) -> Html<String> {
-    let artifact_count = state.store.len();
-    let diagnostics = validate::validate(&state.store, &state.schema, &state.graph);
-    let diag_count = diagnostics.len();
-    let error_count = diagnostics
-        .iter()
-        .filter(|d| d.severity == Severity::Error)
-        .count();
-    let schema_count = state.schema.artifact_types.len();
-
-    let diag_badge = if error_count > 0 {
-        format!(r##"<span class="nav-badge nav-badge-error">{diag_count}</span>"##)
-    } else if diag_count > 0 {
-        format!(r##"<span class="nav-badge nav-badge-warn">{diag_count}</span>"##)
-    } else {
-        r##"<span class="nav-badge nav-badge-ok">0</span>"##.to_string()
-    };
-
+fn page_layout(content: &str) -> Html<String> {
     Html(format!(
-        r###"<!DOCTYPE html>
+        r##"<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -142,19 +219,20 @@ fn layout(state: &AppState, content: &str) -> Html<String> {
 <nav>
   <h1>Rivet</h1>
   <ul>
-    <li><a hx-get="/stats" hx-target="#content" hx-push-url="false" href="#">Overview</a></li>
-    <li><a hx-get="/artifacts" hx-target="#content" hx-push-url="false" href="#">Artifacts <span class="nav-badge">{artifact_count}</span></a></li>
-    <li><a hx-get="/validate" hx-target="#content" hx-push-url="false" href="#">Validation {diag_badge}</a></li>
-    <li><a hx-get="/matrix" hx-target="#content" hx-push-url="false" href="#">Matrix</a></li>
-    <li><a hx-get="/schemas" hx-target="#content" hx-push-url="false" href="#">Schemas <span class="nav-badge">{schema_count}</span></a></li>
+    <li><a hx-get="/stats" hx-target="#content" hx-push-url="false" href="#"><span class="nav-icon">&#9632;</span> Overview</a></li>
+    <li><a hx-get="/artifacts" hx-target="#content" hx-push-url="false" href="#"><span class="nav-icon">&#9830;</span> Artifacts</a></li>
+    <li><a hx-get="/validate" hx-target="#content" hx-push-url="false" href="#"><span class="nav-icon">&#10003;</span> Validation</a></li>
+    <li><a hx-get="/matrix" hx-target="#content" hx-push-url="false" href="#"><span class="nav-icon">&#9638;</span> Matrix</a></li>
+    <li><a hx-get="/graph" hx-target="#content" hx-push-url="false" href="#"><span class="nav-icon">&#9679;</span> Graph</a></li>
   </ul>
 </nav>
 <main id="content">
 {content}
 </main>
 </div>
+{GRAPH_JS}
 </body>
-</html>"###
+</html>"##
     ))
 }
 
@@ -162,7 +240,7 @@ fn layout(state: &AppState, content: &str) -> Html<String> {
 
 async fn index(State(state): State<Arc<AppState>>) -> Html<String> {
     let inner = stats_partial(&state);
-    layout(&state, &inner)
+    page_layout(&inner)
 }
 
 async fn stats_view(State(state): State<Arc<AppState>>) -> Html<String> {
@@ -381,9 +459,372 @@ async fn artifact_detail(
         html.push_str("</tbody></table></div>");
     }
 
-    html.push_str("<p><a hx-get=\"/artifacts\" hx-target=\"#content\" href=\"#\">&larr; Back to artifacts</a></p>");
+    // Show in graph link
+    html.push_str(&format!(
+        r##"<p><a hx-get="/artifacts/{id_esc}/graph" hx-target="#content" href="#">Show in graph</a>
+        &nbsp;|&nbsp;
+        <a hx-get="/artifacts" hx-target="#content" href="#">&larr; Back to artifacts</a></p>"##,
+        id_esc = html_escape(&id),
+    ));
 
     Html(html)
+}
+
+// ── Graph visualization ──────────────────────────────────────────────────
+
+#[derive(Debug, serde::Deserialize)]
+struct GraphParams {
+    types: Option<String>,
+    link_types: Option<String>,
+    #[serde(default = "default_depth")]
+    depth: usize,
+    focus: Option<String>,
+}
+
+fn default_depth() -> usize {
+    0
+}
+
+/// Build a filtered subgraph based on query params and return SVG.
+async fn graph_view(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<GraphParams>,
+) -> Html<String> {
+    let store = &state.store;
+    let link_graph = &state.graph;
+    let pg = link_graph.graph();
+    let node_map = link_graph.node_map();
+
+    // Parse filter sets
+    let type_filter: Option<Vec<String>> = params
+        .types
+        .as_ref()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.split(',').map(|t| t.trim().to_string()).collect());
+    let link_filter: Option<Vec<String>> = params
+        .link_types
+        .as_ref()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.split(',').map(|t| t.trim().to_string()).collect());
+
+    // Build the subgraph to visualize
+    let sub: Graph<String, String>;
+
+    if let Some(focus_id) = &params.focus {
+        if focus_id.is_empty() {
+            // No focus, fall through to full graph
+            sub = build_filtered_subgraph(pg, store, node_map, &type_filter, &link_filter);
+        } else if let Some(&focus_idx) = node_map.get(focus_id.as_str()) {
+            let hops = if params.depth > 0 { params.depth } else { 3 };
+            let ego = ego_subgraph(pg, focus_idx, hops);
+            // Apply type/link filters on the ego subgraph
+            sub = apply_filters_to_graph(&ego, store, &type_filter, &link_filter);
+        } else {
+            sub = build_filtered_subgraph(pg, store, node_map, &type_filter, &link_filter);
+        }
+    } else {
+        sub = build_filtered_subgraph(pg, store, node_map, &type_filter, &link_filter);
+    }
+
+    let colors = type_color_map();
+    let svg_opts = SvgOptions {
+        type_colors: colors,
+        highlight: params.focus.clone().filter(|s| !s.is_empty()),
+        ..SvgOptions::default()
+    };
+
+    let gl = pgv_layout::layout(
+        &sub,
+        &|_idx, n| {
+            let atype = store
+                .get(n.as_str())
+                .map(|a| a.artifact_type.clone())
+                .unwrap_or_default();
+            let title = store
+                .get(n.as_str())
+                .map(|a| a.title.clone())
+                .unwrap_or_default();
+            let sublabel = if title.len() > 24 {
+                Some(format!("{}...", &title[..22]))
+            } else if title.is_empty() {
+                None
+            } else {
+                Some(title)
+            };
+            NodeInfo {
+                id: n.clone(),
+                label: n.clone(),
+                node_type: atype,
+                sublabel,
+            }
+        },
+        &|_idx, e| EdgeInfo { label: e.clone() },
+        &LayoutOptions::default(),
+    );
+
+    let svg = render_svg(&gl, &svg_opts);
+
+    // Build filter controls
+    let mut html = String::from("<h2>Graph</h2>");
+
+    // Filter form
+    html.push_str("<div class=\"card\">");
+    html.push_str(
+        "<form class=\"form-row\" hx-get=\"/graph\" hx-target=\"#content\" hx-push-url=\"false\">",
+    );
+
+    // Type checkboxes
+    let mut all_types: Vec<&str> = store.types().collect();
+    all_types.sort();
+    html.push_str("<div><label>Types</label><div class=\"filter-grid\">");
+    for t in &all_types {
+        let checked = match &type_filter {
+            Some(f) => {
+                if f.iter().any(|x| x == *t) {
+                    " checked"
+                } else {
+                    ""
+                }
+            }
+            None => " checked",
+        };
+        html.push_str(&format!(
+            "<label><input type=\"checkbox\" name=\"types\" value=\"{t}\"{checked}> {t}</label>"
+        ));
+    }
+    html.push_str("</div></div>");
+
+    // Focus input
+    let focus_val = params.focus.as_deref().unwrap_or("");
+    html.push_str(&format!(
+        "<div><label for=\"focus\">Focus</label><br>\
+         <input name=\"focus\" id=\"focus\" value=\"{}\" placeholder=\"e.g. H-1\"></div>",
+        html_escape(focus_val)
+    ));
+
+    // Depth slider
+    let depth_val = if params.depth > 0 { params.depth } else { 3 };
+    html.push_str(&format!(
+        "<div><label for=\"depth\">Depth</label><br>\
+         <input type=\"range\" name=\"depth\" id=\"depth\" min=\"1\" max=\"10\" value=\"{depth_val}\"></div>"
+    ));
+
+    // Link types input
+    let lt_val = params.link_types.as_deref().unwrap_or("");
+    html.push_str(&format!(
+        "<div><label for=\"link_types\">Link types</label><br>\
+         <input name=\"link_types\" id=\"link_types\" value=\"{}\" placeholder=\"comma-separated\"></div>",
+        html_escape(lt_val)
+    ));
+
+    html.push_str("<div><label>&nbsp;</label><br><button type=\"submit\">Apply</button></div>");
+    html.push_str("</form></div>");
+
+    // SVG card
+    html.push_str("<div class=\"card\"><div class=\"graph-container\">");
+    html.push_str(&svg);
+    html.push_str("</div></div>");
+
+    html.push_str(&format!(
+        "<p class=\"meta\">{} nodes, {} edges</p>",
+        gl.nodes.len(),
+        gl.edges.len()
+    ));
+
+    Html(html)
+}
+
+// ── Ego graph for a single artifact ──────────────────────────────────────
+
+#[derive(Debug, serde::Deserialize)]
+struct EgoParams {
+    #[serde(default = "default_ego_hops")]
+    hops: usize,
+}
+
+fn default_ego_hops() -> usize {
+    2
+}
+
+async fn artifact_graph(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Query(params): Query<EgoParams>,
+) -> Html<String> {
+    let store = &state.store;
+    let link_graph = &state.graph;
+    let pg = link_graph.graph();
+    let node_map = link_graph.node_map();
+
+    let Some(&focus_idx) = node_map.get(id.as_str()) else {
+        return Html(format!(
+            "<h2>Not Found</h2><p>Artifact <code>{}</code> not in graph.</p>",
+            html_escape(&id)
+        ));
+    };
+
+    let hops = if params.hops > 0 { params.hops } else { 2 };
+    let sub = ego_subgraph(pg, focus_idx, hops);
+
+    let colors = type_color_map();
+    let svg_opts = SvgOptions {
+        type_colors: colors,
+        highlight: Some(id.clone()),
+        ..SvgOptions::default()
+    };
+
+    let gl = pgv_layout::layout(
+        &sub,
+        &|_idx, n| {
+            let atype = store
+                .get(n.as_str())
+                .map(|a| a.artifact_type.clone())
+                .unwrap_or_default();
+            let title = store
+                .get(n.as_str())
+                .map(|a| a.title.clone())
+                .unwrap_or_default();
+            let sublabel = if title.len() > 24 {
+                Some(format!("{}...", &title[..22]))
+            } else if title.is_empty() {
+                None
+            } else {
+                Some(title)
+            };
+            NodeInfo {
+                id: n.clone(),
+                label: n.clone(),
+                node_type: atype,
+                sublabel,
+            }
+        },
+        &|_idx, e| EdgeInfo { label: e.clone() },
+        &LayoutOptions::default(),
+    );
+
+    let svg = render_svg(&gl, &svg_opts);
+
+    let mut html = format!("<h2>Neighborhood of {}</h2>", html_escape(&id),);
+
+    // Hop control
+    html.push_str("<div class=\"card\">");
+    html.push_str(&format!(
+        "<form class=\"form-row\" hx-get=\"/artifacts/{id_esc}/graph\" hx-target=\"#content\" hx-push-url=\"false\">\
+         <div><label for=\"hops\">Hops</label><br>\
+         <input type=\"range\" name=\"hops\" id=\"hops\" min=\"1\" max=\"6\" value=\"{hops}\"></div>\
+         <div><label>&nbsp;</label><br><button type=\"submit\">Update</button></div>\
+         </form></div>",
+        id_esc = html_escape(&id),
+    ));
+
+    html.push_str("<div class=\"card\"><div class=\"graph-container\">");
+    html.push_str(&svg);
+    html.push_str("</div></div>");
+
+    html.push_str(&format!(
+        "<p class=\"meta\">{} nodes, {} edges ({}-hop neighborhood)</p>",
+        gl.nodes.len(),
+        gl.edges.len(),
+        hops
+    ));
+
+    html.push_str(&format!(
+        r##"<p><a hx-get="/artifacts/{id_esc}" hx-target="#content" href="#">&larr; Back to {id_esc}</a>
+        &nbsp;|&nbsp;
+        <a hx-get="/graph?focus={id_esc}" hx-target="#content" href="#">Open in full graph</a></p>"##,
+        id_esc = html_escape(&id),
+    ));
+
+    Html(html)
+}
+
+/// Build a filtered subgraph from the full petgraph, keeping only nodes
+/// whose artifact types match `type_filter` and edges matching `link_filter`.
+fn build_filtered_subgraph(
+    pg: &petgraph::Graph<String, String>,
+    store: &Store,
+    node_map: &HashMap<String, NodeIndex>,
+    type_filter: &Option<Vec<String>>,
+    link_filter: &Option<Vec<String>>,
+) -> Graph<String, String> {
+    let mut sub = Graph::new();
+    let mut old_to_new: HashMap<NodeIndex, NodeIndex> = HashMap::new();
+
+    // Add nodes that pass the type filter.
+    for (id, &old_idx) in node_map {
+        let include = match type_filter {
+            Some(types) => store
+                .get(id.as_str())
+                .map(|a| types.iter().any(|t| t == &a.artifact_type))
+                .unwrap_or(false),
+            None => true,
+        };
+        if include {
+            let new_idx = sub.add_node(pg[old_idx].clone());
+            old_to_new.insert(old_idx, new_idx);
+        }
+    }
+
+    // Add edges where both endpoints survived and link type matches.
+    for edge in pg.edge_references() {
+        if let (Some(&new_src), Some(&new_dst)) = (
+            old_to_new.get(&edge.source()),
+            old_to_new.get(&edge.target()),
+        ) {
+            let include = match link_filter {
+                Some(lt) => lt.iter().any(|t| t == edge.weight()),
+                None => true,
+            };
+            if include {
+                sub.add_edge(new_src, new_dst, edge.weight().clone());
+            }
+        }
+    }
+
+    sub
+}
+
+/// Apply type and link filters to an already-extracted subgraph.
+fn apply_filters_to_graph(
+    graph: &Graph<String, String>,
+    store: &Store,
+    type_filter: &Option<Vec<String>>,
+    link_filter: &Option<Vec<String>>,
+) -> Graph<String, String> {
+    let mut sub = Graph::new();
+    let mut old_to_new: HashMap<NodeIndex, NodeIndex> = HashMap::new();
+
+    for idx in graph.node_indices() {
+        let id = &graph[idx];
+        let include = match type_filter {
+            Some(types) => store
+                .get(id.as_str())
+                .map(|a| types.iter().any(|t| t == &a.artifact_type))
+                .unwrap_or(false),
+            None => true,
+        };
+        if include {
+            let new_idx = sub.add_node(id.clone());
+            old_to_new.insert(idx, new_idx);
+        }
+    }
+
+    for edge in graph.edge_references() {
+        if let (Some(&new_src), Some(&new_dst)) = (
+            old_to_new.get(&edge.source()),
+            old_to_new.get(&edge.target()),
+        ) {
+            let include = match link_filter {
+                Some(lt) => lt.iter().any(|t| t == edge.weight()),
+                None => true,
+            };
+            if include {
+                sub.add_edge(new_src, new_dst, edge.weight().clone());
+            }
+        }
+    }
+
+    sub
 }
 
 // ── Validation ───────────────────────────────────────────────────────────
@@ -583,53 +1024,6 @@ async fn matrix_view(
         }
 
         html.push_str("</tbody></table></div>");
-    }
-
-    Html(html)
-}
-
-// ── Schemas ─────────────────────────────────────────────────────────────
-
-async fn schemas_view(State(state): State<Arc<AppState>>) -> Html<String> {
-    let mut html = String::from("<h2>Schemas</h2>");
-
-    for file in &state.schema_files {
-        html.push_str(&format!(
-            "<div class=\"card schema-group\"><h3>{} v{}</h3>",
-            html_escape(&file.schema.name),
-            html_escape(&file.schema.version)
-        ));
-        if let Some(desc) = &file.schema.description {
-            html.push_str(&format!("<p>{}</p>", html_escape(desc)));
-        }
-
-        if !file.artifact_types.is_empty() {
-            html.push_str("<h4>Artifact Types</h4><table><thead><tr><th>Name</th><th>Description</th></tr></thead><tbody>");
-            for at in &file.artifact_types {
-                html.push_str(&format!(
-                    "<tr><td><span class=\"badge badge-type\">{}</span></td><td>{}</td></tr>",
-                    html_escape(&at.name),
-                    html_escape(&at.description)
-                ));
-            }
-            html.push_str("</tbody></table>");
-        }
-
-        if !file.link_types.is_empty() {
-            html.push_str("<h4>Link Types</h4><table><thead><tr><th>Name</th><th>Inverse</th><th>Description</th></tr></thead><tbody>");
-            for lt in &file.link_types {
-                let inv = lt.inverse.as_deref().unwrap_or("-");
-                html.push_str(&format!(
-                    "<tr><td>{}</td><td>{}</td><td>{}</td></tr>",
-                    html_escape(&lt.name),
-                    html_escape(inv),
-                    html_escape(&lt.description)
-                ));
-            }
-            html.push_str("</tbody></table>");
-        }
-
-        html.push_str("</div>");
     }
 
     Html(html)

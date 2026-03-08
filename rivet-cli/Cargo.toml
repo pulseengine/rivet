@@ -27,3 +27,5 @@ serde_json = { workspace = true }
 axum = { workspace = true }
 tokio = { workspace = true }
 tower-http = { workspace = true }
+etch = { path = "../etch" }
+petgraph = { workspace = true }
