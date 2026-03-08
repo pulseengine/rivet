@@ -1,0 +1,193 @@
+artifacts:
+  - id: TEST-001
+    type: feature
+    title: Store and model unit tests
+    status: approved
+    description: >
+      Unit tests for the diff, document, and store modules. Verifies artifact
+      storage, retrieval, upsert, by-type indexing, YAML frontmatter parsing,
+      document reference extraction, HTML rendering, and structural diff
+      computation between store snapshots.
+    tags: [testing, swe-4]
+    links:
+      - type: verifies
+        target: REQ-001
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-1
+
+  - id: TEST-002
+    type: feature
+    title: STPA adapter and schema tests
+    status: approved
+    description: >
+      Tests in stpa_roundtrip.rs that verify STPA schema loading, artifact
+      type and link type presence, store insert/lookup, duplicate ID rejection,
+      and broken link detection within the STPA domain.
+    tags: [testing, stpa, swe-5]
+    links:
+      - type: verifies
+        target: REQ-002
+      - type: verifies
+        target: REQ-004
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-1
+
+  - id: TEST-003
+    type: feature
+    title: Schema validation and merge tests
+    status: approved
+    description: >
+      Integration tests for schema loading and merging. Verifies that common +
+      stpa + aspice merge preserves all artifact types, link types, and inverse
+      mappings. Includes cybersecurity schema merge verification and ASPICE
+      traceability rule enforcement.
+    tags: [testing, schema, swe-5]
+    links:
+      - type: verifies
+        target: REQ-010
+      - type: verifies
+        target: REQ-004
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-1
+
+  - id: TEST-004
+    type: feature
+    title: Link graph and coverage tests
+    status: approved
+    description: >
+      Tests for link graph construction, backlink computation, orphan detection,
+      reachability queries, and traceability matrix computation. Includes
+      coverage module tests for full, partial, and vacuous coverage scenarios.
+    tags: [testing, validation, swe-5]
+    links:
+      - type: verifies
+        target: REQ-004
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-1
+
+  - id: TEST-005
+    type: feature
+    title: ReqIF roundtrip tests
+    status: approved
+    description: >
+      Unit tests in reqif.rs and integration tests in integration.rs that
+      verify ReqIF 1.2 XML export produces valid structure, minimal ReqIF
+      parsing, full roundtrip preservation of artifacts/links/fields, and
+      ReqIF-to-store integration.
+    tags: [testing, reqif, swe-5]
+    links:
+      - type: verifies
+        target: REQ-005
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-1
+
+  - id: TEST-006
+    type: feature
+    title: Property-based tests (proptest)
+    status: approved
+    description: >
+      Six proptest properties verifying store insert/lookup consistency,
+      duplicate rejection, schema merge idempotence, link graph backlink
+      symmetry, validation determinism, and type iterator correctness.
+      Runs 30-50 randomized cases per property.
+    tags: [testing, proptest, swe-4]
+    links:
+      - type: verifies
+        target: REQ-001
+      - type: verifies
+        target: REQ-004
+      - type: verifies
+        target: REQ-010
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-1
+
+  - id: TEST-007
+    type: feature
+    title: Integration test suite
+    status: approved
+    description: >
+      Eighteen cross-module integration tests exercising the full pipeline:
+      dogfood validation, generic YAML roundtrip, schema merge, traceability
+      matrix, query filters, link graph, ASPICE rules, store upsert, ReqIF
+      roundtrip, diff computation, and diagnostic diffing.
+    tags: [testing, integration, swe-5]
+    links:
+      - type: verifies
+        target: REQ-003
+      - type: verifies
+        target: REQ-007
+      - type: verifies
+        target: REQ-001
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-1
+
+  - id: TEST-008
+    type: feature
+    title: Diff module tests
+    status: approved
+    description: >
+      Five unit tests for the diff module verifying empty diff, identical
+      stores, added artifacts, removed artifacts, and modified artifact
+      detection including title, status, tags, links, and fields changes.
+    tags: [testing, diff, swe-4]
+    links:
+      - type: verifies
+        target: REQ-001
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-1
+
+  - id: TEST-009
+    type: feature
+    title: Document system tests
+    status: approved
+    description: >
+      Nine unit tests for the document module verifying YAML frontmatter
+      parsing, error handling for missing frontmatter, document store
+      operations, HTML heading rendering, wiki-link reference resolution,
+      default document type inference, multiple references per line,
+      reference extraction, and section hierarchy extraction.
+    tags: [testing, document, swe-4]
+    links:
+      - type: verifies
+        target: REQ-001
+      - type: verifies
+        target: REQ-007
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-1
+
+  - id: TEST-010
+    type: feature
+    title: Results model tests
+    status: approved
+    description: >
+      Nine unit tests for the results module verifying TestStatus display
+      and predicate methods, ResultStore insert ordering, latest_for and
+      history_for queries, aggregate summary statistics, YAML roundtrip
+      serialization, and edge case handling for empty and nonexistent
+      result directories.
+    tags: [testing, results, swe-4]
+    links:
+      - type: verifies
+        target: REQ-009
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-1

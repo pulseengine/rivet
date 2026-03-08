@@ -1,0 +1,67 @@
+run:
+  id: run-001
+  timestamp: "2026-03-08T00:00:00Z"
+  source: cargo test -p rivet-core
+  environment: macOS darwin aarch64
+  commit: 9622f67
+
+results:
+  # TEST-001: Store and model unit tests (diff, document)
+  - artifact: TEST-001
+    status: pass
+    duration: "0.00s"
+    message: "14 unit tests passed (diff: 5, document: 9)"
+
+  # TEST-002: STPA adapter and schema tests
+  - artifact: TEST-002
+    status: pass
+    duration: "0.00s"
+    message: "5 tests passed (stpa_roundtrip.rs)"
+
+  # TEST-003: Schema validation and merge tests
+  - artifact: TEST-003
+    status: pass
+    duration: "0.01s"
+    message: "4 integration tests passed (schema merge, cybersecurity, ASPICE rules)"
+
+  # TEST-004: Link graph and coverage tests
+  - artifact: TEST-004
+    status: pass
+    duration: "0.01s"
+    message: "8 tests passed (coverage: 4, link graph: 2, matrix: 2)"
+
+  # TEST-005: ReqIF roundtrip tests
+  - artifact: TEST-005
+    status: pass
+    duration: "0.01s"
+    message: "5 tests passed (unit: 3, integration: 2)"
+
+  # TEST-006: Property-based tests (proptest)
+  - artifact: TEST-006
+    status: pass
+    duration: "0.04s"
+    message: "6 proptest properties verified (30-50 cases each)"
+
+  # TEST-007: Integration test suite
+  - artifact: TEST-007
+    status: pass
+    duration: "0.01s"
+    message: "18 integration tests passed"
+
+  # TEST-008: Diff module tests
+  - artifact: TEST-008
+    status: pass
+    duration: "0.00s"
+    message: "5 diff unit tests passed"
+
+  # TEST-009: Document system tests
+  - artifact: TEST-009
+    status: pass
+    duration: "0.00s"
+    message: "9 document unit tests passed"
+
+  # TEST-010: Results model tests
+  - artifact: TEST-010
+    status: pass
+    duration: "0.00s"
+    message: "9 results unit tests passed"
