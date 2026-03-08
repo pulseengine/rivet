@@ -205,7 +205,7 @@ fn run(cli: Cli) -> Result<bool> {
         Command::Export { format, output } => cmd_export(&cli, format, output.as_deref()),
         Command::Serve { port } => {
             let port = *port;
-            let (store, schema, graph, doc_store, result_store, project_name, project_path) =
+            let (store, schema, graph, doc_store, result_store, project_name, project_path, schemas_dir) =
                 load_project_full(&cli)?;
             let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
             rt.block_on(serve::run(
@@ -216,6 +216,7 @@ fn run(cli: Cli) -> Result<bool> {
                 result_store,
                 project_name,
                 project_path,
+                schemas_dir,
                 port,
             ))?;
             Ok(true)
@@ -899,6 +900,7 @@ fn load_project_full(
     ResultStore,
     String,
     PathBuf,
+    PathBuf,
 )> {
     let config_path = cli.project.join("rivet.yaml");
     let config = rivet_core::load_project_config(&config_path)
@@ -953,6 +955,7 @@ fn load_project_full(
         result_store,
         project_name,
         project_path,
+        schemas_dir,
     ))
 }
 

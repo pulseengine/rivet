@@ -2275,6 +2275,7 @@ dependencies = [
  "serde_yaml",
  "tokio",
  "tower-http",
+ "urlencoding",
 ]
 
 [[package]]

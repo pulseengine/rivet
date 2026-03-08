@@ -2,21 +2,26 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use axum::Router;
 use axum::extract::{Path, Query, State};
-use axum::response::Html;
-use axum::routing::get;
+use axum::response::{Html, IntoResponse};
+use axum::routing::{get, post};
+use tokio::sync::RwLock;
 use petgraph::graph::{Graph, NodeIndex};
 use petgraph::visit::EdgeRef;
 
 use etch::filter::ego_subgraph;
 use etch::layout::{self as pgv_layout, EdgeInfo, LayoutOptions, NodeInfo};
 use etch::svg::{SvgOptions, render_svg};
+use rivet_core::adapter::{Adapter, AdapterConfig, AdapterSource};
 use rivet_core::coverage;
+use rivet_core::diff::ArtifactDiff;
 use rivet_core::document::{self, DocumentStore};
+use rivet_core::formats::generic::GenericYamlAdapter;
 use rivet_core::links::LinkGraph;
 use rivet_core::matrix::{self, Direction};
+use rivet_core::model::ProjectConfig;
 use rivet_core::results::ResultStore;
 use rivet_core::schema::{Schema, Severity};
 use rivet_core::store::Store;
@@ -159,6 +164,89 @@ struct AppState {
     doc_store: DocumentStore,
     result_store: ResultStore,
     context: RepoContext,
+    /// Canonical path to the project directory (for reload).
+    project_path_buf: PathBuf,
+    /// Path to the schemas directory (for reload).
+    schemas_dir: PathBuf,
+}
+
+/// Convenience alias so handler signatures stay compact.
+type SharedState = Arc<RwLock<AppState>>;
+
+/// Build a fresh `AppState` by loading everything from disk.
+fn reload_state(
+    project_path: &std::path::Path,
+    schemas_dir: &std::path::Path,
+    port: u16,
+) -> Result<AppState> {
+    let config_path = project_path.join("rivet.yaml");
+    let config = rivet_core::load_project_config(&config_path)
+        .with_context(|| format!("loading {}", config_path.display()))?;
+
+    let schema =
+        rivet_core::load_schemas(&config.project.schemas, schemas_dir).context("loading schemas")?;
+
+    let mut store = Store::new();
+    for source in &config.sources {
+        let artifacts = rivet_core::load_artifacts(source, project_path)
+            .with_context(|| format!("loading source '{}'", source.path))?;
+        for artifact in artifacts {
+            store.upsert(artifact);
+        }
+    }
+
+    let graph = LinkGraph::build(&store, &schema);
+
+    let mut doc_store = DocumentStore::new();
+    for docs_path in &config.docs {
+        let dir = project_path.join(docs_path);
+        let docs = rivet_core::document::load_documents(&dir)
+            .with_context(|| format!("loading docs from '{docs_path}'"))?;
+        for doc in docs {
+            doc_store.insert(doc);
+        }
+    }
+
+    let mut result_store = ResultStore::new();
+    if let Some(ref results_path) = config.results {
+        let dir = project_path.join(results_path);
+        let runs = rivet_core::results::load_results(&dir)
+            .with_context(|| format!("loading results from '{results_path}'"))?;
+        for run in runs {
+            result_store.insert(run);
+        }
+    }
+
+    let git = capture_git_info(project_path);
+    let loaded_at = std::process::Command::new("date")
+        .arg("+%H:%M:%S")
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_else(|| "unknown".into());
+    let siblings = discover_siblings(project_path);
+    let project_name = config.project.name.clone();
+
+    let context = RepoContext {
+        project_name,
+        project_path: project_path.display().to_string(),
+        git,
+        loaded_at,
+        siblings,
+        port,
+    };
+
+    Ok(AppState {
+        store,
+        schema,
+        graph,
+        doc_store,
+        result_store,
+        context,
+        project_path_buf: project_path.to_path_buf(),
+        schemas_dir: schemas_dir.to_path_buf(),
+    })
 }
 
 /// Start the axum HTTP server on the given port.
@@ -170,6 +258,7 @@ pub async fn run(
     result_store: ResultStore,
     project_name: String,
     project_path: PathBuf,
+    schemas_dir: PathBuf,
     port: u16,
 ) -> Result<()> {
     let git = capture_git_info(&project_path);
@@ -190,14 +279,16 @@ pub async fn run(
         port,
     };
 
-    let state = Arc::new(AppState {
+    let state: SharedState = Arc::new(RwLock::new(AppState {
         store,
         schema,
         graph,
         doc_store,
         result_store,
         context,
-    });
+        project_path_buf: project_path,
+        schemas_dir,
+    }));
 
     let app = Router::new()
         .route("/", get(index))
@@ -213,8 +304,13 @@ pub async fn run(
         .route("/documents/{id}", get(document_detail))
         .route("/search", get(search_view))
         .route("/verification", get(verification_view))
+        .route("/stpa", get(stpa_view))
         .route("/results", get(results_view))
         .route("/results/{run_id}", get(result_detail))
+        .route("/source", get(source_tree_view))
+        .route("/source/{*path}", get(source_file_view))
+        .route("/diff", get(diff_view))
+        .route("/reload", post(reload_handler))
         .with_state(state);
 
     let addr = format!("0.0.0.0:{port}");
@@ -223,6 +319,38 @@ pub async fn run(
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+/// POST /reload — re-read the project from disk and replace the shared state.
+async fn reload_handler(State(state): State<SharedState>) -> impl IntoResponse {
+    let (project_path, schemas_dir, port) = {
+        let guard = state.read().await;
+        (
+            guard.project_path_buf.clone(),
+            guard.schemas_dir.clone(),
+            guard.context.port,
+        )
+    };
+
+    match reload_state(&project_path, &schemas_dir, port) {
+        Ok(new_state) => {
+            let mut guard = state.write().await;
+            *guard = new_state;
+            (
+                axum::http::StatusCode::OK,
+                [("HX-Refresh", "true")],
+                "reloaded",
+            )
+        }
+        Err(e) => {
+            eprintln!("reload error: {e:#}");
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                [("HX-Refresh", "false")],
+                "reload failed",
+            )
+        }
+    }
 }
 
 // ── Color palette ────────────────────────────────────────────────────────
@@ -240,6 +368,9 @@ fn type_color_map() -> HashMap<String, String> {
         ("causal-factor", "#d63384"),
         ("safety-constraint", "#20c997"),
         ("loss-scenario", "#e83e8c"),
+        ("controller-constraint", "#20c997"),
+        ("controlled-process", "#6610f2"),
+        ("sub-hazard", "#fd7e14"),
         // ASPICE
         ("stakeholder-req", "#0d6efd"),
         ("system-req", "#0dcaf0"),
@@ -530,6 +661,31 @@ details.ver-row[open] .ver-chevron{transform:rotate(90deg)}
 .result-dot-pass{background:#15713a}.result-dot-fail{background:#c62828}
 .result-dot-skip{background:#c5c5cd}.result-dot-error{background:#e67e22}.result-dot-blocked{background:#b8860b}
 
+/* ── Diff ────────────────────────────────────────────────────── */
+.diff-added{background:rgba(21,113,58,.08)}
+.diff-removed{background:rgba(198,40,40,.08)}
+.diff-modified{background:rgba(184,134,11,.08)}
+.diff-icon{display:inline-flex;align-items:center;justify-content:center;width:1.5rem;height:1.5rem;
+  border-radius:4px;font-size:.85rem;font-weight:700;flex-shrink:0;margin-right:.35rem}
+.diff-icon-add{background:rgba(21,113,58,.12);color:#15713a}
+.diff-icon-remove{background:rgba(198,40,40,.12);color:#c62828}
+.diff-icon-modify{background:rgba(184,134,11,.12);color:#b8860b}
+.diff-summary{display:flex;gap:1.25rem;padding:.75rem 1rem;border-radius:var(--radius-sm);
+  background:var(--surface);border:1px solid var(--border);margin-bottom:1.25rem;font-size:.9rem;font-weight:600}
+.diff-summary-item{display:flex;align-items:center;gap:.35rem}
+.diff-old{color:#c62828;text-decoration:line-through;font-size:.85rem}
+.diff-new{color:#15713a;font-size:.85rem}
+.diff-arrow{color:var(--text-secondary);margin:0 .25rem;font-size:.8rem}
+details.diff-row>summary{cursor:pointer;list-style:none;padding:.6rem .875rem;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:.5rem;transition:background var(--transition)}
+details.diff-row>summary::-webkit-details-marker{display:none}
+details.diff-row>summary:hover{background:rgba(58,134,255,.04)}
+details.diff-row[open]>summary{background:rgba(184,134,11,.06);border-bottom-color:var(--border)}
+details.diff-row>.diff-detail{padding:.75rem 1.25rem;background:rgba(0,0,0,.01);border-bottom:1px solid var(--border);font-size:.88rem}
+.diff-field{padding:.3rem 0;display:flex;align-items:baseline;gap:.5rem}
+.diff-field-name{font-weight:600;font-size:.8rem;color:var(--text-secondary);min-width:100px;
+  text-transform:uppercase;letter-spacing:.03em}
+
 /* ── Detail actions ──────────────────────────────────────────── */
 .detail-actions{display:flex;gap:.75rem;align-items:center;margin-top:1rem}
 .btn{display:inline-flex;align-items:center;gap:.4rem;padding:.45rem 1rem;border-radius:var(--radius-sm);
@@ -595,6 +751,60 @@ details.ver-row[open] .ver-chevron{transform:rotate(90deg)}
 .doc-toc .toc-h3{padding-left:1.25rem}
 .doc-toc .toc-h4{padding-left:2.5rem}
 .doc-meta{display:flex;gap:.75rem;flex-wrap:wrap;align-items:center;margin-bottom:1.25rem}
+
+/* ── Source viewer ────────────────────────────────────────────── */
+.source-tree{font-family:var(--mono);font-size:.85rem;line-height:1.8}
+.source-tree ul{list-style:none;margin:0;padding:0}
+.source-tree li{margin:0}
+.source-tree .tree-item{display:flex;align-items:center;gap:.4rem;padding:.2rem .5rem;border-radius:var(--radius-sm);
+  transition:background var(--transition);color:var(--text)}
+.source-tree .tree-item:hover{background:rgba(58,134,255,.06);text-decoration:none}
+.source-tree .tree-icon{display:inline-flex;width:1rem;height:1rem;align-items:center;justify-content:center;flex-shrink:0;opacity:.55}
+.source-tree .indent{display:inline-block;width:1.25rem;flex-shrink:0}
+.source-viewer{font-family:var(--mono);font-size:.82rem;line-height:1.7;overflow-x:auto;
+  background:#fafbfc;border:1px solid var(--border);border-radius:var(--radius);padding:0}
+.source-viewer table{width:100%;border-collapse:collapse;margin:0}
+.source-viewer table td{padding:0;border:none;vertical-align:top}
+.source-viewer table tr:hover{background:rgba(58,134,255,.04)}
+.source-line{display:table-row}
+.source-line .line-no{display:table-cell;width:3.5rem;min-width:3.5rem;padding:.05rem .75rem .05rem .5rem;
+  text-align:right;color:#b0b0b8;user-select:none;border-right:1px solid var(--border);background:#f5f5f7}
+.source-line .line-content{display:table-cell;padding:.05rem .75rem;white-space:pre;tab-size:4}
+.source-line-highlight{background:rgba(58,134,255,.08) !important}
+.source-line-highlight .line-no{background:rgba(58,134,255,.12);color:var(--accent);font-weight:600}
+.source-breadcrumb{display:flex;align-items:center;gap:.4rem;font-size:.85rem;color:var(--text-secondary);
+  margin-bottom:1rem;flex-wrap:wrap}
+.source-breadcrumb a{color:var(--accent);font-weight:500}
+.source-breadcrumb .sep{opacity:.35;margin:0 .1rem}
+.source-meta{display:flex;gap:1.5rem;font-size:.8rem;color:var(--text-secondary);margin-bottom:1rem}
+.source-meta .meta-item{display:flex;align-items:center;gap:.35rem}
+.source-refs{margin-top:1.25rem}
+.source-refs h3{font-size:.95rem;margin-bottom:.5rem}
+
+/* ── STPA tree ───────────────────────────────────────────────── */
+.stpa-tree{margin-top:1.25rem}
+.stpa-level{padding-left:1.5rem;border-left:2px solid var(--border);margin-left:.5rem}
+.stpa-node{display:flex;align-items:center;gap:.5rem;padding:.35rem 0;font-size:.9rem}
+.stpa-node a{font-family:var(--mono);font-size:.82rem;font-weight:500}
+.stpa-link-label{display:inline-block;padding:.1rem .4rem;border-radius:4px;font-size:.68rem;
+  font-family:var(--mono);background:rgba(58,134,255,.08);color:var(--accent);font-weight:500;
+  margin-right:.35rem;white-space:nowrap}
+details.stpa-details>summary{cursor:pointer;list-style:none;padding:.4rem .5rem;border-radius:var(--radius-sm);
+  display:flex;align-items:center;gap:.5rem;transition:background var(--transition);font-size:.9rem}
+details.stpa-details>summary::-webkit-details-marker{display:none}
+details.stpa-details>summary:hover{background:rgba(58,134,255,.04)}
+details.stpa-details>summary .stpa-chevron{transition:transform var(--transition);display:inline-flex;opacity:.4;font-size:.7rem}
+details.stpa-details[open]>summary .stpa-chevron{transform:rotate(90deg)}
+.stpa-uca-table{width:100%;border-collapse:collapse;font-size:.88rem;margin-top:.75rem}
+.stpa-uca-table th{font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;
+  color:var(--text-secondary);padding:.5rem .75rem;border-bottom:2px solid var(--border)}
+.stpa-uca-table td{padding:.55rem .75rem;border-bottom:1px solid var(--border);vertical-align:top}
+.stpa-uca-table tbody tr:hover{background:rgba(58,134,255,.04)}
+.uca-type-badge{display:inline-flex;padding:.15rem .5rem;border-radius:4px;font-size:.72rem;font-weight:600;white-space:nowrap}
+.uca-type-not-providing{background:#fee;color:#c62828}
+.uca-type-providing{background:#fff3e0;color:#e65100}
+.uca-type-too-early-too-late{background:#e8f4fd;color:#0c5a82}
+.uca-type-stopped-too-soon{background:#f3e5f5;color:#6a1b9a}
 
 /* ── Scrollbar (subtle) ───────────────────────────────────────── */
 ::-webkit-scrollbar{width:6px;height:6px}
@@ -964,6 +1174,18 @@ fn page_layout(content: &str, state: &AppState) -> Html<String> {
     } else {
         String::new()
     };
+    let stpa_types = [
+        "loss", "hazard", "sub-hazard", "system-constraint", "controller",
+        "controlled-process", "control-action", "uca", "controller-constraint", "loss-scenario",
+    ];
+    let stpa_count: usize = stpa_types.iter().map(|t| state.store.count_by_type(t)).sum();
+    let stpa_nav = if stpa_count > 0 {
+        format!(
+            "<li><a hx-get=\"/stpa\" hx-target=\"#content\" hx-push-url=\"false\" href=\"#\"><span class=\"nav-label\"><span class=\"nav-icon\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M8 1.5l5.5 2.5v4c0 3.5-2.5 5.5-5.5 7-3-1.5-5.5-3.5-5.5-7V4z\"/><path d=\"M8 5v3M8 10.5h.01\"/></svg></span> STPA</span><span class=\"nav-badge\">{stpa_count}</span></a></li>"
+        )
+    } else {
+        String::new()
+    };
     let version = env!("CARGO_PKG_VERSION");
 
     // Context bar
@@ -1019,6 +1241,13 @@ fn page_layout(content: &str, state: &AppState) -> Html<String> {
          <span>{path}</span>\
          {git_html}\
          <span class=\"ctx-time\">Loaded {loaded_at}</span>\
+         <button hx-post=\"/reload\" style=\"margin-left:.5rem;padding:.15rem .5rem;font-size:.72rem;\
+         font-family:var(--mono);background:rgba(58,134,255,.08);color:var(--accent);border:1px solid var(--accent);\
+         border-radius:4px;cursor:pointer;font-weight:600;transition:all var(--transition)\"\
+         title=\"Reload project from disk\"\
+         onmouseover=\"this.style.background='rgba(58,134,255,.18)'\"\
+         onmouseout=\"this.style.background='rgba(58,134,255,.08)'\"\
+         >&#8635; Reload</button>\
          </div>",
         project = html_escape(&ctx.project_name),
         path = html_escape(&ctx.project_path),
@@ -1051,9 +1280,13 @@ fn page_layout(content: &str, state: &AppState) -> Html<String> {
     <li><a hx-get="/coverage" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><path d="M8 1.5V8l4.6 4.6"/></svg></span> Coverage</span></a></li>
     <li><a hx-get="/graph" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="4" r="2"/><circle cx="12" cy="4" r="2"/><circle cx="4" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><path d="M6 4h4M4 6v4M12 6v4M6 12h4"/></svg></span> Graph</span></a></li>
     <li><a hx-get="/documents" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 1.5H4.5A1.5 1.5 0 003 3v10a1.5 1.5 0 001.5 1.5h7A1.5 1.5 0 0013 13V5.5L9 1.5z"/><path d="M9 1.5V5.5h4"/><path d="M6 8.5h4M6 11h2"/></svg></span> Documents</span>{doc_badge}</a></li>
+    <li><a hx-get="/source" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 4.5 1.5 8 5 11.5"/><polyline points="11 4.5 14.5 8 11 11.5"/><line x1="9" y1="2" x2="7" y2="14"/></svg></span> Source</span></a></li>
     <li class="nav-divider"></li>
     <li><a hx-get="/verification" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5l5.5 2.5v4c0 3.5-2.5 5.5-5.5 7-3-1.5-5.5-3.5-5.5-7V4z"/><path d="M5.5 8l2 2 3.5-3.5"/></svg></span> Verification</span></a></li>
+    {stpa_nav}
     <li><a hx-get="/results" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12.5h12M3 9.5h2v3H3zM7 6.5h2v6H7zM11 3.5h2v9h-2z"/></svg></span> Results</span>{result_badge}</a></li>
+    <li class="nav-divider"></li>
+    <li><a hx-get="/diff" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v10M10 3v10"/><path d="M2 8h3M11 8h3"/><circle cx="6" cy="5" r="1.5"/><circle cx="10" cy="11" r="1.5"/></svg></span> Diff</span></a></li>
   </ul>
   <div id="nav-search-hint" class="nav-search-hint">
     <span><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg></span> Search</span>
@@ -1086,12 +1319,14 @@ fn page_layout(content: &str, state: &AppState) -> Html<String> {
 
 // ── Routes ───────────────────────────────────────────────────────────────
 
-async fn index(State(state): State<Arc<AppState>>) -> Html<String> {
+async fn index(State(state): State<SharedState>) -> Html<String> {
+    let state = state.read().await;
     let inner = stats_partial(&state);
     page_layout(&inner, &state)
 }
 
-async fn stats_view(State(state): State<Arc<AppState>>) -> Html<String> {
+async fn stats_view(State(state): State<SharedState>) -> Html<String> {
+    let state = state.read().await;
     Html(stats_partial(&state))
 }
 
@@ -1343,7 +1578,8 @@ fn stats_partial(state: &AppState) -> String {
 
 // ── Artifacts ────────────────────────────────────────────────────────────
 
-async fn artifacts_list(State(state): State<Arc<AppState>>) -> Html<String> {
+async fn artifacts_list(State(state): State<SharedState>) -> Html<String> {
+    let state = state.read().await;
     let store = &state.store;
 
     let mut artifacts: Vec<_> = store.iter().collect();
@@ -1405,9 +1641,10 @@ async fn artifacts_list(State(state): State<Arc<AppState>>) -> Html<String> {
 }
 
 async fn artifact_detail(
-    State(state): State<Arc<AppState>>,
+    State(state): State<SharedState>,
     Path(id): Path<String>,
 ) -> Html<String> {
+    let state = state.read().await;
     let store = &state.store;
     let graph = &state.graph;
 
@@ -1528,9 +1765,10 @@ fn default_depth() -> usize {
 
 /// Build a filtered subgraph based on query params and return SVG.
 async fn graph_view(
-    State(state): State<Arc<AppState>>,
+    State(state): State<SharedState>,
     Query(params): Query<GraphParams>,
 ) -> Html<String> {
+    let state = state.read().await;
     let store = &state.store;
     let link_graph = &state.graph;
     let pg = link_graph.graph();
@@ -1743,10 +1981,11 @@ fn default_ego_hops() -> usize {
 }
 
 async fn artifact_graph(
-    State(state): State<Arc<AppState>>,
+    State(state): State<SharedState>,
     Path(id): Path<String>,
     Query(params): Query<EgoParams>,
 ) -> Html<String> {
+    let state = state.read().await;
     let store = &state.store;
     let link_graph = &state.graph;
     let pg = link_graph.graph();
@@ -1973,7 +2212,8 @@ fn apply_filters_to_graph(
 
 // ── Validation ───────────────────────────────────────────────────────────
 
-async fn validate_view(State(state): State<Arc<AppState>>) -> Html<String> {
+async fn validate_view(State(state): State<SharedState>) -> Html<String> {
+    let state = state.read().await;
     let diagnostics = validate::validate(&state.store, &state.schema, &state.graph);
 
     let errors = diagnostics
@@ -2058,9 +2298,10 @@ struct MatrixParams {
 }
 
 async fn matrix_view(
-    State(state): State<Arc<AppState>>,
+    State(state): State<SharedState>,
     Query(params): Query<MatrixParams>,
 ) -> Html<String> {
+    let state = state.read().await;
     let store = &state.store;
 
     let mut types: Vec<&str> = store.types().collect();
@@ -2178,7 +2419,8 @@ async fn matrix_view(
 
 // ── Coverage ─────────────────────────────────────────────────────────────
 
-async fn coverage_view(State(state): State<Arc<AppState>>) -> Html<String> {
+async fn coverage_view(State(state): State<SharedState>) -> Html<String> {
+    let state = state.read().await;
     let report = coverage::compute_coverage(&state.store, &state.schema, &state.graph);
     let overall = report.overall_coverage();
 
@@ -2299,7 +2541,8 @@ async fn coverage_view(State(state): State<Arc<AppState>>) -> Html<String> {
 
 // ── Documents ────────────────────────────────────────────────────────────
 
-async fn documents_list(State(state): State<Arc<AppState>>) -> Html<String> {
+async fn documents_list(State(state): State<SharedState>) -> Html<String> {
+    let state = state.read().await;
     let doc_store = &state.doc_store;
 
     let mut html = String::from("<h2>Documents</h2>");
@@ -2347,9 +2590,10 @@ async fn documents_list(State(state): State<Arc<AppState>>) -> Html<String> {
 }
 
 async fn document_detail(
-    State(state): State<Arc<AppState>>,
+    State(state): State<SharedState>,
     Path(id): Path<String>,
 ) -> Html<String> {
+    let state = state.read().await;
     let doc_store = &state.doc_store;
     let store = &state.store;
 
@@ -2487,9 +2731,10 @@ struct SearchHit {
 }
 
 async fn search_view(
-    State(state): State<Arc<AppState>>,
+    State(state): State<SharedState>,
     Query(params): Query<SearchParams>,
 ) -> Html<String> {
+    let state = state.read().await;
     let query = match params.q.as_deref() {
         Some(q) if !q.trim().is_empty() => q.trim(),
         _ => {
@@ -2722,7 +2967,8 @@ fn highlight_match(text: &str, query: &str) -> String {
 
 // ── Verification ─────────────────────────────────────────────────────────
 
-async fn verification_view(State(state): State<Arc<AppState>>) -> Html<String> {
+async fn verification_view(State(state): State<SharedState>) -> Html<String> {
+    let state = state.read().await;
     let store = &state.store;
     let graph = &state.graph;
     let schema = &state.schema;
@@ -3023,9 +3269,344 @@ async fn verification_view(State(state): State<Arc<AppState>>) -> Html<String> {
     Html(html)
 }
 
+// ── STPA ─────────────────────────────────────────────────────────────────
+
+async fn stpa_view(State(state): State<SharedState>) -> Html<String> {
+    let state = state.read().await;
+    stpa_partial(&state)
+}
+
+fn stpa_partial(state: &AppState) -> Html<String> {
+    let store = &state.store;
+    let graph = &state.graph;
+
+    let stpa_types = [
+        ("loss", "Losses"),
+        ("hazard", "Hazards"),
+        ("sub-hazard", "Sub-Hazards"),
+        ("system-constraint", "System Constraints"),
+        ("controller", "Controllers"),
+        ("controlled-process", "Controlled Processes"),
+        ("control-action", "Control Actions"),
+        ("uca", "UCAs"),
+        ("controller-constraint", "Controller Constraints"),
+        ("loss-scenario", "Loss Scenarios"),
+    ];
+
+    let total: usize = stpa_types.iter().map(|(t, _)| store.count_by_type(t)).sum();
+
+    let mut html = String::from("<h2>STPA Analysis</h2>");
+
+    if total == 0 {
+        html.push_str(
+            "<div class=\"card\">\
+             <p>No STPA artifacts found in this project.</p>\
+             <p style=\"color:var(--text-secondary);font-size:.9rem;margin-top:.5rem\">\
+             Add artifacts of types <code>loss</code>, <code>hazard</code>, <code>uca</code>, etc. \
+             using the <code>stpa</code> schema to enable the STPA analysis dashboard.</p>\
+             </div>",
+        );
+        return Html(html);
+    }
+
+    // Summary stat cards
+    html.push_str("<div class=\"stat-grid\">");
+    let stat_colors = [
+        "#dc3545", "#fd7e14", "#fd7e14", "#20c997", "#6f42c1",
+        "#6610f2", "#17a2b8", "#e83e8c", "#20c997", "#e83e8c",
+    ];
+    for (i, (type_name, label)) in stpa_types.iter().enumerate() {
+        let count = store.count_by_type(type_name);
+        if count == 0 {
+            continue;
+        }
+        let color = stat_colors[i];
+        html.push_str(&format!(
+            "<div class=\"stat-box\" style=\"border-top-color:{color}\">\
+             <div class=\"number\" style=\"color:{color}\">{count}</div>\
+             <div class=\"label\">{label}</div></div>"
+        ));
+    }
+    html.push_str("</div>");
+
+    // Hierarchy tree view
+    html.push_str("<div class=\"card\"><h3>STPA Hierarchy</h3><div class=\"stpa-tree\">");
+
+    let losses = store.by_type("loss");
+    if losses.is_empty() {
+        html.push_str(
+            "<p class=\"meta\">No losses defined. The STPA hierarchy starts with losses.</p>",
+        );
+    }
+
+    let mut sorted_losses: Vec<&str> = losses.iter().map(|s| s.as_str()).collect();
+    sorted_losses.sort();
+
+    for loss_id in &sorted_losses {
+        let Some(loss) = store.get(loss_id) else { continue };
+        html.push_str("<details class=\"stpa-details\" open><summary>");
+        html.push_str("<span class=\"stpa-chevron\">&#9654;</span> ");
+        html.push_str(&badge_for_type("loss"));
+        html.push_str(&format!(
+            " <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" href=\"#\">{id}</a>\
+             <span style=\"color:var(--text-secondary);font-size:.85rem\"> {title}</span>",
+            id = html_escape(loss_id),
+            title = html_escape(&loss.title),
+        ));
+        html.push_str("</summary>");
+
+        let hazard_backlinks = graph.backlinks_of_type(loss_id, "leads-to-loss");
+        if !hazard_backlinks.is_empty() {
+            html.push_str("<div class=\"stpa-level\">");
+            let mut hazard_ids: Vec<&str> =
+                hazard_backlinks.iter().map(|bl| bl.source.as_str()).collect();
+            hazard_ids.sort();
+            hazard_ids.dedup();
+            for hazard_id in &hazard_ids {
+                let Some(hazard) = store.get(hazard_id) else { continue };
+                html.push_str("<details class=\"stpa-details\" open><summary>");
+                html.push_str("<span class=\"stpa-chevron\">&#9654;</span> ");
+                html.push_str("<span class=\"stpa-link-label\">leads-to-loss</span>");
+                html.push_str(&badge_for_type(&hazard.artifact_type));
+                html.push_str(&format!(
+                    " <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" href=\"#\">{id}</a>\
+                     <span style=\"color:var(--text-secondary);font-size:.85rem\"> {title}</span>",
+                    id = html_escape(hazard_id),
+                    title = html_escape(&hazard.title),
+                ));
+                html.push_str("</summary>");
+
+                let constraint_bls = graph.backlinks_of_type(hazard_id, "prevents");
+                let uca_bls = graph.backlinks_of_type(hazard_id, "leads-to-hazard");
+
+                if !constraint_bls.is_empty() || !uca_bls.is_empty() {
+                    html.push_str("<div class=\"stpa-level\">");
+
+                    // System Constraints
+                    let mut sc_ids: Vec<&str> = constraint_bls
+                        .iter()
+                        .filter(|bl| {
+                            store.get(&bl.source)
+                                .map(|a| a.artifact_type == "system-constraint")
+                                .unwrap_or(false)
+                        })
+                        .map(|bl| bl.source.as_str())
+                        .collect();
+                    sc_ids.sort();
+                    sc_ids.dedup();
+                    for sc_id in &sc_ids {
+                        let Some(sc) = store.get(sc_id) else { continue };
+                        html.push_str(&format!(
+                            "<div class=\"stpa-node\">\
+                             <span class=\"stpa-link-label\">prevents</span>{badge}\
+                             <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" href=\"#\">{id}</a>\
+                             <span style=\"color:var(--text-secondary);font-size:.85rem\"> {title}</span>\
+                             </div>",
+                            badge = badge_for_type("system-constraint"),
+                            id = html_escape(sc_id),
+                            title = html_escape(&sc.title),
+                        ));
+                    }
+
+                    // UCAs
+                    let mut uca_ids: Vec<&str> = uca_bls
+                        .iter()
+                        .filter(|bl| {
+                            store.get(&bl.source)
+                                .map(|a| a.artifact_type == "uca")
+                                .unwrap_or(false)
+                        })
+                        .map(|bl| bl.source.as_str())
+                        .collect();
+                    uca_ids.sort();
+                    uca_ids.dedup();
+                    for uca_id in &uca_ids {
+                        let Some(uca) = store.get(uca_id) else { continue };
+                        // Collapse below level 2
+                        html.push_str("<details class=\"stpa-details\"><summary>");
+                        html.push_str("<span class=\"stpa-chevron\">&#9654;</span> ");
+                        html.push_str("<span class=\"stpa-link-label\">leads-to-hazard</span>");
+                        html.push_str(&badge_for_type("uca"));
+                        html.push_str(&format!(
+                            " <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" href=\"#\">{id}</a>\
+                             <span style=\"color:var(--text-secondary);font-size:.85rem\"> {title}</span>",
+                            id = html_escape(uca_id),
+                            title = html_escape(&uca.title),
+                        ));
+                        html.push_str("</summary>");
+
+                        let cc_bls = graph.backlinks_of_type(uca_id, "inverts-uca");
+                        let ls_bls = graph.backlinks_of_type(uca_id, "caused-by-uca");
+
+                        if !cc_bls.is_empty() || !ls_bls.is_empty() {
+                            html.push_str("<div class=\"stpa-level\">");
+                            // Controller Constraints
+                            let mut cc_ids: Vec<&str> =
+                                cc_bls.iter().map(|bl| bl.source.as_str()).collect();
+                            cc_ids.sort();
+                            cc_ids.dedup();
+                            for cc_id in &cc_ids {
+                                let Some(cc) = store.get(cc_id) else { continue };
+                                html.push_str(&format!(
+                                    "<div class=\"stpa-node\">\
+                                     <span class=\"stpa-link-label\">inverts-uca</span>{badge}\
+                                     <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" href=\"#\">{id}</a>\
+                                     <span style=\"color:var(--text-secondary);font-size:.85rem\"> {title}</span>\
+                                     </div>",
+                                    badge = badge_for_type("controller-constraint"),
+                                    id = html_escape(cc_id),
+                                    title = html_escape(&cc.title),
+                                ));
+                            }
+                            // Loss Scenarios
+                            let mut ls_ids: Vec<&str> =
+                                ls_bls.iter().map(|bl| bl.source.as_str()).collect();
+                            ls_ids.sort();
+                            ls_ids.dedup();
+                            for ls_id in &ls_ids {
+                                let Some(ls) = store.get(ls_id) else { continue };
+                                html.push_str(&format!(
+                                    "<div class=\"stpa-node\">\
+                                     <span class=\"stpa-link-label\">caused-by-uca</span>{badge}\
+                                     <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" href=\"#\">{id}</a>\
+                                     <span style=\"color:var(--text-secondary);font-size:.85rem\"> {title}</span>\
+                                     </div>",
+                                    badge = badge_for_type("loss-scenario"),
+                                    id = html_escape(ls_id),
+                                    title = html_escape(&ls.title),
+                                ));
+                            }
+                            html.push_str("</div>"); // stpa-level (CC/LS)
+                        }
+                        html.push_str("</details>"); // UCA
+                    }
+                    html.push_str("</div>"); // stpa-level (SC/UCA)
+                }
+                html.push_str("</details>"); // Hazard
+            }
+            html.push_str("</div>"); // stpa-level (Hazards)
+        }
+        html.push_str("</details>"); // Loss
+    }
+
+    html.push_str("</div></div>"); // stpa-tree, card
+
+    // UCA Table
+    let uca_ids = store.by_type("uca");
+    if !uca_ids.is_empty() {
+        html.push_str("<div class=\"card\"><h3>Unsafe Control Actions</h3>");
+
+        struct UcaRow {
+            id: String,
+            title: String,
+            uca_type: String,
+            control_action: String,
+            linked_hazards: Vec<String>,
+        }
+
+        let mut rows: Vec<UcaRow> = Vec::new();
+        for uca_id in uca_ids {
+            let Some(uca) = store.get(uca_id) else { continue };
+            let uca_type = uca.fields.get("uca-type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("-")
+                .to_string();
+            let controller_links: Vec<&str> = uca.links.iter()
+                .filter(|l| l.link_type == "issued-by")
+                .map(|l| l.target.as_str())
+                .collect();
+            let control_action = if let Some(ctrl_id) = controller_links.first() {
+                let ca_bls = graph.backlinks_of_type(ctrl_id, "issued-by");
+                ca_bls.iter()
+                    .filter(|bl| store.get(&bl.source)
+                        .map(|a| a.artifact_type == "control-action")
+                        .unwrap_or(false))
+                    .map(|bl| bl.source.clone())
+                    .next()
+                    .unwrap_or_else(|| ctrl_id.to_string())
+            } else {
+                "-".to_string()
+            };
+            let hazards: Vec<String> = uca.links.iter()
+                .filter(|l| l.link_type == "leads-to-hazard")
+                .map(|l| l.target.clone())
+                .collect();
+            rows.push(UcaRow {
+                id: uca_id.clone(),
+                title: uca.title.clone(),
+                uca_type,
+                control_action,
+                linked_hazards: hazards,
+            });
+        }
+
+        rows.sort_by(|a, b| a.control_action.cmp(&b.control_action).then(a.id.cmp(&b.id)));
+
+        html.push_str(
+            "<table class=\"stpa-uca-table\"><thead><tr>\
+             <th>ID</th><th>Control Action</th><th>UCA Type</th>\
+             <th>Description</th><th>Linked Hazards</th>\
+             </tr></thead><tbody>",
+        );
+
+        for row in &rows {
+            let type_class = match row.uca_type.as_str() {
+                "not-providing" => "uca-type-not-providing",
+                "providing" => "uca-type-providing",
+                "too-early-too-late" => "uca-type-too-early-too-late",
+                "stopped-too-soon" => "uca-type-stopped-too-soon",
+                _ => "",
+            };
+            let type_badge = if type_class.is_empty() {
+                html_escape(&row.uca_type)
+            } else {
+                format!(
+                    "<span class=\"uca-type-badge {type_class}\">{}</span>",
+                    html_escape(&row.uca_type),
+                )
+            };
+            let hazard_links: Vec<String> = row.linked_hazards.iter().map(|h| {
+                format!(
+                    "<a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" href=\"#\" \
+                     style=\"font-family:var(--mono);font-size:.8rem\">{id}</a>",
+                    id = html_escape(h),
+                )
+            }).collect();
+            let ca_display = if row.control_action == "-" {
+                "-".to_string()
+            } else {
+                format!(
+                    "<a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" href=\"#\" \
+                     style=\"font-family:var(--mono);font-size:.8rem\">{id}</a>",
+                    id = html_escape(&row.control_action),
+                )
+            };
+            html.push_str(&format!(
+                "<tr>\
+                 <td><a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" href=\"#\">{id}</a></td>\
+                 <td>{ca}</td>\
+                 <td>{type_badge}</td>\
+                 <td>{title}</td>\
+                 <td>{hazards}</td></tr>",
+                id = html_escape(&row.id),
+                ca = ca_display,
+                title = html_escape(&row.title),
+                hazards = hazard_links.join(", "),
+            ));
+        }
+
+        html.push_str("</tbody></table></div>");
+    }
+
+    html.push_str(&format!("<p class=\"meta\">{total} STPA artifacts total</p>"));
+
+    Html(html)
+}
+
 // ── Results ──────────────────────────────────────────────────────────────
 
-async fn results_view(State(state): State<Arc<AppState>>) -> Html<String> {
+async fn results_view(State(state): State<SharedState>) -> Html<String> {
+    let state = state.read().await;
     let result_store = &state.result_store;
 
     let mut html = String::from("<h2>Test Results</h2>");
@@ -3122,9 +3703,10 @@ async fn results_view(State(state): State<Arc<AppState>>) -> Html<String> {
 }
 
 async fn result_detail(
-    State(state): State<Arc<AppState>>,
+    State(state): State<SharedState>,
     Path(run_id): Path<String>,
 ) -> Html<String> {
+    let state = state.read().await;
     let result_store = &state.result_store;
 
     let Some(run) = result_store.get_run(&run_id) else {
@@ -3215,6 +3797,517 @@ async fn result_detail(
         "<p><a hx-get=\"/results\" hx-target=\"#content\" href=\"#\" class=\"btn btn-secondary\">&larr; Back to results</a></p>",
     );
 
+    Html(html)
+}
+
+// ── Source viewer ──────────────────────────────────────────────────────────────
+
+const SOURCE_MAX_SIZE: u64 = 100 * 1024;
+const SOURCE_MAX_DEPTH: usize = 3;
+const SOURCE_SKIP_DIRS: &[&str] = &["target", ".git", "node_modules", ".DS_Store"];
+
+struct TreeEntry {
+    name: String,
+    rel_path: String,
+    is_dir: bool,
+    children: Vec<TreeEntry>,
+}
+
+fn build_tree(base: &std::path::Path, rel: &str, depth: usize) -> Vec<TreeEntry> {
+    if depth > SOURCE_MAX_DEPTH {
+        return Vec::new();
+    }
+    let Ok(entries) = std::fs::read_dir(base) else {
+        return Vec::new();
+    };
+    let mut items: Vec<TreeEntry> = Vec::new();
+    for entry in entries.flatten() {
+        let ft = match entry.file_type() {
+            Ok(ft) => ft,
+            Err(_) => continue,
+        };
+        if ft.is_symlink() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        if SOURCE_SKIP_DIRS.contains(&name.as_str()) || name.starts_with('.') {
+            continue;
+        }
+        let child_rel = if rel.is_empty() {
+            name.clone()
+        } else {
+            format!("{rel}/{name}")
+        };
+        if ft.is_dir() {
+            let children = build_tree(&entry.path(), &child_rel, depth + 1);
+            items.push(TreeEntry {
+                name,
+                rel_path: child_rel,
+                is_dir: true,
+                children,
+            });
+        } else {
+            items.push(TreeEntry {
+                name,
+                rel_path: child_rel,
+                is_dir: false,
+                children: Vec::new(),
+            });
+        }
+    }
+    items.sort_by(|a, b| {
+        b.is_dir
+            .cmp(&a.is_dir)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+    items
+}
+
+fn render_tree(entries: &[TreeEntry], html: &mut String, depth: usize) {
+    html.push_str("<ul>");
+    for entry in entries {
+        html.push_str("<li>");
+        let indent: String = (0..depth)
+            .map(|_| "<span class=\"indent\"></span>")
+            .collect();
+        if entry.is_dir {
+            html.push_str(&format!(
+                "<span class=\"tree-item\">{indent}<span class=\"tree-icon\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M2 4.5h4l2 2h6v7H2z\"/></svg></span> {name}</span>",
+                name = html_escape(&entry.name),
+            ));
+            if !entry.children.is_empty() {
+                render_tree(&entry.children, html, depth + 1);
+            }
+        } else {
+            let encoded = urlencoding::encode(&entry.rel_path);
+            let icon = if entry.name.ends_with(".yaml") || entry.name.ends_with(".yml") {
+                "<svg width=\"14\" height=\"14\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"#b8860b\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"1.5\" width=\"10\" height=\"13\" rx=\"1.5\"/><path d=\"M6 5h4M6 8h4M6 11h2\"/></svg>"
+            } else if entry.name.ends_with(".rs") {
+                "<svg width=\"14\" height=\"14\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"#e67e22\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polyline points=\"5 4.5 1.5 8 5 11.5\"/><polyline points=\"11 4.5 14.5 8 11 11.5\"/></svg>"
+            } else if entry.name.ends_with(".md") {
+                "<svg width=\"14\" height=\"14\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"#3a86ff\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M9 1.5H4.5A1.5 1.5 0 003 3v10a1.5 1.5 0 001.5 1.5h7A1.5 1.5 0 0013 13V5.5L9 1.5z\"/><path d=\"M9 1.5V5.5h4\"/></svg>"
+            } else if entry.name.ends_with(".toml") {
+                "<svg width=\"14\" height=\"14\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"#6f42c1\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"1.5\" width=\"10\" height=\"13\" rx=\"1.5\"/><path d=\"M6 5h4M6 8h2\"/></svg>"
+            } else {
+                "<svg width=\"14\" height=\"14\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"1.5\" width=\"10\" height=\"13\" rx=\"1.5\"/></svg>"
+            };
+            html.push_str(&format!(
+                "<a class=\"tree-item\" hx-get=\"/source/{encoded}\" hx-target=\"#content\" hx-push-url=\"false\" href=\"#\">{indent}<span class=\"tree-icon\">{icon}</span> {name}</a>",
+                name = html_escape(&entry.name),
+            ));
+        }
+        html.push_str("</li>");
+    }
+    html.push_str("</ul>");
+}
+
+async fn source_tree_view(State(state): State<SharedState>) -> Html<String> {
+    let state = state.read().await;
+    let project_path = &state.project_path_buf;
+    let tree = build_tree(project_path, "", 0);
+    let mut html = String::from("<h2>Source Files</h2>");
+    html.push_str(&format!(
+        "<p class=\"meta\" style=\"margin-bottom:1rem\">Project directory: <code>{}</code></p>",
+        html_escape(&project_path.display().to_string())
+    ));
+    html.push_str("<div class=\"card source-tree\">");
+    render_tree(&tree, &mut html, 0);
+    html.push_str("</div>");
+    Html(html)
+}
+
+fn format_size(bytes: u64) -> String {
+    if bytes < 1024 {
+        format!("{bytes} B")
+    } else if bytes < 1024 * 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    }
+}
+
+fn format_mtime(time: std::time::SystemTime) -> String {
+    let secs = time
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    std::process::Command::new("date")
+        .args(["-r", &secs.to_string(), "+%Y-%m-%d %H:%M:%S"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_else(|| format!("epoch+{secs}s"))
+}
+
+fn collect_artifact_ids(store: &rivet_core::store::Store) -> std::collections::HashSet<String> {
+    store.iter().map(|a| a.id.clone()).collect()
+}
+
+fn artifacts_referencing_file(
+    store: &rivet_core::store::Store,
+    file_rel: &str,
+) -> Vec<(String, String, String)> {
+    let rel = std::path::Path::new(file_rel);
+    store
+        .iter()
+        .filter_map(|a| {
+            a.source_file.as_ref().and_then(|sf| {
+                if sf == rel || sf.ends_with(file_rel) {
+                    Some((a.id.clone(), a.artifact_type.clone(), a.title.clone()))
+                } else {
+                    None
+                }
+            })
+        })
+        .collect()
+}
+
+async fn source_file_view(
+    State(state): State<SharedState>,
+    Path(raw_path): Path<String>,
+) -> Html<String> {
+    let state = state.read().await;
+    let project_path = &state.project_path_buf;
+    let store = &state.store;
+    let decoded = urlencoding::decode(&raw_path).unwrap_or(std::borrow::Cow::Borrowed(&raw_path));
+    let rel_path = decoded.as_ref();
+
+    let full_path = project_path.join(rel_path);
+    let canonical = match full_path.canonicalize() {
+        Ok(p) => p,
+        Err(_) => {
+            return Html(format!(
+                "<h2>Not Found</h2><p>File <code>{}</code> does not exist.</p>",
+                html_escape(rel_path)
+            ));
+        }
+    };
+    let canonical_project = match project_path.canonicalize() {
+        Ok(p) => p,
+        Err(_) => {
+            return Html("<h2>Error</h2><p>Cannot resolve project path.</p>".into());
+        }
+    };
+    if !canonical.starts_with(&canonical_project) {
+        return Html("<h2>Forbidden</h2><p>Path traversal is not allowed.</p>".into());
+    }
+
+    let metadata = match std::fs::symlink_metadata(&full_path) {
+        Ok(m) => m,
+        Err(_) => {
+            return Html(format!(
+                "<h2>Not Found</h2><p>File <code>{}</code> does not exist.</p>",
+                html_escape(rel_path)
+            ));
+        }
+    };
+    if metadata.file_type().is_symlink() {
+        return Html("<h2>Forbidden</h2><p>Symlinks are not followed.</p>".into());
+    }
+    if metadata.is_dir() {
+        return Html(format!(
+            "<h2>Directory</h2><p><code>{}</code> is a directory. <a hx-get=\"/source\" hx-target=\"#content\" href=\"#\">Back to tree</a></p>",
+            html_escape(rel_path)
+        ));
+    }
+
+    let file_size = metadata.len();
+    if file_size > SOURCE_MAX_SIZE {
+        return Html(format!(
+            "<h2>File Too Large</h2><p><code>{}</code> is {} which exceeds the 100 KB limit.</p><p><a hx-get=\"/source\" hx-target=\"#content\" href=\"#\" class=\"btn btn-secondary\">&larr; Back to files</a></p>",
+            html_escape(rel_path),
+            format_size(file_size)
+        ));
+    }
+
+    let content = match std::fs::read_to_string(&full_path) {
+        Ok(c) => c,
+        Err(e) => {
+            return Html(format!(
+                "<h2>Error</h2><p>Cannot read <code>{}</code>: {}</p>",
+                html_escape(rel_path),
+                html_escape(&e.to_string())
+            ));
+        }
+    };
+
+    let mut html = String::new();
+
+    // Breadcrumb
+    html.push_str("<div class=\"source-breadcrumb\">");
+    html.push_str("<a hx-get=\"/source\" hx-target=\"#content\" hx-push-url=\"false\" href=\"#\">Source</a>");
+    let parts: Vec<&str> = rel_path.split('/').collect();
+    for (i, part) in parts.iter().enumerate() {
+        html.push_str("<span class=\"sep\">/</span>");
+        if i == parts.len() - 1 {
+            html.push_str(&format!("<strong>{}</strong>", html_escape(part)));
+        } else {
+            html.push_str(&format!("<span>{}</span>", html_escape(part)));
+        }
+    }
+    html.push_str("</div>");
+
+    // File metadata
+    let mtime_str = metadata
+        .modified()
+        .map(format_mtime)
+        .unwrap_or_else(|_| "unknown".into());
+    html.push_str("<div class=\"source-meta\">");
+    html.push_str(&format!(
+        "<span class=\"meta-item\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"1.5\" width=\"10\" height=\"13\" rx=\"1.5\"/></svg> {}</span>",
+        format_size(file_size)
+    ));
+    html.push_str(&format!(
+        "<span class=\"meta-item\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"8\" cy=\"8\" r=\"6.5\"/><path d=\"M8 4v4l3 2\"/></svg> {}</span>",
+        html_escape(&mtime_str)
+    ));
+    html.push_str(&format!(
+        "<span class=\"meta-item\">{} lines</span>",
+        content.lines().count()
+    ));
+    html.push_str("</div>");
+
+    let file_name = full_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    let is_yaml = file_name.ends_with(".yaml") || file_name.ends_with(".yml");
+    let is_markdown = file_name.ends_with(".md");
+    let is_rust = file_name.ends_with(".rs");
+    let artifact_ids = collect_artifact_ids(store);
+
+    if is_markdown && content.starts_with("---") {
+        if let Ok(doc) = rivet_core::document::parse_document(&content, Some(&full_path)) {
+            html.push_str("<div class=\"card\"><div class=\"doc-body\">");
+            let body_html = document::render_to_html(&doc, |aid| store.contains(aid));
+            html.push_str(&body_html);
+            html.push_str("</div></div>");
+        } else {
+            render_code_block(&content, &artifact_ids, is_yaml, is_rust, &mut html);
+        }
+    } else {
+        render_code_block(&content, &artifact_ids, is_yaml, is_rust, &mut html);
+    }
+
+    let refs = artifacts_referencing_file(store, rel_path);
+    if !refs.is_empty() {
+        html.push_str("<div class=\"source-refs card\">");
+        html.push_str(&format!("<h3>Artifacts Referencing This File ({})</h3>", refs.len()));
+        html.push_str("<table><thead><tr><th>ID</th><th>Type</th><th>Title</th></tr></thead><tbody>");
+        for (id, atype, title) in &refs {
+            html.push_str(&format!(
+                "<tr><td><a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"false\" href=\"#\">{id}</a></td><td>{}</td><td>{}</td></tr>",
+                badge_for_type(atype),
+                html_escape(title),
+            ));
+        }
+        html.push_str("</tbody></table></div>");
+    }
+
+    html.push_str("<p style=\"margin-top:1rem\"><a hx-get=\"/source\" hx-target=\"#content\" hx-push-url=\"false\" href=\"#\" class=\"btn btn-secondary\">&larr; Back to files</a></p>");
+    Html(html)
+}
+
+fn render_code_block(
+    content: &str,
+    artifact_ids: &std::collections::HashSet<String>,
+    is_yaml: bool,
+    is_rust: bool,
+    html: &mut String,
+) {
+    html.push_str("<div class=\"card source-viewer\"><table>");
+    for (i, line) in content.lines().enumerate() {
+        let line_num = i + 1;
+        let escaped = html_escape(line);
+        let has_artifact = artifact_ids.iter().any(|id| line.contains(id.as_str()));
+        let row_class = if has_artifact {
+            "source-line source-line-highlight"
+        } else {
+            "source-line"
+        };
+        let display_line = if is_yaml || is_rust {
+            let mut result = escaped.clone();
+            let mut ids: Vec<&String> = artifact_ids
+                .iter()
+                .filter(|id| line.contains(id.as_str()))
+                .collect();
+            ids.sort_by(|a, b| b.len().cmp(&a.len()));
+            for id in ids {
+                let escaped_id = html_escape(id);
+                let link = format!(
+                    "<a class=\"artifact-ref\" hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"false\" href=\"#\">{escaped_id}</a>"
+                );
+                if let Some(pos) = result.find(&escaped_id) {
+                    let before = &result[..pos];
+                    let after = &result[pos + escaped_id.len()..];
+                    result = format!("{before}{link}{after}");
+                }
+            }
+            result
+        } else {
+            escaped
+        };
+        html.push_str(&format!(
+            "<tr class=\"{row_class}\"><td class=\"line-no\">{line_num}</td><td class=\"line-content\">{display_line}</td></tr>"
+        ));
+    }
+    html.push_str("</table></div>");
+}
+
+// ── Diff ─────────────────────────────────────────────────────────────────
+
+#[derive(Debug, serde::Deserialize)]
+struct DiffParams { base: Option<String>, head: Option<String> }
+
+fn discover_git_refs(pp: &std::path::Path) -> (Vec<String>, Vec<String>) {
+    let rg = |a: &[&str]| -> Vec<String> {
+        std::process::Command::new("git").args(a).current_dir(pp).output().ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
+            .unwrap_or_default()
+    };
+    let tags = rg(&["tag", "--list", "--sort=-creatordate"]);
+    let branches: Vec<String> = rg(&["branch", "--list", "--format=%(refname:short)"]).into_iter().filter(|b| b != "HEAD").collect();
+    (tags, branches)
+}
+
+fn load_store_from_git_ref(pp: &std::path::Path, gr: &str) -> Result<Store, String> {
+    let rg = |a: &[&str]| -> Result<String, String> {
+        let o = std::process::Command::new("git").args(a).current_dir(pp).output().map_err(|e| format!("git: {e}"))?;
+        if !o.status.success() { return Err(format!("git {} failed: {}", a.join(" "), String::from_utf8_lossy(&o.stderr).trim())); }
+        Ok(String::from_utf8_lossy(&o.stdout).to_string())
+    };
+    let cc = rg(&["show", &format!("{gr}:rivet.yaml")])?;
+    let cfg: ProjectConfig = serde_yaml::from_str(&cc).map_err(|e| format!("parse rivet.yaml@{gr}: {e}"))?;
+    let mut store = Store::new();
+    let adp = GenericYamlAdapter::new();
+    let ac = AdapterConfig::default();
+    for src in &cfg.sources {
+        if src.format != "generic-yaml" && src.format != "generic" { continue; }
+        let tree = rg(&["ls-tree", "-r", "--name-only", gr, "--", &src.path])?;
+        for fp in tree.lines() {
+            let fp = fp.trim();
+            if fp.is_empty() || (!fp.ends_with(".yaml") && !fp.ends_with(".yml")) { continue; }
+            let ct = match rg(&["show", &format!("{gr}:{fp}")]) { Ok(c) => c, Err(_) => continue };
+            if let Ok(arts) = adp.import(&AdapterSource::Bytes(ct.into_bytes()), &ac) {
+                for a in arts { store.upsert(a); }
+            }
+        }
+    }
+    Ok(store)
+}
+
+fn diff_ref_options(sel: &str, tags: &[String], branches: &[String], inc_wt: bool) -> String {
+    let mut h = String::new();
+    if inc_wt {
+        let s = if sel == "working" { " selected" } else { "" };
+        h.push_str(&format!("<option value=\"working\"{s}>Working tree (unstaged)</option>"));
+    }
+    for o in &["HEAD", "HEAD~1", "HEAD~2", "HEAD~3", "HEAD~4", "HEAD~5"] {
+        let s = if sel == *o { " selected" } else { "" };
+        h.push_str(&format!("<option value=\"{o}\"{s}>{o}</option>"));
+    }
+    if !tags.is_empty() {
+        h.push_str("<optgroup label=\"Tags\">");
+        for t in tags { let s = if sel == t { " selected" } else { "" }; h.push_str(&format!("<option value=\"{t}\"{s}>{t}</option>", t = html_escape(t))); }
+        h.push_str("</optgroup>");
+    }
+    if !branches.is_empty() {
+        h.push_str("<optgroup label=\"Branches\">");
+        for b in branches { let s = if sel == b { " selected" } else { "" }; h.push_str(&format!("<option value=\"{b}\"{s}>{b}</option>", b = html_escape(b))); }
+        h.push_str("</optgroup>");
+    }
+    h
+}
+
+async fn diff_view(State(state): State<SharedState>, Query(params): Query<DiffParams>) -> Html<String> {
+    let state = state.read().await;
+    let pp = &state.project_path_buf;
+    let br = params.base.unwrap_or_default();
+    let hr = params.head.unwrap_or_default();
+    let (tags, branches) = discover_git_refs(pp);
+    let mut html = String::from("<h2>Diff</h2>");
+    html.push_str("<div class=\"card\"><form class=\"form-row\" hx-get=\"/diff\" hx-target=\"#content\">");
+    let bs = if br.is_empty() { "HEAD" } else { &br };
+    html.push_str("<div><label>Base</label><select name=\"base\">");
+    html.push_str(&diff_ref_options(bs, &tags, &branches, false));
+    html.push_str("</select></div>");
+    let hs = if hr.is_empty() { "working" } else { &hr };
+    html.push_str("<div><label>Head</label><select name=\"head\">");
+    html.push_str(&diff_ref_options(hs, &tags, &branches, true));
+    html.push_str("</select></div>");
+    html.push_str("<div><label>&nbsp;</label><button type=\"submit\">Compare</button></div>");
+    html.push_str("</form></div>");
+    if br.is_empty() && hr.is_empty() {
+        html.push_str("<div class=\"card\" style=\"text-align:center;padding:3rem;color:var(--text-secondary)\"><p style=\"font-size:1.1rem;margin-bottom:.5rem\">Select a base and head revision, then click <strong>Compare</strong>.</p><p style=\"font-size:.88rem\">This will compare artifact YAML files between two git states.</p></div>");
+        return Html(html);
+    }
+    let base_store = match load_store_from_git_ref(pp, &br) {
+        Ok(s) => s,
+        Err(e) => {
+            html.push_str(&format!("<div class=\"card\" style=\"color:#c62828\"><strong>Error loading base ({}):</strong> {}</div>", html_escape(&br), html_escape(&e)));
+            return Html(html);
+        }
+    };
+    let head_store: Store;
+    let head_label: String;
+    if hr == "working" || hr.is_empty() {
+        head_store = state.store.clone();
+        head_label = "Working tree".to_string();
+    } else {
+        match load_store_from_git_ref(pp, &hr) {
+            Ok(s) => { head_store = s; head_label = hr.clone(); }
+            Err(e) => {
+                html.push_str(&format!("<div class=\"card\" style=\"color:#c62828\"><strong>Error loading head ({}):</strong> {}</div>", html_escape(&hr), html_escape(&e)));
+                return Html(html);
+            }
+        }
+    };
+    let diff = ArtifactDiff::compute(&base_store, &head_store);
+    html.push_str(&format!("<p class=\"meta\" style=\"margin-bottom:.75rem\">Comparing <strong>{}</strong> &rarr; <strong>{}</strong></p>", html_escape(&br), html_escape(&head_label)));
+    html.push_str("<div class=\"diff-summary\">");
+    html.push_str(&format!("<span class=\"diff-summary-item\"><span class=\"diff-icon diff-icon-add\">+</span> {} added</span>", diff.added.len()));
+    html.push_str(&format!("<span class=\"diff-summary-item\"><span class=\"diff-icon diff-icon-remove\">&minus;</span> {} removed</span>", diff.removed.len()));
+    html.push_str(&format!("<span class=\"diff-summary-item\"><span class=\"diff-icon diff-icon-modify\">&Delta;</span> {} modified</span>", diff.modified.len()));
+    html.push_str(&format!("<span class=\"diff-summary-item\" style=\"color:var(--text-secondary)\">{} unchanged</span>", diff.unchanged));
+    html.push_str("</div>");
+    if diff.is_empty() {
+        html.push_str("<div class=\"card\" style=\"text-align:center;padding:2rem;color:var(--text-secondary)\"><p>No differences found between these revisions.</p></div>");
+        return Html(html);
+    }
+    html.push_str("<div class=\"card\" style=\"padding:0;overflow:hidden\">");
+    for id in &diff.added {
+        let title = head_store.get(id).map(|a| a.title.as_str()).unwrap_or("");
+        let at = head_store.get(id).map(|a| a.artifact_type.as_str()).unwrap_or("");
+        html.push_str(&format!("<div class=\"diff-added\" style=\"padding:.6rem .875rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:.5rem\"><span class=\"diff-icon diff-icon-add\">+</span><code style=\"font-weight:600\">{}</code> {} <span>{}</span></div>", html_escape(id), badge_for_type(at), html_escape(title)));
+    }
+    for id in &diff.removed {
+        let title = base_store.get(id).map(|a| a.title.as_str()).unwrap_or("");
+        let at = base_store.get(id).map(|a| a.artifact_type.as_str()).unwrap_or("");
+        html.push_str(&format!("<div class=\"diff-removed\" style=\"padding:.6rem .875rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:.5rem\"><span class=\"diff-icon diff-icon-remove\">&minus;</span><code style=\"font-weight:600\">{}</code> {} <span>{}</span></div>", html_escape(id), badge_for_type(at), html_escape(title)));
+    }
+    for ch in &diff.modified {
+        let at = head_store.get(&ch.id).map(|a| a.artifact_type.as_str()).unwrap_or("");
+        let title = head_store.get(&ch.id).map(|a| a.title.as_str()).unwrap_or("");
+        html.push_str(&format!("<details class=\"diff-row\"><summary class=\"diff-modified\"><span class=\"diff-icon diff-icon-modify\">&Delta;</span><code style=\"font-weight:600\">{}</code> {} <span>{}</span><span class=\"ver-chevron\" style=\"margin-left:auto\"><svg width=\"12\" height=\"12\" viewBox=\"0 0 12 12\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M4 2l4 4-4 4\"/></svg></span></summary><div class=\"diff-detail\">", html_escape(&ch.id), badge_for_type(at), html_escape(title)));
+        if let Some((ref o, ref n)) = ch.title_changed {
+            html.push_str(&format!("<div class=\"diff-field\"><span class=\"diff-field-name\">Title</span> <span class=\"diff-old\">{}</span> <span class=\"diff-arrow\">&rarr;</span> <span class=\"diff-new\">{}</span></div>", html_escape(o), html_escape(n)));
+        }
+        if let Some((ref o, ref n)) = ch.status_changed {
+            html.push_str(&format!("<div class=\"diff-field\"><span class=\"diff-field-name\">Status</span> <span class=\"diff-old\">{}</span> <span class=\"diff-arrow\">&rarr;</span> <span class=\"diff-new\">{}</span></div>", html_escape(o.as_deref().unwrap_or("(none)")), html_escape(n.as_deref().unwrap_or("(none)"))));
+        }
+        if let Some((ref o, ref n)) = ch.type_changed {
+            html.push_str(&format!("<div class=\"diff-field\"><span class=\"diff-field-name\">Type</span> <span class=\"diff-old\">{}</span> <span class=\"diff-arrow\">&rarr;</span> <span class=\"diff-new\">{}</span></div>", html_escape(o), html_escape(n)));
+        }
+        if ch.description_changed {
+            html.push_str("<div class=\"diff-field\"><span class=\"diff-field-name\">Description</span> <span style=\"color:var(--text-secondary);font-style:italic\">changed</span></div>");
+        }
+        for t in &ch.tags_added { html.push_str(&format!("<div class=\"diff-field\"><span class=\"diff-field-name\">Tag</span> <span class=\"diff-new\">+ {}</span></div>", html_escape(t))); }
+        for t in &ch.tags_removed { html.push_str(&format!("<div class=\"diff-field\"><span class=\"diff-field-name\">Tag</span> <span class=\"diff-old\">&minus; {}</span></div>", html_escape(t))); }
+        for l in &ch.links_added { html.push_str(&format!("<div class=\"diff-field\"><span class=\"diff-field-name\">Link</span> <span class=\"diff-new\">+ {} &rarr; {}</span></div>", html_escape(&l.link_type), html_escape(&l.target))); }
+        for l in &ch.links_removed { html.push_str(&format!("<div class=\"diff-field\"><span class=\"diff-field-name\">Link</span> <span class=\"diff-old\">&minus; {} &rarr; {}</span></div>", html_escape(&l.link_type), html_escape(&l.target))); }
+        for f in &ch.fields_changed { html.push_str(&format!("<div class=\"diff-field\"><span class=\"diff-field-name\">Field</span> <span style=\"color:var(--text-secondary)\">{} changed</span></div>", html_escape(f))); }
+        html.push_str("</div></details>");
+    }
+    html.push_str("</div>");
     Html(html)
 }
 
