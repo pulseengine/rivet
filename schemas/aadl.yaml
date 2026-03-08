@@ -1,0 +1,133 @@
+# AADL Architecture schema for rivet
+#
+# Maps AADL components, analysis results, and flows into the rivet
+# artifact model. Bridges ASPICE SYS.3/SWE.2 architecture levels
+# with formal AADL models analyzed by spar.
+
+schema:
+  name: aadl
+  version: "0.1.0"
+  namespace: "http://pulseengine.dev/ns/aadl#"
+  extends: [common]
+  description: >
+    AADL architecture model artifact types for spar integration.
+
+artifact-types:
+
+  - name: aadl-component
+    description: AADL component type or implementation imported from spar
+    fields:
+      - name: category
+        type: string
+        required: true
+        allowed-values:
+          - system
+          - process
+          - thread
+          - thread-group
+          - processor
+          - virtual-processor
+          - memory
+          - bus
+          - virtual-bus
+          - device
+          - subprogram
+          - subprogram-group
+          - data
+          - abstract
+      - name: aadl-package
+        type: string
+        required: true
+        description: AADL package containing this component
+      - name: classifier-kind
+        type: string
+        required: false
+        allowed-values: [type, implementation, feature-group-type]
+      - name: features
+        type: structured
+        required: false
+        description: Port/access/feature group declarations
+      - name: properties
+        type: structured
+        required: false
+        description: AADL property associations
+      - name: aadl-file
+        type: string
+        required: false
+        description: Source .aadl file path
+    link-fields:
+      - name: allocated-from
+        link-type: allocated-from
+        target-types: [system-req, sw-req, system-arch-component]
+        required: false
+        cardinality: zero-or-many
+
+  - name: aadl-analysis-result
+    description: Output of a spar analysis pass
+    fields:
+      - name: analysis-name
+        type: string
+        required: true
+        description: Name of the analysis (e.g., connectivity, scheduling, latency)
+      - name: severity
+        type: string
+        required: true
+        allowed-values: [error, warning, info]
+      - name: component-path
+        type: string
+        required: false
+        description: Hierarchical path to the component (e.g., root/subsystem/cpu)
+      - name: details
+        type: text
+        required: false
+    link-fields:
+      - name: analyzes
+        link-type: verifies
+        target-types: [aadl-component]
+        required: false
+        cardinality: zero-or-many
+
+  - name: aadl-flow
+    description: End-to-end flow with latency bounds
+    fields:
+      - name: flow-kind
+        type: string
+        required: true
+        allowed-values: [source, sink, path, end-to-end]
+      - name: latency-best-ms
+        type: number
+        required: false
+      - name: latency-worst-ms
+        type: number
+        required: false
+      - name: segments
+        type: structured
+        required: false
+    link-fields:
+      - name: part-of
+        link-type: allocated-from
+        target-types: [aadl-component]
+        required: false
+        cardinality: zero-or-many
+
+link-types:
+  - name: modeled-by
+    inverse: models
+    description: An architecture component is modeled by an AADL component
+    source-types: [system-arch-component, sw-arch-component]
+    target-types: [aadl-component]
+
+traceability-rules:
+  - name: aadl-component-has-allocation
+    description: Every AADL component should trace to a requirement or architecture element
+    source-type: aadl-component
+    required-backlink: allocated-from
+    from-types: [system-req, sw-req, system-arch-component]
+    severity: warning
+
+  - name: safety-critical-has-analysis
+    description: Safety-critical AADL components should have analysis results
+    source-type: aadl-component
+    required-backlink: verifies
+    from-types: [aadl-analysis-result]
+    severity: warning

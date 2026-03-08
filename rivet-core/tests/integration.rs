@@ -1088,3 +1088,20 @@ fn test_diff_diagnostic_changes() {
         "1 new errors, 1 resolved errors, 0 new warnings, 0 resolved warnings"
     );
 }
+
+// ── AADL schema ──────────────────────────────────────────────────────────
+
+#[test]
+fn aadl_schema_loads() {
+    let schemas_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("schemas");
+    let common = rivet_core::schema::Schema::load_file(&schemas_dir.join("common.yaml")).unwrap();
+    let aadl = rivet_core::schema::Schema::load_file(&schemas_dir.join("aadl.yaml")).unwrap();
+    let merged = rivet_core::schema::Schema::merge(&[common, aadl]);
+    assert!(merged.artifact_type("aadl-component").is_some());
+    assert!(merged.artifact_type("aadl-analysis-result").is_some());
+    assert!(merged.artifact_type("aadl-flow").is_some());
+    assert!(merged.link_type("modeled-by").is_some());
+}
