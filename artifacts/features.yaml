@@ -137,7 +137,7 @@ artifacts:
   - id: FEAT-010
     type: feature
     title: ReqIF 1.2 adapter
-    status: draft
+    status: approved
     description: >
       Import/export adapter for OMG ReqIF 1.2 XML format.
     tags: [interchange, phase-2]

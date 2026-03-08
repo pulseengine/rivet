@@ -51,7 +51,7 @@ impl Default for WasmRuntimeConfig {
     fn default() -> Self {
         Self {
             max_memory_bytes: Some(256 * 1024 * 1024), // 256 MiB
-            fuel: Some(1_000_000_000),                  // 1 billion ops
+            fuel: Some(1_000_000_000),                 // 1 billion ops
             wasi: true,
         }
     }
@@ -139,8 +139,8 @@ impl WasmAdapterRuntime {
             engine_config.consume_fuel(true);
         }
 
-        let engine = Engine::new(&engine_config)
-            .map_err(|e| WasmError::EngineCreation(e.to_string()))?;
+        let engine =
+            Engine::new(&engine_config).map_err(|e| WasmError::EngineCreation(e.to_string()))?;
 
         Ok(Self { engine, config })
     }
@@ -157,12 +157,11 @@ impl WasmAdapterRuntime {
             source: e,
         })?;
 
-        let component = Component::from_binary(&self.engine, &bytes).map_err(|e| {
-            WasmError::Compilation {
+        let component =
+            Component::from_binary(&self.engine, &bytes).map_err(|e| WasmError::Compilation {
                 path: path.to_path_buf(),
                 reason: e.to_string(),
-            }
-        })?;
+            })?;
 
         Ok(WasmAdapter {
             engine: self.engine.clone(),

@@ -382,13 +382,18 @@ fn cmd_export(cli: &Cli, format: &str, output: Option<&std::path::Path>) -> Resu
                 .export(&artifacts, &config)
                 .map_err(|e| anyhow::anyhow!("{e}"))?
         }
-        other => anyhow::bail!("unsupported export format: {other} (supported: reqif, generic-yaml)"),
+        other => {
+            anyhow::bail!("unsupported export format: {other} (supported: reqif, generic-yaml)")
+        }
     };
 
     if let Some(path) = output {
-        std::fs::write(path, &bytes)
-            .with_context(|| format!("writing {}", path.display()))?;
-        println!("Exported {} artifacts to {}", artifacts.len(), path.display());
+        std::fs::write(path, &bytes).with_context(|| format!("writing {}", path.display()))?;
+        println!(
+            "Exported {} artifacts to {}",
+            artifacts.len(),
+            path.display()
+        );
     } else {
         use std::io::Write;
         std::io::stdout()
@@ -457,7 +462,12 @@ fn load_project(cli: &Cli) -> Result<(Store, rivet_core::schema::Schema, LinkGra
 /// the serve command to display per-schema grouping in the dashboard).
 fn load_project_with_files(
     cli: &Cli,
-) -> Result<(Store, rivet_core::schema::Schema, Vec<SchemaFile>, LinkGraph)> {
+) -> Result<(
+    Store,
+    rivet_core::schema::Schema,
+    Vec<SchemaFile>,
+    LinkGraph,
+)> {
     let config_path = cli.project.join("rivet.yaml");
     let config = rivet_core::load_project_config(&config_path)
         .with_context(|| format!("loading {}", config_path.display()))?;
@@ -521,8 +531,7 @@ fn cmd_import(
 
     println!("Loading WASM adapter: {}", adapter_path.display());
 
-    let runtime =
-        WasmAdapterRuntime::with_defaults().context("failed to create WASM runtime")?;
+    let runtime = WasmAdapterRuntime::with_defaults().context("failed to create WASM runtime")?;
 
     let adapter = runtime
         .load_adapter(adapter_path)
@@ -544,7 +553,9 @@ fn cmd_import(
             .collect::<BTreeMap<String, String>>(),
     };
 
-    let artifacts = adapter.import(&source, &config).context("adapter import failed")?;
+    let artifacts = adapter
+        .import(&source, &config)
+        .context("adapter import failed")?;
 
     println!("\nImported {} artifacts:", artifacts.len());
     for artifact in &artifacts {

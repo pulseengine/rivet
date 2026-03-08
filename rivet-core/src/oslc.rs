@@ -160,15 +160,27 @@ pub struct OslcRequirement {
     pub rdf_type: Vec<String>,
 
     /// dcterms:identifier — external unique identifier.
-    #[serde(rename = "dcterms:identifier", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "dcterms:identifier",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub identifier: Option<String>,
 
     /// dcterms:title — human-readable title.
-    #[serde(rename = "dcterms:title", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "dcterms:title",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub title: Option<String>,
 
     /// dcterms:description — detailed description.
-    #[serde(rename = "dcterms:description", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "dcterms:description",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub description: Option<String>,
 
     /// oslc_rm:elaboratedBy — links to elaborating resources.
@@ -214,15 +226,27 @@ pub struct OslcTestCase {
     pub rdf_type: Vec<String>,
 
     /// dcterms:identifier — external unique identifier.
-    #[serde(rename = "dcterms:identifier", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "dcterms:identifier",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub identifier: Option<String>,
 
     /// dcterms:title — human-readable title.
-    #[serde(rename = "dcterms:title", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "dcterms:title",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub title: Option<String>,
 
     /// dcterms:description — detailed description of the test case.
-    #[serde(rename = "dcterms:description", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "dcterms:description",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub description: Option<String>,
 
     /// oslc_qm:validatesRequirement — links to requirements validated by this test.
@@ -252,15 +276,27 @@ pub struct OslcTestResult {
     pub rdf_type: Vec<String>,
 
     /// dcterms:identifier — external unique identifier.
-    #[serde(rename = "dcterms:identifier", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "dcterms:identifier",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub identifier: Option<String>,
 
     /// dcterms:title — human-readable title.
-    #[serde(rename = "dcterms:title", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "dcterms:title",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub title: Option<String>,
 
     /// oslc_qm:status — the test execution status (passed, failed, etc.).
-    #[serde(rename = "oslc_qm:status", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "oslc_qm:status",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub status: Option<String>,
 
     /// oslc_qm:reportsOnTestCase — link to the test case this result is for.
@@ -291,19 +327,35 @@ pub struct OslcChangeRequest {
     pub rdf_type: Vec<String>,
 
     /// dcterms:identifier — external unique identifier.
-    #[serde(rename = "dcterms:identifier", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "dcterms:identifier",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub identifier: Option<String>,
 
     /// dcterms:title — human-readable title.
-    #[serde(rename = "dcterms:title", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "dcterms:title",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub title: Option<String>,
 
     /// dcterms:description — detailed description of the change.
-    #[serde(rename = "dcterms:description", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "dcterms:description",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub description: Option<String>,
 
     /// oslc_cm:status — the lifecycle status of the change request.
-    #[serde(rename = "oslc_cm:status", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "oslc_cm:status",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub status: Option<String>,
 
     /// oslc_cm:implementsRequirement — links to requirements implemented by this change.
@@ -428,11 +480,19 @@ pub struct ServiceProviderCatalog {
     pub about: Option<String>,
 
     /// dcterms:title — human-readable name of this catalog.
-    #[serde(rename = "dcterms:title", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "dcterms:title",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub title: Option<String>,
 
     /// dcterms:description — description of this catalog.
-    #[serde(rename = "dcterms:description", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "dcterms:description",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub description: Option<String>,
 
     /// Nested sub-catalogs.
@@ -456,7 +516,11 @@ pub struct ServiceProvider {
     pub about: Option<String>,
 
     /// dcterms:title — project/area name.
-    #[serde(rename = "dcterms:title", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "dcterms:title",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub title: Option<String>,
 
     /// Services offered by this provider.
@@ -490,7 +554,11 @@ pub struct Service {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueryCapability {
     /// dcterms:title — human-readable name (e.g., "Requirement Query Capability").
-    #[serde(rename = "dcterms:title", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "dcterms:title",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub title: Option<String>,
 
     /// The base URL for OSLC queries.
@@ -506,7 +574,11 @@ pub struct QueryCapability {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreationFactory {
     /// dcterms:title — human-readable name.
-    #[serde(rename = "dcterms:title", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "dcterms:title",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub title: Option<String>,
 
     /// The URL to POST new resources to.
@@ -561,9 +633,7 @@ pub fn oslc_to_artifact(resource: &OslcResource) -> Result<Artifact, Error> {
 
     let id: ArtifactId = resource
         .identifier()
-        .ok_or_else(|| {
-            Error::Adapter("OSLC resource missing dcterms:identifier".to_string())
-        })?
+        .ok_or_else(|| Error::Adapter("OSLC resource missing dcterms:identifier".to_string()))?
         .to_string();
 
     let title = resource.title().unwrap_or("(untitled)").to_string();
@@ -625,7 +695,12 @@ pub fn oslc_to_artifact(resource: &OslcResource) -> Result<Artifact, Error> {
                     target: extract_link_target(&link.href),
                 });
             }
-            (r.description.clone(), r.status.clone(), link_list, BTreeMap::new())
+            (
+                r.description.clone(),
+                r.status.clone(),
+                link_list,
+                BTreeMap::new(),
+            )
         }
     };
 
@@ -653,8 +728,8 @@ pub fn oslc_to_artifact(resource: &OslcResource) -> Result<Artifact, Error> {
 /// Returns an error if the artifact type cannot be mapped to a known OSLC
 /// resource type.
 pub fn artifact_to_oslc(artifact: &Artifact) -> Result<OslcResource, Error> {
-    let resource_type = OslcResourceType::from_artifact_type(&artifact.artifact_type)
-        .ok_or_else(|| {
+    let resource_type =
+        OslcResourceType::from_artifact_type(&artifact.artifact_type).ok_or_else(|| {
             Error::Adapter(format!(
                 "cannot map artifact type '{}' to an OSLC resource type",
                 artifact.artifact_type
@@ -785,9 +860,7 @@ pub struct SyncDiff {
 impl SyncDiff {
     /// Returns `true` if there are no differences between local and remote.
     pub fn is_empty(&self) -> bool {
-        self.remote_only.is_empty()
-            && self.local_only.is_empty()
-            && self.modified.is_empty()
+        self.remote_only.is_empty() && self.local_only.is_empty() && self.modified.is_empty()
     }
 
     /// Total number of artifacts that differ between local and remote.
@@ -801,10 +874,8 @@ impl SyncDiff {
 /// Comparison is based on artifact IDs. Two artifacts with the same ID are
 /// considered "modified" if their titles or descriptions differ.
 pub fn compute_diff(local: &[Artifact], remote: &[Artifact]) -> SyncDiff {
-    let local_map: BTreeMap<&str, &Artifact> =
-        local.iter().map(|a| (a.id.as_str(), a)).collect();
-    let remote_map: BTreeMap<&str, &Artifact> =
-        remote.iter().map(|a| (a.id.as_str(), a)).collect();
+    let local_map: BTreeMap<&str, &Artifact> = local.iter().map(|a| (a.id.as_str(), a)).collect();
+    let remote_map: BTreeMap<&str, &Artifact> = remote.iter().map(|a| (a.id.as_str(), a)).collect();
 
     let mut diff = SyncDiff::default();
 
@@ -1074,11 +1145,7 @@ impl OslcClient {
     }
 
     /// Build a POST request with appropriate headers, auth, and body.
-    fn build_post_request(
-        &self,
-        url: &str,
-        body: &serde_json::Value,
-    ) -> reqwest::RequestBuilder {
+    fn build_post_request(&self, url: &str, body: &serde_json::Value) -> reqwest::RequestBuilder {
         let mut req = self
             .http
             .post(url)
@@ -1092,11 +1159,7 @@ impl OslcClient {
     }
 
     /// Build a PUT request with appropriate headers, auth, and body.
-    fn build_put_request(
-        &self,
-        url: &str,
-        body: &serde_json::Value,
-    ) -> reqwest::RequestBuilder {
+    fn build_put_request(&self, url: &str, body: &serde_json::Value) -> reqwest::RequestBuilder {
         let mut req = self
             .http
             .put(url)
@@ -1163,11 +1226,7 @@ pub trait SyncAdapter {
     ) -> impl std::future::Future<Output = Result<(), Error>> + Send;
 
     /// Compute the difference between local and remote artifact sets.
-    fn diff(
-        &self,
-        local: &[Artifact],
-        remote: &[Artifact],
-    ) -> SyncDiff;
+    fn diff(&self, local: &[Artifact], remote: &[Artifact]) -> SyncDiff;
 }
 
 /// An OSLC-based sync adapter backed by an [`OslcClient`].
@@ -1220,10 +1279,7 @@ impl SyncAdapter for OslcSyncAdapter {
     /// them to Rivet artifacts. Uses an empty `oslc.where` clause to fetch
     /// all resources, with full property selection.
     async fn pull(&self, service_url: &str) -> Result<Vec<Artifact>, Error> {
-        let query_response = self
-            .client
-            .query(service_url, "", "")
-            .await?;
+        let query_response = self.client.query(service_url, "", "").await?;
 
         let mut artifacts = Vec::new();
         for member_value in &query_response.members {
@@ -1245,9 +1301,8 @@ impl SyncAdapter for OslcSyncAdapter {
     async fn push(&self, service_url: &str, artifacts: &[Artifact]) -> Result<(), Error> {
         for artifact in artifacts {
             let oslc_resource = artifact_to_oslc(artifact)?;
-            let json_value = serde_json::to_value(&oslc_resource).map_err(|e| {
-                Error::Adapter(format!("failed to serialize OSLC resource: {e}"))
-            })?;
+            let json_value = serde_json::to_value(&oslc_resource)
+                .map_err(|e| Error::Adapter(format!("failed to serialize OSLC resource: {e}")))?;
 
             self.client
                 .create_resource(service_url, &json_value)
@@ -1275,17 +1330,11 @@ fn parse_member_resource(value: &serde_json::Value) -> Result<OslcResource, Erro
     let rdf_types = value
         .get("@type")
         .and_then(|t| t.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str())
-                .collect::<Vec<_>>()
-        })
+        .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>())
         .unwrap_or_default();
 
     // Also check for a single string @type
-    let single_type = value
-        .get("@type")
-        .and_then(|t| t.as_str());
+    let single_type = value.get("@type").and_then(|t| t.as_str());
 
     let all_types: Vec<&str> = if rdf_types.is_empty() {
         single_type.into_iter().collect()
@@ -1313,8 +1362,10 @@ fn parse_member_resource(value: &serde_json::Value) -> Result<OslcResource, Erro
                     Ok(OslcResource::TestResult(tr))
                 }
                 OslcResourceType::ChangeRequest => {
-                    let cr: OslcChangeRequest = serde_json::from_value(value.clone())
-                        .map_err(|e| Error::Adapter(format!("failed to parse ChangeRequest: {e}")))?;
+                    let cr: OslcChangeRequest =
+                        serde_json::from_value(value.clone()).map_err(|e| {
+                            Error::Adapter(format!("failed to parse ChangeRequest: {e}"))
+                        })?;
                     Ok(OslcResource::ChangeRequest(cr))
                 }
             };
@@ -1322,8 +1373,9 @@ fn parse_member_resource(value: &serde_json::Value) -> Result<OslcResource, Erro
     }
 
     // Fallback: try to parse as a Requirement (the most common type)
-    let req: OslcRequirement = serde_json::from_value(value.clone())
-        .map_err(|e| Error::Adapter(format!("failed to parse OSLC resource (unknown type): {e}")))?;
+    let req: OslcRequirement = serde_json::from_value(value.clone()).map_err(|e| {
+        Error::Adapter(format!("failed to parse OSLC resource (unknown type): {e}"))
+    })?;
     Ok(OslcResource::Requirement(req))
 }
 
@@ -1346,8 +1398,8 @@ mod tests {
 
         for rt in &types {
             let uri = rt.rdf_type();
-            let parsed = OslcResourceType::from_rdf_type(uri)
-                .expect("should parse back from RDF type URI");
+            let parsed =
+                OslcResourceType::from_rdf_type(uri).expect("should parse back from RDF type URI");
             assert_eq!(&parsed, rt);
         }
     }

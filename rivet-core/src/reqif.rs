@@ -70,7 +70,11 @@ pub struct ReqIfHeader {
     #[serde(rename = "COMMENT", default, skip_serializing_if = "Option::is_none")]
     pub comment: Option<String>,
 
-    #[serde(rename = "CREATION-TIME", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "CREATION-TIME",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub creation_time: Option<String>,
 
     #[serde(
@@ -94,7 +98,11 @@ pub struct ReqIfHeader {
     )]
     pub req_if_version: Option<String>,
 
-    #[serde(rename = "SOURCE-TOOL-ID", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "SOURCE-TOOL-ID",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub source_tool_id: Option<String>,
 
     #[serde(rename = "TITLE", default, skip_serializing_if = "Option::is_none")]
@@ -145,10 +153,18 @@ pub struct DatatypeDefinitionString {
     #[serde(rename = "@IDENTIFIER")]
     pub identifier: String,
 
-    #[serde(rename = "@LONG-NAME", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "@LONG-NAME",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub long_name: Option<String>,
 
-    #[serde(rename = "@MAX-LENGTH", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "@MAX-LENGTH",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub max_length: Option<u64>,
 }
 
@@ -170,10 +186,18 @@ pub struct SpecObjectType {
     #[serde(rename = "@IDENTIFIER")]
     pub identifier: String,
 
-    #[serde(rename = "@LONG-NAME", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "@LONG-NAME",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub long_name: Option<String>,
 
-    #[serde(rename = "SPEC-ATTRIBUTES", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "SPEC-ATTRIBUTES",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub spec_attributes: Option<SpecAttributes>,
 }
 
@@ -183,7 +207,11 @@ pub struct SpecRelationType {
     #[serde(rename = "@IDENTIFIER")]
     pub identifier: String,
 
-    #[serde(rename = "@LONG-NAME", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "@LONG-NAME",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub long_name: Option<String>,
 }
 
@@ -200,7 +228,11 @@ pub struct AttributeDefinitionString {
     #[serde(rename = "@IDENTIFIER")]
     pub identifier: String,
 
-    #[serde(rename = "@LONG-NAME", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "@LONG-NAME",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub long_name: Option<String>,
 
     #[serde(rename = "TYPE", default, skip_serializing_if = "Option::is_none")]
@@ -229,7 +261,11 @@ pub struct SpecObject {
     #[serde(rename = "@IDENTIFIER")]
     pub identifier: String,
 
-    #[serde(rename = "@LONG-NAME", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "@LONG-NAME",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub long_name: Option<String>,
 
     #[serde(rename = "@DESC", default, skip_serializing_if = "Option::is_none")]
@@ -454,7 +490,11 @@ pub fn parse_reqif(xml: &str) -> Result<Vec<Artifact>, Error> {
         let artifact_type = obj
             .object_type_ref
             .as_ref()
-            .and_then(|r| object_type_names.get(r.spec_object_type_ref.as_str()).copied())
+            .and_then(|r| {
+                object_type_names
+                    .get(r.spec_object_type_ref.as_str())
+                    .copied()
+            })
             .unwrap_or("unknown")
             .to_string();
 
@@ -750,8 +790,8 @@ pub fn build_reqif(artifacts: &[Artifact]) -> ReqIfRoot {
 
 /// Serialize a ReqIF document to XML bytes.
 pub fn serialize_reqif(root: &ReqIfRoot) -> Result<Vec<u8>, Error> {
-    let xml_body =
-        xml_to_string(root).map_err(|e| Error::Adapter(format!("ReqIF XML serialize error: {e}")))?;
+    let xml_body = xml_to_string(root)
+        .map_err(|e| Error::Adapter(format!("ReqIF XML serialize error: {e}")))?;
 
     // Prepend the XML declaration that quick-xml's serializer omits.
     let mut output = String::with_capacity(xml_body.len() + 50);
@@ -777,10 +817,7 @@ mod tests {
                 links: vec![],
                 fields: {
                     let mut f = BTreeMap::new();
-                    f.insert(
-                        "priority".into(),
-                        serde_yaml::Value::String("must".into()),
-                    );
+                    f.insert("priority".into(), serde_yaml::Value::String("must".into()));
                     f
                 },
                 source_file: None,
@@ -803,6 +840,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)] // quick-xml uses unsafe/SIMD internals that Miri cannot interpret
     fn test_export_produces_valid_xml() {
         let arts = sample_artifacts();
         let adapter = ReqIfAdapter::new();
@@ -821,6 +859,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)] // quick-xml uses unsafe/SIMD internals that Miri cannot interpret
     fn test_roundtrip() {
         let original = sample_artifacts();
         let adapter = ReqIfAdapter::new();
@@ -835,7 +874,10 @@ mod tests {
 
         for (orig, re) in original.iter().zip(reimported.iter()) {
             assert_eq!(orig.id, re.id, "id mismatch");
-            assert_eq!(orig.artifact_type, re.artifact_type, "artifact_type mismatch");
+            assert_eq!(
+                orig.artifact_type, re.artifact_type,
+                "artifact_type mismatch"
+            );
             assert_eq!(orig.title, re.title, "title mismatch");
             assert_eq!(orig.description, re.description, "description mismatch");
             assert_eq!(orig.status, re.status, "status mismatch");
@@ -850,6 +892,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)] // quick-xml uses unsafe/SIMD internals that Miri cannot interpret
     fn test_parse_minimal_reqif() {
         let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
 <REQ-IF xmlns="http://www.omg.org/spec/ReqIF/20110401/reqif.xsd">

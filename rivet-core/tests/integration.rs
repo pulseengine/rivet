@@ -8,11 +8,11 @@ use std::path::PathBuf;
 
 use rivet_core::adapter::{Adapter, AdapterConfig, AdapterSource};
 use rivet_core::formats::generic::GenericYamlAdapter;
-use rivet_core::reqif::ReqIfAdapter;
 use rivet_core::links::LinkGraph;
 use rivet_core::matrix::{self, Direction};
 use rivet_core::model::{Artifact, Link};
 use rivet_core::query::{self, Query};
+use rivet_core::reqif::ReqIfAdapter;
 use rivet_core::schema::{Schema, Severity};
 use rivet_core::store::Store;
 use rivet_core::validate;
@@ -800,11 +800,7 @@ fn test_reqif_roundtrip() {
             "description mismatch for {}",
             orig.id
         );
-        assert_eq!(
-            orig.status, re.status,
-            "status mismatch for {}",
-            orig.id
-        );
+        assert_eq!(orig.status, re.status, "status mismatch for {}", orig.id);
         assert_eq!(orig.tags, re.tags, "tags mismatch for {}", orig.id);
         assert_eq!(
             orig.links.len(),
