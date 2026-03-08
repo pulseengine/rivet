@@ -1102,17 +1102,17 @@ fn aadl_adapter_parses_spar_json() {
             {
                 "name": "Pkg",
                 "component_types": [
-                    { "name": "Sys", "category": "System" }
+                    { "name": "Sys", "category": "system" }
                 ],
                 "component_impls": [
-                    { "name": "Sys.Impl", "category": "System" }
+                    { "name": "Sys.Impl", "category": "system" }
                 ]
             }
         ],
         "instance": null,
         "diagnostics": [
             {
-                "severity": "Warning",
+                "severity": "warning",
                 "message": "No binding for cpu1",
                 "path": ["root", "cpu1"],
                 "analysis": "binding_check"

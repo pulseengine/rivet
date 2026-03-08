@@ -9,7 +9,7 @@
 //! - `Bytes`     — parse JSON directly (main path for tests)
 //! - `Path`      — read a file as JSON
 //! - `Directory` — find `.aadl` files, invoke `spar analyze --format json`,
-//!                 parse its stdout
+//!   parse its stdout
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -189,8 +189,8 @@ fn component_to_artifact(
         artifact_type: "aadl-component".into(),
         title: format!("{} {} ({})", category, comp_name, classifier_kind),
         description: None,
-        status: None,
-        tags: vec![],
+        status: Some("imported".into()),
+        tags: vec!["aadl".into()],
         links: vec![],
         fields,
         source_file: None,
@@ -198,7 +198,7 @@ fn component_to_artifact(
 }
 
 fn diagnostic_to_artifact(index: usize, diag: &SparDiagnostic) -> Artifact {
-    let id = format!("AADL-DIAG-{:04}", index);
+    let id = format!("AADL-DIAG-{:04}", index + 1);
 
     let mut fields = BTreeMap::new();
     fields.insert(
@@ -224,7 +224,7 @@ fn diagnostic_to_artifact(index: usize, diag: &SparDiagnostic) -> Artifact {
         title: format!("[{}] {}", diag.analysis, diag.message),
         description: Some(diag.message.clone()),
         status: None,
-        tags: vec![],
+        tags: vec!["aadl".into(), diag.analysis.clone()],
         links: vec![],
         fields,
         source_file: None,
