@@ -88,6 +88,7 @@ jobs:
   # ── Code coverage (Rust nightly for source-based instrumentation) ───
   coverage:
     name: Code Coverage
+    needs: [test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -99,11 +100,15 @@ jobs:
         run: |
           cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
           cargo llvm-cov --all-features --workspace --html --output-dir coverage-html
+      - name: Enforce minimum coverage threshold
+        run: cargo llvm-cov --all-features --workspace --fail-under-lines 60
       - name: Upload LCOV to Codecov
         uses: codecov/codecov-action@v4
         with:
           files: lcov.info
-          fail_ci_if_error: false
+          fail_ci_if_error: true
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
       - name: Upload HTML coverage report
         uses: actions/upload-artifact@v4
         with:

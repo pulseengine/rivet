@@ -11,6 +11,10 @@ rust-version.workspace = true
 name = "rivet"
 path = "src/main.rs"
 
+[features]
+default = []
+wasm = ["rivet-core/wasm"]
+
 [dependencies]
 rivet-core = { path = "../rivet-core" }
 clap = { workspace = true }

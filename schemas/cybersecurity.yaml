@@ -1,0 +1,317 @@
+# Cybersecurity schema — ASPICE 4.0 SEC.1-4 / ISO 21434
+#
+# Defines artifact types and traceability rules for automotive cybersecurity
+# engineering aligned with Automotive SPICE v4.0 cybersecurity plug-in and
+# ISO/SAE 21434 "Road vehicles — Cybersecurity engineering".
+#
+# Processes covered:
+#   SEC.1  Cybersecurity Requirements Analysis
+#   SEC.2  Cybersecurity Design
+#   SEC.3  Cybersecurity Implementation
+#   SEC.4  Cybersecurity Verification
+#
+# Supporting activities:
+#   MAN.7  TARA (Threat Analysis and Risk Assessment)
+#
+# This schema extends common and is designed to compose with the aspice schema.
+
+schema:
+  name: cybersecurity
+  version: "0.1.0"
+  namespace: "http://pulseengine.dev/ns/cybersecurity#"
+  extends: [common]
+  description: >
+    Automotive cybersecurity artifact types aligned with ASPICE v4.0
+    SEC.1-4 and ISO/SAE 21434.
+
+# ──────────────────────────────────────────────────────────────────────────
+# Artifact types
+# ──────────────────────────────────────────────────────────────────────────
+artifact-types:
+
+  # ── TARA (MAN.7) ──────────────────────────────────────────────────────
+
+  - name: asset
+    description: >
+      An item of value requiring protection — data, function, or component.
+      Identified during TARA (ISO 21434 clause 8).
+    fields:
+      - name: asset-type
+        type: string
+        required: false
+        allowed-values: [data, function, component, interface, key-material]
+      - name: cybersecurity-properties
+        type: list<string>
+        required: false
+        description: "CIA properties: confidentiality, integrity, availability, authenticity"
+    link-fields: []
+
+  - name: threat-scenario
+    description: >
+      A potential attack scenario against an asset.
+      Part of TARA (ISO 21434 clause 8).
+    fields:
+      - name: attack-vector
+        type: string
+        required: false
+        allowed-values: [network, physical, local, adjacent]
+        description: CVSS-style attack vector
+      - name: attack-feasibility
+        type: string
+        required: false
+        allowed-values: [high, medium, low, very-low]
+      - name: impact
+        type: string
+        required: false
+        allowed-values: [severe, major, moderate, negligible]
+    link-fields:
+      - name: targets
+        link-type: threatens
+        target-types: [asset]
+        required: true
+        cardinality: one-or-many
+
+  - name: risk-assessment
+    description: >
+      Combined risk level from threat feasibility and impact.
+      Determines whether a cybersecurity goal is needed (ISO 21434 clause 8).
+    fields:
+      - name: risk-level
+        type: string
+        required: true
+        allowed-values: [unacceptable, conditional, acceptable]
+      - name: risk-treatment
+        type: string
+        required: false
+        allowed-values: [mitigate, avoid, transfer, accept]
+    link-fields:
+      - name: threat
+        link-type: assesses
+        target-types: [threat-scenario]
+        required: true
+        cardinality: exactly-one
+
+  # ── SEC.1: Cybersecurity Requirements Analysis ────────────────────────
+
+  - name: cybersecurity-goal
+    description: >
+      A top-level cybersecurity requirement derived from TARA results.
+      Equivalent to a cybersecurity goal in ISO 21434 clause 9.
+    aspice-process: SEC.1
+    fields:
+      - name: cal
+        type: string
+        required: false
+        allowed-values: ["1", "2", "3", "4"]
+        description: Cybersecurity Assurance Level (CAL 1-4)
+      - name: verification-criteria
+        type: text
+        required: false
+    link-fields:
+      - name: mitigates
+        link-type: mitigates
+        target-types: [threat-scenario]
+        required: true
+        cardinality: one-or-many
+
+  - name: cybersecurity-req
+    description: >
+      A detailed cybersecurity requirement derived from cybersecurity goals.
+      SEC.1 outcome (ISO 21434 clause 9).
+    aspice-process: SEC.1
+    fields:
+      - name: req-type
+        type: string
+        required: false
+        allowed-values: [authentication, authorization, encryption, integrity, availability, logging]
+      - name: priority
+        type: string
+        required: false
+      - name: verification-criteria
+        type: text
+        required: false
+    link-fields:
+      - name: derived-from
+        link-type: derives-from
+        target-types: [cybersecurity-goal]
+        required: true
+        cardinality: one-or-many
+
+  # ── SEC.2: Cybersecurity Design ───────────────────────────────────────
+
+  - name: cybersecurity-design
+    description: >
+      Architecture or design element addressing cybersecurity requirements.
+      SEC.2 outcome — security mechanisms, protocols, algorithms.
+    aspice-process: SEC.2
+    fields:
+      - name: mechanism
+        type: string
+        required: false
+        description: Security mechanism (e.g. TLS, SecOC, HSM, secure boot)
+      - name: algorithm
+        type: string
+        required: false
+        description: Cryptographic algorithm or protocol
+    link-fields:
+      - name: satisfies
+        link-type: satisfies
+        target-types: [cybersecurity-req]
+        required: true
+        cardinality: one-or-many
+
+  # ── SEC.3: Cybersecurity Implementation ───────────────────────────────
+
+  - name: cybersecurity-implementation
+    description: >
+      Implementation artifact for a cybersecurity design element.
+      SEC.3 outcome — code, configuration, key management.
+    aspice-process: SEC.3
+    fields:
+      - name: unit
+        type: string
+        required: false
+        description: Source file or module
+      - name: implementation-type
+        type: string
+        required: false
+        allowed-values: [code, configuration, key-provisioning, policy]
+    link-fields:
+      - name: implements
+        link-type: implements
+        target-types: [cybersecurity-design]
+        required: true
+        cardinality: one-or-many
+
+  # ── SEC.4: Cybersecurity Verification ─────────────────────────────────
+
+  - name: cybersecurity-verification
+    description: >
+      Verification measure for cybersecurity requirements.
+      SEC.4 outcome — includes penetration testing, fuzzing, code review,
+      static analysis, vulnerability scanning.
+    aspice-process: SEC.4
+    fields:
+      - name: method
+        type: string
+        required: false
+        allowed-values:
+          - penetration-test
+          - fuzz-test
+          - code-review
+          - static-analysis
+          - vulnerability-scan
+          - automated-test
+          - manual-test
+          - formal-verification
+      - name: preconditions
+        type: list<string>
+        required: false
+      - name: steps
+        type: structured
+        required: false
+    link-fields:
+      - name: verifies
+        link-type: verifies
+        target-types: [cybersecurity-req, cybersecurity-design, cybersecurity-implementation]
+        required: true
+        cardinality: one-or-many
+
+# ──────────────────────────────────────────────────────────────────────────
+# Cybersecurity-specific link types
+# ──────────────────────────────────────────────────────────────────────────
+link-types:
+  - name: threatens
+    inverse: threatened-by
+    description: Threat scenario threatens an asset
+    source-types: [threat-scenario]
+    target-types: [asset]
+
+  - name: assesses
+    inverse: assessed-by
+    description: Risk assessment evaluates a threat scenario
+    source-types: [risk-assessment]
+    target-types: [threat-scenario]
+
+# ──────────────────────────────────────────────────────────────────────────
+# Cybersecurity traceability rules
+#
+# These encode the traceability requirements from ISO 21434 and
+# ASPICE v4.0 SEC processes.
+# ──────────────────────────────────────────────────────────────────────────
+traceability-rules:
+  # TARA completeness
+  - name: threat-has-asset
+    description: Every threat scenario must target at least one asset
+    source-type: threat-scenario
+    required-link: threatens
+    target-types: [asset]
+    severity: error
+
+  - name: risk-has-threat
+    description: Every risk assessment must assess a threat scenario
+    source-type: risk-assessment
+    required-link: assesses
+    target-types: [threat-scenario]
+    severity: error
+
+  # SEC.1 traceability
+  - name: goal-mitigates-threat
+    description: Every cybersecurity goal must mitigate at least one threat
+    source-type: cybersecurity-goal
+    required-link: mitigates
+    target-types: [threat-scenario]
+    severity: error
+
+  - name: req-derives-from-goal
+    description: Every cybersecurity requirement must derive from a cybersecurity goal
+    source-type: cybersecurity-req
+    required-link: derives-from
+    target-types: [cybersecurity-goal]
+    severity: error
+
+  # SEC.2 traceability
+  - name: design-satisfies-req
+    description: Every cybersecurity design must satisfy at least one cybersecurity requirement
+    source-type: cybersecurity-design
+    required-link: satisfies
+    target-types: [cybersecurity-req]
+    severity: error
+
+  # SEC.3 traceability
+  - name: impl-implements-design
+    description: Every cybersecurity implementation must implement a design element
+    source-type: cybersecurity-implementation
+    required-link: implements
+    target-types: [cybersecurity-design]
+    severity: error
+
+  # SEC.4 traceability
+  - name: verification-verifies-sec
+    description: Every cybersecurity verification must verify a requirement, design, or implementation
+    source-type: cybersecurity-verification
+    required-link: verifies
+    target-types: [cybersecurity-req, cybersecurity-design, cybersecurity-implementation]
+    severity: error
+
+  # Coverage rules
+  - name: sec-req-has-verification
+    description: Every cybersecurity requirement should be verified
+    source-type: cybersecurity-req
+    required-backlink: verifies
+    from-types: [cybersecurity-verification]
+    severity: warning
+
+  - name: sec-req-has-design
+    description: Every cybersecurity requirement should be satisfied by a design element
+    source-type: cybersecurity-req
+    required-backlink: satisfies
+    from-types: [cybersecurity-design]
+    severity: warning
+
+  - name: threat-has-goal
+    description: Every unacceptable threat should be mitigated by a cybersecurity goal
+    source-type: threat-scenario
+    required-backlink: mitigates
+    from-types: [cybersecurity-goal]
+    severity: warning

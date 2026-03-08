@@ -1,0 +1,103 @@
+name: Release Test Evidence
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test-evidence:
+    name: Build Test Evidence Bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: llvm-tools-preview
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Install tools: cargo-nextest for JUnit XML, cargo-llvm-cov for coverage
+      - name: Install cargo-nextest and cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest,cargo-llvm-cov
+
+      # ── 1. Test suite with JUnit XML output ─────────────────────────────
+      - name: Run tests with JUnit XML output
+        run: |
+          mkdir -p test-evidence/test-results
+          cargo nextest run --all --profile ci
+          cp target/nextest/ci/junit.xml test-evidence/test-results/junit.xml
+
+      # ── 2. Code coverage (LCOV) ────────────────────────────────────────
+      - name: Generate code coverage (LCOV)
+        run: |
+          mkdir -p test-evidence/coverage
+          cargo llvm-cov --all-features --workspace --lcov --output-path test-evidence/coverage/lcov.info
+          cargo llvm-cov report --all-features --workspace > test-evidence/coverage/summary.txt
+
+      # ── 3. Benchmarks (criterion HTML reports) ─────────────────────────
+      - name: Run criterion benchmarks
+        run: |
+          cargo bench --bench core_benchmarks -- --output-format=criterion
+          mkdir -p test-evidence/benchmarks
+          cp -r target/criterion/* test-evidence/benchmarks/ 2>/dev/null || true
+
+      # ── 4. Rivet validate ──────────────────────────────────────────────
+      - name: Run rivet validate
+        run: |
+          mkdir -p test-evidence/validation
+          set +e
+          cargo run --release -- validate > test-evidence/validation/validate-output.txt 2>&1
+          rc=$?
+          set -e
+          echo "" >> test-evidence/validation/validate-output.txt
+          echo "exit_code=${rc}" >> test-evidence/validation/validate-output.txt
+
+      # ── 5. Metadata ────────────────────────────────────────────────────
+      - name: Generate metadata.json
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          RUST_VERSION="$(rustc --version)"
+          OS_INFO="$(uname -srm)"
+          TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          jq -n \
+            --arg tag "${TAG}" \
+            --arg commit "${GITHUB_SHA}" \
+            --arg timestamp "${TIMESTAMP}" \
+            --arg rust_version "${RUST_VERSION}" \
+            --arg os "${OS_INFO}" \
+            '{tag: $tag, commit: $commit, timestamp: $timestamp, rust_version: $rust_version, os: $os}' \
+            > test-evidence/metadata.json
+
+      # ── 6. Package everything ──────────────────────────────────────────
+      - name: Package test evidence tarball
+        id: package
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          ARCHIVE="test-evidence-${TAG}.tar.gz"
+          tar czf "${ARCHIVE}" test-evidence/
+          echo "archive=${ARCHIVE}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      # ── 7. Create GitHub Release with asset ────────────────────────────
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.package.outputs.tag }}"
+          ARCHIVE="${{ steps.package.outputs.archive }}"
+
+          gh release create "${TAG}" \
+            --title "Release ${TAG}" \
+            --generate-notes \
+            "${ARCHIVE}#Test Evidence (tar.gz)"

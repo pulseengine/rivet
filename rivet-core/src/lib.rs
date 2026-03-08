@@ -4,10 +4,16 @@ pub mod formats;
 pub mod links;
 pub mod matrix;
 pub mod model;
+#[cfg(feature = "oslc")]
+pub mod oslc;
 pub mod query;
+pub mod reqif;
 pub mod schema;
 pub mod store;
 pub mod validate;
+
+#[cfg(feature = "wasm")]
+pub mod wasm_runtime;
 
 use std::path::Path;
 
@@ -64,6 +70,10 @@ pub fn load_artifacts(
         }
         "generic" | "generic-yaml" => {
             let adapter = formats::generic::GenericYamlAdapter::new();
+            adapter::Adapter::import(&adapter, &source_input, &adapter_config)
+        }
+        "reqif" => {
+            let adapter = reqif::ReqIfAdapter::new();
             adapter::Adapter::import(&adapter, &source_input, &adapter_config)
         }
         other => Err(Error::Adapter(format!("unknown format: {}", other))),

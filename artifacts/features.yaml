@@ -121,7 +121,7 @@ artifacts:
   - id: FEAT-009
     type: feature
     title: HTTP serve with HTMX dashboard
-    status: draft
+    status: approved
     description: >
       axum HTTP server serving an HTMX-powered dashboard for browsing
       artifacts, viewing traceability matrices, and validation results.
@@ -222,5 +222,43 @@ artifacts:
         target: REQ-013
       - type: implements
         target: DD-009
+    fields:
+      phase: phase-1
+
+  - id: FEAT-016
+    type: feature
+    title: ASPICE 4.0 schema alignment
+    status: approved
+    description: >
+      Updated aspice.yaml schema to v4.0: renamed types (unit-verification,
+      sw-integration-verification, sw-verification, sys-integration-verification,
+      sys-verification, verification-execution, verification-verdict),
+      expanded method values (8 verification methods), added
+      verification-criteria to requirement types.
+    tags: [schema, aspice, phase-1]
+    links:
+      - type: satisfies
+        target: REQ-015
+      - type: implements
+        target: DD-010
+    fields:
+      phase: phase-1
+
+  - id: FEAT-017
+    type: feature
+    title: Cybersecurity schema (SEC.1-4)
+    status: approved
+    description: >
+      New cybersecurity.yaml schema with 10 artifact types covering
+      TARA (asset, threat-scenario, risk-assessment), SEC.1 (cybersecurity-goal,
+      cybersecurity-req), SEC.2 (cybersecurity-design), SEC.3
+      (cybersecurity-implementation), SEC.4 (cybersecurity-verification).
+      Includes 2 link types and 10 traceability rules.
+    tags: [schema, cybersecurity, phase-1]
+    links:
+      - type: satisfies
+        target: REQ-016
+      - type: implements
+        target: DD-010
     fields:
       phase: phase-1

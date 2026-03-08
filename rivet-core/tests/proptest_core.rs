@@ -142,7 +142,7 @@ proptest! {
 fn prop_schema_merge_idempotent() {
     let schemas_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../schemas");
 
-    for schema_name in &["common", "stpa", "aspice", "dev"] {
+    for schema_name in &["common", "stpa", "aspice", "cybersecurity", "dev"] {
         let path = schemas_dir.join(format!("{schema_name}.yaml"));
         if !path.exists() {
             continue;

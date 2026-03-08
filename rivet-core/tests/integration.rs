@@ -8,6 +8,7 @@ use std::path::PathBuf;
 
 use rivet_core::adapter::{Adapter, AdapterConfig, AdapterSource};
 use rivet_core::formats::generic::GenericYamlAdapter;
+use rivet_core::reqif::ReqIfAdapter;
 use rivet_core::links::LinkGraph;
 use rivet_core::matrix::{self, Direction};
 use rivet_core::model::{Artifact, Link};
@@ -223,13 +224,13 @@ fn test_schema_merge_preserves_types() {
         "sw-req",
         "sw-arch-component",
         "sw-detail-design",
-        "unit-test",
-        "integration-test",
-        "sw-qual-test",
-        "sys-integration-test",
-        "sys-qual-test",
-        "test-execution",
-        "test-verdict",
+        "unit-verification",
+        "sw-integration-verification",
+        "sw-verification",
+        "sys-integration-verification",
+        "sys-verification",
+        "verification-execution",
+        "verification-verdict",
     ];
     for t in &aspice_types {
         assert!(
@@ -267,6 +268,48 @@ fn test_schema_merge_preserves_types() {
     assert_eq!(schema.inverse_of("verifies"), Some("verified-by"));
     assert_eq!(schema.inverse_of("leads-to-loss"), Some("loss-caused-by"));
     assert_eq!(schema.inverse_of("result-of"), Some("has-result"));
+}
+
+// ── Cybersecurity schema merge ───────────────────────────────────────────
+
+/// The cybersecurity schema loads and merges with common + aspice.
+#[test]
+fn test_cybersecurity_schema_merge() {
+    let schema = load_schema_files(&["common", "aspice", "cybersecurity"]);
+
+    // Cybersecurity types
+    let sec_types = [
+        "asset",
+        "threat-scenario",
+        "risk-assessment",
+        "cybersecurity-goal",
+        "cybersecurity-req",
+        "cybersecurity-design",
+        "cybersecurity-implementation",
+        "cybersecurity-verification",
+    ];
+    for t in &sec_types {
+        assert!(
+            schema.artifact_type(t).is_some(),
+            "merged schema must contain cybersecurity type '{t}'"
+        );
+    }
+
+    // Cybersecurity link types
+    assert!(schema.link_type("threatens").is_some());
+    assert!(schema.link_type("assesses").is_some());
+
+    // Inverse mappings
+    assert_eq!(schema.inverse_of("threatens"), Some("threatened-by"));
+    assert_eq!(schema.inverse_of("assesses"), Some("assessed-by"));
+
+    // ASPICE types still present
+    assert!(schema.artifact_type("sw-req").is_some());
+    assert!(schema.artifact_type("unit-verification").is_some());
+
+    // Common link types still present
+    assert!(schema.link_type("mitigates").is_some());
+    assert!(schema.link_type("verifies").is_some());
 }
 
 // ── Traceability matrix ─────────────────────────────────────────────────
@@ -643,4 +686,189 @@ fn test_store_upsert_type_change() {
     assert_eq!(store.by_type("loss").len(), 0);
     assert_eq!(store.by_type("hazard").len(), 1);
     assert_eq!(store.len(), 1);
+}
+
+// ── ReqIF roundtrip ─────────────────────────────────────────────────────
+
+/// Create artifacts with links and fields, export to ReqIF XML, reimport,
+/// verify that all data survives the round-trip.
+#[test]
+fn test_reqif_roundtrip() {
+    let original = vec![
+        make_artifact_full(
+            "REQ-001",
+            "requirement",
+            "Memory isolation requirement",
+            Some("approved"),
+            &["safety", "core"],
+            vec![],
+            {
+                let mut f = BTreeMap::new();
+                f.insert("priority".into(), serde_yaml::Value::String("must".into()));
+                f
+            },
+        ),
+        make_artifact_full(
+            "REQ-002",
+            "requirement",
+            "Access control",
+            Some("draft"),
+            &["security"],
+            vec![Link {
+                link_type: "derives-from".into(),
+                target: "REQ-001".into(),
+            }],
+            BTreeMap::new(),
+        ),
+        make_artifact_full(
+            "TC-001",
+            "test-case",
+            "Verify memory isolation",
+            None,
+            &[],
+            vec![Link {
+                link_type: "verifies".into(),
+                target: "REQ-001".into(),
+            }],
+            BTreeMap::new(),
+        ),
+    ];
+
+    let adapter = ReqIfAdapter::new();
+    let config = AdapterConfig::default();
+
+    // Export
+    let xml_bytes = adapter.export(&original, &config).expect("export to ReqIF");
+    let xml_str = std::str::from_utf8(&xml_bytes).expect("valid utf-8");
+
+    // Verify XML structure
+    assert!(
+        xml_str.contains("<?xml version=\"1.0\" encoding=\"UTF-8\"?>"),
+        "must have XML declaration"
+    );
+    assert!(xml_str.contains("REQ-IF"), "must have REQ-IF root element");
+    assert!(
+        xml_str.contains("THE-HEADER"),
+        "must have THE-HEADER element"
+    );
+    assert!(
+        xml_str.contains("SPEC-OBJECTS"),
+        "must have SPEC-OBJECTS element"
+    );
+    assert!(
+        xml_str.contains("SPEC-RELATIONS"),
+        "must have SPEC-RELATIONS element"
+    );
+    assert!(
+        xml_str.contains("SPEC-OBJECT-TYPE"),
+        "must have SPEC-OBJECT-TYPE"
+    );
+    assert!(
+        xml_str.contains("SPEC-RELATION-TYPE"),
+        "must have SPEC-RELATION-TYPE"
+    );
+    assert!(
+        xml_str.contains("http://www.omg.org/spec/ReqIF/20110401/reqif.xsd"),
+        "must use ReqIF 1.2 namespace"
+    );
+    assert!(
+        xml_str.contains("DATATYPE-DEFINITION-STRING"),
+        "must have DATATYPES"
+    );
+
+    // Reimport
+    let reimported = adapter
+        .import(&AdapterSource::Bytes(xml_bytes), &config)
+        .expect("reimport from ReqIF");
+
+    assert_eq!(
+        reimported.len(),
+        original.len(),
+        "artifact count must match"
+    );
+
+    for (orig, re) in original.iter().zip(reimported.iter()) {
+        assert_eq!(orig.id, re.id, "id mismatch for {}", orig.id);
+        assert_eq!(
+            orig.artifact_type, re.artifact_type,
+            "artifact_type mismatch for {}",
+            orig.id
+        );
+        assert_eq!(orig.title, re.title, "title mismatch for {}", orig.id);
+        assert_eq!(
+            orig.description, re.description,
+            "description mismatch for {}",
+            orig.id
+        );
+        assert_eq!(
+            orig.status, re.status,
+            "status mismatch for {}",
+            orig.id
+        );
+        assert_eq!(orig.tags, re.tags, "tags mismatch for {}", orig.id);
+        assert_eq!(
+            orig.links.len(),
+            re.links.len(),
+            "links count mismatch for {}",
+            orig.id
+        );
+        for (ol, rl) in orig.links.iter().zip(re.links.iter()) {
+            assert_eq!(ol.link_type, rl.link_type, "link_type mismatch");
+            assert_eq!(ol.target, rl.target, "link target mismatch");
+        }
+        assert_eq!(orig.fields, re.fields, "fields mismatch for {}", orig.id);
+    }
+}
+
+/// Verify that ReqIF-exported artifacts can be loaded into a Store and
+/// participate in link-graph analysis.
+#[test]
+fn test_reqif_store_integration() {
+    let artifacts = vec![
+        make_artifact_full(
+            "SYS-001",
+            "system-req",
+            "System requirement",
+            Some("approved"),
+            &[],
+            vec![],
+            BTreeMap::new(),
+        ),
+        make_artifact_full(
+            "SW-001",
+            "sw-req",
+            "Software requirement",
+            Some("approved"),
+            &[],
+            vec![Link {
+                link_type: "derives-from".into(),
+                target: "SYS-001".into(),
+            }],
+            BTreeMap::new(),
+        ),
+    ];
+
+    let adapter = ReqIfAdapter::new();
+    let config = AdapterConfig::default();
+
+    // Export then reimport via ReqIF.
+    let xml_bytes = adapter.export(&artifacts, &config).expect("export");
+    let reimported = adapter
+        .import(&AdapterSource::Bytes(xml_bytes), &config)
+        .expect("reimport");
+
+    // Load into a store.
+    let mut store = Store::new();
+    for a in reimported {
+        store.upsert(a);
+    }
+
+    assert_eq!(store.len(), 2);
+    assert!(store.contains("SYS-001"));
+    assert!(store.contains("SW-001"));
+
+    let sw = store.get("SW-001").unwrap();
+    assert_eq!(sw.links.len(), 1);
+    assert_eq!(sw.links[0].link_type, "derives-from");
+    assert_eq!(sw.links[0].target, "SYS-001");
 }

@@ -1,7 +1,7 @@
 //! Traceability matrix generation.
 //!
 //! Computes coverage between two artifact types via a specified link type.
-//! For example: "which sw-reqs are verified by sw-qual-tests?"
+//! For example: "which sw-reqs are verified by sw-verification measures?"
 
 use crate::links::LinkGraph;
 use crate::store::Store;

@@ -177,3 +177,34 @@ artifacts:
     fields:
       priority: must
       category: non-functional
+
+  - id: REQ-015
+    type: requirement
+    title: ASPICE 4.0 aligned schemas
+    status: approved
+    description: >
+      Schema definitions must align with Automotive SPICE v4.0 process
+      reference model. SWE.5 is "Software Component Verification and
+      Integration Verification", SWE.6 is "Software Verification".
+      Use "verification measure" terminology instead of "test".
+      Expanded method values (static-analysis, formal-verification,
+      simulation, inspection, walkthrough). Verification-criteria field
+      on requirement types.
+    tags: [aspice, schema]
+    fields:
+      priority: must
+      category: functional
+
+  - id: REQ-016
+    type: requirement
+    title: Cybersecurity schema (ISO 21434 / ASPICE SEC.1-4)
+    status: approved
+    description: >
+      Support automotive cybersecurity engineering artifacts aligned with
+      ISO/SAE 21434 and ASPICE v4.0 SEC.1-4 processes. Cover TARA
+      (assets, threats, risk assessment), cybersecurity goals/requirements,
+      cybersecurity design, implementation, and verification.
+    tags: [cybersecurity, aspice, schema]
+    fields:
+      priority: should
+      category: functional

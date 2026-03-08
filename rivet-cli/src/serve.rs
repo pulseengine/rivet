@@ -8,7 +8,7 @@ use axum::routing::get;
 
 use rivet_core::links::LinkGraph;
 use rivet_core::matrix::{self, Direction};
-use rivet_core::schema::{Schema, Severity};
+use rivet_core::schema::{Schema, SchemaFile, Severity};
 use rivet_core::store::Store;
 use rivet_core::validate;
 
@@ -16,14 +16,22 @@ use rivet_core::validate;
 struct AppState {
     store: Store,
     schema: Schema,
+    schema_files: Vec<SchemaFile>,
     graph: LinkGraph,
 }
 
 /// Start the axum HTTP server on the given port.
-pub async fn run(store: Store, schema: Schema, graph: LinkGraph, port: u16) -> Result<()> {
+pub async fn run(
+    store: Store,
+    schema: Schema,
+    schema_files: Vec<SchemaFile>,
+    graph: LinkGraph,
+    port: u16,
+) -> Result<()> {
     let state = Arc::new(AppState {
         store,
         schema,
+        schema_files,
         graph,
     });
 
@@ -34,6 +42,7 @@ pub async fn run(store: Store, schema: Schema, graph: LinkGraph, port: u16) -> R
         .route("/validate", get(validate_view))
         .route("/matrix", get(matrix_view))
         .route("/stats", get(stats_view))
+        .route("/schemas", get(schemas_view))
         .with_state(state);
 
     let addr = format!("0.0.0.0:{port}");
@@ -89,13 +98,37 @@ dl{margin:.5rem 0}
 dt{font-weight:600;font-size:.85rem;color:#495057;margin-top:.5rem}
 dd{margin-left:0;margin-bottom:.25rem}
 .meta{color:#6c757d;font-size:.85rem}
+.nav-badge{display:inline-block;padding:.1rem .4rem;border-radius:10px;font-size:.7rem;font-weight:700;
+           background:#3a3a5e;color:#c0c0d0;margin-left:.35rem;min-width:1.2rem;text-align:center}
+.nav-badge-error{background:#c62828;color:#fff}
+.nav-badge-warn{background:#e6a700;color:#1a1a2e}
+.nav-badge-ok{background:#2e7d32;color:#fff}
+.schema-group{margin-bottom:1.5rem}
+.schema-group h3{border-bottom:2px solid #dee2e6;padding-bottom:.35rem}
 "#;
 
 // ── Layout ───────────────────────────────────────────────────────────────
 
-fn layout(content: &str) -> Html<String> {
+fn layout(state: &AppState, content: &str) -> Html<String> {
+    let artifact_count = state.store.len();
+    let diagnostics = validate::validate(&state.store, &state.schema, &state.graph);
+    let diag_count = diagnostics.len();
+    let error_count = diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Error)
+        .count();
+    let schema_count = state.schema.artifact_types.len();
+
+    let diag_badge = if error_count > 0 {
+        format!(r##"<span class="nav-badge nav-badge-error">{diag_count}</span>"##)
+    } else if diag_count > 0 {
+        format!(r##"<span class="nav-badge nav-badge-warn">{diag_count}</span>"##)
+    } else {
+        r##"<span class="nav-badge nav-badge-ok">0</span>"##.to_string()
+    };
+
     Html(format!(
-        r##"<!DOCTYPE html>
+        r###"<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -110,9 +143,10 @@ fn layout(content: &str) -> Html<String> {
   <h1>Rivet</h1>
   <ul>
     <li><a hx-get="/stats" hx-target="#content" hx-push-url="false" href="#">Overview</a></li>
-    <li><a hx-get="/artifacts" hx-target="#content" hx-push-url="false" href="#">Artifacts</a></li>
-    <li><a hx-get="/validate" hx-target="#content" hx-push-url="false" href="#">Validation</a></li>
+    <li><a hx-get="/artifacts" hx-target="#content" hx-push-url="false" href="#">Artifacts <span class="nav-badge">{artifact_count}</span></a></li>
+    <li><a hx-get="/validate" hx-target="#content" hx-push-url="false" href="#">Validation {diag_badge}</a></li>
     <li><a hx-get="/matrix" hx-target="#content" hx-push-url="false" href="#">Matrix</a></li>
+    <li><a hx-get="/schemas" hx-target="#content" hx-push-url="false" href="#">Schemas <span class="nav-badge">{schema_count}</span></a></li>
   </ul>
 </nav>
 <main id="content">
@@ -120,7 +154,7 @@ fn layout(content: &str) -> Html<String> {
 </main>
 </div>
 </body>
-</html>"##
+</html>"###
     ))
 }
 
@@ -128,7 +162,7 @@ fn layout(content: &str) -> Html<String> {
 
 async fn index(State(state): State<Arc<AppState>>) -> Html<String> {
     let inner = stats_partial(&state);
-    layout(&inner)
+    layout(&state, &inner)
 }
 
 async fn stats_view(State(state): State<Arc<AppState>>) -> Html<String> {
@@ -549,6 +583,53 @@ async fn matrix_view(
         }
 
         html.push_str("</tbody></table></div>");
+    }
+
+    Html(html)
+}
+
+// ── Schemas ─────────────────────────────────────────────────────────────
+
+async fn schemas_view(State(state): State<Arc<AppState>>) -> Html<String> {
+    let mut html = String::from("<h2>Schemas</h2>");
+
+    for file in &state.schema_files {
+        html.push_str(&format!(
+            "<div class=\"card schema-group\"><h3>{} v{}</h3>",
+            html_escape(&file.schema.name),
+            html_escape(&file.schema.version)
+        ));
+        if let Some(desc) = &file.schema.description {
+            html.push_str(&format!("<p>{}</p>", html_escape(desc)));
+        }
+
+        if !file.artifact_types.is_empty() {
+            html.push_str("<h4>Artifact Types</h4><table><thead><tr><th>Name</th><th>Description</th></tr></thead><tbody>");
+            for at in &file.artifact_types {
+                html.push_str(&format!(
+                    "<tr><td><span class=\"badge badge-type\">{}</span></td><td>{}</td></tr>",
+                    html_escape(&at.name),
+                    html_escape(&at.description)
+                ));
+            }
+            html.push_str("</tbody></table>");
+        }
+
+        if !file.link_types.is_empty() {
+            html.push_str("<h4>Link Types</h4><table><thead><tr><th>Name</th><th>Inverse</th><th>Description</th></tr></thead><tbody>");
+            for lt in &file.link_types {
+                let inv = lt.inverse.as_deref().unwrap_or("-");
+                html.push_str(&format!(
+                    "<tr><td>{}</td><td>{}</td><td>{}</td></tr>",
+                    html_escape(&lt.name),
+                    html_escape(inv),
+                    html_escape(&lt.description)
+                ));
+            }
+            html.push_str("</tbody></table>");
+        }
+
+        html.push_str("</div>");
     }
 
     Html(html)

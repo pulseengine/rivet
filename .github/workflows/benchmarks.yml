@@ -1,0 +1,49 @@
+name: Benchmarks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  benchmark:
+    name: Criterion Benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run criterion benchmarks
+        run: cargo bench --bench core_benchmarks -- --output-format=bencher | tee benchmark-output.txt
+
+      - name: Store and compare benchmark results
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: Rivet Criterion Benchmarks
+          tool: cargo
+          output-file-path: benchmark-output.txt
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # Push results to gh-pages on main branch pushes
+          auto-push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          # Comment on PRs when there is a regression
+          comment-on-alert: true
+          # Alert threshold: warn at 120% of baseline
+          alert-threshold: "120%"
+          # Fail the workflow if regression exceeds 150%
+          fail-on-alert: true
+          fail-threshold: "150%"
+          # Keep benchmark data for the last 30 entries
+          max-items-in-chart: 30
+          # Only save data points on pushes to main (not on PRs)
+          save-data-file: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}

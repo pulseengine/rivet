@@ -207,11 +207,14 @@ artifact-types:
         required: false
         allowed-values:
           - controller-failure
+          - inadequate-control-algorithm
+          - inadequate-process-model
           - inadequate-feedback
           - process-model-flaw
           - coordination-failure
           - actuator-failure
           - sensor-failure
+          - control-path
       - name: causal-factors
         type: list<string>
         required: false
@@ -220,8 +223,11 @@ artifact-types:
       - name: uca
         link-type: caused-by-uca
         target-types: [uca]
-        required: true
-        cardinality: one-or-many
+        required: false
+        cardinality: zero-or-many
+        description: >
+          UCA(s) this scenario explains. Type-a scenarios (why does the UCA
+          occur?) require this link; type-b control-path scenarios may omit it.
       - name: hazards
         link-type: leads-to-hazard
         target-types: [hazard, sub-hazard]
