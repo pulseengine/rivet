@@ -1,4 +1,5 @@
 pub mod adapter;
+pub mod coverage;
 pub mod diff;
 pub mod document;
 pub mod error;

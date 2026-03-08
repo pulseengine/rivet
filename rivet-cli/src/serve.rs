@@ -12,6 +12,7 @@ use petgraph::visit::EdgeRef;
 use etch::filter::ego_subgraph;
 use etch::layout::{self as pgv_layout, EdgeInfo, LayoutOptions, NodeInfo};
 use etch::svg::{SvgOptions, render_svg};
+use rivet_core::coverage;
 use rivet_core::document::{self, DocumentStore};
 use rivet_core::links::LinkGraph;
 use rivet_core::matrix::{self, Direction};
@@ -51,8 +52,10 @@ pub async fn run(
         .route("/matrix", get(matrix_view))
         .route("/graph", get(graph_view))
         .route("/stats", get(stats_view))
+        .route("/coverage", get(coverage_view))
         .route("/documents", get(documents_list))
         .route("/documents/{id}", get(document_detail))
+        .route("/search", get(search_view))
         .with_state(state);
 
     let addr = format!("0.0.0.0:{port}");
@@ -327,6 +330,46 @@ nav a:hover .nav-icon,nav a.active .nav-icon{opacity:.9}
 
 /* ── Selection ────────────────────────────────────────────────── */
 ::selection{background:rgba(58,134,255,.18)}
+
+/* ── Cmd+K search modal ──────────────────────────────────────── */
+.cmd-k-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(4px);
+  z-index:10000;display:none;align-items:flex-start;justify-content:center;padding-top:min(20vh,160px)}
+.cmd-k-overlay.open{display:flex}
+.cmd-k-modal{background:var(--sidebar);border-radius:12px;width:100%;max-width:600px;
+  box-shadow:0 16px 70px rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.08);
+  overflow:hidden;display:flex;flex-direction:column;max-height:min(70vh,520px)}
+.cmd-k-input{width:100%;padding:.875rem 1rem .875rem 2.75rem;font-size:1rem;font-family:var(--font);
+  background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,.08);
+  color:#fff;outline:none;caret-color:var(--accent)}
+.cmd-k-input::placeholder{color:rgba(255,255,255,.35)}
+.cmd-k-icon{position:absolute;left:1rem;top:.95rem;color:rgba(255,255,255,.35);pointer-events:none;
+  font-size:.95rem}
+.cmd-k-head{position:relative}
+.cmd-k-results{overflow-y:auto;padding:.5rem 0;flex:1}
+.cmd-k-empty{padding:1.5rem 1rem;text-align:center;color:rgba(255,255,255,.35);font-size:.9rem}
+.cmd-k-group{padding:0 .5rem}
+.cmd-k-group-label{font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;
+  color:rgba(255,255,255,.3);padding:.5rem .625rem .25rem}
+.cmd-k-item{display:flex;align-items:center;gap:.75rem;padding:.5rem .625rem;border-radius:var(--radius-sm);
+  cursor:pointer;color:var(--sidebar-text);font-size:.88rem;transition:background 80ms ease}
+.cmd-k-item:hover,.cmd-k-item.active{background:rgba(255,255,255,.08);color:#fff}
+.cmd-k-item-icon{width:1.5rem;height:1.5rem;border-radius:4px;display:flex;align-items:center;
+  justify-content:center;font-size:.7rem;flex-shrink:0;background:rgba(255,255,255,.06);color:rgba(255,255,255,.5)}
+.cmd-k-item-body{flex:1;min-width:0}
+.cmd-k-item-title{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cmd-k-item-title mark{background:transparent;color:var(--accent);font-weight:700}
+.cmd-k-item-meta{font-size:.75rem;color:rgba(255,255,255,.35);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cmd-k-item-meta mark{background:transparent;color:var(--accent);font-weight:600}
+.cmd-k-item-field{font-size:.65rem;padding:.1rem .35rem;border-radius:3px;
+  background:rgba(255,255,255,.06);color:rgba(255,255,255,.4);white-space:nowrap;flex-shrink:0}
+.cmd-k-kbd{display:inline-flex;align-items:center;gap:.2rem;font-size:.7rem;font-family:var(--mono);
+  padding:.15rem .4rem;border-radius:4px;background:rgba(255,255,255,.08);color:rgba(255,255,255,.4);
+  border:1px solid rgba(255,255,255,.06)}
+.nav-search-hint{display:flex;align-items:center;justify-content:space-between;padding:.5rem .75rem;
+  margin-top:auto;border-top:1px solid rgba(255,255,255,.06);padding-top:1rem;
+  color:var(--sidebar-text);font-size:.82rem;cursor:pointer;border-radius:var(--radius-sm);
+  transition:all var(--transition)}
+.nav-search-hint:hover{background:var(--sidebar-hover);color:var(--sidebar-active)}
 "#;
 
 // ── Pan/zoom JS ──────────────────────────────────────────────────────────
@@ -507,6 +550,114 @@ const GRAPH_JS: &str = r#"
 </script>
 "#;
 
+// ── Cmd+K search JS ──────────────────────────────────────────────────────
+
+const SEARCH_JS: &str = r#"
+<script>
+(function(){
+  var overlay=document.getElementById('cmd-k-overlay');
+  var input=document.getElementById('cmd-k-input');
+  var results=document.getElementById('cmd-k-results');
+  var timer=null;
+  var activeIdx=-1;
+  var items=[];
+
+  function open(){
+    overlay.classList.add('open');
+    input.value='';
+    results.innerHTML='<div class="cmd-k-empty">Type to search artifacts and documents</div>';
+    activeIdx=-1;
+    items=[];
+    setTimeout(function(){input.focus()},20);
+  }
+  function close(){
+    overlay.classList.remove('open');
+    input.blur();
+  }
+
+  // Keyboard shortcut: Cmd+K / Ctrl+K
+  document.addEventListener('keydown',function(e){
+    if((e.metaKey||e.ctrlKey)&&e.key==='k'){
+      e.preventDefault();
+      if(overlay.classList.contains('open')){close()}else{open()}
+    }
+    if(e.key==='Escape'&&overlay.classList.contains('open')){
+      e.preventDefault();close();
+    }
+  });
+
+  // Click outside to close
+  overlay.addEventListener('mousedown',function(e){
+    if(e.target===overlay) close();
+  });
+
+  // Nav hint click
+  var hint=document.getElementById('nav-search-hint');
+  if(hint) hint.addEventListener('click',function(){open()});
+
+  // Debounced search
+  input.addEventListener('input',function(){
+    clearTimeout(timer);
+    var q=input.value.trim();
+    if(!q){
+      results.innerHTML='<div class="cmd-k-empty">Type to search artifacts and documents</div>';
+      activeIdx=-1;items=[];
+      return;
+    }
+    timer=setTimeout(function(){
+      fetch('/search?q='+encodeURIComponent(q))
+        .then(function(r){return r.text()})
+        .then(function(html){
+          results.innerHTML=html;
+          items=results.querySelectorAll('.cmd-k-item');
+          activeIdx=-1;
+          setActive(-1);
+        });
+    },200);
+  });
+
+  // Arrow navigation
+  input.addEventListener('keydown',function(e){
+    if(e.key==='ArrowDown'){
+      e.preventDefault();
+      if(items.length>0){activeIdx=Math.min(activeIdx+1,items.length-1);setActive(activeIdx);}
+    } else if(e.key==='ArrowUp'){
+      e.preventDefault();
+      if(items.length>0){activeIdx=Math.max(activeIdx-1,0);setActive(activeIdx);}
+    } else if(e.key==='Enter'){
+      e.preventDefault();
+      if(activeIdx>=0&&activeIdx<items.length){
+        navigate(items[activeIdx]);
+      }
+    }
+  });
+
+  function setActive(idx){
+    for(var i=0;i<items.length;i++){
+      items[i].classList.toggle('active',i===idx);
+    }
+    if(idx>=0&&idx<items.length){
+      items[idx].scrollIntoView({block:'nearest'});
+    }
+  }
+
+  function navigate(el){
+    var url=el.getAttribute('data-url');
+    if(url){
+      close();
+      htmx.ajax('GET',url,'#content');
+    }
+  }
+
+  // Click on result
+  results.addEventListener('click',function(e){
+    var item=e.target.closest('.cmd-k-item');
+    if(item) navigate(item);
+  });
+})();
+</script>
+"#;
+
 // ── Layout ───────────────────────────────────────────────────────────────
 
 fn page_layout(content: &str) -> Html<String> {
@@ -533,15 +684,32 @@ fn page_layout(content: &str) -> Html<String> {
     <li><a hx-get="/artifacts" hx-target="#content" hx-push-url="false" href="#"><span class="nav-icon">&#9830;</span> Artifacts</a></li>
     <li><a hx-get="/validate" hx-target="#content" hx-push-url="false" href="#"><span class="nav-icon">&#10003;</span> Validation</a></li>
     <li><a hx-get="/matrix" hx-target="#content" hx-push-url="false" href="#"><span class="nav-icon">&#9638;</span> Matrix</a></li>
+    <li><a hx-get="/coverage" hx-target="#content" hx-push-url="false" href="#"><span class="nav-icon">&#9632;</span> Coverage</a></li>
     <li><a hx-get="/graph" hx-target="#content" hx-push-url="false" href="#"><span class="nav-icon">&#9679;</span> Graph</a></li>
     <li><a hx-get="/documents" hx-target="#content" hx-push-url="false" href="#"><span class="nav-icon">&#9776;</span> Documents</a></li>
   </ul>
+  <div id="nav-search-hint" class="nav-search-hint">
+    <span><span class="nav-icon">&#128269;</span> Search</span>
+    <span class="cmd-k-kbd">&#8984;K</span>
+  </div>
 </nav>
 <main id="content" hx-swap="innerHTML transition:true">
 {content}
 </main>
 </div>
+<div id="cmd-k-overlay" class="cmd-k-overlay">
+  <div class="cmd-k-modal">
+    <div class="cmd-k-head">
+      <span class="cmd-k-icon">&#128269;</span>
+      <input id="cmd-k-input" class="cmd-k-input" type="text" placeholder="Search artifacts, documents..." autocomplete="off" spellcheck="false">
+    </div>
+    <div id="cmd-k-results" class="cmd-k-results">
+      <div class="cmd-k-empty">Type to search artifacts and documents</div>
+    </div>
+  </div>
+</div>
 {GRAPH_JS}
+{SEARCH_JS}
 </body>
 </html>"##
     ))
@@ -1450,6 +1618,127 @@ async fn matrix_view(
     Html(html)
 }
 
+// ── Coverage ─────────────────────────────────────────────────────────────
+
+async fn coverage_view(State(state): State<Arc<AppState>>) -> Html<String> {
+    let report = coverage::compute_coverage(&state.store, &state.schema, &state.graph);
+    let overall = report.overall_coverage();
+
+    let mut html = String::from("<h2>Traceability Coverage</h2>");
+
+    // Overall stat
+    let overall_color = if overall >= 80.0 {
+        "#15713a"
+    } else if overall >= 50.0 {
+        "#8b6914"
+    } else {
+        "#c62828"
+    };
+    html.push_str("<div class=\"stat-grid\">");
+    html.push_str(&format!(
+        "<div class=\"stat-box\"><div class=\"number\" style=\"color:{overall_color}\">{:.1}%</div><div class=\"label\">Overall Coverage</div></div>",
+        overall
+    ));
+    html.push_str(&format!(
+        "<div class=\"stat-box\"><div class=\"number\">{}</div><div class=\"label\">Rules</div></div>",
+        report.entries.len()
+    ));
+    let fully_covered = report
+        .entries
+        .iter()
+        .filter(|e| e.covered == e.total)
+        .count();
+    html.push_str(&format!(
+        "<div class=\"stat-box\"><div class=\"number\">{}</div><div class=\"label\">Fully Covered</div></div>",
+        fully_covered
+    ));
+    html.push_str("</div>");
+
+    if report.entries.is_empty() {
+        html.push_str(
+            "<div class=\"card\"><p>No traceability rules defined in the schema.</p></div>",
+        );
+        return Html(html);
+    }
+
+    // Per-rule cards with coverage bars
+    html.push_str("<div class=\"card\"><h3>Coverage by Rule</h3>");
+    html.push_str("<table><thead><tr><th>Rule</th><th>Source Type</th><th>Link</th><th>Direction</th><th>Coverage</th><th style=\"width:30%\">Progress</th></tr></thead><tbody>");
+
+    for entry in &report.entries {
+        let pct = entry.percentage();
+        let (bar_color, badge_class) = if pct >= 80.0 {
+            ("#15713a", "badge-ok")
+        } else if pct >= 50.0 {
+            ("#b8860b", "badge-warn")
+        } else {
+            ("#c62828", "badge-error")
+        };
+
+        let dir_label = match entry.direction {
+            coverage::CoverageDirection::Forward => "forward",
+            coverage::CoverageDirection::Backward => "backward",
+        };
+
+        html.push_str(&format!(
+            "<tr>\
+             <td title=\"{}\">{}</td>\
+             <td><span class=\"badge badge-type\">{}</span></td>\
+             <td><span class=\"link-pill\">{}</span></td>\
+             <td>{}</td>\
+             <td><span class=\"badge {badge_class}\">{}/{} ({:.1}%)</span></td>\
+             <td>\
+               <div style=\"background:#e5e5ea;border-radius:4px;height:18px;position:relative;overflow:hidden\">\
+                 <div style=\"background:{bar_color};height:100%;width:{pct:.1}%;border-radius:4px;transition:width .3s ease\"></div>\
+               </div>\
+             </td>\
+             </tr>",
+            html_escape(&entry.description),
+            html_escape(&entry.rule_name),
+            html_escape(&entry.source_type),
+            html_escape(&entry.link_type),
+            dir_label,
+            entry.covered,
+            entry.total,
+            pct,
+        ));
+    }
+
+    html.push_str("</tbody></table></div>");
+
+    // Uncovered artifacts
+    let has_uncovered = report.entries.iter().any(|e| !e.uncovered_ids.is_empty());
+    if has_uncovered {
+        html.push_str("<div class=\"card\"><h3>Uncovered Artifacts</h3>");
+
+        for entry in &report.entries {
+            if entry.uncovered_ids.is_empty() {
+                continue;
+            }
+            html.push_str(&format!(
+                "<h3 style=\"font-size:.9rem;margin-top:1rem\">{} <span class=\"meta\">({} uncovered)</span></h3>",
+                html_escape(&entry.rule_name),
+                entry.uncovered_ids.len()
+            ));
+            html.push_str("<table><thead><tr><th>ID</th><th>Title</th></tr></thead><tbody>");
+            for id in &entry.uncovered_ids {
+                let title = state.store.get(id).map(|a| a.title.as_str()).unwrap_or("-");
+                html.push_str(&format!(
+                    "<tr><td><a hx-get=\"/artifacts/{id_esc}\" hx-target=\"#content\" href=\"#\">{id_esc}</a></td>\
+                     <td>{title_esc}</td></tr>",
+                    id_esc = html_escape(id),
+                    title_esc = html_escape(title),
+                ));
+            }
+            html.push_str("</tbody></table>");
+        }
+
+        html.push_str("</div>");
+    }
+
+    Html(html)
+}
+
 // ── Documents ────────────────────────────────────────────────────────────
 
 async fn documents_list(State(state): State<Arc<AppState>>) -> Html<String> {
@@ -1622,6 +1911,258 @@ async fn document_detail(
     );
 
     Html(html)
+}
+
+// ── Search ───────────────────────────────────────────────────────────────
+
+#[derive(Debug, serde::Deserialize)]
+struct SearchParams {
+    q: Option<String>,
+}
+
+/// A single search hit with context about which field matched.
+struct SearchHit {
+    id: String,
+    title: String,
+    kind: &'static str,
+    type_name: String,
+    matched_field: &'static str,
+    context: String,
+    url: String,
+}
+
+async fn search_view(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<SearchParams>,
+) -> Html<String> {
+    let query = match params.q.as_deref() {
+        Some(q) if !q.trim().is_empty() => q.trim(),
+        _ => {
+            return Html(String::from(
+                "<div class=\"cmd-k-empty\">Type to search artifacts and documents</div>",
+            ));
+        }
+    };
+
+    let query_lower = query.to_lowercase();
+    let mut hits: Vec<SearchHit> = Vec::new();
+
+    // Search artifacts
+    for artifact in state.store.iter() {
+        let id_lower = artifact.id.to_lowercase();
+        let title_lower = artifact.title.to_lowercase();
+        let type_lower = artifact.artifact_type.to_lowercase();
+
+        if id_lower.contains(&query_lower) {
+            hits.push(SearchHit {
+                id: artifact.id.clone(),
+                title: artifact.title.clone(),
+                kind: "artifact",
+                type_name: artifact.artifact_type.clone(),
+                matched_field: "id",
+                context: artifact.id.clone(),
+                url: format!("/artifacts/{}", artifact.id),
+            });
+            continue;
+        }
+        if title_lower.contains(&query_lower) {
+            hits.push(SearchHit {
+                id: artifact.id.clone(),
+                title: artifact.title.clone(),
+                kind: "artifact",
+                type_name: artifact.artifact_type.clone(),
+                matched_field: "title",
+                context: artifact.title.clone(),
+                url: format!("/artifacts/{}", artifact.id),
+            });
+            continue;
+        }
+        if type_lower.contains(&query_lower) {
+            hits.push(SearchHit {
+                id: artifact.id.clone(),
+                title: artifact.title.clone(),
+                kind: "artifact",
+                type_name: artifact.artifact_type.clone(),
+                matched_field: "type",
+                context: artifact.artifact_type.clone(),
+                url: format!("/artifacts/{}", artifact.id),
+            });
+            continue;
+        }
+        if let Some(desc) = &artifact.description {
+            if desc.to_lowercase().contains(&query_lower) {
+                let desc_lower = desc.to_lowercase();
+                let pos = desc_lower.find(&query_lower).unwrap_or(0);
+                let start = pos.saturating_sub(40);
+                let end = (pos + query.len() + 40).min(desc.len());
+                let mut snippet = String::new();
+                if start > 0 {
+                    snippet.push_str("...");
+                }
+                snippet.push_str(&desc[start..end]);
+                if end < desc.len() {
+                    snippet.push_str("...");
+                }
+                hits.push(SearchHit {
+                    id: artifact.id.clone(),
+                    title: artifact.title.clone(),
+                    kind: "artifact",
+                    type_name: artifact.artifact_type.clone(),
+                    matched_field: "description",
+                    context: snippet,
+                    url: format!("/artifacts/{}", artifact.id),
+                });
+                continue;
+            }
+        }
+        for tag in &artifact.tags {
+            if tag.to_lowercase().contains(&query_lower) {
+                hits.push(SearchHit {
+                    id: artifact.id.clone(),
+                    title: artifact.title.clone(),
+                    kind: "artifact",
+                    type_name: artifact.artifact_type.clone(),
+                    matched_field: "tag",
+                    context: tag.clone(),
+                    url: format!("/artifacts/{}", artifact.id),
+                });
+                break;
+            }
+        }
+    }
+
+    // Search documents
+    for doc in state.doc_store.iter() {
+        let id_lower = doc.id.to_lowercase();
+        let title_lower = doc.title.to_lowercase();
+
+        if id_lower.contains(&query_lower) {
+            hits.push(SearchHit {
+                id: doc.id.clone(),
+                title: doc.title.clone(),
+                kind: "document",
+                type_name: doc.doc_type.clone(),
+                matched_field: "id",
+                context: doc.id.clone(),
+                url: format!("/documents/{}", doc.id),
+            });
+            continue;
+        }
+        if title_lower.contains(&query_lower) {
+            hits.push(SearchHit {
+                id: doc.id.clone(),
+                title: doc.title.clone(),
+                kind: "document",
+                type_name: doc.doc_type.clone(),
+                matched_field: "title",
+                context: doc.title.clone(),
+                url: format!("/documents/{}", doc.id),
+            });
+        }
+    }
+
+    // Sort: exact id match first, then by kind, then by id
+    hits.sort_by(|a, b| {
+        let a_exact = a.id.to_lowercase() == query_lower;
+        let b_exact = b.id.to_lowercase() == query_lower;
+        b_exact
+            .cmp(&a_exact)
+            .then_with(|| a.kind.cmp(b.kind))
+            .then_with(|| a.id.cmp(&b.id))
+    });
+
+    hits.truncate(50);
+
+    if hits.is_empty() {
+        return Html(format!(
+            "<div class=\"cmd-k-empty\">No results for &ldquo;{}&rdquo;</div>",
+            html_escape(query)
+        ));
+    }
+
+    // Group by kind
+    let mut html = String::new();
+
+    let artifact_hits: Vec<&SearchHit> = hits.iter().filter(|h| h.kind == "artifact").collect();
+    let document_hits: Vec<&SearchHit> = hits.iter().filter(|h| h.kind == "document").collect();
+
+    if !artifact_hits.is_empty() {
+        html.push_str("<div class=\"cmd-k-group\">");
+        html.push_str("<div class=\"cmd-k-group-label\">Artifacts</div>");
+        for hit in &artifact_hits {
+            render_search_hit(&mut html, hit, query);
+        }
+        html.push_str("</div>");
+    }
+
+    if !document_hits.is_empty() {
+        html.push_str("<div class=\"cmd-k-group\">");
+        html.push_str("<div class=\"cmd-k-group-label\">Documents</div>");
+        for hit in &document_hits {
+            render_search_hit(&mut html, hit, query);
+        }
+        html.push_str("</div>");
+    }
+
+    Html(html)
+}
+
+/// Render a single search result item with highlighted match context.
+fn render_search_hit(html: &mut String, hit: &SearchHit, query: &str) {
+    let icon = match hit.kind {
+        "artifact" => "&#9830;",
+        "document" => "&#9776;",
+        _ => "&#8226;",
+    };
+
+    let highlighted_title = highlight_match(&html_escape(&hit.title), query);
+
+    let field_label = match hit.matched_field {
+        "id" => "id",
+        "title" => "title",
+        "description" => "description",
+        "type" => "type",
+        "tag" => "tag",
+        _ => "",
+    };
+
+    let context_display = if hit.matched_field == "title" {
+        String::new()
+    } else {
+        let escaped = html_escape(&hit.context);
+        format!(" &mdash; {}", highlight_match(&escaped, query))
+    };
+
+    html.push_str(&format!(
+        "<div class=\"cmd-k-item\" data-url=\"{}\">\
+           <div class=\"cmd-k-item-icon\">{icon}</div>\
+           <div class=\"cmd-k-item-body\">\
+             <div class=\"cmd-k-item-title\">{highlighted_title}</div>\
+             <div class=\"cmd-k-item-meta\">{}{context_display}</div>\
+           </div>\
+           <div class=\"cmd-k-item-field\">{field_label}</div>\
+         </div>",
+        html_escape(&hit.url),
+        html_escape(&hit.type_name),
+    ));
+}
+
+/// Case-insensitive highlight: wraps matching substrings in `<mark>`.
+fn highlight_match(text: &str, query: &str) -> String {
+    let text_lower = text.to_lowercase();
+    let query_lower = query.to_lowercase();
+    let mut result = String::with_capacity(text.len() + 16);
+    let mut start = 0;
+    while let Some(pos) = text_lower[start..].find(&query_lower) {
+        let abs = start + pos;
+        result.push_str(&text[start..abs]);
+        result.push_str("<mark>");
+        result.push_str(&text[abs..abs + query.len()]);
+        result.push_str("</mark>");
+        start = abs + query.len();
+    }
+    result.push_str(&text[start..]);
+    result
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────

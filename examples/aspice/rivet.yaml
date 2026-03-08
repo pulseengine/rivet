@@ -1,0 +1,14 @@
+# Run: rivet --schemas ../../schemas validate
+project:
+  name: aspice-braking-system
+  version: "1.0.0"
+  schemas:
+    - common
+    - aspice
+
+sources:
+  - path: artifacts
+    format: generic-yaml
+
+docs:
+  - docs

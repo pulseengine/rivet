@@ -4,6 +4,7 @@ use std::process::ExitCode;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
+use rivet_core::coverage;
 use rivet_core::diff::{ArtifactDiff, DiagnosticDiff};
 use rivet_core::document::{self, DocumentStore};
 use rivet_core::links::LinkGraph;
@@ -35,6 +36,21 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Initialize a new rivet project
+    Init {
+        /// Project name (defaults to directory name)
+        #[arg(long)]
+        name: Option<String>,
+
+        /// Schemas to include (e.g. common,dev or common,aspice)
+        #[arg(long, value_delimiter = ',', default_values_t = ["common".to_string(), "dev".to_string()])]
+        schema: Vec<String>,
+
+        /// Directory to initialize (defaults to current directory)
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
+    },
+
     /// Validate artifacts against schemas
     Validate,
 
@@ -51,6 +67,17 @@ enum Command {
 
     /// Show artifact summary statistics
     Stats,
+
+    /// Show traceability coverage report
+    Coverage {
+        /// Output format: "table" (default) or "json"
+        #[arg(short, long, default_value = "table")]
+        format: String,
+
+        /// Exit with failure if overall coverage is below this percentage
+        #[arg(long)]
+        fail_under: Option<f64>,
+    },
 
     /// Generate a traceability matrix
     Matrix {
@@ -155,11 +182,18 @@ fn main() -> ExitCode {
 }
 
 fn run(cli: Cli) -> Result<bool> {
+    // Init does not need a loaded project; handle it first.
+    if let Command::Init { name, schema, dir } = &cli.command {
+        return cmd_init(name.as_deref(), schema, dir);
+    }
+
     match &cli.command {
+        Command::Init { .. } => unreachable!(),
         Command::Stpa { path, schema } => cmd_stpa(path, schema.as_deref(), &cli),
         Command::Validate => cmd_validate(&cli),
         Command::List { r#type, status } => cmd_list(&cli, r#type.as_deref(), status.as_deref()),
         Command::Stats => cmd_stats(&cli),
+        Command::Coverage { format, fail_under } => cmd_coverage(&cli, format, fail_under.as_ref()),
         Command::Matrix {
             from,
             to,
@@ -182,6 +216,122 @@ fn run(cli: Cli) -> Result<bool> {
             config_entries,
         } => cmd_import(adapter, source, config_entries),
     }
+}
+
+/// Initialize a new rivet project.
+fn cmd_init(name: Option<&str>, schemas: &[String], dir: &std::path::Path) -> Result<bool> {
+    let dir = if dir == std::path::Path::new(".") {
+        std::env::current_dir().context("resolving current directory")?
+    } else {
+        dir.to_path_buf()
+    };
+
+    let project_name = name.map(|s| s.to_string()).unwrap_or_else(|| {
+        dir.file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "my-project".to_string())
+    });
+
+    // Check for existing rivet.yaml
+    let config_path = dir.join("rivet.yaml");
+    if config_path.exists() {
+        eprintln!(
+            "warning: {} already exists, skipping init",
+            config_path.display()
+        );
+        return Ok(false);
+    }
+
+    // Ensure the target directory exists
+    std::fs::create_dir_all(&dir)
+        .with_context(|| format!("creating directory {}", dir.display()))?;
+
+    // Build schema list for the config
+    let schema_entries: String = schemas
+        .iter()
+        .map(|s| format!("    - {s}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // Write rivet.yaml
+    let config_content = format!(
+        "\
+project:
+  name: {project_name}
+  version: \"0.1.0\"
+  schemas:
+{schema_entries}
+
+sources:
+  - path: artifacts
+    format: generic-yaml
+"
+    );
+    std::fs::write(&config_path, &config_content)
+        .with_context(|| format!("writing {}", config_path.display()))?;
+    println!("  created {}", config_path.display());
+
+    // Create artifacts/ directory with a sample file
+    let artifacts_dir = dir.join("artifacts");
+    std::fs::create_dir_all(&artifacts_dir)
+        .with_context(|| format!("creating {}", artifacts_dir.display()))?;
+
+    let sample_artifact_path = artifacts_dir.join("requirements.yaml");
+    let sample_artifact = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: First requirement
+    status: draft
+    description: >
+      Describe what the system shall do.
+    tags: [core]
+    fields:
+      priority: must
+      category: functional
+";
+    std::fs::write(&sample_artifact_path, sample_artifact)
+        .with_context(|| format!("writing {}", sample_artifact_path.display()))?;
+    println!("  created {}", sample_artifact_path.display());
+
+    // Create docs/ directory with a sample document
+    let docs_dir = dir.join("docs");
+    std::fs::create_dir_all(&docs_dir)
+        .with_context(|| format!("creating {}", docs_dir.display()))?;
+
+    let sample_doc_path = docs_dir.join("getting-started.md");
+    let sample_doc = format!(
+        "\
+# {project_name}
+
+Getting started with your rivet project.
+
+## Overview
+
+This project uses [rivet](https://github.com/pulseengine/rivet) for SDLC artifact
+traceability and validation. Artifacts are stored as YAML files in `artifacts/` and
+validated against schemas listed in `rivet.yaml`.
+
+## Quick start
+
+```bash
+rivet validate     # Validate all artifacts
+rivet list         # List all artifacts
+rivet stats        # Show summary statistics
+```
+"
+    );
+    std::fs::write(&sample_doc_path, &sample_doc)
+        .with_context(|| format!("writing {}", sample_doc_path.display()))?;
+    println!("  created {}", sample_doc_path.display());
+
+    println!(
+        "\nInitialized rivet project '{}' in {}",
+        project_name,
+        dir.display()
+    );
+
+    Ok(true)
 }
 
 /// Load STPA files directly and validate them.
@@ -331,6 +481,68 @@ fn cmd_stats(cli: &Cli) -> Result<bool> {
 
     if !graph.broken.is_empty() {
         println!("\nBroken links: {}", graph.broken.len());
+    }
+
+    Ok(true)
+}
+
+/// Show traceability coverage report.
+fn cmd_coverage(cli: &Cli, format: &str, fail_under: Option<&f64>) -> Result<bool> {
+    let (store, schema, graph) = load_project(cli)?;
+    let report = coverage::compute_coverage(&store, &schema, &graph);
+
+    if format == "json" {
+        let json = report
+            .to_json()
+            .map_err(|e| anyhow::anyhow!("json serialization: {e}"))?;
+        println!("{json}");
+    } else {
+        println!("Traceability Coverage Report\n");
+        println!(
+            "  {:<30} {:<20} {:>8} {:>8} {:>8}",
+            "Rule", "Source Type", "Covered", "Total", "%"
+        );
+        println!("  {}", "-".repeat(80));
+
+        for entry in &report.entries {
+            println!(
+                "  {:<30} {:<20} {:>8} {:>8} {:>7.1}%",
+                entry.rule_name,
+                entry.source_type,
+                entry.covered,
+                entry.total,
+                entry.percentage()
+            );
+        }
+
+        let overall = report.overall_coverage();
+        println!("  {}", "-".repeat(80));
+        println!("  {:<52} {:>7.1}%", "Overall (weighted)", overall);
+
+        // Show uncovered artifacts
+        let has_uncovered = report.entries.iter().any(|e| !e.uncovered_ids.is_empty());
+        if has_uncovered {
+            println!("\nUncovered artifacts:");
+            for entry in &report.entries {
+                if !entry.uncovered_ids.is_empty() {
+                    println!("  {} ({}):", entry.rule_name, entry.source_type);
+                    for id in &entry.uncovered_ids {
+                        println!("    {}", id);
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(&threshold) = fail_under {
+        let overall = report.overall_coverage();
+        if overall < threshold {
+            eprintln!(
+                "\nerror: overall coverage {:.1}% is below threshold {:.1}%",
+                overall, threshold
+            );
+            return Ok(false);
+        }
     }
 
     Ok(true)

@@ -1,0 +1,316 @@
+artifacts:
+  # ── Unit Verification (SWE.4) ────────────────────────────────────────
+
+  - id: UVER-1
+    type: unit-verification
+    title: Pressure demand calculation unit tests
+    status: approved
+    description: >
+      Automated unit tests for the pressure demand calculation function.
+      Covers nominal pedal inputs, boundary conditions (0 and 4095),
+      rate limiter activation, and axle load ratio extremes.
+    tags: [braking, ebd, unit-test]
+    fields:
+      method: automated-test
+      preconditions:
+        - Rust test harness with mock HCU output buffer
+        - Calibration constants loaded from test fixture
+      steps:
+        - step: 1
+          action: Call calculate_pressure_demand with pedal=0, ratio=(0.6, 0.4)
+          expected: front_demand=0, rear_demand=0
+        - step: 2
+          action: Call with pedal=4095, ratio=(0.6, 0.4)
+          expected: front_demand=2457, rear_demand=1638
+        - step: 3
+          action: Call with pedal=4095 after previous pedal=0 (rate limiter test)
+          expected: Demand increases by at most 500 per cycle
+        - step: 4
+          action: Call with pedal=2048, ratio=(1.0, 0.0) — full front bias
+          expected: front_demand=2048, rear_demand=0
+    links:
+      - type: verifies
+        target: SWDD-1
+
+  - id: UVER-2
+    type: unit-verification
+    title: Slip ratio and phase state machine unit tests
+    status: approved
+    description: >
+      Automated unit tests for the wheel slip computation and ABS phase
+      state machine.  Tests nominal slip calculation, divide-by-zero guard,
+      and all state transitions with calibratable thresholds.
+    tags: [braking, abs, unit-test]
+    fields:
+      method: automated-test
+      preconditions:
+        - Rust test harness with mock wheel speed sensor inputs
+        - NVM calibration parameters loaded from test fixture
+      steps:
+        - step: 1
+          action: Set all wheel speeds equal to reference speed
+          expected: Slip ratio = 0.0 for all wheels, phase = NORMAL
+        - step: 2
+          action: Set one wheel speed to 80 % of reference (20 % slip)
+          expected: Slip ratio = 0.2, phase transitions to BUILD
+        - step: 3
+          action: Set reference speed to 0 (vehicle stationary)
+          expected: Slip ratio clamped to 0.0, no divide-by-zero
+        - step: 4
+          action: Simulate full ABS cycle (NORMAL -> BUILD -> HOLD -> RELEASE -> NORMAL)
+          expected: Each phase transition occurs at correct threshold crossings
+    links:
+      - type: verifies
+        target: SWDD-2
+
+  # ── Software Integration Verification (SWE.5) ────────────────────────
+
+  - id: SWINTVER-1
+    type: sw-integration-verification
+    title: Brake Pressure Manager integration verification
+    status: approved
+    description: >
+      Integration test verifying the Brake Pressure Manager component
+      interfaces.  Validates that the pressure demand output is correctly
+      consumed by the HCU valve driver and that the axle load estimator
+      input interface provides consistent data across task boundaries.
+    tags: [braking, ebd, integration]
+    fields:
+      method: automated-test
+      preconditions:
+        - Software-in-the-loop environment with HCU driver stub
+        - Axle load estimator component running in parallel task
+      steps:
+        - step: 1
+          action: Run 10 ms cyclic task for 100 cycles with ramp pedal input
+          expected: Pressure demand output follows pedal ramp with correct ratio
+        - step: 2
+          action: Inject a step change in axle load estimate mid-cycle
+          expected: Pressure ratio adapts within one control cycle (10 ms)
+        - step: 3
+          action: Verify inter-component data consistency under task preemption
+          expected: No data tearing in shared axle load structure
+    links:
+      - type: verifies
+        target: SWARCH-1
+
+  - id: SWINTVER-2
+    type: sw-integration-verification
+    title: ABS Slip Controller integration verification
+    status: approved
+    description: >
+      Integration test verifying the ABS Slip Controller component
+      interfaces with the wheel speed sensor abstraction layer and the
+      HCU command interface.  Validates end-to-end data flow from sensor
+      read to pressure phase command output.
+    tags: [braking, abs, integration]
+    fields:
+      method: automated-test
+      preconditions:
+        - Software-in-the-loop environment with sensor and HCU driver stubs
+        - Simulated wheel speed profiles for ABS activation scenario
+      steps:
+        - step: 1
+          action: Run 2 ms cyclic task with all wheels at constant speed
+          expected: No ABS intervention, all phases remain NORMAL
+        - step: 2
+          action: Inject sudden wheel deceleration on one wheel (simulated lock-up)
+          expected: ABS activates within 3 control cycles, phase transitions to BUILD
+        - step: 3
+          action: Verify HCU command output matches expected phase sequence
+          expected: Build, hold, release commands issued in correct order
+    links:
+      - type: verifies
+        target: SWARCH-2
+
+  # ── Software Verification (SWE.6) ────────────────────────────────────
+
+  - id: SWVER-1
+    type: sw-verification
+    title: Brake pressure demand and axle load estimation verification
+    status: approved
+    description: >
+      Software-level verification of the brake pressure demand calculation
+      and axle load estimator against their software requirements.
+      Conducted on the target microcontroller using hardware-in-the-loop
+      simulation with calibrated brake pedal and IMU sensor inputs.
+    tags: [braking, ebd, hil]
+    fields:
+      method: automated-test
+      preconditions:
+        - Hardware-in-the-loop bench with calibrated pedal sensor simulator
+        - IMU signal generator for acceleration profiles
+        - CAN FD bus analyzer monitoring HCU commands
+      steps:
+        - step: 1
+          action: Apply 50 % pedal input at 60 km/h on level road
+          expected: DAC output matches expected pressure demand within +/- 1 LSB
+        - step: 2
+          action: Apply full braking during 0.8 g deceleration
+          expected: Axle load estimate shifts ratio towards front axle within 2 %
+        - step: 3
+          action: Release brake pedal rapidly
+          expected: Pressure demand ramps down respecting rate limiter
+    links:
+      - type: verifies
+        target: SWREQ-1
+      - type: verifies
+        target: SWREQ-2
+
+  - id: SWVER-2
+    type: sw-verification
+    title: ABS slip control algorithm verification
+    status: approved
+    description: >
+      Software-level verification of the ABS slip control algorithm against
+      its software requirement.  Uses a vehicle dynamics model in the
+      hardware-in-the-loop environment to simulate lock-up scenarios on
+      various road surfaces.
+    tags: [braking, abs, hil]
+    fields:
+      method: automated-test
+      preconditions:
+        - Hardware-in-the-loop bench with vehicle dynamics model (CarMaker)
+        - Wheel speed sensor emulation (4 channels, 48 teeth)
+        - Road surface friction profiles (ice, wet, dry, split-mu)
+      steps:
+        - step: 1
+          action: Emergency braking at 100 km/h on dry asphalt (mu = 0.9)
+          expected: No wheel lock-up, slip stays within 10-15 % target band
+        - step: 2
+          action: Emergency braking at 80 km/h on ice (mu = 0.15)
+          expected: ABS activates, slip regulated within 10-20 % band
+        - step: 3
+          action: Emergency braking at 60 km/h on split-mu (left ice, right dry)
+          expected: Independent wheel regulation, vehicle maintains directional stability
+    links:
+      - type: verifies
+        target: SWREQ-3
+
+  # ── System Integration Verification (SYS.4) ──────────────────────────
+
+  - id: SYSINTVER-1
+    type: sys-integration-verification
+    title: HCU integration verification
+    status: approved
+    description: >
+      System integration verification of the Hydraulic Control Unit with
+      the ABS ECU.  Validates the CAN FD command interface, solenoid valve
+      response timing, and pressure sensor feedback loop on the physical
+      brake system test bench.
+    tags: [braking, hcu, system-integration]
+    fields:
+      method: automated-test
+      preconditions:
+        - Physical brake system test bench with HCU and ABS ECU
+        - CAN FD bus connected and operational
+        - Brake fluid system primed and bled
+      steps:
+        - step: 1
+          action: Send pressure build command for front axle via CAN FD
+          expected: Front solenoid valve opens within 5 ms, pressure rises
+        - step: 2
+          action: Send hold command followed by release command
+          expected: Pressure holds stable, then decreases within 10 ms
+        - step: 3
+          action: Verify pressure sensor feedback matches commanded pressure
+          expected: Feedback within 3 % of commanded value at steady state
+    links:
+      - type: verifies
+        target: SYSARCH-1
+
+  - id: SYSINTVER-2
+    type: sys-integration-verification
+    title: ABS ECU integration verification
+    status: approved
+    description: >
+      System integration verification of the ABS ECU with wheel speed
+      sensors and the HCU.  Validates the complete sensor-to-actuator
+      signal chain on the vehicle integration test bench.
+    tags: [braking, abs, system-integration]
+    fields:
+      method: automated-test
+      preconditions:
+        - Vehicle integration test bench with all four wheel speed sensors
+        - ABS ECU connected to HCU via CAN FD
+        - Wheel speed simulation via motor-driven tone wheels
+      steps:
+        - step: 1
+          action: Spin all tone wheels at constant speed (60 km/h equivalent)
+          expected: ECU reads four valid wheel speeds, ABS inactive
+        - step: 2
+          action: Decelerate one tone wheel rapidly (simulate lock-up)
+          expected: ECU detects slip, sends pressure modulation commands to HCU
+        - step: 3
+          action: Verify end-to-end latency from sensor event to valve actuation
+          expected: Total latency below 6 ms (2 ms computation + 4 ms CAN + valve)
+    links:
+      - type: verifies
+        target: SYSARCH-2
+
+  # ── System Verification (SYS.5) ──────────────────────────────────────
+
+  - id: SYSVER-1
+    type: sys-verification
+    title: Brake pressure modulation and load-dependent ratio system test
+    status: approved
+    description: >
+      Full system verification of brake pressure modulation and dynamic
+      load-dependent ratio on the vehicle dynamometer.  Validates against
+      system requirements for axle-independent modulation and load-based
+      ratio adaptation.
+    tags: [braking, ebd, dynamometer]
+    fields:
+      method: automated-test
+      preconditions:
+        - Vehicle on chassis dynamometer with brake pressure transducers
+        - Vehicle loaded to GVW (Gross Vehicle Weight)
+        - Data acquisition system recording at 1 kHz
+      steps:
+        - step: 1
+          action: Apply 50 % brake pedal at 100 km/h, measure front and rear pressure
+          expected: Independent pressure modulation with front/rear ratio matching load
+        - step: 2
+          action: Repeat with vehicle at curb weight (reduced rear load)
+          expected: Ratio shifts towards front axle compared to GVW test
+        - step: 3
+          action: Apply step pedal input, measure pressure response time
+          expected: Pressure responds within 10 ms control cycle at each axle
+    links:
+      - type: verifies
+        target: SYSREQ-1
+      - type: verifies
+        target: SYSREQ-2
+
+  - id: SYSVER-2
+    type: sys-verification
+    title: ABS wheel slip regulation system test
+    status: approved
+    description: >
+      Full system verification of ABS wheel slip regulation on the proving
+      ground.  Validates against the system requirement for slip regulation
+      within the target band on multiple surface types.
+    tags: [braking, abs, proving-ground]
+    fields:
+      method: manual-test
+      preconditions:
+        - Instrumented test vehicle on proving ground
+        - Low-mu (basalt tile), split-mu, and high-mu (dry asphalt) surfaces
+        - Optical wheel speed reference measurement system
+        - On-board data logger recording slip ratios and pressure commands
+      steps:
+        - step: 1
+          action: Emergency stop from 80 km/h on dry asphalt
+          expected: No wheel lock-up, stopping distance within ECE R13-H limit
+        - step: 2
+          action: Emergency stop from 60 km/h on wet basalt tiles (mu ~ 0.3)
+          expected: ABS activates, slip regulated within 10-20 % band
+        - step: 3
+          action: Emergency stop from 60 km/h on split-mu surface
+          expected: ABS regulates each side independently, vehicle tracks straight
+        - step: 4
+          action: Verify regulation onset timing
+          expected: Slip regulation achieved within 3 pressure cycles of lock-up onset
+    links:
+      - type: verifies
+        target: SYSREQ-3
