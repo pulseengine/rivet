@@ -217,12 +217,19 @@ td a{font-family:var(--mono);font-size:.85rem;font-weight:500}
 /* ── Stat grid ────────────────────────────────────────────────── */
 .stat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:1rem;margin-bottom:1.75rem}
 .stat-box{background:var(--surface);border-radius:var(--radius);padding:1.25rem 1rem;text-align:center;
-          box-shadow:var(--shadow);border:1px solid var(--border);transition:box-shadow var(--transition),transform var(--transition)}
+          box-shadow:var(--shadow);border:1px solid var(--border);transition:box-shadow var(--transition),transform var(--transition);
+          border-top:3px solid var(--border)}
 .stat-box:hover{box-shadow:var(--shadow-md);transform:translateY(-1px)}
-.stat-box .number{font-size:2rem;font-weight:800;color:var(--accent);letter-spacing:-.02em;
+.stat-box .number{font-size:2rem;font-weight:800;letter-spacing:-.02em;
                   font-variant-numeric:tabular-nums;line-height:1.2}
 .stat-box .label{font-size:.8rem;font-weight:500;color:var(--text-secondary);margin-top:.25rem;
                  text-transform:uppercase;letter-spacing:.04em}
+.stat-blue{border-top-color:#3a86ff}.stat-blue .number{color:#3a86ff}
+.stat-green{border-top-color:#15713a}.stat-green .number{color:#15713a}
+.stat-orange{border-top-color:#e67e22}.stat-orange .number{color:#e67e22}
+.stat-red{border-top-color:#c62828}.stat-red .number{color:#c62828}
+.stat-amber{border-top-color:#b8860b}.stat-amber .number{color:#b8860b}
+.stat-purple{border-top-color:#6f42c1}.stat-purple .number{color:#6f42c1}
 
 /* ── Link pills ───────────────────────────────────────────────── */
 .link-pill{display:inline-block;padding:.15rem .45rem;border-radius:4px;
@@ -262,9 +269,28 @@ dd{margin-left:0;margin-bottom:.25rem;margin-top:.2rem}
 /* ── Meta text ────────────────────────────────────────────────── */
 .meta{color:var(--text-secondary);font-size:.85rem}
 
-/* ── Nav icons ────────────────────────────────────────────────── */
+/* ── Nav icons & badges ───────────────────────────────────────── */
 .nav-icon{display:inline-flex;width:1.25rem;justify-content:center;flex-shrink:0;font-size:.8rem;opacity:.5}
 nav a:hover .nav-icon,nav a.active .nav-icon{opacity:.9}
+.nav-label{display:flex;align-items:center;gap:.5rem;flex:1;min-width:0}
+.nav-badge{font-size:.65rem;font-weight:700;padding:.1rem .4rem;border-radius:4px;
+           background:rgba(255,255,255,.08);color:rgba(255,255,255,.4);margin-left:auto;flex-shrink:0}
+.nav-badge-error{background:rgba(220,53,69,.2);color:#ff6b7a}
+nav .nav-divider{height:1px;background:rgba(255,255,255,.06);margin:.75rem .75rem}
+
+/* ── Footer ──────────────────────────────────────────────────── */
+.footer{padding:2rem 0 1rem;text-align:center;font-size:.75rem;color:var(--text-secondary);
+        border-top:1px solid var(--border);margin-top:3rem}
+
+/* ── Detail actions ──────────────────────────────────────────── */
+.detail-actions{display:flex;gap:.75rem;align-items:center;margin-top:1rem}
+.btn{display:inline-flex;align-items:center;gap:.4rem;padding:.45rem 1rem;border-radius:var(--radius-sm);
+     font-size:.85rem;font-weight:600;font-family:var(--font);text-decoration:none;
+     transition:all var(--transition);cursor:pointer;border:none}
+.btn-primary{background:var(--accent);color:#fff;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.btn-primary:hover{background:var(--accent-hover);transform:translateY(-1px);color:#fff;text-decoration:none}
+.btn-secondary{background:transparent;color:var(--text-secondary);border:1px solid var(--border)}
+.btn-secondary:hover{background:rgba(0,0,0,.03);color:var(--text);text-decoration:none}
 
 /* ── Graph ────────────────────────────────────────────────────── */
 .graph-container{border-radius:var(--radius);overflow:hidden;background:#fafbfc;cursor:grab;
@@ -660,7 +686,28 @@ const SEARCH_JS: &str = r#"
 
 // ── Layout ───────────────────────────────────────────────────────────────
 
-fn page_layout(content: &str) -> Html<String> {
+struct NavInfo {
+    artifact_count: usize,
+    error_count: usize,
+    doc_count: usize,
+}
+
+fn page_layout(content: &str, nav: &NavInfo) -> Html<String> {
+    let artifact_count = nav.artifact_count;
+    let error_badge = if nav.error_count > 0 {
+        format!(
+            "<span class=\"nav-badge nav-badge-error\">{}</span>",
+            nav.error_count
+        )
+    } else {
+        "<span class=\"nav-badge\">OK</span>".to_string()
+    };
+    let doc_badge = if nav.doc_count > 0 {
+        format!("<span class=\"nav-badge\">{}</span>", nav.doc_count)
+    } else {
+        String::new()
+    };
+    let version = env!("CARGO_PKG_VERSION");
     Html(format!(
         r##"<!DOCTYPE html>
 <html lang="en">
@@ -680,13 +727,14 @@ fn page_layout(content: &str) -> Html<String> {
 <nav>
   <h1>Rivet</h1>
   <ul>
-    <li><a hx-get="/stats" hx-target="#content" hx-push-url="false" href="#" class="active"><span class="nav-icon">&#9632;</span> Overview</a></li>
-    <li><a hx-get="/artifacts" hx-target="#content" hx-push-url="false" href="#"><span class="nav-icon">&#9830;</span> Artifacts</a></li>
-    <li><a hx-get="/validate" hx-target="#content" hx-push-url="false" href="#"><span class="nav-icon">&#10003;</span> Validation</a></li>
-    <li><a hx-get="/matrix" hx-target="#content" hx-push-url="false" href="#"><span class="nav-icon">&#9638;</span> Matrix</a></li>
-    <li><a hx-get="/coverage" hx-target="#content" hx-push-url="false" href="#"><span class="nav-icon">&#9632;</span> Coverage</a></li>
-    <li><a hx-get="/graph" hx-target="#content" hx-push-url="false" href="#"><span class="nav-icon">&#9679;</span> Graph</a></li>
-    <li><a hx-get="/documents" hx-target="#content" hx-push-url="false" href="#"><span class="nav-icon">&#9776;</span> Documents</a></li>
+    <li><a hx-get="/stats" hx-target="#content" hx-push-url="false" href="#" class="active"><span class="nav-label"><span class="nav-icon">&#9632;</span> Overview</span></a></li>
+    <li><a hx-get="/artifacts" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon">&#9830;</span> Artifacts</span><span class="nav-badge">{artifact_count}</span></a></li>
+    <li><a hx-get="/validate" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon">&#10003;</span> Validation</span>{error_badge}</a></li>
+    <li class="nav-divider"></li>
+    <li><a hx-get="/matrix" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon">&#9638;</span> Matrix</span></a></li>
+    <li><a hx-get="/coverage" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon">&#9632;</span> Coverage</span></a></li>
+    <li><a hx-get="/graph" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon">&#9679;</span> Graph</span></a></li>
+    <li><a hx-get="/documents" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon">&#9776;</span> Documents</span>{doc_badge}</a></li>
   </ul>
   <div id="nav-search-hint" class="nav-search-hint">
     <span><span class="nav-icon">&#128269;</span> Search</span>
@@ -695,6 +743,7 @@ fn page_layout(content: &str) -> Html<String> {
 </nav>
 <main id="content" hx-swap="innerHTML transition:true">
 {content}
+<div class="footer">Powered by Rivet v{version}</div>
 </main>
 </div>
 <div id="cmd-k-overlay" class="cmd-k-overlay">
@@ -719,7 +768,21 @@ fn page_layout(content: &str) -> Html<String> {
 
 async fn index(State(state): State<Arc<AppState>>) -> Html<String> {
     let inner = stats_partial(&state);
-    page_layout(&inner)
+    let nav = make_nav_info(&state);
+    page_layout(&inner, &nav)
+}
+
+fn make_nav_info(state: &AppState) -> NavInfo {
+    let diagnostics = validate::validate(&state.store, &state.schema, &state.graph);
+    let error_count = diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Error)
+        .count();
+    NavInfo {
+        artifact_count: state.store.len(),
+        error_count,
+        doc_count: state.doc_store.len(),
+    }
 }
 
 async fn stats_view(State(state): State<Arc<AppState>>) -> Html<String> {
@@ -747,35 +810,35 @@ fn stats_partial(state: &AppState) -> String {
 
     let mut html = String::from("<h2>Dashboard</h2>");
 
-    // Summary cards
+    // Summary cards with colored accents
     html.push_str("<div class=\"stat-grid\">");
     html.push_str(&format!(
-        "<div class=\"stat-box\"><div class=\"number\">{}</div><div class=\"label\">Artifacts</div></div>",
+        "<div class=\"stat-box stat-blue\"><div class=\"number\">{}</div><div class=\"label\">Artifacts</div></div>",
         store.len()
     ));
     html.push_str(&format!(
-        "<div class=\"stat-box\"><div class=\"number\">{}</div><div class=\"label\">Types</div></div>",
+        "<div class=\"stat-box stat-green\"><div class=\"number\">{}</div><div class=\"label\">Types</div></div>",
         types.len()
     ));
     html.push_str(&format!(
-        "<div class=\"stat-box\"><div class=\"number\">{}</div><div class=\"label\">Orphans</div></div>",
+        "<div class=\"stat-box stat-orange\"><div class=\"number\">{}</div><div class=\"label\">Orphans</div></div>",
         orphans.len()
     ));
     html.push_str(&format!(
-        "<div class=\"stat-box\"><div class=\"number\">{}</div><div class=\"label\">Errors</div></div>",
+        "<div class=\"stat-box stat-red\"><div class=\"number\">{}</div><div class=\"label\">Errors</div></div>",
         errors
     ));
     html.push_str(&format!(
-        "<div class=\"stat-box\"><div class=\"number\">{}</div><div class=\"label\">Warnings</div></div>",
+        "<div class=\"stat-box stat-amber\"><div class=\"number\">{}</div><div class=\"label\">Warnings</div></div>",
         warnings
     ));
     html.push_str(&format!(
-        "<div class=\"stat-box\"><div class=\"number\">{}</div><div class=\"label\">Broken Links</div></div>",
+        "<div class=\"stat-box stat-purple\"><div class=\"number\">{}</div><div class=\"label\">Broken Links</div></div>",
         graph.broken.len()
     ));
     if !doc_store.is_empty() {
         html.push_str(&format!(
-            "<div class=\"stat-box\"><div class=\"number\">{}</div><div class=\"label\">Documents</div></div>",
+            "<div class=\"stat-box stat-blue\"><div class=\"number\">{}</div><div class=\"label\">Documents</div></div>",
             doc_store.len()
         ));
     }
@@ -945,11 +1008,12 @@ async fn artifact_detail(
         html.push_str("</tbody></table></div>");
     }
 
-    // Show in graph link
+    // Action buttons
     html.push_str(&format!(
-        r##"<p><a hx-get="/artifacts/{id_esc}/graph" hx-target="#content" href="#">Show in graph</a>
-        &nbsp;|&nbsp;
-        <a hx-get="/artifacts" hx-target="#content" href="#">&larr; Back to artifacts</a></p>"##,
+        r##"<div class="detail-actions">
+        <a class="btn btn-primary" hx-get="/artifacts/{id_esc}/graph" hx-target="#content" href="#">Show in graph</a>
+        <a class="btn btn-secondary" hx-get="/artifacts" hx-target="#content" href="#">&larr; Back to artifacts</a>
+        </div>"##,
         id_esc = html_escape(&id),
     ));
 
