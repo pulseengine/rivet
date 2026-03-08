@@ -7,6 +7,7 @@
 &nbsp;
 
 [![CI](https://github.com/pulseengine/rivet/actions/workflows/ci.yml/badge.svg)](https://github.com/pulseengine/rivet/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/pulseengine/rivet/branch/main/graph/badge.svg)](https://codecov.io/gh/pulseengine/rivet)
 ![Rust](https://img.shields.io/badge/Rust-CE422B?style=flat-square&logo=rust&logoColor=white&labelColor=1a1b27)
 ![YAML](https://img.shields.io/badge/YAML-654FF0?style=flat-square&logoColor=white&labelColor=1a1b27)
 ![STPA](https://img.shields.io/badge/STPA-654FF0?style=flat-square&logoColor=white&labelColor=1a1b27)

@@ -1,0 +1,925 @@
+//! ReqIF 1.2 XML import/export adapter.
+//!
+//! Implements the OMG Requirements Interchange Format (ReqIF) version 1.2,
+//! namespace `http://www.omg.org/spec/ReqIF/20110401/reqif.xsd`.
+//!
+//! Mapping strategy:
+//!
+//! | Rivet concept     | ReqIF element                     |
+//! |-------------------|-----------------------------------|
+//! | Artifact          | SPEC-OBJECT                       |
+//! | Artifact.id       | SPEC-OBJECT.IDENTIFIER            |
+//! | Artifact.title    | SPEC-OBJECT.LONG-NAME             |
+//! | Artifact.description | SPEC-OBJECT.DESC               |
+//! | Artifact.artifact_type | SPEC-OBJECT-TYPE.LONG-NAME   |
+//! | Artifact.status   | ATTRIBUTE-VALUE-STRING ("status") |
+//! | Artifact.tags     | ATTRIBUTE-VALUE-STRING ("tags")   |
+//! | Artifact.fields   | ATTRIBUTE-VALUE-STRING per field   |
+//! | Link              | SPEC-RELATION                     |
+//! | Link.link_type    | SPEC-RELATION-TYPE.LONG-NAME      |
+
+use std::collections::{BTreeMap, HashMap};
+
+use quick_xml::de::from_str as xml_from_str;
+use quick_xml::se::to_string as xml_to_string;
+use serde::{Deserialize, Serialize};
+
+use crate::adapter::{Adapter, AdapterConfig, AdapterSource};
+use crate::error::Error;
+use crate::model::{Artifact, Link};
+
+// ── ReqIF XML structures ────────────────────────────────────────────────
+//
+// These mirror the ReqIF 1.2 XSD just enough for lossless round-tripping
+// of Rivet artifacts.  Fields not relevant to Rivet are accepted on read
+// (via serde defaults) and omitted on write.
+
+/// Root element: `<REQ-IF>`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename = "REQ-IF")]
+pub struct ReqIfRoot {
+    #[serde(rename = "@xmlns", default = "default_namespace")]
+    pub xmlns: String,
+
+    #[serde(rename = "THE-HEADER")]
+    pub the_header: TheHeader,
+
+    #[serde(rename = "CORE-CONTENT")]
+    pub core_content: CoreContent,
+}
+
+fn default_namespace() -> String {
+    REQIF_NAMESPACE.to_string()
+}
+
+/// `<THE-HEADER>` wrapping `<REQ-IF-HEADER>`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename = "THE-HEADER")]
+pub struct TheHeader {
+    #[serde(rename = "REQ-IF-HEADER")]
+    pub req_if_header: ReqIfHeader,
+}
+
+/// `<REQ-IF-HEADER>`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename = "REQ-IF-HEADER")]
+pub struct ReqIfHeader {
+    #[serde(rename = "@IDENTIFIER")]
+    pub identifier: String,
+
+    #[serde(rename = "COMMENT", default, skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
+
+    #[serde(
+        rename = "CREATION-TIME",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub creation_time: Option<String>,
+
+    #[serde(
+        rename = "REPOSITORY-ID",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub repository_id: Option<String>,
+
+    #[serde(
+        rename = "REQ-IF-TOOL-ID",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub req_if_tool_id: Option<String>,
+
+    #[serde(
+        rename = "REQ-IF-VERSION",
+        default = "default_reqif_version",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub req_if_version: Option<String>,
+
+    #[serde(
+        rename = "SOURCE-TOOL-ID",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub source_tool_id: Option<String>,
+
+    #[serde(rename = "TITLE", default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+}
+
+fn default_reqif_version() -> Option<String> {
+    Some("1.2".into())
+}
+
+/// `<CORE-CONTENT>` wrapping `<REQ-IF-CONTENT>`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename = "CORE-CONTENT")]
+pub struct CoreContent {
+    #[serde(rename = "REQ-IF-CONTENT")]
+    pub req_if_content: ReqIfContent,
+}
+
+/// `<REQ-IF-CONTENT>` — the meat of a ReqIF document.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename = "REQ-IF-CONTENT")]
+pub struct ReqIfContent {
+    #[serde(rename = "DATATYPES", default)]
+    pub datatypes: Datatypes,
+
+    #[serde(rename = "SPEC-TYPES", default)]
+    pub spec_types: SpecTypes,
+
+    #[serde(rename = "SPEC-OBJECTS", default)]
+    pub spec_objects: SpecObjects,
+
+    #[serde(rename = "SPEC-RELATIONS", default)]
+    pub spec_relations: SpecRelations,
+}
+
+// ── DATATYPES ───────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename = "DATATYPES")]
+pub struct Datatypes {
+    #[serde(rename = "DATATYPE-DEFINITION-STRING", default)]
+    pub string_types: Vec<DatatypeDefinitionString>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename = "DATATYPE-DEFINITION-STRING")]
+pub struct DatatypeDefinitionString {
+    #[serde(rename = "@IDENTIFIER")]
+    pub identifier: String,
+
+    #[serde(
+        rename = "@LONG-NAME",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub long_name: Option<String>,
+
+    #[serde(
+        rename = "@MAX-LENGTH",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub max_length: Option<u64>,
+}
+
+// ── SPEC-TYPES ──────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename = "SPEC-TYPES")]
+pub struct SpecTypes {
+    #[serde(rename = "SPEC-OBJECT-TYPE", default)]
+    pub object_types: Vec<SpecObjectType>,
+
+    #[serde(rename = "SPEC-RELATION-TYPE", default)]
+    pub relation_types: Vec<SpecRelationType>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename = "SPEC-OBJECT-TYPE")]
+pub struct SpecObjectType {
+    #[serde(rename = "@IDENTIFIER")]
+    pub identifier: String,
+
+    #[serde(
+        rename = "@LONG-NAME",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub long_name: Option<String>,
+
+    #[serde(
+        rename = "SPEC-ATTRIBUTES",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub spec_attributes: Option<SpecAttributes>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename = "SPEC-RELATION-TYPE")]
+pub struct SpecRelationType {
+    #[serde(rename = "@IDENTIFIER")]
+    pub identifier: String,
+
+    #[serde(
+        rename = "@LONG-NAME",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub long_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename = "SPEC-ATTRIBUTES")]
+pub struct SpecAttributes {
+    #[serde(rename = "ATTRIBUTE-DEFINITION-STRING", default)]
+    pub string_attrs: Vec<AttributeDefinitionString>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename = "ATTRIBUTE-DEFINITION-STRING")]
+pub struct AttributeDefinitionString {
+    #[serde(rename = "@IDENTIFIER")]
+    pub identifier: String,
+
+    #[serde(
+        rename = "@LONG-NAME",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub long_name: Option<String>,
+
+    #[serde(rename = "TYPE", default, skip_serializing_if = "Option::is_none")]
+    pub datatype_ref: Option<DatatypeRef>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename = "TYPE")]
+pub struct DatatypeRef {
+    #[serde(rename = "DATATYPE-DEFINITION-STRING-REF")]
+    pub datatype_ref: String,
+}
+
+// ── SPEC-OBJECTS ────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename = "SPEC-OBJECTS")]
+pub struct SpecObjects {
+    #[serde(rename = "SPEC-OBJECT", default)]
+    pub objects: Vec<SpecObject>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename = "SPEC-OBJECT")]
+pub struct SpecObject {
+    #[serde(rename = "@IDENTIFIER")]
+    pub identifier: String,
+
+    #[serde(
+        rename = "@LONG-NAME",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub long_name: Option<String>,
+
+    #[serde(rename = "@DESC", default, skip_serializing_if = "Option::is_none")]
+    pub desc: Option<String>,
+
+    #[serde(rename = "TYPE", default, skip_serializing_if = "Option::is_none")]
+    pub object_type_ref: Option<SpecObjectTypeRef>,
+
+    #[serde(rename = "VALUES", default, skip_serializing_if = "Option::is_none")]
+    pub values: Option<Values>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename = "TYPE")]
+pub struct SpecObjectTypeRef {
+    #[serde(rename = "SPEC-OBJECT-TYPE-REF")]
+    pub spec_object_type_ref: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename = "VALUES")]
+pub struct Values {
+    #[serde(rename = "ATTRIBUTE-VALUE-STRING", default)]
+    pub string_values: Vec<AttributeValueString>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename = "ATTRIBUTE-VALUE-STRING")]
+pub struct AttributeValueString {
+    #[serde(rename = "@THE-VALUE")]
+    pub the_value: String,
+
+    #[serde(rename = "DEFINITION")]
+    pub definition: AttrDefinitionRef,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename = "DEFINITION")]
+pub struct AttrDefinitionRef {
+    #[serde(rename = "ATTRIBUTE-DEFINITION-STRING-REF")]
+    pub attr_def_ref: String,
+}
+
+// ── SPEC-RELATIONS ──────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename = "SPEC-RELATIONS")]
+pub struct SpecRelations {
+    #[serde(rename = "SPEC-RELATION", default)]
+    pub relations: Vec<SpecRelation>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename = "SPEC-RELATION")]
+pub struct SpecRelation {
+    #[serde(rename = "@IDENTIFIER")]
+    pub identifier: String,
+
+    #[serde(rename = "TYPE", default, skip_serializing_if = "Option::is_none")]
+    pub relation_type_ref: Option<SpecRelationTypeRef>,
+
+    #[serde(rename = "SOURCE")]
+    pub source: SpecRelationEnd,
+
+    #[serde(rename = "TARGET")]
+    pub target: SpecRelationEnd,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename = "TYPE")]
+pub struct SpecRelationTypeRef {
+    #[serde(rename = "SPEC-RELATION-TYPE-REF")]
+    pub spec_relation_type_ref: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpecRelationEnd {
+    #[serde(rename = "SPEC-OBJECT-REF")]
+    pub spec_object_ref: String,
+}
+
+// ── Constants ───────────────────────────────────────────────────────────
+
+pub const REQIF_NAMESPACE: &str = "http://www.omg.org/spec/ReqIF/20110401/reqif.xsd";
+
+const DATATYPE_STRING_ID: &str = "DT-STRING";
+const ATTR_DEF_STATUS: &str = "ATTR-STATUS";
+const ATTR_DEF_TAGS: &str = "ATTR-TAGS";
+const ATTR_DEF_ARTIFACT_TYPE: &str = "ATTR-ARTIFACT-TYPE";
+
+// ── Adapter ─────────────────────────────────────────────────────────────
+
+pub struct ReqIfAdapter {
+    supported: Vec<String>,
+}
+
+impl ReqIfAdapter {
+    pub fn new() -> Self {
+        Self {
+            supported: vec![], // accepts all types
+        }
+    }
+}
+
+impl Default for ReqIfAdapter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Adapter for ReqIfAdapter {
+    fn id(&self) -> &str {
+        "reqif"
+    }
+
+    fn name(&self) -> &str {
+        "ReqIF 1.2 XML"
+    }
+
+    fn supported_types(&self) -> &[String] {
+        &self.supported
+    }
+
+    fn import(
+        &self,
+        source: &AdapterSource,
+        _config: &AdapterConfig,
+    ) -> Result<Vec<Artifact>, Error> {
+        let xml_str = match source {
+            AdapterSource::Bytes(bytes) => std::str::from_utf8(bytes)
+                .map_err(|e| Error::Adapter(format!("invalid UTF-8: {e}")))?
+                .to_string(),
+            AdapterSource::Path(path) => std::fs::read_to_string(path)
+                .map_err(|e| Error::Io(format!("{}: {e}", path.display())))?,
+            AdapterSource::Directory(dir) => {
+                return import_reqif_directory(dir);
+            }
+        };
+        parse_reqif(&xml_str)
+    }
+
+    fn export(&self, artifacts: &[Artifact], _config: &AdapterConfig) -> Result<Vec<u8>, Error> {
+        let reqif = build_reqif(artifacts);
+        serialize_reqif(&reqif)
+    }
+}
+
+// ── Import ──────────────────────────────────────────────────────────────
+
+fn import_reqif_directory(dir: &std::path::Path) -> Result<Vec<Artifact>, Error> {
+    let mut artifacts = Vec::new();
+    let entries =
+        std::fs::read_dir(dir).map_err(|e| Error::Io(format!("{}: {e}", dir.display())))?;
+
+    for entry in entries {
+        let entry = entry.map_err(|e| Error::Io(e.to_string()))?;
+        let path = entry.path();
+        if path
+            .extension()
+            .is_some_and(|ext| ext == "reqif" || ext == "xml")
+        {
+            let content = std::fs::read_to_string(&path)
+                .map_err(|e| Error::Io(format!("{}: {e}", path.display())))?;
+            match parse_reqif(&content) {
+                Ok(arts) => artifacts.extend(arts),
+                Err(e) => log::warn!("skipping {}: {e}", path.display()),
+            }
+        } else if path.is_dir() {
+            artifacts.extend(import_reqif_directory(&path)?);
+        }
+    }
+
+    Ok(artifacts)
+}
+
+/// Parse a ReqIF XML string into Rivet artifacts.
+pub fn parse_reqif(xml: &str) -> Result<Vec<Artifact>, Error> {
+    let root: ReqIfRoot =
+        xml_from_str(xml).map_err(|e| Error::Adapter(format!("ReqIF XML parse error: {e}")))?;
+
+    let content = &root.core_content.req_if_content;
+
+    // Build lookup tables for types.
+    let object_type_names: HashMap<&str, &str> = content
+        .spec_types
+        .object_types
+        .iter()
+        .map(|t| {
+            (
+                t.identifier.as_str(),
+                t.long_name.as_deref().unwrap_or(&t.identifier),
+            )
+        })
+        .collect();
+
+    let relation_type_names: HashMap<&str, &str> = content
+        .spec_types
+        .relation_types
+        .iter()
+        .map(|t| {
+            (
+                t.identifier.as_str(),
+                t.long_name.as_deref().unwrap_or(&t.identifier),
+            )
+        })
+        .collect();
+
+    // Build lookup: attr-def id -> long-name.
+    let mut attr_def_names: HashMap<&str, &str> = HashMap::new();
+    for ot in &content.spec_types.object_types {
+        if let Some(attrs) = &ot.spec_attributes {
+            for ad in &attrs.string_attrs {
+                let name = ad.long_name.as_deref().unwrap_or(&ad.identifier);
+                attr_def_names.insert(ad.identifier.as_str(), name);
+            }
+        }
+    }
+
+    // Parse SPEC-OBJECTS into Artifacts.
+    let mut artifacts: Vec<Artifact> = Vec::new();
+    for obj in &content.spec_objects.objects {
+        let artifact_type = obj
+            .object_type_ref
+            .as_ref()
+            .and_then(|r| {
+                object_type_names
+                    .get(r.spec_object_type_ref.as_str())
+                    .copied()
+            })
+            .unwrap_or("unknown")
+            .to_string();
+
+        let mut status: Option<String> = None;
+        let mut tags: Vec<String> = Vec::new();
+        let mut fields: BTreeMap<String, serde_yaml::Value> = BTreeMap::new();
+        let mut override_artifact_type: Option<String> = None;
+
+        if let Some(values) = &obj.values {
+            for av in &values.string_values {
+                let attr_name = attr_def_names
+                    .get(av.definition.attr_def_ref.as_str())
+                    .copied()
+                    .unwrap_or(&av.definition.attr_def_ref);
+
+                match attr_name {
+                    "status" => {
+                        if !av.the_value.is_empty() {
+                            status = Some(av.the_value.clone());
+                        }
+                    }
+                    "tags" => {
+                        tags = av
+                            .the_value
+                            .split(',')
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty())
+                            .collect();
+                    }
+                    "artifact-type" => {
+                        if !av.the_value.is_empty() {
+                            override_artifact_type = Some(av.the_value.clone());
+                        }
+                    }
+                    _ => {
+                        fields.insert(
+                            attr_name.to_string(),
+                            serde_yaml::Value::String(av.the_value.clone()),
+                        );
+                    }
+                }
+            }
+        }
+
+        let artifact = Artifact {
+            id: obj.identifier.clone(),
+            artifact_type: override_artifact_type.unwrap_or(artifact_type),
+            title: obj.long_name.clone().unwrap_or_default(),
+            description: obj.desc.clone(),
+            status,
+            tags,
+            links: vec![], // filled in below from SPEC-RELATIONS
+            fields,
+            source_file: None,
+        };
+        artifacts.push(artifact);
+    }
+
+    // Build id -> index map using owned strings to avoid borrow conflicts.
+    let artifact_ids: HashMap<String, usize> = artifacts
+        .iter()
+        .enumerate()
+        .map(|(i, a)| (a.id.clone(), i))
+        .collect();
+
+    // Parse SPEC-RELATIONS into Links on source artifacts.
+    for rel in &content.spec_relations.relations {
+        let link_type = rel
+            .relation_type_ref
+            .as_ref()
+            .and_then(|r| {
+                relation_type_names
+                    .get(r.spec_relation_type_ref.as_str())
+                    .copied()
+            })
+            .unwrap_or("traces-to")
+            .to_string();
+
+        let source_id = &rel.source.spec_object_ref;
+        let target_id = &rel.target.spec_object_ref;
+
+        if let Some(&idx) = artifact_ids.get(source_id) {
+            artifacts[idx].links.push(Link {
+                link_type,
+                target: target_id.clone(),
+            });
+        }
+    }
+
+    Ok(artifacts)
+}
+
+// ── Export ───────────────────────────────────────────────────────────────
+
+/// Build a ReqIF document from Rivet artifacts.
+pub fn build_reqif(artifacts: &[Artifact]) -> ReqIfRoot {
+    // Collect unique artifact types and link types.
+    let mut artifact_types: Vec<String> = Vec::new();
+    let mut link_types: Vec<String> = Vec::new();
+
+    for a in artifacts {
+        if !artifact_types.contains(&a.artifact_type) {
+            artifact_types.push(a.artifact_type.clone());
+        }
+        for l in &a.links {
+            if !link_types.contains(&l.link_type) {
+                link_types.push(l.link_type.clone());
+            }
+        }
+    }
+
+    // Collect unique extra field names across all artifacts.
+    let mut field_names: Vec<String> = Vec::new();
+    for a in artifacts {
+        for key in a.fields.keys() {
+            if !field_names.contains(key) {
+                field_names.push(key.clone());
+            }
+        }
+    }
+
+    // Build DATATYPE-DEFINITION-STRING.
+    let datatypes = Datatypes {
+        string_types: vec![DatatypeDefinitionString {
+            identifier: DATATYPE_STRING_ID.into(),
+            long_name: Some("String".into()),
+            max_length: Some(65535),
+        }],
+    };
+
+    // Build SPEC-OBJECT-TYPEs — one per artifact type, each with standard
+    // attribute definitions for status, tags, artifact-type, plus any extra fields.
+    let object_types: Vec<SpecObjectType> = artifact_types
+        .iter()
+        .map(|at| {
+            let type_id = format!("SOT-{at}");
+
+            let mut string_attrs = vec![
+                AttributeDefinitionString {
+                    identifier: ATTR_DEF_STATUS.into(),
+                    long_name: Some("status".into()),
+                    datatype_ref: Some(DatatypeRef {
+                        datatype_ref: DATATYPE_STRING_ID.into(),
+                    }),
+                },
+                AttributeDefinitionString {
+                    identifier: ATTR_DEF_TAGS.into(),
+                    long_name: Some("tags".into()),
+                    datatype_ref: Some(DatatypeRef {
+                        datatype_ref: DATATYPE_STRING_ID.into(),
+                    }),
+                },
+                AttributeDefinitionString {
+                    identifier: ATTR_DEF_ARTIFACT_TYPE.into(),
+                    long_name: Some("artifact-type".into()),
+                    datatype_ref: Some(DatatypeRef {
+                        datatype_ref: DATATYPE_STRING_ID.into(),
+                    }),
+                },
+            ];
+
+            for fname in &field_names {
+                string_attrs.push(AttributeDefinitionString {
+                    identifier: format!("ATTR-{fname}"),
+                    long_name: Some(fname.clone()),
+                    datatype_ref: Some(DatatypeRef {
+                        datatype_ref: DATATYPE_STRING_ID.into(),
+                    }),
+                });
+            }
+
+            SpecObjectType {
+                identifier: type_id,
+                long_name: Some(at.clone()),
+                spec_attributes: Some(SpecAttributes { string_attrs }),
+            }
+        })
+        .collect();
+
+    // Build SPEC-RELATION-TYPEs.
+    let relation_types: Vec<SpecRelationType> = link_types
+        .iter()
+        .map(|lt| {
+            let type_id = format!("SRT-{lt}");
+            SpecRelationType {
+                identifier: type_id,
+                long_name: Some(lt.clone()),
+            }
+        })
+        .collect();
+
+    // Build SPEC-OBJECTs.
+    let objects: Vec<SpecObject> = artifacts
+        .iter()
+        .map(|a| {
+            let type_ref_id = format!("SOT-{}", a.artifact_type);
+
+            let mut string_values = vec![
+                AttributeValueString {
+                    the_value: a.status.clone().unwrap_or_default(),
+                    definition: AttrDefinitionRef {
+                        attr_def_ref: ATTR_DEF_STATUS.into(),
+                    },
+                },
+                AttributeValueString {
+                    the_value: a.tags.join(", "),
+                    definition: AttrDefinitionRef {
+                        attr_def_ref: ATTR_DEF_TAGS.into(),
+                    },
+                },
+                AttributeValueString {
+                    the_value: a.artifact_type.clone(),
+                    definition: AttrDefinitionRef {
+                        attr_def_ref: ATTR_DEF_ARTIFACT_TYPE.into(),
+                    },
+                },
+            ];
+
+            for (key, value) in &a.fields {
+                let val_str = match value {
+                    serde_yaml::Value::String(s) => s.clone(),
+                    other => format!("{other:?}"),
+                };
+                string_values.push(AttributeValueString {
+                    the_value: val_str,
+                    definition: AttrDefinitionRef {
+                        attr_def_ref: format!("ATTR-{key}"),
+                    },
+                });
+            }
+
+            SpecObject {
+                identifier: a.id.clone(),
+                long_name: Some(a.title.clone()),
+                desc: a.description.clone(),
+                object_type_ref: Some(SpecObjectTypeRef {
+                    spec_object_type_ref: type_ref_id,
+                }),
+                values: Some(Values { string_values }),
+            }
+        })
+        .collect();
+
+    // Build SPEC-RELATIONs.
+    let mut relations: Vec<SpecRelation> = Vec::new();
+    let mut rel_counter = 0u64;
+    for a in artifacts {
+        for link in &a.links {
+            rel_counter += 1;
+            let type_ref_id = format!("SRT-{}", link.link_type);
+            relations.push(SpecRelation {
+                identifier: format!("REL-{rel_counter}"),
+                relation_type_ref: Some(SpecRelationTypeRef {
+                    spec_relation_type_ref: type_ref_id,
+                }),
+                source: SpecRelationEnd {
+                    spec_object_ref: a.id.clone(),
+                },
+                target: SpecRelationEnd {
+                    spec_object_ref: link.target.clone(),
+                },
+            });
+        }
+    }
+
+    ReqIfRoot {
+        xmlns: REQIF_NAMESPACE.into(),
+        the_header: TheHeader {
+            req_if_header: ReqIfHeader {
+                identifier: "rivet-export".into(),
+                comment: Some("Generated by Rivet SDLC tool".into()),
+                creation_time: None,
+                repository_id: None,
+                req_if_tool_id: Some("rivet".into()),
+                req_if_version: Some("1.2".into()),
+                source_tool_id: Some("rivet".into()),
+                title: Some("Rivet ReqIF Export".into()),
+            },
+        },
+        core_content: CoreContent {
+            req_if_content: ReqIfContent {
+                datatypes,
+                spec_types: SpecTypes {
+                    object_types,
+                    relation_types,
+                },
+                spec_objects: SpecObjects { objects },
+                spec_relations: SpecRelations { relations },
+            },
+        },
+    }
+}
+
+/// Serialize a ReqIF document to XML bytes.
+pub fn serialize_reqif(root: &ReqIfRoot) -> Result<Vec<u8>, Error> {
+    let xml_body = xml_to_string(root)
+        .map_err(|e| Error::Adapter(format!("ReqIF XML serialize error: {e}")))?;
+
+    // Prepend the XML declaration that quick-xml's serializer omits.
+    let mut output = String::with_capacity(xml_body.len() + 50);
+    output.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+    output.push_str(&xml_body);
+
+    Ok(output.into_bytes())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_artifacts() -> Vec<Artifact> {
+        vec![
+            Artifact {
+                id: "REQ-001".into(),
+                artifact_type: "requirement".into(),
+                title: "Memory isolation".into(),
+                description: Some("The system shall enforce memory isolation.".into()),
+                status: Some("approved".into()),
+                tags: vec!["safety".into(), "core".into()],
+                links: vec![],
+                fields: {
+                    let mut f = BTreeMap::new();
+                    f.insert("priority".into(), serde_yaml::Value::String("must".into()));
+                    f
+                },
+                source_file: None,
+            },
+            Artifact {
+                id: "TC-001".into(),
+                artifact_type: "test-case".into(),
+                title: "Test memory isolation".into(),
+                description: None,
+                status: Some("draft".into()),
+                tags: vec![],
+                links: vec![Link {
+                    link_type: "verifies".into(),
+                    target: "REQ-001".into(),
+                }],
+                fields: BTreeMap::new(),
+                source_file: None,
+            },
+        ]
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)] // quick-xml uses unsafe/SIMD internals that Miri cannot interpret
+    fn test_export_produces_valid_xml() {
+        let arts = sample_artifacts();
+        let adapter = ReqIfAdapter::new();
+        let config = AdapterConfig::default();
+        let bytes = adapter.export(&arts, &config).unwrap();
+        let xml = std::str::from_utf8(&bytes).unwrap();
+
+        assert!(xml.starts_with("<?xml version=\"1.0\" encoding=\"UTF-8\"?>"));
+        assert!(xml.contains("REQ-IF"));
+        assert!(xml.contains("THE-HEADER"));
+        assert!(xml.contains("SPEC-OBJECTS"));
+        assert!(xml.contains("SPEC-RELATIONS"));
+        assert!(xml.contains("SPEC-OBJECT-TYPE"));
+        assert!(xml.contains("SPEC-RELATION-TYPE"));
+        assert!(xml.contains(REQIF_NAMESPACE));
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)] // quick-xml uses unsafe/SIMD internals that Miri cannot interpret
+    fn test_roundtrip() {
+        let original = sample_artifacts();
+        let adapter = ReqIfAdapter::new();
+        let config = AdapterConfig::default();
+
+        let bytes = adapter.export(&original, &config).unwrap();
+        let reimported = adapter
+            .import(&AdapterSource::Bytes(bytes), &config)
+            .unwrap();
+
+        assert_eq!(reimported.len(), original.len());
+
+        for (orig, re) in original.iter().zip(reimported.iter()) {
+            assert_eq!(orig.id, re.id, "id mismatch");
+            assert_eq!(
+                orig.artifact_type, re.artifact_type,
+                "artifact_type mismatch"
+            );
+            assert_eq!(orig.title, re.title, "title mismatch");
+            assert_eq!(orig.description, re.description, "description mismatch");
+            assert_eq!(orig.status, re.status, "status mismatch");
+            assert_eq!(orig.tags, re.tags, "tags mismatch");
+            assert_eq!(orig.links.len(), re.links.len(), "links len mismatch");
+            for (ol, rl) in orig.links.iter().zip(re.links.iter()) {
+                assert_eq!(ol.link_type, rl.link_type, "link_type mismatch");
+                assert_eq!(ol.target, rl.target, "link target mismatch");
+            }
+            assert_eq!(orig.fields, re.fields, "fields mismatch");
+        }
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)] // quick-xml uses unsafe/SIMD internals that Miri cannot interpret
+    fn test_parse_minimal_reqif() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<REQ-IF xmlns="http://www.omg.org/spec/ReqIF/20110401/reqif.xsd">
+  <THE-HEADER>
+    <REQ-IF-HEADER IDENTIFIER="test-header"/>
+  </THE-HEADER>
+  <CORE-CONTENT>
+    <REQ-IF-CONTENT>
+      <DATATYPES/>
+      <SPEC-TYPES>
+        <SPEC-OBJECT-TYPE IDENTIFIER="SOT-req" LONG-NAME="requirement"/>
+      </SPEC-TYPES>
+      <SPEC-OBJECTS>
+        <SPEC-OBJECT IDENTIFIER="R-1" LONG-NAME="First req" DESC="A description">
+          <TYPE><SPEC-OBJECT-TYPE-REF>SOT-req</SPEC-OBJECT-TYPE-REF></TYPE>
+        </SPEC-OBJECT>
+      </SPEC-OBJECTS>
+      <SPEC-RELATIONS/>
+    </REQ-IF-CONTENT>
+  </CORE-CONTENT>
+</REQ-IF>"#;
+
+        let arts = parse_reqif(xml).unwrap();
+        assert_eq!(arts.len(), 1);
+        assert_eq!(arts[0].id, "R-1");
+        assert_eq!(arts[0].title, "First req");
+        assert_eq!(arts[0].description, Some("A description".into()));
+        assert_eq!(arts[0].artifact_type, "requirement");
+    }
+}

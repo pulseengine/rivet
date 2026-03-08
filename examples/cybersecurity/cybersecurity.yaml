@@ -1,0 +1,336 @@
+artifacts:
+  # ── Assets (TARA — items of value) ─────────────────────────────────────
+
+  - id: ASSET-001
+    type: asset
+    title: Firmware Update Channel
+    description: >
+      OTA and wired firmware update communication channel between the backend
+      server and the ECU bootloader.  Compromise could allow installation of
+      manipulated firmware.
+    status: approved
+    tags: [ota, firmware, sec]
+    fields:
+      asset-type: interface
+      cybersecurity-properties:
+        - integrity
+        - authenticity
+
+  - id: ASSET-002
+    type: asset
+    title: UDS Diagnostic Interface
+    description: >
+      Unified Diagnostic Services (ISO 14229) interface exposed on the OBD-II
+      port and over DoIP.  Provides security-sensitive services such as
+      ECU reset, memory read/write, and routine control.
+    status: approved
+    tags: [diagnostics, uds, sec]
+    fields:
+      asset-type: interface
+      cybersecurity-properties:
+        - confidentiality
+        - integrity
+        - authenticity
+
+  # ── Threat Scenarios ────────────────────────────────────────────────────
+
+  - id: TS-001
+    type: threat-scenario
+    title: Malicious firmware injection via OTA channel
+    description: >
+      An attacker intercepts or spoofs the OTA update server to deliver a
+      manipulated firmware image to the ECU bootloader, bypassing
+      authenticity checks.
+    status: approved
+    tags: [ota, spoofing]
+    fields:
+      attack-vector: network
+      attack-feasibility: medium
+      impact: severe
+    links:
+      - type: threatens
+        target: ASSET-001
+
+  - id: TS-002
+    type: threat-scenario
+    title: Unauthorized diagnostic session via UDS
+    description: >
+      An attacker gains physical or adjacent-network access to the diagnostic
+      interface and opens a SecurityAccess session without valid credentials,
+      enabling safety-critical service execution.
+    status: approved
+    tags: [diagnostics, elevation-of-privilege]
+    fields:
+      attack-vector: physical
+      attack-feasibility: medium
+      impact: major
+    links:
+      - type: threatens
+        target: ASSET-002
+
+  # ── Risk Assessments ────────────────────────────────────────────────────
+
+  - id: RA-001
+    type: risk-assessment
+    title: Risk of malicious firmware injection
+    description: >
+      Network-based attack with medium feasibility and severe safety impact.
+      Risk level is unacceptable — mitigation required.
+    status: approved
+    tags: [ota]
+    fields:
+      risk-level: unacceptable
+      risk-treatment: mitigate
+    links:
+      - type: assesses
+        target: TS-001
+
+  - id: RA-002
+    type: risk-assessment
+    title: Risk of unauthorized diagnostic access
+    description: >
+      Physical attack with medium feasibility and major impact on vehicle
+      safety functions.  Risk level is unacceptable — mitigation required.
+    status: approved
+    tags: [diagnostics]
+    fields:
+      risk-level: unacceptable
+      risk-treatment: mitigate
+    links:
+      - type: assesses
+        target: TS-002
+
+  # ── Cybersecurity Goals (SEC.1 — top-level requirements) ────────────────
+
+  - id: CSG-001
+    type: cybersecurity-goal
+    title: Ensure firmware image authenticity and integrity
+    description: >
+      The system shall verify the authenticity and integrity of every firmware
+      image before installation to prevent execution of manipulated code.
+    status: approved
+    tags: [secure-boot, ota]
+    fields:
+      cal: "3"
+      verification-criteria: >
+        Demonstrate that the bootloader rejects any firmware image whose
+        cryptographic signature is invalid or missing.
+    links:
+      - type: mitigates
+        target: TS-001
+
+  - id: CSG-002
+    type: cybersecurity-goal
+    title: Authenticate diagnostic service requests
+    description: >
+      The system shall authenticate every security-sensitive UDS diagnostic
+      request before granting access to protected services.
+    status: approved
+    tags: [diagnostics, authentication]
+    fields:
+      cal: "2"
+      verification-criteria: >
+        Demonstrate that all SecurityAccess (0x27) and Authentication (0x29)
+        requests are validated before granting an elevated session.
+    links:
+      - type: mitigates
+        target: TS-002
+
+  # ── Cybersecurity Requirements (SEC.1 — detailed requirements) ──────────
+
+  - id: CSREQ-001
+    type: cybersecurity-req
+    title: Verify firmware signature using ECDSA-P256
+    description: >
+      The bootloader shall verify the ECDSA-P256-SHA256 signature of every
+      firmware image against the OEM root-of-trust public key stored in the
+      HSM before writing to flash.
+    status: approved
+    tags: [secure-boot, crypto]
+    fields:
+      req-type: integrity
+      priority: must
+      verification-criteria: >
+        Test with valid, corrupted, and missing signatures; confirm only
+        validly signed images are accepted.
+    links:
+      - type: derives-from
+        target: CSG-001
+
+  - id: CSREQ-002
+    type: cybersecurity-req
+    title: Protect firmware transfer with TLS 1.3
+    description: >
+      All OTA firmware downloads shall use TLS 1.3 with mutual authentication
+      between the ECU and the backend update server.
+    status: approved
+    tags: [ota, tls]
+    fields:
+      req-type: encryption
+      priority: must
+      verification-criteria: >
+        Verify that downgrade to TLS 1.2 or plaintext is rejected; confirm
+        mutual certificate validation.
+    links:
+      - type: derives-from
+        target: CSG-001
+
+  - id: CSREQ-003
+    type: cybersecurity-req
+    title: UDS SecurityAccess challenge-response via HSM
+    description: >
+      The UDS SecurityAccess service (0x27) shall implement a
+      challenge-response scheme using AES-128-CMAC with keys managed by the
+      on-chip HSM.  Failed attempts shall trigger exponential back-off.
+    status: approved
+    tags: [diagnostics, hsm]
+    fields:
+      req-type: authentication
+      priority: must
+      verification-criteria: >
+        Test correct challenge-response flow, invalid key rejection, and
+        back-off timer activation after 3 consecutive failures.
+    links:
+      - type: derives-from
+        target: CSG-002
+
+  # ── Cybersecurity Designs (SEC.2) ───────────────────────────────────────
+
+  - id: CSD-001
+    type: cybersecurity-design
+    title: Secure Boot chain with HSM-backed signature verification
+    description: >
+      A two-stage secure boot chain: the HSM verifies the bootloader first
+      stage using a ROM-rooted public key, then the bootloader verifies the
+      application image using an OEM key stored in HSM secure storage.
+      ECDSA-P256-SHA256 is used throughout.
+    status: approved
+    tags: [secure-boot, hsm]
+    fields:
+      mechanism: secure boot
+      algorithm: ECDSA-P256-SHA256
+    links:
+      - type: satisfies
+        target: CSREQ-001
+
+  - id: CSD-002
+    type: cybersecurity-design
+    title: TLS 1.3 mutual-auth OTA transport and HSM-backed UDS auth
+    description: >
+      OTA channel secured with TLS 1.3 (ECDHE key exchange, AES-128-GCM
+      cipher suite, X.509 mutual authentication).  UDS SecurityAccess uses
+      AES-128-CMAC challenge-response with keys stored in HSM SHE+
+      key slots.
+    status: approved
+    tags: [tls, hsm, uds]
+    fields:
+      mechanism: TLS 1.3 + HSM CMAC
+      algorithm: AES-128-GCM / AES-128-CMAC
+    links:
+      - type: satisfies
+        target: CSREQ-002
+      - type: satisfies
+        target: CSREQ-003
+
+  # ── Cybersecurity Implementations (SEC.3) ───────────────────────────────
+
+  - id: CSI-001
+    type: cybersecurity-implementation
+    title: Bootloader secure-boot verification module
+    description: >
+      Implementation of the secure boot verification logic in the bootloader,
+      using the HSM driver API for ECDSA verify operations and secure key
+      storage access.
+    status: approved
+    tags: [secure-boot, code]
+    fields:
+      unit: src/boot/secure_boot.c
+      implementation-type: code
+    links:
+      - type: implements
+        target: CSD-001
+
+  - id: CSI-002
+    type: cybersecurity-implementation
+    title: TLS 1.3 stack and UDS authentication handler
+    description: >
+      Integration of the wolfSSL TLS 1.3 library for OTA transport and
+      implementation of the UDS SecurityAccess handler calling the HSM
+      CMAC API for challenge-response authentication.
+    status: approved
+    tags: [tls, uds, code]
+    fields:
+      unit: src/comms/tls_ota.c, src/diag/uds_security.c
+      implementation-type: code
+    links:
+      - type: implements
+        target: CSD-002
+
+  # ── Cybersecurity Verifications (SEC.4) ─────────────────────────────────
+
+  - id: CSV-001
+    type: cybersecurity-verification
+    title: Secure boot signature rejection test
+    description: >
+      Verify that the bootloader rejects firmware images with invalid,
+      corrupted, or missing ECDSA signatures and only accepts correctly
+      signed images.
+    status: approved
+    tags: [secure-boot, test]
+    fields:
+      method: automated-test
+      preconditions:
+        - HSM provisioned with OEM test root-of-trust key
+        - Test firmware images with valid, corrupted, and absent signatures
+      steps:
+        - step: 1
+          action: Flash a validly signed firmware image
+          expected: Image accepted and written to application partition
+        - step: 2
+          action: Flash an image with a corrupted signature
+          expected: Bootloader rejects the image and retains previous firmware
+        - step: 3
+          action: Flash an image with no signature block
+          expected: Bootloader rejects the image with authentication error
+    links:
+      - type: verifies
+        target: CSREQ-001
+
+  - id: CSV-002
+    type: cybersecurity-verification
+    title: OTA transport and UDS authentication penetration test
+    description: >
+      Penetration test covering the TLS 1.3 OTA transport channel and the
+      UDS SecurityAccess service.  Confirms that TLS downgrade is rejected,
+      mutual authentication is enforced, and brute-force/replay attacks on
+      UDS are mitigated by the challenge-response scheme and exponential
+      back-off timer.
+    status: approved
+    tags: [ota, diagnostics, pentest]
+    fields:
+      method: penetration-test
+      preconditions:
+        - ECU connected via OBD-II with DoIP enabled
+        - OTA backend test environment with valid and expired certificates
+        - Valid and invalid SecurityAccess key material available
+      steps:
+        - step: 1
+          action: Initiate OTA download over TLS 1.3 with valid mutual certificates
+          expected: TLS session established and firmware downloaded
+        - step: 2
+          action: Attempt TLS downgrade to 1.2 or plaintext
+          expected: ECU rejects the connection
+        - step: 3
+          action: Attempt SecurityAccess with correct challenge-response
+          expected: Security session granted
+        - step: 4
+          action: Replay a previously valid response to a new challenge
+          expected: Authentication rejected
+        - step: 5
+          action: Send 3 consecutive invalid responses
+          expected: ECU enforces exponential back-off delay before next attempt
+    links:
+      - type: verifies
+        target: CSREQ-002
+      - type: verifies
+        target: CSREQ-003

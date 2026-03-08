@@ -1,0 +1,10 @@
+# Run: rivet --schemas ../../schemas validate
+project:
+  name: cybersecurity-example
+  schemas:
+    - common
+    - cybersecurity
+
+sources:
+  - path: cybersecurity.yaml
+    format: generic-yaml

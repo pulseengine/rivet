@@ -3,7 +3,7 @@ use crate::schema::{Cardinality, Schema, Severity};
 use crate::store::Store;
 
 /// A single validation diagnostic.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Diagnostic {
     pub severity: Severity,
     pub artifact_id: Option<String>,

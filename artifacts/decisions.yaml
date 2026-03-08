@@ -189,3 +189,30 @@ artifacts:
       alternatives: >
         Manual timing with std::time::Instant. Rejected because it
         lacks statistical rigor and regression detection.
+
+  - id: DD-010
+    type: design-decision
+    title: ASPICE 4.0 verification terminology and composable cybersecurity schema
+    status: approved
+    description: >
+      Update aspice.yaml to v4.0 terminology: rename artifact types from
+      *-test to *-verification, expand method values, add verification-criteria.
+      Cybersecurity (SEC.1-4, ISO 21434) is a separate composable schema
+      file rather than embedded in aspice.yaml.
+    tags: [schema, aspice, cybersecurity]
+    links:
+      - type: satisfies
+        target: REQ-015
+      - type: satisfies
+        target: REQ-016
+    fields:
+      rationale: >
+        ASPICE 4.0 broadened "testing" to "verification measures" — the
+        schema should reflect this. Cybersecurity as a separate schema
+        follows the composable merge pattern (common + aspice + cybersecurity)
+        so projects can opt in without forcing cybersecurity types on
+        safety-only projects.
+      alternatives: >
+        Keep old test terminology for backward compatibility. Rejected
+        because the schema is pre-1.0 and alignment with the standard
+        is more valuable than backward compatibility at this stage.

@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "rivet-core",
     "rivet-cli",
+    "etch",
 ]
 
 [workspace.package]
@@ -34,11 +35,17 @@ env_logger = "0.11"
 
 # HTTP / serve
 axum = "0.8"
+reqwest = { version = "0.12", features = ["json"] }
 tokio = { version = "1", features = ["full"] }
 tower-http = { version = "0.6", features = ["cors", "fs"] }
+urlencoding = "2"
 
 # XML (ReqIF)
 quick-xml = { version = "0.37", features = ["serialize"] }
+
+# WASM component model
+wasmtime = { version = "42", features = ["component-model"] }
+wasmtime-wasi = "42"
 
 # Benchmarking
 criterion = { version = "0.5", features = ["html_reports"] }

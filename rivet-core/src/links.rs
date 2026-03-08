@@ -40,7 +40,7 @@ pub struct LinkGraph {
     /// petgraph directed graph for structural analysis.
     graph: DiGraph<ArtifactId, String>,
     /// Map from artifact ID to petgraph node index (used for graph lookups).
-    _node_map: HashMap<ArtifactId, NodeIndex>,
+    node_map: HashMap<ArtifactId, NodeIndex>,
 }
 
 impl LinkGraph {
@@ -100,8 +100,18 @@ impl LinkGraph {
             backward,
             broken,
             graph,
-            _node_map: node_map,
+            node_map,
         }
+    }
+
+    /// Access the underlying petgraph directed graph.
+    pub fn graph(&self) -> &DiGraph<ArtifactId, String> {
+        &self.graph
+    }
+
+    /// Access the mapping from artifact ID to petgraph node index.
+    pub fn node_map(&self) -> &HashMap<ArtifactId, NodeIndex> {
+        &self.node_map
     }
 
     /// Get forward links from an artifact.

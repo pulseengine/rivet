@@ -11,6 +11,10 @@ rust-version.workspace = true
 name = "rivet"
 path = "src/main.rs"
 
+[features]
+default = []
+wasm = ["rivet-core/wasm"]
+
 [dependencies]
 rivet-core = { path = "../rivet-core" }
 clap = { workspace = true }
@@ -23,3 +27,5 @@ serde_json = { workspace = true }
 axum = { workspace = true }
 tokio = { workspace = true }
 tower-http = { workspace = true }
+etch = { path = "../etch" }
+petgraph = { workspace = true }

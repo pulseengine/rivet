@@ -4,6 +4,7 @@ use std::process::ExitCode;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
+use rivet_core::diff::{ArtifactDiff, DiagnosticDiff};
 use rivet_core::links::LinkGraph;
 use rivet_core::matrix::{self, Direction};
 use rivet_core::schema::Severity;
@@ -79,11 +80,49 @@ enum Command {
         schema: Option<PathBuf>,
     },
 
+    /// Compare two versions of artifacts and show what changed
+    Diff {
+        /// Path to the base artifact directory (older version)
+        #[arg(long)]
+        base: Option<PathBuf>,
+
+        /// Path to the head artifact directory (newer version)
+        #[arg(long)]
+        head: Option<PathBuf>,
+    },
+
+    /// Export artifacts to a specified format
+    Export {
+        /// Output format: "reqif", "generic-yaml"
+        #[arg(short, long)]
+        format: String,
+
+        /// Output file path (stdout if omitted)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
+
     /// Start the HTMX-powered dashboard server
     Serve {
         /// Port to listen on
         #[arg(short = 'P', long, default_value = "3000")]
         port: u16,
+    },
+
+    /// Import artifacts using a custom WASM adapter component
+    #[cfg(feature = "wasm")]
+    Import {
+        /// Path to the WASM adapter component file (.wasm)
+        #[arg(long)]
+        adapter: PathBuf,
+
+        /// Path to the source data (file or directory)
+        #[arg(long)]
+        source: PathBuf,
+
+        /// Adapter configuration entries (key=value pairs)
+        #[arg(long = "config", value_parser = parse_key_val)]
+        config_entries: Vec<(String, String)>,
     },
 }
 
@@ -126,6 +165,8 @@ fn run(cli: Cli) -> Result<bool> {
             link,
             direction,
         } => cmd_matrix(&cli, from, to, link.as_deref(), direction),
+        Command::Diff { base, head } => cmd_diff(&cli, base.as_deref(), head.as_deref()),
+        Command::Export { format, output } => cmd_export(&cli, format, output.as_deref()),
         Command::Serve { port } => {
             let port = *port;
             let (store, schema, graph) = load_project(&cli)?;
@@ -133,6 +174,12 @@ fn run(cli: Cli) -> Result<bool> {
             rt.block_on(serve::run(store, schema, graph, port))?;
             Ok(true)
         }
+        #[cfg(feature = "wasm")]
+        Command::Import {
+            adapter,
+            source,
+            config_entries,
+        } => cmd_import(adapter, source, config_entries),
     }
 }
 
@@ -327,6 +374,198 @@ fn cmd_matrix(
     Ok(true)
 }
 
+/// Export all project artifacts in the specified format.
+fn cmd_export(cli: &Cli, format: &str, output: Option<&std::path::Path>) -> Result<bool> {
+    use rivet_core::adapter::{Adapter, AdapterConfig};
+
+    let (store, _, _) = load_project(cli)?;
+    let artifacts: Vec<_> = store.iter().cloned().collect();
+    let config = AdapterConfig::default();
+
+    let bytes = match format {
+        "reqif" => {
+            let adapter = rivet_core::reqif::ReqIfAdapter::new();
+            adapter
+                .export(&artifacts, &config)
+                .map_err(|e| anyhow::anyhow!("{e}"))?
+        }
+        "generic-yaml" | "generic" => {
+            let adapter = rivet_core::formats::generic::GenericYamlAdapter::new();
+            adapter
+                .export(&artifacts, &config)
+                .map_err(|e| anyhow::anyhow!("{e}"))?
+        }
+        other => {
+            anyhow::bail!("unsupported export format: {other} (supported: reqif, generic-yaml)")
+        }
+    };
+
+    if let Some(path) = output {
+        std::fs::write(path, &bytes).with_context(|| format!("writing {}", path.display()))?;
+        println!(
+            "Exported {} artifacts to {}",
+            artifacts.len(),
+            path.display()
+        );
+    } else {
+        use std::io::Write;
+        std::io::stdout()
+            .write_all(&bytes)
+            .context("writing to stdout")?;
+    }
+
+    Ok(true)
+}
+
+/// Compare two artifact sets and display the differences.
+fn cmd_diff(
+    cli: &Cli,
+    base_path: Option<&std::path::Path>,
+    head_path: Option<&std::path::Path>,
+) -> Result<bool> {
+    let (base_store, base_schema, base_graph, head_store, head_schema, head_graph) =
+        match (base_path, head_path) {
+            (Some(bp), Some(hp)) => {
+                // Explicit --base and --head directories: load each as a
+                // standalone project.
+                let base_cli = Cli {
+                    project: bp.to_path_buf(),
+                    schemas: cli.schemas.clone(),
+                    verbose: cli.verbose,
+                    command: Command::Validate,
+                };
+                let head_cli = Cli {
+                    project: hp.to_path_buf(),
+                    schemas: cli.schemas.clone(),
+                    verbose: cli.verbose,
+                    command: Command::Validate,
+                };
+                let (bs, bsc, bg) = load_project(&base_cli)?;
+                let (hs, hsc, hg) = load_project(&head_cli)?;
+                (bs, bsc, bg, hs, hsc, hg)
+            }
+            _ => {
+                // Default: load the project twice (same working tree). This
+                // is a placeholder — a future version will compare against
+                // the last clean git state.
+                let (s1, sc1, g1) = load_project(cli)?;
+                let (s2, sc2, g2) = load_project(cli)?;
+                (s1, sc1, g1, s2, sc2, g2)
+            }
+        };
+
+    // Compute artifact diff
+    let diff = ArtifactDiff::compute(&base_store, &head_store);
+
+    // Compute diagnostic diff
+    let base_diags = validate::validate(&base_store, &base_schema, &base_graph);
+    let head_diags = validate::validate(&head_store, &head_schema, &head_graph);
+    let diag_diff = DiagnosticDiff::compute(&base_diags, &head_diags);
+
+    // ── Display ──────────────────────────────────────────────────────
+
+    let use_color = std::io::IsTerminal::is_terminal(&std::io::stdout());
+
+    let green = |s: &str| {
+        if use_color {
+            format!("\x1b[32m{s}\x1b[0m")
+        } else {
+            format!("+ {s}")
+        }
+    };
+    let red = |s: &str| {
+        if use_color {
+            format!("\x1b[31m{s}\x1b[0m")
+        } else {
+            format!("- {s}")
+        }
+    };
+    let yellow = |s: &str| {
+        if use_color {
+            format!("\x1b[33m{s}\x1b[0m")
+        } else {
+            format!("~ {s}")
+        }
+    };
+
+    // Added
+    for id in &diff.added {
+        let title = head_store.get(id).map(|a| a.title.as_str()).unwrap_or("");
+        println!("{}", green(&format!("{id}  {title}")));
+    }
+
+    // Removed
+    for id in &diff.removed {
+        let title = base_store.get(id).map(|a| a.title.as_str()).unwrap_or("");
+        println!("{}", red(&format!("{id}  {title}")));
+    }
+
+    // Modified
+    for change in &diff.modified {
+        println!("{}", yellow(&change.id));
+
+        if let Some((old, new)) = &change.title_changed {
+            println!("  title: {} -> {}", red(old), green(new));
+        }
+        if change.description_changed {
+            println!("  description: changed");
+        }
+        if let Some((old, new)) = &change.status_changed {
+            let old_s = old.as_deref().unwrap_or("(none)");
+            let new_s = new.as_deref().unwrap_or("(none)");
+            println!("  status: {} -> {}", red(old_s), green(new_s));
+        }
+        if let Some((old, new)) = &change.type_changed {
+            println!("  type: {} -> {}", red(old), green(new));
+        }
+        for tag in &change.tags_added {
+            println!("  tag: {}", green(tag));
+        }
+        for tag in &change.tags_removed {
+            println!("  tag: {}", red(tag));
+        }
+        for link in &change.links_added {
+            println!(
+                "  link: {}",
+                green(&format!("{} -> {}", link.link_type, link.target))
+            );
+        }
+        for link in &change.links_removed {
+            println!(
+                "  link: {}",
+                red(&format!("{} -> {}", link.link_type, link.target))
+            );
+        }
+        for field in &change.fields_changed {
+            println!("  field changed: {field}");
+        }
+    }
+
+    // Summary
+    println!();
+    println!("{}", diff.summary());
+
+    // Diagnostic diff
+    if !diag_diff.is_empty() {
+        println!();
+        for d in &diag_diff.new_errors {
+            println!("{}", red(&format!("NEW  {d}")));
+        }
+        for d in &diag_diff.resolved_errors {
+            println!("{}", green(&format!("RESOLVED  {d}")));
+        }
+        for d in &diag_diff.new_warnings {
+            println!("{}", yellow(&format!("NEW  {d}")));
+        }
+        for d in &diag_diff.resolved_warnings {
+            println!("{}", green(&format!("RESOLVED  {d}")));
+        }
+        println!("{}", diag_diff.summary());
+    }
+
+    Ok(true)
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────
 
 fn resolve_schemas_dir(cli: &Cli) -> PathBuf {
@@ -389,6 +628,65 @@ fn print_stats(store: &Store) {
         println!("  {:30} {:>4}", t, store.count_by_type(t));
     }
     println!("  {:30} {:>4}", "TOTAL", store.len());
+}
+
+/// Parse a key=value pair for adapter configuration.
+#[cfg(feature = "wasm")]
+fn parse_key_val(s: &str) -> Result<(String, String), String> {
+    let pos = s
+        .find('=')
+        .ok_or_else(|| format!("invalid KEY=VALUE: no '=' found in '{s}'"))?;
+    Ok((s[..pos].to_string(), s[pos + 1..].to_string()))
+}
+
+/// Import artifacts using a WASM adapter component.
+#[cfg(feature = "wasm")]
+fn cmd_import(
+    adapter_path: &std::path::Path,
+    source_path: &std::path::Path,
+    config_entries: &[(String, String)],
+) -> Result<bool> {
+    use rivet_core::adapter::{Adapter, AdapterConfig, AdapterSource};
+    use rivet_core::wasm_runtime::WasmAdapterRuntime;
+    use std::collections::BTreeMap;
+
+    println!("Loading WASM adapter: {}", adapter_path.display());
+
+    let runtime = WasmAdapterRuntime::with_defaults().context("failed to create WASM runtime")?;
+
+    let adapter = runtime
+        .load_adapter(adapter_path)
+        .context("failed to load WASM adapter")?;
+
+    println!("  Adapter ID:   {}", adapter.id());
+    println!("  Adapter name: {}", adapter.name());
+
+    let source = if source_path.is_dir() {
+        AdapterSource::Directory(source_path.to_path_buf())
+    } else {
+        AdapterSource::Path(source_path.to_path_buf())
+    };
+
+    let config = AdapterConfig {
+        entries: config_entries
+            .iter()
+            .cloned()
+            .collect::<BTreeMap<String, String>>(),
+    };
+
+    let artifacts = adapter
+        .import(&source, &config)
+        .context("adapter import failed")?;
+
+    println!("\nImported {} artifacts:", artifacts.len());
+    for artifact in &artifacts {
+        println!(
+            "  {:20} {:25} {}",
+            artifact.id, artifact.artifact_type, artifact.title
+        );
+    }
+
+    Ok(true)
 }
 
 fn print_diagnostics(diagnostics: &[validate::Diagnostic]) {

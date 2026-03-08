@@ -30,6 +30,7 @@ impl StpaYamlAdapter {
                 "control-action".into(),
                 "uca".into(),
                 "controller-constraint".into(),
+                "loss-scenario".into(),
             ],
         }
     }
@@ -83,6 +84,7 @@ pub fn import_stpa_directory(dir: &Path) -> Result<Vec<Artifact>, Error> {
         ("control-structure.yaml", parse_control_structure),
         ("ucas.yaml", parse_ucas),
         ("controller-constraints.yaml", parse_controller_constraints),
+        ("loss-scenarios.yaml", parse_loss_scenarios),
     ];
 
     for (filename, parser) in file_parsers {
@@ -118,6 +120,7 @@ pub fn import_stpa_file(path: &Path) -> Result<Vec<Artifact>, Error> {
         "control-structure.yaml" => parse_control_structure,
         "ucas.yaml" => parse_ucas,
         "controller-constraints.yaml" => parse_controller_constraints,
+        "loss-scenarios.yaml" => parse_loss_scenarios,
         _ => {
             return Err(Error::Adapter(format!(
                 "unknown STPA file type: {}",
@@ -599,6 +602,93 @@ fn parse_controller_constraints(path: &Path) -> Result<Vec<Artifact>, Error> {
                 artifact_type: "controller-constraint".into(),
                 title: cc.constraint,
                 description: None,
+                status: None,
+                tags: vec![],
+                links,
+                fields,
+                source_file: None,
+            }
+        })
+        .collect())
+}
+
+// ── Loss scenarios ────────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+struct LossScenariosFile {
+    #[serde(rename = "loss-scenarios")]
+    loss_scenarios: Vec<StpaLossScenario>,
+}
+
+#[derive(Deserialize)]
+struct StpaLossScenario {
+    id: String,
+    title: String,
+    #[serde(default)]
+    uca: Option<String>,
+    #[serde(default, rename = "type")]
+    scenario_type: Option<String>,
+    #[serde(default)]
+    scenario: Option<String>,
+    #[serde(default, rename = "causal-factors")]
+    causal_factors: Vec<String>,
+    #[serde(default)]
+    hazards: Vec<String>,
+    #[serde(default, rename = "process-model-flaw")]
+    process_model_flaw: Option<String>,
+}
+
+fn parse_loss_scenarios(path: &Path) -> Result<Vec<Artifact>, Error> {
+    let content = read_file(path)?;
+    let file: LossScenariosFile = serde_yaml::from_str(&content)?;
+
+    Ok(file
+        .loss_scenarios
+        .into_iter()
+        .map(|ls| {
+            let mut fields = BTreeMap::new();
+            if let Some(st) = &ls.scenario_type {
+                fields.insert(
+                    "scenario-type".into(),
+                    serde_yaml::Value::String(st.clone()),
+                );
+            }
+            if !ls.causal_factors.is_empty() {
+                fields.insert(
+                    "causal-factors".into(),
+                    serde_yaml::to_value(&ls.causal_factors).unwrap(),
+                );
+            }
+            if let Some(flaw) = &ls.process_model_flaw {
+                fields.insert(
+                    "process-model-flaw".into(),
+                    serde_yaml::Value::String(flaw.clone()),
+                );
+            }
+
+            let mut links = Vec::new();
+
+            // Link to the UCA that causes this scenario
+            if let Some(uca) = &ls.uca {
+                links.push(Link {
+                    link_type: "caused-by-uca".into(),
+                    target: uca.clone(),
+                });
+            }
+
+            // Link to hazards this scenario leads to
+            for hazard in &ls.hazards {
+                links.push(Link {
+                    link_type: "leads-to-hazard".into(),
+                    target: hazard.clone(),
+                });
+            }
+
+            Artifact {
+                id: ls.id,
+                artifact_type: "loss-scenario".into(),
+                title: ls.title,
+                description: ls.scenario,
                 status: None,
                 tags: vec![],
                 links,

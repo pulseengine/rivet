@@ -1,0 +1,9 @@
+[package]
+name = "etch"
+description = "Hierarchical graph layout and SVG rendering — Etch renders"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+petgraph = { workspace = true }

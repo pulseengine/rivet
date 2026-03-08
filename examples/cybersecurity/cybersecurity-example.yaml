@@ -1,0 +1,5 @@
+name: cybersecurity-example
+schemas: [common, aspice, cybersecurity]
+sources:
+  - path: .
+    format: generic-yaml

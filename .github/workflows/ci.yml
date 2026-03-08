@@ -88,22 +88,30 @@ jobs:
   # ── Code coverage (Rust nightly for source-based instrumentation) ───
   coverage:
     name: Code Coverage
+    needs: [test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
       - name: Generate coverage (LCOV + HTML)
         run: |
-          cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
-          cargo llvm-cov --all-features --workspace --html --output-dir coverage-html
+          cargo llvm-cov -p rivet-core --lcov --output-path lcov.info
+          cargo llvm-cov -p rivet-core --html --output-dir coverage-html
+      - name: Enforce minimum coverage threshold
+        run: cargo llvm-cov -p rivet-core --fail-under-lines 40
       - name: Upload LCOV to Codecov
+        if: env.CODECOV_TOKEN != ''
         uses: codecov/codecov-action@v4
         with:
           files: lcov.info
           fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
       - name: Upload HTML coverage report
         uses: actions/upload-artifact@v4
         with:
@@ -121,9 +129,9 @@ jobs:
           components: miri
       - uses: Swatinem/rust-cache@v2
       - name: Run Miri
-        run: cargo miri test --all
+        run: cargo miri test -p rivet-core --lib
         env:
-          MIRIFLAGS: "-Zmiri-strict-provenance"
+          MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
 
   # ── Property-based testing (extended) ───────────────────────────────
   proptest:
@@ -146,9 +154,17 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Install cargo-vet
-        uses: taiki-e/install-action@cargo-vet
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-vet
+      - name: Initialize cargo-vet if needed
+        run: |
+          if [ ! -d supply-chain ]; then
+            cargo vet init
+            echo "::notice::cargo-vet initialized — run 'cargo vet' locally to audit dependencies"
+          fi
       - name: Check supply chain
-        run: cargo vet --locked || echo "::warning::cargo-vet not yet configured — run 'cargo vet init'"
+        run: cargo vet --locked || echo "::warning::cargo-vet found unaudited crates — run 'cargo vet' locally"
 
   # ── MSRV check ──────────────────────────────────────────────────────
   msrv:

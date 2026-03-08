@@ -7,6 +7,11 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
+[features]
+default = []
+oslc = ["dep:reqwest", "dep:urlencoding"]
+wasm = ["dep:wasmtime", "dep:wasmtime-wasi"]
+
 [dependencies]
 serde = { workspace = true }
 serde_yaml = { workspace = true }
@@ -14,10 +19,21 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 petgraph = { workspace = true }
 log = { workspace = true }
+quick-xml = { workspace = true }
+
+# OSLC client (optional, behind "oslc" feature)
+reqwest = { workspace = true, optional = true }
+urlencoding = { workspace = true, optional = true }
+
+# WASM runtime (optional, behind "wasm" feature)
+wasmtime = { workspace = true, optional = true }
+wasmtime-wasi = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = "1.5"
 criterion = { workspace = true }
+wiremock = "0.6"
+tokio = { workspace = true }
 
 [[bench]]
 name = "core_benchmarks"
