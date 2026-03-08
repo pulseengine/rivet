@@ -1,5 +1,6 @@
 pub mod adapter;
 pub mod diff;
+pub mod document;
 pub mod error;
 pub mod formats;
 pub mod links;

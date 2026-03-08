@@ -5,6 +5,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
 use rivet_core::diff::{ArtifactDiff, DiagnosticDiff};
+use rivet_core::document::{self, DocumentStore};
 use rivet_core::links::LinkGraph;
 use rivet_core::matrix::{self, Direction};
 use rivet_core::schema::Severity;
@@ -169,9 +170,9 @@ fn run(cli: Cli) -> Result<bool> {
         Command::Export { format, output } => cmd_export(&cli, format, output.as_deref()),
         Command::Serve { port } => {
             let port = *port;
-            let (store, schema, graph) = load_project(&cli)?;
+            let (store, schema, graph, doc_store) = load_project_with_docs(&cli)?;
             let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
-            rt.block_on(serve::run(store, schema, graph, port))?;
+            rt.block_on(serve::run(store, schema, graph, doc_store, port))?;
             Ok(true)
         }
         #[cfg(feature = "wasm")]
@@ -257,8 +258,17 @@ fn cmd_stpa(
 
 /// Validate a full project (with rivet.yaml).
 fn cmd_validate(cli: &Cli) -> Result<bool> {
-    let (store, schema, graph) = load_project(cli)?;
-    let diagnostics = validate::validate(&store, &schema, &graph);
+    let (store, schema, graph, doc_store) = load_project_with_docs(cli)?;
+    let mut diagnostics = validate::validate(&store, &schema, &graph);
+    diagnostics.extend(validate::validate_documents(&doc_store, &store));
+
+    if !doc_store.is_empty() {
+        println!(
+            "Loaded {} documents with {} artifact references",
+            doc_store.len(),
+            doc_store.all_references().len()
+        );
+    }
 
     print_diagnostics(&diagnostics);
 
@@ -618,6 +628,42 @@ fn load_project(cli: &Cli) -> Result<(Store, rivet_core::schema::Schema, LinkGra
 
     let graph = LinkGraph::build(&store, &schema);
     Ok((store, schema, graph))
+}
+
+fn load_project_with_docs(
+    cli: &Cli,
+) -> Result<(Store, rivet_core::schema::Schema, LinkGraph, DocumentStore)> {
+    let config_path = cli.project.join("rivet.yaml");
+    let config = rivet_core::load_project_config(&config_path)
+        .with_context(|| format!("loading {}", config_path.display()))?;
+
+    let schemas_dir = resolve_schemas_dir(cli);
+    let schema = rivet_core::load_schemas(&config.project.schemas, &schemas_dir)
+        .context("loading schemas")?;
+
+    let mut store = Store::new();
+    for source in &config.sources {
+        let artifacts = rivet_core::load_artifacts(source, &cli.project)
+            .with_context(|| format!("loading source '{}'", source.path))?;
+        for artifact in artifacts {
+            store.upsert(artifact);
+        }
+    }
+
+    let graph = LinkGraph::build(&store, &schema);
+
+    // Load documents from configured directories.
+    let mut doc_store = DocumentStore::new();
+    for docs_path in &config.docs {
+        let dir = cli.project.join(docs_path);
+        let docs = document::load_documents(&dir)
+            .with_context(|| format!("loading docs from '{docs_path}'"))?;
+        for doc in docs {
+            doc_store.insert(doc);
+        }
+    }
+
+    Ok((store, schema, graph, doc_store))
 }
 
 fn print_stats(store: &Store) {

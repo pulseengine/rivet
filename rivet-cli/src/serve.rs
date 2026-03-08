@@ -12,6 +12,7 @@ use petgraph::visit::EdgeRef;
 use etch::filter::ego_subgraph;
 use etch::layout::{self as pgv_layout, EdgeInfo, LayoutOptions, NodeInfo};
 use etch::svg::{SvgOptions, render_svg};
+use rivet_core::document::{self, DocumentStore};
 use rivet_core::links::LinkGraph;
 use rivet_core::matrix::{self, Direction};
 use rivet_core::schema::{Schema, Severity};
@@ -23,14 +24,22 @@ struct AppState {
     store: Store,
     schema: Schema,
     graph: LinkGraph,
+    doc_store: DocumentStore,
 }
 
 /// Start the axum HTTP server on the given port.
-pub async fn run(store: Store, schema: Schema, graph: LinkGraph, port: u16) -> Result<()> {
+pub async fn run(
+    store: Store,
+    schema: Schema,
+    graph: LinkGraph,
+    doc_store: DocumentStore,
+    port: u16,
+) -> Result<()> {
     let state = Arc::new(AppState {
         store,
         schema,
         graph,
+        doc_store,
     });
 
     let app = Router::new()
@@ -42,6 +51,8 @@ pub async fn run(store: Store, schema: Schema, graph: LinkGraph, port: u16) -> R
         .route("/matrix", get(matrix_view))
         .route("/graph", get(graph_view))
         .route("/stats", get(stats_view))
+        .route("/documents", get(documents_list))
+        .route("/documents/{id}", get(document_detail))
         .with_state(state);
 
     let addr = format!("0.0.0.0:{port}");
@@ -118,7 +129,7 @@ nav ul{list-style:none}
 nav li{margin-bottom:.25rem}
 nav a{display:block;padding:.45rem .75rem;border-radius:6px;color:#c0c0d0;font-size:.9rem}
 nav a:hover,nav a.active{background:#2a2a4e;color:#fff;text-decoration:none}
-main{flex:1;padding:2rem 2.5rem;max-width:1100px}
+main{flex:1;padding:2rem 2.5rem;max-width:1400px}
 h2{font-size:1.35rem;margin-bottom:1rem;color:#1a1a2e}
 h3{font-size:1.1rem;margin:1.25rem 0 .5rem;color:#333}
 table{width:100%;border-collapse:collapse;margin-bottom:1.5rem}
@@ -149,12 +160,42 @@ dt{font-weight:600;font-size:.85rem;color:#495057;margin-top:.5rem}
 dd{margin-left:0;margin-bottom:.25rem}
 .meta{color:#6c757d;font-size:.85rem}
 .nav-icon{display:inline-block;width:1.1rem;text-align:center;margin-right:.3rem;font-size:.85rem}
-.graph-container{border:1px solid #dee2e6;border-radius:8px;overflow:hidden;background:#fff;cursor:grab}
+.graph-container{border:1px solid #dee2e6;border-radius:8px;overflow:hidden;background:#fafbfc;cursor:grab;
+     height:calc(100vh - 280px);min-height:400px;position:relative}
 .graph-container:active{cursor:grabbing}
-.graph-container svg{display:block;width:100%;height:auto}
+.graph-container svg{display:block;width:100%;height:100%;position:absolute;top:0;left:0}
+.graph-controls{position:absolute;top:.5rem;right:.5rem;display:flex;flex-direction:column;gap:.25rem;z-index:10}
+.graph-controls button{width:32px;height:32px;border:1px solid #ced4da;border-radius:4px;
+     background:#fff;font-size:1rem;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.graph-controls button:hover{background:#e9ecef}
+.graph-legend{display:flex;flex-wrap:wrap;gap:.75rem;padding:.5rem 0;font-size:.82rem}
+.graph-legend-item{display:flex;align-items:center;gap:.3rem}
+.graph-legend-swatch{width:14px;height:14px;border-radius:3px;border:1px solid #0002;flex-shrink:0}
 .filter-grid{display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:.75rem}
 .filter-grid label{font-size:.82rem;display:flex;align-items:center;gap:.25rem}
 .filter-grid input[type="checkbox"]{margin:0}
+.doc-body{line-height:1.75;font-size:.95rem}
+.doc-body h1{font-size:1.5rem;margin:1.5rem 0 .75rem;color:#1a1a2e;border-bottom:1px solid #dee2e6;padding-bottom:.3rem}
+.doc-body h2{font-size:1.25rem;margin:1.25rem 0 .5rem;color:#333}
+.doc-body h3{font-size:1.1rem;margin:1rem 0 .4rem;color:#495057}
+.doc-body p{margin:.5rem 0}
+.doc-body ul{margin:.5rem 0 .5rem 1.5rem}
+.doc-body li{margin:.2rem 0}
+.artifact-ref{display:inline-block;padding:.1rem .45rem;border-radius:4px;font-size:.85rem;
+     font-weight:600;background:#e8f0fe;color:#1a73e8;cursor:pointer;text-decoration:none;
+     border:1px solid #c6dafc}
+.artifact-ref:hover{background:#c6dafc;text-decoration:none}
+.artifact-ref.broken{background:#fce8e6;color:#c62828;border-color:#f4c7c3;cursor:default}
+.doc-glossary{font-size:.9rem}
+.doc-glossary dt{font-weight:600;color:#333}
+.doc-glossary dd{margin:0 0 .4rem 1rem;color:#555}
+.doc-toc{font-size:.88rem;background:#f8f9fa;border:1px solid #dee2e6;border-radius:6px;padding:.75rem 1rem;margin-bottom:1rem}
+.doc-toc ul{list-style:none;margin:0;padding:0}
+.doc-toc li{margin:.15rem 0}
+.doc-toc .toc-h2{padding-left:0}
+.doc-toc .toc-h3{padding-left:1rem}
+.doc-toc .toc-h4{padding-left:2rem}
+.doc-meta{display:flex;gap:1rem;flex-wrap:wrap;align-items:center;margin-bottom:1rem}
 "#;
 
 // ── Pan/zoom JS ──────────────────────────────────────────────────────────
@@ -164,6 +205,7 @@ const GRAPH_JS: &str = r#"
 (function(){
   document.addEventListener('htmx:afterSwap', initPanZoom);
   document.addEventListener('DOMContentLoaded', initPanZoom);
+
   function initPanZoom(){
     document.querySelectorAll('.graph-container').forEach(function(c){
       if(c._pz) return;
@@ -171,8 +213,12 @@ const GRAPH_JS: &str = r#"
       var svg=c.querySelector('svg');
       if(!svg) return;
       var vb=svg.viewBox.baseVal;
+      var origVB={x:vb.x, y:vb.y, w:vb.width, h:vb.height};
       var drag=false, sx=0, sy=0, ox=0, oy=0;
+
+      // Pan
       c.addEventListener('mousedown',function(e){
+        if(e.target.closest('.graph-controls')) return;
         drag=true; sx=e.clientX; sy=e.clientY;
         ox=vb.x; oy=vb.y; e.preventDefault();
       });
@@ -184,17 +230,110 @@ const GRAPH_JS: &str = r#"
       });
       c.addEventListener('mouseup',function(){ drag=false; });
       c.addEventListener('mouseleave',function(){ drag=false; });
+
+      // Zoom with wheel
       c.addEventListener('wheel',function(e){
         e.preventDefault();
-        var f=e.deltaY>0?1.15:1/1.15;
+        var f=e.deltaY>0?1.12:1/1.12;
         var r=c.getBoundingClientRect();
         var mx=(e.clientX-r.left)/r.width;
         var my=(e.clientY-r.top)/r.height;
         var nx=vb.width*f, ny=vb.height*f;
-        vb.x+=( vb.width-nx)*mx;
+        vb.x+=(vb.width-nx)*mx;
         vb.y+=(vb.height-ny)*my;
         vb.width=nx; vb.height=ny;
       },{passive:false});
+
+      // Touch support
+      var lastDist=0, lastMid=null;
+      c.addEventListener('touchstart',function(e){
+        if(e.touches.length===1){
+          drag=true; sx=e.touches[0].clientX; sy=e.touches[0].clientY;
+          ox=vb.x; oy=vb.y;
+        } else if(e.touches.length===2){
+          drag=false;
+          var dx=e.touches[1].clientX-e.touches[0].clientX;
+          var dy=e.touches[1].clientY-e.touches[0].clientY;
+          lastDist=Math.sqrt(dx*dx+dy*dy);
+          lastMid={x:(e.touches[0].clientX+e.touches[1].clientX)/2,
+                   y:(e.touches[0].clientY+e.touches[1].clientY)/2};
+        }
+      },{passive:true});
+      c.addEventListener('touchmove',function(e){
+        if(e.touches.length===1 && drag){
+          e.preventDefault();
+          var scale=vb.width/c.clientWidth;
+          vb.x=ox-(e.touches[0].clientX-sx)*scale;
+          vb.y=oy-(e.touches[0].clientY-sy)*scale;
+        } else if(e.touches.length===2){
+          e.preventDefault();
+          var dx=e.touches[1].clientX-e.touches[0].clientX;
+          var dy=e.touches[1].clientY-e.touches[0].clientY;
+          var dist=Math.sqrt(dx*dx+dy*dy);
+          var f=lastDist/dist;
+          var r=c.getBoundingClientRect();
+          var mid={x:(e.touches[0].clientX+e.touches[1].clientX)/2,
+                   y:(e.touches[0].clientY+e.touches[1].clientY)/2};
+          var mx=(mid.x-r.left)/r.width;
+          var my=(mid.y-r.top)/r.height;
+          var nx=vb.width*f, ny=vb.height*f;
+          vb.x+=(vb.width-nx)*mx;
+          vb.y+=(vb.height-ny)*my;
+          vb.width=nx; vb.height=ny;
+          lastDist=dist; lastMid=mid;
+        }
+      },{passive:false});
+      c.addEventListener('touchend',function(){ drag=false; lastDist=0; });
+
+      // Zoom buttons
+      var controls=c.querySelector('.graph-controls');
+      if(controls){
+        controls.querySelector('.zoom-in').addEventListener('click',function(){
+          var cx=vb.x+vb.width/2, cy=vb.y+vb.height/2;
+          vb.width/=1.3; vb.height/=1.3;
+          vb.x=cx-vb.width/2; vb.y=cy-vb.height/2;
+        });
+        controls.querySelector('.zoom-out').addEventListener('click',function(){
+          var cx=vb.x+vb.width/2, cy=vb.y+vb.height/2;
+          vb.width*=1.3; vb.height*=1.3;
+          vb.x=cx-vb.width/2; vb.y=cy-vb.height/2;
+        });
+        controls.querySelector('.zoom-fit').addEventListener('click',function(){
+          vb.x=origVB.x; vb.y=origVB.y; vb.width=origVB.w; vb.height=origVB.h;
+        });
+      }
+
+      // Clickable nodes — navigate to artifact detail via htmx
+      svg.querySelectorAll('.node').forEach(function(node){
+        node.style.cursor='pointer';
+        node.addEventListener('click',function(e){
+          e.stopPropagation();
+          var title=node.querySelector('title');
+          if(title){
+            var id=title.textContent;
+            htmx.ajax('GET','/artifacts/'+encodeURIComponent(id),'#content');
+          }
+        });
+        // Hover effect
+        node.addEventListener('mouseenter',function(){
+          var rect=node.querySelector('rect');
+          if(rect) rect.setAttribute('stroke-width','3');
+        });
+        node.addEventListener('mouseleave',function(){
+          var rect=node.querySelector('rect');
+          if(rect){
+            var isHL=rect.getAttribute('stroke')==='#ff6600';
+            rect.setAttribute('stroke-width', isHL?'3':'1.5');
+          }
+        });
+      });
+
+      // Fit to container on first load with some padding
+      var padding=40;
+      vb.x=-padding; vb.y=-padding;
+      vb.width=origVB.w+padding*2;
+      vb.height=origVB.h+padding*2;
+      origVB={x:vb.x, y:vb.y, w:vb.width, h:vb.height};
     });
   }
 })();
@@ -224,6 +363,7 @@ fn page_layout(content: &str) -> Html<String> {
     <li><a hx-get="/validate" hx-target="#content" hx-push-url="false" href="#"><span class="nav-icon">&#10003;</span> Validation</a></li>
     <li><a hx-get="/matrix" hx-target="#content" hx-push-url="false" href="#"><span class="nav-icon">&#9638;</span> Matrix</a></li>
     <li><a hx-get="/graph" hx-target="#content" hx-push-url="false" href="#"><span class="nav-icon">&#9679;</span> Graph</a></li>
+    <li><a hx-get="/documents" hx-target="#content" hx-push-url="false" href="#"><span class="nav-icon">&#9776;</span> Documents</a></li>
   </ul>
 </nav>
 <main id="content">
@@ -250,6 +390,7 @@ async fn stats_view(State(state): State<Arc<AppState>>) -> Html<String> {
 fn stats_partial(state: &AppState) -> String {
     let store = &state.store;
     let graph = &state.graph;
+    let doc_store = &state.doc_store;
 
     let mut types: Vec<&str> = store.types().collect();
     types.sort();
@@ -293,6 +434,12 @@ fn stats_partial(state: &AppState) -> String {
         "<div class=\"stat-box\"><div class=\"number\">{}</div><div class=\"label\">Broken Links</div></div>",
         graph.broken.len()
     ));
+    if !doc_store.is_empty() {
+        html.push_str(&format!(
+            "<div class=\"stat-box\"><div class=\"number\">{}</div><div class=\"label\">Documents</div></div>",
+            doc_store.len()
+        ));
+    }
     html.push_str("</div>");
 
     // By-type table
@@ -528,9 +675,22 @@ async fn graph_view(
 
     let colors = type_color_map();
     let svg_opts = SvgOptions {
-        type_colors: colors,
+        type_colors: colors.clone(),
         highlight: params.focus.clone().filter(|s| !s.is_empty()),
+        interactive: true,
+        base_url: Some("/artifacts".into()),
+        background: Some("#fafbfc".into()),
+        font_size: 12.0,
+        edge_color: "#888".into(),
         ..SvgOptions::default()
+    };
+
+    let layout_opts = LayoutOptions {
+        node_width: 200.0,
+        node_height: 56.0,
+        rank_separation: 90.0,
+        node_separation: 30.0,
+        ..Default::default()
     };
 
     let gl = pgv_layout::layout(
@@ -544,8 +704,8 @@ async fn graph_view(
                 .get(n.as_str())
                 .map(|a| a.title.clone())
                 .unwrap_or_default();
-            let sublabel = if title.len() > 24 {
-                Some(format!("{}...", &title[..22]))
+            let sublabel = if title.len() > 28 {
+                Some(format!("{}...", &title[..26]))
             } else if title.is_empty() {
                 None
             } else {
@@ -559,13 +719,23 @@ async fn graph_view(
             }
         },
         &|_idx, e| EdgeInfo { label: e.clone() },
-        &LayoutOptions::default(),
+        &layout_opts,
     );
 
     let svg = render_svg(&gl, &svg_opts);
 
+    // Collect which types are actually present for the legend
+    let present_types: std::collections::BTreeSet<String> = sub
+        .node_indices()
+        .filter_map(|idx| {
+            store
+                .get(sub[idx].as_str())
+                .map(|a| a.artifact_type.clone())
+        })
+        .collect();
+
     // Build filter controls
-    let mut html = String::from("<h2>Graph</h2>");
+    let mut html = String::from("<h2>Traceability Graph</h2>");
 
     // Filter form
     html.push_str("<div class=\"card\">");
@@ -598,35 +768,67 @@ async fn graph_view(
     let focus_val = params.focus.as_deref().unwrap_or("");
     html.push_str(&format!(
         "<div><label for=\"focus\">Focus</label><br>\
-         <input name=\"focus\" id=\"focus\" value=\"{}\" placeholder=\"e.g. H-1\"></div>",
+         <input name=\"focus\" id=\"focus\" value=\"{}\" placeholder=\"e.g. REQ-001\" list=\"artifact-ids\"></div>",
         html_escape(focus_val)
     ));
+
+    // Datalist for autocomplete
+    html.push_str("<datalist id=\"artifact-ids\">");
+    for a in store.iter() {
+        html.push_str(&format!("<option value=\"{}\">", html_escape(&a.id)));
+    }
+    html.push_str("</datalist>");
 
     // Depth slider
     let depth_val = if params.depth > 0 { params.depth } else { 3 };
     html.push_str(&format!(
-        "<div><label for=\"depth\">Depth</label><br>\
-         <input type=\"range\" name=\"depth\" id=\"depth\" min=\"1\" max=\"10\" value=\"{depth_val}\"></div>"
+        "<div><label for=\"depth\">Depth: <span id=\"depth-val\">{depth_val}</span></label><br>\
+         <input type=\"range\" name=\"depth\" id=\"depth\" min=\"1\" max=\"10\" value=\"{depth_val}\" \
+         oninput=\"document.getElementById('depth-val').textContent=this.value\"></div>"
     ));
 
     // Link types input
     let lt_val = params.link_types.as_deref().unwrap_or("");
     html.push_str(&format!(
         "<div><label for=\"link_types\">Link types</label><br>\
-         <input name=\"link_types\" id=\"link_types\" value=\"{}\" placeholder=\"comma-separated\"></div>",
+         <input name=\"link_types\" id=\"link_types\" value=\"{}\" placeholder=\"e.g. satisfies,implements\"></div>",
         html_escape(lt_val)
     ));
 
     html.push_str("<div><label>&nbsp;</label><br><button type=\"submit\">Apply</button></div>");
-    html.push_str("</form></div>");
+    html.push_str("</form>");
 
-    // SVG card
-    html.push_str("<div class=\"card\"><div class=\"graph-container\">");
+    // Legend
+    if !present_types.is_empty() {
+        html.push_str("<div class=\"graph-legend\">");
+        for t in &present_types {
+            let color = colors
+                .get(t.as_str())
+                .map(|s| s.as_str())
+                .unwrap_or("#e8e8e8");
+            html.push_str(&format!(
+                "<div class=\"graph-legend-item\"><div class=\"graph-legend-swatch\" style=\"background:{color}\"></div>{t}</div>"
+            ));
+        }
+        html.push_str("</div>");
+    }
+    html.push_str("</div>");
+
+    // SVG card with zoom controls
+    html.push_str(
+        "<div class=\"card\" style=\"padding:0;position:relative\">\
+        <div class=\"graph-container\">\
+        <div class=\"graph-controls\">\
+          <button class=\"zoom-in\" title=\"Zoom in\">+</button>\
+          <button class=\"zoom-out\" title=\"Zoom out\">&minus;</button>\
+          <button class=\"zoom-fit\" title=\"Fit to view\">&#8689;</button>\
+        </div>",
+    );
     html.push_str(&svg);
     html.push_str("</div></div>");
 
     html.push_str(&format!(
-        "<p class=\"meta\">{} nodes, {} edges</p>",
+        "<p class=\"meta\">{} nodes, {} edges &mdash; scroll to zoom, drag to pan, click nodes to navigate</p>",
         gl.nodes.len(),
         gl.edges.len()
     ));
@@ -668,9 +870,22 @@ async fn artifact_graph(
 
     let colors = type_color_map();
     let svg_opts = SvgOptions {
-        type_colors: colors,
+        type_colors: colors.clone(),
         highlight: Some(id.clone()),
+        interactive: true,
+        base_url: Some("/artifacts".into()),
+        background: Some("#fafbfc".into()),
+        font_size: 12.0,
+        edge_color: "#888".into(),
         ..SvgOptions::default()
+    };
+
+    let layout_opts = LayoutOptions {
+        node_width: 200.0,
+        node_height: 56.0,
+        rank_separation: 90.0,
+        node_separation: 30.0,
+        ..Default::default()
     };
 
     let gl = pgv_layout::layout(
@@ -684,8 +899,8 @@ async fn artifact_graph(
                 .get(n.as_str())
                 .map(|a| a.title.clone())
                 .unwrap_or_default();
-            let sublabel = if title.len() > 24 {
-                Some(format!("{}...", &title[..22]))
+            let sublabel = if title.len() > 28 {
+                Some(format!("{}...", &title[..26]))
             } else if title.is_empty() {
                 None
             } else {
@@ -699,30 +914,65 @@ async fn artifact_graph(
             }
         },
         &|_idx, e| EdgeInfo { label: e.clone() },
-        &LayoutOptions::default(),
+        &layout_opts,
     );
 
     let svg = render_svg(&gl, &svg_opts);
 
+    // Collect present types for legend
+    let present_types: std::collections::BTreeSet<String> = sub
+        .node_indices()
+        .filter_map(|idx| {
+            store
+                .get(sub[idx].as_str())
+                .map(|a| a.artifact_type.clone())
+        })
+        .collect();
+
     let mut html = format!("<h2>Neighborhood of {}</h2>", html_escape(&id),);
 
-    // Hop control
+    // Hop control + legend
     html.push_str("<div class=\"card\">");
     html.push_str(&format!(
         "<form class=\"form-row\" hx-get=\"/artifacts/{id_esc}/graph\" hx-target=\"#content\" hx-push-url=\"false\">\
-         <div><label for=\"hops\">Hops</label><br>\
-         <input type=\"range\" name=\"hops\" id=\"hops\" min=\"1\" max=\"6\" value=\"{hops}\"></div>\
+         <div><label for=\"hops\">Hops: <span id=\"hops-val\">{hops}</span></label><br>\
+         <input type=\"range\" name=\"hops\" id=\"hops\" min=\"1\" max=\"6\" value=\"{hops}\" \
+         oninput=\"document.getElementById('hops-val').textContent=this.value\"></div>\
          <div><label>&nbsp;</label><br><button type=\"submit\">Update</button></div>\
-         </form></div>",
+         </form>",
         id_esc = html_escape(&id),
     ));
+    // Legend
+    if !present_types.is_empty() {
+        html.push_str("<div class=\"graph-legend\">");
+        for t in &present_types {
+            let color = colors
+                .get(t.as_str())
+                .map(|s| s.as_str())
+                .unwrap_or("#e8e8e8");
+            html.push_str(&format!(
+                "<div class=\"graph-legend-item\"><div class=\"graph-legend-swatch\" style=\"background:{color}\"></div>{t}</div>"
+            ));
+        }
+        html.push_str("</div>");
+    }
+    html.push_str("</div>");
 
-    html.push_str("<div class=\"card\"><div class=\"graph-container\">");
+    // SVG with zoom controls
+    html.push_str(
+        "<div class=\"card\" style=\"padding:0;position:relative\">\
+        <div class=\"graph-container\">\
+        <div class=\"graph-controls\">\
+          <button class=\"zoom-in\" title=\"Zoom in\">+</button>\
+          <button class=\"zoom-out\" title=\"Zoom out\">&minus;</button>\
+          <button class=\"zoom-fit\" title=\"Fit to view\">&#8689;</button>\
+        </div>",
+    );
     html.push_str(&svg);
     html.push_str("</div></div>");
 
     html.push_str(&format!(
-        "<p class=\"meta\">{} nodes, {} edges ({}-hop neighborhood)</p>",
+        "<p class=\"meta\">{} nodes, {} edges ({}-hop neighborhood) &mdash; scroll to zoom, drag to pan, click nodes to navigate</p>",
         gl.nodes.len(),
         gl.edges.len(),
         hops
@@ -1025,6 +1275,180 @@ async fn matrix_view(
 
         html.push_str("</tbody></table></div>");
     }
+
+    Html(html)
+}
+
+// ── Documents ────────────────────────────────────────────────────────────
+
+async fn documents_list(State(state): State<Arc<AppState>>) -> Html<String> {
+    let doc_store = &state.doc_store;
+
+    let mut html = String::from("<h2>Documents</h2>");
+
+    if doc_store.is_empty() {
+        html.push_str("<div class=\"card\"><p>No documents loaded. Add markdown files with YAML frontmatter to a <code>docs/</code> directory and reference it in <code>rivet.yaml</code>:</p>\
+            <pre style=\"background:#f1f3f5;padding:1rem;border-radius:4px;font-size:.88rem;margin-top:.5rem\">docs:\n  - docs</pre></div>");
+        return Html(html);
+    }
+
+    html.push_str(
+        "<table><thead><tr><th>ID</th><th>Type</th><th>Title</th><th>Status</th><th>Refs</th></tr></thead><tbody>",
+    );
+
+    for doc in doc_store.iter() {
+        let status = doc.status.as_deref().unwrap_or("-");
+        let status_badge = match status {
+            "approved" => format!("<span class=\"badge badge-ok\">{status}</span>"),
+            "draft" => format!("<span class=\"badge badge-warn\">{status}</span>"),
+            _ => format!("<span class=\"badge badge-info\">{status}</span>"),
+        };
+        html.push_str(&format!(
+            "<tr><td><a hx-get=\"/documents/{}\" hx-target=\"#content\" href=\"#\">{}</a></td>\
+             <td><span class=\"badge badge-type\">{}</span></td>\
+             <td>{}</td>\
+             <td>{}</td>\
+             <td>{}</td></tr>",
+            html_escape(&doc.id),
+            html_escape(&doc.id),
+            html_escape(&doc.doc_type),
+            html_escape(&doc.title),
+            status_badge,
+            doc.references.len(),
+        ));
+    }
+
+    html.push_str("</tbody></table>");
+    html.push_str(&format!(
+        "<p class=\"meta\">{} documents, {} total artifact references</p>",
+        doc_store.len(),
+        doc_store.all_references().len()
+    ));
+
+    Html(html)
+}
+
+async fn document_detail(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Html<String> {
+    let doc_store = &state.doc_store;
+    let store = &state.store;
+
+    let Some(doc) = doc_store.get(&id) else {
+        return Html(format!(
+            "<h2>Not Found</h2><p>Document <code>{}</code> does not exist.</p>",
+            html_escape(&id)
+        ));
+    };
+
+    let mut html = String::new();
+
+    // Header with metadata
+    html.push_str(&format!("<h2>{}</h2>", html_escape(&doc.title)));
+
+    html.push_str("<div class=\"doc-meta\">");
+    html.push_str(&format!(
+        "<span class=\"badge badge-type\">{}</span>",
+        html_escape(&doc.doc_type)
+    ));
+    if let Some(status) = &doc.status {
+        let badge_class = match status.as_str() {
+            "approved" => "badge-ok",
+            "draft" => "badge-warn",
+            _ => "badge-info",
+        };
+        html.push_str(&format!(
+            "<span class=\"badge {badge_class}\">{}</span>",
+            html_escape(status)
+        ));
+    }
+    html.push_str(&format!(
+        "<span class=\"meta\">{} artifact references</span>",
+        doc.references.len()
+    ));
+    html.push_str("</div>");
+
+    // Table of contents
+    let toc_sections: Vec<_> = doc.sections.iter().filter(|s| s.level >= 2).collect();
+    if toc_sections.len() > 2 {
+        html.push_str("<div class=\"doc-toc\"><strong>Contents</strong><ul>");
+        for sec in &toc_sections {
+            let class = match sec.level {
+                2 => "toc-h2",
+                3 => "toc-h3",
+                _ => "toc-h4",
+            };
+            let ref_count = if sec.artifact_ids.is_empty() {
+                String::new()
+            } else {
+                format!(" <span class=\"meta\">({})</span>", sec.artifact_ids.len())
+            };
+            html.push_str(&format!(
+                "<li class=\"{class}\">{}{ref_count}</li>",
+                html_escape(&sec.title),
+            ));
+        }
+        html.push_str("</ul></div>");
+    }
+
+    // Rendered body
+    html.push_str("<div class=\"card\"><div class=\"doc-body\">");
+    let body_html = document::render_to_html(doc, |aid| store.contains(aid));
+    html.push_str(&body_html);
+    html.push_str("</div></div>");
+
+    // Glossary
+    if !doc.glossary.is_empty() {
+        html.push_str("<div class=\"card\"><h3>Glossary</h3><dl class=\"doc-glossary\">");
+        for (term, definition) in &doc.glossary {
+            html.push_str(&format!(
+                "<dt>{}</dt><dd>{}</dd>",
+                html_escape(term),
+                html_escape(definition)
+            ));
+        }
+        html.push_str("</dl></div>");
+    }
+
+    // Referenced artifacts summary
+    if !doc.references.is_empty() {
+        html.push_str("<div class=\"card\"><h3>Referenced Artifacts</h3>");
+        html.push_str("<table><thead><tr><th>ID</th><th>Type</th><th>Title</th><th>Status</th></tr></thead><tbody>");
+
+        let mut seen = std::collections::HashSet::new();
+        for reference in &doc.references {
+            if !seen.insert(&reference.artifact_id) {
+                continue;
+            }
+            if let Some(artifact) = store.get(&reference.artifact_id) {
+                let status = artifact.status.as_deref().unwrap_or("-");
+                html.push_str(&format!(
+                    "<tr><td><a hx-get=\"/artifacts/{}\" hx-target=\"#content\" href=\"#\">{}</a></td>\
+                     <td><span class=\"badge badge-type\">{}</span></td>\
+                     <td>{}</td>\
+                     <td>{}</td></tr>",
+                    html_escape(&artifact.id),
+                    html_escape(&artifact.id),
+                    html_escape(&artifact.artifact_type),
+                    html_escape(&artifact.title),
+                    html_escape(status),
+                ));
+            } else {
+                html.push_str(&format!(
+                    "<tr><td><span class=\"artifact-ref broken\">{}</span></td>\
+                     <td colspan=\"3\">not found</td></tr>",
+                    html_escape(&reference.artifact_id),
+                ));
+            }
+        }
+
+        html.push_str("</tbody></table></div>");
+    }
+
+    html.push_str(
+        "<p><a hx-get=\"/documents\" hx-target=\"#content\" href=\"#\">&larr; Back to documents</a></p>",
+    );
 
     Html(html)
 }
