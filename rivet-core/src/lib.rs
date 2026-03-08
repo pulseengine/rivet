@@ -80,6 +80,10 @@ pub fn load_artifacts(
             let adapter = reqif::ReqIfAdapter::new();
             adapter::Adapter::import(&adapter, &source_input, &adapter_config)
         }
+        "aadl" => {
+            let adapter = formats::aadl::AadlAdapter::new();
+            adapter::Adapter::import(&adapter, &source_input, &adapter_config)
+        }
         other => Err(Error::Adapter(format!("unknown format: {}", other))),
     }
 }

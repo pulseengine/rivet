@@ -1089,6 +1089,49 @@ fn test_diff_diagnostic_changes() {
     );
 }
 
+// ── AADL adapter ─────────────────────────────────────────────────────────
+
+#[test]
+fn aadl_adapter_parses_spar_json() {
+    use rivet_core::adapter::{Adapter, AdapterConfig, AdapterSource};
+    use rivet_core::formats::aadl::AadlAdapter;
+
+    let json = r#"{
+        "root": "Pkg::Sys.Impl",
+        "packages": [
+            {
+                "name": "Pkg",
+                "component_types": [
+                    { "name": "Sys", "category": "System" }
+                ],
+                "component_impls": [
+                    { "name": "Sys.Impl", "category": "System" }
+                ]
+            }
+        ],
+        "instance": null,
+        "diagnostics": [
+            {
+                "severity": "Warning",
+                "message": "No binding for cpu1",
+                "path": ["root", "cpu1"],
+                "analysis": "binding_check"
+            }
+        ]
+    }"#;
+
+    let adapter = AadlAdapter::new();
+    let source = AdapterSource::Bytes(json.as_bytes().to_vec());
+    let config = AdapterConfig::default();
+    let artifacts = adapter.import(&source, &config).unwrap();
+
+    // 1 type + 1 impl + 1 diagnostic = 3 artifacts
+    assert_eq!(artifacts.len(), 3);
+    assert!(artifacts.iter().any(|a| a.artifact_type == "aadl-component" && a.id == "AADL-Pkg-Sys"));
+    assert!(artifacts.iter().any(|a| a.artifact_type == "aadl-component" && a.id == "AADL-Pkg-Sys.Impl"));
+    assert!(artifacts.iter().any(|a| a.artifact_type == "aadl-analysis-result"));
+}
+
 // ── AADL schema ──────────────────────────────────────────────────────────
 
 #[test]
