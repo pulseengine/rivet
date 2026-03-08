@@ -310,6 +310,8 @@ pub async fn run(
         .route("/source", get(source_tree_view))
         .route("/source/{*path}", get(source_file_view))
         .route("/diff", get(diff_view))
+        .route("/traceability", get(traceability_view))
+        .route("/traceability/history", get(traceability_history))
         .route("/reload", post(reload_handler))
         .with_state(state);
 
@@ -806,6 +808,45 @@ details.stpa-details[open]>summary .stpa-chevron{transform:rotate(90deg)}
 .uca-type-too-early-too-late{background:#e8f4fd;color:#0c5a82}
 .uca-type-stopped-too-soon{background:#f3e5f5;color:#6a1b9a}
 
+/* ── Traceability explorer ──────────────────────────────────────── */
+.trace-matrix{border-collapse:collapse;font-size:.8rem;margin-bottom:1.5rem;width:100%}
+.trace-matrix th{font-weight:600;font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;
+  color:var(--text-secondary);padding:.45rem .6rem;border-bottom:2px solid var(--border);white-space:nowrap}
+.trace-matrix td{padding:.35rem .6rem;border-bottom:1px solid var(--border);text-align:center}
+.trace-matrix td:first-child{text-align:left;font-family:var(--mono);font-size:.78rem;font-weight:500}
+.trace-matrix tbody tr:hover{background:rgba(58,134,255,.04)}
+.trace-cell{display:inline-flex;align-items:center;justify-content:center;width:28px;height:22px;
+  border-radius:4px;font-size:.75rem;font-weight:700;font-variant-numeric:tabular-nums}
+.trace-cell-ok{background:rgba(21,113,58,.1);color:#15713a}
+.trace-cell-gap{background:rgba(198,40,40,.1);color:#c62828}
+.trace-tree{margin-top:1rem}
+.trace-node{display:flex;align-items:center;gap:.5rem;padding:.4rem .6rem;border-radius:var(--radius-sm);
+  transition:background var(--transition);font-size:.88rem}
+.trace-node:hover{background:rgba(58,134,255,.04)}
+.trace-node a{font-family:var(--mono);font-size:.82rem;font-weight:500}
+.trace-edge{display:inline-block;padding:.1rem .4rem;border-radius:4px;font-size:.68rem;
+  font-family:var(--mono);background:rgba(58,134,255,.08);color:var(--accent);font-weight:500;
+  margin-right:.35rem;white-space:nowrap}
+.trace-level{padding-left:1.5rem;border-left:2px solid var(--border);margin-left:.5rem}
+details.trace-details>summary{cursor:pointer;list-style:none;padding:.4rem .5rem;border-radius:var(--radius-sm);
+  display:flex;align-items:center;gap:.5rem;transition:background var(--transition);font-size:.88rem}
+details.trace-details>summary::-webkit-details-marker{display:none}
+details.trace-details>summary:hover{background:rgba(58,134,255,.04)}
+details.trace-details>summary .trace-chevron{transition:transform var(--transition);display:inline-flex;opacity:.4;font-size:.7rem}
+details.trace-details[open]>summary .trace-chevron{transform:rotate(90deg)}
+.trace-history{margin:.35rem 0 .5rem 1.5rem;padding:.5rem .75rem;background:rgba(0,0,0,.015);
+  border-radius:var(--radius-sm);border:1px solid var(--border);font-size:.8rem}
+.trace-history-title{font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;
+  color:var(--text-secondary);margin-bottom:.35rem}
+.trace-history-item{display:flex;align-items:baseline;gap:.5rem;padding:.15rem 0;color:var(--text-secondary)}
+.trace-history-item code{font-size:.75rem;color:var(--accent);font-weight:500}
+.trace-history-item .hist-date{font-size:.72rem;color:var(--text-secondary);opacity:.7;min-width:70px}
+.trace-history-item .hist-msg{font-size:.78rem;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.trace-status{display:inline-flex;padding:.12rem .4rem;border-radius:4px;font-size:.68rem;font-weight:600;
+  margin-left:.25rem}
+.trace-status-approved{background:rgba(21,113,58,.1);color:#15713a}
+.trace-status-draft{background:rgba(184,134,11,.1);color:#b8860b}
+
 /* ── Scrollbar (subtle) ───────────────────────────────────────── */
 ::-webkit-scrollbar{width:6px;height:6px}
 ::-webkit-scrollbar-track{background:transparent}
@@ -1278,6 +1319,7 @@ fn page_layout(content: &str, state: &AppState) -> Html<String> {
     <li class="nav-divider"></li>
     <li><a hx-get="/matrix" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 5.5h13M1.5 10.5h13M5.5 1.5v13M10.5 1.5v13"/><rect x="1.5" y="1.5" width="13" height="13" rx="1.5"/></svg></span> Matrix</span></a></li>
     <li><a hx-get="/coverage" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><path d="M8 1.5V8l4.6 4.6"/></svg></span> Coverage</span></a></li>
+    <li><a hx-get="/traceability" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h2v2H3zM7 4h2v2H7zM11 4h2v2H11zM3 10h2v2H3zM11 10h2v2H11z"/><path d="M5 5h2M9 5h2M4 6v4M12 6v4M5 11h6"/></svg></span> Traceability</span></a></li>
     <li><a hx-get="/graph" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="4" r="2"/><circle cx="12" cy="4" r="2"/><circle cx="4" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><path d="M6 4h4M4 6v4M12 6v4M6 12h4"/></svg></span> Graph</span></a></li>
     <li><a hx-get="/documents" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 1.5H4.5A1.5 1.5 0 003 3v10a1.5 1.5 0 001.5 1.5h7A1.5 1.5 0 0013 13V5.5L9 1.5z"/><path d="M9 1.5V5.5h4"/><path d="M6 8.5h4M6 11h2"/></svg></span> Documents</span>{doc_badge}</a></li>
     <li><a hx-get="/source" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 4.5 1.5 8 5 11.5"/><polyline points="11 4.5 14.5 8 11 11.5"/><line x1="9" y1="2" x2="7" y2="14"/></svg></span> Source</span></a></li>
@@ -4309,6 +4351,422 @@ async fn diff_view(State(state): State<SharedState>, Query(params): Query<DiffPa
     }
     html.push_str("</div>");
     Html(html)
+}
+
+// ── Traceability explorer ────────────────────────────────────────────────
+
+#[derive(Debug, serde::Deserialize)]
+struct TraceParams {
+    root_type: Option<String>,
+    status: Option<String>,
+    search: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct TraceHistoryParams {
+    file: Option<String>,
+}
+
+/// A node in the traceability tree.
+struct TraceNode {
+    id: String,
+    artifact_type: String,
+    title: String,
+    status: String,
+    link_type: String,
+    children: Vec<TraceNode>,
+}
+
+/// Recursively build a trace tree starting from the backlinks of a given
+/// artifact, descending up to `max_depth` levels.
+fn build_trace_children(
+    id: &str,
+    store: &Store,
+    graph: &LinkGraph,
+    depth: usize,
+    max_depth: usize,
+) -> Vec<TraceNode> {
+    if depth >= max_depth {
+        return Vec::new();
+    }
+    let backlinks = graph.backlinks_to(id);
+    let mut nodes: Vec<TraceNode> = Vec::new();
+    for bl in backlinks {
+        let child_id = &bl.source;
+        let (artifact_type, title, status) = if let Some(a) = store.get(child_id) {
+            (
+                a.artifact_type.clone(),
+                a.title.clone(),
+                a.status.clone().unwrap_or_default(),
+            )
+        } else {
+            continue;
+        };
+        let children = build_trace_children(child_id, store, graph, depth + 1, max_depth);
+        nodes.push(TraceNode {
+            id: child_id.clone(),
+            artifact_type,
+            title,
+            status,
+            link_type: bl.link_type.clone(),
+            children,
+        });
+    }
+    // Sort by link type then ID for stable ordering
+    nodes.sort_by(|a, b| a.link_type.cmp(&b.link_type).then(a.id.cmp(&b.id)));
+    nodes
+}
+
+/// Render a trace node and its children as nested `<details>` HTML.
+fn render_trace_node(node: &TraceNode, depth: usize, project_path: &str) -> String {
+    let badge = badge_for_type(&node.artifact_type);
+    let status_class = match node.status.as_str() {
+        "approved" => "trace-status-approved",
+        "draft" => "trace-status-draft",
+        _ => "",
+    };
+    let status_badge = if !node.status.is_empty() {
+        format!(
+            "<span class=\"trace-status {status_class}\">{}</span>",
+            html_escape(&node.status)
+        )
+    } else {
+        String::new()
+    };
+    let edge_label = format!(
+        "<span class=\"trace-edge\">{}</span>",
+        html_escape(&node.link_type)
+    );
+    let escaped_title = html_escape(&node.title);
+    let escaped_id = html_escape(&node.id);
+
+    if node.children.is_empty() {
+        // Leaf node — no expanding
+        format!(
+            "<div class=\"trace-node\">{edge_label}{badge} \
+             <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" href=\"#\">{escaped_id}</a> \
+             <span style=\"color:var(--text-secondary)\">{escaped_title}</span>{status_badge}\
+             <button class=\"btn btn-secondary\" style=\"margin-left:auto;padding:.2rem .5rem;font-size:.68rem\" \
+             hx-get=\"/traceability/history?file={file}\" hx-target=\"#hist-{safe_id}\" hx-swap=\"innerHTML\"\
+             >History</button></div>\
+             <div id=\"hist-{safe_id}\" style=\"margin-left:1.5rem\"></div>",
+            id = node.id,
+            file = html_escape(project_path),
+            safe_id = node.id.replace('.', "_"),
+        )
+    } else {
+        let open_attr = if depth == 0 { " open" } else { "" };
+        let child_count = node.children.len();
+        let mut html = format!(
+            "<details class=\"trace-details\"{open_attr}>\
+             <summary>{edge_label}{badge} \
+             <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" href=\"#\" \
+             onclick=\"event.stopPropagation()\">{escaped_id}</a> \
+             <span style=\"color:var(--text-secondary)\">{escaped_title}</span>{status_badge}\
+             <span style=\"color:var(--text-secondary);font-size:.75rem;margin-left:.25rem\">({child_count})</span>\
+             <span class=\"trace-chevron\"><svg width=\"12\" height=\"12\" viewBox=\"0 0 12 12\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M4 2l4 4-4 4\"/></svg></span>\
+             <button class=\"btn btn-secondary\" style=\"margin-left:auto;padding:.2rem .5rem;font-size:.68rem\" \
+             hx-get=\"/traceability/history?file={file}\" hx-target=\"#hist-{safe_id}\" hx-swap=\"innerHTML\" \
+             onclick=\"event.stopPropagation()\"\
+             >History</button></summary>\
+             <div id=\"hist-{safe_id}\" style=\"margin-left:1.5rem\"></div>\
+             <div class=\"trace-level\">",
+            id = node.id,
+            file = html_escape(project_path),
+            safe_id = node.id.replace('.', "_"),
+        );
+        for child in &node.children {
+            html.push_str(&render_trace_node(child, depth + 1, project_path));
+        }
+        html.push_str("</div></details>");
+        html
+    }
+}
+
+async fn traceability_view(
+    State(state): State<SharedState>,
+    Query(params): Query<TraceParams>,
+) -> Html<String> {
+    let state = state.read().await;
+    let store = &state.store;
+    let graph = &state.graph;
+
+    // Collect all artifact types
+    let mut all_types: Vec<&str> = store.types().collect();
+    all_types.sort();
+
+    let default_root = if store.count_by_type("requirement") > 0 {
+        "requirement"
+    } else if store.count_by_type("stakeholder-req") > 0 {
+        "stakeholder-req"
+    } else {
+        all_types.first().copied().unwrap_or("requirement")
+    };
+    let root_type = params.root_type.as_deref().unwrap_or(default_root);
+    let status_filter = params.status.as_deref().unwrap_or("all");
+    let search_filter = params
+        .search
+        .as_deref()
+        .unwrap_or("")
+        .to_lowercase();
+
+    // Get root artifacts
+    let mut root_ids: Vec<&str> = store
+        .by_type(root_type)
+        .iter()
+        .map(|s| s.as_str())
+        .collect();
+    root_ids.sort();
+
+    // Apply filters
+    let root_artifacts: Vec<&str> = root_ids
+        .into_iter()
+        .filter(|id| {
+            if let Some(a) = store.get(id) {
+                // Status filter
+                if status_filter != "all"
+                    && a.status.as_deref().unwrap_or("") != status_filter
+                {
+                    return false;
+                }
+                // Search filter
+                if !search_filter.is_empty() {
+                    let id_match = id.to_lowercase().contains(&search_filter);
+                    let title_match = a.title.to_lowercase().contains(&search_filter);
+                    if !id_match && !title_match {
+                        return false;
+                    }
+                }
+                true
+            } else {
+                false
+            }
+        })
+        .collect();
+
+    let mut html = String::from("<h2>Traceability Explorer</h2>");
+
+    // ── Filter controls ──────────────────────────────────────────────
+    html.push_str("<div class=\"card\"><form class=\"form-row\" hx-get=\"/traceability\" hx-target=\"#content\">");
+    html.push_str("<div><label>Root type</label><select name=\"root_type\">");
+    for t in &all_types {
+        let sel = if *t == root_type { " selected" } else { "" };
+        html.push_str(&format!(
+            "<option value=\"{t}\"{sel}>{t}</option>",
+            t = html_escape(t)
+        ));
+    }
+    html.push_str("</select></div>");
+    html.push_str("<div><label>Status</label><select name=\"status\">");
+    for (val, label) in &[("all", "All"), ("approved", "Approved"), ("draft", "Draft")] {
+        let sel = if *val == status_filter {
+            " selected"
+        } else {
+            ""
+        };
+        html.push_str(&format!("<option value=\"{val}\"{sel}>{label}</option>"));
+    }
+    html.push_str("</select></div>");
+    html.push_str(&format!(
+        "<div><label>Search</label><input type=\"text\" name=\"search\" placeholder=\"ID or title...\" value=\"{}\"></div>",
+        html_escape(&search_filter)
+    ));
+    html.push_str("<div><label>&nbsp;</label><button type=\"submit\">Filter</button></div>");
+    html.push_str("</form></div>");
+
+    // ── Traceability matrix summary ──────────────────────────────────
+    // Collect all link types that point TO the root type artifacts
+    let mut link_types_set: Vec<String> = Vec::new();
+    for id in &root_artifacts {
+        let backlinks = graph.backlinks_to(id);
+        for bl in backlinks {
+            if !link_types_set.contains(&bl.link_type) {
+                link_types_set.push(bl.link_type.clone());
+            }
+        }
+    }
+    link_types_set.sort();
+
+    if !root_artifacts.is_empty() && !link_types_set.is_empty() {
+        html.push_str("<div class=\"card\" style=\"overflow-x:auto\"><h3 style=\"margin-top:0\">Coverage Matrix</h3>");
+        html.push_str("<table class=\"trace-matrix\"><thead><tr><th>Artifact</th><th>Title</th>");
+        for lt in &link_types_set {
+            html.push_str(&format!("<th>{}</th>", html_escape(lt)));
+        }
+        html.push_str("</tr></thead><tbody>");
+        for id in &root_artifacts {
+            let a = store.get(id).unwrap();
+            let backlinks = graph.backlinks_to(id);
+            html.push_str(&format!(
+                "<tr><td><a hx-get=\"/artifacts/{}\" hx-target=\"#content\" href=\"#\">{}</a></td><td style=\"color:var(--text-secondary);font-size:.82rem\">{}</td>",
+                html_escape(id),
+                html_escape(id),
+                html_escape(&a.title)
+            ));
+            for lt in &link_types_set {
+                let count = backlinks.iter().filter(|bl| bl.link_type == *lt).count();
+                let (cell_class, display) = if count > 0 {
+                    ("trace-cell-ok", count.to_string())
+                } else {
+                    ("trace-cell-gap", "0".to_string())
+                };
+                html.push_str(&format!(
+                    "<td><span class=\"trace-cell {cell_class}\">{display}</span></td>"
+                ));
+            }
+            html.push_str("</tr>");
+        }
+        html.push_str("</tbody></table></div>");
+    }
+
+    // ── Traceability chain explorer ──────────────────────────────────
+    html.push_str("<div class=\"card\"><h3 style=\"margin-top:0\">Linkage Chains</h3>");
+    if root_artifacts.is_empty() {
+        html.push_str("<p style=\"color:var(--text-secondary)\">No artifacts match the current filters.</p>");
+    } else {
+        html.push_str("<div class=\"trace-tree\">");
+        for id in &root_artifacts {
+            let a = store.get(id).unwrap();
+            let children = build_trace_children(id, store, graph, 0, 3);
+            let badge = badge_for_type(&a.artifact_type);
+            let status = a.status.as_deref().unwrap_or("");
+            let status_class = match status {
+                "approved" => "trace-status-approved",
+                "draft" => "trace-status-draft",
+                _ => "",
+            };
+            let status_badge = if !status.is_empty() {
+                format!(
+                    "<span class=\"trace-status {status_class}\">{}</span>",
+                    html_escape(status)
+                )
+            } else {
+                String::new()
+            };
+            let source_path = a
+                .source_file
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default();
+            let safe_id = id.replace('.', "_");
+
+            if children.is_empty() {
+                html.push_str(&format!(
+                    "<div class=\"trace-node\" style=\"font-weight:600\">{badge} \
+                     <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" href=\"#\">{escaped_id}</a> \
+                     <span style=\"color:var(--text-secondary)\">{title}</span>{status_badge} \
+                     <span style=\"color:var(--text-secondary);font-size:.75rem;font-style:italic;margin-left:.5rem\">(no inbound links)</span>\
+                     <button class=\"btn btn-secondary\" style=\"margin-left:auto;padding:.2rem .5rem;font-size:.68rem\" \
+                     hx-get=\"/traceability/history?file={file}\" hx-target=\"#hist-{safe_id}\" hx-swap=\"innerHTML\"\
+                     >History</button></div>\
+                     <div id=\"hist-{safe_id}\"></div>",
+                    id = html_escape(id),
+                    escaped_id = html_escape(id),
+                    title = html_escape(&a.title),
+                    file = html_escape(&source_path),
+                ));
+            } else {
+                let child_count = children.len();
+                html.push_str(&format!(
+                    "<details class=\"trace-details\" open>\
+                     <summary style=\"font-weight:600\">{badge} \
+                     <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" href=\"#\" \
+                     onclick=\"event.stopPropagation()\">{escaped_id}</a> \
+                     <span style=\"color:var(--text-secondary)\">{title}</span>{status_badge}\
+                     <span style=\"color:var(--text-secondary);font-size:.75rem;margin-left:.25rem\">({child_count} inbound)</span>\
+                     <span class=\"trace-chevron\"><svg width=\"12\" height=\"12\" viewBox=\"0 0 12 12\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M4 2l4 4-4 4\"/></svg></span>\
+                     <button class=\"btn btn-secondary\" style=\"margin-left:auto;padding:.2rem .5rem;font-size:.68rem\" \
+                     hx-get=\"/traceability/history?file={file}\" hx-target=\"#hist-{safe_id}\" hx-swap=\"innerHTML\" \
+                     onclick=\"event.stopPropagation()\"\
+                     >History</button></summary>\
+                     <div id=\"hist-{safe_id}\"></div>\
+                     <div class=\"trace-level\">",
+                    id = html_escape(id),
+                    escaped_id = html_escape(id),
+                    title = html_escape(&a.title),
+                    file = html_escape(&source_path),
+                ));
+                for child in &children {
+                    html.push_str(&render_trace_node(child, 1, &source_path_for_artifact(store, &child.id)));
+                }
+                html.push_str("</div></details>");
+            }
+        }
+        html.push_str("</div>");
+    }
+    html.push_str("</div>");
+
+    Html(html)
+}
+
+/// Get source file path string for an artifact.
+fn source_path_for_artifact(store: &Store, id: &str) -> String {
+    store
+        .get(id)
+        .and_then(|a| a.source_file.as_ref())
+        .map(|p| p.display().to_string())
+        .unwrap_or_default()
+}
+
+/// HTMX endpoint: return git history for a specific file as HTML fragment.
+async fn traceability_history(
+    State(state): State<SharedState>,
+    Query(params): Query<TraceHistoryParams>,
+) -> Html<String> {
+    let state = state.read().await;
+    let pp = &state.project_path_buf;
+
+    let file = match params.file {
+        Some(ref f) if !f.is_empty() => f.clone(),
+        _ => return Html("<div class=\"trace-history\"><span style=\"color:var(--text-secondary);font-size:.78rem\">No source file recorded</span></div>".to_string()),
+    };
+
+    // Make the path relative to the project directory for git log
+    let file_path = std::path::Path::new(&file);
+    let rel_path = file_path
+        .strip_prefix(pp)
+        .unwrap_or(file_path);
+
+    let output = std::process::Command::new("git")
+        .args([
+            "log",
+            "--oneline",
+            "--follow",
+            "--format=%h|%as|%s",
+            "-10",
+            "--",
+        ])
+        .arg(rel_path)
+        .current_dir(pp)
+        .output();
+
+    match output {
+        Ok(o) if o.status.success() => {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            let lines: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
+            if lines.is_empty() {
+                return Html("<div class=\"trace-history\"><span style=\"color:var(--text-secondary);font-size:.78rem\">No git history found</span></div>".to_string());
+            }
+            let mut h = String::from("<div class=\"trace-history\"><div class=\"trace-history-title\">Git History</div>");
+            for line in &lines {
+                let parts: Vec<&str> = line.splitn(3, '|').collect();
+                if parts.len() == 3 {
+                    h.push_str(&format!(
+                        "<div class=\"trace-history-item\">\
+                         <code>{}</code>\
+                         <span class=\"hist-date\">{}</span>\
+                         <span class=\"hist-msg\">{}</span></div>",
+                        html_escape(parts[0]),
+                        html_escape(parts[1]),
+                        html_escape(parts[2]),
+                    ));
+                }
+            }
+            h.push_str("</div>");
+            Html(h)
+        }
+        _ => Html("<div class=\"trace-history\"><span style=\"color:var(--text-secondary);font-size:.78rem\">Git history unavailable</span></div>".to_string()),
+    }
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────
