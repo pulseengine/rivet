@@ -294,6 +294,8 @@ pub fn render_to_html(doc: &Document, artifact_exists: impl Fn(&str) -> bool) ->
     let mut html = String::with_capacity(doc.body.len() * 2);
     let mut in_list = false;
     let mut in_paragraph = false;
+    let mut in_table = false;
+    let mut table_header_done = false;
 
     for line in doc.body.lines() {
         let trimmed = line.trim();
@@ -306,6 +308,11 @@ pub fn render_to_html(doc: &Document, artifact_exists: impl Fn(&str) -> bool) ->
             if in_list {
                 html.push_str("</ul>\n");
                 in_list = false;
+            }
+            if in_table {
+                html.push_str("</tbody></table>\n");
+                in_table = false;
+                table_header_done = false;
             }
             continue;
         }
@@ -320,9 +327,57 @@ pub fn render_to_html(doc: &Document, artifact_exists: impl Fn(&str) -> bool) ->
                 html.push_str("</ul>\n");
                 in_list = false;
             }
+            if in_table {
+                html.push_str("</tbody></table>\n");
+                in_table = false;
+                table_header_done = false;
+            }
             let text = &trimmed[level as usize + 1..];
             let text = resolve_inline(text, &artifact_exists);
             html.push_str(&format!("<h{level}>{text}</h{level}>\n"));
+            continue;
+        }
+
+        // Table rows (lines starting and ending with |)
+        if trimmed.starts_with('|') && trimmed.ends_with('|') {
+            if in_paragraph {
+                html.push_str("</p>\n");
+                in_paragraph = false;
+            }
+            if in_list {
+                html.push_str("</ul>\n");
+                in_list = false;
+            }
+
+            // Skip separator rows like |---|---|
+            if is_table_separator(trimmed) {
+                continue;
+            }
+
+            let cells: Vec<&str> = trimmed
+                .trim_matches('|')
+                .split('|')
+                .map(|c| c.trim())
+                .collect();
+
+            if !in_table {
+                // First row is the header
+                html.push_str("<table><thead><tr>");
+                for cell in &cells {
+                    let text = resolve_inline(cell, &artifact_exists);
+                    html.push_str(&format!("<th>{text}</th>"));
+                }
+                html.push_str("</tr></thead><tbody>\n");
+                in_table = true;
+                table_header_done = true;
+            } else if table_header_done {
+                html.push_str("<tr>");
+                for cell in &cells {
+                    let text = resolve_inline(cell, &artifact_exists);
+                    html.push_str(&format!("<td>{text}</td>"));
+                }
+                html.push_str("</tr>\n");
+            }
             continue;
         }
 
@@ -331,6 +386,11 @@ pub fn render_to_html(doc: &Document, artifact_exists: impl Fn(&str) -> bool) ->
             if in_paragraph {
                 html.push_str("</p>\n");
                 in_paragraph = false;
+            }
+            if in_table {
+                html.push_str("</tbody></table>\n");
+                in_table = false;
+                table_header_done = false;
             }
             if !in_list {
                 html.push_str("<ul>\n");
@@ -345,6 +405,11 @@ pub fn render_to_html(doc: &Document, artifact_exists: impl Fn(&str) -> bool) ->
         if in_list {
             html.push_str("</ul>\n");
             in_list = false;
+        }
+        if in_table {
+            html.push_str("</tbody></table>\n");
+            in_table = false;
+            table_header_done = false;
         }
         if !in_paragraph {
             html.push_str("<p>");
@@ -361,8 +426,18 @@ pub fn render_to_html(doc: &Document, artifact_exists: impl Fn(&str) -> bool) ->
     if in_list {
         html.push_str("</ul>\n");
     }
+    if in_table {
+        html.push_str("</tbody></table>\n");
+    }
 
     html
+}
+
+/// Check if a table row is a separator (e.g. `|---|---|`).
+fn is_table_separator(line: &str) -> bool {
+    line.trim_matches('|')
+        .split('|')
+        .all(|cell| cell.trim().chars().all(|c| c == '-' || c == ':'))
 }
 
 /// Resolve inline formatting: `[[ID]]` links, **bold**, *italic*.

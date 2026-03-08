@@ -84,11 +84,4 @@ audit, deny, vet, coverage).
 
 ## 4. Glossary
 
-| Term | Definition |
-|------|-----------|
-| STPA | Systems-Theoretic Process Analysis — a hazard analysis method |
-| UCA | Unsafe Control Action — a control action that leads to a hazard |
-| ASPICE | Automotive SPICE — process assessment model for automotive software |
-| OSLC | Open Services for Lifecycle Collaboration — REST-based tool integration |
-| ReqIF | Requirements Interchange Format — OMG standard for requirements exchange |
-| WASM | WebAssembly — portable binary format for plugin adapters |
+See the glossary panel below (defined in document frontmatter).
