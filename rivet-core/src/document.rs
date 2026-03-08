@@ -293,12 +293,58 @@ fn heading_level(line: &str) -> Option<u8> {
 pub fn render_to_html(doc: &Document, artifact_exists: impl Fn(&str) -> bool) -> String {
     let mut html = String::with_capacity(doc.body.len() * 2);
     let mut in_list = false;
+    let mut in_ordered_list = false;
     let mut in_paragraph = false;
     let mut in_table = false;
     let mut table_header_done = false;
+    let mut in_code_block = false;
+    let mut code_block_lines: Vec<String> = Vec::new();
+    let mut in_blockquote = false;
 
     for line in doc.body.lines() {
         let trimmed = line.trim();
+
+        // Code blocks must be handled first — content inside is literal.
+        if trimmed.starts_with("```") {
+            if in_code_block {
+                // Closing fence: emit the accumulated code block.
+                html.push_str("<pre><code>");
+                html.push_str(&code_block_lines.join("\n"));
+                html.push_str("</code></pre>\n");
+                code_block_lines.clear();
+                in_code_block = false;
+            } else {
+                // Opening fence: close any open block-level element first.
+                if in_paragraph {
+                    html.push_str("</p>\n");
+                    in_paragraph = false;
+                }
+                if in_list {
+                    html.push_str("</ul>\n");
+                    in_list = false;
+                }
+                if in_ordered_list {
+                    html.push_str("</ol>\n");
+                    in_ordered_list = false;
+                }
+                if in_table {
+                    html.push_str("</tbody></table>\n");
+                    in_table = false;
+                    table_header_done = false;
+                }
+                if in_blockquote {
+                    html.push_str("</blockquote>\n");
+                    in_blockquote = false;
+                }
+                in_code_block = true;
+            }
+            continue;
+        }
+
+        if in_code_block {
+            code_block_lines.push(html_escape(line));
+            continue;
+        }
 
         if trimmed.is_empty() {
             if in_paragraph {
@@ -309,10 +355,18 @@ pub fn render_to_html(doc: &Document, artifact_exists: impl Fn(&str) -> bool) ->
                 html.push_str("</ul>\n");
                 in_list = false;
             }
+            if in_ordered_list {
+                html.push_str("</ol>\n");
+                in_ordered_list = false;
+            }
             if in_table {
                 html.push_str("</tbody></table>\n");
                 in_table = false;
                 table_header_done = false;
+            }
+            if in_blockquote {
+                html.push_str("</blockquote>\n");
+                in_blockquote = false;
             }
             continue;
         }
@@ -327,10 +381,18 @@ pub fn render_to_html(doc: &Document, artifact_exists: impl Fn(&str) -> bool) ->
                 html.push_str("</ul>\n");
                 in_list = false;
             }
+            if in_ordered_list {
+                html.push_str("</ol>\n");
+                in_ordered_list = false;
+            }
             if in_table {
                 html.push_str("</tbody></table>\n");
                 in_table = false;
                 table_header_done = false;
+            }
+            if in_blockquote {
+                html.push_str("</blockquote>\n");
+                in_blockquote = false;
             }
             let text = &trimmed[level as usize + 1..];
             let text = resolve_inline(text, &artifact_exists);
@@ -347,6 +409,14 @@ pub fn render_to_html(doc: &Document, artifact_exists: impl Fn(&str) -> bool) ->
             if in_list {
                 html.push_str("</ul>\n");
                 in_list = false;
+            }
+            if in_ordered_list {
+                html.push_str("</ol>\n");
+                in_ordered_list = false;
+            }
+            if in_blockquote {
+                html.push_str("</blockquote>\n");
+                in_blockquote = false;
             }
 
             // Skip separator rows like |---|---|
@@ -381,16 +451,52 @@ pub fn render_to_html(doc: &Document, artifact_exists: impl Fn(&str) -> bool) ->
             continue;
         }
 
-        // List items
-        if trimmed.starts_with("- ") || trimmed.starts_with("* ") {
+        // Blockquotes
+        if let Some(bq_text) = trimmed.strip_prefix("> ") {
             if in_paragraph {
                 html.push_str("</p>\n");
                 in_paragraph = false;
+            }
+            if in_list {
+                html.push_str("</ul>\n");
+                in_list = false;
+            }
+            if in_ordered_list {
+                html.push_str("</ol>\n");
+                in_ordered_list = false;
             }
             if in_table {
                 html.push_str("</tbody></table>\n");
                 in_table = false;
                 table_header_done = false;
+            }
+            if !in_blockquote {
+                html.push_str("<blockquote>");
+                in_blockquote = true;
+            }
+            let text = resolve_inline(bq_text, &artifact_exists);
+            html.push_str(&format!("<p>{text}</p>"));
+            continue;
+        }
+
+        // Unordered list items
+        if trimmed.starts_with("- ") || trimmed.starts_with("* ") {
+            if in_paragraph {
+                html.push_str("</p>\n");
+                in_paragraph = false;
+            }
+            if in_ordered_list {
+                html.push_str("</ol>\n");
+                in_ordered_list = false;
+            }
+            if in_table {
+                html.push_str("</tbody></table>\n");
+                in_table = false;
+                table_header_done = false;
+            }
+            if in_blockquote {
+                html.push_str("</blockquote>\n");
+                in_blockquote = false;
             }
             if !in_list {
                 html.push_str("<ul>\n");
@@ -401,15 +507,51 @@ pub fn render_to_html(doc: &Document, artifact_exists: impl Fn(&str) -> bool) ->
             continue;
         }
 
+        // Ordered list items (e.g. "1. item")
+        if let Some(rest) = ordered_list_text(trimmed) {
+            if in_paragraph {
+                html.push_str("</p>\n");
+                in_paragraph = false;
+            }
+            if in_list {
+                html.push_str("</ul>\n");
+                in_list = false;
+            }
+            if in_table {
+                html.push_str("</tbody></table>\n");
+                in_table = false;
+                table_header_done = false;
+            }
+            if in_blockquote {
+                html.push_str("</blockquote>\n");
+                in_blockquote = false;
+            }
+            if !in_ordered_list {
+                html.push_str("<ol>\n");
+                in_ordered_list = true;
+            }
+            let text = resolve_inline(rest, &artifact_exists);
+            html.push_str(&format!("<li>{text}</li>\n"));
+            continue;
+        }
+
         // Regular text → paragraph
         if in_list {
             html.push_str("</ul>\n");
             in_list = false;
         }
+        if in_ordered_list {
+            html.push_str("</ol>\n");
+            in_ordered_list = false;
+        }
         if in_table {
             html.push_str("</tbody></table>\n");
             in_table = false;
             table_header_done = false;
+        }
+        if in_blockquote {
+            html.push_str("</blockquote>\n");
+            in_blockquote = false;
         }
         if !in_paragraph {
             html.push_str("<p>");
@@ -426,8 +568,14 @@ pub fn render_to_html(doc: &Document, artifact_exists: impl Fn(&str) -> bool) ->
     if in_list {
         html.push_str("</ul>\n");
     }
+    if in_ordered_list {
+        html.push_str("</ol>\n");
+    }
     if in_table {
         html.push_str("</tbody></table>\n");
+    }
+    if in_blockquote {
+        html.push_str("</blockquote>\n");
     }
 
     html
@@ -440,12 +588,54 @@ fn is_table_separator(line: &str) -> bool {
         .all(|cell| cell.trim().chars().all(|c| c == '-' || c == ':'))
 }
 
-/// Resolve inline formatting: `[[ID]]` links, **bold**, *italic*.
+/// If the line is an ordered list item (e.g. `1. text`), return the text after the marker.
+fn ordered_list_text(line: &str) -> Option<&str> {
+    let digit_end = line
+        .as_bytes()
+        .iter()
+        .position(|b| !b.is_ascii_digit())?;
+    if digit_end == 0 {
+        return None;
+    }
+    let rest = &line[digit_end..];
+    rest.strip_prefix(". ")
+}
+
+/// Resolve inline formatting: `[[ID]]` links, **bold**, *italic*, `code`, [text](url).
 fn resolve_inline(text: &str, artifact_exists: &impl Fn(&str) -> bool) -> String {
     let mut result = String::with_capacity(text.len() * 2);
     let mut chars = text.char_indices().peekable();
 
     while let Some((i, ch)) = chars.next() {
+        // Inline code (backticks) — must come before bold/italic since content is literal.
+        if ch == '`' {
+            if let Some(end) = text[i + 1..].find('`') {
+                let inner = html_escape(&text[i + 1..i + 1 + end]);
+                result.push_str(&format!("<code>{inner}</code>"));
+                let skip_to = i + 1 + end + 1;
+                while chars.peek().is_some_and(|&(j, _)| j < skip_to) {
+                    chars.next();
+                }
+                continue;
+            }
+        }
+
+        // Markdown links [text](url) — must come before [[id]] artifact refs.
+        if ch == '[' && !text[i..].starts_with("[[") {
+            if let Some(link) = parse_markdown_link(&text[i..]) {
+                let text_part = html_escape(&link.text);
+                result.push_str(&format!(
+                    "<a href=\"{href}\">{text_part}</a>",
+                    href = html_escape(&link.url),
+                ));
+                let skip_to = i + link.total_len;
+                while chars.peek().is_some_and(|&(j, _)| j < skip_to) {
+                    chars.next();
+                }
+                continue;
+            }
+        }
+
         if ch == '[' && text[i..].starts_with("[[") {
             // Find closing ]]
             if let Some(end) = text[i + 2..].find("]]") {
@@ -510,6 +700,41 @@ fn html_escape(s: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+}
+
+/// Result of parsing a `[text](url)` markdown link.
+struct MarkdownLink {
+    text: String,
+    url: String,
+    /// Total number of bytes consumed from the input (including `[`, `]`, `(`, `)`).
+    total_len: usize,
+}
+
+/// Try to parse `[text](url)` at the start of `s`.
+///
+/// Only allows `http://`, `https://`, and `#` URLs for safety (no `javascript:` etc.).
+fn parse_markdown_link(s: &str) -> Option<MarkdownLink> {
+    if !s.starts_with('[') {
+        return None;
+    }
+    let close_bracket = s[1..].find(']')?;
+    let text = &s[1..1 + close_bracket];
+    let after_bracket = &s[1 + close_bracket + 1..];
+    if !after_bracket.starts_with('(') {
+        return None;
+    }
+    let close_paren = after_bracket[1..].find(')')?;
+    let url = &after_bracket[1..1 + close_paren];
+    // Safety check: only allow http, https, and fragment (#) URLs.
+    if !(url.starts_with("http://") || url.starts_with("https://") || url.starts_with('#')) {
+        return None;
+    }
+    let total_len = 1 + close_bracket + 1 + 1 + close_paren + 1; // [text](url)
+    Some(MarkdownLink {
+        text: text.to_string(),
+        url: url.to_string(),
+        total_len,
+    })
 }
 
 // ---------------------------------------------------------------------------

@@ -85,6 +85,9 @@ pub struct ProjectConfig {
     /// Directories containing markdown documents (with YAML frontmatter).
     #[serde(default)]
     pub docs: Vec<String>,
+    /// Directory containing test result YAML files.
+    #[serde(default)]
+    pub results: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

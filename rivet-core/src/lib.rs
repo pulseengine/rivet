@@ -11,6 +11,7 @@ pub mod model;
 pub mod oslc;
 pub mod query;
 pub mod reqif;
+pub mod results;
 pub mod schema;
 pub mod store;
 pub mod validate;

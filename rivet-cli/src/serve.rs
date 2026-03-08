@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -16,9 +17,139 @@ use rivet_core::coverage;
 use rivet_core::document::{self, DocumentStore};
 use rivet_core::links::LinkGraph;
 use rivet_core::matrix::{self, Direction};
+use rivet_core::results::ResultStore;
 use rivet_core::schema::{Schema, Severity};
 use rivet_core::store::Store;
 use rivet_core::validate;
+
+// ── Repository context ──────────────────────────────────────────────────
+
+/// Git repository status captured at load time.
+struct GitInfo {
+    branch: String,
+    commit_short: String,
+    is_dirty: bool,
+    dirty_count: usize,
+}
+
+/// A discovered sibling project (example or peer).
+struct SiblingProject {
+    name: String,
+    rel_path: String,
+}
+
+/// Project context shown in the dashboard header.
+struct RepoContext {
+    project_name: String,
+    project_path: String,
+    git: Option<GitInfo>,
+    loaded_at: String,
+    siblings: Vec<SiblingProject>,
+    port: u16,
+}
+
+fn capture_git_info(project_path: &std::path::Path) -> Option<GitInfo> {
+    let branch = std::process::Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .current_dir(project_path)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())?;
+
+    let commit_short = std::process::Command::new("git")
+        .args(["rev-parse", "--short", "HEAD"])
+        .current_dir(project_path)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default();
+
+    let porcelain = std::process::Command::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(project_path)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+        .unwrap_or_default();
+
+    let dirty_count = porcelain.lines().filter(|l| !l.is_empty()).count();
+
+    Some(GitInfo {
+        branch,
+        commit_short,
+        is_dirty: dirty_count > 0,
+        dirty_count,
+    })
+}
+
+/// Discover other rivet projects (examples/ and peer directories).
+fn discover_siblings(project_path: &std::path::Path) -> Vec<SiblingProject> {
+    let mut siblings = Vec::new();
+
+    // Check examples/ subdirectory
+    let examples_dir = project_path.join("examples");
+    if examples_dir.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(&examples_dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.join("rivet.yaml").exists() {
+                    if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
+                        siblings.push(SiblingProject {
+                            name: name.to_string(),
+                            rel_path: format!("examples/{name}"),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // If inside examples/, offer root project and peers
+    if let Some(parent) = project_path.parent() {
+        if parent.file_name().and_then(|n| n.to_str()) == Some("examples") {
+            if let Some(root) = parent.parent() {
+                if root.join("rivet.yaml").exists() {
+                    if let Ok(cfg) = std::fs::read_to_string(root.join("rivet.yaml")) {
+                        let root_name = cfg
+                            .lines()
+                            .find(|l| l.trim().starts_with("name:"))
+                            .map(|l| l.trim().trim_start_matches("name:").trim().to_string())
+                            .unwrap_or_else(|| {
+                                root.file_name()
+                                    .and_then(|n| n.to_str())
+                                    .unwrap_or("root")
+                                    .to_string()
+                            });
+                        siblings.push(SiblingProject {
+                            name: root_name,
+                            rel_path: root.display().to_string(),
+                        });
+                    }
+                }
+                // Peer examples
+                if let Ok(entries) = std::fs::read_dir(parent) {
+                    for entry in entries.flatten() {
+                        let p = entry.path();
+                        if p != project_path && p.join("rivet.yaml").exists() {
+                            if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
+                                siblings.push(SiblingProject {
+                                    name: name.to_string(),
+                                    rel_path: p.display().to_string(),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    siblings.sort_by(|a, b| a.name.cmp(&b.name));
+    siblings
+}
 
 /// Shared application state loaded once at startup.
 struct AppState {
@@ -26,6 +157,8 @@ struct AppState {
     schema: Schema,
     graph: LinkGraph,
     doc_store: DocumentStore,
+    result_store: ResultStore,
+    context: RepoContext,
 }
 
 /// Start the axum HTTP server on the given port.
@@ -34,13 +167,36 @@ pub async fn run(
     schema: Schema,
     graph: LinkGraph,
     doc_store: DocumentStore,
+    result_store: ResultStore,
+    project_name: String,
+    project_path: PathBuf,
     port: u16,
 ) -> Result<()> {
+    let git = capture_git_info(&project_path);
+    let loaded_at = std::process::Command::new("date")
+        .arg("+%H:%M:%S")
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_else(|| "unknown".into());
+    let siblings = discover_siblings(&project_path);
+    let context = RepoContext {
+        project_name,
+        project_path: project_path.display().to_string(),
+        git,
+        loaded_at,
+        siblings,
+        port,
+    };
+
     let state = Arc::new(AppState {
         store,
         schema,
         graph,
         doc_store,
+        result_store,
+        context,
     });
 
     let app = Router::new()
@@ -56,6 +212,9 @@ pub async fn run(
         .route("/documents", get(documents_list))
         .route("/documents/{id}", get(document_detail))
         .route("/search", get(search_view))
+        .route("/verification", get(verification_view))
+        .route("/results", get(results_view))
+        .route("/results/{run_id}", get(result_detail))
         .with_state(state);
 
     let addr = format!("0.0.0.0:{port}");
@@ -311,9 +470,65 @@ nav a:hover .nav-icon,nav a.active .nav-icon{opacity:.9}
 .nav-badge-error{background:rgba(220,53,69,.2);color:#ff6b7a}
 nav .nav-divider{height:1px;background:rgba(255,255,255,.06);margin:.75rem .75rem}
 
+/* ── Context bar ─────────────────────────────────────────────── */
+.context-bar{display:flex;align-items:center;gap:.75rem;padding:.5rem 1rem;margin:-2.5rem -3rem 1.5rem;
+  background:var(--surface);border-bottom:1px solid var(--border);font-size:.78rem;color:var(--text-secondary);
+  flex-wrap:wrap}
+.context-bar .ctx-project{font-weight:700;color:var(--text);font-size:.82rem}
+.context-bar .ctx-sep{opacity:.25}
+.context-bar .ctx-git{font-family:var(--mono);font-size:.72rem;padding:.15rem .4rem;border-radius:4px;
+  background:rgba(58,134,255,.08);color:var(--accent)}
+.context-bar .ctx-dirty{font-family:var(--mono);font-size:.68rem;padding:.15rem .4rem;border-radius:4px;
+  background:rgba(220,53,69,.1);color:#c62828}
+.context-bar .ctx-clean{font-family:var(--mono);font-size:.68rem;padding:.15rem .4rem;border-radius:4px;
+  background:rgba(21,113,58,.1);color:#15713a}
+.context-bar .ctx-time{margin-left:auto;opacity:.6}
+.ctx-switcher{position:relative;display:inline-flex;align-items:center}
+.ctx-switcher-details{position:relative}
+.ctx-switcher-details summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;
+  padding:.15rem .35rem;border-radius:4px;opacity:.5;transition:opacity .15s}
+.ctx-switcher-details summary:hover{opacity:1;background:rgba(255,255,255,.06)}
+.ctx-switcher-details summary::-webkit-details-marker{display:none}
+.ctx-switcher-dropdown{position:absolute;top:100%;left:0;z-index:100;margin-top:.35rem;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);
+  padding:.5rem;min-width:280px;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+.ctx-switcher-item{padding:.5rem .65rem;border-radius:4px}
+.ctx-switcher-item:hover{background:rgba(255,255,255,.04)}
+.ctx-switcher-item .ctx-switcher-name{display:block;font-weight:600;font-size:.8rem;color:var(--text);margin-bottom:.2rem}
+.ctx-switcher-item .ctx-switcher-cmd{display:block;font-size:.7rem;color:var(--text-secondary);
+  padding:.2rem .4rem;background:rgba(255,255,255,.04);border-radius:3px;
+  font-family:var(--mono);user-select:all;cursor:text}
+
 /* ── Footer ──────────────────────────────────────────────────── */
 .footer{padding:2rem 0 1rem;text-align:center;font-size:.75rem;color:var(--text-secondary);
         border-top:1px solid var(--border);margin-top:3rem}
+
+/* ── Verification ────────────────────────────────────────────── */
+.ver-level{margin-bottom:1.5rem}
+.ver-level-header{display:flex;align-items:center;gap:.75rem;margin-bottom:.75rem}
+.ver-level-title{font-size:1rem;font-weight:600;color:var(--text)}
+.ver-level-arrow{color:var(--text-secondary);font-size:.85rem}
+details.ver-row>summary{cursor:pointer;list-style:none;padding:.6rem .875rem;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:.75rem;transition:background var(--transition)}
+details.ver-row>summary::-webkit-details-marker{display:none}
+details.ver-row>summary:hover{background:rgba(58,134,255,.04)}
+details.ver-row[open]>summary{background:rgba(58,134,255,.04);border-bottom-color:var(--accent)}
+details.ver-row>.ver-detail{padding:1rem 1.5rem;background:rgba(0,0,0,.01);border-bottom:1px solid var(--border)}
+.ver-chevron{transition:transform var(--transition);display:inline-flex;opacity:.4}
+details.ver-row[open] .ver-chevron{transform:rotate(90deg)}
+.ver-steps{width:100%;border-collapse:collapse;font-size:.85rem;margin-top:.5rem}
+.ver-steps th{text-align:left;font-weight:600;font-size:.72rem;text-transform:uppercase;
+  letter-spacing:.04em;color:var(--text-secondary);padding:.4rem .5rem;border-bottom:1px solid var(--border)}
+.ver-steps td{padding:.4rem .5rem;border-bottom:1px solid rgba(0,0,0,.04);vertical-align:top}
+.method-badge{display:inline-flex;padding:.15rem .5rem;border-radius:4px;font-size:.72rem;font-weight:600;
+  background:#e8f4fd;color:#0c5a82}
+
+/* ── Results ─────────────────────────────────────────────────── */
+.result-pass{color:#15713a}.result-fail{color:#c62828}.result-skip{color:#6e6e73}
+.result-error{color:#e67e22}.result-blocked{color:#8b6914}
+.result-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:.35rem}
+.result-dot-pass{background:#15713a}.result-dot-fail{background:#c62828}
+.result-dot-skip{background:#c5c5cd}.result-dot-error{background:#e67e22}.result-dot-blocked{background:#b8860b}
 
 /* ── Detail actions ──────────────────────────────────────────── */
 .detail-actions{display:flex;gap:.75rem;align-items:center;margin-top:1rem}
@@ -719,28 +934,96 @@ const SEARCH_JS: &str = r#"
 
 // ── Layout ───────────────────────────────────────────────────────────────
 
-struct NavInfo {
-    artifact_count: usize,
-    error_count: usize,
-    doc_count: usize,
-}
-
-fn page_layout(content: &str, nav: &NavInfo) -> Html<String> {
-    let artifact_count = nav.artifact_count;
-    let error_badge = if nav.error_count > 0 {
+fn page_layout(content: &str, state: &AppState) -> Html<String> {
+    let artifact_count = state.store.len();
+    let diagnostics = validate::validate(&state.store, &state.schema, &state.graph);
+    let error_count = diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Error)
+        .count();
+    let error_badge = if error_count > 0 {
         format!(
-            "<span class=\"nav-badge nav-badge-error\">{}</span>",
-            nav.error_count
+            "<span class=\"nav-badge nav-badge-error\">{error_count}</span>"
         )
     } else {
         "<span class=\"nav-badge\">OK</span>".to_string()
     };
-    let doc_badge = if nav.doc_count > 0 {
-        format!("<span class=\"nav-badge\">{}</span>", nav.doc_count)
+    let doc_badge = if !state.doc_store.is_empty() {
+        format!(
+            "<span class=\"nav-badge\">{}</span>",
+            state.doc_store.len()
+        )
+    } else {
+        String::new()
+    };
+    let result_badge = if !state.result_store.is_empty() {
+        format!(
+            "<span class=\"nav-badge\">{}</span>",
+            state.result_store.len()
+        )
     } else {
         String::new()
     };
     let version = env!("CARGO_PKG_VERSION");
+
+    // Context bar
+    let ctx = &state.context;
+    let git_html = if let Some(ref git) = ctx.git {
+        let status = if git.is_dirty {
+            format!(
+                "<span class=\"ctx-dirty\">{} uncommitted</span>",
+                git.dirty_count
+            )
+        } else {
+            "<span class=\"ctx-clean\">clean</span>".to_string()
+        };
+        format!(
+            "<span class=\"ctx-sep\">/</span>\
+             <span class=\"ctx-git\">{branch}@{commit}</span>\
+             {status}",
+            branch = html_escape(&git.branch),
+            commit = html_escape(&git.commit_short),
+        )
+    } else {
+        String::new()
+    };
+    // Project switcher: show siblings as a dropdown if available
+    let switcher_html = if ctx.siblings.is_empty() {
+        String::new()
+    } else {
+        let mut s = String::from(
+            "<span class=\"ctx-switcher\">\
+             <details class=\"ctx-switcher-details\">\
+             <summary title=\"Switch project\"><svg width=\"12\" height=\"12\" viewBox=\"0 0 12 12\" fill=\"none\" \
+             stroke=\"currentColor\" stroke-width=\"1.5\"><path d=\"M3 5l3 3 3-3\"/></svg></summary>\
+             <div class=\"ctx-switcher-dropdown\">",
+        );
+        for sib in &ctx.siblings {
+            s.push_str(&format!(
+                "<div class=\"ctx-switcher-item\">\
+                 <span class=\"ctx-switcher-name\">{}</span>\
+                 <code class=\"ctx-switcher-cmd\">rivet -p {} serve -P {}</code>\
+                 </div>",
+                html_escape(&sib.name),
+                html_escape(&sib.rel_path),
+                ctx.port,
+            ));
+        }
+        s.push_str("</div></details></span>");
+        s
+    };
+    let context_bar = format!(
+        "<div class=\"context-bar\">\
+         <span class=\"ctx-project\">{project}</span>{switcher_html}\
+         <span class=\"ctx-sep\">/</span>\
+         <span>{path}</span>\
+         {git_html}\
+         <span class=\"ctx-time\">Loaded {loaded_at}</span>\
+         </div>",
+        project = html_escape(&ctx.project_name),
+        path = html_escape(&ctx.project_path),
+        loaded_at = html_escape(&ctx.loaded_at),
+    );
     Html(format!(
         r##"<!DOCTYPE html>
 <html lang="en">
@@ -768,6 +1051,9 @@ fn page_layout(content: &str, nav: &NavInfo) -> Html<String> {
     <li><a hx-get="/coverage" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><path d="M8 1.5V8l4.6 4.6"/></svg></span> Coverage</span></a></li>
     <li><a hx-get="/graph" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="4" r="2"/><circle cx="12" cy="4" r="2"/><circle cx="4" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><path d="M6 4h4M4 6v4M12 6v4M6 12h4"/></svg></span> Graph</span></a></li>
     <li><a hx-get="/documents" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 1.5H4.5A1.5 1.5 0 003 3v10a1.5 1.5 0 001.5 1.5h7A1.5 1.5 0 0013 13V5.5L9 1.5z"/><path d="M9 1.5V5.5h4"/><path d="M6 8.5h4M6 11h2"/></svg></span> Documents</span>{doc_badge}</a></li>
+    <li class="nav-divider"></li>
+    <li><a hx-get="/verification" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5l5.5 2.5v4c0 3.5-2.5 5.5-5.5 7-3-1.5-5.5-3.5-5.5-7V4z"/><path d="M5.5 8l2 2 3.5-3.5"/></svg></span> Verification</span></a></li>
+    <li><a hx-get="/results" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12.5h12M3 9.5h2v3H3zM7 6.5h2v6H7zM11 3.5h2v9h-2z"/></svg></span> Results</span>{result_badge}</a></li>
   </ul>
   <div id="nav-search-hint" class="nav-search-hint">
     <span><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg></span> Search</span>
@@ -775,6 +1061,7 @@ fn page_layout(content: &str, nav: &NavInfo) -> Html<String> {
   </div>
 </nav>
 <main id="content" hx-swap="innerHTML transition:true">
+{context_bar}
 {content}
 <div class="footer">Powered by Rivet v{version}</div>
 </main>
@@ -801,21 +1088,7 @@ fn page_layout(content: &str, nav: &NavInfo) -> Html<String> {
 
 async fn index(State(state): State<Arc<AppState>>) -> Html<String> {
     let inner = stats_partial(&state);
-    let nav = make_nav_info(&state);
-    page_layout(&inner, &nav)
-}
-
-fn make_nav_info(state: &AppState) -> NavInfo {
-    let diagnostics = validate::validate(&state.store, &state.schema, &state.graph);
-    let error_count = diagnostics
-        .iter()
-        .filter(|d| d.severity == Severity::Error)
-        .count();
-    NavInfo {
-        artifact_count: state.store.len(),
-        error_count,
-        doc_count: state.doc_store.len(),
-    }
+    page_layout(&inner, &state)
 }
 
 async fn stats_view(State(state): State<Arc<AppState>>) -> Html<String> {
@@ -841,7 +1114,16 @@ fn stats_partial(state: &AppState) -> String {
         .filter(|d| d.severity == Severity::Warning)
         .count();
 
-    let mut html = String::from("<h2>Dashboard</h2>");
+    // Project header
+    let mut html = format!(
+        "<div style=\"margin-bottom:1.5rem\">\
+         <h2 style=\"margin:0\">Project Overview</h2>\
+         <p style=\"color:var(--text-secondary);margin:0.25rem 0 0\">{} &mdash; {} artifact types, {} traceability rules</p>\
+         </div>",
+        html_escape(&state.context.project_name),
+        types.len(),
+        state.schema.traceability_rules.len(),
+    );
 
     // Summary cards with colored accents
     html.push_str("<div class=\"stat-grid\">");
@@ -869,12 +1151,10 @@ fn stats_partial(state: &AppState) -> String {
         "<div class=\"stat-box stat-purple\"><div class=\"number\">{}</div><div class=\"label\">Broken Links</div></div>",
         graph.broken.len()
     ));
-    if !doc_store.is_empty() {
-        html.push_str(&format!(
-            "<div class=\"stat-box stat-blue\"><div class=\"number\">{}</div><div class=\"label\">Documents</div></div>",
-            doc_store.len()
-        ));
-    }
+    html.push_str(&format!(
+        "<div class=\"stat-box stat-blue\"><div class=\"number\">{}</div><div class=\"label\">Documents</div></div>",
+        doc_store.len()
+    ));
     html.push_str("</div>");
 
     // By-type table
@@ -928,6 +1208,135 @@ fn stats_partial(state: &AppState) -> String {
         }
         html.push_str("</tbody></table></div>");
     }
+
+    // ── Coverage summary card ────────────────────────────────────────
+    let cov_report = coverage::compute_coverage(store, &state.schema, graph);
+    if !cov_report.entries.is_empty() {
+        let overall = cov_report.overall_coverage();
+        let cov_color = if overall >= 80.0 {
+            "#15713a"
+        } else if overall >= 50.0 {
+            "#b8860b"
+        } else {
+            "#c62828"
+        };
+        let total_covered: usize = cov_report.entries.iter().map(|e| e.covered).sum();
+        let total_items: usize = cov_report.entries.iter().map(|e| e.total).sum();
+        html.push_str(&format!(
+            "<div class=\"card\">\
+             <h3>Traceability Coverage</h3>\
+             <div style=\"display:flex;align-items:center;gap:1.5rem;margin-bottom:0.75rem\">\
+               <div style=\"font-size:2rem;font-weight:700;color:{cov_color}\">{overall:.0}%</div>\
+               <div style=\"flex:1\">\
+                 <div class=\"status-bar-track\" style=\"height:0.6rem\">\
+                   <div class=\"status-bar-fill\" style=\"background:{cov_color};width:{overall:.1}%\"></div>\
+                 </div>\
+                 <div style=\"color:var(--text-secondary);font-size:.8rem;margin-top:.35rem\">\
+                   {total_covered} / {total_items} artifacts covered across {} rules\
+                 </div>\
+               </div>\
+             </div>\
+             <a href=\"#\" hx-get=\"/coverage\" hx-target=\"#content\" \
+                style=\"font-size:.85rem;color:var(--accent);text-decoration:none\">\
+                View full coverage report &rarr;</a>\
+             </div>",
+            cov_report.entries.len(),
+        ));
+    }
+
+    // ── Test results summary ─────────────────────────────────────────
+    if !state.result_store.is_empty() {
+        let summary = state.result_store.summary();
+        let rate = summary.pass_rate();
+        let rate_color = if rate >= 80.0 {
+            "#15713a"
+        } else if rate >= 50.0 {
+            "#b8860b"
+        } else {
+            "#c62828"
+        };
+        html.push_str("<div class=\"card\"><h3>Test Results</h3>");
+        html.push_str(&format!(
+            "<div style=\"display:flex;align-items:center;gap:1.5rem;margin-bottom:0.5rem\">\
+             <div style=\"font-size:2rem;font-weight:700;color:{rate_color}\">{rate:.0}%</div>\
+             <div style=\"flex:1\">\
+               <div class=\"status-bar-track\" style=\"height:0.6rem\">\
+                 <div class=\"status-bar-fill\" style=\"background:{rate_color};width:{rate:.1}%\"></div>\
+               </div>\
+             </div>\
+             </div>"
+        ));
+        html.push_str("<div style=\"display:flex;gap:1.25rem;font-size:.85rem;color:var(--text-secondary);margin-bottom:0.75rem\">");
+        html.push_str(&format!(
+            "<span>{} runs</span>\
+             <span style=\"color:#15713a\">{} passed</span>\
+             <span style=\"color:#c62828\">{} failed</span>",
+            summary.total_runs, summary.pass_count, summary.fail_count,
+        ));
+        if summary.skip_count > 0 {
+            html.push_str(&format!(
+                "<span style=\"color:#b8860b\">{} skipped</span>",
+                summary.skip_count,
+            ));
+        }
+        if summary.blocked_count > 0 {
+            html.push_str(&format!(
+                "<span style=\"color:#b8860b\">{} blocked</span>",
+                summary.blocked_count,
+            ));
+        }
+        html.push_str("</div>");
+        html.push_str(
+            "<a href=\"#\" hx-get=\"/results\" hx-target=\"#content\" \
+             style=\"font-size:.85rem;color:var(--accent);text-decoration:none\">\
+             View all test runs &rarr;</a>",
+        );
+        html.push_str("</div>");
+    }
+
+    // ── Quick links ──────────────────────────────────────────────────
+    // Count verifiable types for the verification link badge
+    let ver_count = {
+        let mut count = 0usize;
+        for rule in &state.schema.traceability_rules {
+            if rule.required_backlink.as_deref() == Some("verifies") {
+                count += store.by_type(&rule.source_type).len();
+            }
+        }
+        count
+    };
+
+    html.push_str(
+        "<div style=\"margin-top:1.5rem\">\
+         <h3 style=\"margin-bottom:0.75rem\">Quick Links</h3>\
+         <div style=\"display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:0.75rem\">",
+    );
+    html.push_str(&format!(
+        "<a href=\"#\" hx-get=\"/verification\" hx-target=\"#content\" \
+         style=\"display:block;padding:1rem;background:var(--surface);border:1px solid var(--border);\
+         border-radius:var(--radius-sm);text-decoration:none;color:var(--text)\">\
+         <div style=\"font-weight:600;margin-bottom:.25rem\">Verification</div>\
+         <div style=\"font-size:.85rem;color:var(--text-secondary)\">{ver_count} requirements</div>\
+         </a>",
+    ));
+    html.push_str(&format!(
+        "<a href=\"#\" hx-get=\"/documents\" hx-target=\"#content\" \
+         style=\"display:block;padding:1rem;background:var(--surface);border:1px solid var(--border);\
+         border-radius:var(--radius-sm);text-decoration:none;color:var(--text)\">\
+         <div style=\"font-weight:600;margin-bottom:.25rem\">Documents</div>\
+         <div style=\"font-size:.85rem;color:var(--text-secondary)\">{} loaded</div>\
+         </a>",
+        doc_store.len(),
+    ));
+    html.push_str(
+        "<a href=\"#\" hx-get=\"/graph\" hx-target=\"#content\" \
+         style=\"display:block;padding:1rem;background:var(--surface);border:1px solid var(--border);\
+         border-radius:var(--radius-sm);text-decoration:none;color:var(--text)\">\
+         <div style=\"font-weight:600;margin-bottom:.25rem\">Traceability Graph</div>\
+         <div style=\"font-size:.85rem;color:var(--text-secondary)\">Full link graph</div>\
+         </a>",
+    );
+    html.push_str("</div></div>");
 
     html
 }
@@ -2309,6 +2718,504 @@ fn highlight_match(text: &str, query: &str) -> String {
     }
     result.push_str(&text[start..]);
     result
+}
+
+// ── Verification ─────────────────────────────────────────────────────────
+
+async fn verification_view(State(state): State<Arc<AppState>>) -> Html<String> {
+    let store = &state.store;
+    let graph = &state.graph;
+    let schema = &state.schema;
+
+    // Find types that need verification (have required-backlink: verifies rules)
+    let mut verifiable_types: Vec<(String, String)> = Vec::new(); // (source_type, rule_name)
+    for rule in &schema.traceability_rules {
+        if rule.required_backlink.as_deref() == Some("verifies") {
+            verifiable_types.push((rule.source_type.clone(), rule.name.clone()));
+        }
+    }
+
+    // Also find types that have forward `verifies` links (the verifiers themselves)
+    // to auto-discover if no rules match
+    if verifiable_types.is_empty() {
+        // Fallback: find all artifact types that have backlinks of type "verifies"
+        let mut seen = std::collections::HashSet::new();
+        for artifact in store.iter() {
+            let backlinks = graph.backlinks_to(&artifact.id);
+            for bl in backlinks {
+                if bl.link_type == "verifies" && seen.insert(artifact.artifact_type.clone()) {
+                    verifiable_types
+                        .push((artifact.artifact_type.clone(), "verifies".to_string()));
+                }
+            }
+        }
+    }
+
+    let mut html = String::from("<h2>Verification</h2>");
+
+    if verifiable_types.is_empty() {
+        html.push_str("<div class=\"card\"><p>No verification traceability rules found in the schema. \
+            Add <code>required-backlink: verifies</code> rules to your schema to enable the verification dashboard.</p></div>");
+        return Html(html);
+    }
+
+    // Compute stats
+    let mut total_reqs = 0usize;
+    let mut verified_reqs = 0usize;
+
+    // Group by verifiable type
+    for (source_type, _rule_name) in &verifiable_types {
+        let source_ids = store.by_type(source_type);
+        if source_ids.is_empty() {
+            continue;
+        }
+
+        total_reqs += source_ids.len();
+
+        // Collect requirement → verifier mapping
+        struct ReqRow {
+            id: String,
+            title: String,
+            status: String,
+            verifiers: Vec<VerifierInfo>,
+        }
+        struct VerifierInfo {
+            id: String,
+            title: String,
+            artifact_type: String,
+            method: String,
+            steps: Vec<StepInfo>,
+            latest_result: Option<(String, rivet_core::results::TestStatus)>,
+        }
+        struct StepInfo {
+            step: String,
+            action: String,
+            expected: String,
+        }
+
+        let mut rows: Vec<ReqRow> = Vec::new();
+
+        for req_id in source_ids {
+            let req = store.get(req_id).unwrap();
+            let backlinks = graph.backlinks_to(req_id);
+            let ver_links: Vec<_> = backlinks
+                .iter()
+                .filter(|bl| bl.link_type == "verifies")
+                .collect();
+
+            if !ver_links.is_empty() {
+                verified_reqs += 1;
+            }
+
+            let mut verifiers = Vec::new();
+            for bl in &ver_links {
+                if let Some(ver_artifact) = store.get(&bl.source) {
+                    let method = ver_artifact
+                        .fields
+                        .get("method")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unspecified")
+                        .to_string();
+
+                    let steps = ver_artifact
+                        .fields
+                        .get("steps")
+                        .and_then(|v| v.as_sequence())
+                        .map(|seq| {
+                            seq.iter()
+                                .map(|s| {
+                                    let step = s
+                                        .get("step")
+                                        .map(|v| {
+                                            if let Some(n) = v.as_u64() {
+                                                n.to_string()
+                                            } else if let Some(s) = v.as_str() {
+                                                s.to_string()
+                                            } else {
+                                                format!("{v:?}")
+                                            }
+                                        })
+                                        .unwrap_or_default();
+                                    let action = s
+                                        .get("action")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    let expected = s
+                                        .get("expected")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    StepInfo {
+                                        step,
+                                        action,
+                                        expected,
+                                    }
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
+
+                    // Look up latest test result
+                    let latest_result = state
+                        .result_store
+                        .latest_for(&bl.source)
+                        .map(|(_run, r)| (r.status.to_string(), r.status.clone()));
+
+                    verifiers.push(VerifierInfo {
+                        id: ver_artifact.id.clone(),
+                        title: ver_artifact.title.clone(),
+                        artifact_type: ver_artifact.artifact_type.clone(),
+                        method,
+                        steps,
+                        latest_result,
+                    });
+                }
+            }
+
+            rows.push(ReqRow {
+                id: req.id.clone(),
+                title: req.title.clone(),
+                status: req.status.as_deref().unwrap_or("-").to_string(),
+                verifiers,
+            });
+        }
+
+        rows.sort_by(|a, b| a.id.cmp(&b.id));
+
+        // Render this type's section
+        let type_verified = rows.iter().filter(|r| !r.verifiers.is_empty()).count();
+        let type_total = rows.len();
+        let pct = if type_total > 0 {
+            (type_verified as f64 / type_total as f64) * 100.0
+        } else {
+            100.0
+        };
+
+        html.push_str("<div class=\"ver-level\"><div class=\"card\">");
+        html.push_str(&format!(
+            "<div class=\"ver-level-header\">\
+             {} <span class=\"ver-level-arrow\">&rarr;</span> \
+             <span class=\"ver-level-title\">verified by</span> \
+             <span class=\"badge badge-info\">{type_verified}/{type_total} ({pct:.0}%)</span></div>",
+            badge_for_type(source_type),
+        ));
+
+        for row in &rows {
+            let ver_count = row.verifiers.len();
+            let has_verifiers = ver_count > 0;
+            let coverage_badge = if has_verifiers {
+                format!(
+                    "<span class=\"badge badge-ok\">{ver_count} verifier{}</span>",
+                    if ver_count > 1 { "s" } else { "" }
+                )
+            } else {
+                "<span class=\"badge badge-error\">unverified</span>".to_string()
+            };
+
+            html.push_str("<details class=\"ver-row\"><summary>");
+            html.push_str(&format!(
+                "<span class=\"ver-chevron\"><svg width=\"12\" height=\"12\" viewBox=\"0 0 12 12\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"><path d=\"M4.5 2.5l4 3.5-4 3.5\"/></svg></span>\
+                 <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" href=\"#\" style=\"flex-shrink:0\">{id}</a>\
+                 <span style=\"flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-secondary)\">{title}</span>\
+                 <span class=\"badge\" style=\"font-size:0.7rem;opacity:0.6\">{status}</span>\
+                 {coverage_badge}",
+                id = html_escape(&row.id),
+                title = html_escape(&row.title),
+                status = html_escape(&row.status),
+            ));
+
+            // Show latest result dots for verifiers
+            for v in &row.verifiers {
+                if let Some((_, ref status)) = v.latest_result {
+                    let dot_class = match status {
+                        rivet_core::results::TestStatus::Pass => "result-dot-pass",
+                        rivet_core::results::TestStatus::Fail => "result-dot-fail",
+                        rivet_core::results::TestStatus::Skip => "result-dot-skip",
+                        rivet_core::results::TestStatus::Error => "result-dot-error",
+                        rivet_core::results::TestStatus::Blocked => "result-dot-blocked",
+                    };
+                    html.push_str(&format!(
+                        "<span class=\"result-dot {dot_class}\" title=\"{}: {}\"></span>",
+                        html_escape(&v.id),
+                        status
+                    ));
+                }
+            }
+
+            html.push_str("</summary>");
+
+            if has_verifiers {
+                html.push_str("<div class=\"ver-detail\">");
+                for v in &row.verifiers {
+                    html.push_str(&format!(
+                        "<p style=\"margin-bottom:.5rem\">\
+                         <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" href=\"#\">{id}</a> \
+                         {type_badge} \
+                         <span class=\"method-badge\">{method}</span> \
+                         &mdash; {title}",
+                        id = html_escape(&v.id),
+                        type_badge = badge_for_type(&v.artifact_type),
+                        method = html_escape(&v.method),
+                        title = html_escape(&v.title),
+                    ));
+                    if let Some((ref status_str, _)) = v.latest_result {
+                        html.push_str(&format!(
+                            " <span class=\"badge badge-{cls}\">{status_str}</span>",
+                            cls = match status_str.as_str() {
+                                "pass" => "ok",
+                                "fail" | "error" => "error",
+                                "skip" | "blocked" => "warn",
+                                _ => "info",
+                            },
+                        ));
+                    }
+                    html.push_str("</p>");
+
+                    if !v.steps.is_empty() {
+                        html.push_str(
+                            "<table class=\"ver-steps\"><thead><tr>\
+                             <th style=\"width:3rem\">#</th><th>Action</th><th>Expected</th>\
+                             </tr></thead><tbody>",
+                        );
+                        for s in &v.steps {
+                            html.push_str(&format!(
+                                "<tr><td>{}</td><td>{}</td><td>{}</td></tr>",
+                                html_escape(&s.step),
+                                html_escape(&s.action),
+                                html_escape(&s.expected),
+                            ));
+                        }
+                        html.push_str("</tbody></table>");
+                    }
+                }
+                html.push_str("</div>");
+            }
+
+            html.push_str("</details>");
+        }
+
+        html.push_str("</div></div>");
+    }
+
+    // Summary stats
+    let ver_pct = if total_reqs > 0 {
+        (verified_reqs as f64 / total_reqs as f64) * 100.0
+    } else {
+        100.0
+    };
+    let summary = format!(
+        "<div class=\"stat-grid\">\
+         <div class=\"stat-box stat-blue\"><div class=\"number\">{total_reqs}</div><div class=\"label\">Requirements</div></div>\
+         <div class=\"stat-box stat-green\"><div class=\"number\">{verified_reqs}</div><div class=\"label\">Verified</div></div>\
+         <div class=\"stat-box stat-red\"><div class=\"number\">{}</div><div class=\"label\">Unverified</div></div>\
+         <div class=\"stat-box stat-purple\"><div class=\"number\">{ver_pct:.0}%</div><div class=\"label\">Coverage</div></div>\
+         </div>",
+        total_reqs - verified_reqs,
+    );
+
+    // Insert summary before the level cards
+    html = format!(
+        "<h2>Verification</h2>{summary}{}",
+        &html["<h2>Verification</h2>".len()..]
+    );
+
+    Html(html)
+}
+
+// ── Results ──────────────────────────────────────────────────────────────
+
+async fn results_view(State(state): State<Arc<AppState>>) -> Html<String> {
+    let result_store = &state.result_store;
+
+    let mut html = String::from("<h2>Test Results</h2>");
+
+    if result_store.is_empty() {
+        html.push_str("<div class=\"card\"><p>No test results loaded. Add result YAML files to a <code>results/</code> directory and reference it in <code>rivet.yaml</code>:</p>\
+            <pre style=\"background:#f1f3f5;padding:1rem;border-radius:4px;font-size:.88rem;margin-top:.5rem\">results: results</pre>\
+            <p style=\"margin-top:.75rem;color:var(--text-secondary);font-size:.88rem\">Each result file contains a <code>run:</code> metadata block and a <code>results:</code> list with per-artifact pass/fail/skip status.</p></div>");
+        return Html(html);
+    }
+
+    let summary = result_store.summary();
+
+    // Stats
+    html.push_str("<div class=\"stat-grid\">");
+    html.push_str(&format!(
+        "<div class=\"stat-box stat-blue\"><div class=\"number\">{}</div><div class=\"label\">Total Runs</div></div>",
+        summary.total_runs
+    ));
+    html.push_str(&format!(
+        "<div class=\"stat-box stat-green\"><div class=\"number\">{:.0}%</div><div class=\"label\">Pass Rate</div></div>",
+        summary.pass_rate()
+    ));
+    html.push_str(&format!(
+        "<div class=\"stat-box stat-green\"><div class=\"number\">{}</div><div class=\"label\">Passed</div></div>",
+        summary.pass_count
+    ));
+    html.push_str(&format!(
+        "<div class=\"stat-box stat-red\"><div class=\"number\">{}</div><div class=\"label\">Failed</div></div>",
+        summary.fail_count
+    ));
+    if summary.skip_count > 0 {
+        html.push_str(&format!(
+            "<div class=\"stat-box stat-amber\"><div class=\"number\">{}</div><div class=\"label\">Skipped</div></div>",
+            summary.skip_count
+        ));
+    }
+    if summary.blocked_count > 0 {
+        html.push_str(&format!(
+            "<div class=\"stat-box stat-amber\"><div class=\"number\">{}</div><div class=\"label\">Blocked</div></div>",
+            summary.blocked_count
+        ));
+    }
+    html.push_str("</div>");
+
+    // Run history table
+    html.push_str("<div class=\"card\"><h3>Run History</h3>");
+    html.push_str(
+        "<table><thead><tr><th>Run ID</th><th>Timestamp</th><th>Source</th><th>Environment</th>\
+         <th>Pass</th><th>Fail</th><th>Skip</th><th>Total</th></tr></thead><tbody>",
+    );
+
+    for run in result_store.runs() {
+        let pass = run
+            .results
+            .iter()
+            .filter(|r| r.status.is_pass())
+            .count();
+        let fail = run
+            .results
+            .iter()
+            .filter(|r| r.status.is_fail())
+            .count();
+        let skip = run.results.len() - pass - fail;
+        let total = run.results.len();
+
+        let status_badge = if fail > 0 {
+            "<span class=\"badge badge-error\">FAIL</span>"
+        } else {
+            "<span class=\"badge badge-ok\">PASS</span>"
+        };
+
+        html.push_str(&format!(
+            "<tr>\
+             <td><a hx-get=\"/results/{id}\" hx-target=\"#content\" href=\"#\">{id}</a> {status_badge}</td>\
+             <td>{ts}</td>\
+             <td>{src}</td>\
+             <td>{env}</td>\
+             <td style=\"color:#15713a\">{pass}</td>\
+             <td style=\"color:#c62828\">{fail}</td>\
+             <td style=\"color:#6e6e73\">{skip}</td>\
+             <td>{total}</td>\
+             </tr>",
+            id = html_escape(&run.run.id),
+            ts = html_escape(&run.run.timestamp),
+            src = run.run.source.as_deref().unwrap_or("-"),
+            env = run.run.environment.as_deref().unwrap_or("-"),
+        ));
+    }
+
+    html.push_str("</tbody></table></div>");
+
+    Html(html)
+}
+
+async fn result_detail(
+    State(state): State<Arc<AppState>>,
+    Path(run_id): Path<String>,
+) -> Html<String> {
+    let result_store = &state.result_store;
+
+    let Some(run) = result_store.get_run(&run_id) else {
+        return Html(format!(
+            "<h2>Not Found</h2><p>Run <code>{}</code> does not exist.</p>",
+            html_escape(&run_id)
+        ));
+    };
+
+    let mut html = format!("<h2>Run: {}</h2>", html_escape(&run.run.id));
+
+    // Metadata
+    html.push_str("<div class=\"card\"><dl>");
+    html.push_str(&format!(
+        "<dt>Timestamp</dt><dd>{}</dd>",
+        html_escape(&run.run.timestamp)
+    ));
+    if let Some(ref source) = run.run.source {
+        html.push_str(&format!(
+            "<dt>Source</dt><dd>{}</dd>",
+            html_escape(source)
+        ));
+    }
+    if let Some(ref env) = run.run.environment {
+        html.push_str(&format!(
+            "<dt>Environment</dt><dd>{}</dd>",
+            html_escape(env)
+        ));
+    }
+    if let Some(ref commit) = run.run.commit {
+        html.push_str(&format!(
+            "<dt>Commit</dt><dd><code>{}</code></dd>",
+            html_escape(commit)
+        ));
+    }
+    html.push_str("</dl></div>");
+
+    // Results table
+    html.push_str("<div class=\"card\"><h3>Results</h3>");
+    html.push_str(
+        "<table><thead><tr><th>Artifact</th><th>Title</th><th>Status</th><th>Duration</th><th>Message</th></tr></thead><tbody>",
+    );
+
+    for result in &run.results {
+        let title = state
+            .store
+            .get(&result.artifact)
+            .map(|a| a.title.as_str())
+            .unwrap_or("-");
+        let (status_badge, status_class) = match result.status {
+            rivet_core::results::TestStatus::Pass => {
+                ("<span class=\"badge badge-ok\">PASS</span>", "")
+            }
+            rivet_core::results::TestStatus::Fail => {
+                ("<span class=\"badge badge-error\">FAIL</span>", "result-fail")
+            }
+            rivet_core::results::TestStatus::Skip => {
+                ("<span class=\"badge badge-info\">SKIP</span>", "")
+            }
+            rivet_core::results::TestStatus::Error => {
+                ("<span class=\"badge badge-error\">ERROR</span>", "result-error")
+            }
+            rivet_core::results::TestStatus::Blocked => {
+                ("<span class=\"badge badge-warn\">BLOCKED</span>", "")
+            }
+        };
+
+        let duration = result.duration.as_deref().unwrap_or("-");
+        let message = result.message.as_deref().unwrap_or("");
+
+        html.push_str(&format!(
+            "<tr class=\"{status_class}\">\
+             <td><a hx-get=\"/artifacts/{aid}\" hx-target=\"#content\" href=\"#\">{aid}</a></td>\
+             <td>{title}</td>\
+             <td>{status_badge}</td>\
+             <td>{duration}</td>\
+             <td>{msg}</td>\
+             </tr>",
+            aid = html_escape(&result.artifact),
+            title = html_escape(title),
+            msg = html_escape(message),
+        ));
+    }
+
+    html.push_str("</tbody></table></div>");
+
+    html.push_str(
+        "<p><a hx-get=\"/results\" hx-target=\"#content\" href=\"#\" class=\"btn btn-secondary\">&larr; Back to results</a></p>",
+    );
+
+    Html(html)
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────

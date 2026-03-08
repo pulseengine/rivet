@@ -9,6 +9,7 @@ use rivet_core::diff::{ArtifactDiff, DiagnosticDiff};
 use rivet_core::document::{self, DocumentStore};
 use rivet_core::links::LinkGraph;
 use rivet_core::matrix::{self, Direction};
+use rivet_core::results::{self, ResultStore};
 use rivet_core::schema::Severity;
 use rivet_core::store::Store;
 use rivet_core::validate;
@@ -204,9 +205,19 @@ fn run(cli: Cli) -> Result<bool> {
         Command::Export { format, output } => cmd_export(&cli, format, output.as_deref()),
         Command::Serve { port } => {
             let port = *port;
-            let (store, schema, graph, doc_store) = load_project_with_docs(&cli)?;
+            let (store, schema, graph, doc_store, result_store, project_name, project_path) =
+                load_project_full(&cli)?;
             let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
-            rt.block_on(serve::run(store, schema, graph, doc_store, port))?;
+            rt.block_on(serve::run(
+                store,
+                schema,
+                graph,
+                doc_store,
+                result_store,
+                project_name,
+                project_path,
+                port,
+            ))?;
             Ok(true)
         }
         #[cfg(feature = "wasm")]
@@ -876,6 +887,73 @@ fn load_project_with_docs(
     }
 
     Ok((store, schema, graph, doc_store))
+}
+
+fn load_project_full(
+    cli: &Cli,
+) -> Result<(
+    Store,
+    rivet_core::schema::Schema,
+    LinkGraph,
+    DocumentStore,
+    ResultStore,
+    String,
+    PathBuf,
+)> {
+    let config_path = cli.project.join("rivet.yaml");
+    let config = rivet_core::load_project_config(&config_path)
+        .with_context(|| format!("loading {}", config_path.display()))?;
+
+    let schemas_dir = resolve_schemas_dir(cli);
+    let schema = rivet_core::load_schemas(&config.project.schemas, &schemas_dir)
+        .context("loading schemas")?;
+
+    let mut store = Store::new();
+    for source in &config.sources {
+        let artifacts = rivet_core::load_artifacts(source, &cli.project)
+            .with_context(|| format!("loading source '{}'", source.path))?;
+        for artifact in artifacts {
+            store.upsert(artifact);
+        }
+    }
+
+    let graph = LinkGraph::build(&store, &schema);
+
+    // Load documents
+    let mut doc_store = DocumentStore::new();
+    for docs_path in &config.docs {
+        let dir = cli.project.join(docs_path);
+        let docs = document::load_documents(&dir)
+            .with_context(|| format!("loading docs from '{docs_path}'"))?;
+        for doc in docs {
+            doc_store.insert(doc);
+        }
+    }
+
+    // Load test results
+    let mut result_store = ResultStore::new();
+    if let Some(ref results_path) = config.results {
+        let dir = cli.project.join(results_path);
+        let runs = results::load_results(&dir)
+            .with_context(|| format!("loading results from '{results_path}'"))?;
+        for run in runs {
+            result_store.insert(run);
+        }
+    }
+
+    let project_name = config.project.name.clone();
+    let project_path = std::fs::canonicalize(&cli.project)
+        .unwrap_or_else(|_| cli.project.clone());
+
+    Ok((
+        store,
+        schema,
+        graph,
+        doc_store,
+        result_store,
+        project_name,
+        project_path,
+    ))
 }
 
 fn print_stats(store: &Store) {

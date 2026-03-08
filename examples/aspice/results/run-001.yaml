@@ -1,0 +1,26 @@
+run:
+  id: run-2026-03-01
+  timestamp: "2026-03-01T09:15:00Z"
+  source: "CI pipeline #18"
+  environment: "HIL bench A"
+  commit: "a1b2c3d"
+results:
+  - artifact: UVER-1
+    status: pass
+    duration: "1.2s"
+  - artifact: UVER-2
+    status: pass
+    duration: "2.8s"
+  - artifact: SWINTVER-1
+    status: pass
+    duration: "4.5s"
+  - artifact: SWINTVER-2
+    status: fail
+    message: "ABS activation latency exceeded 3 cycle threshold on ice surface"
+    duration: "6.1s"
+  - artifact: SWVER-1
+    status: pass
+    duration: "12.3s"
+  - artifact: SWVER-2
+    status: pass
+    duration: "15.7s"
