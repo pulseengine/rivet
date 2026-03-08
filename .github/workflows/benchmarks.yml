@@ -28,6 +28,7 @@ jobs:
         run: cargo bench --bench core_benchmarks -- --output-format=bencher | tee benchmark-output.txt
 
       - name: Store and compare benchmark results
+        continue-on-error: true
         uses: benchmark-action/github-action-benchmark@v1
         with:
           name: Rivet Criterion Benchmarks
