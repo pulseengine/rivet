@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -117,6 +117,27 @@ fn type_color_map() -> HashMap<String, String> {
         .collect()
 }
 
+/// Return a colored badge `<span>` for an artifact type.
+///
+/// Uses the `type_color_map` hex color as text and computes a 12%-opacity
+/// tinted background from it.
+fn badge_for_type(type_name: &str) -> String {
+    let colors = type_color_map();
+    let hex = colors
+        .get(type_name)
+        .map(|s| s.as_str())
+        .unwrap_or("#5b2d9e");
+    // Parse hex → rgb
+    let hex_digits = hex.trim_start_matches('#');
+    let r = u8::from_str_radix(&hex_digits[0..2], 16).unwrap_or(91);
+    let g = u8::from_str_radix(&hex_digits[2..4], 16).unwrap_or(45);
+    let b = u8::from_str_radix(&hex_digits[4..6], 16).unwrap_or(158);
+    format!(
+        "<span class=\"badge\" style=\"background:rgba({r},{g},{b},.12);color:{hex};font-family:var(--mono);font-size:.72rem\">{}</span>",
+        html_escape(type_name)
+    )
+}
+
 // ── CSS ──────────────────────────────────────────────────────────────────
 
 const CSS: &str = r#"
@@ -169,7 +190,7 @@ nav a{display:flex;align-items:center;gap:.5rem;padding:.5rem .75rem;border-radi
       color:var(--sidebar-text);font-size:.875rem;font-weight:500;
       transition:all var(--transition)}
 nav a:hover{background:var(--sidebar-hover);color:var(--sidebar-active);text-decoration:none}
-nav a.active{background:var(--sidebar-hover);color:var(--sidebar-active)}
+nav a.active{background:rgba(58,134,255,.08);color:var(--sidebar-active);border-left:2px solid var(--accent);padding-left:calc(.75rem - 2px)}
 nav a:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 
 /* ── Main content ─────────────────────────────────────────────── */
@@ -184,7 +205,7 @@ main.htmx-settling{opacity:1;transition:opacity 200ms ease-in}
 #loading-bar.done{width:100%;transition:width 100ms ease;opacity:0;transition:width 100ms ease,opacity 300ms ease 100ms}
 
 /* ── Typography ───────────────────────────────────────────────── */
-h2{font-size:1.4rem;font-weight:700;margin-bottom:1.25rem;color:var(--text);letter-spacing:-.01em}
+h2{font-size:1.4rem;font-weight:700;margin-bottom:1.25rem;color:var(--text);letter-spacing:-.01em;padding-bottom:.75rem;border-bottom:1px solid var(--border)}
 h3{font-size:1.05rem;font-weight:600;margin:1.5rem 0 .75rem;color:var(--text)}
 code,pre{font-family:var(--mono);font-size:.85em}
 pre{background:#f1f1f3;padding:1rem;border-radius:var(--radius-sm);overflow-x:auto}
@@ -208,6 +229,18 @@ td a{font-family:var(--mono);font-size:.85rem;font-weight:500}
 .badge-info{background:#e8f4fd;color:#0c5a82}
 .badge-ok{background:#e6f9ed;color:#15713a}
 .badge-type{background:#f0ecf9;color:#5b2d9e;font-family:var(--mono);font-size:.72rem}
+
+/* ── Validation bar ──────────────────────────────────────────── */
+.validation-bar{padding:1rem 1.25rem;border-radius:var(--radius);margin-bottom:1.25rem;font-weight:600;font-size:.95rem}
+.validation-bar.pass{background:linear-gradient(135deg,#e6f9ed,#d4f5e0);color:#15713a;border:1px solid #b8e8c8}
+.validation-bar.fail{background:linear-gradient(135deg,#fee,#fdd);color:#c62828;border:1px solid #f4c7c3}
+
+/* ── Status progress bars ────────────────────────────────────── */
+.status-bar-row{display:flex;align-items:center;gap:.75rem;margin-bottom:.5rem;font-size:.85rem}
+.status-bar-label{width:80px;text-align:right;font-weight:500;color:var(--text-secondary)}
+.status-bar-track{flex:1;height:20px;background:#e5e5ea;border-radius:4px;overflow:hidden;position:relative}
+.status-bar-fill{height:100%;border-radius:4px;transition:width .3s ease}
+.status-bar-count{width:40px;font-variant-numeric:tabular-nums;color:var(--text-secondary)}
 
 /* ── Cards ────────────────────────────────────────────────────── */
 .card{background:var(--surface);border-radius:var(--radius);padding:1.5rem;
@@ -270,7 +303,7 @@ dd{margin-left:0;margin-bottom:.25rem;margin-top:.2rem}
 .meta{color:var(--text-secondary);font-size:.85rem}
 
 /* ── Nav icons & badges ───────────────────────────────────────── */
-.nav-icon{display:inline-flex;width:1.25rem;justify-content:center;flex-shrink:0;font-size:.8rem;opacity:.5}
+.nav-icon{display:inline-flex;width:1.25rem;height:1.25rem;align-items:center;justify-content:center;flex-shrink:0;opacity:.5}
 nav a:hover .nav-icon,nav a.active .nav-icon{opacity:.9}
 .nav-label{display:flex;align-items:center;gap:.5rem;flex:1;min-width:0}
 .nav-badge{font-size:.65rem;font-weight:700;padding:.1rem .4rem;border-radius:4px;
@@ -727,17 +760,17 @@ fn page_layout(content: &str, nav: &NavInfo) -> Html<String> {
 <nav>
   <h1>Rivet</h1>
   <ul>
-    <li><a hx-get="/stats" hx-target="#content" hx-push-url="false" href="#" class="active"><span class="nav-label"><span class="nav-icon">&#9632;</span> Overview</span></a></li>
-    <li><a hx-get="/artifacts" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon">&#9830;</span> Artifacts</span><span class="nav-badge">{artifact_count}</span></a></li>
-    <li><a hx-get="/validate" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon">&#10003;</span> Validation</span>{error_badge}</a></li>
+    <li><a hx-get="/stats" hx-target="#content" hx-push-url="false" href="#" class="active"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="1.5" width="5" height="5" rx="1"/><rect x="9.5" y="1.5" width="5" height="5" rx="1"/><rect x="1.5" y="9.5" width="5" height="5" rx="1"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/></svg></span> Overview</span></a></li>
+    <li><a hx-get="/artifacts" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="1.5" width="10" height="13" rx="1.5"/><path d="M6 5h4M6 8h4M6 11h2"/></svg></span> Artifacts</span><span class="nav-badge">{artifact_count}</span></a></li>
+    <li><a hx-get="/validate" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><path d="M5.5 8l2 2 3.5-3.5"/></svg></span> Validation</span>{error_badge}</a></li>
     <li class="nav-divider"></li>
-    <li><a hx-get="/matrix" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon">&#9638;</span> Matrix</span></a></li>
-    <li><a hx-get="/coverage" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon">&#9632;</span> Coverage</span></a></li>
-    <li><a hx-get="/graph" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon">&#9679;</span> Graph</span></a></li>
-    <li><a hx-get="/documents" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon">&#9776;</span> Documents</span>{doc_badge}</a></li>
+    <li><a hx-get="/matrix" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 5.5h13M1.5 10.5h13M5.5 1.5v13M10.5 1.5v13"/><rect x="1.5" y="1.5" width="13" height="13" rx="1.5"/></svg></span> Matrix</span></a></li>
+    <li><a hx-get="/coverage" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><path d="M8 1.5V8l4.6 4.6"/></svg></span> Coverage</span></a></li>
+    <li><a hx-get="/graph" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="4" r="2"/><circle cx="12" cy="4" r="2"/><circle cx="4" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><path d="M6 4h4M4 6v4M12 6v4M6 12h4"/></svg></span> Graph</span></a></li>
+    <li><a hx-get="/documents" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 1.5H4.5A1.5 1.5 0 003 3v10a1.5 1.5 0 001.5 1.5h7A1.5 1.5 0 0013 13V5.5L9 1.5z"/><path d="M9 1.5V5.5h4"/><path d="M6 8.5h4M6 11h2"/></svg></span> Documents</span>{doc_badge}</a></li>
   </ul>
   <div id="nav-search-hint" class="nav-search-hint">
-    <span><span class="nav-icon">&#128269;</span> Search</span>
+    <span><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg></span> Search</span>
     <span class="cmd-k-kbd">&#8984;K</span>
   </div>
 </nav>
@@ -848,11 +881,42 @@ fn stats_partial(state: &AppState) -> String {
     html.push_str("<div class=\"card\"><h3>Artifacts by Type</h3><table><thead><tr><th>Type</th><th>Count</th></tr></thead><tbody>");
     for t in &types {
         html.push_str(&format!(
-            "<tr><td><span class=\"badge badge-type\">{t}</span></td><td>{}</td></tr>",
+            "<tr><td>{}</td><td>{}</td></tr>",
+            badge_for_type(t),
             store.count_by_type(t)
         ));
     }
     html.push_str("</tbody></table></div>");
+
+    // Status breakdown
+    let mut status_counts: BTreeMap<String, usize> = BTreeMap::new();
+    for a in store.iter() {
+        let s = a.status.as_deref().unwrap_or("unknown");
+        *status_counts.entry(s.to_string()).or_default() += 1;
+    }
+    let total_artifacts = store.len().max(1);
+    html.push_str("<div class=\"card\"><h3>Status Distribution</h3>");
+    for (status, count) in &status_counts {
+        let pct = (*count as f64 / total_artifacts as f64) * 100.0;
+        let bar_color = match status.as_str() {
+            "approved" => "#15713a",
+            "draft" => "#b8860b",
+            "obsolete" => "#c62828",
+            "unknown" => "#9898a6",
+            _ => "#3a86ff",
+        };
+        html.push_str(&format!(
+            "<div class=\"status-bar-row\">\
+             <div class=\"status-bar-label\">{}</div>\
+             <div class=\"status-bar-track\">\
+               <div class=\"status-bar-fill\" style=\"background:{bar_color};width:{pct:.1}%\"></div>\
+             </div>\
+             <div class=\"status-bar-count\">{count}</div>\
+             </div>",
+            html_escape(status),
+        ));
+    }
+    html.push_str("</div>");
 
     // Orphans
     if !orphans.is_empty() {
@@ -877,8 +941,15 @@ async fn artifacts_list(State(state): State<Arc<AppState>>) -> Html<String> {
     artifacts.sort_by(|a, b| a.id.cmp(&b.id));
 
     let mut html = String::from("<h2>Artifacts</h2>");
+    // Client-side filter input
+    html.push_str("<div style=\"position:relative;margin-bottom:1rem\">\
+        <svg width=\"15\" height=\"15\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" style=\"position:absolute;left:.75rem;top:50%;transform:translateY(-50%);opacity:.4\"><circle cx=\"7\" cy=\"7\" r=\"4.5\"/><path d=\"M10.5 10.5L14 14\"/></svg>\
+        <input type=\"search\" id=\"artifact-filter\" placeholder=\"Filter artifacts...\" \
+        style=\"width:100%;padding:.6rem .75rem .6rem 2.25rem;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:.875rem;font-family:var(--font);background:var(--surface);color:var(--text);outline:none\" \
+        oninput=\"filterTable(this.value)\">\
+        </div>");
     html.push_str(
-        "<table><thead><tr><th>ID</th><th>Type</th><th>Title</th><th>Status</th><th>Links</th></tr></thead><tbody>",
+        "<table id=\"artifacts-table\"><thead><tr><th>ID</th><th>Type</th><th>Title</th><th>Status</th><th>Links</th></tr></thead><tbody>",
     );
 
     for a in &artifacts {
@@ -891,13 +962,13 @@ async fn artifacts_list(State(state): State<Arc<AppState>>) -> Html<String> {
         };
         html.push_str(&format!(
             "<tr><td><a hx-get=\"/artifacts/{}\" hx-target=\"#content\" href=\"#\">{}</a></td>\
-             <td><span class=\"badge badge-type\">{}</span></td>\
+             <td>{}</td>\
              <td>{}</td>\
              <td>{}</td>\
              <td>{}</td></tr>",
             html_escape(&a.id),
             html_escape(&a.id),
-            html_escape(&a.artifact_type),
+            badge_for_type(&a.artifact_type),
             html_escape(&a.title),
             status_badge,
             a.links.len()
@@ -909,6 +980,17 @@ async fn artifacts_list(State(state): State<Arc<AppState>>) -> Html<String> {
         "<p class=\"meta\">{} artifacts total</p>",
         artifacts.len()
     ));
+    // Inline filter script
+    html.push_str(
+        "<script>\
+        function filterTable(q){\
+          q=q.toLowerCase();\
+          document.querySelectorAll('#artifacts-table tbody tr').forEach(function(r){\
+            r.style.display=r.textContent.toLowerCase().includes(q)?'':'none';\
+          });\
+        }\
+        </script>",
+    );
 
     Html(html)
 }
@@ -928,9 +1010,9 @@ async fn artifact_detail(
     };
 
     let mut html = format!(
-        "<h2>{}</h2><p class=\"meta\"><span class=\"badge badge-type\">{}</span></p>",
+        "<h2>{}</h2><p class=\"meta\">{}</p>",
         html_escape(&artifact.id),
-        html_escape(&artifact.artifact_type)
+        badge_for_type(&artifact.artifact_type)
     );
 
     html.push_str("<div class=\"card\"><dl>");
@@ -1500,15 +1582,18 @@ async fn validate_view(State(state): State<Arc<AppState>>) -> Html<String> {
 
     let mut html = String::from("<h2>Validation Results</h2>");
 
-    // Summary
-    let overall = if errors > 0 {
-        "<span class=\"badge badge-error\">FAIL</span>"
+    // Colored summary bar
+    let total_issues = errors + warnings + infos;
+    if total_issues == 0 {
+        html.push_str("<div class=\"validation-bar pass\">All checks passed</div>");
     } else {
-        "<span class=\"badge badge-ok\">PASS</span>"
-    };
-    html.push_str(&format!(
-        "<p>Status: {overall} &mdash; {errors} errors, {warnings} warnings, {infos} info</p>"
-    ));
+        html.push_str(&format!(
+            "<div class=\"validation-bar fail\">{total_issues} issue{} found &mdash; {errors} error{}, {warnings} warning{}, {infos} info</div>",
+            if total_issues != 1 { "s" } else { "" },
+            if errors != 1 { "s" } else { "" },
+            if warnings != 1 { "s" } else { "" },
+        ));
+    }
 
     if diagnostics.is_empty() {
         html.push_str("<div class=\"card\"><p>No issues found.</p></div>");
@@ -1747,7 +1832,7 @@ async fn coverage_view(State(state): State<Arc<AppState>>) -> Html<String> {
         html.push_str(&format!(
             "<tr>\
              <td title=\"{}\">{}</td>\
-             <td><span class=\"badge badge-type\">{}</span></td>\
+             <td>{}</td>\
              <td><span class=\"link-pill\">{}</span></td>\
              <td>{}</td>\
              <td><span class=\"badge {badge_class}\">{}/{} ({:.1}%)</span></td>\
@@ -1759,7 +1844,7 @@ async fn coverage_view(State(state): State<Arc<AppState>>) -> Html<String> {
              </tr>",
             html_escape(&entry.description),
             html_escape(&entry.rule_name),
-            html_escape(&entry.source_type),
+            badge_for_type(&entry.source_type),
             html_escape(&entry.link_type),
             dir_label,
             entry.covered,
@@ -1829,13 +1914,13 @@ async fn documents_list(State(state): State<Arc<AppState>>) -> Html<String> {
         };
         html.push_str(&format!(
             "<tr><td><a hx-get=\"/documents/{}\" hx-target=\"#content\" href=\"#\">{}</a></td>\
-             <td><span class=\"badge badge-type\">{}</span></td>\
+             <td>{}</td>\
              <td>{}</td>\
              <td>{}</td>\
              <td>{}</td></tr>",
             html_escape(&doc.id),
             html_escape(&doc.id),
-            html_escape(&doc.doc_type),
+            badge_for_type(&doc.doc_type),
             html_escape(&doc.title),
             status_badge,
             doc.references.len(),
@@ -1872,10 +1957,7 @@ async fn document_detail(
     html.push_str(&format!("<h2>{}</h2>", html_escape(&doc.title)));
 
     html.push_str("<div class=\"doc-meta\">");
-    html.push_str(&format!(
-        "<span class=\"badge badge-type\">{}</span>",
-        html_escape(&doc.doc_type)
-    ));
+    html.push_str(&badge_for_type(&doc.doc_type));
     if let Some(status) = &doc.status {
         let badge_class = match status.as_str() {
             "approved" => "badge-ok",
@@ -1949,12 +2031,12 @@ async fn document_detail(
                 let status = artifact.status.as_deref().unwrap_or("-");
                 html.push_str(&format!(
                     "<tr><td><a hx-get=\"/artifacts/{}\" hx-target=\"#content\" href=\"#\">{}</a></td>\
-                     <td><span class=\"badge badge-type\">{}</span></td>\
+                     <td>{}</td>\
                      <td>{}</td>\
                      <td>{}</td></tr>",
                     html_escape(&artifact.id),
                     html_escape(&artifact.id),
-                    html_escape(&artifact.artifact_type),
+                    badge_for_type(&artifact.artifact_type),
                     html_escape(&artifact.title),
                     html_escape(status),
                 ));
