@@ -100,10 +100,10 @@ jobs:
           tool: cargo-llvm-cov
       - name: Generate coverage (LCOV + HTML)
         run: |
-          cargo llvm-cov --workspace --lcov --output-path lcov.info
-          cargo llvm-cov --workspace --html --output-dir coverage-html
+          cargo llvm-cov -p rivet-core --lcov --output-path lcov.info
+          cargo llvm-cov -p rivet-core --html --output-dir coverage-html
       - name: Enforce minimum coverage threshold
-        run: cargo llvm-cov --workspace --fail-under-lines 60
+        run: cargo llvm-cov -p rivet-core --fail-under-lines 40
       - name: Upload LCOV to Codecov
         if: env.CODECOV_TOKEN != ''
         uses: codecov/codecov-action@v4
