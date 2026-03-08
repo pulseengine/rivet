@@ -490,19 +490,13 @@ fn cmd_diff(
 
     // Added
     for id in &diff.added {
-        let title = head_store
-            .get(id)
-            .map(|a| a.title.as_str())
-            .unwrap_or("");
+        let title = head_store.get(id).map(|a| a.title.as_str()).unwrap_or("");
         println!("{}", green(&format!("{id}  {title}")));
     }
 
     // Removed
     for id in &diff.removed {
-        let title = base_store
-            .get(id)
-            .map(|a| a.title.as_str())
-            .unwrap_or("");
+        let title = base_store.get(id).map(|a| a.title.as_str()).unwrap_or("");
         println!("{}", red(&format!("{id}  {title}")));
     }
 
@@ -625,8 +619,6 @@ fn load_project(cli: &Cli) -> Result<(Store, rivet_core::schema::Schema, LinkGra
     let graph = LinkGraph::build(&store, &schema);
     Ok((store, schema, graph))
 }
-
-
 
 fn print_stats(store: &Store) {
     println!("Artifact summary:");

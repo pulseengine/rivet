@@ -890,7 +890,10 @@ fn test_diff_identical_stores() {
     let diff = ArtifactDiff::compute(&base, &head);
     assert!(diff.is_empty(), "identical stores must produce empty diff");
     assert_eq!(diff.unchanged, 2);
-    assert_eq!(diff.summary(), "0 added, 0 removed, 0 modified, 2 unchanged");
+    assert_eq!(
+        diff.summary(),
+        "0 added, 0 removed, 0 modified, 2 unchanged"
+    );
 }
 
 // ── Diff: added artifact ────────────────────────────────────────────────
@@ -986,10 +989,7 @@ fn test_diff_modified_artifact() {
         ],
         {
             let mut f = BTreeMap::new();
-            f.insert(
-                "priority".into(),
-                serde_yaml::Value::String("must".into()),
-            );
+            f.insert("priority".into(), serde_yaml::Value::String("must".into()));
             f
         },
     ))
@@ -1078,10 +1078,7 @@ fn test_diff_diagnostic_changes() {
     assert_eq!(ddiff.new_errors[0].artifact_id.as_deref(), Some("X-3"));
 
     assert_eq!(ddiff.resolved_errors.len(), 1);
-    assert_eq!(
-        ddiff.resolved_errors[0].artifact_id.as_deref(),
-        Some("X-1")
-    );
+    assert_eq!(ddiff.resolved_errors[0].artifact_id.as_deref(), Some("X-1"));
 
     assert!(ddiff.new_warnings.is_empty());
     assert!(ddiff.resolved_warnings.is_empty());

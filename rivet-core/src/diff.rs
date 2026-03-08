@@ -107,16 +107,10 @@ impl ArtifactDiff {
                 .collect();
 
             // Links diff (order-insensitive)
-            let base_links: BTreeSet<(&String, &String)> = b
-                .links
-                .iter()
-                .map(|l| (&l.link_type, &l.target))
-                .collect();
-            let head_links: BTreeSet<(&String, &String)> = h
-                .links
-                .iter()
-                .map(|l| (&l.link_type, &l.target))
-                .collect();
+            let base_links: BTreeSet<(&String, &String)> =
+                b.links.iter().map(|l| (&l.link_type, &l.target)).collect();
+            let head_links: BTreeSet<(&String, &String)> =
+                h.links.iter().map(|l| (&l.link_type, &l.target)).collect();
             let links_added: Vec<Link> = head_links
                 .difference(&base_links)
                 .map(|(lt, tgt)| Link {

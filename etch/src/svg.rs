@@ -222,10 +222,7 @@ fn write_nodes(svg: &mut String, layout: &GraphLayout, options: &SvgOptions) {
 
         // Rectangle.
         let r = options.rounded_corners;
-        let is_highlighted = options
-            .highlight
-            .as_ref()
-            .is_some_and(|h| h == &node.id);
+        let is_highlighted = options.highlight.as_ref().is_some_and(|h| h == &node.id);
         let stroke_w = if is_highlighted { "3.0" } else { "1.5" };
         let stroke_c = if is_highlighted { "#ff6600" } else { "#333" };
         writeln!(
