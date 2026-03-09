@@ -250,6 +250,7 @@ fn reload_state(
 }
 
 /// Start the axum HTTP server on the given port.
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
     store: Store,
     schema: Schema,
@@ -294,6 +295,7 @@ pub async fn run(
         .route("/", get(index))
         .route("/artifacts", get(artifacts_list))
         .route("/artifacts/{id}", get(artifact_detail))
+        .route("/artifacts/{id}/preview", get(artifact_preview))
         .route("/artifacts/{id}/graph", get(artifact_graph))
         .route("/validate", get(validate_view))
         .route("/matrix", get(matrix_view))
@@ -310,10 +312,14 @@ pub async fn run(
         .route("/source", get(source_tree_view))
         .route("/source/{*path}", get(source_file_view))
         .route("/diff", get(diff_view))
+        .route("/doc-linkage", get(doc_linkage_view))
         .route("/traceability", get(traceability_view))
         .route("/traceability/history", get(traceability_history))
+        .route("/api/links/{id}", get(api_artifact_links))
+        .route("/api/render-aadl", get(api_render_aadl))
         .route("/reload", post(reload_handler))
-        .with_state(state);
+        .with_state(state)
+        .layer(axum::middleware::from_fn(redirect_non_htmx));
 
     let addr = format!("0.0.0.0:{port}");
     eprintln!("rivet dashboard listening on http://localhost:{port}");
@@ -321,6 +327,78 @@ pub async fn run(
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+/// Middleware: redirect direct browser requests (no HX-Request header) to `/?goto=/path`
+/// so the full layout is served and JS loads the content.
+async fn redirect_non_htmx(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let path = req.uri().path().to_string();
+    let is_htmx = req.headers().contains_key("hx-request");
+    let method = req.method().clone();
+
+    // Only redirect GET requests to known view routes, not / or /reload or /api/*
+    if method == axum::http::Method::GET && !is_htmx && path != "/" && !path.starts_with("/?") && !path.starts_with("/api/") {
+        let goto = urlencoding::encode(&path);
+        return axum::response::Redirect::to(&format!("/?goto={goto}")).into_response();
+    }
+
+    next.run(req).await
+}
+
+/// GET /api/links/{id} — return JSON array of AADL-prefixed artifact IDs linked
+/// to the given artifact (forward links, backlinks, and self if applicable).
+async fn api_artifact_links(
+    State(state): State<SharedState>,
+    Path(id): Path<String>,
+) -> axum::Json<Vec<String>> {
+    let state = state.read().await;
+    let graph = &state.graph;
+
+    let mut linked_ids = Vec::new();
+
+    // Forward links from this artifact
+    for link in graph.links_from(&id) {
+        if link.target.starts_with("AADL-") {
+            linked_ids.push(link.target.clone());
+        }
+    }
+
+    // Backlinks to this artifact
+    for bl in graph.backlinks_to(&id) {
+        if bl.source.starts_with("AADL-") {
+            linked_ids.push(bl.source.clone());
+        }
+    }
+
+    // If this IS an AADL artifact, include self
+    if id.starts_with("AADL-") {
+        linked_ids.push(id);
+    }
+
+    axum::Json(linked_ids)
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[allow(dead_code)]
+struct RenderAadlParams {
+    root: String,
+    #[serde(default)]
+    highlight: Option<String>,
+}
+
+/// GET /api/render-aadl — render an AADL component diagram as SVG.
+async fn api_render_aadl(
+    State(_state): State<SharedState>,
+    Query(params): Query<RenderAadlParams>,
+) -> Result<Html<String>, Html<String>> {
+    // Placeholder — will call spar-wasm once compiled
+    Err(Html(format!(
+        "AADL rendering not yet available for root: {}",
+        params.root
+    )))
 }
 
 /// POST /reload — re-read the project from disk and replace the shared state.
@@ -465,6 +543,7 @@ a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius
 
 /* ── Shell layout ─────────────────────────────────────────────── */
 .shell{display:flex;min-height:100vh}
+.content-area{display:flex;flex-direction:column;flex:1;min-width:0}
 
 /* ── Sidebar navigation ──────────────────────────────────────── */
 nav{width:232px;background:var(--sidebar);color:var(--sidebar-text);
@@ -486,7 +565,7 @@ nav a.active{background:rgba(58,134,255,.08);color:var(--sidebar-active);border-
 nav a:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 
 /* ── Main content ─────────────────────────────────────────────── */
-main{flex:1;padding:2.5rem 3rem;max-width:1400px;min-width:0}
+main{flex:1;padding:2.5rem 3rem;max-width:1400px;min-width:0;overflow-y:auto}
 main.htmx-swapping{opacity:.4;transition:opacity 150ms ease-out}
 main.htmx-settling{opacity:1;transition:opacity 200ms ease-in}
 
@@ -604,7 +683,7 @@ nav a:hover .nav-icon,nav a.active .nav-icon{opacity:.9}
 nav .nav-divider{height:1px;background:rgba(255,255,255,.06);margin:.75rem .75rem}
 
 /* ── Context bar ─────────────────────────────────────────────── */
-.context-bar{display:flex;align-items:center;gap:.75rem;padding:.5rem 1rem;margin:-2.5rem -3rem 1.5rem;
+.context-bar{display:flex;align-items:center;gap:.75rem;padding:.5rem 1.5rem;
   background:var(--surface);border-bottom:1px solid var(--border);font-size:.78rem;color:var(--text-secondary);
   flex-wrap:wrap}
 .context-bar .ctx-project{font-weight:700;color:var(--text);font-size:.82rem}
@@ -740,6 +819,21 @@ details.diff-row>.diff-detail{padding:.75rem 1.25rem;background:rgba(0,0,0,.01);
 .artifact-ref:hover{background:#d4def5;text-decoration:none;transform:translateY(-1px);box-shadow:0 2px 4px rgba(0,0,0,.06)}
 .artifact-ref.broken{background:#fde8e8;color:#c62828;border-color:#f4c7c3;cursor:default}
 .artifact-ref.broken:hover{transform:none;box-shadow:none}
+/* ── Artifact hover preview ────────────────────────────────── */
+.art-tooltip{position:absolute;z-index:1000;pointer-events:none;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  box-shadow:var(--shadow-lg);padding:0;max-width:340px;min-width:220px;
+  opacity:0;transition:opacity 120ms ease-in}
+.art-tooltip.visible{opacity:1;pointer-events:auto}
+.art-preview{padding:.75rem .85rem;font-size:.82rem;line-height:1.45}
+.art-preview-header{display:flex;align-items:center;gap:.4rem;margin-bottom:.3rem}
+.art-preview-title{font-weight:600;font-size:.85rem;margin-bottom:.3rem;color:var(--text)}
+.art-preview-desc{color:var(--text-secondary);font-size:.78rem;line-height:1.4;margin-top:.3rem;
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.art-preview-links{font-size:.72rem;color:var(--text-secondary);margin-top:.35rem;font-family:var(--mono)}
+.art-preview-tags{margin-top:.35rem;display:flex;flex-wrap:wrap;gap:.25rem}
+.art-preview-tag{font-size:.65rem;padding:.1rem .35rem;border-radius:3px;
+  background:rgba(58,134,255,.08);color:var(--accent);font-family:var(--mono)}
 .doc-glossary{font-size:.9rem}
 .doc-glossary dt{font-weight:600;color:var(--text)}
 .doc-glossary dd{margin:0 0 .5rem 1rem;color:var(--text-secondary)}
@@ -774,6 +868,12 @@ details.diff-row>.diff-detail{padding:.75rem 1.25rem;background:rgba(0,0,0,.01);
 .source-line .line-content{display:table-cell;padding:.05rem .75rem;white-space:pre;tab-size:4}
 .source-line-highlight{background:rgba(58,134,255,.08) !important}
 .source-line-highlight .line-no{background:rgba(58,134,255,.12);color:var(--accent);font-weight:600}
+.source-line:target{background:rgba(255,210,50,.18) !important}
+.source-line:target .line-no{background:rgba(255,210,50,.25);color:#9a6700;font-weight:700}
+.source-line .line-no a{color:inherit;text-decoration:none}
+.source-line .line-no a:hover{color:var(--accent);text-decoration:underline}
+.source-ref-link{color:var(--accent);text-decoration:none;font-family:var(--mono);font-size:.85em}
+.source-ref-link:hover{text-decoration:underline}
 .source-breadcrumb{display:flex;align-items:center;gap:.4rem;font-size:.85rem;color:var(--text-secondary);
   margin-bottom:1rem;flex-wrap:wrap}
 .source-breadcrumb a{color:var(--accent);font-weight:500}
@@ -895,6 +995,10 @@ details.trace-details[open]>summary .trace-chevron{transform:rotate(90deg)}
   color:var(--sidebar-text);font-size:.82rem;cursor:pointer;border-radius:var(--radius-sm);
   transition:all var(--transition)}
 .nav-search-hint:hover{background:var(--sidebar-hover);color:var(--sidebar-active)}
+.aadl-diagram{background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:1rem;margin:1rem 0}
+.aadl-diagram svg{width:100%;height:auto;max-height:600px}
+.aadl-loading{color:var(--text-secondary);font-style:italic}
+.aadl-error{color:var(--danger);font-style:italic}
 "#;
 
 // ── Pan/zoom JS ──────────────────────────────────────────────────────────
@@ -935,7 +1039,34 @@ const GRAPH_JS: &str = r#"
     if(path) setActiveNav(path);
   });
   // Set initial active state
-  document.addEventListener('DOMContentLoaded',function(){setActiveNav('/stats')});
+  document.addEventListener('DOMContentLoaded',function(){
+    var p=window.location.pathname;
+    if(p==='/'||p==='') p='/stats';
+    setActiveNav(p);
+    // If landing on a deep URL, load its content via HTMX
+    if(p!=='/stats'&&p!=='/'){
+      htmx.ajax('GET',p,'#content');
+    }
+  });
+
+  // ── Browser back/forward ─────────────────────────────────
+  window.addEventListener('popstate',function(){
+    var p=window.location.pathname;
+    if(p==='/'||p==='') p='/stats';
+    setActiveNav(p);
+    htmx.ajax('GET',p,'#content');
+  });
+
+  // ── Source line anchor scroll ────────────────────────────
+  function scrollToLineAnchor(){
+    var h=window.location.hash;
+    if(h&&h.match(/^#L\d+$/)){
+      var el=document.getElementById(h.substring(1));
+      if(el){el.scrollIntoView({behavior:'smooth',block:'center'});}
+    }
+  }
+  document.body.addEventListener('htmx:afterSwap',scrollToLineAnchor);
+  document.addEventListener('DOMContentLoaded',scrollToLineAnchor);
 
   // ── Pan/zoom ─────────────────────────────────────────────
   document.addEventListener('htmx:afterSwap', initPanZoom);
@@ -951,19 +1082,13 @@ const GRAPH_JS: &str = r#"
       var origVB={x:vb.x, y:vb.y, w:vb.width, h:vb.height};
       var drag=false, sx=0, sy=0, ox=0, oy=0;
 
-      // Pan
+      // Pan (mousedown only — move/up handled in node-drag block)
       c.addEventListener('mousedown',function(e){
         if(e.target.closest('.graph-controls')) return;
+        if(e.target.closest('.node')) return; // let node drag handle it
         drag=true; sx=e.clientX; sy=e.clientY;
         ox=vb.x; oy=vb.y; e.preventDefault();
       });
-      c.addEventListener('mousemove',function(e){
-        if(!drag) return;
-        var scale=vb.width/c.clientWidth;
-        vb.x=ox-(e.clientX-sx)*scale;
-        vb.y=oy-(e.clientY-sy)*scale;
-      });
-      c.addEventListener('mouseup',function(){ drag=false; });
       c.addEventListener('mouseleave',function(){ drag=false; });
 
       // Zoom with wheel
@@ -1038,18 +1163,123 @@ const GRAPH_JS: &str = r#"
         });
       }
 
-      // Clickable nodes — navigate to artifact detail via htmx
-      svg.querySelectorAll('.node').forEach(function(node){
-        node.style.cursor='pointer';
-        node.addEventListener('click',function(e){
-          e.stopPropagation();
-          var title=node.querySelector('title');
-          if(title){
-            var id=title.textContent;
-            htmx.ajax('GET','/artifacts/'+encodeURIComponent(id),'#content');
+      // ── Node dragging + click ──────────────────────────────
+      var dragNode=null, dnSX=0, dnSY=0, dnOX=0, dnOY=0, dnMoved=false;
+      var nodeOffsets={}; // id -> {dx,dy}
+
+      function getNodeCenter(node){
+        var r=node.querySelector('rect');
+        if(!r) return {x:0,y:0};
+        var x=parseFloat(r.getAttribute('x'))||0;
+        var y=parseFloat(r.getAttribute('y'))||0;
+        var w=parseFloat(r.getAttribute('width'))||0;
+        var h=parseFloat(r.getAttribute('height'))||0;
+        var id=node.getAttribute('data-id')||'';
+        var off=nodeOffsets[id]||{dx:0,dy:0};
+        return {x:x+w/2+off.dx, y:y+h/2+off.dy};
+      }
+
+      function updateEdges(){
+        svg.querySelectorAll('.edge').forEach(function(edge){
+          var src=edge.getAttribute('data-source');
+          var tgt=edge.getAttribute('data-target');
+          var srcOff=nodeOffsets[src]||{dx:0,dy:0};
+          var tgtOff=nodeOffsets[tgt]||{dx:0,dy:0};
+          var path=edge.querySelector('path');
+          if(!path) return;
+          var origD=path.getAttribute('data-orig-d');
+          if(!origD){ origD=path.getAttribute('d'); path.setAttribute('data-orig-d',origD); }
+          // Parse path points and offset them
+          var newD=offsetPath(origD,srcOff,tgtOff);
+          path.setAttribute('d',newD);
+          // Move label
+          var lbg=edge.querySelector('.label-bg');
+          var ltxt=edge.querySelector('text');
+          if(lbg){
+            var ox=lbg.getAttribute('data-orig-x');
+            if(!ox){ ox=lbg.getAttribute('x'); lbg.setAttribute('data-orig-x',ox);
+                     var oy=lbg.getAttribute('y'); lbg.setAttribute('data-orig-y',oy); }
+            var avgDx=(srcOff.dx+tgtOff.dx)/2;
+            var avgDy=(srcOff.dy+tgtOff.dy)/2;
+            lbg.setAttribute('x',parseFloat(lbg.getAttribute('data-orig-x'))+avgDx);
+            lbg.setAttribute('y',parseFloat(lbg.getAttribute('data-orig-y'))+avgDy);
+          }
+          if(ltxt){
+            var otx=ltxt.getAttribute('data-orig-x');
+            if(!otx){ otx=ltxt.getAttribute('x'); ltxt.setAttribute('data-orig-x',otx);
+                      var oty=ltxt.getAttribute('y'); ltxt.setAttribute('data-orig-y',oty); }
+            var avgDx2=(srcOff.dx+tgtOff.dx)/2;
+            var avgDy2=(srcOff.dy+tgtOff.dy)/2;
+            ltxt.setAttribute('x',parseFloat(ltxt.getAttribute('data-orig-x'))+avgDx2);
+            ltxt.setAttribute('y',parseFloat(ltxt.getAttribute('data-orig-y'))+avgDy2);
           }
         });
-        // Hover effect
+      }
+
+      function offsetPath(d,srcOff,tgtOff){
+        // SVG path: M x y, L x y, C x y x y x y, etc.
+        // Split into commands and offset first point by srcOff, last by tgtOff, middle interpolated
+        var tokens=d.match(/[MLCQZ]|[-]?[\d.]+/gi);
+        if(!tokens) return d;
+        var pts=[];
+        var i=0;
+        while(i<tokens.length){
+          var t=tokens[i];
+          if(t==='M'||t==='L'||t==='m'||t==='l'){
+            i++; pts.push({cmd:t.toUpperCase(),x:parseFloat(tokens[i]),y:parseFloat(tokens[i+1])}); i+=2;
+          } else if(t==='C'||t==='c'){
+            i++;
+            pts.push({cmd:'C1',x:parseFloat(tokens[i]),y:parseFloat(tokens[i+1])});
+            pts.push({cmd:'C2',x:parseFloat(tokens[i+2]),y:parseFloat(tokens[i+3])});
+            pts.push({cmd:'C3',x:parseFloat(tokens[i+4]),y:parseFloat(tokens[i+5])});
+            i+=6;
+          } else { i++; }
+        }
+        if(pts.length===0) return d;
+        // First point gets srcOff, last gets tgtOff, middle gets interpolated
+        var n=pts.length;
+        for(var j=0;j<n;j++){
+          var frac=n>1?j/(n-1):0;
+          pts[j].x+= srcOff.dx*(1-frac)+tgtOff.dx*frac;
+          pts[j].y+= srcOff.dy*(1-frac)+tgtOff.dy*frac;
+        }
+        // Rebuild
+        var out='';
+        for(var j=0;j<pts.length;j++){
+          var p=pts[j];
+          if(p.cmd==='M') out+='M '+p.x+' '+p.y+' ';
+          else if(p.cmd==='L') out+='L '+p.x+' '+p.y+' ';
+          else if(p.cmd==='C1') out+='C '+p.x+' '+p.y+', ';
+          else if(p.cmd==='C2') out+=p.x+' '+p.y+', ';
+          else if(p.cmd==='C3') out+=p.x+' '+p.y+' ';
+        }
+        return out.trim();
+      }
+
+      svg.querySelectorAll('.node').forEach(function(node){
+        node.style.cursor='grab';
+        var nid=node.getAttribute('data-id')||'';
+        nodeOffsets[nid]={dx:0,dy:0};
+
+        node.addEventListener('mousedown',function(e){
+          if(e.button!==0) return;
+          e.stopPropagation();
+          dragNode=node; dnMoved=false;
+          var scale=vb.width/c.clientWidth;
+          dnSX=e.clientX; dnSY=e.clientY;
+          var off=nodeOffsets[nid];
+          dnOX=off.dx; dnOY=off.dy;
+          node.style.cursor='grabbing';
+          e.preventDefault();
+        });
+
+        node.addEventListener('click',function(e){
+          e.stopPropagation();
+          if(dnMoved) return; // was a drag, not a click
+          var href=node.getAttribute('data-href');
+          if(href) htmx.ajax('GET',href,'#content');
+        });
+
         node.addEventListener('mouseenter',function(){
           var rect=node.querySelector('rect');
           if(rect) rect.setAttribute('stroke-width','3');
@@ -1063,6 +1293,28 @@ const GRAPH_JS: &str = r#"
         });
       });
 
+      c.addEventListener('mousemove',function(e){
+        if(dragNode){
+          var scale=vb.width/c.clientWidth;
+          var dx=(e.clientX-dnSX)*scale;
+          var dy=(e.clientY-dnSY)*scale;
+          if(Math.abs(dx)>2||Math.abs(dy)>2) dnMoved=true;
+          var nid=dragNode.getAttribute('data-id')||'';
+          nodeOffsets[nid]={dx:dnOX+dx, dy:dnOY+dy};
+          dragNode.setAttribute('transform','translate('+nodeOffsets[nid].dx+','+nodeOffsets[nid].dy+')');
+          updateEdges();
+          return; // don't pan while dragging a node
+        }
+        if(!drag) return;
+        var scale2=vb.width/c.clientWidth;
+        vb.x=ox-(e.clientX-sx)*scale2;
+        vb.y=oy-(e.clientY-sy)*scale2;
+      });
+      c.addEventListener('mouseup',function(){
+        if(dragNode){ dragNode.style.cursor='grab'; dragNode=null; }
+        drag=false;
+      });
+
       // Fit to container on first load with some padding
       var padding=40;
       vb.x=-padding; vb.y=-padding;
@@ -1071,6 +1323,64 @@ const GRAPH_JS: &str = r#"
       origVB={x:vb.x, y:vb.y, w:vb.width, h:vb.height};
     });
   }
+
+  // ── Artifact hover preview tooltip ───────────────────────
+  (function(){
+    var tip=document.createElement('div');
+    tip.className='art-tooltip';
+    document.body.appendChild(tip);
+    var timer=null, ctrl=null, currentEl=null;
+
+    function show(el){
+      var href=el.getAttribute('hx-get')||'';
+      var m=href.match(/^\/artifacts\/(.+)$/);
+      if(!m) return;
+      var id=m[1];
+      if(ctrl) ctrl.abort();
+      ctrl=new AbortController();
+      fetch('/artifacts/'+encodeURIComponent(id)+'/preview',{signal:ctrl.signal})
+        .then(function(r){return r.text()})
+        .then(function(html){
+          tip.innerHTML=html;
+          tip.classList.add('visible');
+          position(el);
+        }).catch(function(){});
+    }
+
+    function position(el){
+      var r=el.getBoundingClientRect();
+      var tw=tip.offsetWidth, th=tip.offsetHeight;
+      var left=r.left+r.width/2-tw/2;
+      var top=r.top-th-6;
+      if(top<4){ top=r.bottom+6; }
+      if(left<4) left=4;
+      if(left+tw>window.innerWidth-4) left=window.innerWidth-tw-4;
+      tip.style.left=left+'px';
+      tip.style.top=top+window.scrollY+'px';
+    }
+
+    function hide(){
+      clearTimeout(timer); timer=null;
+      if(ctrl){ ctrl.abort(); ctrl=null; }
+      tip.classList.remove('visible');
+      currentEl=null;
+    }
+
+    document.body.addEventListener('mouseenter',function(e){
+      var el=e.target.closest('[hx-get^="/artifacts/"]');
+      if(!el||el.getAttribute('hx-get').indexOf('/preview')!==-1) return;
+      currentEl=el;
+      timer=setTimeout(function(){ show(el); },300);
+    },true);
+
+    document.body.addEventListener('mouseleave',function(e){
+      var el=e.target.closest('[hx-get^="/artifacts/"]');
+      if(el&&el===currentEl) hide();
+    },true);
+
+    // also hide when clicking (navigating away)
+    document.body.addEventListener('click',function(){ hide(); },true);
+  })();
 })();
 </script>
 "#;
@@ -1183,6 +1493,78 @@ const SEARCH_JS: &str = r#"
 </script>
 "#;
 
+// ── AADL diagram JS ─────────────────────────────────────────────────────
+
+const AADL_JS: &str = r#"
+<script>
+(function(){
+  function initAadlDiagrams(){
+    var containers=document.querySelectorAll('.aadl-diagram:not([data-loaded])');
+    containers.forEach(function(container){
+      container.setAttribute('data-loaded','true');
+      var root=container.getAttribute('data-root');
+      if(!root) return;
+      fetch('/api/render-aadl?root='+encodeURIComponent(root))
+        .then(function(r){
+          if(!r.ok) throw new Error('HTTP '+r.status);
+          return r.text();
+        })
+        .then(function(svgText){
+          var parser=new DOMParser();
+          var doc=parser.parseFromString(svgText,'image/svg+xml');
+          var svg=doc.documentElement;
+          if(svg.nodeName==='parsererror'||svg.querySelector('parsererror')){
+            throw new Error('Invalid SVG response');
+          }
+          var loading=container.querySelector('.aadl-loading');
+          if(loading) loading.remove();
+          container.appendChild(document.importNode(svg,true));
+          initDiagramInteraction(container);
+        })
+        .catch(function(err){
+          var loading=container.querySelector('.aadl-loading');
+          if(loading) loading.remove();
+          var p=document.createElement('p');
+          p.className='aadl-error';
+          p.textContent='Failed to load AADL diagram: '+err.message;
+          container.appendChild(p);
+        });
+    });
+  }
+
+  function initDiagramInteraction(container){
+    var nodes=container.querySelectorAll('svg [data-id]');
+    nodes.forEach(function(node){
+      node.style.cursor='pointer';
+      node.addEventListener('click',function(){
+        var id=node.getAttribute('data-id');
+        if(id) htmx.ajax('GET','/artifacts/'+encodeURIComponent(id),{target:'#content'});
+      });
+    });
+  }
+
+  window.highlightAadlNodes=function(artifactIds){
+    var nodes=document.querySelectorAll('.aadl-diagram svg .node');
+    nodes.forEach(function(node){
+      var id=node.getAttribute('data-id');
+      var rect=node.querySelector('rect');
+      if(!rect) return;
+      if(artifactIds.indexOf(id)!==-1){
+        rect.setAttribute('stroke','#f0c040');
+        rect.setAttribute('stroke-width','3');
+      } else {
+        rect.setAttribute('stroke','');
+        rect.setAttribute('stroke-width','');
+      }
+    });
+  };
+
+  document.addEventListener('DOMContentLoaded',initAadlDiagrams);
+  document.body.addEventListener('htmx:afterSwap',initAadlDiagrams);
+})();
+</script>
+"#;
+
 // ── Layout ───────────────────────────────────────────────────────────────
 
 fn page_layout(content: &str, state: &AppState) -> Html<String> {
@@ -1222,7 +1604,7 @@ fn page_layout(content: &str, state: &AppState) -> Html<String> {
     let stpa_count: usize = stpa_types.iter().map(|t| state.store.count_by_type(t)).sum();
     let stpa_nav = if stpa_count > 0 {
         format!(
-            "<li><a hx-get=\"/stpa\" hx-target=\"#content\" hx-push-url=\"false\" href=\"#\"><span class=\"nav-label\"><span class=\"nav-icon\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M8 1.5l5.5 2.5v4c0 3.5-2.5 5.5-5.5 7-3-1.5-5.5-3.5-5.5-7V4z\"/><path d=\"M8 5v3M8 10.5h.01\"/></svg></span> STPA</span><span class=\"nav-badge\">{stpa_count}</span></a></li>"
+            "<li><a hx-get=\"/stpa\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\"><span class=\"nav-label\"><span class=\"nav-icon\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M8 1.5l5.5 2.5v4c0 3.5-2.5 5.5-5.5 7-3-1.5-5.5-3.5-5.5-7V4z\"/><path d=\"M8 5v3M8 10.5h.01\"/></svg></span> STPA</span><span class=\"nav-badge\">{stpa_count}</span></a></li>"
         )
     } else {
         String::new()
@@ -1313,33 +1695,36 @@ fn page_layout(content: &str, state: &AppState) -> Html<String> {
 <nav>
   <h1>Rivet</h1>
   <ul>
-    <li><a hx-get="/stats" hx-target="#content" hx-push-url="false" href="#" class="active"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="1.5" width="5" height="5" rx="1"/><rect x="9.5" y="1.5" width="5" height="5" rx="1"/><rect x="1.5" y="9.5" width="5" height="5" rx="1"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/></svg></span> Overview</span></a></li>
-    <li><a hx-get="/artifacts" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="1.5" width="10" height="13" rx="1.5"/><path d="M6 5h4M6 8h4M6 11h2"/></svg></span> Artifacts</span><span class="nav-badge">{artifact_count}</span></a></li>
-    <li><a hx-get="/validate" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><path d="M5.5 8l2 2 3.5-3.5"/></svg></span> Validation</span>{error_badge}</a></li>
+    <li><a hx-get="/stats" hx-target="#content" hx-push-url="true" href="#" class="active"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="1.5" width="5" height="5" rx="1"/><rect x="9.5" y="1.5" width="5" height="5" rx="1"/><rect x="1.5" y="9.5" width="5" height="5" rx="1"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/></svg></span> Overview</span></a></li>
+    <li><a hx-get="/artifacts" hx-target="#content" hx-push-url="true" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="1.5" width="10" height="13" rx="1.5"/><path d="M6 5h4M6 8h4M6 11h2"/></svg></span> Artifacts</span><span class="nav-badge">{artifact_count}</span></a></li>
+    <li><a hx-get="/validate" hx-target="#content" hx-push-url="true" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><path d="M5.5 8l2 2 3.5-3.5"/></svg></span> Validation</span>{error_badge}</a></li>
     <li class="nav-divider"></li>
-    <li><a hx-get="/matrix" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 5.5h13M1.5 10.5h13M5.5 1.5v13M10.5 1.5v13"/><rect x="1.5" y="1.5" width="13" height="13" rx="1.5"/></svg></span> Matrix</span></a></li>
-    <li><a hx-get="/coverage" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><path d="M8 1.5V8l4.6 4.6"/></svg></span> Coverage</span></a></li>
-    <li><a hx-get="/traceability" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h2v2H3zM7 4h2v2H7zM11 4h2v2H11zM3 10h2v2H3zM11 10h2v2H11z"/><path d="M5 5h2M9 5h2M4 6v4M12 6v4M5 11h6"/></svg></span> Traceability</span></a></li>
-    <li><a hx-get="/graph" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="4" r="2"/><circle cx="12" cy="4" r="2"/><circle cx="4" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><path d="M6 4h4M4 6v4M12 6v4M6 12h4"/></svg></span> Graph</span></a></li>
-    <li><a hx-get="/documents" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 1.5H4.5A1.5 1.5 0 003 3v10a1.5 1.5 0 001.5 1.5h7A1.5 1.5 0 0013 13V5.5L9 1.5z"/><path d="M9 1.5V5.5h4"/><path d="M6 8.5h4M6 11h2"/></svg></span> Documents</span>{doc_badge}</a></li>
-    <li><a hx-get="/source" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 4.5 1.5 8 5 11.5"/><polyline points="11 4.5 14.5 8 11 11.5"/><line x1="9" y1="2" x2="7" y2="14"/></svg></span> Source</span></a></li>
+    <li><a hx-get="/matrix" hx-target="#content" hx-push-url="true" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 5.5h13M1.5 10.5h13M5.5 1.5v13M10.5 1.5v13"/><rect x="1.5" y="1.5" width="13" height="13" rx="1.5"/></svg></span> Matrix</span></a></li>
+    <li><a hx-get="/coverage" hx-target="#content" hx-push-url="true" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><path d="M8 1.5V8l4.6 4.6"/></svg></span> Coverage</span></a></li>
+    <li><a hx-get="/traceability" hx-target="#content" hx-push-url="true" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h2v2H3zM7 4h2v2H7zM11 4h2v2H11zM3 10h2v2H3zM11 10h2v2H11z"/><path d="M5 5h2M9 5h2M4 6v4M12 6v4M5 11h6"/></svg></span> Traceability</span></a></li>
+    <li><a hx-get="/graph" hx-target="#content" hx-push-url="true" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="4" r="2"/><circle cx="12" cy="4" r="2"/><circle cx="4" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><path d="M6 4h4M4 6v4M12 6v4M6 12h4"/></svg></span> Graph</span></a></li>
+    <li><a hx-get="/documents" hx-target="#content" hx-push-url="true" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 1.5H4.5A1.5 1.5 0 003 3v10a1.5 1.5 0 001.5 1.5h7A1.5 1.5 0 0013 13V5.5L9 1.5z"/><path d="M9 1.5V5.5h4"/><path d="M6 8.5h4M6 11h2"/></svg></span> Documents</span>{doc_badge}</a></li>
+    <li><a hx-get="/doc-linkage" hx-target="#content" hx-push-url="true" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="1" width="5" height="6" rx="1"/><rect x="10" y="1" width="5" height="6" rx="1"/><rect x="5.5" y="9" width="5" height="6" rx="1"/><path d="M3.5 7v2.5h4.5M12.5 7v2.5h-4.5"/></svg></span> Doc Linkage</span></a></li>
+    <li><a hx-get="/source" hx-target="#content" hx-push-url="true" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 4.5 1.5 8 5 11.5"/><polyline points="11 4.5 14.5 8 11 11.5"/><line x1="9" y1="2" x2="7" y2="14"/></svg></span> Source</span></a></li>
     <li class="nav-divider"></li>
-    <li><a hx-get="/verification" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5l5.5 2.5v4c0 3.5-2.5 5.5-5.5 7-3-1.5-5.5-3.5-5.5-7V4z"/><path d="M5.5 8l2 2 3.5-3.5"/></svg></span> Verification</span></a></li>
+    <li><a hx-get="/verification" hx-target="#content" hx-push-url="true" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5l5.5 2.5v4c0 3.5-2.5 5.5-5.5 7-3-1.5-5.5-3.5-5.5-7V4z"/><path d="M5.5 8l2 2 3.5-3.5"/></svg></span> Verification</span></a></li>
     {stpa_nav}
-    <li><a hx-get="/results" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12.5h12M3 9.5h2v3H3zM7 6.5h2v6H7zM11 3.5h2v9h-2z"/></svg></span> Results</span>{result_badge}</a></li>
+    <li><a hx-get="/results" hx-target="#content" hx-push-url="true" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12.5h12M3 9.5h2v3H3zM7 6.5h2v6H7zM11 3.5h2v9h-2z"/></svg></span> Results</span>{result_badge}</a></li>
     <li class="nav-divider"></li>
-    <li><a hx-get="/diff" hx-target="#content" hx-push-url="false" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v10M10 3v10"/><path d="M2 8h3M11 8h3"/><circle cx="6" cy="5" r="1.5"/><circle cx="10" cy="11" r="1.5"/></svg></span> Diff</span></a></li>
+    <li><a hx-get="/diff" hx-target="#content" hx-push-url="true" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v10M10 3v10"/><path d="M2 8h3M11 8h3"/><circle cx="6" cy="5" r="1.5"/><circle cx="10" cy="11" r="1.5"/></svg></span> Diff</span></a></li>
   </ul>
   <div id="nav-search-hint" class="nav-search-hint">
     <span><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg></span> Search</span>
     <span class="cmd-k-kbd">&#8984;K</span>
   </div>
 </nav>
-<main id="content" hx-swap="innerHTML transition:true">
+<div class="content-area">
 {context_bar}
+<main id="content" hx-swap="innerHTML transition:true">
 {content}
 <div class="footer">Powered by Rivet v{version}</div>
 </main>
+</div>
 </div>
 <div id="cmd-k-overlay" class="cmd-k-overlay">
   <div class="cmd-k-modal">
@@ -1354,6 +1739,7 @@ fn page_layout(content: &str, state: &AppState) -> Html<String> {
 </div>
 {GRAPH_JS}
 {SEARCH_JS}
+{AADL_JS}
 </body>
 </html>"##
     ))
@@ -1361,8 +1747,25 @@ fn page_layout(content: &str, state: &AppState) -> Html<String> {
 
 // ── Routes ───────────────────────────────────────────────────────────────
 
-async fn index(State(state): State<SharedState>) -> Html<String> {
+#[derive(Debug, serde::Deserialize)]
+struct IndexParams {
+    goto: Option<String>,
+}
+
+async fn index(
+    State(state): State<SharedState>,
+    Query(params): Query<IndexParams>,
+) -> Html<String> {
     let state = state.read().await;
+    // If goto param is set, render layout with empty content and let JS load the page
+    if let Some(ref goto) = params.goto {
+        let placeholder = format!(
+            "<div id=\"goto-target\" data-url=\"{}\"></div>\
+             <script>htmx.ajax('GET','{}','#content');</script>",
+            html_escape(goto), html_escape(goto)
+        );
+        return page_layout(&placeholder, &state);
+    }
     let inner = stats_partial(&state);
     page_layout(&inner, &state)
 }
@@ -1682,6 +2085,66 @@ async fn artifacts_list(State(state): State<SharedState>) -> Html<String> {
     Html(html)
 }
 
+/// Compact preview tooltip for an artifact — loaded on hover.
+async fn artifact_preview(
+    State(state): State<SharedState>,
+    Path(id): Path<String>,
+) -> Html<String> {
+    let state = state.read().await;
+    let store = &state.store;
+    let graph = &state.graph;
+
+    let Some(artifact) = store.get(&id) else {
+        return Html(format!("<div class=\"art-preview\"><strong>{}</strong><br><em>Not found</em></div>", html_escape(&id)));
+    };
+
+    let mut html = String::from("<div class=\"art-preview\">");
+    html.push_str(&format!(
+        "<div class=\"art-preview-header\">{} <strong>{}</strong></div>",
+        badge_for_type(&artifact.artifact_type),
+        html_escape(&artifact.id)
+    ));
+    html.push_str(&format!(
+        "<div class=\"art-preview-title\">{}</div>",
+        html_escape(&artifact.title)
+    ));
+    if let Some(status) = &artifact.status {
+        let cls = match status.as_str() {
+            "approved" => "badge-ok",
+            "draft" => "badge-warn",
+            "obsolete" => "badge-error",
+            _ => "badge-info",
+        };
+        html.push_str(&format!(
+            "<span class=\"badge {cls}\" style=\"font-size:.65rem;margin-top:.25rem\">{}</span> ",
+            html_escape(status)
+        ));
+    }
+    if let Some(desc) = &artifact.description {
+        let snippet: String = desc.chars().take(160).collect();
+        let ellip = if desc.len() > 160 { "..." } else { "" };
+        html.push_str(&format!(
+            "<div class=\"art-preview-desc\">{}{ellip}</div>",
+            html_escape(&snippet)
+        ));
+    }
+    let fwd = artifact.links.len();
+    let back = graph.backlinks_to(&id).len();
+    if fwd > 0 || back > 0 {
+        html.push_str(&format!(
+            "<div class=\"art-preview-links\">{fwd} outgoing, {back} incoming</div>"
+        ));
+    }
+    if !artifact.tags.is_empty() {
+        let tags: Vec<String> = artifact.tags.iter()
+            .map(|t| format!("<span class=\"art-preview-tag\">{}</span>", html_escape(t)))
+            .collect();
+        html.push_str(&format!("<div class=\"art-preview-tags\">{}</div>", tags.join(" ")));
+    }
+    html.push_str("</div>");
+    Html(html)
+}
+
 async fn artifact_detail(
     State(state): State<SharedState>,
     Path(id): Path<String>,
@@ -1726,10 +2189,10 @@ async fn artifact_detail(
         html.push_str(&format!("<dt>Tags</dt><dd>{}</dd>", tags.join(" ")));
     }
 
-    // Extra fields
+    // Extra fields — detect file:line source references and make them clickable
     for (key, value) in &artifact.fields {
         let val = match value {
-            serde_yaml::Value::String(s) => html_escape(s),
+            serde_yaml::Value::String(s) => linkify_source_refs(&html_escape(s)),
             other => html_escape(&format!("{other:?}")),
         };
         html.push_str(&format!("<dt>{}</dt><dd>{}</dd>", html_escape(key), val));
@@ -1776,6 +2239,29 @@ async fn artifact_detail(
             ));
         }
         html.push_str("</tbody></table></div>");
+    }
+
+    // AADL diagram highlighting data
+    let mut aadl_links = Vec::new();
+    for link in &artifact.links {
+        if link.target.starts_with("AADL-") {
+            aadl_links.push(link.target.clone());
+        }
+    }
+    for bl in graph.backlinks_to(&id) {
+        if bl.source.starts_with("AADL-") {
+            aadl_links.push(bl.source.clone());
+        }
+    }
+    if id.starts_with("AADL-") {
+        aadl_links.push(id.clone());
+    }
+    if !aadl_links.is_empty() {
+        let json = serde_json::to_string(&aadl_links).unwrap_or_default();
+        html.push_str(&format!(
+            "<script>if(window.highlightAadlNodes)highlightAadlNodes({});</script>",
+            json
+        ));
     }
 
     // Action buttons
@@ -1914,7 +2400,7 @@ async fn graph_view(
     // Filter form
     html.push_str("<div class=\"card\">");
     html.push_str(
-        "<form class=\"form-row\" hx-get=\"/graph\" hx-target=\"#content\" hx-push-url=\"false\">",
+        "<form class=\"form-row\" hx-get=\"/graph\" hx-target=\"#content\" hx-push-url=\"true\">",
     );
 
     // Type checkboxes
@@ -2109,7 +2595,7 @@ async fn artifact_graph(
     // Hop control + legend
     html.push_str("<div class=\"card\">");
     html.push_str(&format!(
-        "<form class=\"form-row\" hx-get=\"/artifacts/{id_esc}/graph\" hx-target=\"#content\" hx-push-url=\"false\">\
+        "<form class=\"form-row\" hx-get=\"/artifacts/{id_esc}/graph\" hx-target=\"#content\" hx-push-url=\"true\">\
          <div><label for=\"hops\">Hops: <span id=\"hops-val\">{hops}</span></label><br>\
          <input type=\"range\" name=\"hops\" id=\"hops\" min=\"1\" max=\"6\" value=\"{hops}\" \
          oninput=\"document.getElementById('hops-val').textContent=this.value\"></div>\
@@ -2353,7 +2839,7 @@ async fn matrix_view(
     let mut html = String::from("<h2>Traceability Matrix</h2>");
     html.push_str("<div class=\"card\">");
     html.push_str(
-        "<form class=\"form-row\" hx-get=\"/matrix\" hx-target=\"#content\" hx-push-url=\"false\">",
+        "<form class=\"form-row\" hx-get=\"/matrix\" hx-target=\"#content\" hx-push-url=\"true\">",
     );
 
     // From select
@@ -3934,7 +4420,7 @@ fn render_tree(entries: &[TreeEntry], html: &mut String, depth: usize) {
                 "<svg width=\"14\" height=\"14\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"1.5\" width=\"10\" height=\"13\" rx=\"1.5\"/></svg>"
             };
             html.push_str(&format!(
-                "<a class=\"tree-item\" hx-get=\"/source/{encoded}\" hx-target=\"#content\" hx-push-url=\"false\" href=\"#\">{indent}<span class=\"tree-icon\">{icon}</span> {name}</a>",
+                "<a class=\"tree-item\" hx-get=\"/source/{encoded}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{indent}<span class=\"tree-icon\">{icon}</span> {name}</a>",
                 name = html_escape(&entry.name),
             ));
         }
@@ -3986,23 +4472,70 @@ fn collect_artifact_ids(store: &rivet_core::store::Store) -> std::collections::H
     store.iter().map(|a| a.id.clone()).collect()
 }
 
+/// Info about an artifact that references a source file, with optional line info.
+struct FileRef {
+    id: String,
+    artifact_type: String,
+    title: String,
+    line: Option<u32>,
+    end_line: Option<u32>,
+}
+
 fn artifacts_referencing_file(
     store: &rivet_core::store::Store,
     file_rel: &str,
-) -> Vec<(String, String, String)> {
+) -> Vec<FileRef> {
     let rel = std::path::Path::new(file_rel);
-    store
-        .iter()
-        .filter_map(|a| {
-            a.source_file.as_ref().and_then(|sf| {
-                if sf == rel || sf.ends_with(file_rel) {
-                    Some((a.id.clone(), a.artifact_type.clone(), a.title.clone()))
-                } else {
-                    None
+    let mut refs = Vec::new();
+
+    for a in store.iter() {
+        // Check source_file (existing behavior)
+        if let Some(sf) = &a.source_file {
+            if sf == rel || sf.ends_with(file_rel) {
+                refs.push(FileRef {
+                    id: a.id.clone(), artifact_type: a.artifact_type.clone(),
+                    title: a.title.clone(), line: None, end_line: None,
+                });
+                continue;
+            }
+        }
+        // Scan string fields for file:line references matching this file
+        for value in a.fields.values() {
+            if let serde_yaml::Value::String(s) = value {
+                if let Some((_file, line, end_line)) = extract_file_ref(s, file_rel) {
+                    refs.push(FileRef {
+                        id: a.id.clone(), artifact_type: a.artifact_type.clone(),
+                        title: a.title.clone(), line, end_line,
+                    });
+                    break; // one ref per artifact is enough
                 }
-            })
-        })
-        .collect()
+            }
+        }
+    }
+    refs
+}
+
+/// If `val` contains a source ref matching `target_file`, return (file, line, end_line).
+fn extract_file_ref(val: &str, target_file: &str) -> Option<(String, Option<u32>, Option<u32>)> {
+    // Look for target_file possibly followed by :line or :line-line
+    let idx = val.find(target_file)?;
+    let after = &val[idx + target_file.len()..];
+    if let Some(rest) = after.strip_prefix(':') {
+        let digits_end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+        if digits_end > 0 {
+            let line: u32 = rest[..digits_end].parse().ok()?;
+            let rest2 = &rest[digits_end..];
+            if let Some(rest3) = rest2.strip_prefix('-') {
+                let d2_end = rest3.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest3.len());
+                if d2_end > 0 {
+                    let end_line: u32 = rest3[..d2_end].parse().ok()?;
+                    return Some((target_file.to_string(), Some(line), Some(end_line)));
+                }
+            }
+            return Some((target_file.to_string(), Some(line), None));
+        }
+    }
+    Some((target_file.to_string(), None, None))
 }
 
 async fn source_file_view(
@@ -4078,7 +4611,7 @@ async fn source_file_view(
 
     // Breadcrumb
     html.push_str("<div class=\"source-breadcrumb\">");
-    html.push_str("<a hx-get=\"/source\" hx-target=\"#content\" hx-push-url=\"false\" href=\"#\">Source</a>");
+    html.push_str("<a hx-get=\"/source\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">Source</a>");
     let parts: Vec<&str> = rel_path.split('/').collect();
     for (i, part) in parts.iter().enumerate() {
         html.push_str("<span class=\"sep\">/</span>");
@@ -4133,18 +4666,24 @@ async fn source_file_view(
     if !refs.is_empty() {
         html.push_str("<div class=\"source-refs card\">");
         html.push_str(&format!("<h3>Artifacts Referencing This File ({})</h3>", refs.len()));
-        html.push_str("<table><thead><tr><th>ID</th><th>Type</th><th>Title</th></tr></thead><tbody>");
-        for (id, atype, title) in &refs {
+        html.push_str("<table><thead><tr><th>ID</th><th>Type</th><th>Title</th><th>Lines</th></tr></thead><tbody>");
+        for fref in &refs {
+            let line_info = match (fref.line, fref.end_line) {
+                (Some(l), Some(e)) => format!("<a href=\"#L{l}\" onclick=\"var el=document.getElementById('L{l}');if(el)el.scrollIntoView({{behavior:'smooth',block:'center'}})\">{l}-{e}</a>"),
+                (Some(l), None) => format!("<a href=\"#L{l}\" onclick=\"var el=document.getElementById('L{l}');if(el)el.scrollIntoView({{behavior:'smooth',block:'center'}})\">{l}</a>"),
+                _ => "—".into(),
+            };
             html.push_str(&format!(
-                "<tr><td><a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"false\" href=\"#\">{id}</a></td><td>{}</td><td>{}</td></tr>",
-                badge_for_type(atype),
-                html_escape(title),
+                "<tr><td><a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a></td><td>{}</td><td>{}</td><td>{line_info}</td></tr>",
+                badge_for_type(&fref.artifact_type),
+                html_escape(&fref.title),
+                id = fref.id,
             ));
         }
         html.push_str("</tbody></table></div>");
     }
 
-    html.push_str("<p style=\"margin-top:1rem\"><a hx-get=\"/source\" hx-target=\"#content\" hx-push-url=\"false\" href=\"#\" class=\"btn btn-secondary\">&larr; Back to files</a></p>");
+    html.push_str("<p style=\"margin-top:1rem\"><a hx-get=\"/source\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" class=\"btn btn-secondary\">&larr; Back to files</a></p>");
     Html(html)
 }
 
@@ -4171,11 +4710,11 @@ fn render_code_block(
                 .iter()
                 .filter(|id| line.contains(id.as_str()))
                 .collect();
-            ids.sort_by(|a, b| b.len().cmp(&a.len()));
+            ids.sort_by_key(|b| std::cmp::Reverse(b.len()));
             for id in ids {
                 let escaped_id = html_escape(id);
                 let link = format!(
-                    "<a class=\"artifact-ref\" hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"false\" href=\"#\">{escaped_id}</a>"
+                    "<a class=\"artifact-ref\" hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{escaped_id}</a>"
                 );
                 if let Some(pos) = result.find(&escaped_id) {
                     let before = &result[..pos];
@@ -4188,7 +4727,7 @@ fn render_code_block(
             escaped
         };
         html.push_str(&format!(
-            "<tr class=\"{row_class}\"><td class=\"line-no\">{line_num}</td><td class=\"line-content\">{display_line}</td></tr>"
+            "<tr id=\"L{line_num}\" class=\"{row_class}\"><td class=\"line-no\"><a href=\"#L{line_num}\">{line_num}</a></td><td class=\"line-content\">{display_line}</td></tr>"
         ));
     }
     html.push_str("</table></div>");
@@ -4350,6 +4889,269 @@ async fn diff_view(State(state): State<SharedState>, Query(params): Query<DiffPa
         html.push_str("</div></details>");
     }
     html.push_str("</div>");
+    Html(html)
+}
+
+// ── Document linkage view ────────────────────────────────────────────────
+
+async fn doc_linkage_view(State(state): State<SharedState>) -> Html<String> {
+    let state = state.read().await;
+    let store = &state.store;
+    let doc_store = &state.doc_store;
+    let graph = &state.graph;
+
+    let mut html = String::from("<h2>Document Linkage</h2>");
+    html.push_str("<p class=\"meta\">Shows how documents relate through their artifact references and which artifacts remain unlinked.</p>");
+
+    // Collect per-document artifact sets
+    struct DocInfo {
+        id: String,
+        title: String,
+        artifact_ids: Vec<String>,
+    }
+    let mut doc_infos: Vec<DocInfo> = Vec::new();
+    let mut all_doc_artifacts: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for doc in doc_store.iter() {
+        let mut seen = std::collections::HashSet::new();
+        let art_ids: Vec<String> = doc.references.iter()
+            .filter(|r| seen.insert(r.artifact_id.clone()))
+            .map(|r| r.artifact_id.clone())
+            .collect();
+        for aid in &art_ids {
+            all_doc_artifacts.insert(aid.clone());
+        }
+        doc_infos.push(DocInfo {
+            id: doc.id.clone(),
+            title: doc.title.clone(),
+            artifact_ids: art_ids,
+        });
+    }
+
+    // Also consider artifacts loaded from YAML source files as "belonging" to that source
+    // Group by source file directory
+    let mut source_groups: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();
+    for a in store.iter() {
+        if let Some(sf) = &a.source_file {
+            let dir = sf.parent().and_then(|p| p.to_str()).unwrap_or("artifacts");
+            source_groups.entry(dir.to_string()).or_default().push(a.id.clone());
+        }
+    }
+
+    // ── Document linkage graph (via etch layout engine) ──
+    // Build a petgraph where nodes = documents + source groups, edges = cross-doc links
+    {
+        use petgraph::Graph;
+        let mut pg: Graph<String, String> = Graph::new();
+        let mut node_idx_map: std::collections::HashMap<String, petgraph::graph::NodeIndex> = std::collections::HashMap::new();
+
+        // Add document nodes
+        for doc in &doc_infos {
+            let idx = pg.add_node(doc.id.clone());
+            node_idx_map.insert(doc.id.clone(), idx);
+        }
+        // Add source group nodes
+        for path in source_groups.keys() {
+            let short = std::path::Path::new(path.as_str()).file_name().and_then(|n| n.to_str()).unwrap_or(path);
+            let label = format!("{short}/");
+            let idx = pg.add_node(label.clone());
+            node_idx_map.insert(path.clone(), idx);
+        }
+
+        // Build artifact→node index (which node "owns" each artifact)
+        let mut art_to_node: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        for doc in &doc_infos {
+            for aid in &doc.artifact_ids {
+                art_to_node.insert(aid.clone(), doc.id.clone());
+            }
+        }
+        for (path, ids) in &source_groups {
+            for aid in ids {
+                art_to_node.entry(aid.clone()).or_insert_with(|| path.clone());
+            }
+        }
+
+        // Add edges: collect link types per (src_node→tgt_node) pair
+        // Uses both forward links and backlinks so target-only nodes (like SRS-001) get edges too
+        let mut edge_types: std::collections::HashMap<(String, String), std::collections::BTreeSet<String>> = std::collections::HashMap::new();
+        for (aid, src_node) in &art_to_node {
+            if let Some(a) = store.get(aid) {
+                for link in &a.links {
+                    if let Some(tgt_node) = art_to_node.get(&link.target) {
+                        if tgt_node != src_node {
+                            edge_types.entry((src_node.clone(), tgt_node.clone()))
+                                .or_default()
+                                .insert(link.link_type.clone());
+                        }
+                    }
+                }
+            }
+        }
+        for ((src, tgt), types) in &edge_types {
+            if let (Some(&si), Some(&ti)) = (node_idx_map.get(src), node_idx_map.get(tgt)) {
+                let label = types.iter().cloned().collect::<Vec<_>>().join(", ");
+                pg.add_edge(si, ti, label);
+            }
+        }
+
+        // Build type map for coloring: documents=specification, source groups=source
+        let doc_ids: std::collections::HashSet<String> = doc_infos.iter().map(|d| d.id.clone()).collect();
+
+        let mut colors = type_color_map();
+        colors.insert("document".into(), "#3a86ff".into());
+        colors.insert("source-group".into(), "#4caf50".into());
+
+        let svg_opts = SvgOptions {
+            type_colors: colors,
+            interactive: true,
+            base_url: Some("/documents".into()),
+            background: Some("#fafbfc".into()),
+            font_size: 12.0,
+            edge_color: "#3a86ff".into(),
+            ..SvgOptions::default()
+        };
+
+        let layout_opts = LayoutOptions {
+            node_width: 220.0,
+            node_height: 60.0,
+            rank_separation: 100.0,
+            node_separation: 40.0,
+            ..Default::default()
+        };
+
+        let gl = pgv_layout::layout(
+            &pg,
+            &|_idx, label| {
+                let node_type = if doc_ids.contains(label) { "document" } else { "source-group" };
+                let sublabel = if doc_ids.contains(label) {
+                    doc_infos.iter().find(|d| d.id == *label)
+                        .map(|d| {
+                            let s = format!("{} ({} refs)", d.title, d.artifact_ids.len());
+                            if s.len() > 30 { format!("{}...", &s[..28]) } else { s }
+                        })
+                } else {
+                    source_groups.iter().find(|(p, _)| {
+                        let short = std::path::Path::new(p.as_str()).file_name().and_then(|n| n.to_str()).unwrap_or(p);
+                        format!("{short}/") == *label
+                    }).map(|(_, ids)| format!("{} artifacts", ids.len()))
+                };
+                NodeInfo {
+                    id: label.clone(),
+                    label: label.clone(),
+                    node_type: node_type.into(),
+                    sublabel,
+                }
+            },
+            &|_idx, e| EdgeInfo { label: e.clone() },
+            &layout_opts,
+        );
+
+        let svg = render_svg(&gl, &svg_opts);
+        html.push_str(
+            "<div class=\"card\" style=\"padding:0;position:relative\">\
+            <div class=\"graph-container\">\
+            <div class=\"graph-controls\">\
+              <button class=\"zoom-in\" title=\"Zoom in\">+</button>\
+              <button class=\"zoom-out\" title=\"Zoom out\">&minus;</button>\
+              <button class=\"zoom-fit\" title=\"Fit to view\">&#8689;</button>\
+            </div>"
+        );
+        html.push_str(&svg);
+        html.push_str("</div></div>");
+        html.push_str(&format!(
+            "<p class=\"meta\">{} nodes, {} edges &mdash; scroll to zoom, drag to pan, drag nodes to reposition</p>",
+            gl.nodes.len(), gl.edges.len()
+        ));
+    }
+
+    // ── Inter-document link table ──
+    html.push_str("<div class=\"card\"><h3>Cross-Document Links</h3>");
+    html.push_str("<p style=\"font-size:.85rem;color:var(--text-secondary)\">Artifacts in one document that link to artifacts in another document.</p>");
+    html.push_str("<table><thead><tr><th>Source Doc</th><th>Artifact</th><th>Link</th><th>Target</th><th>Target Doc</th></tr></thead><tbody>");
+
+    let mut cross_link_count = 0u32;
+    // Build artifact→document index
+    let mut art_to_doc: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for doc in &doc_infos {
+        for aid in &doc.artifact_ids {
+            art_to_doc.insert(aid.clone(), doc.id.clone());
+        }
+    }
+
+    for doc in &doc_infos {
+        for aid in &doc.artifact_ids {
+            if let Some(a) = store.get(aid) {
+                for link in &a.links {
+                    if let Some(target_doc) = art_to_doc.get(&link.target) {
+                        if target_doc != &doc.id {
+                            cross_link_count += 1;
+                            html.push_str(&format!(
+                                "<tr><td><a hx-get=\"/documents/{src_doc}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{src_doc}</a></td>\
+                                 <td><a hx-get=\"/artifacts/{aid}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{aid}</a></td>\
+                                 <td><span class=\"link-pill\">{lt}</span></td>\
+                                 <td><a hx-get=\"/artifacts/{tgt}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{tgt}</a></td>\
+                                 <td><a hx-get=\"/documents/{tgt_doc}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{tgt_doc}</a></td></tr>",
+                                src_doc = html_escape(&doc.id),
+                                lt = html_escape(&link.link_type),
+                                tgt = html_escape(&link.target),
+                                tgt_doc = html_escape(target_doc),
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if cross_link_count == 0 {
+        html.push_str("<tr><td colspan=\"5\" style=\"text-align:center;color:var(--text-secondary)\">No cross-document links found</td></tr>");
+    }
+    html.push_str("</tbody></table></div>");
+
+    // ── Unlinked artifacts ──
+    // Artifacts that exist in the store but are NOT referenced by any document
+    let all_artifact_ids: std::collections::HashSet<String> = store.iter().map(|a| a.id.clone()).collect();
+    let unlinked: Vec<&rivet_core::model::Artifact> = store.iter()
+        .filter(|a| !all_doc_artifacts.contains(&a.id))
+        .collect();
+
+    html.push_str("<div class=\"card\"><h3>Artifacts Not Referenced in Any Document</h3>");
+    if unlinked.is_empty() {
+        html.push_str("<p style=\"color:var(--text-secondary)\">All artifacts are referenced by at least one document.</p>");
+    } else {
+        html.push_str(&format!("<p style=\"font-size:.85rem;color:var(--text-secondary)\">{} artifacts are not referenced by any document via <code>[[ID]]</code>.</p>", unlinked.len()));
+        html.push_str("<table><thead><tr><th>ID</th><th>Type</th><th>Title</th><th>Links</th></tr></thead><tbody>");
+        for a in &unlinked {
+            let link_count = a.links.len() + graph.backlinks_to(&a.id).len();
+            html.push_str(&format!(
+                "<tr><td><a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a></td><td>{}</td><td>{}</td><td>{link_count}</td></tr>",
+                badge_for_type(&a.artifact_type),
+                html_escape(&a.title),
+                id = html_escape(&a.id),
+            ));
+        }
+        html.push_str("</tbody></table>");
+    }
+    html.push_str("</div>");
+
+    // ── Per-document summary cards ──
+    html.push_str("<div class=\"card\"><h3>Document Summary</h3>");
+    html.push_str("<table><thead><tr><th>Document</th><th>Type</th><th>References</th><th>Valid Refs</th><th>Broken Refs</th></tr></thead><tbody>");
+    for doc in doc_store.iter() {
+        let total_refs = doc.references.len();
+        let valid = doc.references.iter().filter(|r| store.contains(&r.artifact_id)).count();
+        let broken = total_refs - valid;
+        let broken_class = if broken > 0 { " style=\"color:var(--error);font-weight:600\"" } else { "" };
+        html.push_str(&format!(
+            "<tr><td><a hx-get=\"/documents/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a></td>\
+             <td>{}</td><td>{total_refs}</td><td>{valid}</td><td{broken_class}>{broken}</td></tr>",
+            badge_for_type(&doc.doc_type),
+            id = html_escape(&doc.id),
+        ));
+    }
+    html.push_str("</tbody></table></div>");
+
+    let _ = all_artifact_ids;
     Html(html)
 }
 
@@ -4776,4 +5578,132 @@ fn html_escape(s: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+}
+
+/// Turn `path/to/file.rs:42` patterns into clickable `/source/path/to/file.rs#L42` links.
+/// Also handles ranges like `file.rs:10-20` and plain `path/to/file.rs` (no line).
+fn linkify_source_refs(s: &str) -> String {
+    // Regex-free: scan for patterns like word/word.ext:digits or word/word.ext:digits-digits
+    let mut result = String::new();
+    let src = s;
+    let mut pos = 0usize;
+
+    while pos < src.len() {
+        // Look for file-like patterns: contains '/' or '.' and optionally ':digits'
+        if let Some(m) = find_source_ref(&src[pos..]) {
+            result.push_str(&src[pos..pos + m.start]);
+            let file_path = &m.file;
+            let encoded_path = urlencoding::encode(file_path);
+            if let Some(line) = m.line {
+                if let Some(end_line) = m.end_line {
+                    result.push_str(&format!(
+                        "<a class=\"source-ref-link\" hx-get=\"/source/{encoded_path}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" onclick=\"setTimeout(function(){{var e=document.getElementById('L{line}');if(e)e.scrollIntoView({{behavior:'smooth',block:'center'}})}},200)\">{file_path}:{line}-{end_line}</a>"
+                    ));
+                } else {
+                    result.push_str(&format!(
+                        "<a class=\"source-ref-link\" hx-get=\"/source/{encoded_path}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" onclick=\"setTimeout(function(){{var e=document.getElementById('L{line}');if(e)e.scrollIntoView({{behavior:'smooth',block:'center'}})}},200)\">{file_path}:{line}</a>"
+                    ));
+                }
+            } else {
+                result.push_str(&format!(
+                    "<a class=\"source-ref-link\" hx-get=\"/source/{encoded_path}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{file_path}</a>"
+                ));
+            }
+            pos += m.start + m.len;
+        } else {
+            result.push_str(&src[pos..]);
+            break;
+        }
+    }
+    result
+}
+
+struct SourceRefMatch {
+    start: usize,
+    len: usize,
+    file: String,
+    line: Option<u32>,
+    end_line: Option<u32>,
+}
+
+/// Find the next source-ref pattern in text: `some/path.ext:line` or `some/path.ext:line-line`
+/// File must contain a `/` or `.` with a recognized extension.
+fn find_source_ref(s: &str) -> Option<SourceRefMatch> {
+    let extensions = [
+        ".rs", ".yaml", ".yml", ".toml", ".md", ".py", ".js", ".ts",
+        ".tsx", ".jsx", ".c", ".h", ".cpp", ".hpp", ".go", ".java",
+        ".rb", ".sh", ".json", ".xml", ".aadl",
+    ];
+    let len = s.len();
+    let mut i = 0;
+    while i < len {
+        // Try to match a file path starting at position i
+        // A file path: sequence of [a-zA-Z0-9_/.\-] containing at least one '/' and ending with a known extension
+        let start = i;
+        let mut j = i;
+        let mut has_slash = false;
+        let mut has_ext = false;
+        while j < len {
+            let c = s.as_bytes()[j];
+            if c.is_ascii_alphanumeric() || c == b'_' || c == b'/' || c == b'.' || c == b'-' {
+                if c == b'/' { has_slash = true; }
+                j += 1;
+            } else {
+                break;
+            }
+        }
+        if has_slash && j > start + 2 {
+            let candidate = &s[start..j];
+            // Check if it ends with a known extension
+            for ext in &extensions {
+                if candidate.ends_with(ext) {
+                    has_ext = true;
+                    break;
+                }
+            }
+            if has_ext {
+                let file = candidate.to_string();
+                // Check for :line or :line-line
+                if j < len && s.as_bytes()[j] == b':' {
+                    let _colon_pos = j;
+                    j += 1;
+                    let line_start = j;
+                    while j < len && s.as_bytes()[j].is_ascii_digit() { j += 1; }
+                    if j > line_start {
+                        let line: u32 = s[line_start..j].parse().unwrap_or(0);
+                        if line > 0 {
+                            // Check for range: -digits
+                            if j < len && s.as_bytes()[j] == b'-' {
+                                let dash = j;
+                                j += 1;
+                                let end_start = j;
+                                while j < len && s.as_bytes()[j].is_ascii_digit() { j += 1; }
+                                if j > end_start {
+                                    let end_line: u32 = s[end_start..j].parse().unwrap_or(0);
+                                    if end_line > 0 {
+                                        return Some(SourceRefMatch {
+                                            start, len: j - start, file, line: Some(line), end_line: Some(end_line),
+                                        });
+                                    }
+                                }
+                                // Not a valid range, just use line
+                                return Some(SourceRefMatch {
+                                    start, len: dash - start, file, line: Some(line), end_line: None,
+                                });
+                            }
+                            return Some(SourceRefMatch {
+                                start, len: j - start, file, line: Some(line), end_line: None,
+                            });
+                        }
+                    }
+                }
+                // No line number, just file path
+                return Some(SourceRefMatch {
+                    start, len: j - start, file, line: None, end_line: None,
+                });
+            }
+        }
+        i += 1;
+    }
+    None
 }

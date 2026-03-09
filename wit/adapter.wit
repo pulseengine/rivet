@@ -93,3 +93,32 @@ interface adapter {
 world rivet-adapter {
     export adapter;
 }
+
+/// Errors returned by renderer operations
+variant render-error {
+    parse-error(string),
+    no-root(string),
+    layout-error(string),
+}
+
+/// Interface for rendering AADL instance models to SVG.
+///
+/// A `renderer` implementation parses AADL sources, instantiates
+/// from the given root component implementation, lays out the
+/// architecture, and returns an SVG string.
+interface renderer {
+    /// Render an AADL instance tree rooted at `root` (e.g. "Pkg::Impl").
+    ///
+    /// `highlight` is an optional list of component paths to visually
+    /// emphasise in the output (e.g. flow participants).
+    ///
+    /// Returns the SVG document as a UTF-8 string, or a `render-error`.
+    render: func(root: string, highlight: list<string>) -> result<string, render-error>;
+}
+
+/// World for a spar WASM component that can both adapt AADL artifacts
+/// for rivet and render instance-model diagrams.
+world spar-component {
+    export adapter;
+    export renderer;
+}

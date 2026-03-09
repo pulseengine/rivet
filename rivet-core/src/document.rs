@@ -299,6 +299,7 @@ pub fn render_to_html(doc: &Document, artifact_exists: impl Fn(&str) -> bool) ->
     let mut table_header_done = false;
     let mut in_code_block = false;
     let mut code_block_lines: Vec<String> = Vec::new();
+    let mut code_block_lang: Option<String> = None;
     let mut in_blockquote = false;
 
     for line in doc.body.lines() {
@@ -307,11 +308,24 @@ pub fn render_to_html(doc: &Document, artifact_exists: impl Fn(&str) -> bool) ->
         // Code blocks must be handled first — content inside is literal.
         if trimmed.starts_with("```") {
             if in_code_block {
-                // Closing fence: emit the accumulated code block.
-                html.push_str("<pre><code>");
-                html.push_str(&code_block_lines.join("\n"));
-                html.push_str("</code></pre>\n");
+                // Closing fence: check if this is an AADL diagram block.
+                if code_block_lang.as_deref() == Some("aadl") {
+                    // Parse `root:` from accumulated lines.
+                    let root = code_block_lines
+                        .iter()
+                        .find_map(|l| l.strip_prefix("root:").or_else(|| l.strip_prefix("root: ")))
+                        .unwrap_or("")
+                        .trim();
+                    html.push_str(&format!(
+                        "<div class=\"aadl-diagram\" data-root=\"{root}\"><p class=\"aadl-loading\">Loading AADL diagram...</p></div>\n"
+                    ));
+                } else {
+                    html.push_str("<pre><code>");
+                    html.push_str(&code_block_lines.join("\n"));
+                    html.push_str("</code></pre>\n");
+                }
                 code_block_lines.clear();
+                code_block_lang = None;
                 in_code_block = false;
             } else {
                 // Opening fence: close any open block-level element first.
@@ -336,6 +350,13 @@ pub fn render_to_html(doc: &Document, artifact_exists: impl Fn(&str) -> bool) ->
                     html.push_str("</blockquote>\n");
                     in_blockquote = false;
                 }
+                // Capture language tag from the opening fence.
+                let lang = trimmed.trim_start_matches('`').trim();
+                code_block_lang = if lang.is_empty() {
+                    None
+                } else {
+                    Some(lang.to_string())
+                };
                 in_code_block = true;
             }
             continue;
@@ -910,5 +931,15 @@ See frontmatter.
         let content = "---\nid: D-1\ntitle: Test\n---\nBody.\n";
         let doc = parse_document(content, None).unwrap();
         assert_eq!(doc.doc_type, "document");
+    }
+
+    #[test]
+    fn render_aadl_code_block_placeholder() {
+        let content = "---\nid: DOC-001\ntitle: Architecture\n---\n\n## Overview\n\n```aadl\nroot: FlightControl::Controller.Basic\n```\n\nSome text after.\n";
+        let doc = parse_document(content, None).unwrap();
+        let html = render_to_html(&doc, |_| true);
+        assert!(html.contains("aadl-diagram"));
+        assert!(html.contains("data-root=\"FlightControl::Controller.Basic\""));
+        assert!(!html.contains("<pre><code>root: FlightControl"));
     }
 }

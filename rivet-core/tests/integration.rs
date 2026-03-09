@@ -1089,6 +1089,26 @@ fn test_diff_diagnostic_changes() {
     );
 }
 
+// ── AADL diagram placeholder in documents ────────────────────────────────
+
+#[test]
+fn document_with_aadl_block_renders_placeholder() {
+    let doc_content = "---\nid: DOC-ARCH\ntitle: System Architecture\n---\n\n## Flight Control Architecture\n\nThe system uses the following AADL architecture:\n\n```aadl\nroot: FlightControl::Controller.Basic\n```\n\nThis design satisfies [[SYSREQ-001]].\n";
+
+    let doc = rivet_core::document::parse_document(doc_content, None).unwrap();
+    let html = rivet_core::document::render_to_html(&doc, |id| id == "SYSREQ-001");
+
+    // AADL block becomes a diagram placeholder
+    assert!(html.contains("class=\"aadl-diagram\""));
+    assert!(html.contains("data-root=\"FlightControl::Controller.Basic\""));
+
+    // Wiki-link still resolves
+    assert!(html.contains("SYSREQ-001"));
+
+    // Other text renders normally
+    assert!(html.contains("Flight Control Architecture"));
+}
+
 // ── AADL adapter ─────────────────────────────────────────────────────────
 
 #[test]
