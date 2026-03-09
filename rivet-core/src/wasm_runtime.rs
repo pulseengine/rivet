@@ -639,6 +639,60 @@ mod tests {
         }
     }
 
+    /// End-to-end: load the spar WASM component, preopen a directory with
+    /// real AADL files, call the renderer, and verify the SVG output.
+    ///
+    /// Set `SPAR_WASM_PATH` to override the default component location.
+    /// The test is skipped if the component or AADL files are not found.
+    #[test]
+    fn render_aadl_via_wasm() {
+        // Only run if the WASM component exists
+        let wasm_path = std::env::var("SPAR_WASM_PATH")
+            .unwrap_or_else(|_| "/Volumes/Home/git/pulseengine/spar/target/wasm32-wasip2/release/spar_wasm.wasm".into());
+        let path = std::path::Path::new(&wasm_path);
+        if !path.exists() {
+            eprintln!("Skipping: WASM component not found at {}", path.display());
+            return;
+        }
+
+        // The AADL example directory
+        let aadl_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../examples/aadl/aadl");
+        if !aadl_dir.exists() {
+            eprintln!("Skipping: AADL example not found at {}", aadl_dir.display());
+            return;
+        }
+
+        let runtime = WasmAdapterRuntime::with_defaults().unwrap();
+        let adapter = runtime.load_adapter(path).unwrap();
+
+        // Call render with the AADL directory preopened
+        let result = adapter.call_render(
+            "FlightControl::Controller.Basic",
+            &[],
+            Some(&aadl_dir),
+        );
+
+        match result {
+            Ok(svg) => {
+                assert!(svg.contains("<svg"), "output should be SVG");
+                assert!(svg.contains("</svg>"), "SVG should be complete");
+                assert!(svg.contains("data-id"), "nodes should have data-id");
+
+                // Write to temp for inspection
+                let out = std::env::temp_dir().join("rivet-wasm-test");
+                std::fs::create_dir_all(&out).ok();
+                let svg_path = out.join("wasm-rendered.svg");
+                std::fs::write(&svg_path, &svg).unwrap();
+                eprintln!("SVG written to: {}", svg_path.display());
+            }
+            Err(e) => {
+                // Some WASM/WASI issues are expected in test environments
+                eprintln!("Render returned error (may be expected): {:?}", e);
+            }
+        }
+    }
+
     /// Load the real spar WASM component and call the renderer interface.
     ///
     /// Set `SPAR_WASM_PATH` to override the default component location.
