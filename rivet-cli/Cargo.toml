@@ -30,3 +30,7 @@ tower-http = { workspace = true }
 etch = { path = "../etch" }
 petgraph = { workspace = true }
 urlencoding = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+tempfile = "3"

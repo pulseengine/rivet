@@ -312,3 +312,132 @@ artifacts:
         target: REQ-007
     fields:
       phase: phase-3
+
+  - id: FEAT-021
+    type: feature
+    title: Embedded schemas
+    status: approved
+    description: >
+      Schemas compiled into the binary via include_str! with fallback
+      loading when the schemas/ directory is not found on disk. Enables
+      zero-configuration operation without requiring schema files to be
+      shipped alongside the binary.
+    tags: [schema, distribution, phase-2]
+    links:
+      - type: satisfies
+        target: REQ-010
+    fields:
+      phase: phase-2
+
+  - id: FEAT-022
+    type: feature
+    title: "rivet docs command"
+    status: approved
+    description: >
+      Built-in searchable documentation system with topic-based browsing,
+      grep-style search across all docs, and --format json output for
+      machine consumption. Provides offline-first help without external
+      documentation sites.
+    tags: [cli, docs, phase-2]
+    links:
+      - type: satisfies
+        target: REQ-007
+    fields:
+      phase: phase-2
+
+  - id: FEAT-023
+    type: feature
+    title: "rivet schema command"
+    status: approved
+    description: >
+      Schema introspection commands (list, show, links, rules) that let
+      users explore loaded schemas from the CLI. Supports --format json
+      for agent and tooling integration.
+    tags: [cli, schema, phase-2]
+    links:
+      - type: satisfies
+        target: REQ-007
+      - type: satisfies
+        target: REQ-010
+    fields:
+      phase: phase-2
+
+  - id: FEAT-024
+    type: feature
+    title: "rivet context command"
+    status: approved
+    description: >
+      Generates .rivet/agent-context.md containing project state, coverage
+      summaries, active validation rules, and example artifact IDs. Designed
+      to give AI coding agents the context they need to work effectively
+      with rivet-managed projects.
+    tags: [cli, agent, phase-2]
+    links:
+      - type: satisfies
+        target: REQ-007
+    fields:
+      phase: phase-2
+
+  - id: FEAT-025
+    type: feature
+    title: "--format json on all commands"
+    status: approved
+    description: >
+      Machine-readable JSON output envelope available on all CLI commands
+      (validate, list, stats, matrix, diff, coverage, schema, docs).
+      Enables agents and CI pipelines to consume rivet output
+      programmatically.
+    tags: [cli, agent, phase-2]
+    links:
+      - type: satisfies
+        target: REQ-007
+    fields:
+      phase: phase-2
+
+  - id: FEAT-026
+    type: feature
+    title: "rivet init --preset command"
+    status: approved
+    description: >
+      Schema-aware project scaffolding with presets (dev, aspice, stpa,
+      cybersecurity, aadl). Generates rivet.yaml, directories, and example
+      artifacts matching the chosen domain schema.
+    tags: [cli, schema, phase-2]
+    links:
+      - type: satisfies
+        target: REQ-007
+      - type: satisfies
+        target: REQ-010
+    fields:
+      phase: phase-2
+
+  - id: FEAT-027
+    type: feature
+    title: Syntax highlighting in dashboard
+    status: approved
+    description: >
+      Server-side YAML and bash syntax highlighting in the source viewer
+      and documentation pages. Rendered as annotated HTML spans without
+      requiring client-side JavaScript highlighting libraries.
+    tags: [ui, dashboard, phase-2]
+    links:
+      - type: satisfies
+        target: REQ-007
+    fields:
+      phase: phase-2
+
+  - id: FEAT-028
+    type: feature
+    title: Help and Docs dashboard section
+    status: approved
+    description: >
+      Dashboard section providing a schema browser, link type reference,
+      validation rules summary, and doc topic viewer. Gives users a
+      graphical interface for exploring schemas and documentation
+      alongside their artifacts.
+    tags: [ui, dashboard, docs, phase-2]
+    links:
+      - type: satisfies
+        target: REQ-007
+    fields:
+      phase: phase-2
