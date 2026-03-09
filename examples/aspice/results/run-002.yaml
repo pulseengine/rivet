@@ -1,0 +1,38 @@
+run:
+  id: run-2026-03-05
+  timestamp: "2026-03-05T14:30:00Z"
+  source: "CI pipeline #24"
+  environment: "HIL bench A"
+  commit: "e4f5g6h"
+results:
+  - artifact: UVER-1
+    status: pass
+    duration: "1.1s"
+  - artifact: UVER-2
+    status: pass
+    duration: "2.6s"
+  - artifact: SWINTVER-1
+    status: pass
+    duration: "4.2s"
+  - artifact: SWINTVER-2
+    status: pass
+    duration: "5.8s"
+    message: "Fixed: ABS cycle threshold tuning resolved"
+  - artifact: SWVER-1
+    status: pass
+    duration: "11.9s"
+  - artifact: SWVER-2
+    status: pass
+    duration: "14.3s"
+  - artifact: SYSINTVER-1
+    status: pass
+    duration: "22.1s"
+  - artifact: SYSINTVER-2
+    status: skip
+    message: "Vehicle integration bench unavailable"
+  - artifact: SYSVER-1
+    status: pass
+    duration: "45.0s"
+  - artifact: SYSVER-2
+    status: blocked
+    message: "Proving ground access pending weather clearance"

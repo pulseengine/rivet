@@ -8,9 +8,10 @@ license.workspace = true
 rust-version.workspace = true
 
 [features]
-default = []
+default = ["aadl"]
 oslc = ["dep:reqwest", "dep:urlencoding"]
 wasm = ["dep:wasmtime", "dep:wasmtime-wasi"]
+aadl = ["dep:spar-hir", "dep:spar-analysis"]
 
 [dependencies]
 serde = { workspace = true }
@@ -18,6 +19,7 @@ serde_yaml = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 petgraph = { workspace = true }
+anyhow = { workspace = true }
 log = { workspace = true }
 quick-xml = { workspace = true }
 
@@ -28,6 +30,10 @@ urlencoding = { workspace = true, optional = true }
 # WASM runtime (optional, behind "wasm" feature)
 wasmtime = { workspace = true, optional = true }
 wasmtime-wasi = { workspace = true, optional = true }
+
+# AADL / spar (optional, behind "aadl" feature — default on)
+spar-hir = { workspace = true, optional = true }
+spar-analysis = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = "1.5"

@@ -1,0 +1,381 @@
+artifacts:
+  # ── System-level components ──────────────────────────────────
+
+  - id: ARCH-SYS-001
+    type: aadl-component
+    title: Rivet System (top-level)
+    status: implemented
+    tags: [aadl, architecture, system]
+    links:
+      - type: allocated-from
+        target: REQ-001
+    fields:
+      category: system
+      aadl-package: RivetSystem
+      classifier-kind: type
+      aadl-file: arch/rivet_system.aadl:49
+      source-ref: arch/rivet_system.aadl:49-54
+
+  - id: ARCH-SYS-002
+    type: aadl-component
+    title: Rivet System Implementation
+    status: implemented
+    tags: [aadl, architecture, system]
+    links:
+      - type: allocated-from
+        target: REQ-001
+    fields:
+      category: system
+      aadl-package: RivetSystem
+      classifier-kind: implementation
+      aadl-file: arch/rivet_system.aadl:56-67
+
+  # ── Core process ─────────────────────────────────────────────
+
+  - id: ARCH-CORE-001
+    type: aadl-component
+    title: RivetCore process
+    description: >
+      Core library process containing all domain logic: config loading,
+      schema merging, artifact storage, adapter dispatch, graph building,
+      validation, matrix computation, diff, documents, and query.
+    status: implemented
+    tags: [aadl, architecture, core]
+    links:
+      - type: allocated-from
+        target: REQ-001
+      - type: allocated-from
+        target: REQ-002
+    fields:
+      category: process
+      aadl-package: RivetSystem
+      classifier-kind: implementation
+      aadl-file: arch/rivet_system.aadl:75-108
+      source-ref: rivet-core/src/lib.rs:1
+
+  # ── CLI process ──────────────────────────────────────────────
+
+  - id: ARCH-CLI-001
+    type: aadl-component
+    title: RivetCli process
+    description: >
+      CLI binary process: dispatches subcommands (validate, list, stats,
+      matrix, stpa, serve) and hosts the HTTP dashboard.
+    status: implemented
+    tags: [aadl, architecture, cli]
+    links:
+      - type: allocated-from
+        target: REQ-007
+    fields:
+      category: process
+      aadl-package: RivetSystem
+      classifier-kind: implementation
+      aadl-file: arch/rivet_system.aadl:112-125
+      source-ref: rivet-cli/src/main.rs:1
+
+  # ── Core threads (one per module) ────────────────────────────
+
+  - id: ARCH-CORE-SCHEMA
+    type: aadl-component
+    title: Schema Engine
+    description: >
+      Loads and merges YAML schema files (common + domain overlays).
+      Produces the merged SchemaSet used by validation and matrix.
+    status: implemented
+    tags: [aadl, architecture, core, schema]
+    links:
+      - type: allocated-from
+        target: REQ-002
+      - type: allocated-from
+        target: REQ-003
+      - type: allocated-from
+        target: REQ-010
+    fields:
+      category: thread
+      aadl-package: RivetSystem
+      classifier-kind: type
+      source-ref: rivet-core/src/schema.rs:1
+
+  - id: ARCH-CORE-STORE
+    type: aadl-component
+    title: Artifact Store
+    description: >
+      In-memory store holding all loaded artifacts. Provides lookup by ID,
+      type filtering, and iteration.
+    status: implemented
+    tags: [aadl, architecture, core, store]
+    links:
+      - type: allocated-from
+        target: REQ-001
+    fields:
+      category: thread
+      aadl-package: RivetSystem
+      classifier-kind: type
+      source-ref: rivet-core/src/store.rs:1
+
+  - id: ARCH-CORE-ADAPTERS
+    type: aadl-component
+    title: Adapter Dispatch
+    description: >
+      Dispatches source loading to the appropriate adapter based on format
+      string (generic-yaml, stpa-yaml, aadl, reqif).
+    status: implemented
+    tags: [aadl, architecture, core, adapters]
+    links:
+      - type: allocated-from
+        target: REQ-001
+      - type: allocated-from
+        target: REQ-005
+    fields:
+      category: thread
+      aadl-package: RivetSystem
+      classifier-kind: type
+      source-ref: rivet-core/src/adapter.rs:1
+
+  - id: ARCH-CORE-GRAPH
+    type: aadl-component
+    title: Graph Engine
+    description: >
+      Builds petgraph directed graph from artifact links. Provides cycle
+      detection, orphan detection, reachability queries, and topological sort.
+    status: implemented
+    tags: [aadl, architecture, core, graph]
+    links:
+      - type: allocated-from
+        target: REQ-004
+    fields:
+      category: thread
+      aadl-package: RivetSystem
+      classifier-kind: type
+      source-ref: rivet-core/src/links.rs:1
+
+  - id: ARCH-CORE-VALIDATE
+    type: aadl-component
+    title: Validation Engine
+    description: >
+      Validates artifacts against schema (types, required fields, link
+      constraints, traceability rules). Produces ValidationReport with
+      errors and warnings.
+    status: implemented
+    tags: [aadl, architecture, core, validation]
+    links:
+      - type: allocated-from
+        target: REQ-003
+    fields:
+      category: thread
+      aadl-package: RivetSystem
+      classifier-kind: type
+      source-ref: rivet-core/src/validate.rs:1
+
+  - id: ARCH-CORE-MATRIX
+    type: aadl-component
+    title: Matrix Engine
+    description: >
+      Computes traceability matrix with coverage percentages.
+      Source type → target type mapping with linked/total counts.
+    status: implemented
+    tags: [aadl, architecture, core, matrix]
+    links:
+      - type: allocated-from
+        target: REQ-004
+    fields:
+      category: thread
+      aadl-package: RivetSystem
+      classifier-kind: type
+      source-ref: rivet-core/src/matrix.rs:1
+
+  - id: ARCH-CORE-DIFF
+    type: aadl-component
+    title: Diff Engine
+    description: >
+      Computes artifact differences between two snapshots (added, removed,
+      modified artifacts with field-level change details).
+    status: implemented
+    tags: [aadl, architecture, core, diff]
+    links:
+      - type: allocated-from
+        target: REQ-001
+    fields:
+      category: thread
+      aadl-package: RivetSystem
+      classifier-kind: type
+      source-ref: rivet-core/src/diff.rs:1
+
+  - id: ARCH-CORE-DOC
+    type: aadl-component
+    title: Document Engine
+    description: >
+      Scans source files for artifact references ([[ID]] patterns),
+      builds document model with sections and cross-references.
+    status: implemented
+    tags: [aadl, architecture, core, documents]
+    links:
+      - type: allocated-from
+        target: REQ-001
+    fields:
+      category: thread
+      aadl-package: RivetSystem
+      classifier-kind: type
+      source-ref: rivet-core/src/document.rs:1
+
+  - id: ARCH-CORE-QUERY
+    type: aadl-component
+    title: Query Engine
+    description: >
+      Filters and searches artifacts by type, status, tags, and
+      free-text queries.
+    status: implemented
+    tags: [aadl, architecture, core, query]
+    links:
+      - type: allocated-from
+        target: REQ-001
+    fields:
+      category: thread
+      aadl-package: RivetSystem
+      classifier-kind: type
+      source-ref: rivet-core/src/query.rs:1
+
+  - id: ARCH-CORE-RESULTS
+    type: aadl-component
+    title: Results Engine
+    description: >
+      Parses test execution results (JUnit XML) and coverage data (LCOV)
+      for evidence tracking and dashboard display.
+    status: implemented
+    tags: [aadl, architecture, core, results]
+    links:
+      - type: allocated-from
+        target: REQ-009
+    fields:
+      category: thread
+      aadl-package: RivetSystem
+      classifier-kind: type
+      source-ref: rivet-core/src/results.rs:1
+
+  # ── Adapter components ───────────────────────────────────────
+
+  - id: ARCH-ADAPT-GENERIC
+    type: aadl-component
+    title: Generic YAML Adapter
+    description: >
+      Imports canonical YAML artifact files. Primary format for
+      hand-authored artifacts.
+    status: implemented
+    tags: [aadl, architecture, adapter]
+    links:
+      - type: allocated-from
+        target: FEAT-002
+    fields:
+      category: system
+      aadl-package: RivetAdapters
+      classifier-kind: type
+      source-ref: rivet-core/src/formats/generic.rs:1
+
+  - id: ARCH-ADAPT-STPA
+    type: aadl-component
+    title: STPA YAML Adapter
+    description: >
+      Imports meld's STPA safety analysis YAML format. Maps losses,
+      hazards, constraints, UCAs, and scenarios to rivet artifacts.
+    status: implemented
+    tags: [aadl, architecture, adapter, stpa]
+    links:
+      - type: allocated-from
+        target: FEAT-001
+    fields:
+      category: system
+      aadl-package: RivetAdapters
+      classifier-kind: type
+      source-ref: rivet-core/src/formats/stpa.rs:1
+
+  - id: ARCH-ADAPT-AADL
+    type: aadl-component
+    title: AADL Adapter (spar integration)
+    description: >
+      Layer 1 integration: invokes spar CLI with --format json, parses
+      output into aadl-component and aadl-analysis-result artifacts.
+    status: implemented
+    tags: [aadl, architecture, adapter]
+    links:
+      - type: allocated-from
+        target: FEAT-018
+    fields:
+      category: system
+      aadl-package: RivetAdapters
+      classifier-kind: type
+      source-ref: rivet-core/src/formats/aadl.rs:1
+
+  - id: ARCH-ADAPT-REQIF
+    type: aadl-component
+    title: ReqIF 1.2 Adapter
+    description: >
+      Import/export of ReqIF 1.2 XML. Handles spec-objects, spec-types,
+      and spec-relations mapping to rivet artifacts and links.
+    status: implemented
+    tags: [aadl, architecture, adapter, reqif]
+    links:
+      - type: allocated-from
+        target: FEAT-010
+    fields:
+      category: system
+      aadl-package: RivetAdapters
+      classifier-kind: type
+      source-ref: rivet-core/src/reqif.rs:1
+
+  - id: ARCH-ADAPT-WASM
+    type: aadl-component
+    title: WASM Adapter Runtime
+    description: >
+      Loads WASM component adapters at runtime via WIT interface.
+      Provides sandboxed execution with fuel metering and memory limits.
+    status: partial
+    tags: [aadl, architecture, adapter, wasm]
+    links:
+      - type: allocated-from
+        target: FEAT-012
+      - type: allocated-from
+        target: REQ-008
+    fields:
+      category: system
+      aadl-package: RivetAdapters
+      classifier-kind: implementation
+      source-ref: rivet-core/src/wasm_runtime.rs:1
+
+  # ── Dashboard components ─────────────────────────────────────
+
+  - id: ARCH-DASH-001
+    type: aadl-component
+    title: Dashboard System
+    description: >
+      axum HTTP server with HTMX-driven dashboard. Server-rendered HTML
+      fragments, no frontend framework. Includes pan/zoom/drag graph
+      visualization, artifact hover previews, and Cmd+K search.
+    status: implemented
+    tags: [aadl, architecture, dashboard]
+    links:
+      - type: allocated-from
+        target: FEAT-009
+      - type: allocated-from
+        target: REQ-007
+    fields:
+      category: system
+      aadl-package: RivetDashboard
+      classifier-kind: implementation
+      aadl-file: arch/rivet_dashboard.aadl:18-35
+      source-ref: rivet-cli/src/serve.rs:1
+
+  - id: ARCH-DASH-GRAPH
+    type: aadl-component
+    title: Graph Visualizer (etch)
+    description: >
+      Renders petgraph link graphs as SVG using the etch layout engine.
+      Supports interactive pan, zoom, and node dragging.
+    status: implemented
+    tags: [aadl, architecture, dashboard, graph]
+    links:
+      - type: allocated-from
+        target: FEAT-009
+    fields:
+      category: process
+      aadl-package: RivetDashboard
+      classifier-kind: type

@@ -143,10 +143,13 @@ fn write_style(svg: &mut String, options: &SvgOptions) {
          \x20   .node text {{ font-family: {font}; font-size: {fs}px; \
          fill: #222; text-anchor: middle; dominant-baseline: central; }}\n\
          \x20   .node .sublabel {{ font-size: {}px; fill: #666; }}\n\
-         \x20   .edge path {{ fill: none; stroke: {ec}; stroke-width: 1.2; \
+         \x20   .edge path {{ fill: none; stroke: {ec}; stroke-width: 1.4; \
          marker-end: url(#arrowhead); }}\n\
+         \x20   .edge .label-bg {{ fill: #fff; opacity: 0.85; rx: 3; }}\n\
          \x20   .edge text {{ font-family: {font}; font-size: {}px; \
-         fill: {ec}; text-anchor: middle; }}\n\
+         fill: #555; text-anchor: middle; dominant-baseline: central; \
+         font-weight: 500; }}\n\
+         \x20   .node:hover rect {{ filter: brightness(0.92); }}\n\
          \x20 </style>\n",
         fs - 2.0,
         fs - 2.0,
@@ -175,15 +178,25 @@ fn write_edges(svg: &mut String, layout: &GraphLayout) {
 
         writeln!(svg, "        <path d=\"{path_d}\" />").unwrap();
 
-        // Edge label at midpoint.
+        // Edge label at midpoint with background pill.
         if !edge.label.is_empty() {
             let mid = edge.points.len() / 2;
             let (mx, my) = edge.points[mid];
+            let label = xml_escape(&edge.label);
+            let text_y = my - 4.0;
+            // Approximate label width: ~6.5px per char at default font size.
+            let approx_w = edge.label.len() as f64 * 6.5 + 8.0;
+            let approx_h = 14.0;
             writeln!(
                 svg,
-                "        <text x=\"{mx}\" y=\"{}\">{}</text>",
-                my - 4.0,
-                xml_escape(&edge.label),
+                "        <rect class=\"label-bg\" x=\"{}\" y=\"{}\" width=\"{approx_w}\" height=\"{approx_h}\" />",
+                mx - approx_w / 2.0,
+                text_y - approx_h / 2.0,
+            )
+            .unwrap();
+            writeln!(
+                svg,
+                "        <text x=\"{mx}\" y=\"{text_y}\">{label}</text>",
             )
             .unwrap();
         }

@@ -1,17 +1,11 @@
 project:
-  name: rivet
+  name: aadl-integration-example
   version: "0.1.0"
   schemas:
     - common
-    - dev
+    - aspice
     - aadl
 
 sources:
   - path: artifacts
     format: generic-yaml
-
-docs:
-  - docs
-  - arch
-
-results: results

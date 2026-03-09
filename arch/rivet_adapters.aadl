@@ -1,0 +1,92 @@
+-- rivet_adapters.aadl
+--
+-- Adapter subsystem — models the extensible import/export pipeline.
+-- Each adapter is a component that implements the Adapter trait/WIT interface.
+-- Native adapters are compiled-in; WASM adapters are loaded at runtime.
+
+package RivetAdapters
+public
+  with RivetSystem;
+
+  -- ── Adapter interface (mirrors Adapter trait / WIT) ─────────
+
+  abstract Adapter
+    features
+      source_in   : in data port;
+      config_in   : in data port;
+      artifacts   : out data port RivetSystem::ArtifactSet;
+      export_data : out data port;
+  end Adapter;
+
+  -- ── Native adapters (compiled into rivet-core) ──────────────
+
+  system GenericYamlAdapter extends Adapter
+    -- Parses canonical YAML artifact files (artifacts/*.yaml)
+  end GenericYamlAdapter;
+
+  system StpaYamlAdapter extends Adapter
+    -- Imports meld STPA safety analysis YAML
+  end StpaYamlAdapter;
+
+  system AadlAdapter extends Adapter
+    -- Invokes spar CLI, parses JSON output into aadl-component artifacts
+    features
+      spar_invoke : requires data access;  -- spar CLI on PATH
+  end AadlAdapter;
+
+  system ReqIfAdapter extends Adapter
+    -- ReqIF 1.2 XML import/export (RIF namespace)
+  end ReqIfAdapter;
+
+  -- ── WASM adapter runtime ────────────────────────────────────
+
+  system WasmRuntime
+    features
+      component_in : in data port;   -- .wasm component bytes
+      adapter_out  : out data port;  -- instantiated Adapter
+    properties
+      -- Resource limits: fuel metering, memory cap
+  end WasmRuntime;
+
+  system implementation WasmRuntime.Impl
+    subcomponents
+      engine     : process WasmEngine;
+      linker     : process WasmLinker;
+      sandbox    : process WasmSandbox;
+    connections
+      c_load   : port component_in  -> engine.load;
+      c_link   : port engine.module -> linker.module;
+      c_sand   : port linker.linked -> sandbox.run;
+      c_out    : port sandbox.adapter -> adapter_out;
+  end WasmRuntime.Impl;
+
+  process WasmEngine
+    -- wasmtime::Engine with shared compilation cache
+    features
+      load   : in data port;
+      module : out data port;
+  end WasmEngine;
+
+  process WasmLinker
+    -- Links WASI imports, adapter WIT interface
+    features
+      module : in data port;
+      linked : out data port;
+  end WasmLinker;
+
+  process WasmSandbox
+    -- Isolated execution with fuel metering and memory limits
+    features
+      run     : in data port;
+      adapter : out data port;
+  end WasmSandbox;
+
+  -- ── Future: OSLC sync adapter ───────────────────────────────
+
+  system OslcAdapter extends Adapter
+    -- Bidirectional sync with Polarion, DOORS, codebeamer via OSLC RM/QM
+    features
+      oslc_endpoint : requires data access;  -- remote OSLC service provider
+  end OslcAdapter;
+
+end RivetAdapters;

@@ -1,0 +1,224 @@
+-- rivet_system.aadl
+--
+-- Top-level system architecture for Rivet.
+-- Models the system as seen by users: CLI commands and HTTP dashboard.
+
+package RivetSystem
+public
+
+  -- ── Data types ──────────────────────────────────────────────
+
+  data ArtifactSet
+    -- Collection of parsed artifacts (YAML, STPA, AADL, ReqIF)
+  end ArtifactSet;
+
+  data ValidationReport
+    -- Schema violations, orphans, coverage gaps
+  end ValidationReport;
+
+  data ProjectConfig
+    -- Parsed rivet.yaml: schemas, sources, project metadata
+  end ProjectConfig;
+
+  data SchemaSet
+    -- Merged schema (common + domain overlays)
+  end SchemaSet;
+
+  data LinkGraph
+    -- petgraph-backed directed graph of artifact links
+  end LinkGraph;
+
+  data TraceMatrix
+    -- Coverage matrix: source type → target type with percentages
+  end TraceMatrix;
+
+  data HtmlFragment
+    -- Server-rendered HTML (HTMX partial or full page)
+  end HtmlFragment;
+
+  data HttpRequest
+    -- Inbound HTTP request (axum)
+  end HttpRequest;
+
+  -- ── System boundary ─────────────────────────────────────────
+
+  system Rivet
+    features
+      cli_input      : in data port;
+      cli_output     : out data port;
+      http_request   : in data port HttpRequest;
+      http_response  : out data port HtmlFragment;
+      filesystem     : requires data access;
+  end Rivet;
+
+  system implementation Rivet.Impl
+    subcomponents
+      core : process RivetCore.Impl;
+      cli  : process RivetCli.Impl;
+    connections
+      c_cli_in  : port cli_input     -> cli.commands;
+      c_cli_out : port cli.output    -> cli_output;
+      c_http_in : port http_request  -> cli.http_in;
+      c_http_out: port cli.http_out  -> http_response;
+      c_core    : port cli.core_req  -> core.request;
+      c_core_r  : port core.response -> cli.core_resp;
+  end Rivet.Impl;
+
+  -- ── RivetCore process ───────────────────────────────────────
+
+  process RivetCore
+    features
+      request  : in data port;
+      response : out data port;
+  end RivetCore;
+
+  process implementation RivetCore.Impl
+    subcomponents
+      config_loader : thread ConfigLoader;
+      schema_engine : thread SchemaEngine;
+      store         : thread ArtifactStore;
+      adapters      : thread AdapterDispatch;
+      graph         : thread GraphEngine;
+      validator     : thread ValidationEngine;
+      matrix        : thread MatrixEngine;
+      diff_engine   : thread DiffEngine;
+      doc_engine    : thread DocumentEngine;
+      query_engine  : thread QueryEngine;
+      results       : thread ResultsEngine;
+    connections
+      -- Config loads schemas and source list
+      cfg_schema : port config_loader.schemas   -> schema_engine.load;
+      cfg_src    : port config_loader.sources   -> adapters.source_list;
+      -- Adapters produce artifacts into the store
+      adapt_arts : port adapters.artifacts      -> store.ingest;
+      -- Store feeds the graph builder
+      store_graph: port store.artifact_set      -> graph.build;
+      -- Validator reads schema + store + graph
+      val_schema : port schema_engine.merged    -> validator.schema;
+      val_store  : port store.artifact_set      -> validator.artifacts;
+      val_graph  : port graph.link_graph        -> validator.graph;
+      -- Matrix reads graph + store
+      mat_graph  : port graph.link_graph        -> matrix.graph;
+      mat_store  : port store.artifact_set      -> matrix.artifacts;
+      -- Document engine scans source files
+      doc_store  : port store.artifact_set      -> doc_engine.artifacts;
+      -- Query engine for search/filter
+      qry_store  : port store.artifact_set      -> query_engine.artifacts;
+  end RivetCore.Impl;
+
+  -- ── RivetCli process ────────────────────────────────────────
+
+  process RivetCli
+    features
+      commands  : in data port;
+      output    : out data port;
+      http_in   : in data port HttpRequest;
+      http_out  : out data port HtmlFragment;
+      core_req  : out data port;
+      core_resp : in data port;
+  end RivetCli;
+
+  process implementation RivetCli.Impl
+    subcomponents
+      cmd_dispatch  : thread CommandDispatch;
+      serve_handler : thread ServeHandler;
+    connections
+      cmd_in   : port commands    -> cmd_dispatch.input;
+      cmd_out  : port cmd_dispatch.output -> output;
+      cmd_core : port cmd_dispatch.core_call -> core_req;
+      cmd_resp : port core_resp  -> cmd_dispatch.core_result;
+      srv_in   : port http_in    -> serve_handler.request;
+      srv_out  : port serve_handler.response -> http_out;
+      srv_core : port core_resp  -> serve_handler.data;
+  end RivetCli.Impl;
+
+  -- ── Core threads (one per module) ───────────────────────────
+
+  thread ConfigLoader
+    features
+      schemas : out data port SchemaSet;
+      sources : out data port;
+  end ConfigLoader;
+
+  thread SchemaEngine
+    features
+      load   : in data port;
+      merged : out data port SchemaSet;
+  end SchemaEngine;
+
+  thread ArtifactStore
+    features
+      ingest       : in data port ArtifactSet;
+      artifact_set : out data port ArtifactSet;
+  end ArtifactStore;
+
+  thread AdapterDispatch
+    features
+      source_list : in data port;
+      artifacts   : out data port ArtifactSet;
+  end AdapterDispatch;
+
+  thread GraphEngine
+    features
+      build      : in data port ArtifactSet;
+      link_graph : out data port LinkGraph;
+  end GraphEngine;
+
+  thread ValidationEngine
+    features
+      schema    : in data port SchemaSet;
+      artifacts : in data port ArtifactSet;
+      graph     : in data port LinkGraph;
+      report    : out data port ValidationReport;
+  end ValidationEngine;
+
+  thread MatrixEngine
+    features
+      graph     : in data port LinkGraph;
+      artifacts : in data port ArtifactSet;
+      matrix    : out data port TraceMatrix;
+  end MatrixEngine;
+
+  thread DiffEngine
+    features
+      baseline  : in data port ArtifactSet;
+      current   : in data port ArtifactSet;
+      delta     : out data port;
+  end DiffEngine;
+
+  thread DocumentEngine
+    features
+      artifacts : in data port ArtifactSet;
+      documents : out data port;
+  end DocumentEngine;
+
+  thread QueryEngine
+    features
+      artifacts : in data port ArtifactSet;
+      results   : out data port;
+  end QueryEngine;
+
+  thread ResultsEngine
+    features
+      test_data : in data port;
+      summary   : out data port;
+  end ResultsEngine;
+
+  -- ── CLI threads ─────────────────────────────────────────────
+
+  thread CommandDispatch
+    features
+      input       : in data port;
+      output      : out data port;
+      core_call   : out data port;
+      core_result : in data port;
+  end CommandDispatch;
+
+  thread ServeHandler
+    features
+      request  : in data port HttpRequest;
+      response : out data port HtmlFragment;
+      data     : in data port;
+  end ServeHandler;
+
+end RivetSystem;

@@ -1,0 +1,22 @@
+package FlightControl
+public
+  system Controller
+    features
+      sensor_in: in data port;
+      actuator_out: out data port;
+  end Controller;
+
+  process NavProcess
+    features
+      inp: in data port;
+      outp: out data port;
+  end NavProcess;
+
+  system implementation Controller.Basic
+    subcomponents
+      nav: process NavProcess;
+    connections
+      c1: port sensor_in -> nav.inp;
+      c2: port nav.outp -> actuator_out;
+  end Controller.Basic;
+end FlightControl;

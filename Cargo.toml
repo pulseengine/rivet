@@ -11,7 +11,7 @@ version = "0.1.0"
 authors = ["PulseEngine <https://github.com/pulseengine>"]
 edition = "2024"
 license = "Apache-2.0"
-rust-version = "1.85"
+rust-version = "1.89"
 
 [workspace.dependencies]
 # Serialization
@@ -49,3 +49,7 @@ wasmtime-wasi = "42"
 
 # Benchmarking
 criterion = { version = "0.5", features = ["html_reports"] }
+
+# AADL (spar) — parser, HIR, analysis
+spar-hir = { git = "https://github.com/pulseengine/spar.git", rev = "21a5411" }
+spar-analysis = { git = "https://github.com/pulseengine/spar.git", rev = "21a5411" }

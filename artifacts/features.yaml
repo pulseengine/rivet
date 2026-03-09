@@ -262,3 +262,53 @@ artifacts:
         target: DD-010
     fields:
       phase: phase-1
+
+  - id: FEAT-018
+    type: feature
+    title: AADL adapter (spar Layer 1)
+    status: approved
+    description: >
+      Import AADL architecture models via spar CLI JSON output. Converts
+      spar component types, implementations, and analysis diagnostics
+      into rivet aadl-component and aadl-analysis-result artifacts.
+    tags: [adapter, aadl, phase-2]
+    links:
+      - type: satisfies
+        target: REQ-001
+      - type: satisfies
+        target: REQ-005
+    fields:
+      phase: phase-2
+
+  - id: FEAT-019
+    type: feature
+    title: AADL architecture dogfood (rivet self-model)
+    status: approved
+    description: >
+      Model rivet's own system and software architecture as AADL
+      components in arch/. Three packages: RivetSystem (top-level),
+      RivetAdapters (extensibility), RivetDashboard (serve/UI).
+      Architecture artifacts trace to requirements via allocated-from.
+    tags: [aadl, architecture, dogfood, phase-2]
+    links:
+      - type: satisfies
+        target: REQ-001
+    fields:
+      phase: phase-2
+
+  - id: FEAT-020
+    type: feature
+    title: AADL browser rendering (spar WASM)
+    status: draft
+    description: >
+      Render AADL component diagrams in the dashboard using a spar WASM
+      module compiled for the browser. Provides interactive visualization
+      of system/software architecture with drill-down into subcomponents.
+    tags: [aadl, wasm, ui, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-008
+      - type: satisfies
+        target: REQ-007
+    fields:
+      phase: phase-3

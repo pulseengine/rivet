@@ -1,0 +1,101 @@
+-- rivet_dashboard.aadl
+--
+-- Dashboard subsystem — the axum + HTMX serve handler.
+-- Models the HTTP routing, view rendering, and live-reload state.
+
+package RivetDashboard
+public
+  with RivetSystem;
+
+  -- ── Dashboard system boundary ───────────────────────────────
+
+  system Dashboard
+    features
+      http_in     : in data port RivetSystem::HttpRequest;
+      http_out    : out data port RivetSystem::HtmlFragment;
+      state       : requires data access;  -- Arc<RwLock<AppState>>
+  end Dashboard;
+
+  system implementation Dashboard.Impl
+    subcomponents
+      router      : process HttpRouter;
+      views       : process ViewRenderers;
+      graph_viz   : process GraphVisualizer;
+      file_watch  : process FileWatcher;
+    connections
+      c_route    : port http_in       -> router.request;
+      c_view     : port router.view   -> views.render;
+      c_graph    : port router.graph  -> graph_viz.render;
+      c_html     : port views.html    -> http_out;
+      c_graph_out: port graph_viz.svg -> views.graph_embed;
+      c_reload   : port file_watch.changed -> router.reload;
+  end Dashboard.Impl;
+
+  -- ── HTTP router ─────────────────────────────────────────────
+
+  process HttpRouter
+    -- axum Router with middleware (redirect_non_htmx, logging)
+    features
+      request : in data port RivetSystem::HttpRequest;
+      view    : out data port;
+      graph   : out data port;
+      reload  : in data port;
+  end HttpRouter;
+
+  -- ── View renderers ──────────────────────────────────────────
+
+  process ViewRenderers
+    -- Server-rendered HTML fragments for HTMX swap
+    features
+      render      : in data port;
+      graph_embed : in data port;
+      html        : out data port RivetSystem::HtmlFragment;
+  end ViewRenderers;
+
+  process implementation ViewRenderers.Impl
+    subcomponents
+      stats_view       : thread StatsView;
+      artifacts_view   : thread ArtifactsView;
+      artifact_detail  : thread ArtifactDetailView;
+      validation_view  : thread ValidationView;
+      matrix_view      : thread MatrixView;
+      graph_view       : thread GraphView;
+      source_view      : thread SourceView;
+      doc_view         : thread DocumentView;
+      doc_linkage_view : thread DocLinkageView;
+      search_handler   : thread SearchHandler;
+      preview_handler  : thread PreviewHandler;
+  end ViewRenderers.Impl;
+
+  -- ── Graph visualizer (etch layout engine) ───────────────────
+
+  process GraphVisualizer
+    -- petgraph → etch layout → SVG with pan/zoom/drag
+    features
+      render : in data port;
+      svg    : out data port;
+  end GraphVisualizer;
+
+  -- ── File watcher for live reload ────────────────────────────
+
+  process FileWatcher
+    -- Watches project directory, triggers state rebuild
+    features
+      changed : out data port;
+  end FileWatcher;
+
+  -- ── Individual view threads ─────────────────────────────────
+
+  thread StatsView end StatsView;
+  thread ArtifactsView end ArtifactsView;
+  thread ArtifactDetailView end ArtifactDetailView;
+  thread ValidationView end ValidationView;
+  thread MatrixView end MatrixView;
+  thread GraphView end GraphView;
+  thread SourceView end SourceView;
+  thread DocumentView end DocumentView;
+  thread DocLinkageView end DocLinkageView;
+  thread SearchHandler end SearchHandler;
+  thread PreviewHandler end PreviewHandler;
+
+end RivetDashboard;

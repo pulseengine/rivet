@@ -76,12 +76,18 @@ impl Artifact {
     }
 }
 
-/// Project configuration loaded from `trace.yaml`.
+/// Project configuration loaded from `rivet.yaml`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectConfig {
     pub project: ProjectMetadata,
     #[serde(default)]
     pub sources: Vec<SourceConfig>,
+    /// Directories containing markdown documents (with YAML frontmatter).
+    #[serde(default)]
+    pub docs: Vec<String>,
+    /// Directory containing test result YAML files.
+    #[serde(default)]
+    pub results: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

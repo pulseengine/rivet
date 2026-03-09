@@ -1,3 +1,4 @@
+use crate::document::DocumentStore;
 use crate::links::LinkGraph;
 use crate::schema::{Cardinality, Schema, Severity};
 use crate::store::Store;
@@ -218,6 +219,31 @@ pub fn validate(store: &Store, schema: &Schema, graph: &LinkGraph) -> Vec<Diagno
                         message: rule.description.clone(),
                     });
                 }
+            }
+        }
+    }
+
+    diagnostics
+}
+
+/// Validate document `[[ID]]` references against the artifact store.
+///
+/// Returns diagnostics for any reference that points to a non-existent artifact.
+pub fn validate_documents(doc_store: &DocumentStore, store: &Store) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+
+    for doc in doc_store.iter() {
+        for reference in &doc.references {
+            if !store.contains(&reference.artifact_id) {
+                diagnostics.push(Diagnostic {
+                    severity: Severity::Warning,
+                    artifact_id: Some(doc.id.clone()),
+                    rule: "doc-broken-ref".into(),
+                    message: format!(
+                        "document references [[{}]] (line {}) which does not exist",
+                        reference.artifact_id, reference.line
+                    ),
+                });
             }
         }
     }

@@ -29,3 +29,4 @@ tokio = { workspace = true }
 tower-http = { workspace = true }
 etch = { path = "../etch" }
 petgraph = { workspace = true }
+urlencoding = { workspace = true }

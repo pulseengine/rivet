@@ -1,0 +1,176 @@
+artifacts:
+  # ── System Architecture (SYS.3) ──────────────────────────────────────
+
+  - id: SYSARCH-1
+    type: system-arch-component
+    title: Hydraulic Control Unit
+    status: approved
+    description: >
+      The HCU receives brake pressure commands from the ECU and drives
+      proportional solenoid valves to modulate brake line pressure
+      independently on each axle.  Contains the valve block, pump motor,
+      and pressure sensors.
+    tags: [braking, hcu, hardware]
+    fields:
+      component-type: mixed
+      interfaces:
+        provided:
+          - name: pressure-command
+            protocol: CAN FD
+            description: Accepts 12-bit pressure demand per axle at 100 Hz
+        required:
+          - name: power-supply
+            description: 12 V nominal, 60 A peak during pump operation
+    links:
+      - type: allocated-from
+        target: SYSREQ-1
+      - type: allocated-from
+        target: SYSREQ-2
+
+  - id: SYSARCH-2
+    type: system-arch-component
+    title: ABS Electronic Control Unit
+    status: approved
+    description: >
+      The ABS ECU hosts the slip control software, reads wheel speed sensors
+      via the sensor interface, and commands pressure modulation through the
+      HCU.  Includes the microcontroller, CAN FD transceiver, and power
+      management.
+    tags: [braking, abs, ecu]
+    fields:
+      component-type: mixed
+      interfaces:
+        provided:
+          - name: abs-status
+            protocol: CAN FD
+            description: ABS active flag, wheel speeds, slip ratios at 100 Hz
+        required:
+          - name: wheel-speed-input
+            protocol: analog
+            description: 4x wheel speed sensor signals (inductive, 48 teeth)
+          - name: hcu-command
+            protocol: CAN FD
+            description: Pressure build/hold/release commands to HCU
+    links:
+      - type: allocated-from
+        target: SYSREQ-3
+
+  # ── Software Architecture (SWE.2) ────────────────────────────────────
+
+  - id: SWARCH-1
+    type: sw-arch-component
+    title: Brake Pressure Manager
+    status: approved
+    description: >
+      Software component responsible for computing brake pressure demands
+      for each axle.  Reads pedal position and axle load estimates, applies
+      the load-dependent ratio, and outputs DAC commands to the HCU valve
+      driver.  Runs in the 10 ms periodic task.
+    tags: [braking, ebd, software]
+    fields:
+      interfaces:
+        provided:
+          - name: pressure_demand_output
+            type: function
+            description: "fn pressure_demand(pedal: u16, speed: u16, ratio: f32) -> [u16; 2]"
+        required:
+          - name: axle_load_input
+            type: function
+            description: "fn get_axle_loads() -> (f32, f32)"
+      concurrency: single-threaded (10 ms cyclic task)
+      resource-budgets:
+        stack: 2 KiB
+        wcet: 200 us
+    links:
+      - type: allocated-from
+        target: SWREQ-1
+      - type: allocated-from
+        target: SWREQ-2
+
+  - id: SWARCH-2
+    type: sw-arch-component
+    title: ABS Slip Controller
+    status: approved
+    description: >
+      Software component implementing the wheel slip regulation algorithm.
+      Reads wheel speed sensor inputs at 500 Hz via the sensor abstraction
+      layer, computes individual wheel slip ratios, determines the pressure
+      modulation phase (build/hold/release), and issues commands to the HCU
+      driver.  Runs in the 2 ms high-priority task.
+    tags: [braking, abs, software]
+    fields:
+      interfaces:
+        provided:
+          - name: slip_status
+            type: struct
+            description: "struct SlipStatus { slip_ratio: [f32; 4], phase: [Phase; 4], abs_active: bool }"
+        required:
+          - name: wheel_speed_input
+            type: function
+            description: "fn read_wheel_speeds() -> [u16; 4]"
+          - name: hcu_command
+            type: function
+            description: "fn set_pressure_phase(wheel: u8, phase: Phase)"
+      concurrency: single-threaded (2 ms cyclic task)
+      resource-budgets:
+        stack: 4 KiB
+        wcet: 400 us
+    links:
+      - type: allocated-from
+        target: SWREQ-3
+
+  # ── Software Detailed Design / Unit Construction (SWE.3) ─────────────
+
+  - id: SWDD-1
+    type: sw-detail-design
+    title: Pressure demand calculation function
+    status: approved
+    description: >
+      Implements the brake pressure demand calculation.  Reads the 12-bit
+      ADC pedal position value, multiplies by the load-dependent front/rear
+      ratio from the axle load estimator, clamps the result to the
+      [0, 4095] DAC range, and writes to the HCU valve driver output buffer.
+      Includes a rate limiter (max 500 LSB/cycle) to prevent pressure
+      spikes.
+    tags: [braking, ebd, implementation]
+    fields:
+      unit: src/braking/pressure_demand.rs
+      function: calculate_pressure_demand
+      algorithm: >
+        1. Read pedal ADC (12-bit, 0-4095).
+        2. Read axle load ratio (front_ratio, rear_ratio) from estimator.
+        3. front_demand = clamp(pedal * front_ratio, 0, 4095).
+        4. rear_demand = clamp(pedal * rear_ratio, 0, 4095).
+        5. Apply rate limiter: abs(demand - prev_demand) <= 500.
+        6. Write to HCU output buffer.
+    links:
+      - type: refines
+        target: SWARCH-1
+
+  - id: SWDD-2
+    type: sw-detail-design
+    title: Wheel slip ratio computation and phase selector
+    status: approved
+    description: >
+      Computes individual wheel slip ratios from raw wheel speed sensor
+      ticks and vehicle reference speed.  Implements the ABS phase state
+      machine: NORMAL -> BUILD -> HOLD -> RELEASE -> NORMAL based on slip
+      threshold crossings with hysteresis.  Transition thresholds are
+      calibratable parameters stored in NVM.
+    tags: [braking, abs, implementation]
+    fields:
+      unit: src/braking/slip_control.rs
+      function: compute_slip_and_select_phase
+      algorithm: >
+        1. Convert wheel speed ticks to m/s using calibration factor.
+        2. Estimate vehicle reference speed as max(wheel_speeds).
+        3. slip[i] = (v_ref - v_wheel[i]) / v_ref (guard div-by-zero).
+        4. Phase state machine per wheel:
+           - NORMAL: if slip > threshold_high -> BUILD
+           - BUILD:  if slip > threshold_release -> HOLD
+           - HOLD:   if slip < threshold_low -> RELEASE
+           - RELEASE: if slip < threshold_normal -> NORMAL
+        5. Output phase commands to HCU driver.
+    links:
+      - type: refines
+        target: SWARCH-2

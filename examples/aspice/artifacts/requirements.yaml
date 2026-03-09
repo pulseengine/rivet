@@ -1,0 +1,156 @@
+artifacts:
+  # ── Stakeholder Requirements (SYS.1) ──────────────────────────────────
+
+  - id: STKH-1
+    type: stakeholder-req
+    title: Electronic Brake Force Distribution
+    status: approved
+    description: >
+      The vehicle shall distribute braking force between front and rear axles
+      electronically, adapting to load conditions, to ensure stable and
+      predictable deceleration across all operating conditions.
+    tags: [braking, ebd]
+    fields:
+      priority: must
+      source: customer
+
+  - id: STKH-2
+    type: stakeholder-req
+    title: Anti-lock Braking System
+    status: approved
+    description: >
+      The vehicle shall prevent wheel lock-up during emergency braking on all
+      surface types to maintain steering control and reduce stopping distance,
+      compliant with ECE R13-H and FMVSS 135.
+    tags: [braking, abs]
+    fields:
+      priority: must
+      source: regulation
+
+  # ── System Requirements (SYS.2) ───────────────────────────────────────
+
+  - id: SYSREQ-1
+    type: system-req
+    title: Brake pressure modulation per axle
+    status: approved
+    description: >
+      The braking system shall independently modulate brake pressure on front
+      and rear axles within 10 ms control cycle time, using proportional
+      solenoid valves driven by the hydraulic control unit.
+    tags: [braking, ebd, hydraulics]
+    fields:
+      req-type: functional
+      priority: must
+      verification-criteria: >
+        Measure brake pressure response on a dynamometer at each axle during
+        step and ramp demand profiles; confirm independent modulation within
+        10 ms cycle time.
+    links:
+      - type: derives-from
+        target: STKH-1
+
+  - id: SYSREQ-2
+    type: system-req
+    title: Dynamic load-dependent brake force ratio
+    status: approved
+    description: >
+      The system shall compute the front-to-rear brake force ratio as a
+      function of estimated vehicle deceleration, axle load transfer, and
+      surface friction coefficient, updating the ratio every control cycle.
+    tags: [braking, ebd, control]
+    fields:
+      req-type: functional
+      priority: must
+      verification-criteria: >
+        Verify computed brake force ratio against reference model output for
+        a set of deceleration, load, and friction scenarios on a
+        hardware-in-the-loop bench.
+    links:
+      - type: derives-from
+        target: STKH-1
+
+  - id: SYSREQ-3
+    type: system-req
+    title: Wheel slip regulation
+    status: approved
+    description: >
+      The ABS controller shall regulate individual wheel slip to the target
+      slip ratio (10-20 % depending on surface) by modulating brake pressure
+      through build, hold, and release phases, achieving regulation within
+      3 pressure cycles after lock-up onset detection.
+    tags: [braking, abs, control]
+    fields:
+      req-type: functional
+      priority: must
+      verification-criteria: >
+        Execute full-vehicle ABS stops on low-mu, split-mu, and high-mu
+        surfaces; confirm wheel slip stays within target band and regulation
+        onset occurs within 3 pressure cycles.
+    links:
+      - type: derives-from
+        target: STKH-2
+
+  # ── Software Requirements (SWE.1) ─────────────────────────────────────
+
+  - id: SWREQ-1
+    type: sw-req
+    title: Brake pressure demand calculation
+    status: approved
+    description: >
+      The software shall calculate the target brake pressure for each axle
+      based on driver brake pedal input, vehicle speed, and the load-dependent
+      ratio, outputting a 12-bit DAC command to the hydraulic valve driver
+      every 10 ms.
+    tags: [braking, ebd, software]
+    fields:
+      req-type: functional
+      priority: must
+      verification-criteria: >
+        Unit test the pressure demand function with boundary and nominal pedal
+        input, speed, and ratio combinations; verify DAC output within +/- 1 LSB
+        of the reference model.
+    links:
+      - type: derives-from
+        target: SYSREQ-1
+
+  - id: SWREQ-2
+    type: sw-req
+    title: Axle load estimator
+    status: approved
+    description: >
+      The software shall estimate front and rear axle loads using longitudinal
+      acceleration from the inertial measurement unit and static weight
+      distribution parameters, updating the estimate every 10 ms with a
+      first-order low-pass filter (time constant 50 ms).
+    tags: [braking, ebd, estimation]
+    fields:
+      req-type: functional
+      priority: must
+      verification-criteria: >
+        Inject known acceleration profiles and verify estimated axle loads
+        against a Simulink reference model; maximum steady-state error
+        shall not exceed 2 % of nominal axle load.
+    links:
+      - type: derives-from
+        target: SYSREQ-2
+
+  - id: SWREQ-3
+    type: sw-req
+    title: ABS slip control algorithm
+    status: approved
+    description: >
+      The software shall implement a threshold-based ABS slip control
+      algorithm that reads wheel speed sensor inputs at 500 Hz, computes
+      individual wheel slip ratios, and commands pressure build, hold, or
+      release actions to maintain each wheel within the target slip window.
+    tags: [braking, abs, software]
+    fields:
+      req-type: functional
+      priority: must
+      verification-criteria: >
+        Execute model-in-the-loop tests with recorded wheel speed data from
+        ice, wet, and dry surfaces; verify that slip regulation commands
+        match the validated reference controller output.
+    links:
+      - type: derives-from
+        target: SYSREQ-3

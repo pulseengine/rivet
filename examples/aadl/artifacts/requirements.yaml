@@ -1,0 +1,42 @@
+artifacts:
+  - id: STAKE-001
+    type: stakeholder-req
+    title: System shall respond to pilot inputs in real-time
+    status: approved
+
+  - id: SYSREQ-001
+    type: system-req
+    title: Flight controller shall process sensor data within 50ms
+    status: approved
+    fields:
+      req-type: performance
+      priority: must
+    links:
+      - type: derives-from
+        target: STAKE-001
+
+  - id: AADL-FlightControl-Controller
+    type: aadl-component
+    title: system FlightControl Controller
+    status: imported
+    tags: [aadl]
+    fields:
+      category: system
+      aadl-package: FlightControl
+      classifier-kind: type
+    links:
+      - type: allocated-from
+        target: SYSREQ-001
+
+  - id: AADL-FlightControl-Controller.Basic
+    type: aadl-component
+    title: system implementation Controller.Basic (FlightControl)
+    status: imported
+    tags: [aadl]
+    fields:
+      category: system
+      aadl-package: FlightControl
+      classifier-kind: implementation
+    links:
+      - type: allocated-from
+        target: SYSREQ-001

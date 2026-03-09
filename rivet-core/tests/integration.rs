@@ -1088,3 +1088,95 @@ fn test_diff_diagnostic_changes() {
         "1 new errors, 1 resolved errors, 0 new warnings, 0 resolved warnings"
     );
 }
+
+// ── AADL diagram placeholder in documents ────────────────────────────────
+
+#[test]
+fn document_with_aadl_block_renders_placeholder() {
+    let doc_content = "---\nid: DOC-ARCH\ntitle: System Architecture\n---\n\n## Flight Control Architecture\n\nThe system uses the following AADL architecture:\n\n```aadl\nroot: FlightControl::Controller.Basic\n```\n\nThis design satisfies [[SYSREQ-001]].\n";
+
+    let doc = rivet_core::document::parse_document(doc_content, None).unwrap();
+    let html = rivet_core::document::render_to_html(&doc, |id| id == "SYSREQ-001");
+
+    // AADL block becomes a diagram placeholder
+    assert!(html.contains("class=\"aadl-diagram\""));
+    assert!(html.contains("data-root=\"FlightControl::Controller.Basic\""));
+
+    // Wiki-link still resolves
+    assert!(html.contains("SYSREQ-001"));
+
+    // Other text renders normally
+    assert!(html.contains("Flight Control Architecture"));
+}
+
+// ── AADL adapter ─────────────────────────────────────────────────────────
+
+#[test]
+fn aadl_adapter_parses_spar_json() {
+    use rivet_core::adapter::{Adapter, AdapterConfig, AdapterSource};
+    use rivet_core::formats::aadl::AadlAdapter;
+
+    let json = r#"{
+        "root": "Pkg::Sys.Impl",
+        "packages": [
+            {
+                "name": "Pkg",
+                "component_types": [
+                    { "name": "Sys", "category": "system" }
+                ],
+                "component_impls": [
+                    { "name": "Sys.Impl", "category": "system" }
+                ]
+            }
+        ],
+        "instance": null,
+        "diagnostics": [
+            {
+                "severity": "warning",
+                "message": "No binding for cpu1",
+                "path": ["root", "cpu1"],
+                "analysis": "binding_check"
+            }
+        ]
+    }"#;
+
+    let adapter = AadlAdapter::new();
+    let source = AdapterSource::Bytes(json.as_bytes().to_vec());
+    let config = AdapterConfig::default();
+    let artifacts = adapter.import(&source, &config).unwrap();
+
+    // 1 type + 1 impl + 1 diagnostic = 3 artifacts
+    assert_eq!(artifacts.len(), 3);
+    assert!(
+        artifacts
+            .iter()
+            .any(|a| a.artifact_type == "aadl-component" && a.id == "AADL-Pkg-Sys")
+    );
+    assert!(
+        artifacts
+            .iter()
+            .any(|a| a.artifact_type == "aadl-component" && a.id == "AADL-Pkg-Sys.Impl")
+    );
+    assert!(
+        artifacts
+            .iter()
+            .any(|a| a.artifact_type == "aadl-analysis-result")
+    );
+}
+
+// ── AADL schema ──────────────────────────────────────────────────────────
+
+#[test]
+fn aadl_schema_loads() {
+    let schemas_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("schemas");
+    let common = rivet_core::schema::Schema::load_file(&schemas_dir.join("common.yaml")).unwrap();
+    let aadl = rivet_core::schema::Schema::load_file(&schemas_dir.join("aadl.yaml")).unwrap();
+    let merged = rivet_core::schema::Schema::merge(&[common, aadl]);
+    assert!(merged.artifact_type("aadl-component").is_some());
+    assert!(merged.artifact_type("aadl-analysis-result").is_some());
+    assert!(merged.artifact_type("aadl-flow").is_some());
+    assert!(merged.link_type("modeled-by").is_some());
+}
