@@ -18,8 +18,43 @@ mod docs;
 mod schema_cmd;
 mod serve;
 
+fn build_version() -> &'static str {
+    use std::sync::LazyLock;
+    static VERSION: LazyLock<String> = LazyLock::new(|| {
+        let version = env!("CARGO_PKG_VERSION");
+        let commit = env!("RIVET_GIT_COMMIT");
+        let branch = env!("RIVET_GIT_BRANCH");
+        let dirty: bool = env!("RIVET_GIT_DIRTY").parse().unwrap_or(false);
+        let staged: u32 = env!("RIVET_GIT_STAGED").parse().unwrap_or(0);
+        let modified: u32 = env!("RIVET_GIT_MODIFIED").parse().unwrap_or(0);
+        let untracked: u32 = env!("RIVET_GIT_UNTRACKED").parse().unwrap_or(0);
+        let date = env!("RIVET_BUILD_DATE");
+
+        let mut s = format!("{version} ({commit} {branch} {date})");
+        if dirty {
+            let mut parts = Vec::new();
+            if staged > 0 {
+                parts.push(format!("{staged} staged"));
+            }
+            if modified > 0 {
+                parts.push(format!("{modified} modified"));
+            }
+            if untracked > 0 {
+                parts.push(format!("{untracked} untracked"));
+            }
+            if parts.is_empty() {
+                s.push_str(" [dirty]");
+            } else {
+                s.push_str(&format!(" [{}]", parts.join(", ")));
+            }
+        }
+        s
+    });
+    &VERSION
+}
+
 #[derive(Parser)]
-#[command(name = "rivet", about = "SDLC artifact traceability and validation")]
+#[command(name = "rivet", about = "SDLC artifact traceability and validation", version = build_version())]
 struct Cli {
     /// Path to the project directory (containing rivet.yaml)
     #[arg(short, long, default_value = ".")]
@@ -323,6 +358,7 @@ fn run(cli: Cli) -> Result<bool> {
                 project_name,
                 project_path,
                 schemas_dir,
+                doc_dirs,
             ) = load_project_full(&cli)?;
             let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
             rt.block_on(serve::run(
@@ -334,6 +370,7 @@ fn run(cli: Cli) -> Result<bool> {
                 project_name,
                 project_path,
                 schemas_dir,
+                doc_dirs,
                 port,
             ))?;
             Ok(true)
@@ -1621,6 +1658,7 @@ fn load_project_full(
     String,
     PathBuf,
     PathBuf,
+    Vec<PathBuf>,
 )> {
     let config_path = cli.project.join("rivet.yaml");
     let config = rivet_core::load_project_config(&config_path)
@@ -1643,8 +1681,12 @@ fn load_project_full(
 
     // Load documents
     let mut doc_store = DocumentStore::new();
+    let mut doc_dirs = Vec::new();
     for docs_path in &config.docs {
         let dir = cli.project.join(docs_path);
+        if dir.is_dir() {
+            doc_dirs.push(dir.clone());
+        }
         let docs = document::load_documents(&dir)
             .with_context(|| format!("loading docs from '{docs_path}'"))?;
         for doc in docs {
@@ -1675,6 +1717,7 @@ fn load_project_full(
         project_name,
         project_path,
         schemas_dir,
+        doc_dirs,
     ))
 }
 

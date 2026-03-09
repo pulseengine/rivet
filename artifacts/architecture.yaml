@@ -15,6 +15,7 @@ artifacts:
       classifier-kind: type
       aadl-file: arch/rivet_system.aadl:49
       source-ref: arch/rivet_system.aadl:49-54
+      diagram: "root: RivetSystem::Rivet.Impl"
 
   - id: ARCH-SYS-002
     type: aadl-component

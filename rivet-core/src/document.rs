@@ -37,6 +37,20 @@ use std::path::{Path, PathBuf};
 use crate::error::Error;
 
 // ---------------------------------------------------------------------------
+// Artifact embedding info
+// ---------------------------------------------------------------------------
+
+/// Minimal artifact info for embedding in documents.
+#[derive(Debug, Clone)]
+pub struct ArtifactInfo {
+    pub id: String,
+    pub title: String,
+    pub art_type: String,
+    pub status: String,
+    pub description: String,
+}
+
+// ---------------------------------------------------------------------------
 // Data model
 // ---------------------------------------------------------------------------
 
@@ -290,7 +304,11 @@ fn heading_level(line: &str) -> Option<u8> {
 ///
 /// This is a lightweight renderer — not a full CommonMark implementation.
 /// It handles headings, paragraphs, bold/italic, lists, and `[[ID]]` links.
-pub fn render_to_html(doc: &Document, artifact_exists: impl Fn(&str) -> bool) -> String {
+pub fn render_to_html(
+    doc: &Document,
+    artifact_exists: impl Fn(&str) -> bool,
+    artifact_info: impl Fn(&str) -> Option<ArtifactInfo>,
+) -> String {
     let mut html = String::with_capacity(doc.body.len() * 2);
     let mut in_list = false;
     let mut in_ordered_list = false;
@@ -319,6 +337,12 @@ pub fn render_to_html(doc: &Document, artifact_exists: impl Fn(&str) -> bool) ->
                     html.push_str(&format!(
                         "<div class=\"aadl-diagram\" data-root=\"{root}\"><p class=\"aadl-loading\">Loading AADL diagram...</p></div>\n"
                     ));
+                } else if code_block_lang.as_deref() == Some("mermaid") {
+                    // Mermaid diagrams: emit a <pre class="mermaid"> block
+                    // that the mermaid.js library will render client-side.
+                    html.push_str("<pre class=\"mermaid\">");
+                    html.push_str(&code_block_lines.join("\n"));
+                    html.push_str("</pre>\n");
                 } else {
                     html.push_str("<pre><code>");
                     html.push_str(&code_block_lines.join("\n"));
@@ -416,7 +440,7 @@ pub fn render_to_html(doc: &Document, artifact_exists: impl Fn(&str) -> bool) ->
                 in_blockquote = false;
             }
             let text = &trimmed[level as usize + 1..];
-            let text = resolve_inline(text, &artifact_exists);
+            let text = resolve_inline(text, &artifact_exists, &artifact_info);
             html.push_str(&format!("<h{level}>{text}</h{level}>\n"));
             continue;
         }
@@ -455,7 +479,7 @@ pub fn render_to_html(doc: &Document, artifact_exists: impl Fn(&str) -> bool) ->
                 // First row is the header
                 html.push_str("<table><thead><tr>");
                 for cell in &cells {
-                    let text = resolve_inline(cell, &artifact_exists);
+                    let text = resolve_inline(cell, &artifact_exists, &artifact_info);
                     html.push_str(&format!("<th>{text}</th>"));
                 }
                 html.push_str("</tr></thead><tbody>\n");
@@ -464,7 +488,7 @@ pub fn render_to_html(doc: &Document, artifact_exists: impl Fn(&str) -> bool) ->
             } else if table_header_done {
                 html.push_str("<tr>");
                 for cell in &cells {
-                    let text = resolve_inline(cell, &artifact_exists);
+                    let text = resolve_inline(cell, &artifact_exists, &artifact_info);
                     html.push_str(&format!("<td>{text}</td>"));
                 }
                 html.push_str("</tr>\n");
@@ -495,7 +519,7 @@ pub fn render_to_html(doc: &Document, artifact_exists: impl Fn(&str) -> bool) ->
                 html.push_str("<blockquote>");
                 in_blockquote = true;
             }
-            let text = resolve_inline(bq_text, &artifact_exists);
+            let text = resolve_inline(bq_text, &artifact_exists, &artifact_info);
             html.push_str(&format!("<p>{text}</p>"));
             continue;
         }
@@ -523,7 +547,7 @@ pub fn render_to_html(doc: &Document, artifact_exists: impl Fn(&str) -> bool) ->
                 html.push_str("<ul>\n");
                 in_list = true;
             }
-            let text = resolve_inline(&trimmed[2..], &artifact_exists);
+            let text = resolve_inline(&trimmed[2..], &artifact_exists, &artifact_info);
             html.push_str(&format!("<li>{text}</li>\n"));
             continue;
         }
@@ -551,7 +575,7 @@ pub fn render_to_html(doc: &Document, artifact_exists: impl Fn(&str) -> bool) ->
                 html.push_str("<ol>\n");
                 in_ordered_list = true;
             }
-            let text = resolve_inline(rest, &artifact_exists);
+            let text = resolve_inline(rest, &artifact_exists, &artifact_info);
             html.push_str(&format!("<li>{text}</li>\n"));
             continue;
         }
@@ -580,7 +604,7 @@ pub fn render_to_html(doc: &Document, artifact_exists: impl Fn(&str) -> bool) ->
         } else {
             html.push('\n');
         }
-        html.push_str(&resolve_inline(trimmed, &artifact_exists));
+        html.push_str(&resolve_inline(trimmed, &artifact_exists, &artifact_info));
     }
 
     if in_paragraph {
@@ -619,12 +643,32 @@ fn ordered_list_text(line: &str) -> Option<&str> {
     rest.strip_prefix(". ")
 }
 
-/// Resolve inline formatting: `[[ID]]` links, **bold**, *italic*, `code`, [text](url).
-fn resolve_inline(text: &str, artifact_exists: &impl Fn(&str) -> bool) -> String {
+/// Resolve inline formatting: `[[ID]]` links, **bold**, *italic*, `code`, [text](url), ![alt](url).
+fn resolve_inline(
+    text: &str,
+    artifact_exists: &impl Fn(&str) -> bool,
+    artifact_info: &impl Fn(&str) -> Option<ArtifactInfo>,
+) -> String {
     let mut result = String::with_capacity(text.len() * 2);
     let mut chars = text.char_indices().peekable();
 
     while let Some((i, ch)) = chars.next() {
+        // Images: ![alt](url)
+        if ch == '!' && text[i..].starts_with("![") {
+            if let Some(link) = parse_markdown_link(&text[i + 1..]) {
+                let alt = html_escape(&link.text);
+                let src = html_escape(&link.url);
+                result.push_str(&format!(
+                    "<img src=\"{src}\" alt=\"{alt}\" style=\"max-width:100%;height:auto\" />"
+                ));
+                let skip_to = i + 1 + link.total_len;
+                while chars.peek().is_some_and(|&(j, _)| j < skip_to) {
+                    chars.next();
+                }
+                continue;
+            }
+        }
+
         // Inline code (backticks) — must come before bold/italic since content is literal.
         if ch == '`' {
             if let Some(end) = text[i + 1..].find('`') {
@@ -651,6 +695,52 @@ fn resolve_inline(text: &str, artifact_exists: &impl Fn(&str) -> bool) -> String
                     chars.next();
                 }
                 continue;
+            }
+        }
+
+        // Artifact embedding: {{artifact:ID}}
+        if ch == '{' && text[i..].starts_with("{{artifact:") {
+            if let Some(end) = text[i..].find("}}") {
+                let id = text[i + 11..i + end].trim();
+                if let Some(info) = artifact_info(id) {
+                    let desc_preview = if info.description.len() > 150 {
+                        format!("{}…", &info.description[..150])
+                    } else {
+                        info.description.clone()
+                    };
+                    result.push_str(&format!(
+                        "<div class=\"artifact-embed\">\
+                         <div class=\"artifact-embed-header\">\
+                         <a class=\"artifact-ref\" hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a>\
+                         <span class=\"type-badge\">{type_}</span>\
+                         <span class=\"status-badge\">{status}</span>\
+                         </div>\
+                         <div class=\"artifact-embed-title\">{title}</div>\
+                         <div class=\"artifact-embed-desc\">{desc}</div>\
+                         </div>",
+                        id = html_escape(id),
+                        type_ = html_escape(&info.art_type),
+                        status = html_escape(&info.status),
+                        title = html_escape(&info.title),
+                        desc = html_escape(&desc_preview),
+                    ));
+                    let skip_to = i + end + 2;
+                    while chars.peek().is_some_and(|&(j, _)| j < skip_to) {
+                        chars.next();
+                    }
+                    continue;
+                } else {
+                    // Broken reference
+                    result.push_str(&format!(
+                        "<span class=\"artifact-ref broken\">{{{{artifact:{}}}}}</span>",
+                        html_escape(id)
+                    ));
+                    let skip_to = i + end + 2;
+                    while chars.peek().is_some_and(|&(j, _)| j < skip_to) {
+                        chars.next();
+                    }
+                    continue;
+                }
             }
         }
 
@@ -898,7 +988,8 @@ See frontmatter.
     #[test]
     fn render_html_resolves_refs() {
         let doc = parse_document(SAMPLE_DOC, None).unwrap();
-        let html = render_to_html(&doc, |id| id == "REQ-001" || id == "REQ-002");
+        let html =
+            render_to_html(&doc, |id| id == "REQ-001" || id == "REQ-002", |_| None);
         assert!(html.contains("artifact-ref"));
         assert!(html.contains("hx-get=\"/artifacts/REQ-001\""));
         assert!(html.contains("class=\"artifact-ref broken\""));
@@ -907,7 +998,7 @@ See frontmatter.
     #[test]
     fn render_html_headings() {
         let doc = parse_document(SAMPLE_DOC, None).unwrap();
-        let html = render_to_html(&doc, |_| true);
+        let html = render_to_html(&doc, |_| true, |_| None);
         assert!(html.contains("<h1>"));
         assert!(html.contains("<h2>"));
         assert!(html.contains("<h3>"));
@@ -934,9 +1025,62 @@ See frontmatter.
     fn render_aadl_code_block_placeholder() {
         let content = "---\nid: DOC-001\ntitle: Architecture\n---\n\n## Overview\n\n```aadl\nroot: FlightControl::Controller.Basic\n```\n\nSome text after.\n";
         let doc = parse_document(content, None).unwrap();
-        let html = render_to_html(&doc, |_| true);
+        let html = render_to_html(&doc, |_| true, |_| None);
         assert!(html.contains("aadl-diagram"));
         assert!(html.contains("data-root=\"FlightControl::Controller.Basic\""));
         assert!(!html.contains("<pre><code>root: FlightControl"));
+    }
+
+    #[test]
+    fn artifact_embedding() {
+        let info_fn = |id: &str| -> Option<ArtifactInfo> {
+            if id == "REQ-001" {
+                Some(ArtifactInfo {
+                    id: "REQ-001".into(),
+                    title: "Test requirement".into(),
+                    art_type: "requirement".into(),
+                    status: "approved".into(),
+                    description: "A test requirement description".into(),
+                })
+            } else {
+                None
+            }
+        };
+        let content =
+            "---\nid: DOC-E\ntitle: Embed Test\n---\nSee {{artifact:REQ-001}} for details.\n";
+        let doc = parse_document(content, None).unwrap();
+        let html = render_to_html(&doc, |_| true, info_fn);
+        assert!(
+            html.contains("artifact-embed"),
+            "should contain embedded artifact card"
+        );
+        assert!(html.contains("REQ-001"), "should contain artifact ID");
+        assert!(
+            html.contains("Test requirement"),
+            "should contain artifact title"
+        );
+        assert!(
+            html.contains("type-badge"),
+            "should contain type badge"
+        );
+        assert!(
+            html.contains("status-badge"),
+            "should contain status badge"
+        );
+    }
+
+    #[test]
+    fn artifact_embedding_broken_ref() {
+        let content = "---\nid: DOC-B\ntitle: Broken\n---\nSee {{artifact:NOPE-999}} here.\n";
+        let doc = parse_document(content, None).unwrap();
+        let html = render_to_html(&doc, |_| true, |_| None);
+        assert!(
+            html.contains("artifact-ref broken"),
+            "broken embed should have broken class"
+        );
+        assert!(
+            html.contains("NOPE-999"),
+            "should show the broken ID"
+        );
     }
 }
