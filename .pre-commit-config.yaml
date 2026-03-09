@@ -61,6 +61,32 @@ repos:
         files: '(Cargo\.toml|Cargo\.lock)$'
         stages: [pre-push]
 
+      # ── Dogfood validation ─────────────────────────────────────
+      - id: rivet-validate
+        name: rivet validate (dogfood)
+        entry: rivet validate --strict
+        language: system
+        pass_filenames: false
+        files: '(artifacts/.*\.yaml|schemas/.*\.yaml|rivet\.yaml)$'
+
+      # ── Benchmarks (compile check only — not full run) ────────
+      - id: cargo-bench-check
+        name: cargo bench --no-run
+        entry: cargo bench --no-run
+        language: system
+        types: [rust]
+        pass_filenames: false
+        stages: [pre-push]
+
+      # ── Security: known vulnerabilities (RustSec advisory DB) ──────
+      - id: cargo-audit
+        name: cargo audit
+        entry: cargo audit
+        language: system
+        pass_filenames: false
+        files: '(Cargo\.toml|Cargo\.lock)$'
+        stages: [pre-push]
+
       # ── Security: license compliance, bans, sources, advisories ────
       - id: cargo-deny
         name: cargo deny check
@@ -69,3 +95,12 @@ repos:
         pass_filenames: false
         files: '(Cargo\.toml|Cargo\.lock|deny\.toml)$'
         stages: [pre-push]
+
+      # ── Mutation testing (pre-push, slow) ─────────────────────
+      - id: cargo-mutants
+        name: cargo mutants (smoke)
+        entry: bash -c 'cargo mutants --timeout 60 --jobs 4 -p rivet-core -- --lib 2>&1 | tail -5'
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+        verbose: true
