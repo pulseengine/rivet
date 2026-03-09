@@ -48,7 +48,7 @@ artifacts:
       alternatives: >
         Custom adjacency list implementation. Rejected because graph
         algorithms are subtle and petgraph is well-proven.
-      source-ref: rivet-core/src/graph.rs:1
+      source-ref: rivet-core/src/links.rs:1
 
   - id: DD-003
     type: design-decision
