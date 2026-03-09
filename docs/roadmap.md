@@ -75,6 +75,32 @@ The `arch/` directory contains AADL models for rivet's own architecture:
 (extensible adapter subsystem + WASM runtime), and `RivetDashboard`
 (axum/HTMX serve handler with view renderers and graph visualizer).
 
+## Phase 2.5 — Documentation & Agent Support (Complete)
+
+Phase 2.5 added built-in documentation, schema introspection, agent context
+generation, and machine-readable output — making rivet self-describing and
+consumable by both humans and AI agents.
+
+### Embedded Schemas & Scaffolding
+
+- [[FEAT-021]] — Schemas compiled into binary (include_str! with disk fallback)
+- [[FEAT-026]] — `rivet init --preset` for schema-aware project scaffolding
+
+### CLI Introspection Commands
+
+- [[FEAT-022]] — `rivet docs` with topic browsing, grep search, --format json
+- [[FEAT-023]] — `rivet schema` introspection (list, show, links, rules)
+- [[FEAT-024]] — `rivet context` generates .rivet/agent-context.md for AI agents
+
+### Machine-Readable Output
+
+- [[FEAT-025]] — `--format json` envelope on all CLI commands
+
+### Dashboard Enhancements
+
+- [[FEAT-027]] — Server-side syntax highlighting in source viewer and docs
+- [[FEAT-028]] — Help & Docs dashboard section (schema browser, link types, rules)
+
 ## Phase 3 — Sync & Extensibility (Planned)
 
 Phase 3 enables bidirectional synchronization with external ALM tools and
