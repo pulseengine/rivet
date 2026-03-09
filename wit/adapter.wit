@@ -83,22 +83,15 @@ interface adapter {
     supported-types: func() -> list<string>;
 
     /// Import artifacts from raw bytes
-    import: func(source: list<u8>, config: adapter-config) -> result<list<artifact>, adapter-error>;
+    %import: func(source: list<u8>, config: adapter-config) -> result<list<artifact>, adapter-error>;
 
     /// Export artifacts to raw bytes
-    export: func(artifacts: list<artifact>, config: adapter-config) -> result<list<u8>, adapter-error>;
+    %export: func(artifacts: list<artifact>, config: adapter-config) -> result<list<u8>, adapter-error>;
 }
 
 /// World for a rivet adapter component
 world rivet-adapter {
     export adapter;
-}
-
-/// Errors returned by renderer operations
-variant render-error {
-    parse-error(string),
-    no-root(string),
-    layout-error(string),
 }
 
 /// Interface for rendering AADL instance models to SVG.
@@ -107,6 +100,13 @@ variant render-error {
 /// from the given root component implementation, lays out the
 /// architecture, and returns an SVG string.
 interface renderer {
+    /// Errors returned by renderer operations
+    variant render-error {
+        parse-error(string),
+        no-root(string),
+        layout-error(string),
+    }
+
     /// Render an AADL instance tree rooted at `root` (e.g. "Pkg::Impl").
     ///
     /// `highlight` is an optional list of component paths to visually

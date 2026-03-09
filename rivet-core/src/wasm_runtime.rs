@@ -33,6 +33,20 @@ use crate::error::Error;
 use crate::model::Artifact;
 
 // ---------------------------------------------------------------------------
+// Generated WIT bindings (component-model typed interface)
+// ---------------------------------------------------------------------------
+
+/// Type-safe bindings generated from `wit/adapter.wit` for the
+/// `spar-component` world.  This gives us typed access to the
+/// exported `adapter` and `renderer` interfaces.
+mod wit_bindings {
+    wasmtime::component::bindgen!({
+        path: "../wit/adapter.wit",
+        world: "spar-component",
+    });
+}
+
+// ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
 
@@ -360,6 +374,68 @@ impl WasmAdapter {
         ))
     }
 
+    /// Call the guest `render` function from the renderer interface.
+    ///
+    /// This creates a fresh WASI-enabled store (optionally pre-opening
+    /// `aadl_dir` so the guest can read `.aadl` files), instantiates the
+    /// component using the generated WIT bindings, and calls the
+    /// `pulseengine:rivet/renderer.render` export.
+    pub fn call_render(
+        &self,
+        root: &str,
+        highlight: &[String],
+        aadl_dir: Option<&Path>,
+    ) -> Result<String, WasmError> {
+        // -- Build WASI context ------------------------------------------------
+        let mut wasi_builder = wasmtime_wasi::WasiCtxBuilder::new();
+        wasi_builder.inherit_stderr();
+
+        // Pre-open the AADL directory so the guest can read .aadl files.
+        if let Some(dir) = aadl_dir {
+            wasi_builder
+                .preopened_dir(
+                    dir,
+                    ".",
+                    wasmtime_wasi::DirPerms::READ,
+                    wasmtime_wasi::FilePerms::READ,
+                )
+                .map_err(|e| WasmError::Instantiation(format!("preopened dir: {}", e)))?;
+        }
+
+        let state = HostState {
+            wasi: wasi_builder.build(),
+            table: wasmtime::component::ResourceTable::new(),
+            limiter: self
+                .runtime_config
+                .max_memory_bytes
+                .map(|max| MemoryLimiter { max_memory: max }),
+        };
+
+        let mut store = Store::new(&self.engine, state);
+
+        if let Some(fuel) = self.runtime_config.fuel {
+            store
+                .set_fuel(fuel)
+                .map_err(|e| WasmError::Instantiation(e.to_string()))?;
+        }
+        if self.runtime_config.max_memory_bytes.is_some() {
+            store.limiter(|state| state.limiter.as_mut().unwrap());
+        }
+
+        // -- Instantiate via generated bindings --------------------------------
+        let linker = self.create_linker()?;
+
+        let bindings =
+            wit_bindings::SparComponent::instantiate(&mut store, &self.component, &linker)
+                .map_err(|e| WasmError::Instantiation(e.to_string()))?;
+
+        bindings
+            .pulseengine_rivet_renderer()
+            .call_render(&mut store, root, highlight)
+            .map_err(|e| WasmError::Guest(e.to_string()))?
+            .map_err(|e| WasmError::Guest(format!("render error: {:?}", e)))
+    }
+
     /// Call the guest `export` function.
     fn call_export(
         &self,
@@ -561,5 +637,38 @@ mod tests {
             Error::Adapter(msg) => assert!(msg.contains("test error")),
             other => panic!("expected Adapter error, got: {other:?}"),
         }
+    }
+
+    /// Load the real spar WASM component and call the renderer interface.
+    ///
+    /// Set `SPAR_WASM_PATH` to override the default component location.
+    /// The test is skipped if the component file does not exist.
+    #[test]
+    fn load_spar_wasm_component() {
+        let wasm_path = std::env::var("SPAR_WASM_PATH").unwrap_or_else(|_| {
+            "/Volumes/Home/git/pulseengine/spar/target/wasm32-wasip2/release/spar_wasm.wasm".into()
+        });
+        let path = Path::new(&wasm_path);
+        if !path.exists() {
+            eprintln!("Skipping: WASM component not found at {}", path.display());
+            return;
+        }
+
+        let runtime = WasmAdapterRuntime::with_defaults().unwrap();
+        let adapter = runtime.load_adapter(path).unwrap();
+
+        // Call render without any preopened AADL files.  The component should
+        // load and the interface should be callable, but we expect an error
+        // because there are no .aadl source files available to the guest.
+        let result = adapter.call_render("Test::S.I", &[], None);
+        assert!(result.is_err());
+        let err_msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            err_msg.contains("no .aadl files")
+                || err_msg.contains("render error")
+                || err_msg.contains("cannot instantiate"),
+            "unexpected error: {}",
+            err_msg
+        );
     }
 }

@@ -3,3 +3,7 @@
 *.swo
 .DS_Store
 .claude/worktrees/
+
+# WASM binary assets (built or downloaded, not committed)
+rivet-cli/assets/wasm/*.wasm
+rivet-cli/assets/wasm/js/
