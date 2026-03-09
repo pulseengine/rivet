@@ -4964,9 +4964,9 @@ fn highlight_yaml_line(line: &str) -> String {
         let key_part = &trimmed[..colon_pos];
         let rest = &trimmed[colon_pos..]; // starts with ':'
         // List prefix
-        if key_part.starts_with("- ") {
+        if let Some(after_dash) = key_part.strip_prefix("- ") {
             out.push_str("<span class=\"hl-punct\">-</span> ");
-            out.push_str(&format!("<span class=\"hl-key\">{}</span>", html_escape(&key_part[2..])));
+            out.push_str(&format!("<span class=\"hl-key\">{}</span>", html_escape(after_dash)));
         } else {
             out.push_str(&format!("<span class=\"hl-key\">{}</span>", html_escape(key_part)));
         }
@@ -4987,7 +4987,7 @@ fn highlight_yaml_line(line: &str) -> String {
 }
 
 fn find_yaml_colon(s: &str) -> Option<usize> {
-    let (search, offset) = if s.starts_with("- ") { (&s[2..], 2) } else { (s, 0) };
+    let (search, offset) = if let Some(rest) = s.strip_prefix("- ") { (rest, 2) } else { (s, 0) };
     let mut in_quote = false;
     let mut quote_char = ' ';
     for (i, c) in search.char_indices() {
@@ -6315,12 +6315,12 @@ async fn help_docs_topic(
             html.push('\n');
             continue;
         }
-        if line.starts_with("# ") {
-            html.push_str(&format!("<h2>{}</h2>", html_escape(&line[2..])));
-        } else if line.starts_with("## ") {
-            html.push_str(&format!("<h3 style=\"margin-top:1.5rem\">{}</h3>", html_escape(&line[3..])));
-        } else if line.starts_with("### ") {
-            html.push_str(&format!("<h4 style=\"margin-top:1rem\">{}</h4>", html_escape(&line[4..])));
+        if let Some(h1) = line.strip_prefix("# ") {
+            html.push_str(&format!("<h2>{}</h2>", html_escape(h1)));
+        } else if let Some(h2) = line.strip_prefix("## ") {
+            html.push_str(&format!("<h3 style=\"margin-top:1.5rem\">{}</h3>", html_escape(h2)));
+        } else if let Some(h3) = line.strip_prefix("### ") {
+            html.push_str(&format!("<h4 style=\"margin-top:1rem\">{}</h4>", html_escape(h3)));
         } else if line.starts_with('|') {
             if !in_table {
                 html.push_str(r#"<div style="overflow-x:auto;margin:.75rem 0"><table>"#);

@@ -321,8 +321,237 @@ fn run(cli: Cli) -> Result<bool> {
     }
 }
 
+/// Preset configuration for `rivet init`.
+struct InitPreset {
+    schemas: Vec<&'static str>,
+    /// Each entry: (filename, yaml_content)
+    sample_files: Vec<(&'static str, &'static str)>,
+}
+
+fn resolve_preset(preset: &str) -> Result<InitPreset> {
+    match preset {
+        "dev" => Ok(InitPreset {
+            schemas: vec!["common", "dev"],
+            sample_files: vec![("requirements.yaml", DEV_SAMPLE)],
+        }),
+        "aspice" => Ok(InitPreset {
+            schemas: vec!["common", "aspice"],
+            sample_files: vec![("requirements.yaml", ASPICE_SAMPLE)],
+        }),
+        "stpa" => Ok(InitPreset {
+            schemas: vec!["common", "stpa"],
+            sample_files: vec![("safety.yaml", STPA_SAMPLE)],
+        }),
+        "cybersecurity" => Ok(InitPreset {
+            schemas: vec!["common", "cybersecurity"],
+            sample_files: vec![("security.yaml", CYBERSECURITY_SAMPLE)],
+        }),
+        "aadl" => Ok(InitPreset {
+            schemas: vec!["common", "dev", "aadl"],
+            sample_files: vec![("architecture.yaml", AADL_SAMPLE)],
+        }),
+        other => anyhow::bail!(
+            "unknown preset: '{other}' (valid: dev, aspice, stpa, cybersecurity, aadl)"
+        ),
+    }
+}
+
+const DEV_SAMPLE: &str = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: First requirement
+    status: draft
+    description: >
+      Describe what the system shall do.
+    tags: [core]
+    fields:
+      priority: must
+      category: functional
+
+  - id: FEAT-001
+    type: feature
+    title: Initial feature
+    status: draft
+    description: >
+      A user-visible capability delivered by the project.
+    fields:
+      phase: phase-1
+    links:
+      - type: satisfies
+        target: REQ-001
+";
+
+const ASPICE_SAMPLE: &str = "\
+artifacts:
+  - id: SYSREQ-001
+    type: system-req
+    title: System shall provide data logging
+    status: draft
+    description: >
+      The system shall log all sensor data at 100Hz to non-volatile storage.
+    fields:
+      req-type: functional
+      priority: must
+      verification-criteria: >
+        Verify that sensor data is recorded at 100Hz under nominal load.
+
+  - id: SWREQ-001
+    type: sw-req
+    title: Logging service shall buffer sensor frames
+    status: draft
+    description: >
+      The logging service shall maintain a ring buffer of at least 1000
+      sensor frames to absorb transient write latency.
+    fields:
+      req-type: functional
+      priority: must
+    links:
+      - type: derives-from
+        target: SYSREQ-001
+
+  - id: SWARCH-001
+    type: sw-arch-component
+    title: SensorLogger component
+    status: draft
+    description: >
+      Software component responsible for buffering and persisting sensor
+      data frames.
+    links:
+      - type: allocated-from
+        target: SWREQ-001
+";
+
+const STPA_SAMPLE: &str = "\
+artifacts:
+  - id: L-001
+    type: loss
+    title: Loss of vehicle control
+    status: draft
+    description: >
+      Driver loses ability to control vehicle trajectory, potentially
+      resulting in collision or road departure.
+    fields:
+      stakeholders: [driver, passengers, other-road-users]
+
+  - id: H-001
+    type: hazard
+    title: Unintended acceleration while stationary
+    status: draft
+    description: >
+      Vehicle accelerates without driver command while the vehicle is
+      stationary, together with traffic conditions, leading to L-001.
+    fields:
+      severity: catastrophic
+    links:
+      - type: leads-to-loss
+        target: L-001
+
+  - id: UCA-001
+    type: uca
+    title: Throttle controller provides torque request when vehicle is stationary and driver has not pressed accelerator
+    status: draft
+    description: >
+      Providing a torque request while stationary and no pedal input
+      causes unintended acceleration (H-001).
+    fields:
+      uca-type: providing
+      context: >
+        Vehicle is stationary, brake applied, accelerator pedal not pressed.
+    links:
+      - type: issued-by
+        target: CTRL-001
+      - type: leads-to-hazard
+        target: H-001
+
+  - id: CTRL-001
+    type: controller
+    title: Throttle controller
+    status: draft
+    description: >
+      ECU responsible for computing torque requests from pedal position
+      and engine state.
+    fields:
+      controller-type: automated
+";
+
+const CYBERSECURITY_SAMPLE: &str = "\
+artifacts:
+  - id: TS-001
+    type: threat-scenario
+    title: Spoofed CAN messages inject false sensor readings
+    status: draft
+    description: >
+      An attacker with physical access to the OBD-II port sends
+      crafted CAN frames that spoof wheel-speed sensor values.
+    fields:
+      attack-vector: physical
+      attack-feasibility: medium
+      impact: severe
+    links:
+      - type: threatens
+        target: ASSET-001
+
+  - id: ASSET-001
+    type: asset
+    title: Wheel-speed sensor data
+    status: draft
+    description: >
+      CAN bus messages carrying wheel-speed sensor readings used
+      by ABS and ESC controllers.
+    fields:
+      asset-type: data
+      cybersecurity-properties: [integrity, availability]
+
+  - id: SECGOAL-001
+    type: cybersecurity-goal
+    title: Ensure integrity of wheel-speed data on CAN bus
+    status: draft
+    description: >
+      Wheel-speed sensor messages shall be authenticated to prevent
+      injection of spoofed values.
+    fields:
+      cal: \"3\"
+    links:
+      - type: mitigates
+        target: TS-001
+";
+
+const AADL_SAMPLE: &str = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: Sensor data acquisition
+    status: draft
+    description: >
+      The system shall acquire sensor data at a minimum rate of 100Hz.
+    fields:
+      priority: must
+      category: functional
+
+  - id: AADL-001
+    type: aadl-component
+    title: sensor_acquisition.impl
+    status: draft
+    description: >
+      AADL process implementation for sensor data acquisition,
+      containing periodic threads for each sensor channel.
+    fields:
+      category: process
+      aadl-package: sensor_subsystem
+      classifier-kind: implementation
+    links:
+      - type: allocated-from
+        target: REQ-001
+";
+
 /// Initialize a new rivet project.
-fn cmd_init(name: Option<&str>, preset: &str, schemas: &[String], dir: &std::path::Path) -> Result<bool> {
+fn cmd_init(
+    name: Option<&str>,
+    preset: &str,
+    schema_override: &[String],
+    dir: &std::path::Path,
+) -> Result<bool> {
     let dir = if dir == std::path::Path::new(".") {
         std::env::current_dir().context("resolving current directory")?
     } else {
@@ -345,25 +574,22 @@ fn cmd_init(name: Option<&str>, preset: &str, schemas: &[String], dir: &std::pat
         return Ok(false);
     }
 
+    // Resolve preset (before I/O so invalid preset fails early)
+    let init_preset = resolve_preset(preset)?;
+
     // Ensure the target directory exists
     std::fs::create_dir_all(&dir)
         .with_context(|| format!("creating directory {}", dir.display()))?;
 
-    // Resolve schemas: use explicit --schema if given, otherwise derive from preset
-    let resolved_schemas: Vec<String> = if schemas.is_empty() {
-        match preset {
-            "aspice" => vec!["common".to_string(), "aspice".to_string()],
-            "stpa" => vec!["common".to_string(), "stpa".to_string()],
-            "cybersecurity" => vec!["common".to_string(), "cybersecurity".to_string()],
-            "aadl" => vec!["common".to_string(), "aadl".to_string()],
-            _ => vec!["common".to_string(), "dev".to_string()],
-        }
+    // Use --schema override if provided, otherwise use preset defaults
+    let schemas: Vec<String> = if schema_override.is_empty() {
+        init_preset.schemas.iter().map(|s| s.to_string()).collect()
     } else {
-        schemas.to_vec()
+        schema_override.to_vec()
     };
 
     // Build schema list for the config
-    let schema_entries: String = resolved_schemas
+    let schema_entries: String = schemas
         .iter()
         .map(|s| format!("    - {s}"))
         .collect::<Vec<_>>()
@@ -387,28 +613,17 @@ sources:
         .with_context(|| format!("writing {}", config_path.display()))?;
     println!("  created {}", config_path.display());
 
-    // Create artifacts/ directory with a sample file
+    // Create artifacts/ directory with preset-specific sample files
     let artifacts_dir = dir.join("artifacts");
     std::fs::create_dir_all(&artifacts_dir)
         .with_context(|| format!("creating {}", artifacts_dir.display()))?;
 
-    let sample_artifact_path = artifacts_dir.join("requirements.yaml");
-    let sample_artifact = "\
-artifacts:
-  - id: REQ-001
-    type: requirement
-    title: First requirement
-    status: draft
-    description: >
-      Describe what the system shall do.
-    tags: [core]
-    fields:
-      priority: must
-      category: functional
-";
-    std::fs::write(&sample_artifact_path, sample_artifact)
-        .with_context(|| format!("writing {}", sample_artifact_path.display()))?;
-    println!("  created {}", sample_artifact_path.display());
+    for (filename, content) in &init_preset.sample_files {
+        let path = artifacts_dir.join(filename);
+        std::fs::write(&path, content)
+            .with_context(|| format!("writing {}", path.display()))?;
+        println!("  created {}", path.display());
+    }
 
     // Create docs/ directory with a sample document
     let docs_dir = dir.join("docs");
@@ -442,7 +657,7 @@ rivet stats        # Show summary statistics
     println!("  created {}", sample_doc_path.display());
 
     println!(
-        "\nInitialized rivet project '{}' in {}",
+        "\nInitialized rivet project '{}' in {} (preset: {preset})",
         project_name,
         dir.display()
     );
@@ -1085,8 +1300,13 @@ fn cmd_schema(cli: &Cli, action: &SchemaAction) -> Result<bool> {
 
 /// Generate .rivet/agent-context.md from project state.
 fn cmd_context(cli: &Cli) -> Result<bool> {
+    let config_path = cli.project.join("rivet.yaml");
+    let config = rivet_core::load_project_config(&config_path)
+        .with_context(|| format!("loading {}", config_path.display()))?;
+
     let (store, schema, graph, doc_store) = load_project_with_docs(cli)?;
     let diagnostics = validate::validate(&store, &schema, &graph);
+    let coverage_report = coverage::compute_coverage(&store, &schema, &graph);
 
     let rivet_dir = cli.project.join(".rivet");
     std::fs::create_dir_all(&rivet_dir)
@@ -1094,47 +1314,166 @@ fn cmd_context(cli: &Cli) -> Result<bool> {
 
     let mut out = String::new();
     out.push_str("# Rivet Agent Context\n\n");
-    out.push_str("Auto-generated — do not edit.\n\n");
+    out.push_str("Auto-generated by `rivet context` — do not edit.\n\n");
 
-    // Artifact summary
+    // ── 1. Project configuration ────────────────────────────────────────
+    out.push_str("## Project\n\n");
+    out.push_str(&format!("- **Name:** {}\n", config.project.name));
+    if let Some(ref v) = config.project.version {
+        out.push_str(&format!("- **Version:** {v}\n"));
+    }
+    out.push_str(&format!(
+        "- **Schemas:** {}\n",
+        config.project.schemas.join(", ")
+    ));
+    out.push_str(&format!(
+        "- **Sources:** {}\n",
+        config
+            .sources
+            .iter()
+            .map(|s| format!("{} ({})", s.path, s.format))
+            .collect::<Vec<_>>()
+            .join(", ")
+    ));
+    if !config.docs.is_empty() {
+        out.push_str(&format!("- **Docs:** {}\n", config.docs.join(", ")));
+    }
+    if let Some(ref r) = config.results {
+        out.push_str(&format!("- **Results:** {r}\n"));
+    }
+    out.push('\n');
+
+    // ── 2. Artifact summary with example IDs ────────────────────────────
     out.push_str("## Artifacts\n\n");
     let mut types: Vec<&str> = store.types().collect();
     types.sort();
-    out.push_str("| Type | Count |\n|------|-------|\n");
+    out.push_str("| Type | Count | Example IDs |\n|------|-------|-------------|\n");
     for t in &types {
-        out.push_str(&format!("| {} | {} |\n", t, store.count_by_type(t)));
+        let ids = store.by_type(t);
+        let examples: Vec<&str> = ids.iter().take(3).map(|id| id.as_str()).collect();
+        out.push_str(&format!(
+            "| {} | {} | {} |\n",
+            t,
+            store.count_by_type(t),
+            examples.join(", ")
+        ));
     }
-    out.push_str(&format!("| **Total** | **{}** |\n\n", store.len()));
+    out.push_str(&format!("| **Total** | **{}** | |\n\n", store.len()));
 
-    // Schema types
-    out.push_str("## Available Types\n\n");
+    // ── 3. Schema summary (types + required fields) ─────────────────────
+    out.push_str("## Schema\n\n");
     let mut stypes: Vec<_> = schema.artifact_types.values().collect();
     stypes.sort_by_key(|t| &t.name);
     for t in &stypes {
-        out.push_str(&format!("- `{}` — {}\n", t.name, t.description));
+        let required: Vec<&str> = t
+            .fields
+            .iter()
+            .filter(|f| f.required)
+            .map(|f| f.name.as_str())
+            .collect();
+        let req_str = if required.is_empty() {
+            String::from("(none)")
+        } else {
+            required.join(", ")
+        };
+        out.push_str(&format!(
+            "- **`{}`** — {}  \n  Required fields: {}\n",
+            t.name, t.description, req_str
+        ));
     }
 
     // Link types
-    out.push_str("\n## Link Types\n\n");
+    out.push_str("\n### Link Types\n\n");
     let mut links: Vec<_> = schema.link_types.values().collect();
     links.sort_by_key(|l| &l.name);
     for l in &links {
         let inv = l.inverse.as_deref().unwrap_or("-");
         out.push_str(&format!("- `{}` (inverse: `{}`)\n", l.name, inv));
     }
+    out.push('\n');
 
-    // Validation summary
-    let errors = diagnostics.iter().filter(|d| d.severity == Severity::Error).count();
-    let warnings = diagnostics.iter().filter(|d| d.severity == Severity::Warning).count();
+    // ── 4. Traceability rules ───────────────────────────────────────────
+    out.push_str("## Traceability Rules\n\n");
+    if schema.traceability_rules.is_empty() {
+        out.push_str("No traceability rules defined.\n\n");
+    } else {
+        out.push_str("| Rule | Source Type | Severity | Description |\n");
+        out.push_str("|------|------------|----------|-------------|\n");
+        for rule in &schema.traceability_rules {
+            let sev = match rule.severity {
+                Severity::Error => "error",
+                Severity::Warning => "warning",
+                Severity::Info => "info",
+            };
+            out.push_str(&format!(
+                "| {} | {} | {} | {} |\n",
+                rule.name, rule.source_type, sev, rule.description
+            ));
+        }
+        out.push('\n');
+    }
+
+    // ── 5. Coverage summary ─────────────────────────────────────────────
+    out.push_str("## Coverage\n\n");
     out.push_str(&format!(
-        "\n## Validation\n\n{} errors, {} warnings\n\n",
+        "**Overall: {:.1}%**\n\n",
+        coverage_report.overall_coverage()
+    ));
+    if !coverage_report.entries.is_empty() {
+        out.push_str("| Rule | Source Type | Covered | Total | % |\n");
+        out.push_str("|------|------------|---------|-------|---|\n");
+        for entry in &coverage_report.entries {
+            out.push_str(&format!(
+                "| {} | {} | {} | {} | {:.1}% |\n",
+                entry.rule_name,
+                entry.source_type,
+                entry.covered,
+                entry.total,
+                entry.percentage()
+            ));
+        }
+        out.push('\n');
+    }
+
+    // ── 6. Validation summary ───────────────────────────────────────────
+    let errors = diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Error)
+        .count();
+    let warnings = diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Warning)
+        .count();
+    out.push_str(&format!(
+        "## Validation\n\n{} errors, {} warnings\n\n",
         errors, warnings
     ));
 
     // Documents
     if !doc_store.is_empty() {
-        out.push_str(&format!("## Documents\n\n{} loaded\n", doc_store.len()));
+        out.push_str(&format!(
+            "## Documents\n\n{} documents loaded\n\n",
+            doc_store.len()
+        ));
     }
+
+    // ── 7. Quick command reference ──────────────────────────────────────
+    out.push_str("## Commands\n\n");
+    out.push_str("```bash\n");
+    out.push_str("rivet validate              # validate all artifacts\n");
+    out.push_str("rivet list                  # list all artifacts\n");
+    out.push_str("rivet list -t <type>        # filter by type\n");
+    out.push_str("rivet stats                 # artifact counts + orphans\n");
+    out.push_str("rivet coverage              # traceability coverage report\n");
+    out.push_str("rivet matrix --from X --to Y  # traceability matrix\n");
+    out.push_str("rivet diff --base A --head B  # compare artifact sets\n");
+    out.push_str("rivet schema list           # list schema types\n");
+    out.push_str("rivet schema show <type>    # show type details\n");
+    out.push_str("rivet schema rules          # list traceability rules\n");
+    out.push_str("rivet export -f generic-yaml  # export as YAML\n");
+    out.push_str("rivet serve                 # start dashboard on :3000\n");
+    out.push_str("rivet context               # regenerate this file\n");
+    out.push_str("```\n");
 
     let context_path = rivet_dir.join("agent-context.md");
     std::fs::write(&context_path, &out)
