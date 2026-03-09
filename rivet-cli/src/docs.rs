@@ -40,6 +40,12 @@ const TOPICS: &[DocTopic] = &[
         content: JSON_DOC,
     },
     DocTopic {
+        slug: "documents",
+        title: "Documents — markdown with frontmatter, images, and diagrams",
+        category: "Reference",
+        content: DOCUMENTS_DOC,
+    },
+    DocTopic {
         slug: "schema/common",
         title: "Common base fields and link types",
         category: "Schemas",
@@ -327,6 +333,131 @@ rivet schema list --format json | jq -r '.artifact_types[] | [.name, .descriptio
 ```bash
 rivet validate --format json | jq -e '.errors == 0' > /dev/null && echo "PASS" || echo "FAIL"
 ```
+"#;
+
+const DOCUMENTS_DOC: &str = r#"# Documents
+
+Rivet treats markdown files as first-class project documents. Documents are
+loaded from directories listed under `docs:` in `rivet.yaml`, parsed for
+YAML frontmatter, and scanned for artifact references.
+
+## Directory Layout
+
+```yaml
+# rivet.yaml
+docs:
+  - docs        # loads docs/*.md recursively
+  - arch        # loads arch/*.md recursively
+```
+
+Each `.md` file becomes a document in the dashboard's Documents view.
+
+## Frontmatter
+
+Every document should start with a YAML frontmatter block:
+
+```yaml
+---
+id: DOC-SRS
+title: Software Requirements Specification
+type: specification
+status: approved
+tags: [requirements, safety]
+---
+```
+
+| Field  | Required | Description                              |
+|--------|----------|------------------------------------------|
+| id     | yes      | Unique document identifier               |
+| title  | yes      | Display title                            |
+| type   | no       | Document type (specification, plan, etc.) |
+| status | no       | Lifecycle status (draft, approved, etc.)  |
+| tags   | no       | Categorization tags                      |
+
+## Artifact References
+
+Use `[[ID]]` syntax to reference artifacts anywhere in the document body:
+
+```markdown
+The latency requirement [[REQ-001]] is satisfied by design decision [[DD-005]].
+```
+
+These are rendered as clickable links in the dashboard and tracked in the
+document-artifact linkage view. Broken references (IDs not found in the
+artifact store) are visually flagged.
+
+## Images
+
+Embed images using standard markdown syntax:
+
+```markdown
+![Architecture diagram](images/arch-overview.png)
+![Sequence flow](images/flow.svg)
+```
+
+Images are resolved relative to the document's `docs:` directory.
+Place images in a subdirectory (e.g. `docs/images/`) and reference them
+with a relative path.
+
+Supported formats: PNG, JPEG, GIF, SVG, WebP.
+
+In the dashboard, image paths are served via `/docs-asset/` — e.g.
+`images/arch.png` in a doc becomes `/docs-asset/images/arch.png`.
+
+## Mermaid Diagrams
+
+Embed diagrams using fenced code blocks with the `mermaid` language tag:
+
+````markdown
+```mermaid
+graph TD
+    REQ-001 -->|satisfies| FEAT-001
+    REQ-001 -->|derives-from| SYS-REQ-001
+    DD-005 -->|implements| REQ-001
+```
+````
+
+Mermaid diagrams are rendered client-side in the dashboard. Supported
+diagram types include:
+
+- **flowchart / graph** — dependency and flow diagrams
+- **sequence** — interaction sequences
+- **state** — state machines
+- **class** — structure diagrams
+- **gantt** — timeline views
+- **C4** — architecture (C4 model)
+
+### Tips
+
+- Use artifact IDs as node names to match traceability
+- Keep diagrams focused (10-20 nodes max) for readability
+- The `mermaid` block is passed through as-is in CLI text output
+
+## AADL Diagrams
+
+If you have spar (AADL parser) integration, use `aadl` code blocks:
+
+````markdown
+```aadl
+root: flight_controller
+```
+````
+
+These are rendered as interactive architecture diagrams via the WASM runtime.
+
+## Sections and TOC
+
+Headings (`##`, `###`, etc.) are parsed into sections. Documents with more
+than two sections automatically get a table of contents in the dashboard.
+Section-level artifact reference counts are shown in the TOC.
+
+## Validation
+
+Documents participate in validation:
+
+- **Broken references**: `[[ID]]` pointing to nonexistent artifacts are warnings
+- **Coverage**: The doc-linkage view shows which artifacts are referenced in docs
+- **Orphan detection**: Artifacts never referenced in any document are flagged
 "#;
 
 // ── Public API ──────────────────────────────────────────────────────────

@@ -19,6 +19,15 @@ artifacts:
       alternatives: >
         Per-tool REST adapters (Polarion REST, DOORS DNG API). Rejected
         because each requires separate auth, pagination, and schema mapping.
+      diagram: |
+        graph LR
+          A[Rivet Core] -->|OSLC| B[Polarion]
+          A -->|OSLC| C[DOORS]
+          A -->|OSLC| D[codebeamer]
+          style A fill:#e8f4fd,stroke:#0550ae
+          style B fill:#f0f0f0,stroke:#666
+          style C fill:#f0f0f0,stroke:#666
+          style D fill:#f0f0f0,stroke:#666
 
   - id: DD-002
     type: design-decision

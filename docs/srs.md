@@ -82,6 +82,33 @@ audit, deny, vet, coverage).
 
 [[REQ-011]] pins Rust edition 2024 with MSRV 1.85.
 
+### 3.7 Traceability Flow
+
+The following diagram shows the traceability chain from stakeholder needs
+through to verification evidence:
+
+```mermaid
+graph TD
+    REQ[Requirements] -->|satisfies| DD[Design Decisions]
+    REQ -->|allocated-to| ARCH[Architecture]
+    DD -->|implemented-by| FEAT[Features]
+    FEAT -->|verified-by| TEST[Test Artifacts]
+    TEST -->|evidence| RES[Test Results]
+    style REQ fill:#e8f4fd,stroke:#0550ae
+    style ARCH fill:#f0e6ff,stroke:#6639ba
+    style TEST fill:#e6ffe6,stroke:#15713a
+```
+
+### 3.8 Key Requirement Details
+
+The following requirement is the cornerstone of the system:
+
+{{artifact:REQ-001}}
+
+And the design decision that shapes tool integration:
+
+{{artifact:DD-001}}
+
 ## 4. Glossary
 
 See the glossary panel below (defined in document frontmatter).

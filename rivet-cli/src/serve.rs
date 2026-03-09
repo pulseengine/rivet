@@ -169,6 +169,8 @@ struct AppState {
     project_path_buf: PathBuf,
     /// Path to the schemas directory (for reload).
     schemas_dir: PathBuf,
+    /// Resolved docs directories (for serving images/assets).
+    doc_dirs: Vec<PathBuf>,
 }
 
 /// Convenience alias so handler signatures stay compact.
@@ -199,8 +201,12 @@ fn reload_state(
     let graph = LinkGraph::build(&store, &schema);
 
     let mut doc_store = DocumentStore::new();
+    let mut doc_dirs = Vec::new();
     for docs_path in &config.docs {
         let dir = project_path.join(docs_path);
+        if dir.is_dir() {
+            doc_dirs.push(dir.clone());
+        }
         let docs = rivet_core::document::load_documents(&dir)
             .with_context(|| format!("loading docs from '{docs_path}'"))?;
         for doc in docs {
@@ -247,6 +253,7 @@ fn reload_state(
         context,
         project_path_buf: project_path.to_path_buf(),
         schemas_dir: schemas_dir.to_path_buf(),
+        doc_dirs,
     })
 }
 
@@ -261,6 +268,7 @@ pub async fn run(
     project_name: String,
     project_path: PathBuf,
     schemas_dir: PathBuf,
+    doc_dirs: Vec<PathBuf>,
     port: u16,
 ) -> Result<()> {
     let git = capture_git_info(&project_path);
@@ -290,6 +298,7 @@ pub async fn run(
         context,
         project_path_buf: project_path,
         schemas_dir,
+        doc_dirs,
     }));
 
     let app = Router::new()
@@ -326,6 +335,7 @@ pub async fn run(
         .route("/help/schema/{name}", get(help_schema_show))
         .route("/help/links", get(help_links_view))
         .route("/help/rules", get(help_rules_view))
+        .route("/docs-asset/{*path}", get(docs_asset))
         .route("/reload", post(reload_handler))
         .with_state(state)
         .layer(axum::middleware::from_fn(redirect_non_htmx));
@@ -356,6 +366,7 @@ async fn redirect_non_htmx(
         && !path.starts_with("/api/")
         && !path.starts_with("/wasm/")
         && !path.starts_with("/source-raw/")
+        && !path.starts_with("/docs-asset/")
     {
         let goto = urlencoding::encode(&path);
         return axum::response::Redirect::to(&format!("/?goto={goto}")).into_response();
@@ -496,7 +507,10 @@ async fn wasm_asset(Path(path): Path<String>) -> impl IntoResponse {
         if let Ok(bytes) = std::fs::read(candidate) {
             return (
                 axum::http::StatusCode::OK,
-                [(axum::http::header::CONTENT_TYPE, content_type)],
+                [
+                    (axum::http::header::CONTENT_TYPE, content_type),
+                    (axum::http::header::CACHE_CONTROL, "no-cache"),
+                ],
                 bytes,
             )
                 .into_response();
@@ -535,11 +549,12 @@ async fn reload_handler(
 
             // Redirect back to wherever the user was (HTMX sends HX-Current-URL).
             // Extract the path portion from the full URL (e.g. "http://localhost:3001/documents/DOC-001" → "/documents/DOC-001").
+            // Navigate back to wherever the user was (HTMX sends HX-Current-URL).
+            // HX-Location does a client-side HTMX navigation (fetch + swap + push-url).
             let redirect_url = headers
                 .get("HX-Current-URL")
                 .and_then(|v| v.to_str().ok())
                 .and_then(|full_url| {
-                    // Find the path after the authority (scheme://host[:port])
                     full_url
                         .find("://")
                         .and_then(|i| full_url[i + 3..].find('/'))
@@ -550,9 +565,14 @@ async fn reload_handler(
                 })
                 .unwrap_or_else(|| "/".to_owned());
 
+            let location_json = format!(
+                "{{\"path\":\"{}\",\"target\":\"#content\"}}",
+                redirect_url.replace('"', "\\\"")
+            );
+
             (
                 axum::http::StatusCode::OK,
-                [("HX-Redirect", redirect_url)],
+                [("HX-Location", location_json)],
                 "reloaded".to_owned(),
             )
         }
@@ -560,11 +580,61 @@ async fn reload_handler(
             eprintln!("reload error: {e:#}");
             (
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                [("HX-Redirect", "/".to_owned())],
+                [("HX-Location", "{\"path\":\"/\",\"target\":\"#content\"}".to_owned())],
                 format!("reload failed: {e}"),
             )
         }
     }
+}
+
+/// GET /docs-asset/{*path} — serve static files (images, SVG, etc.) from docs directories.
+async fn docs_asset(
+    State(state): State<SharedState>,
+    Path(path): Path<String>,
+) -> impl IntoResponse {
+    let state = state.read().await;
+
+    // Sanitize: reject path traversal
+    if path.contains("..") {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            [("Content-Type", "text/plain")],
+            Vec::new(),
+        );
+    }
+
+    // Search through all doc directories for the requested file
+    for dir in &state.doc_dirs {
+        let file_path = dir.join(&path);
+        if file_path.is_file() {
+            if let Ok(bytes) = std::fs::read(&file_path) {
+                let content_type = match file_path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("")
+                {
+                    "png" => "image/png",
+                    "jpg" | "jpeg" => "image/jpeg",
+                    "gif" => "image/gif",
+                    "svg" => "image/svg+xml",
+                    "webp" => "image/webp",
+                    "pdf" => "application/pdf",
+                    _ => "application/octet-stream",
+                };
+                return (
+                    axum::http::StatusCode::OK,
+                    [("Content-Type", content_type)],
+                    bytes,
+                );
+            }
+        }
+    }
+
+    (
+        axum::http::StatusCode::NOT_FOUND,
+        [("Content-Type", "text/plain")],
+        b"not found".to_vec(),
+    )
 }
 
 // ── Color palette ────────────────────────────────────────────────────────
@@ -724,6 +794,13 @@ td{border-bottom:1px solid var(--border)}
 tbody tr{transition:background var(--transition)}
 tbody tr:nth-child(even){background:rgba(0,0,0,.015)}
 tbody tr:hover{background:rgba(58,134,255,.04)}
+.tbl-filter-wrap{margin-bottom:.5rem}
+.tbl-filter{width:100%;max-width:20rem;padding:.4rem .65rem;font-size:.85rem;font-family:var(--mono);
+  border:1px solid var(--border);border-radius:5px;background:var(--surface);color:var(--text);
+  outline:none;transition:border-color var(--transition)}
+.tbl-filter:focus{border-color:var(--accent)}
+.tbl-sort-arrow{font-size:.7rem;opacity:.6;margin-left:.25rem}
+th:hover .tbl-sort-arrow{opacity:1}
 td a{font-family:var(--mono);font-size:.85rem;font-weight:500}
 
 /* ── Badges ───────────────────────────────────────────────────── */
@@ -946,6 +1023,8 @@ details.diff-row>.diff-detail{padding:.75rem 1.25rem;background:rgba(0,0,0,.01);
 .doc-body p{margin:.5rem 0}
 .doc-body ul{margin:.5rem 0 .5rem 1.5rem}
 .doc-body li{margin:.2rem 0}
+.doc-body img{border-radius:6px;margin:.75rem 0;box-shadow:0 2px 8px rgba(0,0,0,.1)}
+.doc-body pre.mermaid{background:transparent;border:1px solid var(--border);border-radius:6px;padding:1rem;text-align:center}
 .artifact-ref{display:inline-flex;align-items:center;padding:.15rem .5rem;border-radius:5px;
      font-size:.8rem;font-weight:600;font-family:var(--mono);background:#edf2ff;
      color:#3a63c7;cursor:pointer;text-decoration:none;
@@ -1090,6 +1169,27 @@ details.trace-details[open]>summary .trace-chevron{transform:rotate(90deg)}
 .trace-status-approved{background:rgba(21,113,58,.1);color:#15713a}
 .trace-status-draft{background:rgba(184,134,11,.1);color:#b8860b}
 
+/* ── Artifact embedding in docs ────────────────────────────────── */
+.artifact-embed{margin:.75rem 0;padding:.75rem 1rem;background:var(--card-bg);border:1px solid var(--border);
+  border-radius:var(--radius);border-left:3px solid var(--accent)}
+.artifact-embed-header{display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem}
+.artifact-embed-header .artifact-ref{font-family:var(--mono);font-size:.85rem;font-weight:600}
+.artifact-embed-title{font-weight:600;font-size:.92rem;color:var(--text)}
+.artifact-embed-desc{font-size:.82rem;color:var(--text-secondary);margin-top:.25rem;line-height:1.5}
+
+/* ── Diagram in artifact detail ────────────────────────────────── */
+.artifact-diagram{margin:1rem 0}
+.artifact-diagram .mermaid{background:var(--card-bg);padding:1rem;border-radius:var(--radius);
+  border:1px solid var(--border)}
+
+/* ── AADL SVG style overrides (match etch) ────────────────────── */
+.aadl-viewport svg text{font-family:system-ui,-apple-system,BlinkMacSystemFont,sans-serif !important;
+  font-size:12px !important}
+.aadl-viewport svg rect,.aadl-viewport svg polygon{rx:6;ry:6}
+.aadl-viewport svg .node rect{stroke-width:1.5px;filter:drop-shadow(0 1px 3px rgba(0,0,0,.1))}
+.aadl-viewport svg .edge path,.aadl-viewport svg .edge line{stroke:#888 !important;stroke-width:1.2px}
+.aadl-viewport svg .edge polygon{fill:#888 !important;stroke:#888 !important}
+
 /* ── Scrollbar (subtle) ───────────────────────────────────────── */
 ::-webkit-scrollbar{width:6px;height:6px}
 ::-webkit-scrollbar-track{background:transparent}
@@ -1151,14 +1251,34 @@ details.trace-details[open]>summary .trace-chevron{transform:rotate(90deg)}
   width:1.7rem;height:1.7rem;cursor:pointer;font-size:.85rem;line-height:1;display:flex;
   align-items:center;justify-content:center;color:var(--text-secondary);transition:all .15s}
 .aadl-controls button:hover{background:var(--primary);color:#fff;border-color:var(--primary)}
-.aadl-viewport{overflow:hidden;padding:.5rem;cursor:grab;min-height:200px;position:relative}
+.aadl-viewport{overflow:hidden;cursor:grab;min-height:300px;position:relative;background:var(--body-bg)}
 .aadl-viewport.grabbing{cursor:grabbing}
-.aadl-viewport svg{width:100%;height:auto;transition:transform .15s ease;transform-origin:center center}
-.aadl-viewport svg .node rect{rx:6;ry:6;filter:drop-shadow(0 1px 2px rgba(0,0,0,.08))}
+.aadl-viewport svg{transform-origin:0 0;position:absolute;top:0;left:0}
+.aadl-viewport svg .node rect,.aadl-viewport svg .node polygon,.aadl-viewport svg .node path,.aadl-viewport svg .node ellipse{filter:drop-shadow(0 1px 2px rgba(0,0,0,.08))}
 .aadl-viewport svg .node text{font-family:system-ui,-apple-system,sans-serif}
 .aadl-viewport svg .edge path{stroke-dasharray:none}
 .aadl-loading{color:var(--text-secondary);font-style:italic;padding:2rem;text-align:center}
 .aadl-error{color:var(--danger);font-style:italic;padding:1rem}
+.aadl-analysis{border-top:1px solid var(--border);max-height:220px;overflow-y:auto;font-size:.78rem}
+.aadl-analysis-header{display:flex;align-items:center;gap:.5rem;padding:.4rem 1rem;
+  background:var(--nav-bg);font-weight:600;font-size:.75rem;color:var(--text-secondary);
+  position:sticky;top:0;z-index:1;border-bottom:1px solid var(--border)}
+.aadl-analysis-header .badge-count{display:inline-flex;align-items:center;justify-content:center;
+  min-width:1.3rem;height:1.3rem;border-radius:99px;font-size:.65rem;font-weight:700;padding:0 .3rem}
+.badge-error{background:var(--danger);color:#fff}
+.badge-warning{background:#e8a735;color:#fff}
+.badge-info{background:var(--primary);color:#fff}
+.aadl-diag{display:flex;align-items:baseline;gap:.5rem;padding:.3rem 1rem;border-bottom:1px solid var(--border)}
+.aadl-diag:last-child{border-bottom:none}
+.aadl-diag:hover{background:rgba(0,0,0,.03)}
+.aadl-diag .sev{flex-shrink:0;font-size:.65rem;font-weight:700;text-transform:uppercase;
+  padding:.1rem .35rem;border-radius:var(--radius-sm);letter-spacing:.03em}
+.sev-error{background:#fde8e8;color:var(--danger)}
+.sev-warning{background:#fef3cd;color:#856404}
+.sev-info{background:#d1ecf1;color:#0c5460}
+.aadl-diag .diag-path{color:var(--text-secondary);font-family:var(--mono);font-size:.72rem;flex-shrink:0}
+.aadl-diag .diag-msg{color:var(--text);flex:1}
+.aadl-diag .diag-analysis{color:var(--text-secondary);font-size:.68rem;opacity:.7;flex-shrink:0}
 "#;
 
 // ── Pan/zoom JS ──────────────────────────────────────────────────────────
@@ -1842,12 +1962,12 @@ async function initAadlDiagrams(){
       controls.className = 'aadl-controls';
       var btnOut = document.createElement('button');
       btnOut.setAttribute('data-zoom','-1'); btnOut.title = 'Zoom out'; btnOut.textContent = '\u2212';
-      var btnReset = document.createElement('button');
-      btnReset.setAttribute('data-zoom','0'); btnReset.title = 'Reset zoom'; btnReset.textContent = '1:1';
+      var btnFit = document.createElement('button');
+      btnFit.setAttribute('data-zoom','0'); btnFit.title = 'Fit to view'; btnFit.textContent = 'Fit';
       var btnIn = document.createElement('button');
       btnIn.setAttribute('data-zoom','1'); btnIn.title = 'Zoom in'; btnIn.textContent = '+';
       controls.appendChild(btnOut);
-      controls.appendChild(btnReset);
+      controls.appendChild(btnFit);
       controls.appendChild(btnIn);
       caption.appendChild(controls);
       container.appendChild(caption);
@@ -1867,6 +1987,59 @@ async function initAadlDiagrams(){
       container.appendChild(viewport);
       initZoomPan(viewport, imported);
       initDiagramInteraction(viewport);
+
+      // Run analysis and display diagnostics panel
+      try {
+        var diags = renderer.analyze(root);
+        if(diags && diags.length > 0){
+          var panel = document.createElement('div');
+          panel.className = 'aadl-analysis';
+
+          // Header with severity counts
+          var hdr = document.createElement('div');
+          hdr.className = 'aadl-analysis-header';
+          hdr.textContent = 'Analysis ';
+          var errors = diags.filter(function(d){ return d.severity === 'error'; }).length;
+          var warnings = diags.filter(function(d){ return d.severity === 'warning'; }).length;
+          var infos = diags.filter(function(d){ return d.severity === 'info'; }).length;
+          if(errors > 0){ var b = document.createElement('span'); b.className = 'badge-count badge-error'; b.textContent = errors; hdr.appendChild(b); }
+          if(warnings > 0){ var b = document.createElement('span'); b.className = 'badge-count badge-warning'; b.textContent = warnings; hdr.appendChild(b); }
+          if(infos > 0){ var b = document.createElement('span'); b.className = 'badge-count badge-info'; b.textContent = infos; hdr.appendChild(b); }
+          panel.appendChild(hdr);
+
+          // Sort: errors first, then warnings, then info
+          var order = {error:0, warning:1, info:2};
+          diags.sort(function(a,b){ return (order[a.severity]||9) - (order[b.severity]||9); });
+
+          for(var i = 0; i < diags.length; i++){
+            var d = diags[i];
+            var row = document.createElement('div');
+            row.className = 'aadl-diag';
+            var sev = document.createElement('span');
+            sev.className = 'sev sev-' + d.severity;
+            sev.textContent = d.severity;
+            row.appendChild(sev);
+            if(d.componentPath){
+              var path = document.createElement('span');
+              path.className = 'diag-path';
+              path.textContent = d.componentPath;
+              row.appendChild(path);
+            }
+            var msg = document.createElement('span');
+            msg.className = 'diag-msg';
+            msg.textContent = d.message;
+            row.appendChild(msg);
+            var an = document.createElement('span');
+            an.className = 'diag-analysis';
+            an.textContent = d.analysisName;
+            row.appendChild(an);
+            panel.appendChild(row);
+          }
+          container.appendChild(panel);
+        }
+      } catch(analyzeErr){
+        console.warn('AADL analysis error:', analyzeErr);
+      }
     } catch(err){
       while(container.firstChild) container.removeChild(container.firstChild);
       var p = document.createElement('p');
@@ -1880,43 +2053,101 @@ async function initAadlDiagrams(){
 }
 
 function initZoomPan(viewport, svg){
-  var scale = 1, panX = 0, panY = 0, dragging = false, startX, startY;
-  function applyTransform(){
+  var scale = 1, panX = 0, panY = 0;
+  var dragging = false, dragMoved = false, startMX, startMY, startPX, startPY;
+  var minScale = 0.05, maxScale = 12;
+
+  function apply(){
     svg.style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + scale + ')';
   }
+
+  // Get SVG intrinsic size
+  var svgW = parseFloat(svg.getAttribute('width')) || 400;
+  var svgH = parseFloat(svg.getAttribute('height')) || 300;
+
+  // Fit diagram into viewport with padding
+  function fitToView(){
+    var vw = viewport.clientWidth || 600;
+    var vh = viewport.clientHeight || 400;
+    var pad = 24;
+    scale = Math.min((vw - pad) / svgW, (vh - pad) / svgH, 3);
+    panX = (vw - svgW * scale) / 2;
+    panY = (vh - svgH * scale) / 2;
+    apply();
+  }
+
+  // Zoom toward a point in viewport coordinates
+  function zoomAt(mx, my, factor){
+    var ns = Math.max(minScale, Math.min(maxScale, scale * factor));
+    panX = mx - (mx - panX) * (ns / scale);
+    panY = my - (my - panY) * (ns / scale);
+    scale = ns;
+    apply();
+  }
+
   // Zoom buttons
   var controls = viewport.parentElement.querySelector('.aadl-controls');
   if(controls){
     controls.addEventListener('click', function(e){
       var btn = e.target.closest('button');
       if(!btn) return;
-      var z = parseInt(btn.getAttribute('data-zoom'));
-      if(z === 0){ scale = 1; panX = 0; panY = 0; }
-      else { scale = Math.max(0.2, Math.min(5, scale + z * 0.25)); }
-      applyTransform();
+      var z = btn.getAttribute('data-zoom');
+      if(z === '0'){ fitToView(); return; }
+      var vw = viewport.clientWidth || 600;
+      var vh = viewport.clientHeight || 400;
+      zoomAt(vw/2, vh/2, parseInt(z) > 0 ? 1.5 : 1/1.5);
     });
   }
-  // Mouse wheel zoom
+
+  // Mouse wheel zoom toward cursor
   viewport.addEventListener('wheel', function(e){
     e.preventDefault();
-    var delta = e.deltaY > 0 ? -0.1 : 0.1;
-    scale = Math.max(0.2, Math.min(5, scale + delta));
-    applyTransform();
+    var rect = viewport.getBoundingClientRect();
+    var mx = e.clientX - rect.left;
+    var my = e.clientY - rect.top;
+    // Trackpad pinch sends ctrlKey + small delta; mouse wheel sends larger delta
+    var factor = e.ctrlKey
+      ? (e.deltaY > 0 ? 0.97 : 1.03)
+      : (e.deltaY > 0 ? 0.85 : 1/0.85);
+    zoomAt(mx, my, factor);
   }, {passive: false});
-  // Pan via drag
+
+  // Pan via drag (works anywhere, including on nodes)
   viewport.addEventListener('mousedown', function(e){
-    if(e.target.closest('.node')){ return; }
-    dragging = true; startX = e.clientX - panX; startY = e.clientY - panY;
+    if(e.button !== 0) return;
+    dragging = true; dragMoved = false;
+    startMX = e.clientX; startMY = e.clientY;
+    startPX = panX; startPY = panY;
     viewport.classList.add('grabbing');
   });
   window.addEventListener('mousemove', function(e){
     if(!dragging) return;
-    panX = e.clientX - startX; panY = e.clientY - startY;
-    applyTransform();
+    var dx = e.clientX - startMX, dy = e.clientY - startMY;
+    if(!dragMoved && Math.abs(dx) + Math.abs(dy) > 4) dragMoved = true;
+    if(dragMoved){
+      panX = startPX + dx;
+      panY = startPY + dy;
+      apply();
+    }
   });
   window.addEventListener('mouseup', function(){
-    dragging = false; viewport.classList.remove('grabbing');
+    if(!dragging) return;
+    dragging = false;
+    viewport.classList.remove('grabbing');
+    // Mark viewport so node click handler can distinguish click from drag
+    if(dragMoved) viewport.setAttribute('data-dragged','');
+    else viewport.removeAttribute('data-dragged');
   });
+
+  // Double-click to zoom in toward cursor
+  viewport.addEventListener('dblclick', function(e){
+    e.preventDefault();
+    var rect = viewport.getBoundingClientRect();
+    zoomAt(e.clientX - rect.left, e.clientY - rect.top, 2);
+  });
+
+  // Initial fit
+  fitToView();
 }
 
 function initDiagramInteraction(viewport){
@@ -1924,9 +2155,24 @@ function initDiagramInteraction(viewport){
   nodes.forEach(function(node){
     node.style.cursor = 'pointer';
     node.addEventListener('click', function(e){
+      // Skip if this was a drag gesture, not a click
+      if(viewport.hasAttribute('data-dragged')){
+        viewport.removeAttribute('data-dragged');
+        return;
+      }
       e.stopPropagation();
       var id = node.getAttribute('data-id');
-      if(id) htmx.ajax('GET', '/artifacts/' + encodeURIComponent(id), {target:'#content'});
+      if(!id) return;
+      fetch('/artifacts/' + encodeURIComponent(id) + '/preview', {headers:{'HX-Request':'true'}})
+        .then(function(r){
+          if(r.ok) return r.text();
+          return null;
+        })
+        .then(function(html){
+          if(html && html.indexOf('not found') === -1 && html.indexOf('Not Found') === -1){
+            htmx.ajax('GET', '/artifacts/' + encodeURIComponent(id), {target:'#content'});
+          }
+        });
     });
   });
 }
@@ -1935,19 +2181,86 @@ window.highlightAadlNodes = function(artifactIds){
   var nodes = document.querySelectorAll('.aadl-diagram svg .node');
   nodes.forEach(function(node){
     var id = node.getAttribute('data-id');
-    var rect = node.querySelector('rect');
-    if(!rect) return;
+    // Shape may be rect, polygon, path, or ellipse depending on AADL category
+    var shape = node.querySelector('rect, polygon, path, ellipse');
+    if(!shape) return;
     if(artifactIds.indexOf(id) !== -1){
-      rect.setAttribute('stroke','#f0c040');
-      rect.setAttribute('stroke-width','3');
+      shape.setAttribute('stroke','#f0c040');
+      shape.setAttribute('stroke-width','3');
     } else {
-      rect.setAttribute('stroke','');
-      rect.setAttribute('stroke-width','');
+      shape.setAttribute('stroke','');
+      shape.setAttribute('stroke-width','');
     }
   });
 };
 
 document.body.addEventListener('htmx:afterSwap', initAadlDiagrams);
+
+// ── Table sort & filter ──────────────────────────────────
+function initTables(){
+  var tables = document.querySelectorAll('#content table');
+  tables.forEach(function(table){
+    if(table.classList.contains('tbl-enhanced')) return;
+    var thead = table.querySelector('thead');
+    var tbody = table.querySelector('tbody');
+    if(!thead || !tbody) return;
+    var rows = tbody.querySelectorAll('tr');
+    if(rows.length < 3) return; // skip tiny tables
+    table.classList.add('tbl-enhanced');
+
+    // Add filter input above table
+    var wrap = document.createElement('div');
+    wrap.className = 'tbl-filter-wrap';
+    var inp = document.createElement('input');
+    inp.type = 'text';
+    inp.placeholder = 'Filter rows\u2026';
+    inp.className = 'tbl-filter';
+    inp.addEventListener('input', function(){
+      var q = inp.value.toLowerCase();
+      tbody.querySelectorAll('tr').forEach(function(row){
+        row.style.display = row.textContent.toLowerCase().indexOf(q) !== -1 ? '' : 'none';
+      });
+    });
+    wrap.appendChild(inp);
+    table.parentNode.insertBefore(wrap, table);
+
+    // Sortable headers
+    var ths = thead.querySelectorAll('th');
+    ths.forEach(function(th, colIdx){
+      th.style.cursor = 'pointer';
+      th.style.userSelect = 'none';
+      th.title = 'Click to sort';
+      var arrow = document.createElement('span');
+      arrow.className = 'tbl-sort-arrow';
+      arrow.textContent = '';
+      th.appendChild(arrow);
+      var asc = true;
+      th.addEventListener('click', function(){
+        // Reset all arrows
+        ths.forEach(function(h){
+          var a = h.querySelector('.tbl-sort-arrow');
+          if(a) a.textContent = '';
+        });
+        var rowsArr = Array.from(tbody.querySelectorAll('tr'));
+        rowsArr.sort(function(a, b){
+          var at = (a.children[colIdx] || {}).textContent || '';
+          var bt = (b.children[colIdx] || {}).textContent || '';
+          // Try numeric sort first
+          var an = parseFloat(at), bn = parseFloat(bt);
+          if(!isNaN(an) && !isNaN(bn)){
+            return asc ? an - bn : bn - an;
+          }
+          return asc ? at.localeCompare(bt) : bt.localeCompare(at);
+        });
+        rowsArr.forEach(function(r){ tbody.appendChild(r); });
+        arrow.textContent = asc ? ' \u25B2' : ' \u25BC';
+        asc = !asc;
+      });
+    });
+  });
+}
+document.body.addEventListener('htmx:afterSwap', initTables);
+document.addEventListener('DOMContentLoaded', initTables);
 </script>
 "#;
 
@@ -2080,6 +2393,13 @@ fn page_layout(content: &str, state: &AppState) -> Html<String> {
 <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>{CSS}</style>
 <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({{startOnLoad:false,theme:'neutral',securityLevel:'loose'}});
+function renderMermaid(){{mermaid.run({{querySelector:'.mermaid'}}).catch(function(){{}})}}
+document.addEventListener('htmx:afterSwap',renderMermaid);
+document.addEventListener('DOMContentLoaded',renderMermaid);
+</script>
 </head>
 <body>
 <div id="loading-bar"></div>
@@ -2155,7 +2475,8 @@ async fn index(
     if let Some(ref goto) = params.goto {
         let placeholder = format!(
             "<div id=\"goto-target\" data-url=\"{}\"></div>\
-             <script>htmx.ajax('GET','{}','#content');</script>",
+             <script>htmx.ajax('GET','{}',{{target:'#content'}}).then(function(){{history.replaceState(null,'','{}');}});</script>",
+            html_escape(goto),
             html_escape(goto),
             html_escape(goto)
         );
@@ -2278,7 +2599,7 @@ fn stats_partial(state: &AppState) -> String {
         html.push_str("<div class=\"card\"><h3>Orphan Artifacts (no links)</h3><table><thead><tr><th>ID</th></tr></thead><tbody>");
         for id in &orphans {
             html.push_str(&format!(
-                "<tr><td><a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" href=\"#\">{id}</a></td></tr>"
+                "<tr><td><a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a></td></tr>"
             ));
         }
         html.push_str("</tbody></table></div>");
@@ -2311,7 +2632,7 @@ fn stats_partial(state: &AppState) -> String {
                  </div>\
                </div>\
              </div>\
-             <a href=\"#\" hx-get=\"/coverage\" hx-target=\"#content\" \
+             <a href=\"#\" hx-get=\"/coverage\" hx-target=\"#content\" hx-push-url=\"true\" \
                 style=\"font-size:.85rem;color:var(--accent);text-decoration:none\">\
                 View full coverage report &rarr;</a>\
              </div>",
@@ -2362,7 +2683,7 @@ fn stats_partial(state: &AppState) -> String {
         }
         html.push_str("</div>");
         html.push_str(
-            "<a href=\"#\" hx-get=\"/results\" hx-target=\"#content\" \
+            "<a href=\"#\" hx-get=\"/results\" hx-target=\"#content\" hx-push-url=\"true\" \
              style=\"font-size:.85rem;color:var(--accent);text-decoration:none\">\
              View all test runs &rarr;</a>",
         );
@@ -2387,7 +2708,7 @@ fn stats_partial(state: &AppState) -> String {
          <div style=\"display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:0.75rem\">",
     );
     html.push_str(&format!(
-        "<a href=\"#\" hx-get=\"/verification\" hx-target=\"#content\" \
+        "<a href=\"#\" hx-get=\"/verification\" hx-target=\"#content\" hx-push-url=\"true\" \
          style=\"display:block;padding:1rem;background:var(--surface);border:1px solid var(--border);\
          border-radius:var(--radius-sm);text-decoration:none;color:var(--text)\">\
          <div style=\"font-weight:600;margin-bottom:.25rem\">Verification</div>\
@@ -2395,7 +2716,7 @@ fn stats_partial(state: &AppState) -> String {
          </a>",
     ));
     html.push_str(&format!(
-        "<a href=\"#\" hx-get=\"/documents\" hx-target=\"#content\" \
+        "<a href=\"#\" hx-get=\"/documents\" hx-target=\"#content\" hx-push-url=\"true\" \
          style=\"display:block;padding:1rem;background:var(--surface);border:1px solid var(--border);\
          border-radius:var(--radius-sm);text-decoration:none;color:var(--text)\">\
          <div style=\"font-weight:600;margin-bottom:.25rem\">Documents</div>\
@@ -2404,7 +2725,7 @@ fn stats_partial(state: &AppState) -> String {
         doc_store.len(),
     ));
     html.push_str(
-        "<a href=\"#\" hx-get=\"/graph\" hx-target=\"#content\" \
+        "<a href=\"#\" hx-get=\"/graph\" hx-target=\"#content\" hx-push-url=\"true\" \
          style=\"display:block;padding:1rem;background:var(--surface);border:1px solid var(--border);\
          border-radius:var(--radius-sm);text-decoration:none;color:var(--text)\">\
          <div style=\"font-weight:600;margin-bottom:.25rem\">Traceability Graph</div>\
@@ -2446,7 +2767,7 @@ async fn artifacts_list(State(state): State<SharedState>) -> Html<String> {
             _ => format!("<span class=\"badge badge-info\">{status}</span>"),
         };
         html.push_str(&format!(
-            "<tr><td><a hx-get=\"/artifacts/{}\" hx-target=\"#content\" href=\"#\">{}</a></td>\
+            "<tr><td><a hx-get=\"/artifacts/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a></td>\
              <td>{}</td>\
              <td>{}</td>\
              <td>{}</td>\
@@ -2591,6 +2912,10 @@ async fn artifact_detail(State(state): State<SharedState>, Path(id): Path<String
 
     // Extra fields — detect file:line source references and make them clickable
     for (key, value) in &artifact.fields {
+        // Skip diagram — rendered separately below as mermaid/AADL
+        if key == "diagram" {
+            continue;
+        }
         let val = match value {
             serde_yaml::Value::String(s) => linkify_source_refs(&html_escape(s)),
             other => html_escape(&format!("{other:?}")),
@@ -2599,13 +2924,34 @@ async fn artifact_detail(State(state): State<SharedState>, Path(id): Path<String
     }
     html.push_str("</dl></div>");
 
+    // Diagram field — render mermaid or AADL diagram if present
+    if let Some(serde_yaml::Value::String(diagram)) = artifact.fields.get("diagram") {
+        html.push_str("<div class=\"card artifact-diagram\">");
+        html.push_str("<h3>Diagram</h3>");
+        let trimmed = diagram.trim();
+        if trimmed.starts_with("root:") {
+            // AADL diagram
+            let root = trimmed.strip_prefix("root:").unwrap_or("").trim();
+            html.push_str(&format!(
+                "<div class=\"aadl-diagram\" data-root=\"{}\"><p class=\"aadl-loading\">Loading AADL diagram...</p></div>",
+                html_escape(root)
+            ));
+        } else {
+            // Treat as mermaid
+            html.push_str("<pre class=\"mermaid\">");
+            html.push_str(&html_escape(trimmed));
+            html.push_str("</pre>");
+        }
+        html.push_str("</div>");
+    }
+
     // Forward links
     if !artifact.links.is_empty() {
         html.push_str("<div class=\"card\"><h3>Outgoing Links</h3><table><thead><tr><th>Type</th><th>Target</th></tr></thead><tbody>");
         for link in &artifact.links {
             let target_display = if store.contains(&link.target) {
                 format!(
-                    "<a hx-get=\"/artifacts/{}\" hx-target=\"#content\" href=\"#\">{}</a>",
+                    "<a hx-get=\"/artifacts/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a>",
                     html_escape(&link.target),
                     html_escape(&link.target)
                 )
@@ -2632,7 +2978,7 @@ async fn artifact_detail(State(state): State<SharedState>, Path(id): Path<String
             let label = bl.inverse_type.as_deref().unwrap_or(&bl.link_type);
             html.push_str(&format!(
                 "<tr><td><span class=\"link-pill\">{}</span></td>\
-                 <td><a hx-get=\"/artifacts/{}\" hx-target=\"#content\" href=\"#\">{}</a></td></tr>",
+                 <td><a hx-get=\"/artifacts/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a></td></tr>",
                 html_escape(label),
                 html_escape(&bl.source),
                 html_escape(&bl.source)
@@ -2667,8 +3013,8 @@ async fn artifact_detail(State(state): State<SharedState>, Path(id): Path<String
     // Action buttons
     html.push_str(&format!(
         r##"<div class="detail-actions">
-        <a class="btn btn-primary" hx-get="/artifacts/{id_esc}/graph" hx-target="#content" href="#">Show in graph</a>
-        <a class="btn btn-secondary" hx-get="/artifacts" hx-target="#content" href="#">&larr; Back to artifacts</a>
+        <a class="btn btn-primary" hx-get="/artifacts/{id_esc}/graph" hx-target="#content" hx-push-url="true" href="#">Show in graph</a>
+        <a class="btn btn-secondary" hx-get="/artifacts" hx-target="#content" hx-push-url="true" href="#">&larr; Back to artifacts</a>
         </div>"##,
         id_esc = html_escape(&id),
     ));
@@ -3040,9 +3386,9 @@ async fn artifact_graph(
     ));
 
     html.push_str(&format!(
-        r##"<p><a hx-get="/artifacts/{id_esc}" hx-target="#content" href="#">&larr; Back to {id_esc}</a>
+        r##"<p><a hx-get="/artifacts/{id_esc}" hx-target="#content" hx-push-url="true" href="#">&larr; Back to {id_esc}</a>
         &nbsp;|&nbsp;
-        <a hx-get="/graph?focus={id_esc}" hx-target="#content" href="#">Open in full graph</a></p>"##,
+        <a hx-get="/graph?focus={id_esc}" hx-target="#content" hx-push-url="true" href="#">Open in full graph</a></p>"##,
         id_esc = html_escape(&id),
     ));
 
@@ -3198,7 +3544,7 @@ async fn validate_view(State(state): State<SharedState>) -> Html<String> {
         let art_id = d.artifact_id.as_deref().unwrap_or("-");
         let art_link = if d.artifact_id.is_some() && state.store.contains(art_id) {
             format!(
-                "<a hx-get=\"/artifacts/{art}\" hx-target=\"#content\" href=\"#\">{art}</a>",
+                "<a hx-get=\"/artifacts/{art}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{art}</a>",
                 art = html_escape(art_id)
             )
         } else {
@@ -3323,7 +3669,7 @@ async fn matrix_view(
                     .iter()
                     .map(|t| {
                         format!(
-                            "<a hx-get=\"/artifacts/{}\" hx-target=\"#content\" href=\"#\">{}</a>",
+                            "<a hx-get=\"/artifacts/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a>",
                             html_escape(&t.id),
                             html_escape(&t.id)
                         )
@@ -3332,7 +3678,7 @@ async fn matrix_view(
                     .join(", ")
             };
             html.push_str(&format!(
-                "<tr><td><a hx-get=\"/artifacts/{}\" hx-target=\"#content\" href=\"#\">{}</a></td><td>{}</td></tr>",
+                "<tr><td><a hx-get=\"/artifacts/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a></td><td>{}</td></tr>",
                 html_escape(&row.source_id),
                 html_escape(&row.source_id),
                 targets
@@ -3452,7 +3798,7 @@ async fn coverage_view(State(state): State<SharedState>) -> Html<String> {
             for id in &entry.uncovered_ids {
                 let title = state.store.get(id).map(|a| a.title.as_str()).unwrap_or("-");
                 html.push_str(&format!(
-                    "<tr><td><a hx-get=\"/artifacts/{id_esc}\" hx-target=\"#content\" href=\"#\">{id_esc}</a></td>\
+                    "<tr><td><a hx-get=\"/artifacts/{id_esc}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id_esc}</a></td>\
                      <td>{title_esc}</td></tr>",
                     id_esc = html_escape(id),
                     title_esc = html_escape(title),
@@ -3493,7 +3839,7 @@ async fn documents_list(State(state): State<SharedState>) -> Html<String> {
             _ => format!("<span class=\"badge badge-info\">{status}</span>"),
         };
         html.push_str(&format!(
-            "<tr><td><a hx-get=\"/documents/{}\" hx-target=\"#content\" href=\"#\">{}</a></td>\
+            "<tr><td><a hx-get=\"/documents/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a></td>\
              <td>{}</td>\
              <td>{}</td>\
              <td>{}</td>\
@@ -3578,7 +3924,21 @@ async fn document_detail(State(state): State<SharedState>, Path(id): Path<String
 
     // Rendered body
     html.push_str("<div class=\"card\"><div class=\"doc-body\">");
-    let body_html = document::render_to_html(doc, |aid| store.contains(aid));
+    let body_html = document::render_to_html(
+        doc,
+        |aid| store.contains(aid),
+        |aid| {
+            store.get(aid).map(|a| document::ArtifactInfo {
+                id: a.id.clone(),
+                title: a.title.clone(),
+                art_type: a.artifact_type.clone(),
+                status: a.status.clone().unwrap_or_default(),
+                description: a.description.clone().unwrap_or_default(),
+            })
+        },
+    );
+    // Rewrite relative image src to serve through /docs-asset/
+    let body_html = rewrite_image_paths(&body_html);
     html.push_str(&body_html);
     html.push_str("</div></div>");
 
@@ -3608,7 +3968,7 @@ async fn document_detail(State(state): State<SharedState>, Path(id): Path<String
             if let Some(artifact) = store.get(&reference.artifact_id) {
                 let status = artifact.status.as_deref().unwrap_or("-");
                 html.push_str(&format!(
-                    "<tr><td><a hx-get=\"/artifacts/{}\" hx-target=\"#content\" href=\"#\">{}</a></td>\
+                    "<tr><td><a hx-get=\"/artifacts/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a></td>\
                      <td>{}</td>\
                      <td>{}</td>\
                      <td>{}</td></tr>",
@@ -3631,7 +3991,7 @@ async fn document_detail(State(state): State<SharedState>, Path(id): Path<String
     }
 
     html.push_str(
-        "<p><a hx-get=\"/documents\" hx-target=\"#content\" href=\"#\">&larr; Back to documents</a></p>",
+        "<p><a hx-get=\"/documents\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">&larr; Back to documents</a></p>",
     );
 
     Html(html)
@@ -4086,7 +4446,7 @@ async fn verification_view(State(state): State<SharedState>) -> Html<String> {
             html.push_str("<details class=\"ver-row\"><summary>");
             html.push_str(&format!(
                 "<span class=\"ver-chevron\"><svg width=\"12\" height=\"12\" viewBox=\"0 0 12 12\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"><path d=\"M4.5 2.5l4 3.5-4 3.5\"/></svg></span>\
-                 <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" href=\"#\" style=\"flex-shrink:0\">{id}</a>\
+                 <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" style=\"flex-shrink:0\">{id}</a>\
                  <span style=\"flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-secondary)\">{title}</span>\
                  <span class=\"badge\" style=\"font-size:0.7rem;opacity:0.6\">{status}</span>\
                  {coverage_badge}",
@@ -4120,7 +4480,7 @@ async fn verification_view(State(state): State<SharedState>) -> Html<String> {
                 for v in &row.verifiers {
                     html.push_str(&format!(
                         "<p style=\"margin-bottom:.5rem\">\
-                         <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" href=\"#\">{id}</a> \
+                         <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a> \
                          {type_badge} \
                          <span class=\"method-badge\">{method}</span> \
                          &mdash; {title}",
@@ -4274,7 +4634,7 @@ fn stpa_partial(state: &AppState) -> Html<String> {
         html.push_str("<span class=\"stpa-chevron\">&#9654;</span> ");
         html.push_str(&badge_for_type("loss"));
         html.push_str(&format!(
-            " <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" href=\"#\">{id}</a>\
+            " <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a>\
              <span style=\"color:var(--text-secondary);font-size:.85rem\"> {title}</span>",
             id = html_escape(loss_id),
             title = html_escape(&loss.title),
@@ -4299,7 +4659,7 @@ fn stpa_partial(state: &AppState) -> Html<String> {
                 html.push_str("<span class=\"stpa-link-label\">leads-to-loss</span>");
                 html.push_str(&badge_for_type(&hazard.artifact_type));
                 html.push_str(&format!(
-                    " <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" href=\"#\">{id}</a>\
+                    " <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a>\
                      <span style=\"color:var(--text-secondary);font-size:.85rem\"> {title}</span>",
                     id = html_escape(hazard_id),
                     title = html_escape(&hazard.title),
@@ -4330,7 +4690,7 @@ fn stpa_partial(state: &AppState) -> Html<String> {
                         html.push_str(&format!(
                             "<div class=\"stpa-node\">\
                              <span class=\"stpa-link-label\">prevents</span>{badge}\
-                             <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" href=\"#\">{id}</a>\
+                             <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a>\
                              <span style=\"color:var(--text-secondary);font-size:.85rem\"> {title}</span>\
                              </div>",
                             badge = badge_for_type("system-constraint"),
@@ -4362,7 +4722,7 @@ fn stpa_partial(state: &AppState) -> Html<String> {
                         html.push_str("<span class=\"stpa-link-label\">leads-to-hazard</span>");
                         html.push_str(&badge_for_type("uca"));
                         html.push_str(&format!(
-                            " <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" href=\"#\">{id}</a>\
+                            " <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a>\
                              <span style=\"color:var(--text-secondary);font-size:.85rem\"> {title}</span>",
                             id = html_escape(uca_id),
                             title = html_escape(&uca.title),
@@ -4384,7 +4744,7 @@ fn stpa_partial(state: &AppState) -> Html<String> {
                                 html.push_str(&format!(
                                     "<div class=\"stpa-node\">\
                                      <span class=\"stpa-link-label\">inverts-uca</span>{badge}\
-                                     <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" href=\"#\">{id}</a>\
+                                     <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a>\
                                      <span style=\"color:var(--text-secondary);font-size:.85rem\"> {title}</span>\
                                      </div>",
                                     badge = badge_for_type("controller-constraint"),
@@ -4402,7 +4762,7 @@ fn stpa_partial(state: &AppState) -> Html<String> {
                                 html.push_str(&format!(
                                     "<div class=\"stpa-node\">\
                                      <span class=\"stpa-link-label\">caused-by-uca</span>{badge}\
-                                     <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" href=\"#\">{id}</a>\
+                                     <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a>\
                                      <span style=\"color:var(--text-secondary);font-size:.85rem\"> {title}</span>\
                                      </div>",
                                     badge = badge_for_type("loss-scenario"),
@@ -4520,7 +4880,7 @@ fn stpa_partial(state: &AppState) -> Html<String> {
                 .iter()
                 .map(|h| {
                     format!(
-                        "<a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" href=\"#\" \
+                        "<a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" \
                      style=\"font-family:var(--mono);font-size:.8rem\">{id}</a>",
                         id = html_escape(h),
                     )
@@ -4530,14 +4890,14 @@ fn stpa_partial(state: &AppState) -> Html<String> {
                 "-".to_string()
             } else {
                 format!(
-                    "<a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" href=\"#\" \
+                    "<a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" \
                      style=\"font-family:var(--mono);font-size:.8rem\">{id}</a>",
                     id = html_escape(&row.control_action),
                 )
             };
             html.push_str(&format!(
                 "<tr>\
-                 <td><a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" href=\"#\">{id}</a></td>\
+                 <td><a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a></td>\
                  <td>{ca}</td>\
                  <td>{type_badge}</td>\
                  <td>{title}</td>\
@@ -4629,7 +4989,7 @@ async fn results_view(State(state): State<SharedState>) -> Html<String> {
 
         html.push_str(&format!(
             "<tr>\
-             <td><a hx-get=\"/results/{id}\" hx-target=\"#content\" href=\"#\">{id}</a> {status_badge}</td>\
+             <td><a hx-get=\"/results/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a> {status_badge}</td>\
              <td>{ts}</td>\
              <td>{src}</td>\
              <td>{env}</td>\
@@ -4726,7 +5086,7 @@ async fn result_detail(
 
         html.push_str(&format!(
             "<tr class=\"{status_class}\">\
-             <td><a hx-get=\"/artifacts/{aid}\" hx-target=\"#content\" href=\"#\">{aid}</a></td>\
+             <td><a hx-get=\"/artifacts/{aid}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{aid}</a></td>\
              <td>{title}</td>\
              <td>{status_badge}</td>\
              <td>{duration}</td>\
@@ -4741,7 +5101,7 @@ async fn result_detail(
     html.push_str("</tbody></table></div>");
 
     html.push_str(
-        "<p><a hx-get=\"/results\" hx-target=\"#content\" href=\"#\" class=\"btn btn-secondary\">&larr; Back to results</a></p>",
+        "<p><a hx-get=\"/results\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" class=\"btn btn-secondary\">&larr; Back to results</a></p>",
     );
 
     Html(html)
@@ -5008,7 +5368,7 @@ async fn source_file_view(
     }
     if metadata.is_dir() {
         return Html(format!(
-            "<h2>Directory</h2><p><code>{}</code> is a directory. <a hx-get=\"/source\" hx-target=\"#content\" href=\"#\">Back to tree</a></p>",
+            "<h2>Directory</h2><p><code>{}</code> is a directory. <a hx-get=\"/source\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">Back to tree</a></p>",
             html_escape(rel_path)
         ));
     }
@@ -5016,7 +5376,7 @@ async fn source_file_view(
     let file_size = metadata.len();
     if file_size > SOURCE_MAX_SIZE {
         return Html(format!(
-            "<h2>File Too Large</h2><p><code>{}</code> is {} which exceeds the 100 KB limit.</p><p><a hx-get=\"/source\" hx-target=\"#content\" href=\"#\" class=\"btn btn-secondary\">&larr; Back to files</a></p>",
+            "<h2>File Too Large</h2><p><code>{}</code> is {} which exceeds the 100 KB limit.</p><p><a hx-get=\"/source\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" class=\"btn btn-secondary\">&larr; Back to files</a></p>",
             html_escape(rel_path),
             format_size(file_size)
         ));
@@ -5075,19 +5435,49 @@ async fn source_file_view(
     let is_yaml = file_name.ends_with(".yaml") || file_name.ends_with(".yml");
     let is_markdown = file_name.ends_with(".md");
     let is_rust = file_name.ends_with(".rs");
+    let is_toml = file_name.ends_with(".toml");
+    let is_shell = file_name.ends_with(".sh");
+    let is_aadl = file_name.ends_with(".aadl");
     let artifact_ids = collect_artifact_ids(store);
+
+    let file_lang = if is_yaml {
+        "yaml"
+    } else if is_rust {
+        "rust"
+    } else if is_toml {
+        "toml"
+    } else if is_shell {
+        "bash"
+    } else if is_aadl {
+        "yaml"  // AADL has similar key: value structure
+    } else {
+        ""
+    };
 
     if is_markdown && content.starts_with("---") {
         if let Ok(doc) = rivet_core::document::parse_document(&content, Some(&full_path)) {
             html.push_str("<div class=\"card\"><div class=\"doc-body\">");
-            let body_html = document::render_to_html(&doc, |aid| store.contains(aid));
+            let body_html = document::render_to_html(
+                &doc,
+                |aid| store.contains(aid),
+                |aid| {
+                    store.get(aid).map(|a| document::ArtifactInfo {
+                        id: a.id.clone(),
+                        title: a.title.clone(),
+                        art_type: a.artifact_type.clone(),
+                        status: a.status.clone().unwrap_or_default(),
+                        description: a.description.clone().unwrap_or_default(),
+                    })
+                },
+            );
+            let body_html = rewrite_image_paths(&body_html);
             html.push_str(&body_html);
             html.push_str("</div></div>");
         } else {
-            render_code_block(&content, &artifact_ids, is_yaml, is_rust, &mut html);
+            render_code_block(&content, &artifact_ids, file_lang, &mut html);
         }
     } else {
-        render_code_block(&content, &artifact_ids, is_yaml, is_rust, &mut html);
+        render_code_block(&content, &artifact_ids, file_lang, &mut html);
     }
 
     let refs = artifacts_referencing_file(store, rel_path);
@@ -5341,24 +5731,198 @@ fn syntax_highlight_line(line: &str, lang: &str) -> String {
     match lang {
         "yaml" | "yml" => highlight_yaml_line(line),
         "bash" | "sh" | "shell" => highlight_bash_line(line),
+        "rust" | "rs" => highlight_rust_line(line),
+        "toml" => highlight_toml_line(line),
         _ => html_escape(line),
     }
+}
+
+/// Syntax-highlight a single line of Rust source.
+fn highlight_rust_line(line: &str) -> String {
+    let trimmed = line.trim_start();
+    if trimmed.is_empty() {
+        return html_escape(line);
+    }
+    // Full-line comments
+    if trimmed.starts_with("//") {
+        let indent = &line[..line.len() - trimmed.len()];
+        return format!(
+            "{}<span class=\"hl-comment\">{}</span>",
+            html_escape(indent),
+            html_escape(trimmed)
+        );
+    }
+    // Attributes: #[...] or #![...]
+    if trimmed.starts_with("#[") || trimmed.starts_with("#![") {
+        let indent = &line[..line.len() - trimmed.len()];
+        return format!(
+            "{}<span class=\"hl-attr\">{}</span>",
+            html_escape(indent),
+            html_escape(trimmed)
+        );
+    }
+    let escaped = html_escape(line);
+    let mut out = String::with_capacity(escaped.len() * 2);
+    let chars: Vec<char> = line.chars().collect();
+    let len = chars.len();
+    let mut i = 0;
+    while i < len {
+        let ch = chars[i];
+        // String literals
+        if ch == '"' {
+            let start = i;
+            i += 1;
+            while i < len && chars[i] != '"' {
+                if chars[i] == '\\' {
+                    i += 1;
+                }
+                i += 1;
+            }
+            if i < len {
+                i += 1;
+            }
+            let s: String = chars[start..i].iter().collect();
+            out.push_str(&format!("<span class=\"hl-str\">{}</span>", html_escape(&s)));
+            continue;
+        }
+        // Char literals
+        if ch == '\'' && i + 2 < len && chars[i + 2] == '\'' {
+            let s: String = chars[i..i + 3].iter().collect();
+            out.push_str(&format!("<span class=\"hl-str\">{}</span>", html_escape(&s)));
+            i += 3;
+            continue;
+        }
+        // Line comments (mid-line)
+        if ch == '/' && i + 1 < len && chars[i + 1] == '/' {
+            let s: String = chars[i..].iter().collect();
+            out.push_str(&format!(
+                "<span class=\"hl-comment\">{}</span>",
+                html_escape(&s)
+            ));
+            break;
+        }
+        // Numbers
+        if ch.is_ascii_digit() && (i == 0 || !chars[i - 1].is_alphanumeric()) {
+            let start = i;
+            while i < len && (chars[i].is_ascii_alphanumeric() || chars[i] == '_' || chars[i] == '.') {
+                i += 1;
+            }
+            let s: String = chars[start..i].iter().collect();
+            out.push_str(&format!("<span class=\"hl-num\">{}</span>", html_escape(&s)));
+            continue;
+        }
+        // Identifiers and keywords
+        if ch.is_ascii_alphabetic() || ch == '_' {
+            let start = i;
+            while i < len && (chars[i].is_ascii_alphanumeric() || chars[i] == '_') {
+                i += 1;
+            }
+            let word: String = chars[start..i].iter().collect();
+            // Check for macro invocation: word!
+            if i < len && chars[i] == '!' && !matches!(word.as_str(), "if" | "else" | "return" | "break" | "continue") {
+                out.push_str(&format!(
+                    "<span class=\"hl-macro\">{}!</span>",
+                    html_escape(&word)
+                ));
+                i += 1;
+                continue;
+            }
+            match word.as_str() {
+                "fn" | "let" | "mut" | "pub" | "use" | "mod" | "struct" | "enum"
+                | "impl" | "trait" | "const" | "static" | "type" | "where" | "match"
+                | "if" | "else" | "for" | "while" | "loop" | "return" | "break"
+                | "continue" | "async" | "await" | "move" | "ref" | "self" | "super"
+                | "crate" | "unsafe" | "extern" | "dyn" | "as" | "in" | "true"
+                | "false" | "Self" | "None" | "Some" | "Ok" | "Err" => {
+                    out.push_str(&format!(
+                        "<span class=\"hl-kw\">{}</span>",
+                        html_escape(&word)
+                    ));
+                }
+                _ if word.chars().next().is_some_and(|c| c.is_ascii_uppercase()) => {
+                    out.push_str(&format!(
+                        "<span class=\"hl-type\">{}</span>",
+                        html_escape(&word)
+                    ));
+                }
+                _ => out.push_str(&html_escape(&word)),
+            }
+            continue;
+        }
+        // Punctuation: &, ::, ->, =>, etc.
+        out.push_str(&html_escape(&ch.to_string()));
+        i += 1;
+    }
+    out
+}
+
+/// Syntax-highlight a single line of TOML.
+fn highlight_toml_line(line: &str) -> String {
+    let trimmed = line.trim_start();
+    if trimmed.is_empty() {
+        return html_escape(line);
+    }
+    let indent = &line[..line.len() - trimmed.len()];
+    // Comments
+    if trimmed.starts_with('#') {
+        return format!(
+            "{}<span class=\"hl-comment\">{}</span>",
+            html_escape(indent),
+            html_escape(trimmed)
+        );
+    }
+    // Section headers [foo] or [[foo]]
+    if trimmed.starts_with('[') {
+        return format!(
+            "{}<span class=\"hl-key\">{}</span>",
+            html_escape(indent),
+            html_escape(trimmed)
+        );
+    }
+    // key = value
+    if let Some(eq_pos) = trimmed.find('=') {
+        let key = &trimmed[..eq_pos].trim_end();
+        let rest = &trimmed[eq_pos..];
+        return format!(
+            "{}<span class=\"hl-key\">{}</span>{}",
+            html_escape(indent),
+            html_escape(key),
+            highlight_toml_value(rest)
+        );
+    }
+    html_escape(line)
+}
+
+fn highlight_toml_value(s: &str) -> String {
+    let trimmed = s.strip_prefix('=').unwrap_or(s);
+    let val = trimmed.trim();
+    if val.starts_with('"') || val.starts_with('\'') {
+        return format!(
+            "<span class=\"hl-punct\">=</span> <span class=\"hl-str\">{}</span>",
+            html_escape(val)
+        );
+    }
+    if val == "true" || val == "false" {
+        return format!(
+            "<span class=\"hl-punct\">=</span> <span class=\"hl-bool\">{}</span>",
+            val
+        );
+    }
+    if val.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+        return format!(
+            "<span class=\"hl-punct\">=</span> <span class=\"hl-num\">{}</span>",
+            html_escape(val)
+        );
+    }
+    format!("<span class=\"hl-punct\">=</span> {}", html_escape(trimmed))
 }
 
 fn render_code_block(
     content: &str,
     artifact_ids: &std::collections::HashSet<String>,
-    is_yaml: bool,
-    is_rust: bool,
+    lang: &str,
     html: &mut String,
 ) {
-    let lang = if is_yaml {
-        "yaml"
-    } else if is_rust {
-        "rust"
-    } else {
-        ""
-    };
     html.push_str("<div class=\"card source-viewer\"><table>");
     for (i, line) in content.lines().enumerate() {
         let line_num = i + 1;
@@ -5375,7 +5939,7 @@ fn render_code_block(
             html_escape(line)
         };
         // Then overlay artifact links on top
-        let display_line = if is_yaml || is_rust {
+        let display_line = if !lang.is_empty() {
             let mut result = highlighted;
             let mut ids: Vec<&String> = artifact_ids
                 .iter()
@@ -5447,14 +6011,25 @@ fn load_store_from_git_ref(pp: &std::path::Path, gr: &str) -> Result<Store, Stri
             .map_err(|e| format!("git: {e}"))?;
         if !o.status.success() {
             return Err(format!(
-                "git {} failed: {}",
-                a.join(" "),
+                "git show {gr} failed: {}",
                 String::from_utf8_lossy(&o.stderr).trim()
             ));
         }
         Ok(String::from_utf8_lossy(&o.stdout).to_string())
     };
-    let cc = rg(&["show", &format!("{gr}:rivet.yaml")])?;
+
+    // Compute the project path relative to the git repo root.
+    // This is needed because `git show REF:path` expects paths relative to
+    // the repo root, not the current directory.
+    let prefix = {
+        let out = rg(&["rev-parse", "--show-prefix"])?;
+        let p = out.trim().to_owned();
+        // p is e.g. "rivet/" or "" (if project is at repo root)
+        p
+    };
+
+    let config_path = format!("{prefix}rivet.yaml");
+    let cc = rg(&["show", &format!("{gr}:{config_path}")])?;
     let cfg: ProjectConfig =
         serde_yaml::from_str(&cc).map_err(|e| format!("parse rivet.yaml@{gr}: {e}"))?;
     let mut store = Store::new();
@@ -5464,7 +6039,8 @@ fn load_store_from_git_ref(pp: &std::path::Path, gr: &str) -> Result<Store, Stri
         if src.format != "generic-yaml" && src.format != "generic" {
             continue;
         }
-        let tree = rg(&["ls-tree", "-r", "--name-only", gr, "--", &src.path])?;
+        let src_path = format!("{prefix}{}", src.path);
+        let tree = rg(&["ls-tree", "-r", "--name-only", gr, "--", &src_path])?;
         for fp in tree.lines() {
             let fp = fp.trim();
             if fp.is_empty() || (!fp.ends_with(".yaml") && !fp.ends_with(".yml")) {
@@ -6040,7 +6616,7 @@ fn render_trace_node(node: &TraceNode, depth: usize, project_path: &str) -> Stri
         // Leaf node — no expanding
         format!(
             "<div class=\"trace-node\">{edge_label}{badge} \
-             <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" href=\"#\">{escaped_id}</a> \
+             <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{escaped_id}</a> \
              <span style=\"color:var(--text-secondary)\">{escaped_title}</span>{status_badge}\
              <button class=\"btn btn-secondary\" style=\"margin-left:auto;padding:.2rem .5rem;font-size:.68rem\" \
              hx-get=\"/traceability/history?file={file}\" hx-target=\"#hist-{safe_id}\" hx-swap=\"innerHTML\"\
@@ -6056,7 +6632,7 @@ fn render_trace_node(node: &TraceNode, depth: usize, project_path: &str) -> Stri
         let mut html = format!(
             "<details class=\"trace-details\"{open_attr}>\
              <summary>{edge_label}{badge} \
-             <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" href=\"#\" \
+             <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" \
              onclick=\"event.stopPropagation()\">{escaped_id}</a> \
              <span style=\"color:var(--text-secondary)\">{escaped_title}</span>{status_badge}\
              <span style=\"color:var(--text-secondary);font-size:.75rem;margin-left:.25rem\">({child_count})</span>\
@@ -6188,7 +6764,7 @@ async fn traceability_view(
             let a = store.get(id).unwrap();
             let backlinks = graph.backlinks_to(id);
             html.push_str(&format!(
-                "<tr><td><a hx-get=\"/artifacts/{}\" hx-target=\"#content\" href=\"#\">{}</a></td><td style=\"color:var(--text-secondary);font-size:.82rem\">{}</td>",
+                "<tr><td><a hx-get=\"/artifacts/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a></td><td style=\"color:var(--text-secondary);font-size:.82rem\">{}</td>",
                 html_escape(id),
                 html_escape(id),
                 html_escape(&a.title)
@@ -6245,7 +6821,7 @@ async fn traceability_view(
             if children.is_empty() {
                 html.push_str(&format!(
                     "<div class=\"trace-node\" style=\"font-weight:600\">{badge} \
-                     <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" href=\"#\">{escaped_id}</a> \
+                     <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{escaped_id}</a> \
                      <span style=\"color:var(--text-secondary)\">{title}</span>{status_badge} \
                      <span style=\"color:var(--text-secondary);font-size:.75rem;font-style:italic;margin-left:.5rem\">(no inbound links)</span>\
                      <button class=\"btn btn-secondary\" style=\"margin-left:auto;padding:.2rem .5rem;font-size:.68rem\" \
@@ -6262,7 +6838,7 @@ async fn traceability_view(
                 html.push_str(&format!(
                     "<details class=\"trace-details\" open>\
                      <summary style=\"font-weight:600\">{badge} \
-                     <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" href=\"#\" \
+                     <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" \
                      onclick=\"event.stopPropagation()\">{escaped_id}</a> \
                      <span style=\"color:var(--text-secondary)\">{title}</span>{status_badge}\
                      <span style=\"color:var(--text-secondary);font-size:.75rem;margin-left:.25rem\">({child_count} inbound)</span>\
@@ -6370,6 +6946,38 @@ fn html_escape(s: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+}
+
+/// Rewrite relative image `src` paths to serve through `/docs-asset/`.
+/// Leaves absolute URLs (http://, https://, //) unchanged.
+fn rewrite_image_paths(html: &str) -> String {
+    let mut result = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(pos) = rest.find("src=\"") {
+        result.push_str(&rest[..pos]);
+        let after_src = &rest[pos + 5..]; // after src="
+        if let Some(end) = after_src.find('"') {
+            let path = &after_src[..end];
+            result.push_str("src=\"");
+            if path.starts_with("http://")
+                || path.starts_with("https://")
+                || path.starts_with("//")
+                || path.starts_with('/')
+            {
+                result.push_str(path);
+            } else {
+                result.push_str("/docs-asset/");
+                result.push_str(path);
+            }
+            result.push('"');
+            rest = &after_src[end + 1..];
+        } else {
+            result.push_str("src=\"");
+            rest = after_src;
+        }
+    }
+    result.push_str(rest);
+    result
 }
 
 /// Turn `path/to/file.rs:42` patterns into clickable `/source/path/to/file.rs#L42` links.
