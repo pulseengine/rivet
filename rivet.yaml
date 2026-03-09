@@ -4,6 +4,7 @@ project:
   schemas:
     - common
     - dev
+    - aadl
 
 sources:
   - path: artifacts
@@ -11,5 +12,6 @@ sources:
 
 docs:
   - docs
+  - arch
 
 results: results

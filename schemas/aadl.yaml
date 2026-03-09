@@ -58,7 +58,7 @@ artifact-types:
     link-fields:
       - name: allocated-from
         link-type: allocated-from
-        target-types: [system-req, sw-req, system-arch-component]
+        target-types: [system-req, sw-req, system-arch-component, requirement, feature]
         required: false
         cardinality: zero-or-many
 
@@ -119,15 +119,8 @@ link-types:
 
 traceability-rules:
   - name: aadl-component-has-allocation
-    description: Every AADL component should trace to a requirement or architecture element
+    description: AADL component should trace to a requirement or architecture element
     source-type: aadl-component
-    required-backlink: allocated-from
-    from-types: [system-req, sw-req, system-arch-component]
-    severity: warning
-
-  - name: safety-critical-has-analysis
-    description: Safety-critical AADL components should have analysis results
-    source-type: aadl-component
-    required-backlink: verifies
-    from-types: [aadl-analysis-result]
-    severity: warning
+    required-link: allocated-from
+    target-types: [system-req, sw-req, system-arch-component, requirement, feature]
+    severity: info

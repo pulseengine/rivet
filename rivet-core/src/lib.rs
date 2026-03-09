@@ -2,6 +2,7 @@ pub mod adapter;
 pub mod coverage;
 pub mod diff;
 pub mod document;
+pub mod embedded;
 pub mod error;
 pub mod formats;
 pub mod links;
@@ -34,20 +35,10 @@ pub fn load_project_config(path: &Path) -> Result<ProjectConfig, Error> {
 }
 
 /// Load schemas from the built-in schemas directory or from file paths.
+///
+/// Falls back to embedded (compiled-in) schemas when files are not on disk.
 pub fn load_schemas(schema_names: &[String], schemas_dir: &Path) -> Result<schema::Schema, Error> {
-    let mut files = Vec::new();
-
-    for name in schema_names {
-        let path = schemas_dir.join(format!("{}.yaml", name));
-        if path.exists() {
-            let file = schema::Schema::load_file(&path)?;
-            files.push(file);
-        } else {
-            log::warn!("schema file not found: {}", path.display());
-        }
-    }
-
-    Ok(schema::Schema::merge(&files))
+    embedded::load_schemas_with_fallback(schema_names, schemas_dir)
 }
 
 /// Load artifacts from a source using the appropriate adapter.

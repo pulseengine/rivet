@@ -49,3 +49,7 @@ wasmtime-wasi = "42"
 
 # Benchmarking
 criterion = { version = "0.5", features = ["html_reports"] }
+
+# AADL (spar) — parser, HIR, analysis
+spar-hir = { git = "https://github.com/pulseengine/spar.git", rev = "21a5411" }
+spar-analysis = { git = "https://github.com/pulseengine/spar.git", rev = "21a5411" }

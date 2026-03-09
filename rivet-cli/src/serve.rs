@@ -14,6 +14,7 @@ use petgraph::visit::EdgeRef;
 use etch::filter::ego_subgraph;
 use etch::layout::{self as pgv_layout, EdgeInfo, LayoutOptions, NodeInfo};
 use etch::svg::{SvgOptions, render_svg};
+use crate::{docs, schema_cmd};
 use rivet_core::adapter::{Adapter, AdapterConfig, AdapterSource};
 use rivet_core::coverage;
 use rivet_core::diff::ArtifactDiff;
@@ -317,6 +318,13 @@ pub async fn run(
         .route("/traceability/history", get(traceability_history))
         .route("/api/links/{id}", get(api_artifact_links))
         .route("/api/render-aadl", get(api_render_aadl))
+        .route("/help", get(help_view))
+        .route("/help/docs", get(help_docs_list))
+        .route("/help/docs/{*slug}", get(help_docs_topic))
+        .route("/help/schema", get(help_schema_list))
+        .route("/help/schema/{name}", get(help_schema_show))
+        .route("/help/links", get(help_links_view))
+        .route("/help/rules", get(help_rules_view))
         .route("/reload", post(reload_handler))
         .with_state(state)
         .layer(axum::middleware::from_fn(redirect_non_htmx));
@@ -1107,6 +1115,15 @@ details.diff-row>.diff-detail{padding:.75rem 1.25rem;background:rgba(0,0,0,.01);
 .source-line:target .line-no{background:rgba(255,210,50,.25);color:#9a6700;font-weight:700}
 .source-line .line-no a{color:inherit;text-decoration:none}
 .source-line .line-no a:hover{color:var(--accent);text-decoration:underline}
+/* ── Syntax highlighting tokens ─────────────────────────────── */
+.hl-key{color:#0550ae}.hl-str{color:#0a3069}.hl-num{color:#0550ae}
+.hl-bool{color:#cf222e;font-weight:600}.hl-null{color:#cf222e;font-style:italic}
+.hl-comment{color:#6e7781;font-style:italic}.hl-tag{color:#6639ba}
+.hl-anchor{color:#953800}.hl-type{color:#8250df}.hl-kw{color:#cf222e;font-weight:600}
+.hl-fn{color:#8250df}.hl-macro{color:#0550ae;font-weight:600}
+.hl-attr{color:#116329}.hl-punct{color:#6e7781}
+.hl-sh-cmd{color:#0550ae;font-weight:600}.hl-sh-flag{color:#953800}
+.hl-sh-pipe{color:#cf222e;font-weight:700}
 .source-ref-link{color:var(--accent);text-decoration:none;font-family:var(--mono);font-size:.85em}
 .source-ref-link:hover{text-decoration:underline}
 .source-breadcrumb{display:flex;align-items:center;gap:.4rem;font-size:.85rem;color:var(--text-secondary);
@@ -1573,7 +1590,7 @@ const GRAPH_JS: &str = r#"
       var id=m[1];
       if(ctrl) ctrl.abort();
       ctrl=new AbortController();
-      fetch('/artifacts/'+encodeURIComponent(id)+'/preview',{signal:ctrl.signal})
+      fetch('/artifacts/'+encodeURIComponent(id)+'/preview',{signal:ctrl.signal,headers:{'HX-Request':'true'}})
         .then(function(r){return r.text()})
         .then(function(html){
           tip.innerHTML=html;
@@ -1947,6 +1964,8 @@ fn page_layout(content: &str, state: &AppState) -> Html<String> {
     <li><a hx-get="/results" hx-target="#content" hx-push-url="true" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12.5h12M3 9.5h2v3H3zM7 6.5h2v6H7zM11 3.5h2v9h-2z"/></svg></span> Results</span>{result_badge}</a></li>
     <li class="nav-divider"></li>
     <li><a hx-get="/diff" hx-target="#content" hx-push-url="true" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v10M10 3v10"/><path d="M2 8h3M11 8h3"/><circle cx="6" cy="5" r="1.5"/><circle cx="10" cy="11" r="1.5"/></svg></span> Diff</span></a></li>
+    <li class="nav-divider"></li>
+    <li><a hx-get="/help" hx-target="#content" hx-push-url="true" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><path d="M6 6.5a2 2 0 013.5 1.5c0 1-1.5 1.5-1.5 2.5M8 12.5v.01"/></svg></span> Help &amp; Docs</span></a></li>
   </ul>
   <div id="nav-search-hint" class="nav-search-hint">
     <span><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg></span> Search</span>
@@ -4922,6 +4941,179 @@ async fn source_file_view(
     Html(html)
 }
 
+/// Syntax-highlight a single line of YAML (returns HTML with `<span class="hl-*">` tokens).
+fn highlight_yaml_line(line: &str) -> String {
+    let escaped = html_escape(line);
+    // Blank lines
+    if line.trim().is_empty() {
+        return escaped;
+    }
+    // Full-line comments
+    let trimmed = line.trim_start();
+    if trimmed.starts_with('#') {
+        let indent = &escaped[..escaped.len() - html_escape(trimmed).len()];
+        return format!("{indent}<span class=\"hl-comment\">{}</span>", html_escape(trimmed));
+    }
+    let mut out = String::with_capacity(escaped.len() + 64);
+    // Check for key: value pattern
+    // Find the first unquoted colon
+    if let Some(colon_pos) = find_yaml_colon(trimmed) {
+        let raw_indent = escaped.len() - html_escape(trimmed).len();
+        let indent_str = &escaped[..raw_indent];
+        out.push_str(indent_str);
+        let key_part = &trimmed[..colon_pos];
+        let rest = &trimmed[colon_pos..]; // starts with ':'
+        // List prefix
+        if key_part.starts_with("- ") {
+            out.push_str("<span class=\"hl-punct\">-</span> ");
+            out.push_str(&format!("<span class=\"hl-key\">{}</span>", html_escape(&key_part[2..])));
+        } else {
+            out.push_str(&format!("<span class=\"hl-key\">{}</span>", html_escape(key_part)));
+        }
+        out.push_str("<span class=\"hl-punct\">:</span>");
+        let after_colon = &rest[1..];
+        if !after_colon.is_empty() {
+            out.push_str(&highlight_yaml_value(after_colon));
+        }
+    } else if trimmed.starts_with("- ") {
+        let raw_indent = escaped.len() - html_escape(trimmed).len();
+        out.push_str(&escaped[..raw_indent]);
+        out.push_str("<span class=\"hl-punct\">-</span>");
+        out.push_str(&highlight_yaml_value(&trimmed[1..]));
+    } else {
+        out.push_str(&escaped);
+    }
+    out
+}
+
+fn find_yaml_colon(s: &str) -> Option<usize> {
+    let (search, offset) = if s.starts_with("- ") { (&s[2..], 2) } else { (s, 0) };
+    let mut in_quote = false;
+    let mut quote_char = ' ';
+    for (i, c) in search.char_indices() {
+        if in_quote {
+            if c == quote_char { in_quote = false; }
+            continue;
+        }
+        if c == '\'' || c == '"' { in_quote = true; quote_char = c; continue; }
+        if c == ':' && (i + 1 >= search.len() || search.as_bytes()[i + 1] == b' ') {
+            return Some(i + offset);
+        }
+    }
+    None
+}
+
+fn highlight_yaml_value(val: &str) -> String {
+    let trimmed = val.trim();
+    if trimmed.is_empty() { return html_escape(val); }
+    // Inline comment
+    let (value_part, comment) = split_inline_comment(trimmed);
+    let leading_space = &val[..val.len() - val.trim_start().len()];
+    let mut out = String::new();
+    out.push_str(&html_escape(leading_space));
+    let v = value_part.trim();
+    if v.is_empty() {
+        // nothing
+    } else if v == "true" || v == "false" {
+        out.push_str(&format!("<span class=\"hl-bool\">{v}</span>"));
+    } else if v == "null" || v == "~" {
+        out.push_str(&format!("<span class=\"hl-null\">{v}</span>"));
+    } else if v.starts_with('"') || v.starts_with('\'') {
+        out.push_str(&format!("<span class=\"hl-str\">{}</span>", html_escape(v)));
+    } else if v.starts_with('[') || v.starts_with('{') {
+        // Inline collections — highlight brackets and values
+        out.push_str(&highlight_yaml_inline_collection(v));
+    } else if v.starts_with('*') || v.starts_with('&') {
+        out.push_str(&format!("<span class=\"hl-anchor\">{}</span>", html_escape(v)));
+    } else if v == ">" || v == "|" || v == ">-" || v == "|-" {
+        out.push_str(&format!("<span class=\"hl-punct\">{}</span>", html_escape(v)));
+    } else if v.parse::<f64>().is_ok() {
+        out.push_str(&format!("<span class=\"hl-num\">{}</span>", html_escape(v)));
+    } else {
+        out.push_str(&format!("<span class=\"hl-str\">{}</span>", html_escape(v)));
+    }
+    if !comment.is_empty() {
+        out.push_str(&format!("  <span class=\"hl-comment\">{}</span>", html_escape(comment)));
+    }
+    out
+}
+
+fn split_inline_comment(s: &str) -> (&str, &str) {
+    let mut in_quote = false;
+    let mut qc = ' ';
+    let bytes = s.as_bytes();
+    for i in 0..bytes.len() {
+        let c = bytes[i] as char;
+        if in_quote {
+            if c == qc { in_quote = false; }
+            continue;
+        }
+        if c == '\'' || c == '"' { in_quote = true; qc = c; continue; }
+        if c == '#' && (i == 0 || bytes[i - 1] == b' ') {
+            return (s[..i].trim_end(), &s[i..]);
+        }
+    }
+    (s, "")
+}
+
+fn highlight_yaml_inline_collection(s: &str) -> String {
+    let mut out = String::new();
+    for c in s.chars() {
+        match c {
+            '[' | ']' | '{' | '}' | ',' => {
+                out.push_str(&format!("<span class=\"hl-punct\">{c}</span>"));
+            }
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+/// Syntax-highlight a single line of shell/bash.
+fn highlight_bash_line(line: &str) -> String {
+    let escaped = html_escape(line);
+    let trimmed = line.trim();
+    if trimmed.is_empty() || trimmed.starts_with('#') {
+        if trimmed.starts_with('#') {
+            return format!("<span class=\"hl-comment\">{}</span>", escaped);
+        }
+        return escaped;
+    }
+    // Simple: highlight the command name and flags
+    let mut out = String::new();
+    let mut first_word = true;
+    for token in trimmed.split_whitespace() {
+        if !first_word || !out.is_empty() { out.push(' '); }
+        if token == "|" || token == "&&" || token == "||" {
+            out.push_str(&format!("<span class=\"hl-sh-pipe\">{}</span>", html_escape(token)));
+            first_word = true;
+            continue;
+        }
+        if first_word {
+            out.push_str(&format!("<span class=\"hl-sh-cmd\">{}</span>", html_escape(token)));
+            first_word = false;
+        } else if token.starts_with('-') {
+            out.push_str(&format!("<span class=\"hl-sh-flag\">{}</span>", html_escape(token)));
+        } else if token.starts_with('"') || token.starts_with('\'') {
+            out.push_str(&format!("<span class=\"hl-str\">{}</span>", html_escape(token)));
+        } else {
+            out.push_str(&html_escape(token));
+        }
+    }
+    // Preserve leading indent
+    let indent = &escaped[..escaped.len() - html_escape(trimmed).len()];
+    format!("{indent}{out}")
+}
+
+/// Apply syntax highlighting to an already-escaped line, based on file type.
+fn syntax_highlight_line(line: &str, lang: &str) -> String {
+    match lang {
+        "yaml" | "yml" => highlight_yaml_line(line),
+        "bash" | "sh" | "shell" => highlight_bash_line(line),
+        _ => html_escape(line),
+    }
+}
+
 fn render_code_block(
     content: &str,
     artifact_ids: &std::collections::HashSet<String>,
@@ -4929,18 +5121,25 @@ fn render_code_block(
     is_rust: bool,
     html: &mut String,
 ) {
+    let lang = if is_yaml { "yaml" } else if is_rust { "rust" } else { "" };
     html.push_str("<div class=\"card source-viewer\"><table>");
     for (i, line) in content.lines().enumerate() {
         let line_num = i + 1;
-        let escaped = html_escape(line);
         let has_artifact = artifact_ids.iter().any(|id| line.contains(id.as_str()));
         let row_class = if has_artifact {
             "source-line source-line-highlight"
         } else {
             "source-line"
         };
+        // First apply syntax highlighting
+        let highlighted = if !lang.is_empty() {
+            syntax_highlight_line(line, lang)
+        } else {
+            html_escape(line)
+        };
+        // Then overlay artifact links on top
         let display_line = if is_yaml || is_rust {
-            let mut result = escaped.clone();
+            let mut result = highlighted;
             let mut ids: Vec<&String> = artifact_ids
                 .iter()
                 .filter(|id| line.contains(id.as_str()))
@@ -4948,10 +5147,11 @@ fn render_code_block(
             ids.sort_by_key(|b| std::cmp::Reverse(b.len()));
             for id in ids {
                 let escaped_id = html_escape(id);
-                let link = format!(
-                    "<a class=\"artifact-ref\" hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{escaped_id}</a>"
-                );
+                // The ID may be wrapped in a highlight span — search for it
                 if let Some(pos) = result.find(&escaped_id) {
+                    let link = format!(
+                        "<a class=\"artifact-ref\" hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{escaped_id}</a>"
+                    );
                     let before = &result[..pos];
                     let after = &result[pos + escaped_id.len()..];
                     result = format!("{before}{link}{after}");
@@ -4959,7 +5159,7 @@ fn render_code_block(
             }
             result
         } else {
-            escaped
+            highlighted
         };
         html.push_str(&format!(
             "<tr id=\"L{line_num}\" class=\"{row_class}\"><td class=\"line-no\"><a href=\"#L{line_num}\">{line_num}</a></td><td class=\"line-content\">{display_line}</td></tr>"
@@ -5942,3 +6142,317 @@ fn find_source_ref(s: &str) -> Option<SourceRefMatch> {
     }
     None
 }
+
+// ── Help / Docs / Schema dashboard views ───────────────────────────────
+
+async fn help_view(State(state): State<SharedState>) -> Html<String> {
+    let state = state.read().await;
+    let schema = &state.schema;
+
+    // Count things for the overview
+    let type_count = schema.artifact_types.len();
+    let link_count = schema.link_types.len();
+    let rule_count = schema.traceability_rules.len();
+
+    let mut html = String::with_capacity(4096);
+    html.push_str("<h2>Help &amp; Documentation</h2>");
+
+    // Quick-links cards
+    html.push_str(r#"<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;margin:1.5rem 0">"#);
+
+    let link_style = "display:inline-block;margin-top:.75rem;font-size:.85rem";
+    html.push_str(&format!(
+        "<div class=\"card\" style=\"padding:1.25rem\">\
+        <h3 style=\"margin:0 0 .5rem\">Schema Types</h3>\
+        <p style=\"font-size:2rem;font-weight:700;margin:.25rem 0\">{type_count}</p>\
+        <p style=\"font-size:.85rem;opacity:.7\">artifact types loaded</p>\
+        <a hx-get=\"/help/schema\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" \
+           style=\"{link_style}\">Browse types &rarr;</a>\
+        </div>"
+    ));
+
+    html.push_str(&format!(
+        "<div class=\"card\" style=\"padding:1.25rem\">\
+        <h3 style=\"margin:0 0 .5rem\">Link Types</h3>\
+        <p style=\"font-size:2rem;font-weight:700;margin:.25rem 0\">{link_count}</p>\
+        <p style=\"font-size:.85rem;opacity:.7\">with inverse mappings</p>\
+        <a hx-get=\"/help/links\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" \
+           style=\"{link_style}\">View links &rarr;</a>\
+        </div>"
+    ));
+
+    html.push_str(&format!(
+        "<div class=\"card\" style=\"padding:1.25rem\">\
+        <h3 style=\"margin:0 0 .5rem\">Traceability Rules</h3>\
+        <p style=\"font-size:2rem;font-weight:700;margin:.25rem 0\">{rule_count}</p>\
+        <p style=\"font-size:.85rem;opacity:.7\">enforced by validation</p>\
+        <a hx-get=\"/help/rules\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" \
+           style=\"{link_style}\">View rules &rarr;</a>\
+        </div>"
+    ));
+
+    html.push_str(&format!(
+        "<div class=\"card\" style=\"padding:1.25rem\">\
+        <h3 style=\"margin:0 0 .5rem\">Documentation</h3>\
+        <p style=\"font-size:.85rem;opacity:.7;margin:.5rem 0\">Built-in guides, references, and schema docs — searchable.</p>\
+        <a hx-get=\"/help/docs\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" \
+           style=\"{link_style}\">Browse topics &rarr;</a>\
+        </div>"
+    ));
+
+    html.push_str("</div>");
+
+    // CLI quick reference
+    html.push_str(r#"<div class="card" style="padding:1.25rem;margin-top:1rem">
+        <h3 style="margin:0 0 1rem">CLI Quick Reference</h3>
+        <pre style="font-size:.82rem;line-height:1.6;opacity:.85">"#);
+    html.push_str("rivet validate              Validate all artifacts\n");
+    html.push_str("rivet list [-t TYPE]        List artifacts\n");
+    html.push_str("rivet stats                 Summary statistics\n");
+    html.push_str("rivet coverage              Traceability coverage\n");
+    html.push_str("rivet matrix --from X --to Y  Traceability matrix\n");
+    html.push_str("rivet schema list           List artifact types\n");
+    html.push_str("rivet schema show TYPE      Show type details\n");
+    html.push_str("rivet docs                  List documentation topics\n");
+    html.push_str("rivet docs --grep PATTERN   Search docs\n");
+    html.push_str("rivet context               Generate agent context\n");
+    html.push_str("rivet serve [-P PORT]       Start dashboard\n");
+    html.push_str("</pre></div>");
+
+    Html(html)
+}
+
+async fn help_docs_list(State(_state): State<SharedState>) -> Html<String> {
+    let raw = docs::list_topics("text");
+
+    let mut html = String::with_capacity(4096);
+    html.push_str(r#"<h2>Documentation Topics</h2>"#);
+    html.push_str(r#"<p style="opacity:.7;margin-bottom:1rem">Built-in reference docs. Click a topic to read, or use <code>rivet docs --grep PATTERN</code> on the CLI.</p>"#);
+
+    // Parse the topic list and render as cards
+    html.push_str(r#"<div style="display:flex;flex-direction:column;gap:.5rem">"#);
+
+    let topics_json = docs::list_topics("json");
+    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&topics_json) {
+        let mut current_cat = String::new();
+        if let Some(topics) = val.get("topics").and_then(|t| t.as_array()) {
+            for topic in topics {
+                let slug = topic.get("slug").and_then(|s| s.as_str()).unwrap_or("");
+                let title = topic.get("title").and_then(|s| s.as_str()).unwrap_or("");
+                let category = topic.get("category").and_then(|s| s.as_str()).unwrap_or("");
+
+                if category != current_cat {
+                    if !current_cat.is_empty() {
+                        html.push_str("</div>");
+                    }
+                    html.push_str(&format!(
+                        r#"<h3 style="margin:1rem 0 .5rem;font-size:.9rem;text-transform:uppercase;letter-spacing:.05em;opacity:.5">{category}</h3>"#
+                    ));
+                    html.push_str(r#"<div style="display:flex;flex-direction:column;gap:.25rem">"#);
+                    current_cat = category.to_string();
+                }
+
+                html.push_str(&format!(
+                    "<a hx-get=\"/help/docs/{slug}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" \
+                       class=\"card\" style=\"padding:.75rem 1rem;display:flex;align-items:center;gap:1rem;text-decoration:none\">\
+                       <code style=\"font-size:.82rem;min-width:10rem\">{slug}</code>\
+                       <span style=\"font-size:.85rem\">{title}</span>\
+                    </a>"
+                ));
+            }
+            if !current_cat.is_empty() {
+                html.push_str("</div>");
+            }
+        }
+    } else {
+        // Fallback: render raw text
+        html.push_str(&format!("<pre>{}</pre>", html_escape(&raw)));
+    }
+
+    html.push_str("</div>");
+    Html(html)
+}
+
+async fn help_docs_topic(
+    State(_state): State<SharedState>,
+    Path(slug): Path<String>,
+) -> Html<String> {
+    let raw = docs::show_topic(&slug, "text");
+
+    let mut html = String::with_capacity(8192);
+    html.push_str("<div style=\"margin-bottom:1rem\"><a hx-get=\"/help/docs\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" style=\"font-size:.85rem\">&larr; All topics</a></div>");
+    html.push_str("<div class=\"card\" style=\"padding:1.5rem\">");
+
+    // Render the markdown-ish content as HTML
+    let mut in_code_block = false;
+    let mut code_lang = String::new();
+    let mut in_table = false;
+    for line in raw.lines() {
+        if line.starts_with("```") {
+            if in_code_block {
+                html.push_str("</pre>");
+                in_code_block = false;
+                code_lang.clear();
+            } else {
+                let lang = line.trim_start_matches('`').trim();
+                code_lang = lang.to_string();
+                html.push_str(r#"<pre style="background:var(--bg);padding:1rem;border-radius:var(--radius-sm);font-size:.82rem;overflow-x:auto;margin:.75rem 0">"#);
+                in_code_block = true;
+            }
+            continue;
+        }
+        if in_code_block {
+            let lang = match code_lang.as_str() {
+                "yaml" | "yml" => "yaml",
+                "bash" | "sh" | "shell" => "bash",
+                _ => "",
+            };
+            if !lang.is_empty() {
+                html.push_str(&syntax_highlight_line(line, lang));
+            } else {
+                html.push_str(&html_escape(line));
+            }
+            html.push('\n');
+            continue;
+        }
+        if line.starts_with("# ") {
+            html.push_str(&format!("<h2>{}</h2>", html_escape(&line[2..])));
+        } else if line.starts_with("## ") {
+            html.push_str(&format!("<h3 style=\"margin-top:1.5rem\">{}</h3>", html_escape(&line[3..])));
+        } else if line.starts_with("### ") {
+            html.push_str(&format!("<h4 style=\"margin-top:1rem\">{}</h4>", html_escape(&line[4..])));
+        } else if line.starts_with('|') {
+            if !in_table {
+                html.push_str(r#"<div style="overflow-x:auto;margin:.75rem 0"><table>"#);
+                in_table = true;
+            }
+            if line.contains("---") && !line.contains(' ') || line.chars().all(|c| c == '|' || c == '-' || c == ' ') {
+                // Skip separator rows
+            } else {
+                html.push_str("<tr>");
+                let cells: Vec<&str> = line.split('|').collect();
+                for cell in &cells[1..cells.len().saturating_sub(1)] {
+                    html.push_str(&format!("<td style=\"padding:.25rem .75rem\">{}</td>", html_escape(cell.trim())));
+                }
+                html.push_str("</tr>");
+            }
+        } else {
+            if in_table {
+                html.push_str("</table></div>");
+                in_table = false;
+            }
+            if line.is_empty() {
+                html.push_str("<br>");
+            } else {
+                html.push_str(&format!("<p style=\"margin:.25rem 0;font-size:.88rem;line-height:1.6\">{}</p>", html_escape(line)));
+            }
+        }
+    }
+    if in_table {
+        html.push_str("</table></div>");
+    }
+    if in_code_block {
+        html.push_str("</pre>");
+    }
+
+    html.push_str("</div>");
+    Html(html)
+}
+
+async fn help_schema_list(State(state): State<SharedState>) -> Html<String> {
+    let state = state.read().await;
+    let schema = &state.schema;
+
+    let mut types: Vec<_> = schema.artifact_types.values().collect();
+    types.sort_by_key(|t| &t.name);
+
+    let mut html = String::with_capacity(4096);
+    html.push_str("<h2>Schema Types</h2>");
+    html.push_str(r#"<p style="opacity:.7;margin-bottom:1rem">Click a type to see fields, link fields, traceability rules, and example YAML.</p>"#);
+
+    html.push_str(r#"<table><thead><tr>
+        <th>Type</th><th>Description</th><th>Fields</th><th>Links</th><th>Process</th>
+    </tr></thead><tbody>"#);
+
+    for t in &types {
+        let proc = t.aspice_process.as_deref().unwrap_or("-");
+        html.push_str(&format!(
+            "<tr style=\"cursor:pointer\" hx-get=\"/help/schema/{name}\" hx-target=\"#content\" hx-push-url=\"true\">\
+            <td><code>{name}</code></td>\
+            <td>{desc}</td>\
+            <td style=\"text-align:center\">{fields}</td>\
+            <td style=\"text-align:center\">{links}</td>\
+            <td>{proc}</td>\
+            </tr>",
+            name = t.name,
+            desc = html_escape(&t.description),
+            fields = t.fields.len(),
+            links = t.link_fields.len(),
+            proc = proc,
+        ));
+    }
+
+    html.push_str("</tbody></table>");
+    Html(html)
+}
+
+async fn help_schema_show(
+    State(state): State<SharedState>,
+    Path(name): Path<String>,
+) -> Html<String> {
+    let state = state.read().await;
+    let raw = schema_cmd::cmd_show(&state.schema, &name, "text");
+
+    let mut html = String::with_capacity(8192);
+    html.push_str("<div style=\"margin-bottom:1rem\"><a hx-get=\"/help/schema\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" style=\"font-size:.85rem\">&larr; All types</a></div>");
+
+    // Render the output as structured HTML
+    html.push_str("<div class=\"card\" style=\"padding:1.5rem\"><pre style=\"font-size:.82rem;line-height:1.6;white-space:pre-wrap\">");
+    html.push_str(&html_escape(&raw));
+    html.push_str("</pre></div>");
+
+    Html(html)
+}
+
+async fn help_links_view(State(state): State<SharedState>) -> Html<String> {
+    let state = state.read().await;
+    let schema = &state.schema;
+
+    let mut links: Vec<_> = schema.link_types.values().collect();
+    links.sort_by_key(|l| &l.name);
+
+    let mut html = String::with_capacity(4096);
+    html.push_str("<div style=\"margin-bottom:1rem\"><a hx-get=\"/help\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" style=\"font-size:.85rem\">&larr; Help</a></div>");
+    html.push_str("<h2>Link Types</h2>");
+
+    html.push_str("<table><thead><tr>\
+        <th>Name</th><th>Inverse</th><th>Description</th>\
+    </tr></thead><tbody>");
+
+    for l in &links {
+        let inv = l.inverse.as_deref().unwrap_or("-");
+        html.push_str(&format!(
+            "<tr><td><code>{}</code></td><td><code>{}</code></td><td>{}</td></tr>",
+            html_escape(&l.name),
+            html_escape(inv),
+            html_escape(&l.description),
+        ));
+    }
+
+    html.push_str("</tbody></table>");
+    Html(html)
+}
+
+async fn help_rules_view(State(state): State<SharedState>) -> Html<String> {
+    let state = state.read().await;
+    let raw = schema_cmd::cmd_rules(&state.schema, "text");
+
+    let mut html = String::with_capacity(4096);
+    html.push_str("<div style=\"margin-bottom:1rem\"><a hx-get=\"/help\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" style=\"font-size:.85rem\">&larr; Help</a></div>");
+    html.push_str("<h2>Traceability Rules</h2>");
+    html.push_str("<div class=\"card\" style=\"padding:1.5rem\"><pre style=\"font-size:.82rem;line-height:1.6;white-space:pre-wrap\">");
+    html.push_str(&html_escape(&raw));
+    html.push_str("</pre></div>");
+    Html(html)
+}
+

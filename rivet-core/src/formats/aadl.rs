@@ -1,15 +1,12 @@
-//! AADL adapter — parses spar's JSON output into rivet Artifacts.
+//! AADL adapter — uses spar crates to parse `.aadl` files directly.
 //!
-//! This is the Layer 1 integration path: rivet calls the spar CLI and
-//! parses its JSON output.  The adapter converts spar's component and
-//! diagnostic data into rivet artifacts that can be validated against the
-//! AADL schema and traced to requirements.
+//! Integration via `spar-hir` (parsing + HIR) and `spar-analysis`
+//! (connectivity, scheduling, latency, etc.). No CLI invocation needed.
 //!
 //! Import modes:
-//! - `Bytes`     — parse JSON directly (main path for tests)
-//! - `Path`      — read a file as JSON
-//! - `Directory` — find `.aadl` files, invoke `spar analyze --format json`,
-//!   parse its stdout
+//! - `Bytes` — parse JSON (legacy/test compatibility)
+//! - `Path` — single `.aadl` file or JSON file
+//! - `Directory` — find `.aadl` files, parse with spar-hir, run analyses
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -66,9 +63,14 @@ impl Adapter for AadlAdapter {
             AdapterSource::Bytes(bytes) => {
                 let content = std::str::from_utf8(bytes)
                     .map_err(|e| Error::Adapter(format!("invalid UTF-8: {}", e)))?;
-                parse_spar_json(content)
+                // Try JSON first (legacy), then AADL source.
+                if content.trim_start().starts_with('{') {
+                    parse_spar_json(content)
+                } else {
+                    import_aadl_sources(&[("input.aadl".into(), content.to_string())], config)
+                }
             }
-            AdapterSource::Path(path) => import_json_file(path),
+            AdapterSource::Path(path) => import_single_file(path, config),
             AdapterSource::Directory(dir) => import_aadl_directory(dir, config),
         }
     }
@@ -80,7 +82,154 @@ impl Adapter for AadlAdapter {
     }
 }
 
-// ── Spar JSON schema ─────────────────────────────────────────────────────
+// ── Direct spar-hir integration ─────────────────────────────────────────
+
+#[cfg(feature = "aadl")]
+fn import_aadl_sources(
+    sources: &[(String, String)],
+    config: &AdapterConfig,
+) -> Result<Vec<Artifact>, Error> {
+    use spar_hir::Database;
+
+    let db = Database::from_aadl(sources);
+    let packages = db.packages();
+
+    let mut artifacts = Vec::new();
+
+    // Convert component types and implementations from HIR.
+    for pkg in &packages {
+        for ct in &pkg.component_types {
+            let category = ct.category.to_string();
+            // Map spaces to dashes for schema compatibility (e.g. "thread group" → "thread-group")
+            let category_id = category.replace(' ', "-");
+            artifacts.push(component_to_artifact(
+                &pkg.name,
+                &ct.name,
+                &category_id,
+                "type",
+            ));
+        }
+        for ci in &pkg.component_impls {
+            let category = ci.category.to_string();
+            let category_id = category.replace(' ', "-");
+            artifacts.push(component_to_artifact(
+                &pkg.name,
+                &ci.name,
+                &category_id,
+                "implementation",
+            ));
+        }
+    }
+
+    // Run tree-level analyses (category rules, naming) on all files.
+    let tree_diags = run_tree_analyses(&db);
+    let mut diag_index = 0;
+    for diag in &tree_diags {
+        artifacts.push(analysis_diagnostic_to_artifact(diag_index, diag));
+        diag_index += 1;
+    }
+
+    // Run instance-level analyses if a root classifier is configured.
+    let root_classifier = config.get("root-classifier");
+    if let Some(root_name) = root_classifier {
+        if let Some(instance) = db.instantiate(root_name) {
+            let instance_diags = run_instance_analyses(&instance);
+            for diag in &instance_diags {
+                artifacts.push(analysis_diagnostic_to_artifact(diag_index, diag));
+                diag_index += 1;
+            }
+        }
+    }
+
+    Ok(artifacts)
+}
+
+#[cfg(feature = "aadl")]
+fn run_instance_analyses(instance: &spar_hir::Instance) -> Vec<spar_analysis::AnalysisDiagnostic> {
+    use spar_analysis::AnalysisRunner;
+
+    let mut runner = AnalysisRunner::new();
+    // Instance-level analyses (operate on SystemInstance).
+    runner.register(Box::new(spar_analysis::connectivity::ConnectivityAnalysis));
+    runner.register(Box::new(spar_analysis::hierarchy::HierarchyAnalysis));
+    runner.register(Box::new(spar_analysis::completeness::CompletenessAnalysis));
+    runner.register(Box::new(spar_analysis::direction_rules::DirectionRuleAnalysis));
+    runner.register(Box::new(spar_analysis::flow_check::FlowCheckAnalysis));
+    runner.register(Box::new(spar_analysis::mode_check::ModeCheckAnalysis));
+    runner.register(Box::new(spar_analysis::binding_check::BindingCheckAnalysis));
+    runner.register(Box::new(spar_analysis::latency::LatencyAnalysis));
+    runner.register(Box::new(spar_analysis::scheduling::SchedulingAnalysis));
+    runner.register(Box::new(spar_analysis::resource_budget::ResourceBudgetAnalysis));
+
+    runner.run_all(instance.inner())
+}
+
+/// Run tree-level checks (category rules, naming, legality) on all item trees.
+#[cfg(feature = "aadl")]
+fn run_tree_analyses(db: &spar_hir::Database) -> Vec<spar_analysis::AnalysisDiagnostic> {
+    let mut diags = Vec::new();
+    for tree in db.item_trees() {
+        diags.extend(spar_analysis::category_check::check_category_rules(tree));
+        diags.extend(spar_analysis::naming_rules::check_naming_rules(tree));
+    }
+    diags
+}
+
+#[cfg(feature = "aadl")]
+fn analysis_diagnostic_to_artifact(
+    index: usize,
+    diag: &spar_analysis::AnalysisDiagnostic,
+) -> Artifact {
+    let id = format!("AADL-DIAG-{:04}", index + 1);
+    let severity = match diag.severity {
+        spar_analysis::Severity::Error => "error",
+        spar_analysis::Severity::Warning => "warning",
+        spar_analysis::Severity::Info => "info",
+    };
+
+    let mut fields = BTreeMap::new();
+    fields.insert(
+        "analysis-name".into(),
+        serde_yaml::Value::String(diag.analysis.clone()),
+    );
+    fields.insert(
+        "severity".into(),
+        serde_yaml::Value::String(severity.into()),
+    );
+    fields.insert(
+        "component-path".into(),
+        serde_yaml::Value::String(diag.path.join(".")),
+    );
+    fields.insert(
+        "details".into(),
+        serde_yaml::Value::String(diag.message.clone()),
+    );
+
+    Artifact {
+        id,
+        artifact_type: "aadl-analysis-result".into(),
+        title: format!("[{}] {}", diag.analysis, diag.message),
+        description: Some(diag.message.clone()),
+        status: None,
+        tags: vec!["aadl".into(), diag.analysis.clone()],
+        links: vec![],
+        fields,
+        source_file: None,
+    }
+}
+
+// Fallback when the aadl feature is disabled.
+#[cfg(not(feature = "aadl"))]
+fn import_aadl_sources(
+    _sources: &[(String, String)],
+    _config: &AdapterConfig,
+) -> Result<Vec<Artifact>, Error> {
+    Err(Error::Adapter(
+        "AADL support requires the 'aadl' feature (spar crates)".into(),
+    ))
+}
+
+// ── Legacy JSON parsing (test compatibility) ────────────────────────────
 
 #[derive(Debug, Deserialize)]
 struct SparOutput {
@@ -126,15 +275,12 @@ struct SparDiagnostic {
     analysis: String,
 }
 
-// ── Parsing & conversion ─────────────────────────────────────────────────
-
 fn parse_spar_json(content: &str) -> Result<Vec<Artifact>, Error> {
     let output: SparOutput = serde_json::from_str(content)
         .map_err(|e| Error::Adapter(format!("failed to parse spar JSON: {}", e)))?;
 
     let mut artifacts = Vec::new();
 
-    // Convert component types and implementations.
     for pkg in &output.packages {
         for ct in &pkg.component_types {
             artifacts.push(component_to_artifact(
@@ -154,13 +300,14 @@ fn parse_spar_json(content: &str) -> Result<Vec<Artifact>, Error> {
         }
     }
 
-    // Convert diagnostics.
     for (index, diag) in output.diagnostics.iter().enumerate() {
         artifacts.push(diagnostic_to_artifact(index, diag));
     }
 
     Ok(artifacts)
 }
+
+// ── Shared artifact builders ────────────────────────────────────────────
 
 fn component_to_artifact(
     pkg_name: &str,
@@ -231,12 +378,22 @@ fn diagnostic_to_artifact(index: usize, diag: &SparDiagnostic) -> Artifact {
     }
 }
 
-// ── File / directory import ──────────────────────────────────────────────
+// ── File / directory import ─────────────────────────────────────────────
 
-fn import_json_file(path: &Path) -> Result<Vec<Artifact>, Error> {
+fn import_single_file(path: &Path, config: &AdapterConfig) -> Result<Vec<Artifact>, Error> {
     let content = std::fs::read_to_string(path)
         .map_err(|e| Error::Io(format!("{}: {}", path.display(), e)))?;
-    let mut artifacts = parse_spar_json(&content)?;
+
+    let is_json = path.extension().is_some_and(|ext| ext == "json")
+        || content.trim_start().starts_with('{');
+
+    let mut artifacts = if is_json {
+        parse_spar_json(&content)?
+    } else {
+        let name = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+        import_aadl_sources(&[(name, content)], config)?
+    };
+
     for a in &mut artifacts {
         a.source_file = Some(path.to_path_buf());
     }
@@ -244,45 +401,30 @@ fn import_json_file(path: &Path) -> Result<Vec<Artifact>, Error> {
 }
 
 fn import_aadl_directory(dir: &Path, config: &AdapterConfig) -> Result<Vec<Artifact>, Error> {
-    // Collect .aadl files.
     let aadl_files = collect_aadl_files(dir)?;
     if aadl_files.is_empty() {
         return Ok(Vec::new());
     }
 
-    // Build the spar command.
-    let root = config.get("root").unwrap_or(".");
-
-    let mut cmd = std::process::Command::new("spar");
-    cmd.arg("analyze")
-        .arg("--root")
-        .arg(root)
-        .arg("--format")
-        .arg("json");
-
-    for file in &aadl_files {
-        cmd.arg(file);
+    // Read all .aadl files into (name, content) pairs for spar-hir.
+    let mut sources = Vec::new();
+    for path in &aadl_files {
+        let content = std::fs::read_to_string(path)
+            .map_err(|e| Error::Io(format!("{}: {}", path.display(), e)))?;
+        let name = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+        sources.push((name, content));
     }
 
-    let output = cmd.output().map_err(|e| {
-        Error::Adapter(format!(
-            "failed to run spar: {} (is spar installed and on PATH?)",
-            e
-        ))
-    })?;
+    let mut artifacts = import_aadl_sources(&sources, config)?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(Error::Adapter(format!(
-            "spar exited with {}: {}",
-            output.status, stderr
-        )));
+    // Tag artifacts with source file info.
+    for a in &mut artifacts {
+        if a.source_file.is_none() {
+            a.source_file = Some(dir.to_path_buf());
+        }
     }
 
-    let stdout = std::str::from_utf8(&output.stdout)
-        .map_err(|e| Error::Adapter(format!("spar output is not valid UTF-8: {}", e)))?;
-
-    parse_spar_json(stdout)
+    Ok(artifacts)
 }
 
 fn collect_aadl_files(dir: &Path) -> Result<Vec<std::path::PathBuf>, Error> {

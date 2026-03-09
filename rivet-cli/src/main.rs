@@ -14,6 +14,8 @@ use rivet_core::schema::Severity;
 use rivet_core::store::Store;
 use rivet_core::validate;
 
+mod docs;
+mod schema_cmd;
 mod serve;
 
 #[derive(Parser)]
@@ -43,8 +45,12 @@ enum Command {
         #[arg(long)]
         name: Option<String>,
 
-        /// Schemas to include (e.g. common,dev or common,aspice)
-        #[arg(long, value_delimiter = ',', default_values_t = ["common".to_string(), "dev".to_string()])]
+        /// Preset: dev (default), aspice, stpa, cybersecurity, aadl
+        #[arg(long, default_value = "dev")]
+        preset: String,
+
+        /// Schemas to include (overrides preset if given)
+        #[arg(long, value_delimiter = ',')]
         schema: Vec<String>,
 
         /// Directory to initialize (defaults to current directory)
@@ -53,7 +59,11 @@ enum Command {
     },
 
     /// Validate artifacts against schemas
-    Validate,
+    Validate {
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
 
     /// List artifacts, optionally filtered by type
     List {
@@ -64,10 +74,18 @@ enum Command {
         /// Filter by status
         #[arg(short, long)]
         status: Option<String>,
+
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
     },
 
     /// Show artifact summary statistics
-    Stats,
+    Stats {
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
 
     /// Show traceability coverage report
     Coverage {
@@ -97,6 +115,10 @@ enum Command {
         /// Direction: "forward" or "backward"
         #[arg(long, default_value = "backward")]
         direction: String,
+
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
     },
 
     /// Load and validate STPA files directly (without rivet.yaml)
@@ -118,6 +140,10 @@ enum Command {
         /// Path to the head artifact directory (newer version)
         #[arg(long)]
         head: Option<PathBuf>,
+
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
     },
 
     /// Export artifacts to a specified format
@@ -130,6 +156,33 @@ enum Command {
         #[arg(short, long)]
         output: Option<PathBuf>,
     },
+
+    /// Introspect loaded schemas (types, links, rules)
+    Schema {
+        #[command(subcommand)]
+        action: SchemaAction,
+    },
+
+    /// Built-in documentation (topics, search)
+    Docs {
+        /// Topic slug to display (omit for topic list)
+        topic: Option<String>,
+
+        /// Search across all docs (like grep)
+        #[arg(long)]
+        grep: Option<String>,
+
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
+
+        /// Context lines around grep matches
+        #[arg(short = 'C', long, default_value = "2")]
+        context: usize,
+    },
+
+    /// Generate .rivet/agent-context.md from current project state
+    Context,
 
     /// Start the HTMX-powered dashboard server
     Serve {
@@ -152,6 +205,36 @@ enum Command {
         /// Adapter configuration entries (key=value pairs)
         #[arg(long = "config", value_parser = parse_key_val)]
         config_entries: Vec<(String, String)>,
+    },
+}
+
+#[derive(Subcommand)]
+enum SchemaAction {
+    /// List all artifact types
+    List {
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+    /// Show detailed info for an artifact type
+    Show {
+        /// Artifact type name
+        name: String,
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+    /// List all link types with inverses
+    Links {
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+    /// List all traceability rules
+    Rules {
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
     },
 }
 
@@ -183,26 +266,34 @@ fn main() -> ExitCode {
 }
 
 fn run(cli: Cli) -> Result<bool> {
-    // Init does not need a loaded project; handle it first.
-    if let Command::Init { name, schema, dir } = &cli.command {
-        return cmd_init(name.as_deref(), schema, dir);
+    // Commands that don't need a loaded project.
+    if let Command::Init { name, preset, schema, dir } = &cli.command {
+        return cmd_init(name.as_deref(), preset, schema, dir);
+    }
+    if let Command::Docs { topic, grep, format, context } = &cli.command {
+        return cmd_docs(topic.as_deref(), grep.as_deref(), format, *context);
+    }
+    if let Command::Context = &cli.command {
+        return cmd_context(&cli);
     }
 
     match &cli.command {
-        Command::Init { .. } => unreachable!(),
+        Command::Init { .. } | Command::Docs { .. } | Command::Context => unreachable!(),
         Command::Stpa { path, schema } => cmd_stpa(path, schema.as_deref(), &cli),
-        Command::Validate => cmd_validate(&cli),
-        Command::List { r#type, status } => cmd_list(&cli, r#type.as_deref(), status.as_deref()),
-        Command::Stats => cmd_stats(&cli),
+        Command::Validate { format } => cmd_validate(&cli, format),
+        Command::List { r#type, status, format } => cmd_list(&cli, r#type.as_deref(), status.as_deref(), format),
+        Command::Stats { format } => cmd_stats(&cli, format),
         Command::Coverage { format, fail_under } => cmd_coverage(&cli, format, fail_under.as_ref()),
         Command::Matrix {
             from,
             to,
             link,
             direction,
-        } => cmd_matrix(&cli, from, to, link.as_deref(), direction),
-        Command::Diff { base, head } => cmd_diff(&cli, base.as_deref(), head.as_deref()),
+            format,
+        } => cmd_matrix(&cli, from, to, link.as_deref(), direction, format),
+        Command::Diff { base, head, format } => cmd_diff(&cli, base.as_deref(), head.as_deref(), format),
         Command::Export { format, output } => cmd_export(&cli, format, output.as_deref()),
+        Command::Schema { action } => cmd_schema(&cli, action),
         Command::Serve { port } => {
             let port = *port;
             let (store, schema, graph, doc_store, result_store, project_name, project_path, schemas_dir) =
@@ -231,7 +322,7 @@ fn run(cli: Cli) -> Result<bool> {
 }
 
 /// Initialize a new rivet project.
-fn cmd_init(name: Option<&str>, schemas: &[String], dir: &std::path::Path) -> Result<bool> {
+fn cmd_init(name: Option<&str>, preset: &str, schemas: &[String], dir: &std::path::Path) -> Result<bool> {
     let dir = if dir == std::path::Path::new(".") {
         std::env::current_dir().context("resolving current directory")?
     } else {
@@ -258,8 +349,21 @@ fn cmd_init(name: Option<&str>, schemas: &[String], dir: &std::path::Path) -> Re
     std::fs::create_dir_all(&dir)
         .with_context(|| format!("creating directory {}", dir.display()))?;
 
+    // Resolve schemas: use explicit --schema if given, otherwise derive from preset
+    let resolved_schemas: Vec<String> = if schemas.is_empty() {
+        match preset {
+            "aspice" => vec!["common".to_string(), "aspice".to_string()],
+            "stpa" => vec!["common".to_string(), "stpa".to_string()],
+            "cybersecurity" => vec!["common".to_string(), "cybersecurity".to_string()],
+            "aadl" => vec!["common".to_string(), "aadl".to_string()],
+            _ => vec!["common".to_string(), "dev".to_string()],
+        }
+    } else {
+        schemas.to_vec()
+    };
+
     // Build schema list for the config
-    let schema_entries: String = schemas
+    let schema_entries: String = resolved_schemas
         .iter()
         .map(|s| format!("    - {s}"))
         .collect::<Vec<_>>()
@@ -419,20 +523,10 @@ fn cmd_stpa(
 }
 
 /// Validate a full project (with rivet.yaml).
-fn cmd_validate(cli: &Cli) -> Result<bool> {
+fn cmd_validate(cli: &Cli, format: &str) -> Result<bool> {
     let (store, schema, graph, doc_store) = load_project_with_docs(cli)?;
     let mut diagnostics = validate::validate(&store, &schema, &graph);
     diagnostics.extend(validate::validate_documents(&doc_store, &store));
-
-    if !doc_store.is_empty() {
-        println!(
-            "Loaded {} documents with {} artifact references",
-            doc_store.len(),
-            doc_store.all_references().len()
-        );
-    }
-
-    print_diagnostics(&diagnostics);
 
     let errors = diagnostics
         .iter()
@@ -442,19 +536,54 @@ fn cmd_validate(cli: &Cli) -> Result<bool> {
         .iter()
         .filter(|d| d.severity == Severity::Warning)
         .count();
+    let infos = diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Info)
+        .count();
 
-    println!();
-    if errors > 0 {
-        println!("Result: FAIL ({} errors, {} warnings)", errors, warnings);
-        Ok(false)
+    if format == "json" {
+        let diag_json: Vec<serde_json::Value> = diagnostics
+            .iter()
+            .map(|d| {
+                serde_json::json!({
+                    "severity": format!("{:?}", d.severity).to_lowercase(),
+                    "artifact_id": d.artifact_id,
+                    "message": d.message,
+                })
+            })
+            .collect();
+        let output = serde_json::json!({
+            "command": "validate",
+            "errors": errors,
+            "warnings": warnings,
+            "infos": infos,
+            "diagnostics": diag_json,
+        });
+        println!("{}", serde_json::to_string_pretty(&output).unwrap());
     } else {
-        println!("Result: PASS ({} warnings)", warnings);
-        Ok(true)
+        if !doc_store.is_empty() {
+            println!(
+                "Loaded {} documents with {} artifact references",
+                doc_store.len(),
+                doc_store.all_references().len()
+            );
+        }
+
+        print_diagnostics(&diagnostics);
+
+        println!();
+        if errors > 0 {
+            println!("Result: FAIL ({} errors, {} warnings)", errors, warnings);
+        } else {
+            println!("Result: PASS ({} warnings)", warnings);
+        }
     }
+
+    Ok(errors == 0)
 }
 
 /// List artifacts.
-fn cmd_list(cli: &Cli, type_filter: Option<&str>, status_filter: Option<&str>) -> Result<bool> {
+fn cmd_list(cli: &Cli, type_filter: Option<&str>, status_filter: Option<&str>, format: &str) -> Result<bool> {
     let (store, _, _) = load_project(cli)?;
 
     let query = rivet_core::query::Query {
@@ -465,34 +594,74 @@ fn cmd_list(cli: &Cli, type_filter: Option<&str>, status_filter: Option<&str>) -
 
     let results = rivet_core::query::execute(&store, &query);
 
-    for artifact in &results {
-        let status = artifact.status.as_deref().unwrap_or("-");
-        let links = artifact.links.len();
-        println!(
-            "  {:20} {:25} {:12} {:3} links  {}",
-            artifact.id, artifact.artifact_type, status, links, artifact.title
-        );
+    if format == "json" {
+        let artifacts_json: Vec<serde_json::Value> = results
+            .iter()
+            .map(|a| {
+                serde_json::json!({
+                    "id": a.id,
+                    "type": a.artifact_type,
+                    "title": a.title,
+                    "status": a.status.as_deref().unwrap_or("-"),
+                    "links": a.links.len(),
+                })
+            })
+            .collect();
+        let output = serde_json::json!({
+            "command": "list",
+            "count": results.len(),
+            "artifacts": artifacts_json,
+        });
+        println!("{}", serde_json::to_string_pretty(&output).unwrap());
+    } else {
+        for artifact in &results {
+            let status = artifact.status.as_deref().unwrap_or("-");
+            let links = artifact.links.len();
+            println!(
+                "  {:20} {:25} {:12} {:3} links  {}",
+                artifact.id, artifact.artifact_type, status, links, artifact.title
+            );
+        }
+        println!("\n{} artifacts", results.len());
     }
-    println!("\n{} artifacts", results.len());
 
     Ok(true)
 }
 
 /// Print summary statistics.
-fn cmd_stats(cli: &Cli) -> Result<bool> {
+fn cmd_stats(cli: &Cli, format: &str) -> Result<bool> {
     let (store, _, graph) = load_project(cli)?;
-    print_stats(&store);
 
     let orphans = graph.orphans(&store);
-    if !orphans.is_empty() {
-        println!("\nOrphan artifacts (no links): {}", orphans.len());
-        for id in &orphans {
-            println!("  {}", id);
-        }
-    }
 
-    if !graph.broken.is_empty() {
-        println!("\nBroken links: {}", graph.broken.len());
+    if format == "json" {
+        let mut types = serde_json::Map::new();
+        let mut type_names: Vec<&str> = store.types().collect();
+        type_names.sort();
+        for t in &type_names {
+            types.insert(t.to_string(), serde_json::json!(store.count_by_type(t)));
+        }
+        let output = serde_json::json!({
+            "command": "stats",
+            "total": store.len(),
+            "types": types,
+            "orphans": orphans,
+            "broken_links": graph.broken.len(),
+        });
+        println!("{}", serde_json::to_string_pretty(&output).unwrap());
+    } else {
+        print_stats(&store);
+
+        if !orphans.is_empty() {
+            println!("\nOrphan artifacts (no links): {}", orphans.len());
+            for id in &orphans {
+                println!("  {}", id);
+            }
+        }
+
+        if !graph.broken.is_empty() {
+            println!("\nBroken links: {}", graph.broken.len());
+        }
     }
 
     Ok(true)
@@ -567,6 +736,7 @@ fn cmd_matrix(
     to: &str,
     link_type: Option<&str>,
     direction: &str,
+    format: &str,
 ) -> Result<bool> {
     let (store, _schema, graph) = load_project(cli)?;
 
@@ -584,26 +754,50 @@ fn cmd_matrix(
 
     let result = matrix::compute_matrix(&store, &graph, from, to, link, dir);
 
-    println!(
-        "Traceability: {} -> {} (via '{}')\n",
-        result.source_type, result.target_type, result.link_type
-    );
+    if format == "json" {
+        let rows_json: Vec<serde_json::Value> = result
+            .rows
+            .iter()
+            .map(|row| {
+                let targets: Vec<&str> = row.targets.iter().map(|t| t.id.as_str()).collect();
+                serde_json::json!({
+                    "source_id": row.source_id,
+                    "targets": targets,
+                })
+            })
+            .collect();
+        let output = serde_json::json!({
+            "command": "matrix",
+            "source_type": result.source_type,
+            "target_type": result.target_type,
+            "link_type": result.link_type,
+            "covered": result.covered,
+            "total": result.total,
+            "rows": rows_json,
+        });
+        println!("{}", serde_json::to_string_pretty(&output).unwrap());
+    } else {
+        println!(
+            "Traceability: {} -> {} (via '{}')\n",
+            result.source_type, result.target_type, result.link_type
+        );
 
-    for row in &result.rows {
-        if row.targets.is_empty() {
-            println!("  {:20} -> (none)", row.source_id);
-        } else {
-            let targets: Vec<&str> = row.targets.iter().map(|t| t.id.as_str()).collect();
-            println!("  {:20} -> {}", row.source_id, targets.join(", "));
+        for row in &result.rows {
+            if row.targets.is_empty() {
+                println!("  {:20} -> (none)", row.source_id);
+            } else {
+                let targets: Vec<&str> = row.targets.iter().map(|t| t.id.as_str()).collect();
+                println!("  {:20} -> {}", row.source_id, targets.join(", "));
+            }
         }
-    }
 
-    println!(
-        "\nCoverage: {}/{} ({:.1}%)",
-        result.covered,
-        result.total,
-        result.coverage_pct()
-    );
+        println!(
+            "\nCoverage: {}/{} ({:.1}%)",
+            result.covered,
+            result.total,
+            result.coverage_pct()
+        );
+    }
 
     Ok(true)
 }
@@ -656,6 +850,7 @@ fn cmd_diff(
     cli: &Cli,
     base_path: Option<&std::path::Path>,
     head_path: Option<&std::path::Path>,
+    format: &str,
 ) -> Result<bool> {
     let (base_store, base_schema, base_graph, head_store, head_schema, head_graph) =
         match (base_path, head_path) {
@@ -666,13 +861,13 @@ fn cmd_diff(
                     project: bp.to_path_buf(),
                     schemas: cli.schemas.clone(),
                     verbose: cli.verbose,
-                    command: Command::Validate,
+                    command: Command::Validate { format: "text".to_string() },
                 };
                 let head_cli = Cli {
                     project: hp.to_path_buf(),
                     schemas: cli.schemas.clone(),
                     verbose: cli.verbose,
-                    command: Command::Validate,
+                    command: Command::Validate { format: "text".to_string() },
                 };
                 let (bs, bsc, bg) = load_project(&base_cli)?;
                 let (hs, hsc, hg) = load_project(&head_cli)?;
@@ -696,107 +891,255 @@ fn cmd_diff(
     let head_diags = validate::validate(&head_store, &head_schema, &head_graph);
     let diag_diff = DiagnosticDiff::compute(&base_diags, &head_diags);
 
-    // ── Display ──────────────────────────────────────────────────────
+    if format == "json" {
+        let modified_json: Vec<serde_json::Value> = diff
+            .modified
+            .iter()
+            .map(|change| {
+                let mut changes = Vec::new();
+                if let Some((old, new)) = &change.title_changed {
+                    changes.push(format!("title: {} -> {}", old, new));
+                }
+                if change.description_changed {
+                    changes.push("description: changed".to_string());
+                }
+                if let Some((old, new)) = &change.status_changed {
+                    let old_s = old.as_deref().unwrap_or("(none)");
+                    let new_s = new.as_deref().unwrap_or("(none)");
+                    changes.push(format!("status: {} -> {}", old_s, new_s));
+                }
+                if let Some((old, new)) = &change.type_changed {
+                    changes.push(format!("type: {} -> {}", old, new));
+                }
+                for tag in &change.tags_added {
+                    changes.push(format!("tag added: {}", tag));
+                }
+                for tag in &change.tags_removed {
+                    changes.push(format!("tag removed: {}", tag));
+                }
+                for link in &change.links_added {
+                    changes.push(format!("link added: {} -> {}", link.link_type, link.target));
+                }
+                for link in &change.links_removed {
+                    changes.push(format!("link removed: {} -> {}", link.link_type, link.target));
+                }
+                for field in &change.fields_changed {
+                    changes.push(format!("field changed: {}", field));
+                }
+                serde_json::json!({
+                    "id": change.id,
+                    "changes": changes,
+                })
+            })
+            .collect();
 
-    let use_color = std::io::IsTerminal::is_terminal(&std::io::stdout());
+        let output = serde_json::json!({
+            "command": "diff",
+            "added": diff.added,
+            "removed": diff.removed,
+            "modified": modified_json,
+            "summary": diff.summary(),
+        });
+        println!("{}", serde_json::to_string_pretty(&output).unwrap());
+    } else {
+        // ── Display ──────────────────────────────────────────────────────
 
-    let green = |s: &str| {
-        if use_color {
-            format!("\x1b[32m{s}\x1b[0m")
-        } else {
-            format!("+ {s}")
-        }
-    };
-    let red = |s: &str| {
-        if use_color {
-            format!("\x1b[31m{s}\x1b[0m")
-        } else {
-            format!("- {s}")
-        }
-    };
-    let yellow = |s: &str| {
-        if use_color {
-            format!("\x1b[33m{s}\x1b[0m")
-        } else {
-            format!("~ {s}")
-        }
-    };
+        let use_color = std::io::IsTerminal::is_terminal(&std::io::stdout());
 
-    // Added
-    for id in &diff.added {
-        let title = head_store.get(id).map(|a| a.title.as_str()).unwrap_or("");
-        println!("{}", green(&format!("{id}  {title}")));
-    }
+        let green = |s: &str| {
+            if use_color {
+                format!("\x1b[32m{s}\x1b[0m")
+            } else {
+                format!("+ {s}")
+            }
+        };
+        let red = |s: &str| {
+            if use_color {
+                format!("\x1b[31m{s}\x1b[0m")
+            } else {
+                format!("- {s}")
+            }
+        };
+        let yellow = |s: &str| {
+            if use_color {
+                format!("\x1b[33m{s}\x1b[0m")
+            } else {
+                format!("~ {s}")
+            }
+        };
 
-    // Removed
-    for id in &diff.removed {
-        let title = base_store.get(id).map(|a| a.title.as_str()).unwrap_or("");
-        println!("{}", red(&format!("{id}  {title}")));
-    }
+        // Added
+        for id in &diff.added {
+            let title = head_store.get(id).map(|a| a.title.as_str()).unwrap_or("");
+            println!("{}", green(&format!("{id}  {title}")));
+        }
 
-    // Modified
-    for change in &diff.modified {
-        println!("{}", yellow(&change.id));
+        // Removed
+        for id in &diff.removed {
+            let title = base_store.get(id).map(|a| a.title.as_str()).unwrap_or("");
+            println!("{}", red(&format!("{id}  {title}")));
+        }
 
-        if let Some((old, new)) = &change.title_changed {
-            println!("  title: {} -> {}", red(old), green(new));
-        }
-        if change.description_changed {
-            println!("  description: changed");
-        }
-        if let Some((old, new)) = &change.status_changed {
-            let old_s = old.as_deref().unwrap_or("(none)");
-            let new_s = new.as_deref().unwrap_or("(none)");
-            println!("  status: {} -> {}", red(old_s), green(new_s));
-        }
-        if let Some((old, new)) = &change.type_changed {
-            println!("  type: {} -> {}", red(old), green(new));
-        }
-        for tag in &change.tags_added {
-            println!("  tag: {}", green(tag));
-        }
-        for tag in &change.tags_removed {
-            println!("  tag: {}", red(tag));
-        }
-        for link in &change.links_added {
-            println!(
-                "  link: {}",
-                green(&format!("{} -> {}", link.link_type, link.target))
-            );
-        }
-        for link in &change.links_removed {
-            println!(
-                "  link: {}",
-                red(&format!("{} -> {}", link.link_type, link.target))
-            );
-        }
-        for field in &change.fields_changed {
-            println!("  field changed: {field}");
-        }
-    }
+        // Modified
+        for change in &diff.modified {
+            println!("{}", yellow(&change.id));
 
-    // Summary
-    println!();
-    println!("{}", diff.summary());
+            if let Some((old, new)) = &change.title_changed {
+                println!("  title: {} -> {}", red(old), green(new));
+            }
+            if change.description_changed {
+                println!("  description: changed");
+            }
+            if let Some((old, new)) = &change.status_changed {
+                let old_s = old.as_deref().unwrap_or("(none)");
+                let new_s = new.as_deref().unwrap_or("(none)");
+                println!("  status: {} -> {}", red(old_s), green(new_s));
+            }
+            if let Some((old, new)) = &change.type_changed {
+                println!("  type: {} -> {}", red(old), green(new));
+            }
+            for tag in &change.tags_added {
+                println!("  tag: {}", green(tag));
+            }
+            for tag in &change.tags_removed {
+                println!("  tag: {}", red(tag));
+            }
+            for link in &change.links_added {
+                println!(
+                    "  link: {}",
+                    green(&format!("{} -> {}", link.link_type, link.target))
+                );
+            }
+            for link in &change.links_removed {
+                println!(
+                    "  link: {}",
+                    red(&format!("{} -> {}", link.link_type, link.target))
+                );
+            }
+            for field in &change.fields_changed {
+                println!("  field changed: {field}");
+            }
+        }
 
-    // Diagnostic diff
-    if !diag_diff.is_empty() {
+        // Summary
         println!();
-        for d in &diag_diff.new_errors {
-            println!("{}", red(&format!("NEW  {d}")));
+        println!("{}", diff.summary());
+
+        // Diagnostic diff
+        if !diag_diff.is_empty() {
+            println!();
+            for d in &diag_diff.new_errors {
+                println!("{}", red(&format!("NEW  {d}")));
+            }
+            for d in &diag_diff.resolved_errors {
+                println!("{}", green(&format!("RESOLVED  {d}")));
+            }
+            for d in &diag_diff.new_warnings {
+                println!("{}", yellow(&format!("NEW  {d}")));
+            }
+            for d in &diag_diff.resolved_warnings {
+                println!("{}", green(&format!("RESOLVED  {d}")));
+            }
+            println!("{}", diag_diff.summary());
         }
-        for d in &diag_diff.resolved_errors {
-            println!("{}", green(&format!("RESOLVED  {d}")));
-        }
-        for d in &diag_diff.new_warnings {
-            println!("{}", yellow(&format!("NEW  {d}")));
-        }
-        for d in &diag_diff.resolved_warnings {
-            println!("{}", green(&format!("RESOLVED  {d}")));
-        }
-        println!("{}", diag_diff.summary());
     }
 
+    Ok(true)
+}
+
+/// Show built-in docs (no project load needed).
+fn cmd_docs(topic: Option<&str>, grep: Option<&str>, format: &str, context: usize) -> Result<bool> {
+    if let Some(pattern) = grep {
+        print!("{}", docs::grep_docs(pattern, format, context));
+    } else if let Some(slug) = topic {
+        print!("{}", docs::show_topic(slug, format));
+    } else {
+        print!("{}", docs::list_topics(format));
+    }
+    Ok(true)
+}
+
+/// Introspect loaded schemas.
+fn cmd_schema(cli: &Cli, action: &SchemaAction) -> Result<bool> {
+    let schemas_dir = resolve_schemas_dir(cli);
+    let config_path = cli.project.join("rivet.yaml");
+    let schema_names = if config_path.exists() {
+        let config = rivet_core::load_project_config(&config_path)
+            .with_context(|| format!("loading {}", config_path.display()))?;
+        config.project.schemas
+    } else {
+        vec!["common".to_string(), "dev".to_string()]
+    };
+    let schema = rivet_core::load_schemas(&schema_names, &schemas_dir)
+        .context("loading schemas")?;
+
+    let output = match action {
+        SchemaAction::List { format } => schema_cmd::cmd_list(&schema, format),
+        SchemaAction::Show { name, format } => schema_cmd::cmd_show(&schema, name, format),
+        SchemaAction::Links { format } => schema_cmd::cmd_links(&schema, format),
+        SchemaAction::Rules { format } => schema_cmd::cmd_rules(&schema, format),
+    };
+    print!("{output}");
+    Ok(true)
+}
+
+/// Generate .rivet/agent-context.md from project state.
+fn cmd_context(cli: &Cli) -> Result<bool> {
+    let (store, schema, graph, doc_store) = load_project_with_docs(cli)?;
+    let diagnostics = validate::validate(&store, &schema, &graph);
+
+    let rivet_dir = cli.project.join(".rivet");
+    std::fs::create_dir_all(&rivet_dir)
+        .with_context(|| format!("creating {}", rivet_dir.display()))?;
+
+    let mut out = String::new();
+    out.push_str("# Rivet Agent Context\n\n");
+    out.push_str("Auto-generated — do not edit.\n\n");
+
+    // Artifact summary
+    out.push_str("## Artifacts\n\n");
+    let mut types: Vec<&str> = store.types().collect();
+    types.sort();
+    out.push_str("| Type | Count |\n|------|-------|\n");
+    for t in &types {
+        out.push_str(&format!("| {} | {} |\n", t, store.count_by_type(t)));
+    }
+    out.push_str(&format!("| **Total** | **{}** |\n\n", store.len()));
+
+    // Schema types
+    out.push_str("## Available Types\n\n");
+    let mut stypes: Vec<_> = schema.artifact_types.values().collect();
+    stypes.sort_by_key(|t| &t.name);
+    for t in &stypes {
+        out.push_str(&format!("- `{}` — {}\n", t.name, t.description));
+    }
+
+    // Link types
+    out.push_str("\n## Link Types\n\n");
+    let mut links: Vec<_> = schema.link_types.values().collect();
+    links.sort_by_key(|l| &l.name);
+    for l in &links {
+        let inv = l.inverse.as_deref().unwrap_or("-");
+        out.push_str(&format!("- `{}` (inverse: `{}`)\n", l.name, inv));
+    }
+
+    // Validation summary
+    let errors = diagnostics.iter().filter(|d| d.severity == Severity::Error).count();
+    let warnings = diagnostics.iter().filter(|d| d.severity == Severity::Warning).count();
+    out.push_str(&format!(
+        "\n## Validation\n\n{} errors, {} warnings\n\n",
+        errors, warnings
+    ));
+
+    // Documents
+    if !doc_store.is_empty() {
+        out.push_str(&format!("## Documents\n\n{} loaded\n", doc_store.len()));
+    }
+
+    let context_path = rivet_dir.join("agent-context.md");
+    std::fs::write(&context_path, &out)
+        .with_context(|| format!("writing {}", context_path.display()))?;
+    println!("Generated {}", context_path.display());
     Ok(true)
 }
 
@@ -890,6 +1233,7 @@ fn load_project_with_docs(
     Ok((store, schema, graph, doc_store))
 }
 
+#[allow(clippy::type_complexity)]
 fn load_project_full(
     cli: &Cli,
 ) -> Result<(

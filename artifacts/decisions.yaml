@@ -39,6 +39,7 @@ artifacts:
       alternatives: >
         Custom adjacency list implementation. Rejected because graph
         algorithms are subtle and petgraph is well-proven.
+      source-ref: rivet-core/src/graph.rs:1
 
   - id: DD-003
     type: design-decision
@@ -56,6 +57,7 @@ artifacts:
       - type: satisfies
         target: REQ-003
     fields:
+      source-ref: rivet-core/src/schema.rs:1
       rationale: >
         Merging allows a base common schema to be extended by domain-specific
         schemas without duplication. Projects pick which schemas they need.
