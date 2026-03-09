@@ -7,7 +7,7 @@ use axum::Router;
 use axum::extract::{Path, Query, State};
 use axum::response::{Html, IntoResponse};
 use axum::routing::{get, post};
-use petgraph::graph::{EdgeIndex, Graph, NodeIndex};
+use petgraph::graph::{Graph, NodeIndex};
 use petgraph::visit::EdgeRef;
 use tokio::sync::RwLock;
 
@@ -312,12 +312,13 @@ pub async fn run(
         .route("/results/{run_id}", get(result_detail))
         .route("/source", get(source_tree_view))
         .route("/source/{*path}", get(source_file_view))
+        .route("/source-raw/{*path}", get(source_raw))
         .route("/diff", get(diff_view))
         .route("/doc-linkage", get(doc_linkage_view))
         .route("/traceability", get(traceability_view))
         .route("/traceability/history", get(traceability_history))
         .route("/api/links/{id}", get(api_artifact_links))
-        .route("/api/render-aadl", get(api_render_aadl))
+        .route("/wasm/{*path}", get(wasm_asset))
         .route("/help", get(help_view))
         .route("/help/docs", get(help_docs_list))
         .route("/help/docs/{*slug}", get(help_docs_topic))
@@ -353,6 +354,8 @@ async fn redirect_non_htmx(
         && path != "/"
         && !path.starts_with("/?")
         && !path.starts_with("/api/")
+        && !path.starts_with("/wasm/")
+        && !path.starts_with("/source-raw/")
     {
         let goto = urlencoding::encode(&path);
         return axum::response::Redirect::to(&format!("/?goto={goto}")).into_response();
@@ -394,263 +397,128 @@ async fn api_artifact_links(
     axum::Json(linked_ids)
 }
 
-#[derive(Debug, serde::Deserialize)]
-struct RenderAadlParams {
-    root: String,
-    #[serde(default)]
-    highlight: Option<String>,
-}
-
-/// Serializable instance node from spar JSON output.
-#[derive(Debug, serde::Deserialize)]
-struct SparInstanceNode {
-    name: String,
-    category: String,
-    #[allow(dead_code)]
-    package: String,
-    #[allow(dead_code)]
-    type_name: String,
-    #[allow(dead_code)]
-    impl_name: Option<String>,
-    #[serde(default)]
-    children: Vec<SparInstanceNode>,
-}
-
-/// Top-level JSON output from `spar analyze --format json`.
-#[derive(Debug, serde::Deserialize)]
-struct SparAnalyzeOutput {
-    #[allow(dead_code)]
-    root: String,
-    #[serde(default)]
-    instance: Option<SparInstanceNode>,
-}
-
-/// Recursively collect .aadl files from a directory.
-fn collect_aadl_files_recursive(dir: &std::path::Path) -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return files;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().is_some_and(|ext| ext == "aadl") {
-            files.push(path);
-        } else if path.is_dir() {
-            files.extend(collect_aadl_files_recursive(&path));
-        }
-    }
-    files
-}
-
-/// GET /api/render-aadl — render an AADL component diagram as SVG.
-///
-/// Shells out to `spar analyze --root {root} --format json {files}`,
-/// parses the instance tree, builds a petgraph, and renders SVG via etch.
-async fn api_render_aadl(
+/// GET /source-raw/{*path} — serve a project file as raw text (for WASM client-side rendering).
+async fn source_raw(
     State(state): State<SharedState>,
-    Query(params): Query<RenderAadlParams>,
-) -> Result<Html<String>, Html<String>> {
-    // 1. Find .aadl files: check configured sources first, then scan project dir.
-    let project_path = {
-        let guard = state.read().await;
-        guard.project_path_buf.clone()
-    };
+    Path(raw_path): Path<String>,
+) -> impl IntoResponse {
+    let state = state.read().await;
+    let project_path = &state.project_path_buf;
+    let decoded = urlencoding::decode(&raw_path).unwrap_or(std::borrow::Cow::Borrowed(&raw_path));
+    let rel_path = decoded.as_ref();
 
-    let aadl_files = find_aadl_files(&project_path);
-    if aadl_files.is_empty() {
-        return Err(Html(
-            "<div class=\"alert alert-warning\">No .aadl files found in the project directory.</div>"
-                .into(),
-        ));
-    }
-
-    // 2. Call spar CLI.
-    let mut cmd = std::process::Command::new("spar");
-    cmd.arg("analyze")
-        .arg("--root")
-        .arg(&params.root)
-        .arg("--format")
-        .arg("json");
-    for f in &aadl_files {
-        cmd.arg(f);
-    }
-
-    let output = match cmd.output() {
-        Ok(o) => o,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return Err(Html(
-                "<div class=\"alert alert-danger\">\
-                 <strong>spar not found.</strong> Install the spar CLI and ensure it is on your PATH.<br>\
-                 <code>cargo install --path /path/to/spar/crates/spar-cli</code>\
-                 </div>"
-                    .into(),
-            ));
-        }
-        Err(e) => {
-            return Err(Html(format!(
-                "<div class=\"alert alert-danger\">Failed to run spar: {}</div>",
-                html_escape(&e.to_string())
-            )));
+    let full_path = project_path.join(rel_path);
+    let canonical = match full_path.canonicalize() {
+        Ok(p) => p,
+        Err(_) => {
+            return (axum::http::StatusCode::NOT_FOUND, "not found").into_response();
         }
     };
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(Html(format!(
-            "<div class=\"alert alert-danger\"><strong>spar exited with error:</strong><pre>{}</pre></div>",
-            html_escape(&stderr)
-        )));
+    let canonical_project = match project_path.canonicalize() {
+        Ok(p) => p,
+        Err(_) => {
+            return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "error").into_response();
+        }
+    };
+    if !canonical.starts_with(&canonical_project) {
+        return (axum::http::StatusCode::FORBIDDEN, "forbidden").into_response();
     }
 
-    // 3. Parse the JSON output.
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let parsed: SparAnalyzeOutput = serde_json::from_str(&stdout).map_err(|e| {
-        Html(format!(
-            "<div class=\"alert alert-danger\">Failed to parse spar JSON output: {}</div>",
-            html_escape(&e.to_string())
-        ))
-    })?;
-
-    let instance = parsed.instance.ok_or_else(|| {
-        Html(format!(
-            "<div class=\"alert alert-warning\">No instance model produced for root <code>{}</code>. \
-             Check that the root classifier exists and has an implementation.</div>",
-            html_escape(&params.root)
-        ))
-    })?;
-
-    // 4. Build a petgraph from the instance tree.
-    let mut graph: Graph<(String, String), ()> = Graph::new();
-    let mut node_indices = Vec::new();
-    build_instance_graph(&instance, &mut graph, None, &mut node_indices);
-
-    // Parse highlight set from comma-separated param.
-    let highlight_set: std::collections::HashSet<String> = params
-        .highlight
-        .as_deref()
-        .unwrap_or("")
-        .split(',')
-        .filter(|s| !s.is_empty())
-        .map(|s| s.trim().to_string())
-        .collect();
-
-    // 5. Layout and render SVG.
-    let mut colors = aadl_category_colors();
-    // Merge in the general type_color_map for consistent look.
-    for (k, v) in type_color_map() {
-        colors.entry(k).or_insert(v);
-    }
-
-    let svg_opts = SvgOptions {
-        type_colors: colors,
-        interactive: true,
-        base_url: Some("/artifacts".into()),
-        background: Some("#fafbfc".into()),
-        font_size: 12.0,
-        edge_color: "#888".into(),
-        highlight: if highlight_set.len() == 1 {
-            highlight_set.into_iter().next()
-        } else {
-            None
-        },
-        ..SvgOptions::default()
+    let metadata = match std::fs::symlink_metadata(&full_path) {
+        Ok(m) => m,
+        Err(_) => return (axum::http::StatusCode::NOT_FOUND, "not found").into_response(),
     };
 
-    let layout_opts = LayoutOptions {
-        node_width: 200.0,
-        node_height: 56.0,
-        rank_separation: 90.0,
-        node_separation: 30.0,
-        ..Default::default()
-    };
-
-    let gl = pgv_layout::layout(
-        &graph,
-        &|_idx: NodeIndex, (name, category): &(String, String)| NodeInfo {
-            id: name.clone(),
-            label: name.clone(),
-            node_type: category.clone(),
-            sublabel: Some(category.clone()),
-        },
-        &|_idx: EdgeIndex, _e: &()| EdgeInfo {
-            label: String::new(),
-        },
-        &layout_opts,
-    );
-
-    let svg = render_svg(&gl, &svg_opts);
-
-    Ok(Html(svg))
-}
-
-/// Find .aadl files for the project: check rivet.yaml sources first, then scan.
-fn find_aadl_files(project_path: &std::path::Path) -> Vec<PathBuf> {
-    // Try loading the project config to find AADL-format sources.
-    let config_path = project_path.join("rivet.yaml");
-    if let Ok(content) = std::fs::read_to_string(&config_path) {
-        if let Ok(config) = serde_yaml::from_str::<rivet_core::model::ProjectConfig>(&content) {
-            let mut files = Vec::new();
-            for source in &config.sources {
-                if source.format == "aadl" {
-                    let dir = project_path.join(&source.path);
-                    files.extend(collect_aadl_files_recursive(&dir));
+    // Directory: return JSON listing of filenames.
+    if metadata.is_dir() {
+        let mut entries = Vec::new();
+        if let Ok(dir) = std::fs::read_dir(&full_path) {
+            for entry in dir.flatten() {
+                if let Some(name) = entry.file_name().to_str() {
+                    entries.push(name.to_string());
                 }
             }
-            if !files.is_empty() {
-                return files;
-            }
+        }
+        entries.sort();
+        let json = serde_json::to_string(&entries).unwrap_or_else(|_| "[]".into());
+        return (
+            axum::http::StatusCode::OK,
+            [(axum::http::header::CONTENT_TYPE, "application/json")],
+            json,
+        )
+            .into_response();
+    }
+
+    match std::fs::read_to_string(&full_path) {
+        Ok(content) => (
+            axum::http::StatusCode::OK,
+            [(
+                axum::http::header::CONTENT_TYPE,
+                "text/plain; charset=utf-8",
+            )],
+            content,
+        )
+            .into_response(),
+        Err(_) => (axum::http::StatusCode::NOT_FOUND, "not found").into_response(),
+    }
+}
+
+/// GET /wasm/{*path} — serve jco-transpiled WASM assets for browser-side rendering.
+async fn wasm_asset(Path(path): Path<String>) -> impl IntoResponse {
+    // Assets are in rivet-cli/assets/wasm/js/ relative to the binary,
+    // but we embed critical files at compile time for portability.
+    let content_type = if path.ends_with(".js") {
+        "application/javascript"
+    } else if path.ends_with(".wasm") {
+        "application/wasm"
+    } else if path.ends_with(".d.ts") {
+        "application/typescript"
+    } else {
+        "application/octet-stream"
+    };
+
+    // Try to load from the assets directory next to the binary, or from
+    // the workspace assets dir during development.
+    let candidates = [
+        std::env::current_dir()
+            .unwrap_or_default()
+            .join("rivet-cli/assets/wasm/js")
+            .join(&path),
+        std::env::current_exe()
+            .unwrap_or_default()
+            .parent()
+            .unwrap_or(std::path::Path::new("."))
+            .join("assets/wasm/js")
+            .join(&path),
+    ];
+
+    for candidate in &candidates {
+        if let Ok(bytes) = std::fs::read(candidate) {
+            return (
+                axum::http::StatusCode::OK,
+                [(axum::http::header::CONTENT_TYPE, content_type)],
+                bytes,
+            )
+                .into_response();
         }
     }
 
-    // Fallback: scan the entire project directory for .aadl files.
-    collect_aadl_files_recursive(project_path)
-}
-
-/// Recursively add instance tree nodes and edges to a petgraph.
-fn build_instance_graph(
-    node: &SparInstanceNode,
-    graph: &mut Graph<(String, String), ()>,
-    parent: Option<NodeIndex>,
-    indices: &mut Vec<NodeIndex>,
-) {
-    let idx = graph.add_node((node.name.clone(), node.category.clone()));
-    indices.push(idx);
-
-    if let Some(parent_idx) = parent {
-        graph.add_edge(parent_idx, idx, ());
-    }
-
-    for child in &node.children {
-        build_instance_graph(child, graph, Some(idx), indices);
-    }
-}
-
-/// AADL-specific category color palette.
-fn aadl_category_colors() -> HashMap<String, String> {
-    let pairs: &[(&str, &str)] = &[
-        ("system", "#4a90d9"),
-        ("process", "#50b848"),
-        ("thread", "#f5a623"),
-        ("thread-group", "#e8913a"),
-        ("processor", "#9b59b6"),
-        ("virtual-processor", "#af7ac5"),
-        ("memory", "#e74c3c"),
-        ("bus", "#1abc9c"),
-        ("virtual-bus", "#48c9b0"),
-        ("device", "#34495e"),
-        ("abstract", "#95a5a6"),
-        ("data", "#3498db"),
-        ("subprogram", "#e67e22"),
-        ("subprogram-group", "#d35400"),
-    ];
-    pairs
-        .iter()
-        .map(|(k, v)| (k.to_string(), v.to_string()))
-        .collect()
+    (
+        axum::http::StatusCode::NOT_FOUND,
+        [(axum::http::header::CONTENT_TYPE, "text/plain")],
+        format!("WASM asset not found: {path}").into_bytes(),
+    )
+        .into_response()
 }
 
 /// POST /reload — re-read the project from disk and replace the shared state.
-async fn reload_handler(State(state): State<SharedState>) -> impl IntoResponse {
+///
+/// Uses the `HX-Current-URL` header (sent automatically by HTMX) to redirect
+/// back to the current page after reload, preserving the user's position.
+async fn reload_handler(
+    State(state): State<SharedState>,
+    headers: axum::http::HeaderMap,
+) -> impl IntoResponse {
     let (project_path, schemas_dir, port) = {
         let guard = state.read().await;
         (
@@ -664,18 +532,36 @@ async fn reload_handler(State(state): State<SharedState>) -> impl IntoResponse {
         Ok(new_state) => {
             let mut guard = state.write().await;
             *guard = new_state;
+
+            // Redirect back to wherever the user was (HTMX sends HX-Current-URL).
+            // Extract the path portion from the full URL (e.g. "http://localhost:3001/documents/DOC-001" → "/documents/DOC-001").
+            let redirect_url = headers
+                .get("HX-Current-URL")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|full_url| {
+                    // Find the path after the authority (scheme://host[:port])
+                    full_url
+                        .find("://")
+                        .and_then(|i| full_url[i + 3..].find('/'))
+                        .map(|j| {
+                            let start = full_url.find("://").unwrap() + 3 + j;
+                            full_url[start..].to_owned()
+                        })
+                })
+                .unwrap_or_else(|| "/".to_owned());
+
             (
                 axum::http::StatusCode::OK,
-                [("HX-Refresh", "true")],
-                "reloaded",
+                [("HX-Redirect", redirect_url)],
+                "reloaded".to_owned(),
             )
         }
         Err(e) => {
             eprintln!("reload error: {e:#}");
             (
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                [("HX-Refresh", "false")],
-                "reload failed",
+                [("HX-Redirect", "/".to_owned())],
+                format!("reload failed: {e}"),
             )
         }
     }
@@ -1252,10 +1138,27 @@ details.trace-details[open]>summary .trace-chevron{transform:rotate(90deg)}
   color:var(--sidebar-text);font-size:.82rem;cursor:pointer;border-radius:var(--radius-sm);
   transition:all var(--transition)}
 .nav-search-hint:hover{background:var(--sidebar-hover);color:var(--sidebar-active)}
-.aadl-diagram{background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:1rem;margin:1rem 0}
-.aadl-diagram svg{width:100%;height:auto;max-height:600px}
-.aadl-loading{color:var(--text-secondary);font-style:italic}
-.aadl-error{color:var(--danger);font-style:italic}
+.aadl-diagram{background:var(--card-bg);border:1px solid var(--border);border-radius:8px;
+  margin:1.5rem 0;overflow:hidden;position:relative}
+.aadl-diagram .aadl-caption{display:flex;align-items:center;justify-content:space-between;
+  padding:.5rem 1rem;border-bottom:1px solid var(--border);background:var(--nav-bg);
+  font-size:.82rem;color:var(--text-secondary)}
+.aadl-caption .aadl-title{font-weight:600;color:var(--text);font-family:var(--mono);font-size:.85rem}
+.aadl-caption .aadl-badge{display:inline-block;padding:.1rem .5rem;border-radius:var(--radius-sm);
+  background:var(--primary);color:#fff;font-size:.72rem;font-weight:600;letter-spacing:.02em}
+.aadl-controls{display:flex;gap:.25rem}
+.aadl-controls button{background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius-sm);
+  width:1.7rem;height:1.7rem;cursor:pointer;font-size:.85rem;line-height:1;display:flex;
+  align-items:center;justify-content:center;color:var(--text-secondary);transition:all .15s}
+.aadl-controls button:hover{background:var(--primary);color:#fff;border-color:var(--primary)}
+.aadl-viewport{overflow:hidden;padding:.5rem;cursor:grab;min-height:200px;position:relative}
+.aadl-viewport.grabbing{cursor:grabbing}
+.aadl-viewport svg{width:100%;height:auto;transition:transform .15s ease;transform-origin:center center}
+.aadl-viewport svg .node rect{rx:6;ry:6;filter:drop-shadow(0 1px 2px rgba(0,0,0,.08))}
+.aadl-viewport svg .node text{font-family:system-ui,-apple-system,sans-serif}
+.aadl-viewport svg .edge path{stroke-dasharray:none}
+.aadl-loading{color:var(--text-secondary);font-style:italic;padding:2rem;text-align:center}
+.aadl-error{color:var(--danger);font-style:italic;padding:1rem}
 "#;
 
 // ── Pan/zoom JS ──────────────────────────────────────────────────────────
@@ -1753,72 +1656,298 @@ const SEARCH_JS: &str = r#"
 // ── AADL diagram JS ─────────────────────────────────────────────────────
 
 const AADL_JS: &str = r#"
-<script>
-(function(){
-  function initAadlDiagrams(){
-    var containers=document.querySelectorAll('.aadl-diagram:not([data-loaded])');
-    containers.forEach(function(container){
-      container.setAttribute('data-loaded','true');
-      var root=container.getAttribute('data-root');
-      if(!root) return;
-      fetch('/api/render-aadl?root='+encodeURIComponent(root))
-        .then(function(r){
-          if(!r.ok) throw new Error('HTTP '+r.status);
-          return r.text();
-        })
-        .then(function(svgText){
-          var parser=new DOMParser();
-          var doc=parser.parseFromString(svgText,'image/svg+xml');
-          var svg=doc.documentElement;
-          if(svg.nodeName==='parsererror'||svg.querySelector('parsererror')){
-            throw new Error('Invalid SVG response');
-          }
-          var loading=container.querySelector('.aadl-loading');
-          if(loading) loading.remove();
-          container.appendChild(document.importNode(svg,true));
-          initDiagramInteraction(container);
-        })
-        .catch(function(err){
-          var loading=container.querySelector('.aadl-loading');
-          if(loading) loading.remove();
-          var p=document.createElement('p');
-          p.className='aadl-error';
-          p.textContent='Failed to load AADL diagram: '+err.message;
-          container.appendChild(p);
-        });
-    });
-  }
+<script type="module">
+// ── AADL diagram rendering via spar WASM component (client-side) ──────
+//
+// The jco-transpiled module at /wasm/spar_wasm.js exposes:
+//   instantiate(getCoreModule, imports) → { renderer: { render(root, highlight) → svg } }
+//
+// We provide a minimal virtual WASI filesystem so the WASM component can
+// read .aadl files that we pre-fetch from the server via /source-raw/.
 
-  function initDiagramInteraction(container){
-    var nodes=container.querySelectorAll('svg [data-id]');
-    nodes.forEach(function(node){
-      node.style.cursor='pointer';
-      node.addEventListener('click',function(){
-        var id=node.getAttribute('data-id');
-        if(id) htmx.ajax('GET','/artifacts/'+encodeURIComponent(id),{target:'#content'});
-      });
-    });
-  }
+const AADL_DIR = 'arch';  // directory under project root containing .aadl files
 
-  window.highlightAadlNodes=function(artifactIds){
-    var nodes=document.querySelectorAll('.aadl-diagram svg .node');
-    nodes.forEach(function(node){
-      var id=node.getAttribute('data-id');
-      var rect=node.querySelector('rect');
-      if(!rect) return;
-      if(artifactIds.indexOf(id)!==-1){
-        rect.setAttribute('stroke','#f0c040');
-        rect.setAttribute('stroke-width','3');
-      } else {
-        rect.setAttribute('stroke','');
-        rect.setAttribute('stroke-width','');
-      }
-    });
+// ── Minimal WASI stubs ────────────────────────────────────────────────
+
+class VPollable { block(){} }
+class VError {}
+class VInputStream {
+  constructor(bytes){ this._buf = bytes; this._pos = 0; }
+  blockingRead(len){ const n = Number(len); const end = Math.min(this._pos + n, this._buf.length); const chunk = this._buf.slice(this._pos, end); this._pos = end; if(chunk.length === 0) throw { tag: 'closed' }; return chunk; }
+  subscribe(){ return new VPollable(); }
+}
+class VOutputStream {
+  checkWrite(){ return 65536n; }
+  write(){}
+  blockingFlush(){}
+  subscribe(){ return new VPollable(); }
+}
+class VDirStream {
+  constructor(entries){ this._entries = entries; this._i = 0; }
+  readDirectoryEntry(){ return this._i < this._entries.length ? this._entries[this._i++] : undefined; }
+}
+class VDescriptor {
+  constructor(kind, content, children){
+    this._kind = kind;        // 'directory' | 'regular-file'
+    this._content = content;  // Uint8Array for files
+    this._children = children; // [{name,type,content}] for dirs
+  }
+  readViaStream(offset){ return new VInputStream(this._content.slice(Number(offset))); }
+  writeViaStream(){ return new VOutputStream(); }
+  appendViaStream(){ return new VOutputStream(); }
+  getFlags(){ return { read: true }; }
+  readDirectory(){ return new VDirStream(this._children.map(c => ({ type: c.type, name: c.name }))); }
+  stat(){ return { type: this._kind, linkCount: 1n, size: BigInt(this._content ? this._content.length : 0) }; }
+  openAt(_pf, path, _of, _fl){
+    if(path === '.' || path === '/' || path === '') return this;
+    // Handle paths like ./file.aadl
+    var name = path.replace(/^\.\//, '');
+    var child = this._children && this._children.find(c => c.name === name);
+    if(!child) throw 'no-entry';
+    return new VDescriptor(child.type, child.content, child.children);
+  }
+  metadataHash(){ return { lower: 0n, upper: 0n }; }
+  metadataHashAt(){ return { lower: 0n, upper: 0n }; }
+}
+
+function buildWasiImports(rootDesc){
+  var enc = new TextEncoder();
+  return {
+    'wasi:cli/environment':       { getEnvironment(){ return []; } },
+    'wasi:cli/exit':              { exit(){} },
+    'wasi:cli/stderr':            { getStderr(){ return new VOutputStream(); } },
+    'wasi:cli/stdin':             { getStdin(){ return new VInputStream(new Uint8Array(0)); } },
+    'wasi:cli/stdout':            { getStdout(){ return new VOutputStream(); } },
+    'wasi:cli/terminal-input':    { TerminalInput: class {} },
+    'wasi:cli/terminal-output':   { TerminalOutput: class {} },
+    'wasi:cli/terminal-stderr':   { getTerminalStderr(){ return undefined; } },
+    'wasi:cli/terminal-stdin':    { getTerminalStdin(){ return undefined; } },
+    'wasi:cli/terminal-stdout':   { getTerminalStdout(){ return undefined; } },
+    'wasi:clocks/monotonic-clock':{ now(){ return 0n; }, subscribe(){ return new VPollable(); } },
+    'wasi:clocks/wall-clock':     { now(){ return { seconds: 0n, nanoseconds: 0 }; } },
+    'wasi:filesystem/preopens':   { getDirectories(){ return [[rootDesc, '/']]; } },
+    'wasi:filesystem/types':      { Descriptor: VDescriptor, DirectoryEntryStream: VDirStream },
+    'wasi:io/error':             { Error: VError },
+    'wasi:io/poll':              { Pollable: VPollable },
+    'wasi:io/streams':           { InputStream: VInputStream, OutputStream: VOutputStream },
+    'wasi:random/insecure-seed':  { insecureSeed(){ return [0n, 0n]; } },
   };
+}
 
-  document.addEventListener('DOMContentLoaded',initAadlDiagrams);
-  document.body.addEventListener('htmx:afterSwap',initAadlDiagrams);
-})();
+// ── Fetch .aadl files and build virtual FS ────────────────────────────
+
+async function fetchAadlSources(){
+  // List .aadl files via /source-raw/arch (returns JSON array of filenames).
+  var resp = await fetch('/source-raw/' + AADL_DIR);
+  if(!resp.ok) return [];
+  var files = await resp.json();
+  var aadlFiles = files.filter(function(f){ return f.endsWith('.aadl'); });
+
+  var enc = new TextEncoder();
+  var children = [];
+  for(var name of aadlFiles){
+    var r = await fetch('/source-raw/' + AADL_DIR + '/' + name);
+    if(!r.ok) continue;
+    var text = await r.text();
+    children.push({ name: name, type: 'regular-file', content: enc.encode(text) });
+  }
+  return children;
+}
+
+// ── WASM module cache ─────────────────────────────────────────────────
+
+var wasmModulePromise = null;
+
+async function getSparRenderer(aadlFiles){
+  if(!wasmModulePromise){
+    wasmModulePromise = import('/wasm/spar_wasm.js');
+  }
+  var mod = await wasmModulePromise;
+  var rootDesc = new VDescriptor('directory', null, aadlFiles);
+  var imports = buildWasiImports(rootDesc);
+  var getCoreModule = async function(path){
+    var url = '/wasm/' + path;
+    return WebAssembly.compileStreaming(fetch(url));
+  };
+  var instance = await mod.instantiate(getCoreModule, imports);
+  return instance.renderer;
+}
+
+// ── Diagram initialization ────────────────────────────────────────────
+
+var aadlFilesCache = null;
+
+async function initAadlDiagrams(){
+  var containers = document.querySelectorAll('.aadl-diagram:not([data-loaded])');
+  if(containers.length === 0) return;
+
+  try {
+    if(!aadlFilesCache) aadlFilesCache = await fetchAadlSources();
+    if(aadlFilesCache.length === 0){
+      containers.forEach(function(c){
+        var ld = c.querySelector('.aadl-loading');
+        if(ld) ld.textContent = 'No .aadl files found in ' + AADL_DIR + '/';
+      });
+      return;
+    }
+  } catch(e){
+    containers.forEach(function(c){
+      var ld = c.querySelector('.aadl-loading');
+      if(ld) ld.textContent = 'Failed to load AADL sources: ' + e.message;
+    });
+    return;
+  }
+
+  for(var container of containers){
+    container.setAttribute('data-loaded','true');
+    var root = container.getAttribute('data-root');
+    if(!root) continue;
+    try {
+      var renderer = await getSparRenderer(aadlFilesCache);
+      var svgText = renderer.render(root, []);
+      var dp = new DOMParser();
+      var xdoc = dp.parseFromString(svgText, 'image/svg+xml');
+      var svg = xdoc.documentElement;
+      if(svg.nodeName === 'parsererror' || svg.querySelector('parsererror')){
+        throw new Error('Invalid SVG from WASM renderer');
+      }
+      // Clear loading placeholder
+      while(container.firstChild) container.removeChild(container.firstChild);
+
+      // Caption bar
+      var parts = root.split('::');
+      var pkgName = parts[0] || '';
+      var implName = parts[1] || root;
+      var caption = document.createElement('div');
+      caption.className = 'aadl-caption';
+      // Left side: badge + title
+      var captionLeft = document.createElement('div');
+      var badge = document.createElement('span');
+      badge.className = 'aadl-badge';
+      badge.textContent = 'AADL';
+      captionLeft.appendChild(badge);
+      captionLeft.appendChild(document.createTextNode(' '));
+      var titleSpan = document.createElement('span');
+      titleSpan.className = 'aadl-title';
+      titleSpan.textContent = implName;
+      captionLeft.appendChild(titleSpan);
+      captionLeft.appendChild(document.createTextNode(' '));
+      var pkgSpan = document.createElement('span');
+      pkgSpan.style.opacity = '.6';
+      pkgSpan.textContent = '(' + pkgName + ')';
+      captionLeft.appendChild(pkgSpan);
+      caption.appendChild(captionLeft);
+      // Right side: zoom controls
+      var controls = document.createElement('div');
+      controls.className = 'aadl-controls';
+      var btnOut = document.createElement('button');
+      btnOut.setAttribute('data-zoom','-1'); btnOut.title = 'Zoom out'; btnOut.textContent = '\u2212';
+      var btnReset = document.createElement('button');
+      btnReset.setAttribute('data-zoom','0'); btnReset.title = 'Reset zoom'; btnReset.textContent = '1:1';
+      var btnIn = document.createElement('button');
+      btnIn.setAttribute('data-zoom','1'); btnIn.title = 'Zoom in'; btnIn.textContent = '+';
+      controls.appendChild(btnOut);
+      controls.appendChild(btnReset);
+      controls.appendChild(btnIn);
+      caption.appendChild(controls);
+      container.appendChild(caption);
+
+      // Viewport
+      var viewport = document.createElement('div');
+      viewport.className = 'aadl-viewport';
+      var imported = document.importNode(svg, true);
+      var nodeCount = imported.querySelectorAll('.node').length;
+      if(nodeCount > 0){
+        var info = document.createElement('span');
+        info.style.cssText = 'opacity:.5;font-size:.75rem;margin-left:.5rem';
+        info.textContent = nodeCount + ' component' + (nodeCount !== 1 ? 's' : '');
+        captionLeft.appendChild(info);
+      }
+      viewport.appendChild(imported);
+      container.appendChild(viewport);
+      initZoomPan(viewport, imported);
+      initDiagramInteraction(viewport);
+    } catch(err){
+      while(container.firstChild) container.removeChild(container.firstChild);
+      var p = document.createElement('p');
+      p.className = 'aadl-error';
+      var detail = err.payload ? JSON.stringify(err.payload) : (err.message || String(err));
+      p.textContent = 'AADL diagram error: ' + detail;
+      console.error('AADL render error:', err, err.payload);
+      container.appendChild(p);
+    }
+  }
+}
+
+function initZoomPan(viewport, svg){
+  var scale = 1, panX = 0, panY = 0, dragging = false, startX, startY;
+  function applyTransform(){
+    svg.style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + scale + ')';
+  }
+  // Zoom buttons
+  var controls = viewport.parentElement.querySelector('.aadl-controls');
+  if(controls){
+    controls.addEventListener('click', function(e){
+      var btn = e.target.closest('button');
+      if(!btn) return;
+      var z = parseInt(btn.getAttribute('data-zoom'));
+      if(z === 0){ scale = 1; panX = 0; panY = 0; }
+      else { scale = Math.max(0.2, Math.min(5, scale + z * 0.25)); }
+      applyTransform();
+    });
+  }
+  // Mouse wheel zoom
+  viewport.addEventListener('wheel', function(e){
+    e.preventDefault();
+    var delta = e.deltaY > 0 ? -0.1 : 0.1;
+    scale = Math.max(0.2, Math.min(5, scale + delta));
+    applyTransform();
+  }, {passive: false});
+  // Pan via drag
+  viewport.addEventListener('mousedown', function(e){
+    if(e.target.closest('.node')){ return; }
+    dragging = true; startX = e.clientX - panX; startY = e.clientY - panY;
+    viewport.classList.add('grabbing');
+  });
+  window.addEventListener('mousemove', function(e){
+    if(!dragging) return;
+    panX = e.clientX - startX; panY = e.clientY - startY;
+    applyTransform();
+  });
+  window.addEventListener('mouseup', function(){
+    dragging = false; viewport.classList.remove('grabbing');
+  });
+}
+
+function initDiagramInteraction(viewport){
+  var nodes = viewport.querySelectorAll('svg [data-id]');
+  nodes.forEach(function(node){
+    node.style.cursor = 'pointer';
+    node.addEventListener('click', function(e){
+      e.stopPropagation();
+      var id = node.getAttribute('data-id');
+      if(id) htmx.ajax('GET', '/artifacts/' + encodeURIComponent(id), {target:'#content'});
+    });
+  });
+}
+
+window.highlightAadlNodes = function(artifactIds){
+  var nodes = document.querySelectorAll('.aadl-diagram svg .node');
+  nodes.forEach(function(node){
+    var id = node.getAttribute('data-id');
+    var rect = node.querySelector('rect');
+    if(!rect) return;
+    if(artifactIds.indexOf(id) !== -1){
+      rect.setAttribute('stroke','#f0c040');
+      rect.setAttribute('stroke-width','3');
+    } else {
+      rect.setAttribute('stroke','');
+      rect.setAttribute('stroke-width','');
+    }
+  });
+};
+
+document.body.addEventListener('htmx:afterSwap', initAadlDiagrams);
 </script>
 "#;
 
