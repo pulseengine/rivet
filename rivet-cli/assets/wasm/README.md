@@ -22,7 +22,16 @@ cp target/wasm32-wasip2/release/spar_wasm.wasm /path/to/sdlc/rivet-cli/assets/wa
 
 ### jco transpilation (for browser use)
 
+The dashboard uses `--instantiation async` mode so the browser JS can provide
+a virtual WASI filesystem with pre-fetched `.aadl` files:
+
 ```bash
-npx @bytecodealliance/jco transpile rivet-cli/assets/wasm/spar_wasm.wasm \
-  -o rivet-cli/assets/wasm/js/
+npx @bytecodealliance/jco transpile --instantiation async \
+  rivet-cli/assets/wasm/spar_wasm.wasm -o rivet-cli/assets/wasm/js/
+```
+
+Or use the build script which handles both compilation and transpilation:
+
+```bash
+./scripts/build-wasm.sh /path/to/spar
 ```
