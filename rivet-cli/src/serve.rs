@@ -8,7 +8,7 @@ use axum::extract::{Path, Query, State};
 use axum::response::{Html, IntoResponse};
 use axum::routing::{get, post};
 use tokio::sync::RwLock;
-use petgraph::graph::{Graph, NodeIndex};
+use petgraph::graph::{EdgeIndex, Graph, NodeIndex};
 use petgraph::visit::EdgeRef;
 
 use etch::filter::ego_subgraph;
@@ -382,23 +382,258 @@ async fn api_artifact_links(
 }
 
 #[derive(Debug, serde::Deserialize)]
-#[allow(dead_code)]
 struct RenderAadlParams {
     root: String,
     #[serde(default)]
     highlight: Option<String>,
 }
 
+/// Serializable instance node from spar JSON output.
+#[derive(Debug, serde::Deserialize)]
+struct SparInstanceNode {
+    name: String,
+    category: String,
+    #[allow(dead_code)]
+    package: String,
+    #[allow(dead_code)]
+    type_name: String,
+    #[allow(dead_code)]
+    impl_name: Option<String>,
+    #[serde(default)]
+    children: Vec<SparInstanceNode>,
+}
+
+/// Top-level JSON output from `spar analyze --format json`.
+#[derive(Debug, serde::Deserialize)]
+struct SparAnalyzeOutput {
+    #[allow(dead_code)]
+    root: String,
+    #[serde(default)]
+    instance: Option<SparInstanceNode>,
+}
+
+/// Recursively collect .aadl files from a directory.
+fn collect_aadl_files_recursive(dir: &std::path::Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return files;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().is_some_and(|ext| ext == "aadl") {
+            files.push(path);
+        } else if path.is_dir() {
+            files.extend(collect_aadl_files_recursive(&path));
+        }
+    }
+    files
+}
+
 /// GET /api/render-aadl — render an AADL component diagram as SVG.
+///
+/// Shells out to `spar analyze --root {root} --format json {files}`,
+/// parses the instance tree, builds a petgraph, and renders SVG via etch.
 async fn api_render_aadl(
-    State(_state): State<SharedState>,
+    State(state): State<SharedState>,
     Query(params): Query<RenderAadlParams>,
 ) -> Result<Html<String>, Html<String>> {
-    // Placeholder — will call spar-wasm once compiled
-    Err(Html(format!(
-        "AADL rendering not yet available for root: {}",
-        params.root
-    )))
+    // 1. Find .aadl files: check configured sources first, then scan project dir.
+    let project_path = {
+        let guard = state.read().await;
+        guard.project_path_buf.clone()
+    };
+
+    let aadl_files = find_aadl_files(&project_path);
+    if aadl_files.is_empty() {
+        return Err(Html(
+            "<div class=\"alert alert-warning\">No .aadl files found in the project directory.</div>"
+                .into(),
+        ));
+    }
+
+    // 2. Call spar CLI.
+    let mut cmd = std::process::Command::new("spar");
+    cmd.arg("analyze")
+        .arg("--root")
+        .arg(&params.root)
+        .arg("--format")
+        .arg("json");
+    for f in &aadl_files {
+        cmd.arg(f);
+    }
+
+    let output = match cmd.output() {
+        Ok(o) => o,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Err(Html(
+                "<div class=\"alert alert-danger\">\
+                 <strong>spar not found.</strong> Install the spar CLI and ensure it is on your PATH.<br>\
+                 <code>cargo install --path /path/to/spar/crates/spar-cli</code>\
+                 </div>"
+                    .into(),
+            ));
+        }
+        Err(e) => {
+            return Err(Html(format!(
+                "<div class=\"alert alert-danger\">Failed to run spar: {}</div>",
+                html_escape(&e.to_string())
+            )));
+        }
+    };
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(Html(format!(
+            "<div class=\"alert alert-danger\"><strong>spar exited with error:</strong><pre>{}</pre></div>",
+            html_escape(&stderr)
+        )));
+    }
+
+    // 3. Parse the JSON output.
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: SparAnalyzeOutput = serde_json::from_str(&stdout).map_err(|e| {
+        Html(format!(
+            "<div class=\"alert alert-danger\">Failed to parse spar JSON output: {}</div>",
+            html_escape(&e.to_string())
+        ))
+    })?;
+
+    let instance = parsed.instance.ok_or_else(|| {
+        Html(format!(
+            "<div class=\"alert alert-warning\">No instance model produced for root <code>{}</code>. \
+             Check that the root classifier exists and has an implementation.</div>",
+            html_escape(&params.root)
+        ))
+    })?;
+
+    // 4. Build a petgraph from the instance tree.
+    let mut graph: Graph<(String, String), ()> = Graph::new();
+    let mut node_indices = Vec::new();
+    build_instance_graph(&instance, &mut graph, None, &mut node_indices);
+
+    // Parse highlight set from comma-separated param.
+    let highlight_set: std::collections::HashSet<String> = params
+        .highlight
+        .as_deref()
+        .unwrap_or("")
+        .split(',')
+        .filter(|s| !s.is_empty())
+        .map(|s| s.trim().to_string())
+        .collect();
+
+    // 5. Layout and render SVG.
+    let mut colors = aadl_category_colors();
+    // Merge in the general type_color_map for consistent look.
+    for (k, v) in type_color_map() {
+        colors.entry(k).or_insert(v);
+    }
+
+    let svg_opts = SvgOptions {
+        type_colors: colors,
+        interactive: true,
+        base_url: Some("/artifacts".into()),
+        background: Some("#fafbfc".into()),
+        font_size: 12.0,
+        edge_color: "#888".into(),
+        highlight: if highlight_set.len() == 1 {
+            highlight_set.into_iter().next()
+        } else {
+            None
+        },
+        ..SvgOptions::default()
+    };
+
+    let layout_opts = LayoutOptions {
+        node_width: 200.0,
+        node_height: 56.0,
+        rank_separation: 90.0,
+        node_separation: 30.0,
+        ..Default::default()
+    };
+
+    let gl = pgv_layout::layout(
+        &graph,
+        &|_idx: NodeIndex, (name, category): &(String, String)| NodeInfo {
+            id: name.clone(),
+            label: name.clone(),
+            node_type: category.clone(),
+            sublabel: Some(category.clone()),
+        },
+        &|_idx: EdgeIndex, _e: &()| EdgeInfo {
+            label: String::new(),
+        },
+        &layout_opts,
+    );
+
+    let svg = render_svg(&gl, &svg_opts);
+
+    Ok(Html(svg))
+}
+
+/// Find .aadl files for the project: check rivet.yaml sources first, then scan.
+fn find_aadl_files(project_path: &std::path::Path) -> Vec<PathBuf> {
+    // Try loading the project config to find AADL-format sources.
+    let config_path = project_path.join("rivet.yaml");
+    if let Ok(content) = std::fs::read_to_string(&config_path) {
+        if let Ok(config) = serde_yaml::from_str::<rivet_core::model::ProjectConfig>(&content) {
+            let mut files = Vec::new();
+            for source in &config.sources {
+                if source.format == "aadl" {
+                    let dir = project_path.join(&source.path);
+                    files.extend(collect_aadl_files_recursive(&dir));
+                }
+            }
+            if !files.is_empty() {
+                return files;
+            }
+        }
+    }
+
+    // Fallback: scan the entire project directory for .aadl files.
+    collect_aadl_files_recursive(project_path)
+}
+
+/// Recursively add instance tree nodes and edges to a petgraph.
+fn build_instance_graph(
+    node: &SparInstanceNode,
+    graph: &mut Graph<(String, String), ()>,
+    parent: Option<NodeIndex>,
+    indices: &mut Vec<NodeIndex>,
+) {
+    let idx = graph.add_node((node.name.clone(), node.category.clone()));
+    indices.push(idx);
+
+    if let Some(parent_idx) = parent {
+        graph.add_edge(parent_idx, idx, ());
+    }
+
+    for child in &node.children {
+        build_instance_graph(child, graph, Some(idx), indices);
+    }
+}
+
+/// AADL-specific category color palette.
+fn aadl_category_colors() -> HashMap<String, String> {
+    let pairs: &[(&str, &str)] = &[
+        ("system", "#4a90d9"),
+        ("process", "#50b848"),
+        ("thread", "#f5a623"),
+        ("thread-group", "#e8913a"),
+        ("processor", "#9b59b6"),
+        ("virtual-processor", "#af7ac5"),
+        ("memory", "#e74c3c"),
+        ("bus", "#1abc9c"),
+        ("virtual-bus", "#48c9b0"),
+        ("device", "#34495e"),
+        ("abstract", "#95a5a6"),
+        ("data", "#3498db"),
+        ("subprogram", "#e67e22"),
+        ("subprogram-group", "#d35400"),
+    ];
+    pairs
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect()
 }
 
 /// POST /reload — re-read the project from disk and replace the shared state.
