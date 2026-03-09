@@ -16,14 +16,7 @@ pub const SCHEMA_CYBERSECURITY: &str = include_str!("../../schemas/cybersecurity
 pub const SCHEMA_AADL: &str = include_str!("../../schemas/aadl.yaml");
 
 /// All known built-in schema names.
-pub const SCHEMA_NAMES: &[&str] = &[
-    "common",
-    "dev",
-    "stpa",
-    "aspice",
-    "cybersecurity",
-    "aadl",
-];
+pub const SCHEMA_NAMES: &[&str] = &["common", "dev", "stpa", "aspice", "cybersecurity", "aadl"];
 
 /// Look up embedded schema content by name.
 pub fn embedded_schema(name: &str) -> Option<&'static str> {

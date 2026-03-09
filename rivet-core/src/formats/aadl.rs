@@ -76,9 +76,7 @@ impl Adapter for AadlAdapter {
     }
 
     fn export(&self, _artifacts: &[Artifact], _config: &AdapterConfig) -> Result<Vec<u8>, Error> {
-        Err(Error::Adapter(
-            "AADL export is not supported".into(),
-        ))
+        Err(Error::Adapter("AADL export is not supported".into()))
     }
 }
 
@@ -153,13 +151,17 @@ fn run_instance_analyses(instance: &spar_hir::Instance) -> Vec<spar_analysis::An
     runner.register(Box::new(spar_analysis::connectivity::ConnectivityAnalysis));
     runner.register(Box::new(spar_analysis::hierarchy::HierarchyAnalysis));
     runner.register(Box::new(spar_analysis::completeness::CompletenessAnalysis));
-    runner.register(Box::new(spar_analysis::direction_rules::DirectionRuleAnalysis));
+    runner.register(Box::new(
+        spar_analysis::direction_rules::DirectionRuleAnalysis,
+    ));
     runner.register(Box::new(spar_analysis::flow_check::FlowCheckAnalysis));
     runner.register(Box::new(spar_analysis::mode_check::ModeCheckAnalysis));
     runner.register(Box::new(spar_analysis::binding_check::BindingCheckAnalysis));
     runner.register(Box::new(spar_analysis::latency::LatencyAnalysis));
     runner.register(Box::new(spar_analysis::scheduling::SchedulingAnalysis));
-    runner.register(Box::new(spar_analysis::resource_budget::ResourceBudgetAnalysis));
+    runner.register(Box::new(
+        spar_analysis::resource_budget::ResourceBudgetAnalysis,
+    ));
 
     runner.run_all(instance.inner())
 }
@@ -384,13 +386,17 @@ fn import_single_file(path: &Path, config: &AdapterConfig) -> Result<Vec<Artifac
     let content = std::fs::read_to_string(path)
         .map_err(|e| Error::Io(format!("{}: {}", path.display(), e)))?;
 
-    let is_json = path.extension().is_some_and(|ext| ext == "json")
-        || content.trim_start().starts_with('{');
+    let is_json =
+        path.extension().is_some_and(|ext| ext == "json") || content.trim_start().starts_with('{');
 
     let mut artifacts = if is_json {
         parse_spar_json(&content)?
     } else {
-        let name = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+        let name = path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
         import_aadl_sources(&[(name, content)], config)?
     };
 
@@ -411,7 +417,11 @@ fn import_aadl_directory(dir: &Path, config: &AdapterConfig) -> Result<Vec<Artif
     for path in &aadl_files {
         let content = std::fs::read_to_string(path)
             .map_err(|e| Error::Io(format!("{}: {}", path.display(), e)))?;
-        let name = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+        let name = path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
         sources.push((name, content));
     }
 

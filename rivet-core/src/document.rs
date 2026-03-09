@@ -611,10 +611,7 @@ fn is_table_separator(line: &str) -> bool {
 
 /// If the line is an ordered list item (e.g. `1. text`), return the text after the marker.
 fn ordered_list_text(line: &str) -> Option<&str> {
-    let digit_end = line
-        .as_bytes()
-        .iter()
-        .position(|b| !b.is_ascii_digit())?;
+    let digit_end = line.as_bytes().iter().position(|b| !b.is_ascii_digit())?;
     if digit_end == 0 {
         return None;
     }

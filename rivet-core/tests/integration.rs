@@ -1147,9 +1147,21 @@ fn aadl_adapter_parses_spar_json() {
 
     // 1 type + 1 impl + 1 diagnostic = 3 artifacts
     assert_eq!(artifacts.len(), 3);
-    assert!(artifacts.iter().any(|a| a.artifact_type == "aadl-component" && a.id == "AADL-Pkg-Sys"));
-    assert!(artifacts.iter().any(|a| a.artifact_type == "aadl-component" && a.id == "AADL-Pkg-Sys.Impl"));
-    assert!(artifacts.iter().any(|a| a.artifact_type == "aadl-analysis-result"));
+    assert!(
+        artifacts
+            .iter()
+            .any(|a| a.artifact_type == "aadl-component" && a.id == "AADL-Pkg-Sys")
+    );
+    assert!(
+        artifacts
+            .iter()
+            .any(|a| a.artifact_type == "aadl-component" && a.id == "AADL-Pkg-Sys.Impl")
+    );
+    assert!(
+        artifacts
+            .iter()
+            .any(|a| a.artifact_type == "aadl-analysis-result")
+    );
 }
 
 // ── AADL schema ──────────────────────────────────────────────────────────

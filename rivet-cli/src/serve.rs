@@ -7,14 +7,14 @@ use axum::Router;
 use axum::extract::{Path, Query, State};
 use axum::response::{Html, IntoResponse};
 use axum::routing::{get, post};
-use tokio::sync::RwLock;
 use petgraph::graph::{EdgeIndex, Graph, NodeIndex};
 use petgraph::visit::EdgeRef;
+use tokio::sync::RwLock;
 
+use crate::{docs, schema_cmd};
 use etch::filter::ego_subgraph;
 use etch::layout::{self as pgv_layout, EdgeInfo, LayoutOptions, NodeInfo};
 use etch::svg::{SvgOptions, render_svg};
-use crate::{docs, schema_cmd};
 use rivet_core::adapter::{Adapter, AdapterConfig, AdapterSource};
 use rivet_core::coverage;
 use rivet_core::diff::ArtifactDiff;
@@ -184,8 +184,8 @@ fn reload_state(
     let config = rivet_core::load_project_config(&config_path)
         .with_context(|| format!("loading {}", config_path.display()))?;
 
-    let schema =
-        rivet_core::load_schemas(&config.project.schemas, schemas_dir).context("loading schemas")?;
+    let schema = rivet_core::load_schemas(&config.project.schemas, schemas_dir)
+        .context("loading schemas")?;
 
     let mut store = Store::new();
     for source in &config.sources {
@@ -348,7 +348,12 @@ async fn redirect_non_htmx(
     let method = req.method().clone();
 
     // Only redirect GET requests to known view routes, not / or /reload or /api/*
-    if method == axum::http::Method::GET && !is_htmx && path != "/" && !path.starts_with("/?") && !path.starts_with("/api/") {
+    if method == axum::http::Method::GET
+        && !is_htmx
+        && path != "/"
+        && !path.starts_with("/?")
+        && !path.starts_with("/api/")
+    {
         let goto = urlencoding::encode(&path);
         return axum::response::Redirect::to(&format!("/?goto={goto}")).into_response();
     }
@@ -1827,17 +1832,12 @@ fn page_layout(content: &str, state: &AppState) -> Html<String> {
         .filter(|d| d.severity == Severity::Error)
         .count();
     let error_badge = if error_count > 0 {
-        format!(
-            "<span class=\"nav-badge nav-badge-error\">{error_count}</span>"
-        )
+        format!("<span class=\"nav-badge nav-badge-error\">{error_count}</span>")
     } else {
         "<span class=\"nav-badge\">OK</span>".to_string()
     };
     let doc_badge = if !state.doc_store.is_empty() {
-        format!(
-            "<span class=\"nav-badge\">{}</span>",
-            state.doc_store.len()
-        )
+        format!("<span class=\"nav-badge\">{}</span>", state.doc_store.len())
     } else {
         String::new()
     };
@@ -1850,10 +1850,21 @@ fn page_layout(content: &str, state: &AppState) -> Html<String> {
         String::new()
     };
     let stpa_types = [
-        "loss", "hazard", "sub-hazard", "system-constraint", "controller",
-        "controlled-process", "control-action", "uca", "controller-constraint", "loss-scenario",
+        "loss",
+        "hazard",
+        "sub-hazard",
+        "system-constraint",
+        "controller",
+        "controlled-process",
+        "control-action",
+        "uca",
+        "controller-constraint",
+        "loss-scenario",
     ];
-    let stpa_count: usize = stpa_types.iter().map(|t| state.store.count_by_type(t)).sum();
+    let stpa_count: usize = stpa_types
+        .iter()
+        .map(|t| state.store.count_by_type(t))
+        .sum();
     let stpa_nav = if stpa_count > 0 {
         format!(
             "<li><a hx-get=\"/stpa\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\"><span class=\"nav-label\"><span class=\"nav-icon\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M8 1.5l5.5 2.5v4c0 3.5-2.5 5.5-5.5 7-3-1.5-5.5-3.5-5.5-7V4z\"/><path d=\"M8 5v3M8 10.5h.01\"/></svg></span> STPA</span><span class=\"nav-badge\">{stpa_count}</span></a></li>"
@@ -2016,7 +2027,8 @@ async fn index(
         let placeholder = format!(
             "<div id=\"goto-target\" data-url=\"{}\"></div>\
              <script>htmx.ajax('GET','{}','#content');</script>",
-            html_escape(goto), html_escape(goto)
+            html_escape(goto),
+            html_escape(goto)
         );
         return page_layout(&placeholder, &state);
     }
@@ -2349,7 +2361,10 @@ async fn artifact_preview(
     let graph = &state.graph;
 
     let Some(artifact) = store.get(&id) else {
-        return Html(format!("<div class=\"art-preview\"><strong>{}</strong><br><em>Not found</em></div>", html_escape(&id)));
+        return Html(format!(
+            "<div class=\"art-preview\"><strong>{}</strong><br><em>Not found</em></div>",
+            html_escape(&id)
+        ));
     };
 
     let mut html = String::from("<div class=\"art-preview\">");
@@ -2390,19 +2405,21 @@ async fn artifact_preview(
         ));
     }
     if !artifact.tags.is_empty() {
-        let tags: Vec<String> = artifact.tags.iter()
+        let tags: Vec<String> = artifact
+            .tags
+            .iter()
             .map(|t| format!("<span class=\"art-preview-tag\">{}</span>", html_escape(t)))
             .collect();
-        html.push_str(&format!("<div class=\"art-preview-tags\">{}</div>", tags.join(" ")));
+        html.push_str(&format!(
+            "<div class=\"art-preview-tags\">{}</div>",
+            tags.join(" ")
+        ));
     }
     html.push_str("</div>");
     Html(html)
 }
 
-async fn artifact_detail(
-    State(state): State<SharedState>,
-    Path(id): Path<String>,
-) -> Html<String> {
+async fn artifact_detail(State(state): State<SharedState>, Path(id): Path<String>) -> Html<String> {
     let state = state.read().await;
     let store = &state.store;
     let graph = &state.graph;
@@ -3371,10 +3388,7 @@ async fn documents_list(State(state): State<SharedState>) -> Html<String> {
     Html(html)
 }
 
-async fn document_detail(
-    State(state): State<SharedState>,
-    Path(id): Path<String>,
-) -> Html<String> {
+async fn document_detail(State(state): State<SharedState>, Path(id): Path<String>) -> Html<String> {
     let state = state.read().await;
     let doc_store = &state.doc_store;
     let store = &state.store;
@@ -3772,8 +3786,7 @@ async fn verification_view(State(state): State<SharedState>) -> Html<String> {
             let backlinks = graph.backlinks_to(&artifact.id);
             for bl in backlinks {
                 if bl.link_type == "verifies" && seen.insert(artifact.artifact_type.clone()) {
-                    verifiable_types
-                        .push((artifact.artifact_type.clone(), "verifies".to_string()));
+                    verifiable_types.push((artifact.artifact_type.clone(), "verifies".to_string()));
                 }
             }
         }
@@ -4094,8 +4107,8 @@ fn stpa_partial(state: &AppState) -> Html<String> {
     // Summary stat cards
     html.push_str("<div class=\"stat-grid\">");
     let stat_colors = [
-        "#dc3545", "#fd7e14", "#fd7e14", "#20c997", "#6f42c1",
-        "#6610f2", "#17a2b8", "#e83e8c", "#20c997", "#e83e8c",
+        "#dc3545", "#fd7e14", "#fd7e14", "#20c997", "#6f42c1", "#6610f2", "#17a2b8", "#e83e8c",
+        "#20c997", "#e83e8c",
     ];
     for (i, (type_name, label)) in stpa_types.iter().enumerate() {
         let count = store.count_by_type(type_name);
@@ -4125,7 +4138,9 @@ fn stpa_partial(state: &AppState) -> Html<String> {
     sorted_losses.sort();
 
     for loss_id in &sorted_losses {
-        let Some(loss) = store.get(loss_id) else { continue };
+        let Some(loss) = store.get(loss_id) else {
+            continue;
+        };
         html.push_str("<details class=\"stpa-details\" open><summary>");
         html.push_str("<span class=\"stpa-chevron\">&#9654;</span> ");
         html.push_str(&badge_for_type("loss"));
@@ -4140,12 +4155,16 @@ fn stpa_partial(state: &AppState) -> Html<String> {
         let hazard_backlinks = graph.backlinks_of_type(loss_id, "leads-to-loss");
         if !hazard_backlinks.is_empty() {
             html.push_str("<div class=\"stpa-level\">");
-            let mut hazard_ids: Vec<&str> =
-                hazard_backlinks.iter().map(|bl| bl.source.as_str()).collect();
+            let mut hazard_ids: Vec<&str> = hazard_backlinks
+                .iter()
+                .map(|bl| bl.source.as_str())
+                .collect();
             hazard_ids.sort();
             hazard_ids.dedup();
             for hazard_id in &hazard_ids {
-                let Some(hazard) = store.get(hazard_id) else { continue };
+                let Some(hazard) = store.get(hazard_id) else {
+                    continue;
+                };
                 html.push_str("<details class=\"stpa-details\" open><summary>");
                 html.push_str("<span class=\"stpa-chevron\">&#9654;</span> ");
                 html.push_str("<span class=\"stpa-link-label\">leads-to-loss</span>");
@@ -4168,7 +4187,8 @@ fn stpa_partial(state: &AppState) -> Html<String> {
                     let mut sc_ids: Vec<&str> = constraint_bls
                         .iter()
                         .filter(|bl| {
-                            store.get(&bl.source)
+                            store
+                                .get(&bl.source)
                                 .map(|a| a.artifact_type == "system-constraint")
                                 .unwrap_or(false)
                         })
@@ -4194,7 +4214,8 @@ fn stpa_partial(state: &AppState) -> Html<String> {
                     let mut uca_ids: Vec<&str> = uca_bls
                         .iter()
                         .filter(|bl| {
-                            store.get(&bl.source)
+                            store
+                                .get(&bl.source)
                                 .map(|a| a.artifact_type == "uca")
                                 .unwrap_or(false)
                         })
@@ -4203,7 +4224,9 @@ fn stpa_partial(state: &AppState) -> Html<String> {
                     uca_ids.sort();
                     uca_ids.dedup();
                     for uca_id in &uca_ids {
-                        let Some(uca) = store.get(uca_id) else { continue };
+                        let Some(uca) = store.get(uca_id) else {
+                            continue;
+                        };
                         // Collapse below level 2
                         html.push_str("<details class=\"stpa-details\"><summary>");
                         html.push_str("<span class=\"stpa-chevron\">&#9654;</span> ");
@@ -4288,28 +4311,40 @@ fn stpa_partial(state: &AppState) -> Html<String> {
 
         let mut rows: Vec<UcaRow> = Vec::new();
         for uca_id in uca_ids {
-            let Some(uca) = store.get(uca_id) else { continue };
-            let uca_type = uca.fields.get("uca-type")
+            let Some(uca) = store.get(uca_id) else {
+                continue;
+            };
+            let uca_type = uca
+                .fields
+                .get("uca-type")
                 .and_then(|v| v.as_str())
                 .unwrap_or("-")
                 .to_string();
-            let controller_links: Vec<&str> = uca.links.iter()
+            let controller_links: Vec<&str> = uca
+                .links
+                .iter()
                 .filter(|l| l.link_type == "issued-by")
                 .map(|l| l.target.as_str())
                 .collect();
             let control_action = if let Some(ctrl_id) = controller_links.first() {
                 let ca_bls = graph.backlinks_of_type(ctrl_id, "issued-by");
-                ca_bls.iter()
-                    .filter(|bl| store.get(&bl.source)
-                        .map(|a| a.artifact_type == "control-action")
-                        .unwrap_or(false))
+                ca_bls
+                    .iter()
+                    .filter(|bl| {
+                        store
+                            .get(&bl.source)
+                            .map(|a| a.artifact_type == "control-action")
+                            .unwrap_or(false)
+                    })
                     .map(|bl| bl.source.clone())
                     .next()
                     .unwrap_or_else(|| ctrl_id.to_string())
             } else {
                 "-".to_string()
             };
-            let hazards: Vec<String> = uca.links.iter()
+            let hazards: Vec<String> = uca
+                .links
+                .iter()
                 .filter(|l| l.link_type == "leads-to-hazard")
                 .map(|l| l.target.clone())
                 .collect();
@@ -4322,7 +4357,11 @@ fn stpa_partial(state: &AppState) -> Html<String> {
             });
         }
 
-        rows.sort_by(|a, b| a.control_action.cmp(&b.control_action).then(a.id.cmp(&b.id)));
+        rows.sort_by(|a, b| {
+            a.control_action
+                .cmp(&b.control_action)
+                .then(a.id.cmp(&b.id))
+        });
 
         html.push_str(
             "<table class=\"stpa-uca-table\"><thead><tr>\
@@ -4347,13 +4386,17 @@ fn stpa_partial(state: &AppState) -> Html<String> {
                     html_escape(&row.uca_type),
                 )
             };
-            let hazard_links: Vec<String> = row.linked_hazards.iter().map(|h| {
-                format!(
-                    "<a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" href=\"#\" \
+            let hazard_links: Vec<String> = row
+                .linked_hazards
+                .iter()
+                .map(|h| {
+                    format!(
+                        "<a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" href=\"#\" \
                      style=\"font-family:var(--mono);font-size:.8rem\">{id}</a>",
-                    id = html_escape(h),
-                )
-            }).collect();
+                        id = html_escape(h),
+                    )
+                })
+                .collect();
             let ca_display = if row.control_action == "-" {
                 "-".to_string()
             } else {
@@ -4380,7 +4423,9 @@ fn stpa_partial(state: &AppState) -> Html<String> {
         html.push_str("</tbody></table></div>");
     }
 
-    html.push_str(&format!("<p class=\"meta\">{total} STPA artifacts total</p>"));
+    html.push_str(&format!(
+        "<p class=\"meta\">{total} STPA artifacts total</p>"
+    ));
 
     Html(html)
 }
@@ -4442,16 +4487,8 @@ async fn results_view(State(state): State<SharedState>) -> Html<String> {
     );
 
     for run in result_store.runs() {
-        let pass = run
-            .results
-            .iter()
-            .filter(|r| r.status.is_pass())
-            .count();
-        let fail = run
-            .results
-            .iter()
-            .filter(|r| r.status.is_fail())
-            .count();
+        let pass = run.results.iter().filter(|r| r.status.is_pass()).count();
+        let fail = run.results.iter().filter(|r| r.status.is_fail()).count();
         let skip = run.results.len() - pass - fail;
         let total = run.results.len();
 
@@ -4507,10 +4544,7 @@ async fn result_detail(
         html_escape(&run.run.timestamp)
     ));
     if let Some(ref source) = run.run.source {
-        html.push_str(&format!(
-            "<dt>Source</dt><dd>{}</dd>",
-            html_escape(source)
-        ));
+        html.push_str(&format!("<dt>Source</dt><dd>{}</dd>", html_escape(source)));
     }
     if let Some(ref env) = run.run.environment {
         html.push_str(&format!(
@@ -4542,15 +4576,17 @@ async fn result_detail(
             rivet_core::results::TestStatus::Pass => {
                 ("<span class=\"badge badge-ok\">PASS</span>", "")
             }
-            rivet_core::results::TestStatus::Fail => {
-                ("<span class=\"badge badge-error\">FAIL</span>", "result-fail")
-            }
+            rivet_core::results::TestStatus::Fail => (
+                "<span class=\"badge badge-error\">FAIL</span>",
+                "result-fail",
+            ),
             rivet_core::results::TestStatus::Skip => {
                 ("<span class=\"badge badge-info\">SKIP</span>", "")
             }
-            rivet_core::results::TestStatus::Error => {
-                ("<span class=\"badge badge-error\">ERROR</span>", "result-error")
-            }
+            rivet_core::results::TestStatus::Error => (
+                "<span class=\"badge badge-error\">ERROR</span>",
+                "result-error",
+            ),
             rivet_core::results::TestStatus::Blocked => {
                 ("<span class=\"badge badge-warn\">BLOCKED</span>", "")
             }
@@ -4735,10 +4771,7 @@ struct FileRef {
     end_line: Option<u32>,
 }
 
-fn artifacts_referencing_file(
-    store: &rivet_core::store::Store,
-    file_rel: &str,
-) -> Vec<FileRef> {
+fn artifacts_referencing_file(store: &rivet_core::store::Store, file_rel: &str) -> Vec<FileRef> {
     let rel = std::path::Path::new(file_rel);
     let mut refs = Vec::new();
 
@@ -4747,8 +4780,11 @@ fn artifacts_referencing_file(
         if let Some(sf) = &a.source_file {
             if sf == rel || sf.ends_with(file_rel) {
                 refs.push(FileRef {
-                    id: a.id.clone(), artifact_type: a.artifact_type.clone(),
-                    title: a.title.clone(), line: None, end_line: None,
+                    id: a.id.clone(),
+                    artifact_type: a.artifact_type.clone(),
+                    title: a.title.clone(),
+                    line: None,
+                    end_line: None,
                 });
                 continue;
             }
@@ -4758,8 +4794,11 @@ fn artifacts_referencing_file(
             if let serde_yaml::Value::String(s) = value {
                 if let Some((_file, line, end_line)) = extract_file_ref(s, file_rel) {
                     refs.push(FileRef {
-                        id: a.id.clone(), artifact_type: a.artifact_type.clone(),
-                        title: a.title.clone(), line, end_line,
+                        id: a.id.clone(),
+                        artifact_type: a.artifact_type.clone(),
+                        title: a.title.clone(),
+                        line,
+                        end_line,
                     });
                     break; // one ref per artifact is enough
                 }
@@ -4775,12 +4814,16 @@ fn extract_file_ref(val: &str, target_file: &str) -> Option<(String, Option<u32>
     let idx = val.find(target_file)?;
     let after = &val[idx + target_file.len()..];
     if let Some(rest) = after.strip_prefix(':') {
-        let digits_end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+        let digits_end = rest
+            .find(|c: char| !c.is_ascii_digit())
+            .unwrap_or(rest.len());
         if digits_end > 0 {
             let line: u32 = rest[..digits_end].parse().ok()?;
             let rest2 = &rest[digits_end..];
             if let Some(rest3) = rest2.strip_prefix('-') {
-                let d2_end = rest3.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest3.len());
+                let d2_end = rest3
+                    .find(|c: char| !c.is_ascii_digit())
+                    .unwrap_or(rest3.len());
                 if d2_end > 0 {
                     let end_line: u32 = rest3[..d2_end].parse().ok()?;
                     return Some((target_file.to_string(), Some(line), Some(end_line)));
@@ -4865,7 +4908,9 @@ async fn source_file_view(
 
     // Breadcrumb
     html.push_str("<div class=\"source-breadcrumb\">");
-    html.push_str("<a hx-get=\"/source\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">Source</a>");
+    html.push_str(
+        "<a hx-get=\"/source\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">Source</a>",
+    );
     let parts: Vec<&str> = rel_path.split('/').collect();
     for (i, part) in parts.iter().enumerate() {
         html.push_str("<span class=\"sep\">/</span>");
@@ -4919,12 +4964,19 @@ async fn source_file_view(
     let refs = artifacts_referencing_file(store, rel_path);
     if !refs.is_empty() {
         html.push_str("<div class=\"source-refs card\">");
-        html.push_str(&format!("<h3>Artifacts Referencing This File ({})</h3>", refs.len()));
+        html.push_str(&format!(
+            "<h3>Artifacts Referencing This File ({})</h3>",
+            refs.len()
+        ));
         html.push_str("<table><thead><tr><th>ID</th><th>Type</th><th>Title</th><th>Lines</th></tr></thead><tbody>");
         for fref in &refs {
             let line_info = match (fref.line, fref.end_line) {
-                (Some(l), Some(e)) => format!("<a href=\"#L{l}\" onclick=\"var el=document.getElementById('L{l}');if(el)el.scrollIntoView({{behavior:'smooth',block:'center'}})\">{l}-{e}</a>"),
-                (Some(l), None) => format!("<a href=\"#L{l}\" onclick=\"var el=document.getElementById('L{l}');if(el)el.scrollIntoView({{behavior:'smooth',block:'center'}})\">{l}</a>"),
+                (Some(l), Some(e)) => format!(
+                    "<a href=\"#L{l}\" onclick=\"var el=document.getElementById('L{l}');if(el)el.scrollIntoView({{behavior:'smooth',block:'center'}})\">{l}-{e}</a>"
+                ),
+                (Some(l), None) => format!(
+                    "<a href=\"#L{l}\" onclick=\"var el=document.getElementById('L{l}');if(el)el.scrollIntoView({{behavior:'smooth',block:'center'}})\">{l}</a>"
+                ),
                 _ => "—".into(),
             };
             html.push_str(&format!(
@@ -4952,7 +5004,10 @@ fn highlight_yaml_line(line: &str) -> String {
     let trimmed = line.trim_start();
     if trimmed.starts_with('#') {
         let indent = &escaped[..escaped.len() - html_escape(trimmed).len()];
-        return format!("{indent}<span class=\"hl-comment\">{}</span>", html_escape(trimmed));
+        return format!(
+            "{indent}<span class=\"hl-comment\">{}</span>",
+            html_escape(trimmed)
+        );
     }
     let mut out = String::with_capacity(escaped.len() + 64);
     // Check for key: value pattern
@@ -4966,9 +5021,15 @@ fn highlight_yaml_line(line: &str) -> String {
         // List prefix
         if let Some(after_dash) = key_part.strip_prefix("- ") {
             out.push_str("<span class=\"hl-punct\">-</span> ");
-            out.push_str(&format!("<span class=\"hl-key\">{}</span>", html_escape(after_dash)));
+            out.push_str(&format!(
+                "<span class=\"hl-key\">{}</span>",
+                html_escape(after_dash)
+            ));
         } else {
-            out.push_str(&format!("<span class=\"hl-key\">{}</span>", html_escape(key_part)));
+            out.push_str(&format!(
+                "<span class=\"hl-key\">{}</span>",
+                html_escape(key_part)
+            ));
         }
         out.push_str("<span class=\"hl-punct\">:</span>");
         let after_colon = &rest[1..];
@@ -4987,15 +5048,25 @@ fn highlight_yaml_line(line: &str) -> String {
 }
 
 fn find_yaml_colon(s: &str) -> Option<usize> {
-    let (search, offset) = if let Some(rest) = s.strip_prefix("- ") { (rest, 2) } else { (s, 0) };
+    let (search, offset) = if let Some(rest) = s.strip_prefix("- ") {
+        (rest, 2)
+    } else {
+        (s, 0)
+    };
     let mut in_quote = false;
     let mut quote_char = ' ';
     for (i, c) in search.char_indices() {
         if in_quote {
-            if c == quote_char { in_quote = false; }
+            if c == quote_char {
+                in_quote = false;
+            }
             continue;
         }
-        if c == '\'' || c == '"' { in_quote = true; quote_char = c; continue; }
+        if c == '\'' || c == '"' {
+            in_quote = true;
+            quote_char = c;
+            continue;
+        }
         if c == ':' && (i + 1 >= search.len() || search.as_bytes()[i + 1] == b' ') {
             return Some(i + offset);
         }
@@ -5005,7 +5076,9 @@ fn find_yaml_colon(s: &str) -> Option<usize> {
 
 fn highlight_yaml_value(val: &str) -> String {
     let trimmed = val.trim();
-    if trimmed.is_empty() { return html_escape(val); }
+    if trimmed.is_empty() {
+        return html_escape(val);
+    }
     // Inline comment
     let (value_part, comment) = split_inline_comment(trimmed);
     let leading_space = &val[..val.len() - val.trim_start().len()];
@@ -5024,16 +5097,25 @@ fn highlight_yaml_value(val: &str) -> String {
         // Inline collections — highlight brackets and values
         out.push_str(&highlight_yaml_inline_collection(v));
     } else if v.starts_with('*') || v.starts_with('&') {
-        out.push_str(&format!("<span class=\"hl-anchor\">{}</span>", html_escape(v)));
+        out.push_str(&format!(
+            "<span class=\"hl-anchor\">{}</span>",
+            html_escape(v)
+        ));
     } else if v == ">" || v == "|" || v == ">-" || v == "|-" {
-        out.push_str(&format!("<span class=\"hl-punct\">{}</span>", html_escape(v)));
+        out.push_str(&format!(
+            "<span class=\"hl-punct\">{}</span>",
+            html_escape(v)
+        ));
     } else if v.parse::<f64>().is_ok() {
         out.push_str(&format!("<span class=\"hl-num\">{}</span>", html_escape(v)));
     } else {
         out.push_str(&format!("<span class=\"hl-str\">{}</span>", html_escape(v)));
     }
     if !comment.is_empty() {
-        out.push_str(&format!("  <span class=\"hl-comment\">{}</span>", html_escape(comment)));
+        out.push_str(&format!(
+            "  <span class=\"hl-comment\">{}</span>",
+            html_escape(comment)
+        ));
     }
     out
 }
@@ -5045,10 +5127,16 @@ fn split_inline_comment(s: &str) -> (&str, &str) {
     for i in 0..bytes.len() {
         let c = bytes[i] as char;
         if in_quote {
-            if c == qc { in_quote = false; }
+            if c == qc {
+                in_quote = false;
+            }
             continue;
         }
-        if c == '\'' || c == '"' { in_quote = true; qc = c; continue; }
+        if c == '\'' || c == '"' {
+            in_quote = true;
+            qc = c;
+            continue;
+        }
         if c == '#' && (i == 0 || bytes[i - 1] == b' ') {
             return (s[..i].trim_end(), &s[i..]);
         }
@@ -5083,19 +5171,33 @@ fn highlight_bash_line(line: &str) -> String {
     let mut out = String::new();
     let mut first_word = true;
     for token in trimmed.split_whitespace() {
-        if !first_word || !out.is_empty() { out.push(' '); }
+        if !first_word || !out.is_empty() {
+            out.push(' ');
+        }
         if token == "|" || token == "&&" || token == "||" {
-            out.push_str(&format!("<span class=\"hl-sh-pipe\">{}</span>", html_escape(token)));
+            out.push_str(&format!(
+                "<span class=\"hl-sh-pipe\">{}</span>",
+                html_escape(token)
+            ));
             first_word = true;
             continue;
         }
         if first_word {
-            out.push_str(&format!("<span class=\"hl-sh-cmd\">{}</span>", html_escape(token)));
+            out.push_str(&format!(
+                "<span class=\"hl-sh-cmd\">{}</span>",
+                html_escape(token)
+            ));
             first_word = false;
         } else if token.starts_with('-') {
-            out.push_str(&format!("<span class=\"hl-sh-flag\">{}</span>", html_escape(token)));
+            out.push_str(&format!(
+                "<span class=\"hl-sh-flag\">{}</span>",
+                html_escape(token)
+            ));
         } else if token.starts_with('"') || token.starts_with('\'') {
-            out.push_str(&format!("<span class=\"hl-str\">{}</span>", html_escape(token)));
+            out.push_str(&format!(
+                "<span class=\"hl-str\">{}</span>",
+                html_escape(token)
+            ));
         } else {
             out.push_str(&html_escape(token));
         }
@@ -5121,7 +5223,13 @@ fn render_code_block(
     is_rust: bool,
     html: &mut String,
 ) {
-    let lang = if is_yaml { "yaml" } else if is_rust { "rust" } else { "" };
+    let lang = if is_yaml {
+        "yaml"
+    } else if is_rust {
+        "rust"
+    } else {
+        ""
+    };
     html.push_str("<div class=\"card source-viewer\"><table>");
     for (i, line) in content.lines().enumerate() {
         let line_num = i + 1;
@@ -5171,40 +5279,76 @@ fn render_code_block(
 // ── Diff ─────────────────────────────────────────────────────────────────
 
 #[derive(Debug, serde::Deserialize)]
-struct DiffParams { base: Option<String>, head: Option<String> }
+struct DiffParams {
+    base: Option<String>,
+    head: Option<String>,
+}
 
 fn discover_git_refs(pp: &std::path::Path) -> (Vec<String>, Vec<String>) {
     let rg = |a: &[&str]| -> Vec<String> {
-        std::process::Command::new("git").args(a).current_dir(pp).output().ok()
+        std::process::Command::new("git")
+            .args(a)
+            .current_dir(pp)
+            .output()
+            .ok()
             .filter(|o| o.status.success())
-            .map(|o| String::from_utf8_lossy(&o.stdout).lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
+            .map(|o| {
+                String::from_utf8_lossy(&o.stdout)
+                    .lines()
+                    .map(|l| l.trim().to_string())
+                    .filter(|l| !l.is_empty())
+                    .collect()
+            })
             .unwrap_or_default()
     };
     let tags = rg(&["tag", "--list", "--sort=-creatordate"]);
-    let branches: Vec<String> = rg(&["branch", "--list", "--format=%(refname:short)"]).into_iter().filter(|b| b != "HEAD").collect();
+    let branches: Vec<String> = rg(&["branch", "--list", "--format=%(refname:short)"])
+        .into_iter()
+        .filter(|b| b != "HEAD")
+        .collect();
     (tags, branches)
 }
 
 fn load_store_from_git_ref(pp: &std::path::Path, gr: &str) -> Result<Store, String> {
     let rg = |a: &[&str]| -> Result<String, String> {
-        let o = std::process::Command::new("git").args(a).current_dir(pp).output().map_err(|e| format!("git: {e}"))?;
-        if !o.status.success() { return Err(format!("git {} failed: {}", a.join(" "), String::from_utf8_lossy(&o.stderr).trim())); }
+        let o = std::process::Command::new("git")
+            .args(a)
+            .current_dir(pp)
+            .output()
+            .map_err(|e| format!("git: {e}"))?;
+        if !o.status.success() {
+            return Err(format!(
+                "git {} failed: {}",
+                a.join(" "),
+                String::from_utf8_lossy(&o.stderr).trim()
+            ));
+        }
         Ok(String::from_utf8_lossy(&o.stdout).to_string())
     };
     let cc = rg(&["show", &format!("{gr}:rivet.yaml")])?;
-    let cfg: ProjectConfig = serde_yaml::from_str(&cc).map_err(|e| format!("parse rivet.yaml@{gr}: {e}"))?;
+    let cfg: ProjectConfig =
+        serde_yaml::from_str(&cc).map_err(|e| format!("parse rivet.yaml@{gr}: {e}"))?;
     let mut store = Store::new();
     let adp = GenericYamlAdapter::new();
     let ac = AdapterConfig::default();
     for src in &cfg.sources {
-        if src.format != "generic-yaml" && src.format != "generic" { continue; }
+        if src.format != "generic-yaml" && src.format != "generic" {
+            continue;
+        }
         let tree = rg(&["ls-tree", "-r", "--name-only", gr, "--", &src.path])?;
         for fp in tree.lines() {
             let fp = fp.trim();
-            if fp.is_empty() || (!fp.ends_with(".yaml") && !fp.ends_with(".yml")) { continue; }
-            let ct = match rg(&["show", &format!("{gr}:{fp}")]) { Ok(c) => c, Err(_) => continue };
+            if fp.is_empty() || (!fp.ends_with(".yaml") && !fp.ends_with(".yml")) {
+                continue;
+            }
+            let ct = match rg(&["show", &format!("{gr}:{fp}")]) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
             if let Ok(arts) = adp.import(&AdapterSource::Bytes(ct.into_bytes()), &ac) {
-                for a in arts { store.upsert(a); }
+                for a in arts {
+                    store.upsert(a);
+                }
             }
         }
     }
@@ -5215,7 +5359,9 @@ fn diff_ref_options(sel: &str, tags: &[String], branches: &[String], inc_wt: boo
     let mut h = String::new();
     if inc_wt {
         let s = if sel == "working" { " selected" } else { "" };
-        h.push_str(&format!("<option value=\"working\"{s}>Working tree (unstaged)</option>"));
+        h.push_str(&format!(
+            "<option value=\"working\"{s}>Working tree (unstaged)</option>"
+        ));
     }
     for o in &["HEAD", "HEAD~1", "HEAD~2", "HEAD~3", "HEAD~4", "HEAD~5"] {
         let s = if sel == *o { " selected" } else { "" };
@@ -5223,25 +5369,42 @@ fn diff_ref_options(sel: &str, tags: &[String], branches: &[String], inc_wt: boo
     }
     if !tags.is_empty() {
         h.push_str("<optgroup label=\"Tags\">");
-        for t in tags { let s = if sel == t { " selected" } else { "" }; h.push_str(&format!("<option value=\"{t}\"{s}>{t}</option>", t = html_escape(t))); }
+        for t in tags {
+            let s = if sel == t { " selected" } else { "" };
+            h.push_str(&format!(
+                "<option value=\"{t}\"{s}>{t}</option>",
+                t = html_escape(t)
+            ));
+        }
         h.push_str("</optgroup>");
     }
     if !branches.is_empty() {
         h.push_str("<optgroup label=\"Branches\">");
-        for b in branches { let s = if sel == b { " selected" } else { "" }; h.push_str(&format!("<option value=\"{b}\"{s}>{b}</option>", b = html_escape(b))); }
+        for b in branches {
+            let s = if sel == b { " selected" } else { "" };
+            h.push_str(&format!(
+                "<option value=\"{b}\"{s}>{b}</option>",
+                b = html_escape(b)
+            ));
+        }
         h.push_str("</optgroup>");
     }
     h
 }
 
-async fn diff_view(State(state): State<SharedState>, Query(params): Query<DiffParams>) -> Html<String> {
+async fn diff_view(
+    State(state): State<SharedState>,
+    Query(params): Query<DiffParams>,
+) -> Html<String> {
     let state = state.read().await;
     let pp = &state.project_path_buf;
     let br = params.base.unwrap_or_default();
     let hr = params.head.unwrap_or_default();
     let (tags, branches) = discover_git_refs(pp);
     let mut html = String::from("<h2>Diff</h2>");
-    html.push_str("<div class=\"card\"><form class=\"form-row\" hx-get=\"/diff\" hx-target=\"#content\">");
+    html.push_str(
+        "<div class=\"card\"><form class=\"form-row\" hx-get=\"/diff\" hx-target=\"#content\">",
+    );
     let bs = if br.is_empty() { "HEAD" } else { &br };
     html.push_str("<div><label>Base</label><select name=\"base\">");
     html.push_str(&diff_ref_options(bs, &tags, &branches, false));
@@ -5270,7 +5433,10 @@ async fn diff_view(State(state): State<SharedState>, Query(params): Query<DiffPa
         head_label = "Working tree".to_string();
     } else {
         match load_store_from_git_ref(pp, &hr) {
-            Ok(s) => { head_store = s; head_label = hr.clone(); }
+            Ok(s) => {
+                head_store = s;
+                head_label = hr.clone();
+            }
             Err(e) => {
                 html.push_str(&format!("<div class=\"card\" style=\"color:#c62828\"><strong>Error loading head ({}):</strong> {}</div>", html_escape(&hr), html_escape(&e)));
                 return Html(html);
@@ -5292,17 +5458,29 @@ async fn diff_view(State(state): State<SharedState>, Query(params): Query<DiffPa
     html.push_str("<div class=\"card\" style=\"padding:0;overflow:hidden\">");
     for id in &diff.added {
         let title = head_store.get(id).map(|a| a.title.as_str()).unwrap_or("");
-        let at = head_store.get(id).map(|a| a.artifact_type.as_str()).unwrap_or("");
+        let at = head_store
+            .get(id)
+            .map(|a| a.artifact_type.as_str())
+            .unwrap_or("");
         html.push_str(&format!("<div class=\"diff-added\" style=\"padding:.6rem .875rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:.5rem\"><span class=\"diff-icon diff-icon-add\">+</span><code style=\"font-weight:600\">{}</code> {} <span>{}</span></div>", html_escape(id), badge_for_type(at), html_escape(title)));
     }
     for id in &diff.removed {
         let title = base_store.get(id).map(|a| a.title.as_str()).unwrap_or("");
-        let at = base_store.get(id).map(|a| a.artifact_type.as_str()).unwrap_or("");
+        let at = base_store
+            .get(id)
+            .map(|a| a.artifact_type.as_str())
+            .unwrap_or("");
         html.push_str(&format!("<div class=\"diff-removed\" style=\"padding:.6rem .875rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:.5rem\"><span class=\"diff-icon diff-icon-remove\">&minus;</span><code style=\"font-weight:600\">{}</code> {} <span>{}</span></div>", html_escape(id), badge_for_type(at), html_escape(title)));
     }
     for ch in &diff.modified {
-        let at = head_store.get(&ch.id).map(|a| a.artifact_type.as_str()).unwrap_or("");
-        let title = head_store.get(&ch.id).map(|a| a.title.as_str()).unwrap_or("");
+        let at = head_store
+            .get(&ch.id)
+            .map(|a| a.artifact_type.as_str())
+            .unwrap_or("");
+        let title = head_store
+            .get(&ch.id)
+            .map(|a| a.title.as_str())
+            .unwrap_or("");
         html.push_str(&format!("<details class=\"diff-row\"><summary class=\"diff-modified\"><span class=\"diff-icon diff-icon-modify\">&Delta;</span><code style=\"font-weight:600\">{}</code> {} <span>{}</span><span class=\"ver-chevron\" style=\"margin-left:auto\"><svg width=\"12\" height=\"12\" viewBox=\"0 0 12 12\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M4 2l4 4-4 4\"/></svg></span></summary><div class=\"diff-detail\">", html_escape(&ch.id), badge_for_type(at), html_escape(title)));
         if let Some((ref o, ref n)) = ch.title_changed {
             html.push_str(&format!("<div class=\"diff-field\"><span class=\"diff-field-name\">Title</span> <span class=\"diff-old\">{}</span> <span class=\"diff-arrow\">&rarr;</span> <span class=\"diff-new\">{}</span></div>", html_escape(o), html_escape(n)));
@@ -5316,11 +5494,21 @@ async fn diff_view(State(state): State<SharedState>, Query(params): Query<DiffPa
         if ch.description_changed {
             html.push_str("<div class=\"diff-field\"><span class=\"diff-field-name\">Description</span> <span style=\"color:var(--text-secondary);font-style:italic\">changed</span></div>");
         }
-        for t in &ch.tags_added { html.push_str(&format!("<div class=\"diff-field\"><span class=\"diff-field-name\">Tag</span> <span class=\"diff-new\">+ {}</span></div>", html_escape(t))); }
-        for t in &ch.tags_removed { html.push_str(&format!("<div class=\"diff-field\"><span class=\"diff-field-name\">Tag</span> <span class=\"diff-old\">&minus; {}</span></div>", html_escape(t))); }
-        for l in &ch.links_added { html.push_str(&format!("<div class=\"diff-field\"><span class=\"diff-field-name\">Link</span> <span class=\"diff-new\">+ {} &rarr; {}</span></div>", html_escape(&l.link_type), html_escape(&l.target))); }
-        for l in &ch.links_removed { html.push_str(&format!("<div class=\"diff-field\"><span class=\"diff-field-name\">Link</span> <span class=\"diff-old\">&minus; {} &rarr; {}</span></div>", html_escape(&l.link_type), html_escape(&l.target))); }
-        for f in &ch.fields_changed { html.push_str(&format!("<div class=\"diff-field\"><span class=\"diff-field-name\">Field</span> <span style=\"color:var(--text-secondary)\">{} changed</span></div>", html_escape(f))); }
+        for t in &ch.tags_added {
+            html.push_str(&format!("<div class=\"diff-field\"><span class=\"diff-field-name\">Tag</span> <span class=\"diff-new\">+ {}</span></div>", html_escape(t)));
+        }
+        for t in &ch.tags_removed {
+            html.push_str(&format!("<div class=\"diff-field\"><span class=\"diff-field-name\">Tag</span> <span class=\"diff-old\">&minus; {}</span></div>", html_escape(t)));
+        }
+        for l in &ch.links_added {
+            html.push_str(&format!("<div class=\"diff-field\"><span class=\"diff-field-name\">Link</span> <span class=\"diff-new\">+ {} &rarr; {}</span></div>", html_escape(&l.link_type), html_escape(&l.target)));
+        }
+        for l in &ch.links_removed {
+            html.push_str(&format!("<div class=\"diff-field\"><span class=\"diff-field-name\">Link</span> <span class=\"diff-old\">&minus; {} &rarr; {}</span></div>", html_escape(&l.link_type), html_escape(&l.target)));
+        }
+        for f in &ch.fields_changed {
+            html.push_str(&format!("<div class=\"diff-field\"><span class=\"diff-field-name\">Field</span> <span style=\"color:var(--text-secondary)\">{} changed</span></div>", html_escape(f)));
+        }
         html.push_str("</div></details>");
     }
     html.push_str("</div>");
@@ -5349,7 +5537,9 @@ async fn doc_linkage_view(State(state): State<SharedState>) -> Html<String> {
 
     for doc in doc_store.iter() {
         let mut seen = std::collections::HashSet::new();
-        let art_ids: Vec<String> = doc.references.iter()
+        let art_ids: Vec<String> = doc
+            .references
+            .iter()
             .filter(|r| seen.insert(r.artifact_id.clone()))
             .map(|r| r.artifact_id.clone())
             .collect();
@@ -5365,11 +5555,15 @@ async fn doc_linkage_view(State(state): State<SharedState>) -> Html<String> {
 
     // Also consider artifacts loaded from YAML source files as "belonging" to that source
     // Group by source file directory
-    let mut source_groups: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();
+    let mut source_groups: std::collections::BTreeMap<String, Vec<String>> =
+        std::collections::BTreeMap::new();
     for a in store.iter() {
         if let Some(sf) = &a.source_file {
             let dir = sf.parent().and_then(|p| p.to_str()).unwrap_or("artifacts");
-            source_groups.entry(dir.to_string()).or_default().push(a.id.clone());
+            source_groups
+                .entry(dir.to_string())
+                .or_default()
+                .push(a.id.clone());
         }
     }
 
@@ -5378,7 +5572,8 @@ async fn doc_linkage_view(State(state): State<SharedState>) -> Html<String> {
     {
         use petgraph::Graph;
         let mut pg: Graph<String, String> = Graph::new();
-        let mut node_idx_map: std::collections::HashMap<String, petgraph::graph::NodeIndex> = std::collections::HashMap::new();
+        let mut node_idx_map: std::collections::HashMap<String, petgraph::graph::NodeIndex> =
+            std::collections::HashMap::new();
 
         // Add document nodes
         for doc in &doc_infos {
@@ -5387,14 +5582,18 @@ async fn doc_linkage_view(State(state): State<SharedState>) -> Html<String> {
         }
         // Add source group nodes
         for path in source_groups.keys() {
-            let short = std::path::Path::new(path.as_str()).file_name().and_then(|n| n.to_str()).unwrap_or(path);
+            let short = std::path::Path::new(path.as_str())
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(path);
             let label = format!("{short}/");
             let idx = pg.add_node(label.clone());
             node_idx_map.insert(path.clone(), idx);
         }
 
         // Build artifact→node index (which node "owns" each artifact)
-        let mut art_to_node: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        let mut art_to_node: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
         for doc in &doc_infos {
             for aid in &doc.artifact_ids {
                 art_to_node.insert(aid.clone(), doc.id.clone());
@@ -5402,19 +5601,25 @@ async fn doc_linkage_view(State(state): State<SharedState>) -> Html<String> {
         }
         for (path, ids) in &source_groups {
             for aid in ids {
-                art_to_node.entry(aid.clone()).or_insert_with(|| path.clone());
+                art_to_node
+                    .entry(aid.clone())
+                    .or_insert_with(|| path.clone());
             }
         }
 
         // Add edges: collect link types per (src_node→tgt_node) pair
         // Uses both forward links and backlinks so target-only nodes (like SRS-001) get edges too
-        let mut edge_types: std::collections::HashMap<(String, String), std::collections::BTreeSet<String>> = std::collections::HashMap::new();
+        let mut edge_types: std::collections::HashMap<
+            (String, String),
+            std::collections::BTreeSet<String>,
+        > = std::collections::HashMap::new();
         for (aid, src_node) in &art_to_node {
             if let Some(a) = store.get(aid) {
                 for link in &a.links {
                     if let Some(tgt_node) = art_to_node.get(&link.target) {
                         if tgt_node != src_node {
-                            edge_types.entry((src_node.clone(), tgt_node.clone()))
+                            edge_types
+                                .entry((src_node.clone(), tgt_node.clone()))
                                 .or_default()
                                 .insert(link.link_type.clone());
                         }
@@ -5430,7 +5635,8 @@ async fn doc_linkage_view(State(state): State<SharedState>) -> Html<String> {
         }
 
         // Build type map for coloring: documents=specification, source groups=source
-        let doc_ids: std::collections::HashSet<String> = doc_infos.iter().map(|d| d.id.clone()).collect();
+        let doc_ids: std::collections::HashSet<String> =
+            doc_infos.iter().map(|d| d.id.clone()).collect();
 
         let mut colors = type_color_map();
         colors.insert("document".into(), "#3a86ff".into());
@@ -5457,18 +5663,31 @@ async fn doc_linkage_view(State(state): State<SharedState>) -> Html<String> {
         let gl = pgv_layout::layout(
             &pg,
             &|_idx, label| {
-                let node_type = if doc_ids.contains(label) { "document" } else { "source-group" };
-                let sublabel = if doc_ids.contains(label) {
-                    doc_infos.iter().find(|d| d.id == *label)
-                        .map(|d| {
-                            let s = format!("{} ({} refs)", d.title, d.artifact_ids.len());
-                            if s.len() > 30 { format!("{}...", &s[..28]) } else { s }
-                        })
+                let node_type = if doc_ids.contains(label) {
+                    "document"
                 } else {
-                    source_groups.iter().find(|(p, _)| {
-                        let short = std::path::Path::new(p.as_str()).file_name().and_then(|n| n.to_str()).unwrap_or(p);
-                        format!("{short}/") == *label
-                    }).map(|(_, ids)| format!("{} artifacts", ids.len()))
+                    "source-group"
+                };
+                let sublabel = if doc_ids.contains(label) {
+                    doc_infos.iter().find(|d| d.id == *label).map(|d| {
+                        let s = format!("{} ({} refs)", d.title, d.artifact_ids.len());
+                        if s.len() > 30 {
+                            format!("{}...", &s[..28])
+                        } else {
+                            s
+                        }
+                    })
+                } else {
+                    source_groups
+                        .iter()
+                        .find(|(p, _)| {
+                            let short = std::path::Path::new(p.as_str())
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or(p);
+                            format!("{short}/") == *label
+                        })
+                        .map(|(_, ids)| format!("{} artifacts", ids.len()))
                 };
                 NodeInfo {
                     id: label.clone(),
@@ -5489,7 +5708,7 @@ async fn doc_linkage_view(State(state): State<SharedState>) -> Html<String> {
               <button class=\"zoom-in\" title=\"Zoom in\">+</button>\
               <button class=\"zoom-out\" title=\"Zoom out\">&minus;</button>\
               <button class=\"zoom-fit\" title=\"Fit to view\">&#8689;</button>\
-            </div>"
+            </div>",
         );
         html.push_str(&svg);
         html.push_str("</div></div>");
@@ -5506,7 +5725,8 @@ async fn doc_linkage_view(State(state): State<SharedState>) -> Html<String> {
 
     let mut cross_link_count = 0u32;
     // Build artifact→document index
-    let mut art_to_doc: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut art_to_doc: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
     for doc in &doc_infos {
         for aid in &doc.artifact_ids {
             art_to_doc.insert(aid.clone(), doc.id.clone());
@@ -5545,8 +5765,10 @@ async fn doc_linkage_view(State(state): State<SharedState>) -> Html<String> {
 
     // ── Unlinked artifacts ──
     // Artifacts that exist in the store but are NOT referenced by any document
-    let all_artifact_ids: std::collections::HashSet<String> = store.iter().map(|a| a.id.clone()).collect();
-    let unlinked: Vec<&rivet_core::model::Artifact> = store.iter()
+    let all_artifact_ids: std::collections::HashSet<String> =
+        store.iter().map(|a| a.id.clone()).collect();
+    let unlinked: Vec<&rivet_core::model::Artifact> = store
+        .iter()
         .filter(|a| !all_doc_artifacts.contains(&a.id))
         .collect();
 
@@ -5574,9 +5796,17 @@ async fn doc_linkage_view(State(state): State<SharedState>) -> Html<String> {
     html.push_str("<table><thead><tr><th>Document</th><th>Type</th><th>References</th><th>Valid Refs</th><th>Broken Refs</th></tr></thead><tbody>");
     for doc in doc_store.iter() {
         let total_refs = doc.references.len();
-        let valid = doc.references.iter().filter(|r| store.contains(&r.artifact_id)).count();
+        let valid = doc
+            .references
+            .iter()
+            .filter(|r| store.contains(&r.artifact_id))
+            .count();
         let broken = total_refs - valid;
-        let broken_class = if broken > 0 { " style=\"color:var(--error);font-weight:600\"" } else { "" };
+        let broken_class = if broken > 0 {
+            " style=\"color:var(--error);font-weight:600\""
+        } else {
+            ""
+        };
         html.push_str(&format!(
             "<tr><td><a hx-get=\"/documents/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a></td>\
              <td>{}</td><td>{total_refs}</td><td>{valid}</td><td{broken_class}>{broken}</td></tr>",
@@ -5741,11 +5971,7 @@ async fn traceability_view(
     };
     let root_type = params.root_type.as_deref().unwrap_or(default_root);
     let status_filter = params.status.as_deref().unwrap_or("all");
-    let search_filter = params
-        .search
-        .as_deref()
-        .unwrap_or("")
-        .to_lowercase();
+    let search_filter = params.search.as_deref().unwrap_or("").to_lowercase();
 
     // Get root artifacts
     let mut root_ids: Vec<&str> = store
@@ -5761,9 +5987,7 @@ async fn traceability_view(
         .filter(|id| {
             if let Some(a) = store.get(id) {
                 // Status filter
-                if status_filter != "all"
-                    && a.status.as_deref().unwrap_or("") != status_filter
-                {
+                if status_filter != "all" && a.status.as_deref().unwrap_or("") != status_filter {
                     return false;
                 }
                 // Search filter
@@ -5859,7 +6083,9 @@ async fn traceability_view(
     // ── Traceability chain explorer ──────────────────────────────────
     html.push_str("<div class=\"card\"><h3 style=\"margin-top:0\">Linkage Chains</h3>");
     if root_artifacts.is_empty() {
-        html.push_str("<p style=\"color:var(--text-secondary)\">No artifacts match the current filters.</p>");
+        html.push_str(
+            "<p style=\"color:var(--text-secondary)\">No artifacts match the current filters.</p>",
+        );
     } else {
         html.push_str("<div class=\"trace-tree\">");
         for id in &root_artifacts {
@@ -5924,7 +6150,11 @@ async fn traceability_view(
                     file = html_escape(&source_path),
                 ));
                 for child in &children {
-                    html.push_str(&render_trace_node(child, 1, &source_path_for_artifact(store, &child.id)));
+                    html.push_str(&render_trace_node(
+                        child,
+                        1,
+                        &source_path_for_artifact(store, &child.id),
+                    ));
                 }
                 html.push_str("</div></details>");
             }
@@ -5960,9 +6190,7 @@ async fn traceability_history(
 
     // Make the path relative to the project directory for git log
     let file_path = std::path::Path::new(&file);
-    let rel_path = file_path
-        .strip_prefix(pp)
-        .unwrap_or(file_path);
+    let rel_path = file_path.strip_prefix(pp).unwrap_or(file_path);
 
     let output = std::process::Command::new("git")
         .args([
@@ -6065,9 +6293,8 @@ struct SourceRefMatch {
 /// File must contain a `/` or `.` with a recognized extension.
 fn find_source_ref(s: &str) -> Option<SourceRefMatch> {
     let extensions = [
-        ".rs", ".yaml", ".yml", ".toml", ".md", ".py", ".js", ".ts",
-        ".tsx", ".jsx", ".c", ".h", ".cpp", ".hpp", ".go", ".java",
-        ".rb", ".sh", ".json", ".xml", ".aadl",
+        ".rs", ".yaml", ".yml", ".toml", ".md", ".py", ".js", ".ts", ".tsx", ".jsx", ".c", ".h",
+        ".cpp", ".hpp", ".go", ".java", ".rb", ".sh", ".json", ".xml", ".aadl",
     ];
     let len = s.len();
     let mut i = 0;
@@ -6081,7 +6308,9 @@ fn find_source_ref(s: &str) -> Option<SourceRefMatch> {
         while j < len {
             let c = s.as_bytes()[j];
             if c.is_ascii_alphanumeric() || c == b'_' || c == b'/' || c == b'.' || c == b'-' {
-                if c == b'/' { has_slash = true; }
+                if c == b'/' {
+                    has_slash = true;
+                }
                 j += 1;
             } else {
                 break;
@@ -6103,7 +6332,9 @@ fn find_source_ref(s: &str) -> Option<SourceRefMatch> {
                     let _colon_pos = j;
                     j += 1;
                     let line_start = j;
-                    while j < len && s.as_bytes()[j].is_ascii_digit() { j += 1; }
+                    while j < len && s.as_bytes()[j].is_ascii_digit() {
+                        j += 1;
+                    }
                     if j > line_start {
                         let line: u32 = s[line_start..j].parse().unwrap_or(0);
                         if line > 0 {
@@ -6112,29 +6343,47 @@ fn find_source_ref(s: &str) -> Option<SourceRefMatch> {
                                 let dash = j;
                                 j += 1;
                                 let end_start = j;
-                                while j < len && s.as_bytes()[j].is_ascii_digit() { j += 1; }
+                                while j < len && s.as_bytes()[j].is_ascii_digit() {
+                                    j += 1;
+                                }
                                 if j > end_start {
                                     let end_line: u32 = s[end_start..j].parse().unwrap_or(0);
                                     if end_line > 0 {
                                         return Some(SourceRefMatch {
-                                            start, len: j - start, file, line: Some(line), end_line: Some(end_line),
+                                            start,
+                                            len: j - start,
+                                            file,
+                                            line: Some(line),
+                                            end_line: Some(end_line),
                                         });
                                     }
                                 }
                                 // Not a valid range, just use line
                                 return Some(SourceRefMatch {
-                                    start, len: dash - start, file, line: Some(line), end_line: None,
+                                    start,
+                                    len: dash - start,
+                                    file,
+                                    line: Some(line),
+                                    end_line: None,
                                 });
                             }
                             return Some(SourceRefMatch {
-                                start, len: j - start, file, line: Some(line), end_line: None,
+                                start,
+                                len: j - start,
+                                file,
+                                line: Some(line),
+                                end_line: None,
                             });
                         }
                     }
                 }
                 // No line number, just file path
                 return Some(SourceRefMatch {
-                    start, len: j - start, file, line: None, end_line: None,
+                    start,
+                    len: j - start,
+                    file,
+                    line: None,
+                    end_line: None,
                 });
             }
         }
@@ -6203,9 +6452,11 @@ async fn help_view(State(state): State<SharedState>) -> Html<String> {
     html.push_str("</div>");
 
     // CLI quick reference
-    html.push_str(r#"<div class="card" style="padding:1.25rem;margin-top:1rem">
+    html.push_str(
+        r#"<div class="card" style="padding:1.25rem;margin-top:1rem">
         <h3 style="margin:0 0 1rem">CLI Quick Reference</h3>
-        <pre style="font-size:.82rem;line-height:1.6;opacity:.85">"#);
+        <pre style="font-size:.82rem;line-height:1.6;opacity:.85">"#,
+    );
     html.push_str("rivet validate              Validate all artifacts\n");
     html.push_str("rivet list [-t TYPE]        List artifacts\n");
     html.push_str("rivet stats                 Summary statistics\n");
@@ -6318,21 +6569,32 @@ async fn help_docs_topic(
         if let Some(h1) = line.strip_prefix("# ") {
             html.push_str(&format!("<h2>{}</h2>", html_escape(h1)));
         } else if let Some(h2) = line.strip_prefix("## ") {
-            html.push_str(&format!("<h3 style=\"margin-top:1.5rem\">{}</h3>", html_escape(h2)));
+            html.push_str(&format!(
+                "<h3 style=\"margin-top:1.5rem\">{}</h3>",
+                html_escape(h2)
+            ));
         } else if let Some(h3) = line.strip_prefix("### ") {
-            html.push_str(&format!("<h4 style=\"margin-top:1rem\">{}</h4>", html_escape(h3)));
+            html.push_str(&format!(
+                "<h4 style=\"margin-top:1rem\">{}</h4>",
+                html_escape(h3)
+            ));
         } else if line.starts_with('|') {
             if !in_table {
                 html.push_str(r#"<div style="overflow-x:auto;margin:.75rem 0"><table>"#);
                 in_table = true;
             }
-            if line.contains("---") && !line.contains(' ') || line.chars().all(|c| c == '|' || c == '-' || c == ' ') {
+            if line.contains("---") && !line.contains(' ')
+                || line.chars().all(|c| c == '|' || c == '-' || c == ' ')
+            {
                 // Skip separator rows
             } else {
                 html.push_str("<tr>");
                 let cells: Vec<&str> = line.split('|').collect();
                 for cell in &cells[1..cells.len().saturating_sub(1)] {
-                    html.push_str(&format!("<td style=\"padding:.25rem .75rem\">{}</td>", html_escape(cell.trim())));
+                    html.push_str(&format!(
+                        "<td style=\"padding:.25rem .75rem\">{}</td>",
+                        html_escape(cell.trim())
+                    ));
                 }
                 html.push_str("</tr>");
             }
@@ -6344,7 +6606,10 @@ async fn help_docs_topic(
             if line.is_empty() {
                 html.push_str("<br>");
             } else {
-                html.push_str(&format!("<p style=\"margin:.25rem 0;font-size:.88rem;line-height:1.6\">{}</p>", html_escape(line)));
+                html.push_str(&format!(
+                    "<p style=\"margin:.25rem 0;font-size:.88rem;line-height:1.6\">{}</p>",
+                    html_escape(line)
+                ));
             }
         }
     }
@@ -6370,9 +6635,11 @@ async fn help_schema_list(State(state): State<SharedState>) -> Html<String> {
     html.push_str("<h2>Schema Types</h2>");
     html.push_str(r#"<p style="opacity:.7;margin-bottom:1rem">Click a type to see fields, link fields, traceability rules, and example YAML.</p>"#);
 
-    html.push_str(r#"<table><thead><tr>
+    html.push_str(
+        r#"<table><thead><tr>
         <th>Type</th><th>Description</th><th>Fields</th><th>Links</th><th>Process</th>
-    </tr></thead><tbody>"#);
+    </tr></thead><tbody>"#,
+    );
 
     for t in &types {
         let proc = t.aspice_process.as_deref().unwrap_or("-");
@@ -6425,9 +6692,11 @@ async fn help_links_view(State(state): State<SharedState>) -> Html<String> {
     html.push_str("<div style=\"margin-bottom:1rem\"><a hx-get=\"/help\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" style=\"font-size:.85rem\">&larr; Help</a></div>");
     html.push_str("<h2>Link Types</h2>");
 
-    html.push_str("<table><thead><tr>\
+    html.push_str(
+        "<table><thead><tr>\
         <th>Name</th><th>Inverse</th><th>Description</th>\
-    </tr></thead><tbody>");
+    </tr></thead><tbody>",
+    );
 
     for l in &links {
         let inv = l.inverse.as_deref().unwrap_or("-");
@@ -6455,4 +6724,3 @@ async fn help_rules_view(State(state): State<SharedState>) -> Html<String> {
     html.push_str("</pre></div>");
     Html(html)
 }
-

@@ -267,10 +267,22 @@ fn main() -> ExitCode {
 
 fn run(cli: Cli) -> Result<bool> {
     // Commands that don't need a loaded project.
-    if let Command::Init { name, preset, schema, dir } = &cli.command {
+    if let Command::Init {
+        name,
+        preset,
+        schema,
+        dir,
+    } = &cli.command
+    {
         return cmd_init(name.as_deref(), preset, schema, dir);
     }
-    if let Command::Docs { topic, grep, format, context } = &cli.command {
+    if let Command::Docs {
+        topic,
+        grep,
+        format,
+        context,
+    } = &cli.command
+    {
         return cmd_docs(topic.as_deref(), grep.as_deref(), format, *context);
     }
     if let Command::Context = &cli.command {
@@ -281,7 +293,11 @@ fn run(cli: Cli) -> Result<bool> {
         Command::Init { .. } | Command::Docs { .. } | Command::Context => unreachable!(),
         Command::Stpa { path, schema } => cmd_stpa(path, schema.as_deref(), &cli),
         Command::Validate { format } => cmd_validate(&cli, format),
-        Command::List { r#type, status, format } => cmd_list(&cli, r#type.as_deref(), status.as_deref(), format),
+        Command::List {
+            r#type,
+            status,
+            format,
+        } => cmd_list(&cli, r#type.as_deref(), status.as_deref(), format),
         Command::Stats { format } => cmd_stats(&cli, format),
         Command::Coverage { format, fail_under } => cmd_coverage(&cli, format, fail_under.as_ref()),
         Command::Matrix {
@@ -291,13 +307,23 @@ fn run(cli: Cli) -> Result<bool> {
             direction,
             format,
         } => cmd_matrix(&cli, from, to, link.as_deref(), direction, format),
-        Command::Diff { base, head, format } => cmd_diff(&cli, base.as_deref(), head.as_deref(), format),
+        Command::Diff { base, head, format } => {
+            cmd_diff(&cli, base.as_deref(), head.as_deref(), format)
+        }
         Command::Export { format, output } => cmd_export(&cli, format, output.as_deref()),
         Command::Schema { action } => cmd_schema(&cli, action),
         Command::Serve { port } => {
             let port = *port;
-            let (store, schema, graph, doc_store, result_store, project_name, project_path, schemas_dir) =
-                load_project_full(&cli)?;
+            let (
+                store,
+                schema,
+                graph,
+                doc_store,
+                result_store,
+                project_name,
+                project_path,
+                schemas_dir,
+            ) = load_project_full(&cli)?;
             let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
             rt.block_on(serve::run(
                 store,
@@ -620,8 +646,7 @@ sources:
 
     for (filename, content) in &init_preset.sample_files {
         let path = artifacts_dir.join(filename);
-        std::fs::write(&path, content)
-            .with_context(|| format!("writing {}", path.display()))?;
+        std::fs::write(&path, content).with_context(|| format!("writing {}", path.display()))?;
         println!("  created {}", path.display());
     }
 
@@ -798,7 +823,12 @@ fn cmd_validate(cli: &Cli, format: &str) -> Result<bool> {
 }
 
 /// List artifacts.
-fn cmd_list(cli: &Cli, type_filter: Option<&str>, status_filter: Option<&str>, format: &str) -> Result<bool> {
+fn cmd_list(
+    cli: &Cli,
+    type_filter: Option<&str>,
+    status_filter: Option<&str>,
+    format: &str,
+) -> Result<bool> {
     let (store, _, _) = load_project(cli)?;
 
     let query = rivet_core::query::Query {
@@ -1076,13 +1106,17 @@ fn cmd_diff(
                     project: bp.to_path_buf(),
                     schemas: cli.schemas.clone(),
                     verbose: cli.verbose,
-                    command: Command::Validate { format: "text".to_string() },
+                    command: Command::Validate {
+                        format: "text".to_string(),
+                    },
                 };
                 let head_cli = Cli {
                     project: hp.to_path_buf(),
                     schemas: cli.schemas.clone(),
                     verbose: cli.verbose,
-                    command: Command::Validate { format: "text".to_string() },
+                    command: Command::Validate {
+                        format: "text".to_string(),
+                    },
                 };
                 let (bs, bsc, bg) = load_project(&base_cli)?;
                 let (hs, hsc, hg) = load_project(&head_cli)?;
@@ -1136,7 +1170,10 @@ fn cmd_diff(
                     changes.push(format!("link added: {} -> {}", link.link_type, link.target));
                 }
                 for link in &change.links_removed {
-                    changes.push(format!("link removed: {} -> {}", link.link_type, link.target));
+                    changes.push(format!(
+                        "link removed: {} -> {}",
+                        link.link_type, link.target
+                    ));
                 }
                 for field in &change.fields_changed {
                     changes.push(format!("field changed: {}", field));
@@ -1285,8 +1322,8 @@ fn cmd_schema(cli: &Cli, action: &SchemaAction) -> Result<bool> {
     } else {
         vec!["common".to_string(), "dev".to_string()]
     };
-    let schema = rivet_core::load_schemas(&schema_names, &schemas_dir)
-        .context("loading schemas")?;
+    let schema =
+        rivet_core::load_schemas(&schema_names, &schemas_dir).context("loading schemas")?;
 
     let output = match action {
         SchemaAction::List { format } => schema_cmd::cmd_list(&schema, format),
@@ -1627,8 +1664,7 @@ fn load_project_full(
     }
 
     let project_name = config.project.name.clone();
-    let project_path = std::fs::canonicalize(&cli.project)
-        .unwrap_or_else(|_| cli.project.clone());
+    let project_path = std::fs::canonicalize(&cli.project).unwrap_or_else(|_| cli.project.clone());
 
     Ok((
         store,

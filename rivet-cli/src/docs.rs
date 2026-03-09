@@ -472,11 +472,15 @@ pub fn grep_docs(pattern: &str, format: &str, context: usize) -> String {
             out.push_str(&format!("{}:{}: {}\n", m.topic, m.line_num + 1 + j, cl));
         }
     }
-    out.push_str(&format!("\n{} matches across {} topics\n", all_matches.len(), {
-        let mut topics: Vec<&str> = all_matches.iter().map(|m| m.topic).collect();
-        topics.dedup();
-        topics.len()
-    }));
+    out.push_str(&format!(
+        "\n{} matches across {} topics\n",
+        all_matches.len(),
+        {
+            let mut topics: Vec<&str> = all_matches.iter().map(|m| m.topic).collect();
+            topics.dedup();
+            topics.len()
+        }
+    ));
     out
 }
 

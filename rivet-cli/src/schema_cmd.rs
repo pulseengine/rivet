@@ -47,8 +47,15 @@ pub fn cmd_list(schema: &Schema, format: &str) -> String {
 /// Show detailed info for a single artifact type, including an example YAML snippet.
 pub fn cmd_show(schema: &Schema, name: &str, format: &str) -> String {
     let Some(t) = schema.artifact_type(name) else {
-        return format!("Unknown artifact type: {name}\n\nAvailable: {}\n",
-            schema.artifact_types.keys().cloned().collect::<Vec<_>>().join(", "));
+        return format!(
+            "Unknown artifact type: {name}\n\nAvailable: {}\n",
+            schema
+                .artifact_types
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
     };
 
     if format == "json" {
@@ -127,7 +134,10 @@ pub fn cmd_show(schema: &Schema, name: &str, format: &str) -> String {
                 .as_ref()
                 .map(|v| format!("  [{}]", v.join(", ")))
                 .unwrap_or_default();
-            out.push_str(&format!("  {:<24} {:<10} {}{}\n", f.name, f.field_type, req, vals));
+            out.push_str(&format!(
+                "  {:<24} {:<10} {}{}\n",
+                f.name, f.field_type, req, vals
+            ));
         }
     }
 
@@ -279,10 +289,7 @@ pub fn cmd_rules(schema: &Schema, format: &str) -> String {
 
 // ── Example YAML generation ─────────────────────────────────────────────
 
-fn generate_example_yaml(
-    t: &rivet_core::schema::ArtifactTypeDef,
-    _schema: &Schema,
-) -> String {
+fn generate_example_yaml(t: &rivet_core::schema::ArtifactTypeDef, _schema: &Schema) -> String {
     let mut out = String::new();
     let id_prefix = t
         .name
