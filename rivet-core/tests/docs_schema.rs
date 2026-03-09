@@ -11,16 +11,16 @@ use std::path::PathBuf;
 /// schema name.
 #[test]
 fn embedded_schema_common_loads() {
-    let schema_file = rivet_core::embedded::load_embedded_schema("common")
-        .expect("common schema must load");
+    let schema_file =
+        rivet_core::embedded::load_embedded_schema("common").expect("common schema must load");
     assert_eq!(schema_file.schema.name, "common");
 }
 
 /// `load_embedded_schema("dev")` parses successfully.
 #[test]
 fn embedded_schema_dev_loads() {
-    let schema_file = rivet_core::embedded::load_embedded_schema("dev")
-        .expect("dev schema must load");
+    let schema_file =
+        rivet_core::embedded::load_embedded_schema("dev").expect("dev schema must load");
     assert_eq!(schema_file.schema.name, "dev");
     assert!(
         !schema_file.artifact_types.is_empty(),
@@ -45,10 +45,7 @@ fn all_embedded_schemas_load() {
 #[test]
 fn embedded_schema_unknown_returns_err() {
     let result = rivet_core::embedded::load_embedded_schema("nonexistent-schema");
-    assert!(
-        result.is_err(),
-        "unknown schema name must return Err"
-    );
+    assert!(result.is_err(), "unknown schema name must return Err");
     let err_msg = format!("{}", result.unwrap_err());
     assert!(
         err_msg.contains("unknown built-in schema"),

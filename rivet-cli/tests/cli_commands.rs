@@ -15,8 +15,7 @@ fn rivet_bin() -> std::path::PathBuf {
     // Construct path from CARGO_MANIFEST_DIR -> workspace target directory
     let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = manifest.parent().expect("workspace root");
-    let target_dir = workspace_root.join("target").join("debug").join("rivet");
-    target_dir
+    workspace_root.join("target").join("debug").join("rivet")
 }
 
 /// Project root (one level up from rivet-cli/).
@@ -58,7 +57,10 @@ fn docs_show_topic() {
         .output()
         .expect("failed to execute rivet docs artifact-format");
 
-    assert!(output.status.success(), "rivet docs artifact-format must exit 0");
+    assert!(
+        output.status.success(),
+        "rivet docs artifact-format must exit 0"
+    );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
@@ -97,7 +99,10 @@ fn docs_list_json() {
         .output()
         .expect("failed to execute rivet docs --format json");
 
-    assert!(output.status.success(), "rivet docs --format json must exit 0");
+    assert!(
+        output.status.success(),
+        "rivet docs --format json must exit 0"
+    );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let parsed: serde_json::Value =
@@ -125,8 +130,7 @@ fn docs_grep_json() {
     assert!(output.status.success());
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let parsed: serde_json::Value =
-        serde_json::from_str(&stdout).expect("grep JSON must be valid");
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("grep JSON must be valid");
 
     assert_eq!(
         parsed.get("command").and_then(|v| v.as_str()),
@@ -148,7 +152,12 @@ fn docs_grep_json() {
 #[test]
 fn schema_list() {
     let output = Command::new(rivet_bin())
-        .args(["--project", project_root().to_str().unwrap(), "schema", "list"])
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "schema",
+            "list",
+        ])
         .output()
         .expect("failed to execute rivet schema list");
 
@@ -231,8 +240,7 @@ fn init_stpa_preset() {
     assert!(config_path.exists(), "rivet.yaml must be created");
 
     // Read and verify config content
-    let config_content =
-        std::fs::read_to_string(&config_path).expect("read rivet.yaml");
+    let config_content = std::fs::read_to_string(&config_path).expect("read rivet.yaml");
     assert!(
         config_content.contains("stpa"),
         "rivet.yaml must reference 'stpa' schema, got:\n{config_content}"
@@ -323,7 +331,10 @@ fn validate_json() {
         "JSON envelope must have command 'validate'"
     );
     assert!(
-        parsed.get("diagnostics").and_then(|v| v.as_array()).is_some(),
+        parsed
+            .get("diagnostics")
+            .and_then(|v| v.as_array())
+            .is_some(),
         "JSON must contain a 'diagnostics' array"
     );
     // errors/warnings fields should be present
@@ -400,18 +411,11 @@ fn list_json() {
     );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let parsed: serde_json::Value =
-        serde_json::from_str(&stdout).expect("list JSON must be valid");
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("list JSON must be valid");
 
-    assert_eq!(
-        parsed.get("command").and_then(|v| v.as_str()),
-        Some("list"),
-    );
+    assert_eq!(parsed.get("command").and_then(|v| v.as_str()), Some("list"),);
     assert!(
-        parsed
-            .get("artifacts")
-            .and_then(|v| v.as_array())
-            .is_some(),
+        parsed.get("artifacts").and_then(|v| v.as_array()).is_some(),
         "list JSON must contain 'artifacts' array"
     );
     assert!(
