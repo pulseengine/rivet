@@ -39,6 +39,30 @@ This flat crate structure keeps module boundaries clear without deep nesting.
 The library/binary split ensures that rivet-core can be consumed as a Rust
 dependency by other tools or tested independently.
 
+### System Architecture Diagram
+
+The top-level system with its core and CLI subsystems:
+
+```aadl
+root: RivetSystem::Rivet.Impl
+```
+
+### Core Process Internals
+
+The core library process showing all domain logic modules and their data flow:
+
+```aadl
+root: RivetSystem::RivetCore.Impl
+```
+
+### CLI Process
+
+The CLI binary process with command dispatch and HTTP serve handler:
+
+```aadl
+root: RivetSystem::RivetCli.Impl
+```
+
 ## 2. Module Structure
 
 ### 2.1 rivet-core Modules
@@ -135,6 +159,10 @@ Adapters implement the `Adapter` trait, which defines `import()` and
 The WASM adapter runtime ([[DD-004]]) and OSLC sync adapter ([[DD-001]])
 extend this pipeline for plugin formats and remote tool synchronization.
 
+```aadl
+root: RivetAdapters::WasmRuntime.Impl
+```
+
 ### 3.3 Link Graph
 
 The `LinkGraph` module uses petgraph ([[DD-002]]) to build a directed graph
@@ -163,6 +191,10 @@ Diagnostics are returned with severity levels (error, warning, info) and the
 caller decides whether to fail on errors.
 
 ## 4. Dashboard Architecture
+
+```aadl
+root: RivetDashboard::Dashboard.Impl
+```
 
 The HTTP dashboard follows [[DD-005]], using axum as the server framework and
 HTMX for dynamic page updates without a JavaScript build toolchain.

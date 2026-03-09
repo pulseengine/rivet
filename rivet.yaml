@@ -9,6 +9,10 @@ project:
 sources:
   - path: artifacts
     format: generic-yaml
+  - path: arch
+    format: aadl
+    config:
+      root-classifier: RivetSystem::Rivet.Impl
 
 docs:
   - docs
