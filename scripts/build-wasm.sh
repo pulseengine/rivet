@@ -22,7 +22,7 @@ echo "Copied WASM component to $OUT_DIR/spar_wasm.wasm"
 ls -lh "$OUT_DIR/spar_wasm.wasm"
 
 echo ""
-echo "Transpiling for browser with jco..."
-npx @bytecodealliance/jco transpile "$OUT_DIR/spar_wasm.wasm" -o "$OUT_DIR/js/" 2>&1
+echo "Transpiling for browser with jco (--instantiation async)..."
+npx @bytecodealliance/jco transpile --instantiation async "$OUT_DIR/spar_wasm.wasm" -o "$OUT_DIR/js/" 2>&1
 echo "Browser JS module written to $OUT_DIR/js/"
 ls -lh "$OUT_DIR/js/spar_wasm.js" "$OUT_DIR/js/spar_wasm.core.wasm" 2>/dev/null || true

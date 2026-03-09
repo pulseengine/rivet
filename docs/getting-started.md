@@ -26,7 +26,7 @@ cargo build --release
 # Binary at target/release/rivet
 ```
 
-Requires Rust edition 2024 (MSRV 1.85).
+Requires Rust edition 2024 (MSRV 1.89).
 
 ---
 
@@ -578,6 +578,142 @@ Run from the example directory:
 cd examples/cybersecurity
 rivet --schemas ../../schemas validate
 ```
+
+---
+
+## AADL Architecture Integration (spar)
+
+Rivet integrates with [spar](https://github.com/pulseengine/spar), an AADL v2.2
+toolchain, to make architecture models first-class lifecycle artifacts. AADL
+components become traceable from requirements through architecture to verification.
+
+### Setup
+
+1. Add the `aadl` schema to your `rivet.yaml`:
+
+```yaml
+project:
+  schemas:
+    - common
+    - dev
+    - aadl       # AADL architecture types
+```
+
+2. Create an `arch/` directory with your `.aadl` files and list it under `docs:`:
+
+```yaml
+docs:
+  - docs
+  - arch         # AADL models (browsable in dashboard, used for diagrams)
+```
+
+3. Build or fetch the spar WASM component for browser-side diagram rendering:
+
+```bash
+# Option A: build from spar source (requires spar repo + wasm32-wasip2 target)
+./scripts/build-wasm.sh /path/to/spar
+
+# Option B: fetch pre-built from GitHub releases
+./scripts/fetch-wasm.sh
+```
+
+`build-wasm.sh` compiles spar to WASM and runs jco transpilation in one step.
+The output lands in `rivet-cli/assets/wasm/js/`.
+
+If you only have the `.wasm` file, transpile manually:
+
+```bash
+npx @bytecodealliance/jco transpile rivet-cli/assets/wasm/spar_wasm.wasm \
+  --instantiation async -o rivet-cli/assets/wasm/js/
+```
+
+### Architecture artifacts
+
+Create hand-authored architecture artifacts in your YAML sources that trace to
+requirements and reference AADL components:
+
+```yaml
+artifacts:
+  - id: ARCH-001
+    type: system-arch-component
+    title: Core validation engine
+    status: approved
+    description: >
+      The validation module that checks artifacts against merged schemas.
+    links:
+      - type: allocated-from
+        target: REQ-004
+    fields:
+      aadl-classifier: RivetSystem::RivetCore.Impl
+```
+
+The `aadl` schema defines `aadl-component`, `aadl-analysis-result`, and
+`aadl-flow` artifact types with traceability rules linking them to requirements.
+
+### Architecture diagrams in documents
+
+Embed AADL architecture diagrams in any markdown document using fenced code
+blocks with the `aadl` language tag:
+
+````markdown
+## System Architecture
+
+```aadl
+root: MyPackage::MySystem.Impl
+```
+
+The system consists of three subsystems...
+````
+
+When viewed in the dashboard (`rivet serve`), these blocks render as interactive
+SVG diagrams. The spar WASM component runs client-side in the browser -- it
+parses the `.aadl` files, instantiates the specified root, and renders the
+component hierarchy as SVG with:
+
+- Color-coded nodes by AADL category (system, process, thread, etc.)
+- Zoom controls (+/−/reset) and mouse wheel zoom
+- Click-drag panning
+- Clickable nodes that navigate to the corresponding artifact
+
+### Dashboard views
+
+Run `rivet serve` and the dashboard provides:
+
+- **Documents** -- Architecture docs with rendered AADL diagrams inline
+- **Source browser** -- Browse `.aadl` files with syntax highlighting
+- **Coverage** -- Traceability coverage showing which AADL components trace to
+  requirements and which lack allocation
+- **Matrix** -- Traceability matrix from requirements to architecture components
+
+### How it works
+
+The AADL diagram rendering is fully client-side:
+
+1. The dashboard serves the jco-transpiled spar WASM module at `/wasm/`
+2. When a page contains an `aadl` diagram block, the browser JS:
+   - Fetches `.aadl` file contents from `/source-raw/arch/`
+   - Loads the WASM module with a virtual WASI filesystem containing those files
+   - Calls `renderer.render(root, [])` to get SVG
+   - Inserts the SVG into the page
+3. No spar CLI installation required on the server
+
+### Layer 2: Rust library integration
+
+For automated import of AADL components as rivet artifacts (without hand-authoring),
+rivet-core includes an AADL adapter behind the `aadl` feature flag that uses
+`spar-hir` as a Rust library:
+
+```yaml
+sources:
+  - path: arch
+    format: aadl
+    config:
+      root: MyPackage::MySystem.Impl
+```
+
+This parses `.aadl` files, runs analyses, and creates artifacts automatically.
+Enable with `cargo build --features aadl`. Note: auto-imported artifacts need
+traceability links added separately to avoid orphans.
 
 ---
 
