@@ -232,6 +232,59 @@ pub fn load_all_externals(
     Ok(resolved)
 }
 
+/// A broken cross-repo reference.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrokenRef {
+    pub reference: String,
+    pub reason: BrokenRefReason,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BrokenRefReason {
+    UnknownPrefix(String),
+    NotFoundInExternal { prefix: String, id: String },
+    NotFoundLocally(String),
+}
+
+/// Validate a list of artifact reference strings against local and external ID sets.
+///
+/// Returns a list of broken references. An empty return means all refs resolved.
+pub fn validate_refs(
+    refs: &[&str],
+    local_ids: &std::collections::HashSet<String>,
+    external_ids: &std::collections::BTreeMap<String, std::collections::HashSet<String>>,
+) -> Vec<BrokenRef> {
+    let mut broken = Vec::new();
+    for r in refs {
+        match parse_artifact_ref(r) {
+            ArtifactRef::Local(id) => {
+                if !local_ids.contains(&id) {
+                    broken.push(BrokenRef {
+                        reference: r.to_string(),
+                        reason: BrokenRefReason::NotFoundLocally(id),
+                    });
+                }
+            }
+            ArtifactRef::External { prefix, id } => {
+                if let Some(ids) = external_ids.get(&prefix) {
+                    if !ids.contains(&id) {
+                        broken.push(BrokenRef {
+                            reference: r.to_string(),
+                            reason: BrokenRefReason::NotFoundInExternal { prefix, id },
+                        });
+                    }
+                } else {
+                    broken.push(BrokenRef {
+                        reference: r.to_string(),
+                        reason: BrokenRefReason::UnknownPrefix(prefix),
+                    });
+                }
+            }
+        }
+    }
+    broken
+}
+
 /// Recursively copy a directory (used on non-unix platforms instead of symlinks).
 #[cfg(not(unix))]
 fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), crate::error::Error> {
@@ -405,6 +458,49 @@ mod tests {
         assert_eq!(results.len(), 2);
         assert!(dir.path().join(".rivet/repos/alpha").exists());
         assert!(dir.path().join(".rivet/repos/beta").exists());
+    }
+
+    #[test]
+    fn validate_cross_repo_links() {
+        use std::collections::{BTreeMap, HashSet};
+
+        // Local artifacts
+        let local_ids: HashSet<String> =
+            ["REQ-001", "FEAT-001"].iter().map(|s| s.to_string()).collect();
+
+        // External artifacts keyed by prefix
+        let mut external_ids: BTreeMap<String, HashSet<String>> = BTreeMap::new();
+        external_ids.insert(
+            "meld".into(),
+            ["UCA-C-1", "H-1"].iter().map(|s| s.to_string()).collect(),
+        );
+
+        // Valid references
+        let refs = vec!["REQ-001", "meld:UCA-C-1", "meld:H-1", "FEAT-001"];
+        let broken = validate_refs(&refs, &local_ids, &external_ids);
+        assert!(broken.is_empty());
+
+        // Broken references
+        let refs2 = vec!["meld:NOPE-999", "unknown:REQ-001", "MISSING-001"];
+        let broken2 = validate_refs(&refs2, &local_ids, &external_ids);
+        assert_eq!(broken2.len(), 3);
+
+        // Verify specific reasons
+        assert_eq!(
+            broken2[0].reason,
+            BrokenRefReason::NotFoundInExternal {
+                prefix: "meld".into(),
+                id: "NOPE-999".into(),
+            }
+        );
+        assert_eq!(
+            broken2[1].reason,
+            BrokenRefReason::UnknownPrefix("unknown".into())
+        );
+        assert_eq!(
+            broken2[2].reason,
+            BrokenRefReason::NotFoundLocally("MISSING-001".into())
+        );
     }
 
     #[test]
