@@ -75,13 +75,20 @@ fn build_wasm_assets() {
     println!("cargo:rerun-if-changed=../scripts/build-wasm.sh");
     println!("cargo:rerun-if-changed=assets/wasm/js/spar_wasm.js");
 
+    // Locate the spar repository.
+    let spar_dir = std::env::var("SPAR_DIR").unwrap_or_else(|_| "../spar".to_string());
+    let spar_path = Path::new(&spar_dir);
+    let spar_wasm_crate = spar_path.join("crates/spar-wasm");
+
+    // Compare local spar HEAD against the rev pinned in Cargo.toml.
+    if spar_path.join(".git").exists() {
+        check_spar_version_drift(&spar_dir);
+    }
+
     if wasm_js.exists() && wasm_core.exists() {
         return; // Assets already present, nothing to do.
     }
 
-    // Locate the spar repository.
-    let spar_dir = std::env::var("SPAR_DIR").unwrap_or_else(|_| "../spar".to_string());
-    let spar_wasm_crate = Path::new(&spar_dir).join("crates/spar-wasm");
     if !spar_wasm_crate.exists() {
         println!(
             "cargo:warning=WASM assets missing and spar repo not found at {spar_dir}. \
@@ -111,5 +118,62 @@ fn build_wasm_assets() {
         Err(e) => {
             println!("cargo:warning=Failed to run WASM build script: {e}");
         }
+    }
+}
+
+/// Compare the local spar repo HEAD against the rev pinned in workspace Cargo.toml.
+/// Warns if they differ so developers know to bump the dep or update spar.
+fn check_spar_version_drift(spar_dir: &str) {
+    // Read the pinned rev from Cargo.toml.
+    let cargo_toml = Path::new("../Cargo.toml");
+    let pinned_rev = match std::fs::read_to_string(cargo_toml) {
+        Ok(content) => {
+            // Look for: spar-hir = { ... rev = "XXXXXXX" ... }
+            content
+                .lines()
+                .find(|l| l.contains("spar-hir") && l.contains("rev"))
+                .and_then(|line| {
+                    let after_rev = line.split("rev = \"").nth(1)?;
+                    Some(after_rev.split('"').next()?.to_string())
+                })
+        }
+        Err(_) => None,
+    };
+
+    let Some(pinned) = pinned_rev else {
+        return; // Can't determine pinned rev, skip check.
+    };
+
+    // Get the local spar HEAD.
+    let local_head = Command::new("git")
+        .args(["rev-parse", "--short=7", "HEAD"])
+        .current_dir(spar_dir)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+
+    let Some(head) = local_head else {
+        return;
+    };
+
+    // Compare (short revs — check prefix match).
+    let pinned_short = &pinned[..pinned.len().min(7)];
+    if !head.starts_with(pinned_short) && !pinned_short.starts_with(&head) {
+        // Count distance.
+        let distance = Command::new("git")
+            .args(["rev-list", "--count", &format!("{pinned}..HEAD")])
+            .current_dir(spar_dir)
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .unwrap_or_else(|| "?".to_string());
+
+        println!(
+            "cargo:warning=spar version drift: Cargo.toml pins rev {pinned}, \
+             but local spar is at {head} ({distance} commits ahead). \
+             Consider: cargo update -p spar-hir -p spar-analysis"
+        );
     }
 }
