@@ -337,8 +337,11 @@ pub async fn run(
         .route("/help/rules", get(help_rules_view))
         .route("/docs-asset/{*path}", get(docs_asset))
         .route("/reload", post(reload_handler))
-        .with_state(state)
-        .layer(axum::middleware::from_fn(redirect_non_htmx));
+        .with_state(state.clone())
+        .layer(axum::middleware::from_fn_with_state(
+            state,
+            wrap_full_page,
+        ));
 
     let addr = format!("0.0.0.0:{port}");
     eprintln!("rivet dashboard listening on http://localhost:{port}");
@@ -348,9 +351,12 @@ pub async fn run(
     Ok(())
 }
 
-/// Middleware: redirect direct browser requests (no HX-Request header) to `/?goto=/path`
-/// so the full layout is served and JS loads the content.
-async fn redirect_non_htmx(
+/// Middleware: for direct browser requests (no HX-Request header) to view routes,
+/// wrap the handler's partial HTML in the full page layout. This replaces the old
+/// `/?goto=` redirect pattern and fixes query-param loss, hash-fragment loss, and
+/// the async replaceState race condition.
+async fn wrap_full_page(
+    State(state): State<SharedState>,
     req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
@@ -358,21 +364,26 @@ async fn redirect_non_htmx(
     let is_htmx = req.headers().contains_key("hx-request");
     let method = req.method().clone();
 
-    // Only redirect GET requests to known view routes, not / or /reload or /api/*
+    let response = next.run(req).await;
+
+    // Only wrap GET requests to view routes (not /, assets, or APIs)
     if method == axum::http::Method::GET
         && !is_htmx
         && path != "/"
-        && !path.starts_with("/?")
         && !path.starts_with("/api/")
         && !path.starts_with("/wasm/")
         && !path.starts_with("/source-raw/")
         && !path.starts_with("/docs-asset/")
     {
-        let goto = urlencoding::encode(&path);
-        return axum::response::Redirect::to(&format!("/?goto={goto}")).into_response();
+        let bytes = axum::body::to_bytes(response.into_body(), 16 * 1024 * 1024)
+            .await
+            .unwrap_or_default();
+        let content = String::from_utf8_lossy(&bytes);
+        let app = state.read().await;
+        return page_layout(&content, &app).into_response();
     }
 
-    next.run(req).await
+    response
 }
 
 /// GET /api/links/{id} — return JSON array of AADL-prefixed artifact IDs linked
@@ -1323,10 +1334,6 @@ const GRAPH_JS: &str = r#"
     var p=window.location.pathname;
     if(p==='/'||p==='') p='/stats';
     setActiveNav(p);
-    // If landing on a deep URL, load its content via HTMX
-    if(p!=='/stats'&&p!=='/'){
-      htmx.ajax('GET',p,'#content');
-    }
   });
 
   // ── Browser back/forward ─────────────────────────────────
@@ -2461,27 +2468,8 @@ document.addEventListener('DOMContentLoaded',renderMermaid);
 
 // ── Routes ───────────────────────────────────────────────────────────────
 
-#[derive(Debug, serde::Deserialize)]
-struct IndexParams {
-    goto: Option<String>,
-}
-
-async fn index(
-    State(state): State<SharedState>,
-    Query(params): Query<IndexParams>,
-) -> Html<String> {
+async fn index(State(state): State<SharedState>) -> Html<String> {
     let state = state.read().await;
-    // If goto param is set, render layout with empty content and let JS load the page
-    if let Some(ref goto) = params.goto {
-        let placeholder = format!(
-            "<div id=\"goto-target\" data-url=\"{}\"></div>\
-             <script>htmx.ajax('GET','{}',{{target:'#content'}}).then(function(){{history.replaceState(null,'','{}');}});</script>",
-            html_escape(goto),
-            html_escape(goto),
-            html_escape(goto)
-        );
-        return page_layout(&placeholder, &state);
-    }
     let inner = stats_partial(&state);
     page_layout(&inner, &state)
 }
