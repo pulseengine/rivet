@@ -67,19 +67,19 @@ const TOPICS: &[DocTopic] = &[
         slug: "schema/stpa",
         title: "STPA safety analysis schema (10 types)",
         category: "Schemas",
-        content: embedded::SCHEMA_STPA,
+        content: STPA_DOC,
     },
     DocTopic {
         slug: "schema/aspice",
         title: "Automotive SPICE schema (14 types, ASPICE 4.0)",
         category: "Schemas",
-        content: embedded::SCHEMA_ASPICE,
+        content: ASPICE_DOC,
     },
     DocTopic {
         slug: "schema/cybersecurity",
         title: "Cybersecurity schema (SEC.1-4, 10 types)",
         category: "Schemas",
-        content: embedded::SCHEMA_CYBERSECURITY,
+        content: CYBERSECURITY_DOC,
     },
     DocTopic {
         slug: "schema/aadl",
@@ -598,58 +598,145 @@ the "unimplemented" report — useful when retrofitting traceability onto an
 existing project where historical commits lack trailers.
 "#;
 
-const CROSS_REPO_DOC: &str = r#"# Cross-Repository Linking
+const CROSS_REPO_DOC: &str = r#"# Cross-Repository Artifact Linking
+
+## Overview
 
 Rivet supports linking artifacts across multiple git repositories using
-prefixed IDs. Each project declares its external dependencies in `rivet.yaml`
-and references foreign artifacts with `prefix:ID` syntax.
+a mesh topology. Any rivet project can declare dependencies on other rivet
+projects and reference their artifacts using prefixed IDs.
 
 ## Configuration
 
-Add an `externals` block to `rivet.yaml`:
+Declare external dependencies in `rivet.yaml`:
 
 ```yaml
 externals:
+  rivet:
+    git: https://github.com/pulseengine/rivet
+    ref: main
+    prefix: rivet
   meld:
-    url: https://github.com/pulseengine/meld.git
-    path: .rivet/externals/meld    # local cache directory
-  spar:
-    url: https://github.com/pulseengine/spar.git
-    path: .rivet/externals/spar
+    path: ../meld
+    prefix: meld
 ```
 
-## Referencing External Artifacts
+- `git` — clone URL for the external repo
+- `path` — local filesystem path (alternative to `git`)
+- `ref` — git ref to checkout (branch, tag, or commit SHA)
+- `prefix` — short alias used in cross-links; must be unique
 
-Use `prefix:ID` syntax in link targets:
+## Cross-Link Syntax
+
+In artifact YAML, reference external artifacts with `prefix:ID`:
 
 ```yaml
 links:
-  - type: satisfies
-    target: meld:LOSS-001
-  - type: allocated-from
-    target: spar:ARCH-005
+  - type: traces-to
+    target: rivet:REQ-001
+  - type: mitigates
+    target: meld:H-1
 ```
+
+Resolution rules:
+- Bare IDs (no colon) resolve locally as usual
+- Prefixed IDs (`prefix:ID`) resolve against the named external
+- Unknown prefixes are validation errors
+- Missing IDs in the external are broken-reference errors
 
 ## Commands
 
-- `rivet sync`             — Fetch/update external repositories
-- `rivet lock`             — Pin externals to specific commits
-- `rivet baseline verify`  — Verify cross-repo baseline consistency
-- `rivet validate`         — Validates cross-repo links alongside local ones
+### `rivet sync`
 
-## Topology
+Fetches external repos into `.rivet/repos/` cache:
 
-Rivet uses a mesh topology: any repo can link to any other repo directly.
-No central authority or hub repository is required. Transitive dependencies
-are discovered automatically — if A depends on B and B depends on C, rivet
-resolves the full chain.
+```
+rivet sync
+```
 
-## Distributed Baselines
+For `git` externals: clones or fetches the repo
+For `path` externals: creates a symlink
 
-Repos participate in baselines by tagging themselves with `baseline/*` tags
-(e.g., `baseline/v2.0`). Consistency is verified but not enforced — each
-repo joins baselines independently.
+### `rivet lock`
+
+Pins all externals to exact commit SHAs in `rivet.lock`:
+
+```
+rivet lock
+rivet lock --update   # refresh to latest refs
+```
+
+### `rivet validate` (with externals)
+
+Validates cross-repo links in addition to local validation:
+- Loads external artifacts from `.rivet/repos/` cache
+- Checks all prefixed references resolve correctly
+- Detects circular dependencies between repos
+- Reports version conflicts (same repo at different refs)
+- Checks lifecycle completeness (V-model coverage)
+
+### `rivet baseline verify <name>`
+
+Verifies baseline consistency across repos:
+
+```
+rivet baseline verify v1.0
+rivet baseline verify v1.0 --strict
+```
+
+Checks each external for `baseline/<name>` tag.
+Without `--strict`: missing tags are warnings.
+With `--strict`: missing tags are errors.
+
+## Distributed Baselining
+
+Repos participate in baselines by tagging: `git tag baseline/v1.0`
+
+- Tags follow the convention `baseline/<name>`
+- Each repo tags itself independently
+- `rivet baseline verify` checks consistency across repos
+- No central platform repository required
+
+## Design Decisions
+
+- **DD-014**: Prefixed IDs (`rivet:REQ-001`) over URI-style references
+- **DD-015**: Mesh topology — any repo links to any other
+- **DD-016**: Distributed baselining — repos tag themselves
+- **DD-017**: Transitive dependency resolution — declare direct deps only
 "#;
+
+const STPA_DOC: &str = concat!(include_str!("../../schemas/stpa.yaml"), r#"
+
+## References
+
+- Leveson, N.G. & Thomas, J.P. (2018). *STPA Handbook*.
+  MIT Partnership for Systems Approaches to Safety and Security (PSASS).
+  https://psas.scripts.mit.edu/home/get_file.php?name=STPA_handbook.pdf
+- Leveson, N.G. (2011). *Engineering a Safer World*.
+  MIT Press. https://mitpress.mit.edu/9780262533690/
+"#);
+
+const ASPICE_DOC: &str = concat!(include_str!("../../schemas/aspice.yaml"), r#"
+
+## References
+
+- Automotive SPICE Process Assessment / Reference Model v4.0.
+  VDA Quality Management Center.
+  https://www.automotivespice.com/
+- intacs — International Assessor Certification Scheme.
+  https://www.intacs.info/
+"#);
+
+const CYBERSECURITY_DOC: &str = concat!(include_str!("../../schemas/cybersecurity.yaml"), r#"
+
+## References
+
+- ISO/SAE 21434:2021 — Road vehicles — Cybersecurity engineering.
+  https://www.iso.org/standard/70918.html
+- UNECE WP.29 Regulation No. 155 — Cyber security and cyber security
+  management system.
+  https://unece.org/transport/documents/2021/03/standards/un-regulation-no-155
+"#);
 
 // ── Public API ──────────────────────────────────────────────────────────
 
