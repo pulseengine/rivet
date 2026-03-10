@@ -41,7 +41,7 @@ tower-http = { version = "0.6", features = ["cors", "fs"] }
 urlencoding = "2"
 
 # XML (ReqIF)
-quick-xml = { version = "0.37", features = ["serialize"] }
+quick-xml = { version = "0.37", features = ["serialize", "overlapped-lists"] }
 
 # WASM component model
 wasmtime = { version = "42", features = ["component-model"] }

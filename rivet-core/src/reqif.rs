@@ -145,6 +145,9 @@ pub struct ReqIfContent {
 pub struct Datatypes {
     #[serde(rename = "DATATYPE-DEFINITION-STRING", default)]
     pub string_types: Vec<DatatypeDefinitionString>,
+
+    #[serde(rename = "DATATYPE-DEFINITION-ENUMERATION", default)]
+    pub enum_types: Vec<DatatypeDefinitionEnumeration>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -168,6 +171,44 @@ pub struct DatatypeDefinitionString {
     pub max_length: Option<u64>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename = "DATATYPE-DEFINITION-ENUMERATION")]
+pub struct DatatypeDefinitionEnumeration {
+    #[serde(rename = "@IDENTIFIER")]
+    pub identifier: String,
+
+    #[serde(
+        rename = "@LONG-NAME",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub long_name: Option<String>,
+
+    #[serde(rename = "SPECIFIED-VALUES", default, skip_serializing_if = "Option::is_none")]
+    pub specified_values: Option<SpecifiedValues>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename = "SPECIFIED-VALUES")]
+pub struct SpecifiedValues {
+    #[serde(rename = "ENUM-VALUE", default)]
+    pub values: Vec<EnumValue>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename = "ENUM-VALUE")]
+pub struct EnumValue {
+    #[serde(rename = "@IDENTIFIER")]
+    pub identifier: String,
+
+    #[serde(
+        rename = "@LONG-NAME",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub long_name: Option<String>,
+}
+
 // ── SPEC-TYPES ──────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -178,6 +219,25 @@ pub struct SpecTypes {
 
     #[serde(rename = "SPEC-RELATION-TYPE", default)]
     pub relation_types: Vec<SpecRelationType>,
+
+    /// StrictDoc and other tools emit SPECIFICATION-TYPE elements.
+    /// We parse but don't use them.
+    #[serde(rename = "SPECIFICATION-TYPE", default)]
+    pub specification_types: Vec<SpecificationType>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename = "SPECIFICATION-TYPE")]
+pub struct SpecificationType {
+    #[serde(rename = "@IDENTIFIER")]
+    pub identifier: String,
+
+    #[serde(
+        rename = "@LONG-NAME",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub long_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -220,6 +280,23 @@ pub struct SpecRelationType {
 pub struct SpecAttributes {
     #[serde(rename = "ATTRIBUTE-DEFINITION-STRING", default)]
     pub string_attrs: Vec<AttributeDefinitionString>,
+
+    #[serde(rename = "ATTRIBUTE-DEFINITION-ENUMERATION", default)]
+    pub enum_attrs: Vec<AttributeDefinitionEnumeration>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename = "ATTRIBUTE-DEFINITION-ENUMERATION")]
+pub struct AttributeDefinitionEnumeration {
+    #[serde(rename = "@IDENTIFIER")]
+    pub identifier: String,
+
+    #[serde(
+        rename = "@LONG-NAME",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub long_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -290,6 +367,34 @@ pub struct SpecObjectTypeRef {
 pub struct Values {
     #[serde(rename = "ATTRIBUTE-VALUE-STRING", default)]
     pub string_values: Vec<AttributeValueString>,
+
+    #[serde(rename = "ATTRIBUTE-VALUE-ENUMERATION", default)]
+    pub enum_values: Vec<AttributeValueEnumeration>,
+}
+
+/// Enumeration attribute value — references one or more ENUM-VALUE identifiers.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename = "ATTRIBUTE-VALUE-ENUMERATION")]
+pub struct AttributeValueEnumeration {
+    #[serde(rename = "VALUES", default, skip_serializing_if = "Option::is_none")]
+    pub values: Option<EnumValueRefs>,
+
+    #[serde(rename = "DEFINITION")]
+    pub definition: EnumAttrDefinitionRef,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename = "VALUES")]
+pub struct EnumValueRefs {
+    #[serde(rename = "ENUM-VALUE-REF", default)]
+    pub refs: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename = "DEFINITION")]
+pub struct EnumAttrDefinitionRef {
+    #[serde(rename = "ATTRIBUTE-DEFINITION-ENUMERATION-REF")]
+    pub attr_def_ref: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -473,13 +578,30 @@ pub fn parse_reqif(xml: &str) -> Result<Vec<Artifact>, Error> {
         })
         .collect();
 
-    // Build lookup: attr-def id -> long-name.
+    // Build lookup: attr-def id -> long-name (strings + enumerations).
+    // Tolerate duplicate attribute definitions (e.g. StrictDoc exports)
+    // by keeping the first occurrence and skipping later duplicates.
     let mut attr_def_names: HashMap<&str, &str> = HashMap::new();
     for ot in &content.spec_types.object_types {
         if let Some(attrs) = &ot.spec_attributes {
             for ad in &attrs.string_attrs {
                 let name = ad.long_name.as_deref().unwrap_or(&ad.identifier);
-                attr_def_names.insert(ad.identifier.as_str(), name);
+                attr_def_names.entry(ad.identifier.as_str()).or_insert(name);
+            }
+            for ad in &attrs.enum_attrs {
+                let name = ad.long_name.as_deref().unwrap_or(&ad.identifier);
+                attr_def_names.entry(ad.identifier.as_str()).or_insert(name);
+            }
+        }
+    }
+
+    // Build lookup: enum-value id -> long-name for resolving ATTRIBUTE-VALUE-ENUMERATION.
+    let mut enum_value_names: HashMap<&str, &str> = HashMap::new();
+    for dt in &content.datatypes.enum_types {
+        if let Some(sv) = &dt.specified_values {
+            for ev in &sv.values {
+                let name = ev.long_name.as_deref().unwrap_or(&ev.identifier);
+                enum_value_names.insert(ev.identifier.as_str(), name);
             }
         }
     }
@@ -502,6 +624,10 @@ pub fn parse_reqif(xml: &str) -> Result<Vec<Artifact>, Error> {
         let mut tags: Vec<String> = Vec::new();
         let mut fields: BTreeMap<String, serde_yaml::Value> = BTreeMap::new();
         let mut override_artifact_type: Option<String> = None;
+        // ReqIF standard attributes (used by StrictDoc, DOORS, etc.)
+        let mut reqif_foreign_id: Option<String> = None;
+        let mut reqif_name: Option<String> = None;
+        let mut reqif_text: Option<String> = None;
 
         if let Some(values) = &obj.values {
             for av in &values.string_values {
@@ -511,12 +637,12 @@ pub fn parse_reqif(xml: &str) -> Result<Vec<Artifact>, Error> {
                     .unwrap_or(&av.definition.attr_def_ref);
 
                 match attr_name {
-                    "status" => {
+                    "status" | "STATUS" => {
                         if !av.the_value.is_empty() {
                             status = Some(av.the_value.clone());
                         }
                     }
-                    "tags" => {
+                    "tags" | "TAGS" => {
                         tags = av
                             .the_value
                             .split(',')
@@ -529,6 +655,27 @@ pub fn parse_reqif(xml: &str) -> Result<Vec<Artifact>, Error> {
                             override_artifact_type = Some(av.the_value.clone());
                         }
                     }
+                    // ReqIF standard attributes (StrictDoc, DOORS, Polarion)
+                    "ReqIF.ForeignID" => {
+                        if !av.the_value.is_empty() {
+                            reqif_foreign_id = Some(av.the_value.clone());
+                        }
+                    }
+                    "ReqIF.Name" => {
+                        if !av.the_value.is_empty() {
+                            reqif_name = Some(av.the_value.clone());
+                        }
+                    }
+                    "ReqIF.Text" => {
+                        if !av.the_value.is_empty() {
+                            reqif_text = Some(av.the_value.clone());
+                        }
+                    }
+                    "ReqIF.ChapterName" => {
+                        if !av.the_value.is_empty() {
+                            reqif_name = Some(av.the_value.clone());
+                        }
+                    }
                     _ => {
                         fields.insert(
                             attr_name.to_string(),
@@ -537,13 +684,67 @@ pub fn parse_reqif(xml: &str) -> Result<Vec<Artifact>, Error> {
                     }
                 }
             }
+
+            // Process enumeration values (e.g. StrictDoc TYPE field)
+            for ev in &values.enum_values {
+                let attr_name = attr_def_names
+                    .get(ev.definition.attr_def_ref.as_str())
+                    .copied()
+                    .unwrap_or(&ev.definition.attr_def_ref);
+
+                // Resolve enum value refs to their LONG-NAME
+                let resolved: Vec<&str> = ev
+                    .values
+                    .as_ref()
+                    .map(|v| {
+                        v.refs
+                            .iter()
+                            .filter_map(|r| enum_value_names.get(r.as_str()).copied())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                let value = resolved.join(", ");
+                if !value.is_empty() {
+                    match attr_name {
+                        "status" | "STATUS" => {
+                            status = Some(value);
+                        }
+                        "tags" | "TAGS" => {
+                            tags = value
+                                .split(',')
+                                .map(|s| s.trim().to_string())
+                                .filter(|s| !s.is_empty())
+                                .collect();
+                        }
+                        _ => {
+                            fields.insert(
+                                attr_name.to_string(),
+                                serde_yaml::Value::String(value),
+                            );
+                        }
+                    }
+                }
+            }
         }
 
+        // Use ReqIF.ForeignID as artifact ID when available (StrictDoc/DOORS
+        // store the human-readable UID there, while IDENTIFIER is a UUID).
+        let id = reqif_foreign_id.unwrap_or_else(|| obj.identifier.clone());
+        // Use ReqIF.Name or @LONG-NAME as title
+        let title = reqif_name
+            .or_else(|| obj.long_name.clone())
+            .unwrap_or_default();
+        // Use ReqIF.Text or @DESC as description
+        let description = reqif_text.or_else(|| obj.desc.clone());
+
         let artifact = Artifact {
-            id: obj.identifier.clone(),
-            artifact_type: override_artifact_type.unwrap_or(artifact_type),
-            title: obj.long_name.clone().unwrap_or_default(),
-            description: obj.desc.clone(),
+            id,
+            artifact_type: override_artifact_type
+                .unwrap_or(artifact_type)
+                .to_lowercase(),
+            title,
+            description,
             status,
             tags,
             links: vec![], // filled in below from SPEC-RELATIONS
@@ -553,7 +754,17 @@ pub fn parse_reqif(xml: &str) -> Result<Vec<Artifact>, Error> {
         artifacts.push(artifact);
     }
 
-    // Build id -> index map using owned strings to avoid borrow conflicts.
+    // Build UUID -> resolved ID map (for StrictDoc where IDENTIFIER is a UUID
+    // but we use ReqIF.ForeignID as the artifact ID).
+    let uuid_to_id: HashMap<String, String> = content
+        .spec_objects
+        .objects
+        .iter()
+        .zip(artifacts.iter())
+        .map(|(obj, art)| (obj.identifier.clone(), art.id.clone()))
+        .collect();
+
+    // Build id -> index map using resolved IDs.
     let artifact_ids: HashMap<String, usize> = artifacts
         .iter()
         .enumerate()
@@ -573,10 +784,15 @@ pub fn parse_reqif(xml: &str) -> Result<Vec<Artifact>, Error> {
             .unwrap_or("traces-to")
             .to_string();
 
-        let source_id = &rel.source.spec_object_ref;
-        let target_id = &rel.target.spec_object_ref;
+        // Resolve UUID references to artifact IDs
+        let source_id = uuid_to_id
+            .get(&rel.source.spec_object_ref)
+            .unwrap_or(&rel.source.spec_object_ref);
+        let target_id = uuid_to_id
+            .get(&rel.target.spec_object_ref)
+            .unwrap_or(&rel.target.spec_object_ref);
 
-        if let Some(&idx) = artifact_ids.get(source_id) {
+        if let Some(&idx) = artifact_ids.get(source_id.as_str()) {
             artifacts[idx].links.push(Link {
                 link_type,
                 target: target_id.clone(),
@@ -623,6 +839,7 @@ pub fn build_reqif(artifacts: &[Artifact]) -> ReqIfRoot {
             long_name: Some("String".into()),
             max_length: Some(65535),
         }],
+        enum_types: vec![],
     };
 
     // Build SPEC-OBJECT-TYPEs — one per artifact type, each with standard
@@ -669,7 +886,10 @@ pub fn build_reqif(artifacts: &[Artifact]) -> ReqIfRoot {
             SpecObjectType {
                 identifier: type_id,
                 long_name: Some(at.clone()),
-                spec_attributes: Some(SpecAttributes { string_attrs }),
+                spec_attributes: Some(SpecAttributes {
+                    string_attrs,
+                    enum_attrs: vec![],
+                }),
             }
         })
         .collect();
@@ -733,7 +953,10 @@ pub fn build_reqif(artifacts: &[Artifact]) -> ReqIfRoot {
                 object_type_ref: Some(SpecObjectTypeRef {
                     spec_object_type_ref: type_ref_id,
                 }),
-                values: Some(Values { string_values }),
+                values: Some(Values {
+                    string_values,
+                    enum_values: vec![],
+                }),
             }
         })
         .collect();
@@ -780,6 +1003,7 @@ pub fn build_reqif(artifacts: &[Artifact]) -> ReqIfRoot {
                 spec_types: SpecTypes {
                     object_types,
                     relation_types,
+                    specification_types: vec![],
                 },
                 spec_objects: SpecObjects { objects },
                 spec_relations: SpecRelations { relations },
@@ -921,5 +1145,57 @@ mod tests {
         assert_eq!(arts[0].title, "First req");
         assert_eq!(arts[0].description, Some("A description".into()));
         assert_eq!(arts[0].artifact_type, "requirement");
+    }
+
+    /// StrictDoc exports may contain duplicate ATTRIBUTE-DEFINITION-STRING
+    /// elements with the same IDENTIFIER. Rivet should tolerate this by
+    /// keeping the first occurrence.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_duplicate_attribute_definitions() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<REQ-IF xmlns="http://www.omg.org/spec/ReqIF/20110401/reqif.xsd">
+  <THE-HEADER>
+    <REQ-IF-HEADER IDENTIFIER="dup-test"/>
+  </THE-HEADER>
+  <CORE-CONTENT>
+    <REQ-IF-CONTENT>
+      <DATATYPES/>
+      <SPEC-TYPES>
+        <SPEC-OBJECT-TYPE IDENTIFIER="SOT-req" LONG-NAME="requirement">
+          <SPEC-ATTRIBUTES>
+            <ATTRIBUTE-DEFINITION-STRING IDENTIFIER="ATTR-STATUS" LONG-NAME="status"/>
+            <ATTRIBUTE-DEFINITION-STRING IDENTIFIER="ATTR-STATUS" LONG-NAME="status"/>
+            <ATTRIBUTE-DEFINITION-STRING IDENTIFIER="ATTR-COMP" LONG-NAME="component"/>
+          </SPEC-ATTRIBUTES>
+        </SPEC-OBJECT-TYPE>
+      </SPEC-TYPES>
+      <SPEC-OBJECTS>
+        <SPEC-OBJECT IDENTIFIER="R-1" LONG-NAME="Test req">
+          <TYPE><SPEC-OBJECT-TYPE-REF>SOT-req</SPEC-OBJECT-TYPE-REF></TYPE>
+          <VALUES>
+            <ATTRIBUTE-VALUE-STRING THE-VALUE="Draft">
+              <DEFINITION><ATTRIBUTE-DEFINITION-STRING-REF>ATTR-STATUS</ATTRIBUTE-DEFINITION-STRING-REF></DEFINITION>
+            </ATTRIBUTE-VALUE-STRING>
+            <ATTRIBUTE-VALUE-STRING THE-VALUE="Threads">
+              <DEFINITION><ATTRIBUTE-DEFINITION-STRING-REF>ATTR-COMP</ATTRIBUTE-DEFINITION-STRING-REF></DEFINITION>
+            </ATTRIBUTE-VALUE-STRING>
+          </VALUES>
+        </SPEC-OBJECT>
+      </SPEC-OBJECTS>
+      <SPEC-RELATIONS/>
+    </REQ-IF-CONTENT>
+  </CORE-CONTENT>
+</REQ-IF>"#;
+
+        let arts = parse_reqif(xml).unwrap();
+        assert_eq!(arts.len(), 1);
+        assert_eq!(arts[0].status, Some("Draft".into()));
+        // "component" field should be present despite duplicate ATTR-STATUS
+        let comp = arts[0].fields.get("component");
+        assert_eq!(
+            comp,
+            Some(&serde_yaml::Value::String("Threads".into()))
+        );
     }
 }
