@@ -155,13 +155,32 @@ fn run_instance_analyses(instance: &spar_hir::Instance) -> Vec<spar_analysis::An
         spar_analysis::direction_rules::DirectionRuleAnalysis,
     ));
     runner.register(Box::new(spar_analysis::flow_check::FlowCheckAnalysis));
+    runner.register(Box::new(spar_analysis::flow_rules::FlowRuleAnalysis));
     runner.register(Box::new(spar_analysis::mode_check::ModeCheckAnalysis));
+    runner.register(Box::new(spar_analysis::mode_rules::ModeRuleAnalysis));
+    runner.register(Box::new(spar_analysis::modal_rules::ModalRuleAnalysis));
     runner.register(Box::new(spar_analysis::binding_check::BindingCheckAnalysis));
+    runner.register(Box::new(spar_analysis::binding_rules::BindingRuleAnalysis));
     runner.register(Box::new(spar_analysis::latency::LatencyAnalysis));
     runner.register(Box::new(spar_analysis::scheduling::SchedulingAnalysis));
     runner.register(Box::new(
         spar_analysis::resource_budget::ResourceBudgetAnalysis,
     ));
+    runner.register(Box::new(
+        spar_analysis::property_rules::PropertyRuleAnalysis,
+    ));
+    runner.register(Box::new(
+        spar_analysis::connection_rules::ConnectionRuleAnalysis,
+    ));
+    runner.register(Box::new(
+        spar_analysis::classifier_match::ClassifierMatchAnalysis,
+    ));
+    runner.register(Box::new(
+        spar_analysis::subcomponent_rules::SubcomponentRuleAnalysis,
+    ));
+    runner.register(Box::new(spar_analysis::emv2_analysis::Emv2Analysis));
+    runner.register(Box::new(spar_analysis::arinc653::Arinc653Analysis));
+    runner.register(Box::new(spar_analysis::wrpc_binding::WrpcBindingAnalysis));
 
     runner.run_all(instance.inner())
 }
@@ -173,6 +192,7 @@ fn run_tree_analyses(db: &spar_hir::Database) -> Vec<spar_analysis::AnalysisDiag
     for tree in db.item_trees() {
         diags.extend(spar_analysis::category_check::check_category_rules(tree));
         diags.extend(spar_analysis::naming_rules::check_naming_rules(tree));
+        diags.extend(spar_analysis::extends_rules::check_extends_rules(tree));
     }
     diags
 }
