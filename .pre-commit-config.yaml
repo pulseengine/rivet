@@ -86,15 +86,6 @@ repos:
         pass_filenames: false
         stages: [pre-push]
 
-      # ── Security: known vulnerabilities (RustSec advisory DB) ──────
-      - id: cargo-audit
-        name: cargo audit
-        entry: cargo audit
-        language: system
-        pass_filenames: false
-        files: '(Cargo\.toml|Cargo\.lock)$'
-        stages: [pre-push]
-
       # ── Security: license compliance, bans, sources, advisories ────
       - id: cargo-deny
         name: cargo deny check
