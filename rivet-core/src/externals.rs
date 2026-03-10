@@ -177,6 +177,61 @@ pub fn ensure_gitignore(project_dir: &Path) -> Result<bool, crate::error::Error>
     Ok(true) // added
 }
 
+/// Load artifacts from an external project directory.
+///
+/// Reads the external project's `rivet.yaml`, discovers its sources,
+/// and loads all artifacts. Does NOT validate against schema (the
+/// external project validates itself).
+pub fn load_external_project(
+    project_dir: &Path,
+) -> Result<Vec<crate::model::Artifact>, crate::error::Error> {
+    let config_path = project_dir.join("rivet.yaml");
+    let config = crate::load_project_config(&config_path)?;
+
+    let mut artifacts = Vec::new();
+    for source in &config.sources {
+        let loaded = crate::load_artifacts(source, project_dir)?;
+        artifacts.extend(loaded);
+    }
+    Ok(artifacts)
+}
+
+/// A resolved external with its loaded artifacts.
+#[derive(Debug)]
+pub struct ResolvedExternal {
+    pub prefix: String,
+    pub project_dir: PathBuf,
+    pub artifacts: Vec<crate::model::Artifact>,
+}
+
+/// Load all external projects from cache and return their artifacts.
+pub fn load_all_externals(
+    externals: &std::collections::BTreeMap<String, ExternalProject>,
+    project_dir: &Path,
+) -> Result<Vec<ResolvedExternal>, crate::error::Error> {
+    let cache_dir = project_dir.join(".rivet/repos");
+    let mut resolved = Vec::new();
+    for (_name, ext) in externals {
+        let ext_dir = if let Some(ref local_path) = ext.path {
+            let p = if Path::new(local_path).is_relative() {
+                project_dir.join(local_path)
+            } else {
+                PathBuf::from(local_path)
+            };
+            p.canonicalize().unwrap_or(p)
+        } else {
+            cache_dir.join(&ext.prefix)
+        };
+        let artifacts = load_external_project(&ext_dir)?;
+        resolved.push(ResolvedExternal {
+            prefix: ext.prefix.clone(),
+            project_dir: ext_dir,
+            artifacts,
+        });
+    }
+    Ok(resolved)
+}
+
 /// Recursively copy a directory (used on non-unix platforms instead of symlinks).
 #[cfg(not(unix))]
 fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), crate::error::Error> {
@@ -350,5 +405,25 @@ mod tests {
         assert_eq!(results.len(), 2);
         assert!(dir.path().join(".rivet/repos/alpha").exists());
         assert!(dir.path().join(".rivet/repos/beta").exists());
+    }
+
+    #[test]
+    fn load_external_artifacts() {
+        let dir = tempfile::tempdir().unwrap();
+        let ext_dir = dir.path().join("ext");
+        std::fs::create_dir_all(ext_dir.join("artifacts")).unwrap();
+        std::fs::write(
+            ext_dir.join("rivet.yaml"),
+            "project:\n  name: ext\n  version: '0.1.0'\n  schemas: [common, dev]\nsources:\n  - path: artifacts\n    format: generic-yaml\n",
+        ).unwrap();
+        std::fs::write(
+            ext_dir.join("artifacts/reqs.yaml"),
+            "artifacts:\n  - id: EXT-001\n    type: requirement\n    title: External req\n  - id: EXT-002\n    type: feature\n    title: External feat\n",
+        ).unwrap();
+
+        let artifacts = load_external_project(&ext_dir).unwrap();
+        assert_eq!(artifacts.len(), 2);
+        assert!(artifacts.iter().any(|a| a.id == "EXT-001"));
+        assert!(artifacts.iter().any(|a| a.id == "EXT-002"));
     }
 }
