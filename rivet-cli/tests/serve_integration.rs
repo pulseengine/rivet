@@ -36,7 +36,7 @@ fn free_port() -> u16 {
 /// Start the rivet server and return (child, port).
 fn start_server() -> (Child, u16) {
     let port = free_port();
-    let child = Command::new(rivet_bin())
+    let mut child = Command::new(rivet_bin())
         .args(["serve", "--port", &port.to_string()])
         .current_dir(project_root())
         .stdout(std::process::Stdio::null())
