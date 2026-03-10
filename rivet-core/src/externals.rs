@@ -390,6 +390,140 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), crate::error::Error>
     Ok(())
 }
 
+/// A backlink from an external artifact to a local (or other external) artifact.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CrossRepoBacklink {
+    /// The external project prefix where the link originates.
+    pub source_prefix: String,
+    /// The artifact ID in the external project that contains the link.
+    pub source_id: String,
+    /// The target reference (may be local ID or another prefix:ID).
+    pub target: String,
+}
+
+/// Compute backlinks: scan external artifacts' links for references to local artifacts
+/// or to other external projects.
+///
+/// A "backlink" is a link stored in an external project's artifact that points back
+/// to an artifact in the local project (or to another external). This enables
+/// bidirectional awareness without requiring both sides to declare the link.
+pub fn compute_backlinks(
+    resolved: &[ResolvedExternal],
+    local_ids: &std::collections::HashSet<String>,
+) -> Vec<CrossRepoBacklink> {
+    let mut backlinks = Vec::new();
+    for ext in resolved {
+        for artifact in &ext.artifacts {
+            for link in &artifact.links {
+                let parsed = parse_artifact_ref(&link.target);
+                match parsed {
+                    // External artifact links to a local ID in our project
+                    ArtifactRef::Local(ref id) if local_ids.contains(id) => {
+                        backlinks.push(CrossRepoBacklink {
+                            source_prefix: ext.prefix.clone(),
+                            source_id: artifact.id.clone(),
+                            target: link.target.clone(),
+                        });
+                    }
+                    // External artifact links to another external (cross-external)
+                    ArtifactRef::External { .. } => {
+                        backlinks.push(CrossRepoBacklink {
+                            source_prefix: ext.prefix.clone(),
+                            source_id: artifact.id.clone(),
+                            target: link.target.clone(),
+                        });
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    backlinks
+}
+
+/// A detected circular dependency chain between repos.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CircularDependency {
+    /// The chain of prefixes forming the cycle (e.g., ["a", "b", "c", "a"]).
+    pub chain: Vec<String>,
+}
+
+/// Detect circular dependencies in the externals graph.
+///
+/// Reads each external's own `rivet.yaml` to discover their declared externals,
+/// then checks for cycles using DFS. Circular deps are warnings (valid in mesh
+/// topology) but should be reported so users are aware.
+pub fn detect_circular_deps(
+    externals: &BTreeMap<String, ExternalProject>,
+    project_name: &str,
+    project_dir: &Path,
+) -> Vec<CircularDependency> {
+    let cache_dir = project_dir.join(".rivet/repos");
+    let mut graph: BTreeMap<String, Vec<String>> = BTreeMap::new();
+
+    // Add edges from current project
+    let deps: Vec<String> = externals.keys().cloned().collect();
+    graph.insert(project_name.to_string(), deps);
+
+    // Add edges from each external's own externals
+    for ext in externals.values() {
+        let ext_dir = if let Some(ref local_path) = ext.path {
+            let p = if std::path::Path::new(local_path).is_relative() {
+                project_dir.join(local_path)
+            } else {
+                std::path::PathBuf::from(local_path)
+            };
+            p.canonicalize().unwrap_or(p)
+        } else {
+            cache_dir.join(&ext.prefix)
+        };
+        let config_path = ext_dir.join("rivet.yaml");
+        if let Ok(ext_config) = crate::load_project_config(&config_path) {
+            if let Some(ref ext_externals) = ext_config.externals {
+                let ext_deps: Vec<String> = ext_externals.keys().cloned().collect();
+                graph.insert(ext.prefix.clone(), ext_deps);
+            }
+        }
+    }
+
+    // DFS cycle detection
+    let mut cycles = Vec::new();
+    let mut visited = std::collections::HashSet::new();
+    let mut path = Vec::new();
+
+    fn dfs(
+        node: &str,
+        graph: &BTreeMap<String, Vec<String>>,
+        visited: &mut std::collections::HashSet<String>,
+        path: &mut Vec<String>,
+        cycles: &mut Vec<CircularDependency>,
+    ) {
+        if let Some(pos) = path.iter().position(|n| n == node) {
+            let mut chain: Vec<String> = path[pos..].to_vec();
+            chain.push(node.to_string());
+            cycles.push(CircularDependency { chain });
+            return;
+        }
+        if visited.contains(node) {
+            return;
+        }
+        path.push(node.to_string());
+        if let Some(neighbors) = graph.get(node) {
+            for neighbor in neighbors {
+                dfs(neighbor, graph, visited, path, cycles);
+            }
+        }
+        path.pop();
+        visited.insert(node.to_string());
+    }
+
+    for node in graph.keys() {
+        dfs(node, &graph, &mut visited, &mut path, &mut cycles);
+    }
+
+    cycles
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -660,5 +794,181 @@ mod tests {
         assert_eq!(artifacts.len(), 2);
         assert!(artifacts.iter().any(|a| a.id == "EXT-001"));
         assert!(artifacts.iter().any(|a| a.id == "EXT-002"));
+    }
+
+    #[test]
+    fn compute_backlinks_finds_reverse_refs() {
+        use crate::model::{Artifact, Link};
+
+        let mut local_ids = std::collections::HashSet::new();
+        local_ids.insert("REQ-001".to_string());
+        local_ids.insert("FEAT-001".to_string());
+
+        let ext_artifact = Artifact {
+            id: "EXT-UCA-1".to_string(),
+            artifact_type: "uca".to_string(),
+            title: "External UCA".to_string(),
+            description: None,
+            status: None,
+            tags: vec![],
+            links: vec![
+                Link {
+                    link_type: "traces-to".to_string(),
+                    target: "REQ-001".to_string(), // links back to our local artifact
+                },
+                Link {
+                    link_type: "mitigates".to_string(),
+                    target: "EXT-OTHER".to_string(), // links to something in their own project
+                },
+            ],
+            fields: std::collections::BTreeMap::new(),
+            source_file: None,
+        };
+
+        let resolved = vec![ResolvedExternal {
+            prefix: "meld".to_string(),
+            project_dir: std::path::PathBuf::from("/tmp/meld"),
+            artifacts: vec![ext_artifact],
+        }];
+
+        let backlinks = compute_backlinks(&resolved, &local_ids);
+        assert_eq!(backlinks.len(), 1);
+        assert_eq!(backlinks[0].source_prefix, "meld");
+        assert_eq!(backlinks[0].source_id, "EXT-UCA-1");
+        assert_eq!(backlinks[0].target, "REQ-001");
+    }
+
+    #[test]
+    fn compute_backlinks_finds_cross_external_refs() {
+        use crate::model::{Artifact, Link};
+
+        let local_ids = std::collections::HashSet::new(); // empty — no local matches
+
+        let ext_artifact = Artifact {
+            id: "EXT-UCA-1".to_string(),
+            artifact_type: "uca".to_string(),
+            title: "External UCA".to_string(),
+            description: None,
+            status: None,
+            tags: vec![],
+            links: vec![Link {
+                link_type: "traces-to".to_string(),
+                target: "other:REQ-001".to_string(), // cross-external ref
+            }],
+            fields: std::collections::BTreeMap::new(),
+            source_file: None,
+        };
+
+        let resolved = vec![ResolvedExternal {
+            prefix: "meld".to_string(),
+            project_dir: std::path::PathBuf::from("/tmp/meld"),
+            artifacts: vec![ext_artifact],
+        }];
+
+        let backlinks = compute_backlinks(&resolved, &local_ids);
+        assert_eq!(backlinks.len(), 1);
+        assert_eq!(backlinks[0].source_prefix, "meld");
+        assert_eq!(backlinks[0].target, "other:REQ-001");
+    }
+
+    #[test]
+    fn compute_backlinks_empty_when_no_matches() {
+        use crate::model::Artifact;
+
+        let mut local_ids = std::collections::HashSet::new();
+        local_ids.insert("REQ-001".to_string());
+
+        let ext_artifact = Artifact {
+            id: "EXT-001".to_string(),
+            artifact_type: "requirement".to_string(),
+            title: "External req".to_string(),
+            description: None,
+            status: None,
+            tags: vec![],
+            links: vec![], // no links at all
+            fields: std::collections::BTreeMap::new(),
+            source_file: None,
+        };
+
+        let resolved = vec![ResolvedExternal {
+            prefix: "meld".to_string(),
+            project_dir: std::path::PathBuf::from("/tmp/meld"),
+            artifacts: vec![ext_artifact],
+        }];
+
+        let backlinks = compute_backlinks(&resolved, &local_ids);
+        assert!(backlinks.is_empty());
+    }
+
+    #[test]
+    fn detect_circular_deps_finds_cycle() {
+        // Test with actual temp dirs containing rivet.yaml files that reference each other
+        let dir = tempfile::tempdir().unwrap();
+
+        // Create project A (current project) that depends on B
+        // Create project B that depends on A (cycle: A -> B -> A)
+        let b_dir = dir.path().join("b");
+        std::fs::create_dir_all(&b_dir).unwrap();
+        std::fs::write(
+            b_dir.join("rivet.yaml"),
+            "project:\n  name: b\n  version: '0.1.0'\n  schemas: [common]\nsources: []\nexternals:\n  a:\n    path: ../\n    prefix: a\n",
+        )
+        .unwrap();
+
+        let mut externals = BTreeMap::new();
+        externals.insert(
+            "b".into(),
+            crate::model::ExternalProject {
+                git: None,
+                path: Some(b_dir.to_str().unwrap().into()),
+                git_ref: None,
+                prefix: "b".into(),
+            },
+        );
+
+        let cycles = detect_circular_deps(&externals, "a", dir.path());
+        assert!(!cycles.is_empty(), "should detect A->B->A cycle");
+        // The cycle should contain both "a" and "b"
+        let chain = &cycles[0].chain;
+        assert!(chain.contains(&"a".to_string()));
+        assert!(chain.contains(&"b".to_string()));
+        assert_eq!(chain.first(), chain.last(), "cycle must start and end with same node");
+    }
+
+    #[test]
+    fn detect_circular_deps_no_cycle() {
+        // Project A depends on B, B has no externals => no cycle
+        let dir = tempfile::tempdir().unwrap();
+
+        let b_dir = dir.path().join("b");
+        std::fs::create_dir_all(&b_dir).unwrap();
+        std::fs::write(
+            b_dir.join("rivet.yaml"),
+            "project:\n  name: b\n  version: '0.1.0'\n  schemas: [common]\nsources: []\n",
+        )
+        .unwrap();
+
+        let mut externals = BTreeMap::new();
+        externals.insert(
+            "b".into(),
+            crate::model::ExternalProject {
+                git: None,
+                path: Some(b_dir.to_str().unwrap().into()),
+                git_ref: None,
+                prefix: "b".into(),
+            },
+        );
+
+        let cycles = detect_circular_deps(&externals, "a", dir.path());
+        assert!(cycles.is_empty(), "no cycle expected");
+    }
+
+    #[test]
+    fn circular_dependency_struct() {
+        let cycle = CircularDependency {
+            chain: vec!["a".into(), "b".into(), "c".into(), "a".into()],
+        };
+        assert_eq!(cycle.chain.len(), 4);
+        assert_eq!(cycle.chain.first(), cycle.chain.last());
     }
 }

@@ -846,6 +846,8 @@ fn cmd_validate(cli: &Cli, format: &str) -> Result<bool> {
         .with_context(|| format!("loading {}", config_path.display()))?;
 
     let mut cross_repo_broken: Vec<rivet_core::externals::BrokenRef> = Vec::new();
+    let mut backlinks: Vec<rivet_core::externals::CrossRepoBacklink> = Vec::new();
+    let mut circular_deps: Vec<rivet_core::externals::CircularDependency> = Vec::new();
     if let Some(ref externals) = config.externals {
         if !externals.is_empty() {
             match rivet_core::externals::load_all_externals(externals, &cli.project) {
@@ -874,11 +876,22 @@ fn cmd_validate(cli: &Cli, format: &str) -> Result<bool> {
                         &local_ids,
                         &external_ids,
                     );
+
+                    // Compute backlinks from external artifacts pointing to local artifacts
+                    backlinks =
+                        rivet_core::externals::compute_backlinks(&resolved, &local_ids);
                 }
                 Err(e) => {
                     eprintln!("  warning: could not load externals for cross-repo validation: {e}");
                 }
             }
+
+            // Detect circular dependencies in the externals graph
+            circular_deps = rivet_core::externals::detect_circular_deps(
+                externals,
+                &config.project.name,
+                &cli.project,
+            );
         }
     }
 
@@ -916,14 +929,36 @@ fn cmd_validate(cli: &Cli, format: &str) -> Result<bool> {
                 })
             })
             .collect();
+        let backlinks_json: Vec<serde_json::Value> = backlinks
+            .iter()
+            .map(|bl| {
+                serde_json::json!({
+                    "source_prefix": bl.source_prefix,
+                    "source_id": bl.source_id,
+                    "target": bl.target,
+                })
+            })
+            .collect();
+        let cycles_json: Vec<serde_json::Value> = circular_deps
+            .iter()
+            .map(|c| {
+                serde_json::json!({
+                    "chain": c.chain,
+                })
+            })
+            .collect();
         let output = serde_json::json!({
             "command": "validate",
             "errors": errors,
             "warnings": warnings,
             "infos": infos,
             "cross_repo_broken": cross_errors,
+            "backlinks": backlinks.len(),
+            "circular_deps": circular_deps.len(),
             "diagnostics": diag_json,
             "broken_cross_refs": cross_json,
+            "cross_repo_backlinks": backlinks_json,
+            "circular_dependencies": cycles_json,
         });
         println!("{}", serde_json::to_string_pretty(&output).unwrap());
     } else {
@@ -942,6 +977,31 @@ fn cmd_validate(cli: &Cli, format: &str) -> Result<bool> {
             println!("Cross-repo link issues:");
             for b in &cross_repo_broken {
                 eprintln!("  broken cross-ref: {} — {:?}", b.reference, b.reason);
+            }
+        }
+
+        if !backlinks.is_empty() {
+            println!();
+            println!(
+                "Cross-repo backlinks: {} (external artifacts linking to local)",
+                backlinks.len()
+            );
+            for bl in &backlinks {
+                println!(
+                    "  {}:{} -> {}",
+                    bl.source_prefix, bl.source_id, bl.target
+                );
+            }
+        }
+
+        if !circular_deps.is_empty() {
+            println!();
+            println!(
+                "warning: {} circular dependency chain(s) detected in externals graph:",
+                circular_deps.len()
+            );
+            for cycle in &circular_deps {
+                println!("  {}", cycle.chain.join(" -> "));
             }
         }
 
