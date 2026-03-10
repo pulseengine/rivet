@@ -903,6 +903,11 @@ fn cmd_validate(cli: &Cli, format: &str) -> Result<bool> {
         }
     }
 
+    // Lifecycle completeness check
+    let all_artifacts: Vec<_> = store.iter().cloned().collect();
+    let lifecycle_gaps =
+        rivet_core::lifecycle::check_lifecycle_completeness(&all_artifacts);
+
     let errors = diagnostics
         .iter()
         .filter(|d| d.severity == Severity::Error)
@@ -969,6 +974,17 @@ fn cmd_validate(cli: &Cli, format: &str) -> Result<bool> {
                 })
             })
             .collect();
+        let lifecycle_json: Vec<serde_json::Value> = lifecycle_gaps
+            .iter()
+            .map(|g| {
+                serde_json::json!({
+                    "artifact_id": g.artifact_id,
+                    "artifact_type": g.artifact_type,
+                    "status": g.artifact_status,
+                    "missing": g.missing,
+                })
+            })
+            .collect();
         let output = serde_json::json!({
             "command": "validate",
             "errors": errors,
@@ -978,11 +994,13 @@ fn cmd_validate(cli: &Cli, format: &str) -> Result<bool> {
             "backlinks": backlinks.len(),
             "circular_deps": circular_deps.len(),
             "version_conflicts": version_conflicts.len(),
+            "lifecycle_gaps": lifecycle_gaps.len(),
             "diagnostics": diag_json,
             "broken_cross_refs": cross_json,
             "cross_repo_backlinks": backlinks_json,
             "circular_dependencies": cycles_json,
             "version_conflict_details": conflicts_json,
+            "lifecycle_coverage": lifecycle_json,
         });
         println!("{}", serde_json::to_string_pretty(&output).unwrap());
     } else {
@@ -1040,6 +1058,23 @@ fn cmd_validate(cli: &Cli, format: &str) -> Result<bool> {
                 for entry in &c.versions {
                     eprintln!("    {} declares ref: {}", entry.declared_by, entry.version);
                 }
+            }
+        }
+
+        if !lifecycle_gaps.is_empty() {
+            println!();
+            println!(
+                "Lifecycle coverage gaps ({}):",
+                lifecycle_gaps.len()
+            );
+            for gap in &lifecycle_gaps {
+                eprintln!(
+                    "  {} ({}, status: {}) — missing: {}",
+                    gap.artifact_id,
+                    gap.artifact_type,
+                    gap.artifact_status.as_deref().unwrap_or("none"),
+                    gap.missing.join(", "),
+                );
             }
         }
 
