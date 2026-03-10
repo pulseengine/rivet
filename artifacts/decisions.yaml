@@ -227,3 +227,77 @@ artifacts:
         Keep old test terminology for backward compatibility. Rejected
         because the schema is pre-1.0 and alignment with the standard
         is more valuable than backward compatibility at this stage.
+
+  - id: DD-011
+    type: design-decision
+    title: Git trailers over inline regex for commit-artifact references
+    status: approved
+    description: >
+      Use standard git trailers (footer key-value pairs) for linking
+      commits to artifacts, rather than inline regex parsing of commit
+      message bodies (e.g., [FEAT-007] Jira-style).
+    tags: [architecture, git, traceability]
+    links:
+      - type: satisfies
+        target: REQ-017
+    fields:
+      rationale: >
+        Git trailers are a well-supported standard, parseable via
+        git log --format='%(trailers)', git interpret-trailers, and
+        programmatic APIs. They separate traceability metadata from
+        the commit description. Inline regex is fragile and ambiguous
+        (brackets in code snippets, prose references).
+      alternatives: >
+        Inline regex parsing of [ARTIFACT-ID] patterns (Jira-style).
+        Rejected because regex is fragile and cannot distinguish
+        intentional references from incidental mentions.
+
+  - id: DD-012
+    type: design-decision
+    title: Runtime graph integration over materialized commit YAML
+    status: approved
+    description: >
+      Commit data is injected as ephemeral nodes into the petgraph link
+      graph at analysis time, rather than materializing commit artifacts
+      as YAML files on disk.
+    tags: [architecture, git, traceability]
+    links:
+      - type: satisfies
+        target: REQ-017
+    fields:
+      rationale: >
+        Git is the single source of truth for commit data. Materializing
+        commits to YAML creates a redundant data store that drifts from
+        git history. The link graph is already rebuilt from scratch on
+        each rivet invocation, so ephemeral commit nodes fit naturally.
+      alternatives: >
+        rivet sync-commits writing commit YAML files to a commits/
+        directory. Rejected because it creates thousands of redundant
+        files and requires ongoing sync discipline.
+
+  - id: DD-013
+    type: design-decision
+    title: Dual opt-out for commit traceability enforcement
+    status: approved
+    description: >
+      Non-essential commits opt out of trailer requirements via two
+      mechanisms: conventional-commit type exemption (configurable list
+      of types like chore, style, ci, docs, build) and an explicit
+      Trace-skip trailer for edge cases.
+    tags: [architecture, git, traceability]
+    links:
+      - type: satisfies
+        target: REQ-018
+      - type: satisfies
+        target: REQ-019
+    fields:
+      rationale: >
+        Type-based exemption handles the 80% case (dependency bumps,
+        formatting, CI tweaks) with zero friction. The explicit skip
+        trailer handles edge cases where a normally-traced type (like
+        feat) genuinely has no artifact mapping, forcing developers to
+        consciously acknowledge the gap.
+      alternatives: >
+        No exemption mechanism (all commits must reference artifacts).
+        Rejected because it creates excessive friction for routine
+        maintenance commits that have no traceability value.

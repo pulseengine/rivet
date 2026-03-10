@@ -1,0 +1,531 @@
+# =============================================================================
+# STPA Step 3 — Unsafe Control Actions (UCAs)
+# =============================================================================
+#
+# An Unsafe Control Action (UCA) is a control action that, in a particular
+# context and worst-case environment, will lead to a hazard.
+#
+# Four types (provably complete):
+#   1. Not providing causes hazard
+#   2. Providing causes hazard
+#   3. Too early, too late, or wrong order
+#   4. Stopped too soon or applied too long
+#
+# Format: <Source> <Type> <Control Action> <Context> <Link to Hazards>
+#
+# Reference: STPA Handbook, §2.5
+# =============================================================================
+
+# =============================================================================
+# Core Engine UCAs — CA-CORE-1: Build/update link graph
+#                    CA-CORE-2: Validate artifacts
+#                    CA-CORE-3: Generate coverage metrics
+# =============================================================================
+core-ucas:
+  control-action: Build link graph, validate artifacts, generate metrics
+  controller: CTRL-CORE
+
+  not-providing:
+    - id: UCA-C-1
+      description: >
+        Core does not validate links when artifacts have been modified
+        since the last validation pass.
+      context: >
+        Developer has edited YAML files and requests a report or export
+        without an intervening validate command.
+      hazards: [H-1, H-3]
+      rationale: >
+        Stale links from the previous validation state are used to
+        generate coverage metrics, hiding newly introduced gaps.
+
+    - id: UCA-C-2
+      description: >
+        Core does not rebuild the link graph after an OSLC sync
+        introduces new or modified artifacts.
+      context: >
+        OSLC sync has completed and written updated YAML files, but
+        the in-memory link graph still reflects the pre-sync state.
+      hazards: [H-1, H-3]
+      rationale: >
+        Coverage metrics computed from the stale graph do not account
+        for links added or removed by the sync.
+
+    - id: UCA-C-3
+      description: >
+        Core does not validate schema conformance for imported artifacts.
+      context: >
+        ReqIF or OSLC import has produced YAML artifacts whose fields
+        do not match the declared schema.
+      hazards: [H-4, H-2]
+      rationale: >
+        Schema-violating artifacts may have mistyped fields, missing
+        required attributes, or incorrect link semantics.
+
+  providing:
+    - id: UCA-C-4
+      description: >
+        Core reports validation as passing when dangling links exist in
+        the link graph.
+      context: >
+        One or more artifacts reference targets that do not exist in
+        the loaded artifact set (deleted, renamed, or not yet imported).
+      hazards: [H-1, H-3, H-6]
+      rationale: >
+        A false-positive validation result causes downstream reports
+        and CI gates to treat the traceability as complete.
+
+    - id: UCA-C-5
+      description: >
+        Core computes coverage metrics that count dangling links as
+        satisfied trace relationships.
+      context: >
+        The link graph contains edges whose target nodes do not resolve
+        to loaded artifacts.
+      hazards: [H-3, H-6]
+      rationale: >
+        Coverage percentage is inflated because unresolvable links are
+        counted as coverage rather than gaps.
+
+    - id: UCA-C-6
+      description: >
+        Core validates an artifact against the wrong schema.
+      context: >
+        The artifact's type field does not match any loaded schema, and
+        Core falls back to a permissive default or skips validation.
+      hazards: [H-4, H-2]
+      rationale: >
+        Artifacts with incorrect or missing fields pass validation,
+        allowing semantically invalid data into the traceability store.
+
+  too-early-too-late:
+    - id: UCA-C-7
+      description: >
+        Core validates artifacts before all sources have been loaded.
+      context: >
+        Multi-source configuration where some YAML directories or OSLC
+        sources have not yet been read when validation begins.
+      hazards: [H-1, H-3]
+      rationale: >
+        Links to artifacts in not-yet-loaded sources are reported as
+        dangling, producing false negatives, or worse — if the
+        incomplete set passes validation, gaps are hidden.
+
+    - id: UCA-C-8
+      description: >
+        Core generates a coverage report after artifact modification
+        but before re-validation.
+      context: >
+        User runs `rivet stats` or `rivet matrix` immediately after
+        editing artifacts, without running `rivet validate` first.
+      hazards: [H-3, H-6]
+      rationale: >
+        The report reflects the previously validated state, not the
+        current state, potentially showing stale coverage data.
+
+  stopped-too-soon:
+    - id: UCA-C-9
+      description: >
+        Core terminates validation after encountering the first error
+        instead of reporting all errors.
+      context: >
+        Multiple schema violations or dangling links exist across
+        different artifact files.
+      hazards: [H-1, H-3]
+      rationale: >
+        Engineers fix only the first error and assume the rest is clean,
+        leaving other validation failures undetected.
+
+# =============================================================================
+# OSLC Client UCAs — CA-OSLC-1: Fetch remote artifacts
+#                     CA-OSLC-2: Write synced artifacts locally
+#                     CA-OSLC-3: Push local changes to remote
+# =============================================================================
+oslc-ucas:
+  control-action: Synchronize artifacts with external ALM tools via OSLC TRS
+  controller: CTRL-OSLC
+
+  not-providing:
+    - id: UCA-O-1
+      description: >
+        OSLC client does not fetch remote changes when the TRS change
+        log indicates modifications since the last sync cursor.
+      context: >
+        External tool has updated, deleted, or created artifacts, but
+        the OSLC client does not poll or process the change log.
+      hazards: [H-1, H-5]
+      rationale: >
+        Local artifact store becomes increasingly stale relative to
+        the external tool, and links to external artifacts may dangle.
+
+    - id: UCA-O-2
+      description: >
+        OSLC client does not push local changes to the remote tool.
+      context: >
+        Developer has created or modified artifacts locally that should
+        be reflected in the external ALM tool.
+      hazards: [H-5, H-1]
+      rationale: >
+        The external tool's view of traceability diverges from the
+        local authoritative state, causing inconsistencies.
+
+    - id: UCA-O-3
+      description: >
+        OSLC client does not report sync failures to the CLI/developer.
+      context: >
+        Network errors, authentication failures, or schema mismatches
+        prevent sync completion, but no diagnostic is emitted.
+      hazards: [H-2, H-1]
+      rationale: >
+        Developer believes sync succeeded when it did not, and
+        proceeds to generate reports from stale data.
+
+  providing:
+    - id: UCA-O-4
+      description: >
+        OSLC client writes synced artifacts that overwrite locally
+        modified data without conflict detection.
+      context: >
+        Both local and remote copies of an artifact have been modified
+        since the last sync.
+      hazards: [H-5, H-3, H-7]
+      rationale: >
+        The last-writer-wins behavior silently discards the local
+        engineer's changes, including potential safety-critical edits.
+
+    - id: UCA-O-5
+      description: >
+        OSLC client syncs a deletion event from the remote tool,
+        removing a locally-needed artifact without confirmation.
+      context: >
+        An artifact deleted in the external tool is still referenced
+        by local links and is needed for traceability coverage.
+      hazards: [H-2, H-1, H-5]
+      rationale: >
+        Phantom deletion — the artifact disappears from the local
+        store, creating dangling links and coverage gaps.
+
+    - id: UCA-O-6
+      description: >
+        OSLC client propagates a corrupted or semantically incorrect
+        artifact from the remote tool to the local store.
+      context: >
+        Remote tool contains a bulk-edit error, data migration
+        artifact, or test data that should not be synced.
+      hazards: [H-8, H-4]
+      rationale: >
+        Corruption flows from the external tool into Rivet's local
+        store and potentially onward to other connected tools.
+
+    - id: UCA-O-7
+      description: >
+        OSLC client pushes locally corrupted data to the remote tool.
+      context: >
+        Local YAML files contain validation errors, but the OSLC
+        client pushes them to the external tool without checking.
+      hazards: [H-8, H-4]
+      rationale: >
+        Error propagation in the outbound direction corrupts the
+        external tool's data, affecting all users of that tool.
+
+  too-early-too-late:
+    - id: UCA-O-8
+      description: >
+        OSLC client syncs after a compliance report has already been
+        generated from stale data.
+      context: >
+        Report was generated before sync; sync then reveals that the
+        external state had changed, invalidating the report.
+      hazards: [H-6, H-3]
+      rationale: >
+        The compliance report does not reflect the current state of
+        traceability, misleading auditors.
+
+    - id: UCA-O-9
+      description: >
+        OSLC client syncs during an active local editing session,
+        creating merge conflicts.
+      context: >
+        Developer is actively editing YAML files when a background
+        sync writes to the same files.
+      hazards: [H-5, H-3]
+      rationale: >
+        Interleaved writes corrupt the YAML structure or silently
+        overwrite in-progress edits.
+
+  stopped-too-soon:
+    - id: UCA-O-10
+      description: >
+        OSLC client aborts sync mid-operation due to a transient
+        network error, leaving the local store in a partial state.
+      context: >
+        Sync has processed some TRS change log entries but not others.
+        Some artifacts are updated, others are stale.
+      hazards: [H-2, H-1, H-5]
+      rationale: >
+        Partial sync creates an inconsistent local state — some links
+        resolve to updated targets while others point to stale data,
+        and the sync cursor may be advanced past un-applied changes.
+
+# =============================================================================
+# ReqIF Adapter UCAs — CA-REQIF-1: Import ReqIF artifacts
+#                       CA-REQIF-2: Export ReqIF XML
+# =============================================================================
+reqif-ucas:
+  control-action: Import and export ReqIF 1.2 XML interchange files
+  controller: CTRL-REQIF
+
+  not-providing:
+    - id: UCA-Q-1
+      description: >
+        ReqIF adapter fails to import valid ReqIF XML, discarding
+        all artifacts in the file.
+      context: >
+        ReqIF file uses unfamiliar SpecTypes, attribute definitions,
+        or namespace variants that the parser does not handle.
+      hazards: [H-2]
+      rationale: >
+        Requirements from the external tool are silently lost during
+        import, creating gaps in the traceability chain.
+
+    - id: UCA-Q-2
+      description: >
+        ReqIF adapter does not export locally-deleted artifacts,
+        failing to communicate the deletion to downstream tools.
+      context: >
+        An artifact has been removed from the local YAML store but
+        the ReqIF export still contains it from a cached state.
+      hazards: [H-1, H-5]
+      rationale: >
+        Downstream tools retain a deleted artifact, creating phantom
+        links and inconsistent traceability state.
+
+  providing:
+    - id: UCA-Q-3
+      description: >
+        ReqIF adapter imports artifacts with incorrect schema mapping,
+        assigning wrong types or statuses.
+      context: >
+        The ReqIF SpecType attributes do not have a clear mapping to
+        Rivet's schema fields, and the adapter guesses incorrectly.
+      hazards: [H-4]
+      rationale: >
+        Semantically mismatched artifacts pass validation against a
+        permissive schema but distort the traceability argument.
+
+    - id: UCA-Q-4
+      description: >
+        ReqIF adapter imports duplicate artifacts when re-importing
+        a file that was previously imported.
+      context: >
+        The same ReqIF file is imported twice (e.g., after a minor
+        update) and the adapter creates new artifacts instead of
+        updating existing ones.
+      hazards: [H-3, H-5]
+      rationale: >
+        Duplicate artifacts inflate coverage metrics and create
+        ambiguous link targets.
+
+    - id: UCA-Q-5
+      description: >
+        ReqIF adapter exports artifacts with stripped rich-text,
+        losing structural information.
+      context: >
+        Artifact descriptions contain markdown tables, formulas, or
+        structured content that is flattened to plain text in ReqIF.
+      hazards: [H-4]
+      rationale: >
+        Downstream tools receive impoverished content that may be
+        misinterpreted, breaking the semantic chain.
+
+  too-early-too-late:
+    - id: UCA-Q-6
+      description: >
+        ReqIF adapter imports artifacts before schema definitions
+        have been loaded.
+      context: >
+        CLI invokes the ReqIF adapter before loading rivet.yaml
+        configuration and schema files.
+      hazards: [H-4, H-2]
+      rationale: >
+        Without schema context, the adapter cannot validate or
+        correctly map imported artifact types.
+
+  stopped-too-soon:
+    - id: UCA-Q-7
+      description: >
+        ReqIF adapter aborts import after encountering a parse error
+        in one SpecObject, discarding all subsequent SpecObjects.
+      context: >
+        A ReqIF file contains hundreds of SpecObjects, and one has
+        malformed XML or an unsupported attribute type.
+      hazards: [H-2]
+      rationale: >
+        A single bad record causes loss of all subsequent records,
+        potentially dropping hundreds of requirements.
+
+# =============================================================================
+# CLI UCAs — CA-CLI-1: Invoke core operations
+#             CA-CLI-2: Initiate OSLC sync
+#             CA-CLI-3: Initiate ReqIF operations
+#             CA-CLI-4: Write artifacts to files
+# =============================================================================
+cli-ucas:
+  control-action: Orchestrate operations and format output for the developer
+  controller: CTRL-CLI
+
+  not-providing:
+    - id: UCA-L-1
+      description: >
+        CLI does not display validation warnings to the developer.
+      context: >
+        Validation produces warnings (non-fatal issues) that are
+        suppressed or not shown in the default output verbosity.
+      hazards: [H-1, H-3]
+      rationale: >
+        Warnings about potential issues (e.g., weak link types,
+        deprecated schemas) are ignored, accumulating into failures.
+
+    - id: UCA-L-2
+      description: >
+        CLI does not invoke validation before generating reports.
+      context: >
+        Developer runs `rivet matrix` or `rivet stats` without a
+        prior `rivet validate` in the same session.
+      hazards: [H-3, H-6]
+      rationale: >
+        Reports are generated from unvalidated data, potentially
+        containing dangling links or schema violations.
+
+  providing:
+    - id: UCA-L-3
+      description: >
+        CLI overwrites local YAML files during sync without prompting
+        the developer for confirmation.
+      context: >
+        Local files have been modified since the last commit, and a
+        sync operation writes incoming data over those modifications.
+      hazards: [H-5, H-3, H-7]
+      rationale: >
+        Developer's in-progress work is silently destroyed by the
+        sync operation.
+
+    - id: UCA-L-4
+      description: >
+        CLI selects the wrong adapter for the current data source.
+      context: >
+        Configuration specifies multiple adapters, and the CLI
+        matches the wrong one based on file extension or path.
+      hazards: [H-4, H-2]
+      rationale: >
+        Using the wrong adapter applies incorrect schema mappings,
+        producing semantically invalid artifacts.
+
+  too-early-too-late:
+    - id: UCA-L-5
+      description: >
+        CLI writes sync results to YAML files while the developer
+        is actively editing those same files.
+      context: >
+        A background sync completes and writes files that the
+        developer has open in their editor.
+      hazards: [H-5, H-7]
+      rationale: >
+        Race condition between sync writes and editor saves causes
+        data loss or YAML corruption.
+
+  stopped-too-soon: []
+
+# =============================================================================
+# CI Pipeline UCAs — CA-CI-1: Run rivet validate
+#                     CA-CI-2: Gate merge on results
+# =============================================================================
+ci-ucas:
+  control-action: Run validation gates and control merge permissions
+  controller: CTRL-CI
+
+  not-providing:
+    - id: UCA-I-1
+      description: >
+        CI pipeline does not run rivet validate on pull requests that
+        modify artifact YAML files.
+      context: >
+        CI workflow is misconfigured or the path filter does not
+        match the artifact file locations.
+      hazards: [H-1, H-3]
+      rationale: >
+        Broken links or schema violations are merged into the main
+        branch without detection.
+
+    - id: UCA-I-2
+      description: >
+        CI pipeline does not block merge when rivet validate fails.
+      context: >
+        Validation is run but configured as an informational check
+        rather than a required check.
+      hazards: [H-1, H-3, H-6]
+      rationale: >
+        Developers see the failure but can merge anyway, allowing
+        known traceability issues into the baseline.
+
+  providing:
+    - id: UCA-I-3
+      description: >
+        CI pipeline reports validation as passing when it actually
+        exited with a non-zero code.
+      context: >
+        Shell script error handling is incorrect (missing set -e or
+        unchecked exit codes).
+      hazards: [H-3, H-6]
+      rationale: >
+        CI green-lights a merge despite validation failures, creating
+        false confidence in the traceability state.
+
+  too-early-too-late:
+    - id: UCA-I-4
+      description: >
+        CI runs validation against an outdated artifact baseline
+        because it does not pull the latest changes.
+      context: >
+        CI caches artifact files from a previous run, or the
+        checkout does not include the PR's latest commits.
+      hazards: [H-1, H-3]
+      rationale: >
+        Validation passes against old data while the current data
+        contains new issues.
+
+  stopped-too-soon: []
+
+# =============================================================================
+# Dashboard UCAs — CA-DASH-1: Display metrics and status
+# =============================================================================
+dashboard-ucas:
+  control-action: Display traceability metrics, graphs, and validation status
+  controller: CTRL-DASH
+
+  not-providing:
+    - id: UCA-D-1
+      description: >
+        Dashboard does not display validation errors or warnings.
+      context: >
+        Validation has been run and found issues, but the dashboard
+        renders only the coverage metrics without the error context.
+      hazards: [H-3, H-6]
+      rationale: >
+        Engineers see green metrics without the associated caveats,
+        developing false confidence in traceability completeness.
+
+  providing:
+    - id: UCA-D-2
+      description: >
+        Dashboard displays cached metrics from a previous session
+        that no longer reflect the current artifact state.
+      context: >
+        Artifacts have been modified since the dashboard was last
+        refreshed, but the dashboard shows stale data.
+      hazards: [H-3, H-6]
+      rationale: >
+        Stale metrics mislead developers and auditors about the
+        current state of traceability.
+
+  too-early-too-late: []
+  stopped-too-soon: []

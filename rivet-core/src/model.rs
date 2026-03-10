@@ -76,6 +76,31 @@ impl Artifact {
     }
 }
 
+/// Configuration for commit-to-artifact traceability.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommitsConfig {
+    #[serde(default = "default_commits_format")]
+    pub format: String,
+    #[serde(default)]
+    pub trailers: BTreeMap<String, String>,
+    #[serde(default, rename = "exempt-types")]
+    pub exempt_types: Vec<String>,
+    #[serde(default = "default_skip_trailer", rename = "skip-trailer")]
+    pub skip_trailer: String,
+    #[serde(default, rename = "traced-paths")]
+    pub traced_paths: Vec<String>,
+    #[serde(default, rename = "trace-exempt-artifacts")]
+    pub trace_exempt_artifacts: Vec<String>,
+}
+
+fn default_commits_format() -> String {
+    "trailers".into()
+}
+
+fn default_skip_trailer() -> String {
+    "Trace: skip".into()
+}
+
 /// Project configuration loaded from `rivet.yaml`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectConfig {
@@ -88,6 +113,9 @@ pub struct ProjectConfig {
     /// Directory containing test result YAML files.
     #[serde(default)]
     pub results: Option<String>,
+    /// Commit traceability configuration.
+    #[serde(default)]
+    pub commits: Option<CommitsConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

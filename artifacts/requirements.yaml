@@ -208,3 +208,46 @@ artifacts:
     fields:
       priority: should
       category: functional
+
+  - id: REQ-017
+    type: requirement
+    title: Commit-to-artifact traceability
+    status: approved
+    description: >
+      The system must parse git commit trailers and link them to artifacts
+      at runtime, injecting ephemeral commit nodes into the link graph.
+      Must support configurable trailer-to-link-type mapping and produce
+      five report types: linked commits, broken references, orphan commits,
+      artifact commit coverage, and unimplemented artifacts.
+    tags: [core, traceability, git]
+    fields:
+      priority: must
+      category: functional
+
+  - id: REQ-018
+    type: requirement
+    title: Commit message validation at commit time
+    status: approved
+    description: >
+      The system must validate commit messages via a pre-commit hook,
+      ensuring non-exempt commits reference at least one valid artifact
+      ID in git trailers. Must support conventional-commit type exemptions
+      and an explicit skip trailer for opt-out.
+    tags: [core, validation, git]
+    fields:
+      priority: must
+      category: functional
+
+  - id: REQ-019
+    type: requirement
+    title: Orphan commit detection
+    status: approved
+    description: >
+      The system must identify commits that modify files in configured
+      traced paths without referencing any artifact. Must support
+      path-based configuration for traced vs. exempt directories and
+      an artifact whitelist for known-unimplemented items.
+    tags: [core, traceability, git]
+    fields:
+      priority: must
+      category: functional

@@ -67,7 +67,15 @@ repos:
         entry: rivet validate --strict
         language: system
         pass_filenames: false
-        files: '(artifacts/.*\.yaml|schemas/.*\.yaml|rivet\.yaml)$'
+        files: '(artifacts/.*\.yaml|schemas/.*\.yaml|safety/.*\.yaml|rivet\.yaml)$'
+
+      # ── Commit-message traceability check ────────────────────
+      - id: rivet-commit-msg
+        name: rivet commit-msg check
+        entry: rivet commit-msg-check
+        language: system
+        stages: [commit-msg]
+        always_run: true
 
       # ── Benchmarks (compile check only — not full run) ────────
       - id: cargo-bench-check

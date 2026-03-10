@@ -1,0 +1,134 @@
+# =============================================================================
+# STPA Step 1b — System-Level Hazards and Sub-Hazards
+# =============================================================================
+#
+# A hazard is a system state or set of conditions that, together with a
+# particular set of worst-case environmental conditions, will lead to a loss.
+#
+# Format: <System> & <Unsafe Condition> & <Link to Losses>
+#
+# Reference: STPA Handbook, §2.3.2
+# =============================================================================
+
+hazards:
+  - id: H-1
+    title: Rivet permits stale cross-references that no longer point to valid artifacts
+    description: >
+      Links between artifacts (e.g., REQ → DD → FEAT → TEST) reference
+      identifiers that have been renamed, deleted, or moved in the source
+      of truth.  In a worst-case environment where engineers rely on
+      automated link validation, stale references create an illusion of
+      complete traceability while gaps exist.
+    losses: [L-1, L-5]
+
+  - id: H-2
+    title: Rivet silently drops artifacts or links during synchronization
+    description: >
+      During OSLC TRS sync, ReqIF import/export, or YAML merge operations,
+      artifacts or their links are discarded without user notification.
+      The lost data may include safety-critical requirements or their
+      verification evidence.
+    losses: [L-1, L-3, L-5]
+
+  - id: H-3
+    title: Rivet produces incorrect coverage metrics showing completeness when gaps exist
+    description: >
+      Coverage matrices, statistics, or dashboards report higher coverage
+      than actually exists.  Engineers and auditors rely on these metrics
+      to judge readiness, so inflated metrics hide real traceability gaps.
+    losses: [L-2, L-5]
+
+  - id: H-4
+    title: Rivet imports semantically mismatched data from external tools
+    description: >
+      Artifact types, statuses, or link semantics from external tools
+      (via ReqIF or OSLC) are mapped incorrectly to Rivet's schema.
+      A "verified" status in Polarion might map to "approved" in Rivet,
+      or a "refines" link might be imported as "satisfies," distorting
+      the traceability argument.
+    losses: [L-1, L-3]
+
+  - id: H-5
+    title: Rivet fails to detect conflicting concurrent modifications
+    description: >
+      Multiple sources (local edits, OSLC sync, ReqIF import) modify the
+      same artifact simultaneously.  Without conflict detection, the last
+      writer wins, silently overwriting safety-relevant changes.
+    losses: [L-1, L-3, L-6]
+
+  - id: H-6
+    title: Rivet generates compliance reports from unverified traceability data
+    description: >
+      Reports and matrices are generated from data that has not passed
+      validation — containing dangling links, schema violations, or
+      outdated sync state.  Auditors receive misleading evidence.
+    losses: [L-2, L-5]
+
+  - id: H-7
+    title: Rivet allows unattributed modification of safety-critical artifacts
+    description: >
+      Changes to artifacts with safety implications (requirements, hazard
+      analyses, verification records) occur without recording who made
+      the change, when, or why.  The audit trail is incomplete.
+    losses: [L-3, L-5, L-6]
+
+  - id: H-8
+    title: Rivet propagates errors bidirectionally across connected tools
+    description: >
+      A corruption or semantic error introduced in one tool (e.g., a
+      bulk-edit mistake in Polarion) is propagated via OSLC sync to
+      Rivet's local store and then onward to other connected tools,
+      amplifying a single-tool error into a multi-tool data integrity
+      incident.
+    losses: [L-1, L-3, L-4]
+
+sub-hazards:
+  # --- H-1 refinements: types of stale references ---
+  - id: H-1.1
+    parent: H-1
+    title: Rivet permits links to artifacts deleted in external tools
+    description: >
+      An artifact referenced by a Rivet link is deleted in an external
+      ALM tool.  The OSLC TRS change log records the deletion, but
+      Rivet does not process it, leaving a dangling forward reference.
+
+  - id: H-1.2
+    parent: H-1
+    title: Rivet permits links to renamed artifact identifiers
+    description: >
+      An artifact's identifier changes (e.g., REQ-042 becomes REQ-042a
+      after a rebase in the external tool).  Rivet's links still point
+      to the old identifier.
+
+  - id: H-1.3
+    parent: H-1
+    title: Rivet permits links to artifacts whose type has changed
+    description: >
+      An artifact originally typed as "requirement" is reclassified as
+      "information" in the external tool, but Rivet still treats the
+      link as a requirement-level trace.
+
+  # --- H-4 refinements: types of semantic mismatch ---
+  - id: H-4.1
+    parent: H-4
+    title: Rivet maps external status values to incorrect internal statuses
+    description: >
+      Lifecycle status strings from external tools (e.g., "In Review",
+      "Baselined", "Obsolete") are mapped to the wrong Rivet status,
+      causing artifacts to appear validated when they are still draft.
+
+  - id: H-4.2
+    parent: H-4
+    title: Rivet maps external link types to incorrect semantic relationships
+    description: >
+      Link type semantics differ between tools.  A "derives" link in
+      DOORS may mean "refines" in Rivet's schema, but an incorrect
+      mapping treats it as "satisfies," inflating coverage metrics.
+
+  - id: H-4.3
+    parent: H-4
+    title: Rivet imports rich-text content as plain text, losing structure
+    description: >
+      ReqIF XHTML content or OSLC rich-text descriptions are stripped
+      to plain text, losing tables, formulas, or embedded diagrams that
+      are essential to understanding the requirement.
