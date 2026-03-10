@@ -1,7 +1,11 @@
+use std::path::Path;
 use std::process::Command;
 
 fn main() {
-    // Emit git metadata as compile-time environment variables.
+    // ── WASM asset build (spar) ────────────────────────────────────────
+    build_wasm_assets();
+
+    // ── Git metadata ───────────────────────────────────────────────────
     println!("cargo:rerun-if-changed=../.git/HEAD");
     println!("cargo:rerun-if-changed=../.git/index");
 
@@ -57,4 +61,55 @@ fn main() {
     println!("cargo:rustc-env=RIVET_GIT_MODIFIED={modified}");
     println!("cargo:rustc-env=RIVET_GIT_UNTRACKED={untracked}");
     println!("cargo:rustc-env=RIVET_BUILD_DATE={build_date}");
+}
+
+/// Build spar WASM assets if they are missing and spar repo is available.
+///
+/// Checks `SPAR_DIR` env var, then `../spar` as default location.
+/// Skips silently if spar is not found (WASM features are optional).
+fn build_wasm_assets() {
+    let wasm_js = Path::new("assets/wasm/js/spar_wasm.js");
+    let wasm_core = Path::new("assets/wasm/js/spar_wasm.core.wasm");
+
+    // Rebuild whenever the build script or existing assets change.
+    println!("cargo:rerun-if-changed=../scripts/build-wasm.sh");
+    println!("cargo:rerun-if-changed=assets/wasm/js/spar_wasm.js");
+
+    if wasm_js.exists() && wasm_core.exists() {
+        return; // Assets already present, nothing to do.
+    }
+
+    // Locate the spar repository.
+    let spar_dir = std::env::var("SPAR_DIR").unwrap_or_else(|_| "../spar".to_string());
+    let spar_wasm_crate = Path::new(&spar_dir).join("crates/spar-wasm");
+    if !spar_wasm_crate.exists() {
+        println!(
+            "cargo:warning=WASM assets missing and spar repo not found at {spar_dir}. \
+             Set SPAR_DIR env var or run: ./scripts/build-wasm.sh /path/to/spar"
+        );
+        return;
+    }
+
+    // Run the build script from the workspace root.
+    println!("cargo:warning=Building spar WASM assets from {spar_dir}...");
+    let status = Command::new("bash")
+        .arg("../scripts/build-wasm.sh")
+        .arg(&spar_dir)
+        .status();
+
+    match status {
+        Ok(s) if s.success() => {
+            println!("cargo:warning=spar WASM assets built successfully.");
+        }
+        Ok(s) => {
+            println!(
+                "cargo:warning=WASM build script exited with {}. \
+                 Dashboard AADL rendering may not work.",
+                s
+            );
+        }
+        Err(e) => {
+            println!("cargo:warning=Failed to run WASM build script: {e}");
+        }
+    }
 }

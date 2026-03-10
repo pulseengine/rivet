@@ -2775,7 +2775,7 @@ dependencies = [
 [[package]]
 name = "spar-analysis"
 version = "0.1.0"
-source = "git+https://github.com/pulseengine/spar.git?rev=5073591#5073591164d83b9257aaa84b878e4c7a0f331fa8"
+source = "git+https://github.com/pulseengine/spar.git?rev=84a7363#84a73630986d194f548541fc86f6c98ef6d79de1"
 dependencies = [
  "la-arena",
  "rustc-hash 2.1.1",
@@ -2786,7 +2786,7 @@ dependencies = [
 [[package]]
 name = "spar-annex"
 version = "0.1.0"
-source = "git+https://github.com/pulseengine/spar.git?rev=5073591#5073591164d83b9257aaa84b878e4c7a0f331fa8"
+source = "git+https://github.com/pulseengine/spar.git?rev=84a7363#84a73630986d194f548541fc86f6c98ef6d79de1"
 dependencies = [
  "rowan",
  "spar-syntax",
@@ -2795,7 +2795,7 @@ dependencies = [
 [[package]]
 name = "spar-base-db"
 version = "0.1.0"
-source = "git+https://github.com/pulseengine/spar.git?rev=5073591#5073591164d83b9257aaa84b878e4c7a0f331fa8"
+source = "git+https://github.com/pulseengine/spar.git?rev=84a7363#84a73630986d194f548541fc86f6c98ef6d79de1"
 dependencies = [
  "rowan",
  "salsa",
@@ -2806,7 +2806,7 @@ dependencies = [
 [[package]]
 name = "spar-hir"
 version = "0.1.0"
-source = "git+https://github.com/pulseengine/spar.git?rev=5073591#5073591164d83b9257aaa84b878e4c7a0f331fa8"
+source = "git+https://github.com/pulseengine/spar.git?rev=84a7363#84a73630986d194f548541fc86f6c98ef6d79de1"
 dependencies = [
  "salsa",
  "serde",
@@ -2819,7 +2819,7 @@ dependencies = [
 [[package]]
 name = "spar-hir-def"
 version = "0.1.0"
-source = "git+https://github.com/pulseengine/spar.git?rev=5073591#5073591164d83b9257aaa84b878e4c7a0f331fa8"
+source = "git+https://github.com/pulseengine/spar.git?rev=84a7363#84a73630986d194f548541fc86f6c98ef6d79de1"
 dependencies = [
  "la-arena",
  "rowan",
@@ -2834,7 +2834,7 @@ dependencies = [
 [[package]]
 name = "spar-parser"
 version = "0.1.0"
-source = "git+https://github.com/pulseengine/spar.git?rev=5073591#5073591164d83b9257aaa84b878e4c7a0f331fa8"
+source = "git+https://github.com/pulseengine/spar.git?rev=84a7363#84a73630986d194f548541fc86f6c98ef6d79de1"
 dependencies = [
  "rowan",
 ]
@@ -2842,7 +2842,7 @@ dependencies = [
 [[package]]
 name = "spar-syntax"
 version = "0.1.0"
-source = "git+https://github.com/pulseengine/spar.git?rev=5073591#5073591164d83b9257aaa84b878e4c7a0f331fa8"
+source = "git+https://github.com/pulseengine/spar.git?rev=84a7363#84a73630986d194f548541fc86f6c98ef6d79de1"
 dependencies = [
  "rowan",
  "spar-parser",
