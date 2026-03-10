@@ -2381,6 +2381,7 @@ dependencies = [
  "serde_yaml",
  "spar-analysis",
  "spar-hir",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "urlencoding",
