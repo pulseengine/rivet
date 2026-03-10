@@ -14,6 +14,7 @@ path = "src/main.rs"
 [features]
 default = []
 wasm = ["rivet-core/wasm"]
+embed-wasm = []
 
 [dependencies]
 rivet-core = { path = "../rivet-core" }

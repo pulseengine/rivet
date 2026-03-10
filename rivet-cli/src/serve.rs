@@ -11,6 +11,16 @@ use petgraph::graph::{Graph, NodeIndex};
 use petgraph::visit::EdgeRef;
 use tokio::sync::RwLock;
 
+/// Embedded WASM/JS assets for single-binary distribution.
+/// Only available when built with `--features embed-wasm` and assets exist.
+#[cfg(feature = "embed-wasm")]
+mod embedded_wasm {
+    pub const SPAR_JS: &str = include_str!("../assets/wasm/js/spar_wasm.js");
+    pub const CORE_WASM: &[u8] = include_bytes!("../assets/wasm/js/spar_wasm.core.wasm");
+    pub const CORE2_WASM: &[u8] = include_bytes!("../assets/wasm/js/spar_wasm.core2.wasm");
+    pub const CORE3_WASM: &[u8] = include_bytes!("../assets/wasm/js/spar_wasm.core3.wasm");
+}
+
 use crate::{docs, schema_cmd};
 use etch::filter::ego_subgraph;
 use etch::layout::{self as pgv_layout, EdgeInfo, LayoutOptions, NodeInfo};
@@ -484,8 +494,6 @@ async fn source_raw(
 
 /// GET /wasm/{*path} — serve jco-transpiled WASM assets for browser-side rendering.
 async fn wasm_asset(Path(path): Path<String>) -> impl IntoResponse {
-    // Assets are in rivet-cli/assets/wasm/js/ relative to the binary,
-    // but we embed critical files at compile time for portability.
     let content_type = if path.ends_with(".js") {
         "application/javascript"
     } else if path.ends_with(".wasm") {
@@ -496,8 +504,31 @@ async fn wasm_asset(Path(path): Path<String>) -> impl IntoResponse {
         "application/octet-stream"
     };
 
-    // Try to load from the assets directory next to the binary, or from
-    // the workspace assets dir during development.
+    // Try embedded assets first (when built with embed-wasm feature).
+    #[cfg(feature = "embed-wasm")]
+    {
+        let bytes: Option<&[u8]> = match path.as_str() {
+            "spar_wasm.js" => Some(embedded_wasm::SPAR_JS.as_bytes()),
+            "spar_wasm.core.wasm" => Some(embedded_wasm::CORE_WASM),
+            "spar_wasm.core2.wasm" => Some(embedded_wasm::CORE2_WASM),
+            "spar_wasm.core3.wasm" => Some(embedded_wasm::CORE3_WASM),
+            _ => None,
+        };
+        if let Some(data) = bytes {
+            return (
+                axum::http::StatusCode::OK,
+                [
+                    (axum::http::header::CONTENT_TYPE, content_type),
+                    (axum::http::header::CACHE_CONTROL, "public, max-age=86400"),
+                ],
+                data.to_vec(),
+            )
+                .into_response();
+        }
+    }
+
+    // Fallback to filesystem (development mode).
+    // Try the workspace assets dir first, then next to the binary.
     let candidates = [
         std::env::current_dir()
             .unwrap_or_default()
