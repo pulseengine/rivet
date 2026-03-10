@@ -102,7 +102,7 @@ fn default_skip_trailer() -> String {
 }
 
 /// Configuration for a single external project dependency.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExternalProject {
     /// Git clone URL (mutually exclusive with `path`).
     #[serde(default)]
