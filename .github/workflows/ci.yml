@@ -161,7 +161,7 @@ jobs:
         with:
           tool: cargo-mutants
       - name: Run cargo-mutants on rivet-core
-        run: cargo mutants -p rivet-core --lib --timeout 120 --jobs 4 --output mutants-out
+        run: cargo mutants -p rivet-core --timeout 120 --jobs 4 --output mutants-out -- --lib
       - name: Upload mutants report
         if: always()
         uses: actions/upload-artifact@v4
