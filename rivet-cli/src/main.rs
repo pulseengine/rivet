@@ -848,6 +848,7 @@ fn cmd_validate(cli: &Cli, format: &str) -> Result<bool> {
     let mut cross_repo_broken: Vec<rivet_core::externals::BrokenRef> = Vec::new();
     let mut backlinks: Vec<rivet_core::externals::CrossRepoBacklink> = Vec::new();
     let mut circular_deps: Vec<rivet_core::externals::CircularDependency> = Vec::new();
+    let mut version_conflicts: Vec<rivet_core::externals::VersionConflict> = Vec::new();
     if let Some(ref externals) = config.externals {
         if !externals.is_empty() {
             match rivet_core::externals::load_all_externals(externals, &cli.project) {
@@ -888,6 +889,13 @@ fn cmd_validate(cli: &Cli, format: &str) -> Result<bool> {
 
             // Detect circular dependencies in the externals graph
             circular_deps = rivet_core::externals::detect_circular_deps(
+                externals,
+                &config.project.name,
+                &cli.project,
+            );
+
+            // Detect version conflicts (same repo at different refs)
+            version_conflicts = rivet_core::externals::detect_version_conflicts(
                 externals,
                 &config.project.name,
                 &cli.project,
@@ -947,6 +955,20 @@ fn cmd_validate(cli: &Cli, format: &str) -> Result<bool> {
                 })
             })
             .collect();
+        let conflicts_json: Vec<serde_json::Value> = version_conflicts
+            .iter()
+            .map(|c| {
+                serde_json::json!({
+                    "repo_identifier": c.repo_identifier,
+                    "versions": c.versions.iter().map(|v| {
+                        serde_json::json!({
+                            "declared_by": v.declared_by,
+                            "version": v.version,
+                        })
+                    }).collect::<Vec<_>>(),
+                })
+            })
+            .collect();
         let output = serde_json::json!({
             "command": "validate",
             "errors": errors,
@@ -955,10 +977,12 @@ fn cmd_validate(cli: &Cli, format: &str) -> Result<bool> {
             "cross_repo_broken": cross_errors,
             "backlinks": backlinks.len(),
             "circular_deps": circular_deps.len(),
+            "version_conflicts": version_conflicts.len(),
             "diagnostics": diag_json,
             "broken_cross_refs": cross_json,
             "cross_repo_backlinks": backlinks_json,
             "circular_dependencies": cycles_json,
+            "version_conflict_details": conflicts_json,
         });
         println!("{}", serde_json::to_string_pretty(&output).unwrap());
     } else {
@@ -1002,6 +1026,20 @@ fn cmd_validate(cli: &Cli, format: &str) -> Result<bool> {
             );
             for cycle in &circular_deps {
                 println!("  {}", cycle.chain.join(" -> "));
+            }
+        }
+
+        if !version_conflicts.is_empty() {
+            println!();
+            println!(
+                "warning: {} version conflict(s) detected in externals:",
+                version_conflicts.len()
+            );
+            for c in &version_conflicts {
+                eprintln!("  {} referenced at different versions:", c.repo_identifier);
+                for entry in &c.versions {
+                    eprintln!("    {} declares ref: {}", entry.declared_by, entry.version);
+                }
             }
         }
 

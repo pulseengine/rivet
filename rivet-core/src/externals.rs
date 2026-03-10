@@ -366,6 +366,99 @@ pub fn read_lockfile(project_dir: &Path) -> Result<Option<Lockfile>, crate::erro
     Ok(Some(lock))
 }
 
+/// A detected version conflict: same repo referenced at different versions.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VersionConflict {
+    /// The git URL or path that conflicts.
+    pub repo_identifier: String,
+    /// The different refs/versions found, with their source chain.
+    pub versions: Vec<ConflictEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConflictEntry {
+    /// The prefix that declares this dependency.
+    pub declared_by: String,
+    /// The git ref or "local path" for path externals.
+    pub version: String,
+}
+
+/// Check for version conflicts across all externals (direct + transitive).
+///
+/// Groups externals by their git URL. If the same URL appears with different
+/// refs, reports a conflict. Direct dependencies take priority over transitive.
+pub fn detect_version_conflicts(
+    externals: &BTreeMap<String, ExternalProject>,
+    project_name: &str,
+    project_dir: &Path,
+) -> Vec<VersionConflict> {
+    // Build a map: git_url -> Vec<(declared_by, ref)>
+    let mut by_url: BTreeMap<String, Vec<ConflictEntry>> = BTreeMap::new();
+
+    // Add direct dependencies
+    for (name, ext) in externals {
+        let repo_id = ext
+            .git
+            .clone()
+            .unwrap_or_else(|| ext.path.clone().unwrap_or_else(|| name.clone()));
+        let version = ext.git_ref.clone().unwrap_or_else(|| "HEAD".into());
+        by_url.entry(repo_id).or_default().push(ConflictEntry {
+            declared_by: project_name.to_string(),
+            version,
+        });
+    }
+
+    // Add transitive dependencies (from each external's own rivet.yaml)
+    let cache_dir = project_dir.join(".rivet/repos");
+    for ext in externals.values() {
+        let ext_dir = if let Some(ref local_path) = ext.path {
+            let p = if Path::new(local_path).is_relative() {
+                project_dir.join(local_path)
+            } else {
+                PathBuf::from(local_path)
+            };
+            p.canonicalize().unwrap_or(p)
+        } else {
+            cache_dir.join(&ext.prefix)
+        };
+        let config_path = ext_dir.join("rivet.yaml");
+        if let Ok(ext_config) = crate::load_project_config(&config_path) {
+            if let Some(ref ext_externals) = ext_config.externals {
+                for (ext_name, ext_ext) in ext_externals {
+                    let repo_id = ext_ext
+                        .git
+                        .clone()
+                        .unwrap_or_else(|| ext_ext.path.clone().unwrap_or_else(|| ext_name.clone()));
+                    let version = ext_ext.git_ref.clone().unwrap_or_else(|| "HEAD".into());
+                    by_url.entry(repo_id).or_default().push(ConflictEntry {
+                        declared_by: ext.prefix.clone(),
+                        version,
+                    });
+                }
+            }
+        }
+    }
+
+    // Find conflicts: same repo with different versions
+    let mut conflicts = Vec::new();
+    for (repo_id, entries) in &by_url {
+        if entries.len() < 2 {
+            continue;
+        }
+        // Check if versions actually differ
+        let first_version = &entries[0].version;
+        let has_conflict = entries.iter().any(|e| &e.version != first_version);
+        if has_conflict {
+            conflicts.push(VersionConflict {
+                repo_identifier: repo_id.clone(),
+                versions: entries.clone(),
+            });
+        }
+    }
+
+    conflicts
+}
+
 /// Recursively copy a directory (used on non-unix platforms instead of symlinks).
 #[cfg(not(unix))]
 fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), crate::error::Error> {
@@ -970,5 +1063,104 @@ mod tests {
         };
         assert_eq!(cycle.chain.len(), 4);
         assert_eq!(cycle.chain.first(), cycle.chain.last());
+    }
+
+    #[test]
+    fn detect_version_conflict_same_url_different_ref() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // Create an external project that also depends on "shared" at a different ref
+        let ext_dir = dir.path().join("ext-a");
+        std::fs::create_dir_all(&ext_dir).unwrap();
+        std::fs::write(
+            ext_dir.join("rivet.yaml"),
+            r#"project:
+  name: ext-a
+  version: "0.1.0"
+  schemas: [common]
+sources: []
+externals:
+  shared:
+    git: https://github.com/org/shared
+    ref: v2.0
+    prefix: shared
+"#,
+        )
+        .unwrap();
+
+        // Direct externals: shared@v1.0 and ext-a (which depends on shared@v2.0)
+        let mut externals = BTreeMap::new();
+        externals.insert(
+            "shared".into(),
+            crate::model::ExternalProject {
+                git: Some("https://github.com/org/shared".into()),
+                path: None,
+                git_ref: Some("v1.0".into()),
+                prefix: "shared".into(),
+            },
+        );
+        externals.insert(
+            "ext-a".into(),
+            crate::model::ExternalProject {
+                git: None,
+                path: Some(ext_dir.to_str().unwrap().into()),
+                git_ref: None,
+                prefix: "ext-a".into(),
+            },
+        );
+
+        let conflicts = detect_version_conflicts(&externals, "myproject", dir.path());
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(
+            conflicts[0].repo_identifier,
+            "https://github.com/org/shared"
+        );
+        assert_eq!(conflicts[0].versions.len(), 2);
+    }
+
+    #[test]
+    fn no_conflict_when_same_version() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let ext_dir = dir.path().join("ext-a");
+        std::fs::create_dir_all(&ext_dir).unwrap();
+        std::fs::write(
+            ext_dir.join("rivet.yaml"),
+            r#"project:
+  name: ext-a
+  version: "0.1.0"
+  schemas: [common]
+sources: []
+externals:
+  shared:
+    git: https://github.com/org/shared
+    ref: v1.0
+    prefix: shared
+"#,
+        )
+        .unwrap();
+
+        let mut externals = BTreeMap::new();
+        externals.insert(
+            "shared".into(),
+            crate::model::ExternalProject {
+                git: Some("https://github.com/org/shared".into()),
+                path: None,
+                git_ref: Some("v1.0".into()),
+                prefix: "shared".into(),
+            },
+        );
+        externals.insert(
+            "ext-a".into(),
+            crate::model::ExternalProject {
+                git: None,
+                path: Some(ext_dir.to_str().unwrap().into()),
+                git_ref: None,
+                prefix: "ext-a".into(),
+            },
+        );
+
+        let conflicts = detect_version_conflicts(&externals, "myproject", dir.path());
+        assert!(conflicts.is_empty());
     }
 }
