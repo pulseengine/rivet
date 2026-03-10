@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use rivet_core::commits::{analyze_commits, is_exempt, ParsedCommit};
+use rivet_core::commits::{ParsedCommit, analyze_commits, is_exempt};
 
 /// Helper to build a `ParsedCommit` with sensible defaults.
 fn make_commit(
@@ -95,8 +95,7 @@ fn full_analysis_reports() {
     // "aaa111" is fully linked; "bbb222" has broken refs but is still placed
     // in the linked vec (with broken refs recorded separately).
     assert_eq!(analysis.linked.len(), 2, "expected 2 linked commits");
-    let linked_hashes: BTreeSet<&str> =
-        analysis.linked.iter().map(|c| c.hash.as_str()).collect();
+    let linked_hashes: BTreeSet<&str> = analysis.linked.iter().map(|c| c.hash.as_str()).collect();
     assert!(linked_hashes.contains("aaa111"));
     assert!(linked_hashes.contains("bbb222"));
 
@@ -147,8 +146,7 @@ fn trace_exempt_artifacts_excluded_from_unimplemented() {
 
     let exempt_types: Vec<String> = vec![];
     let traced_paths: Vec<String> = vec![]; // empty = all paths traced
-    let trace_exempt_artifacts: Vec<String> =
-        vec!["REQ-002".into(), "FEAT-010".into()];
+    let trace_exempt_artifacts: Vec<String> = vec!["REQ-002".into(), "FEAT-010".into()];
     let trailer_map: BTreeMap<String, String> = BTreeMap::new();
 
     // Single linked commit covering REQ-001.

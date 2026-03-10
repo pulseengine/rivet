@@ -351,7 +351,10 @@ fn run(cli: Cli) -> Result<bool> {
     }
 
     match &cli.command {
-        Command::Init { .. } | Command::Docs { .. } | Command::Context | Command::CommitMsgCheck { .. } => unreachable!(),
+        Command::Init { .. }
+        | Command::Docs { .. }
+        | Command::Context
+        | Command::CommitMsgCheck { .. } => unreachable!(),
         Command::Stpa { path, schema } => cmd_stpa(path, schema.as_deref(), &cli),
         Command::Validate { format } => cmd_validate(&cli, format),
         Command::List {
@@ -373,9 +376,12 @@ fn run(cli: Cli) -> Result<bool> {
         }
         Command::Export { format, output } => cmd_export(&cli, format, output.as_deref()),
         Command::Schema { action } => cmd_schema(&cli, action),
-        Command::Commits { since, range, format, strict } => {
-            cmd_commits(&cli, since.as_deref(), range.as_deref(), format, *strict)
-        }
+        Command::Commits {
+            since,
+            range,
+            format,
+            strict,
+        } => cmd_commits(&cli, since.as_deref(), range.as_deref(), format, *strict),
         Command::Serve { port } => {
             let port = *port;
             let (
@@ -1639,7 +1645,10 @@ fn cmd_commit_msg_check(cli: &Cli, file: &std::path::Path) -> Result<bool> {
     }
 
     // Check skip trailer
-    if message.lines().any(|line| line.trim() == commits_cfg.skip_trailer) {
+    if message
+        .lines()
+        .any(|line| line.trim() == commits_cfg.skip_trailer)
+    {
         log::debug!("skip trailer found");
         return Ok(true);
     }
@@ -1689,7 +1698,10 @@ fn cmd_commit_msg_check(cli: &Cli, file: &std::path::Path) -> Result<bool> {
                 }
             }
             Err(e) => {
-                log::warn!("could not load source '{}': {e}; skipping ID validation", source.path);
+                log::warn!(
+                    "could not load source '{}': {e}; skipping ID validation",
+                    source.path
+                );
                 return Ok(true);
             }
         }
@@ -1779,8 +1791,7 @@ fn cmd_commits(
     };
 
     // Resolve project path for git
-    let project_path =
-        std::fs::canonicalize(&cli.project).unwrap_or_else(|_| cli.project.clone());
+    let project_path = std::fs::canonicalize(&cli.project).unwrap_or_else(|_| cli.project.clone());
 
     let trailer_map: &BTreeMap<String, String> = &commits_cfg.trailers;
 
@@ -1806,17 +1817,12 @@ fn cmd_commits(
     }
 
     // Text output
-    let total = analysis.linked.len()
-        + analysis.orphans.len()
-        + analysis.exempt.len();
+    let total = analysis.linked.len() + analysis.orphans.len() + analysis.exempt.len();
 
     println!("Commit traceability analysis");
     println!("============================");
     println!();
-    println!(
-        "  Linked:       {:>4}",
-        analysis.linked.len()
-    );
+    println!("  Linked:       {:>4}", analysis.linked.len());
     println!("  Orphan:       {:>4}", analysis.orphans.len());
     println!("  Exempt:       {:>4}", analysis.exempt.len());
     println!("  Broken refs:  {:>4}", analysis.broken_refs.len());
@@ -1870,9 +1876,7 @@ fn cmd_commits(
             100.0
         };
         println!();
-        println!(
-            "Artifact coverage: {covered}/{trackable} ({pct:.1}%)"
-        );
+        println!("Artifact coverage: {covered}/{trackable} ({pct:.1}%)");
     }
 
     // Exit code
@@ -1882,10 +1886,7 @@ fn cmd_commits(
     Ok(!fail)
 }
 
-fn cmd_commits_json(
-    analysis: &rivet_core::commits::CommitAnalysis,
-    strict: bool,
-) -> Result<bool> {
+fn cmd_commits_json(analysis: &rivet_core::commits::CommitAnalysis, strict: bool) -> Result<bool> {
     let json = serde_json::json!({
         "summary": {
             "linked": analysis.linked.len(),
@@ -1942,9 +1943,7 @@ fn levenshtein(a: &str, b: &str) -> usize {
         curr[0] = i + 1;
         for (j, cb) in b.chars().enumerate() {
             let cost = if ca == cb { 0 } else { 1 };
-            curr[j + 1] = (prev[j] + cost)
-                .min(prev[j + 1] + 1)
-                .min(curr[j] + 1);
+            curr[j + 1] = (prev[j] + cost).min(prev[j + 1] + 1).min(curr[j] + 1);
         }
         std::mem::swap(&mut prev, &mut curr);
     }

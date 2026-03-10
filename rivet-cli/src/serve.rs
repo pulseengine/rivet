@@ -338,10 +338,7 @@ pub async fn run(
         .route("/docs-asset/{*path}", get(docs_asset))
         .route("/reload", post(reload_handler))
         .with_state(state.clone())
-        .layer(axum::middleware::from_fn_with_state(
-            state,
-            wrap_full_page,
-        ));
+        .layer(axum::middleware::from_fn_with_state(state, wrap_full_page));
 
     let addr = format!("0.0.0.0:{port}");
     eprintln!("rivet dashboard listening on http://localhost:{port}");
@@ -591,7 +588,10 @@ async fn reload_handler(
             eprintln!("reload error: {e:#}");
             (
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                [("HX-Location", "{\"path\":\"/\",\"target\":\"#content\"}".to_owned())],
+                [(
+                    "HX-Location",
+                    "{\"path\":\"/\",\"target\":\"#content\"}".to_owned(),
+                )],
                 format!("reload failed: {e}"),
             )
         }
@@ -619,19 +619,16 @@ async fn docs_asset(
         let file_path = dir.join(&path);
         if file_path.is_file() {
             if let Ok(bytes) = std::fs::read(&file_path) {
-                let content_type = match file_path
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("")
-                {
-                    "png" => "image/png",
-                    "jpg" | "jpeg" => "image/jpeg",
-                    "gif" => "image/gif",
-                    "svg" => "image/svg+xml",
-                    "webp" => "image/webp",
-                    "pdf" => "application/pdf",
-                    _ => "application/octet-stream",
-                };
+                let content_type =
+                    match file_path.extension().and_then(|e| e.to_str()).unwrap_or("") {
+                        "png" => "image/png",
+                        "jpg" | "jpeg" => "image/jpeg",
+                        "gif" => "image/gif",
+                        "svg" => "image/svg+xml",
+                        "webp" => "image/webp",
+                        "pdf" => "application/pdf",
+                        _ => "application/octet-stream",
+                    };
                 return (
                     axum::http::StatusCode::OK,
                     [("Content-Type", content_type)],
@@ -5437,7 +5434,7 @@ async fn source_file_view(
     } else if is_shell {
         "bash"
     } else if is_aadl {
-        "yaml"  // AADL has similar key: value structure
+        "yaml" // AADL has similar key: value structure
     } else {
         ""
     };
@@ -5770,13 +5767,19 @@ fn highlight_rust_line(line: &str) -> String {
                 i += 1;
             }
             let s: String = chars[start..i].iter().collect();
-            out.push_str(&format!("<span class=\"hl-str\">{}</span>", html_escape(&s)));
+            out.push_str(&format!(
+                "<span class=\"hl-str\">{}</span>",
+                html_escape(&s)
+            ));
             continue;
         }
         // Char literals
         if ch == '\'' && i + 2 < len && chars[i + 2] == '\'' {
             let s: String = chars[i..i + 3].iter().collect();
-            out.push_str(&format!("<span class=\"hl-str\">{}</span>", html_escape(&s)));
+            out.push_str(&format!(
+                "<span class=\"hl-str\">{}</span>",
+                html_escape(&s)
+            ));
             i += 3;
             continue;
         }
@@ -5792,11 +5795,16 @@ fn highlight_rust_line(line: &str) -> String {
         // Numbers
         if ch.is_ascii_digit() && (i == 0 || !chars[i - 1].is_alphanumeric()) {
             let start = i;
-            while i < len && (chars[i].is_ascii_alphanumeric() || chars[i] == '_' || chars[i] == '.') {
+            while i < len
+                && (chars[i].is_ascii_alphanumeric() || chars[i] == '_' || chars[i] == '.')
+            {
                 i += 1;
             }
             let s: String = chars[start..i].iter().collect();
-            out.push_str(&format!("<span class=\"hl-num\">{}</span>", html_escape(&s)));
+            out.push_str(&format!(
+                "<span class=\"hl-num\">{}</span>",
+                html_escape(&s)
+            ));
             continue;
         }
         // Identifiers and keywords
@@ -5807,7 +5815,13 @@ fn highlight_rust_line(line: &str) -> String {
             }
             let word: String = chars[start..i].iter().collect();
             // Check for macro invocation: word!
-            if i < len && chars[i] == '!' && !matches!(word.as_str(), "if" | "else" | "return" | "break" | "continue") {
+            if i < len
+                && chars[i] == '!'
+                && !matches!(
+                    word.as_str(),
+                    "if" | "else" | "return" | "break" | "continue"
+                )
+            {
                 out.push_str(&format!(
                     "<span class=\"hl-macro\">{}!</span>",
                     html_escape(&word)
@@ -5816,12 +5830,12 @@ fn highlight_rust_line(line: &str) -> String {
                 continue;
             }
             match word.as_str() {
-                "fn" | "let" | "mut" | "pub" | "use" | "mod" | "struct" | "enum"
-                | "impl" | "trait" | "const" | "static" | "type" | "where" | "match"
-                | "if" | "else" | "for" | "while" | "loop" | "return" | "break"
-                | "continue" | "async" | "await" | "move" | "ref" | "self" | "super"
-                | "crate" | "unsafe" | "extern" | "dyn" | "as" | "in" | "true"
-                | "false" | "Self" | "None" | "Some" | "Ok" | "Err" => {
+                "fn" | "let" | "mut" | "pub" | "use" | "mod" | "struct" | "enum" | "impl"
+                | "trait" | "const" | "static" | "type" | "where" | "match" | "if" | "else"
+                | "for" | "while" | "loop" | "return" | "break" | "continue" | "async"
+                | "await" | "move" | "ref" | "self" | "super" | "crate" | "unsafe" | "extern"
+                | "dyn" | "as" | "in" | "true" | "false" | "Self" | "None" | "Some" | "Ok"
+                | "Err" => {
                     out.push_str(&format!(
                         "<span class=\"hl-kw\">{}</span>",
                         html_escape(&word)

@@ -184,7 +184,11 @@ pub struct DatatypeDefinitionEnumeration {
     )]
     pub long_name: Option<String>,
 
-    #[serde(rename = "SPECIFIED-VALUES", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "SPECIFIED-VALUES",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub specified_values: Option<SpecifiedValues>,
 }
 
@@ -741,10 +745,7 @@ pub fn parse_reqif(xml: &str, type_map: &HashMap<String, String>) -> Result<Vec<
                                 .collect();
                         }
                         _ => {
-                            fields.insert(
-                                attr_name.to_string(),
-                                serde_yaml::Value::String(value),
-                            );
+                            fields.insert(attr_name.to_string(), serde_yaml::Value::String(value));
                         }
                     }
                 }
@@ -1222,10 +1223,7 @@ mod tests {
         assert_eq!(arts[0].status, Some("Draft".into()));
         // "component" field should be present despite duplicate ATTR-STATUS
         let comp = arts[0].fields.get("component");
-        assert_eq!(
-            comp,
-            Some(&serde_yaml::Value::String("Threads".into()))
-        );
+        assert_eq!(comp, Some(&serde_yaml::Value::String("Threads".into())));
     }
 
     #[test]

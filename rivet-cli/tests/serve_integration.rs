@@ -62,17 +62,10 @@ fn fetch(port: u16, path: &str, htmx: bool) -> (u16, String, Vec<(String, String
 
     // Use a minimal HTTP/1.1 request via TcpStream
     use std::io::{Read, Write};
-    let mut stream =
-        std::net::TcpStream::connect(format!("127.0.0.1:{port}")).expect("connect");
-    stream
-        .set_read_timeout(Some(Duration::from_secs(5)))
-        .ok();
+    let mut stream = std::net::TcpStream::connect(format!("127.0.0.1:{port}")).expect("connect");
+    stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
 
-    let hx_header = if htmx {
-        "HX-Request: true\r\n"
-    } else {
-        ""
-    };
+    let hx_header = if htmx { "HX-Request: true\r\n" } else { "" };
     let request = format!(
         "GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n{hx_header}Connection: close\r\n\r\n"
     );
@@ -162,10 +155,7 @@ fn server_pages_push_url() {
 
     for page in &pages {
         let (status, body, _headers) = fetch(port, page, true);
-        assert!(
-            status == 200,
-            "GET {page} returned {status}, expected 200"
-        );
+        assert!(status == 200, "GET {page} returned {status}, expected 200");
         assert_links_push_url(&body, page);
     }
 
@@ -208,8 +198,7 @@ fn reload_returns_hx_location() {
 
     // Simulate reload with HX-Current-URL header
     use std::io::{Read, Write};
-    let mut stream =
-        std::net::TcpStream::connect(format!("127.0.0.1:{port}")).expect("connect");
+    let mut stream = std::net::TcpStream::connect(format!("127.0.0.1:{port}")).expect("connect");
     stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
 
     let request = format!(

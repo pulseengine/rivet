@@ -123,7 +123,10 @@ pub fn parse_trailers(message: &str) -> BTreeMap<String, Vec<String>> {
                 && key.starts_with(|c: char| c.is_ascii_uppercase())
                 && !value.is_empty()
             {
-                result.entry(key.to_string()).or_default().push(value.to_string());
+                result
+                    .entry(key.to_string())
+                    .or_default()
+                    .push(value.to_string());
             }
         }
     }
@@ -180,7 +183,10 @@ pub fn parse_commit_message(
             for value in values {
                 let ids = extract_artifact_ids(value);
                 if !ids.is_empty() {
-                    artifact_refs.entry(link_type.clone()).or_default().extend(ids);
+                    artifact_refs
+                        .entry(link_type.clone())
+                        .or_default()
+                        .extend(ids);
                 }
             }
         }
@@ -415,7 +421,8 @@ pub fn analyze_commits(
     }
 
     // Compute unimplemented: known IDs minus covered, minus trace-exempt artifacts
-    let trace_exempt_set: HashSet<&str> = trace_exempt_artifacts.iter().map(|s| s.as_str()).collect();
+    let trace_exempt_set: HashSet<&str> =
+        trace_exempt_artifacts.iter().map(|s| s.as_str()).collect();
     let unimplemented: BTreeSet<String> = known_ids
         .iter()
         .filter(|id| !artifact_coverage.contains(*id) && !trace_exempt_set.contains(id.as_str()))
@@ -687,11 +694,10 @@ mod tests {
 
     #[test]
     fn analyze_full_scenario() {
-        let known_ids: HashSet<String> =
-            ["REQ-001", "REQ-002", "FEAT-010"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect();
+        let known_ids: HashSet<String> = ["REQ-001", "REQ-002", "FEAT-010"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         let exempt_types = vec!["chore".into(), "ci".into()];
         let traced_paths = vec!["src/".into()];
         let trace_exempt_artifacts = vec!["FEAT-010".into()];

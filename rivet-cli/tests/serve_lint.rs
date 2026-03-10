@@ -21,8 +21,7 @@ fn serve_rs_path() -> PathBuf {
 /// - Lines that already contain `hx-push-url`
 #[test]
 fn all_content_links_push_url() {
-    let source = std::fs::read_to_string(serve_rs_path())
-        .expect("failed to read serve.rs");
+    let source = std::fs::read_to_string(serve_rs_path()).expect("failed to read serve.rs");
 
     let mut violations = Vec::new();
 
@@ -36,8 +35,7 @@ fn all_content_links_push_url() {
 
         // Only check lines that have both hx-get and hx-target="#content"
         // (with escaped quotes as they appear in Rust string literals)
-        let has_hx_get = line.contains("hx-get=")
-            || line.contains("hx-get =");
+        let has_hx_get = line.contains("hx-get=") || line.contains("hx-get =");
         let has_content_target = line.contains(r##"hx-target="#content""##)
             || line.contains(r##"hx-target=\"#content\""##);
 
@@ -72,8 +70,7 @@ fn all_content_links_push_url() {
 /// the full page layout with content already rendered (no redirect needed).
 #[test]
 fn wrap_middleware_exists() {
-    let source = std::fs::read_to_string(serve_rs_path())
-        .expect("failed to read serve.rs");
+    let source = std::fs::read_to_string(serve_rs_path()).expect("failed to read serve.rs");
 
     assert!(
         source.contains("hx-request") || source.contains("HX-Request"),
@@ -98,8 +95,7 @@ fn wrap_middleware_exists() {
 /// so reloading stays on the current page instead of navigating to root.
 #[test]
 fn reload_uses_hx_location() {
-    let source = std::fs::read_to_string(serve_rs_path())
-        .expect("failed to read serve.rs");
+    let source = std::fs::read_to_string(serve_rs_path()).expect("failed to read serve.rs");
 
     // The reload handler should reference HX-Location for in-place reload
     assert!(

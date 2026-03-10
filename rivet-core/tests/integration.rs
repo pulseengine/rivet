@@ -1191,19 +1191,34 @@ fn strictdoc_reqif_import() {
     let xml = std::fs::read_to_string(reqif_path).unwrap();
     let arts = rivet_core::reqif::parse_reqif(&xml, &std::collections::HashMap::new()).unwrap();
     // StrictDoc exports TEXT, SECTION, and REQUIREMENT types
-    let reqs: Vec<_> = arts.iter().filter(|a| a.artifact_type == "requirement").collect();
-    println!("Total artifacts: {}, Requirements: {}", arts.len(), reqs.len());
+    let reqs: Vec<_> = arts
+        .iter()
+        .filter(|a| a.artifact_type == "requirement")
+        .collect();
+    println!(
+        "Total artifacts: {}, Requirements: {}",
+        arts.len(),
+        reqs.len()
+    );
     for r in &reqs[..5.min(reqs.len())] {
         println!("  {} — {}", r.id, r.title);
     }
     // Should have human-readable IDs (ZEP-SRS-*), not UUIDs
-    assert!(reqs.iter().any(|r| r.id.starts_with("ZEP-")),
+    assert!(
+        reqs.iter().any(|r| r.id.starts_with("ZEP-")),
         "Expected ZEP-* IDs from ReqIF.ForeignID, got: {:?}",
-        reqs.first().map(|r| &r.id));
+        reqs.first().map(|r| &r.id)
+    );
     // Should have titles
-    assert!(reqs.iter().all(|r| !r.title.is_empty()),
-        "All requirements should have titles from ReqIF.Name");
+    assert!(
+        reqs.iter().all(|r| !r.title.is_empty()),
+        "All requirements should have titles from ReqIF.Name"
+    );
     // Should have parent links
     let with_links: Vec<_> = reqs.iter().filter(|r| !r.links.is_empty()).collect();
-    println!("Requirements with parent links: {}/{}", with_links.len(), reqs.len());
+    println!(
+        "Requirements with parent links: {}/{}",
+        with_links.len(),
+        reqs.len()
+    );
 }
