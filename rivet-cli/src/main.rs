@@ -840,6 +840,48 @@ fn cmd_validate(cli: &Cli, format: &str) -> Result<bool> {
     let mut diagnostics = validate::validate(&store, &schema, &graph);
     diagnostics.extend(validate::validate_documents(&doc_store, &store));
 
+    // Cross-repo link validation
+    let config_path = cli.project.join("rivet.yaml");
+    let config = rivet_core::load_project_config(&config_path)
+        .with_context(|| format!("loading {}", config_path.display()))?;
+
+    let mut cross_repo_broken: Vec<rivet_core::externals::BrokenRef> = Vec::new();
+    if let Some(ref externals) = config.externals {
+        if !externals.is_empty() {
+            match rivet_core::externals::load_all_externals(externals, &cli.project) {
+                Ok(resolved) => {
+                    // Build external ID sets
+                    let mut external_ids: std::collections::BTreeMap<
+                        String,
+                        std::collections::HashSet<String>,
+                    > = std::collections::BTreeMap::new();
+                    for ext in &resolved {
+                        let ids: std::collections::HashSet<String> =
+                            ext.artifacts.iter().map(|a| a.id.clone()).collect();
+                        external_ids.insert(ext.prefix.clone(), ids);
+                    }
+
+                    // Collect local IDs and all link targets
+                    let local_ids: std::collections::HashSet<String> =
+                        store.iter().map(|a| a.id.clone()).collect();
+                    let all_refs: Vec<&str> = store
+                        .iter()
+                        .flat_map(|a| a.links.iter().map(|l| l.target.as_str()))
+                        .collect();
+
+                    cross_repo_broken = rivet_core::externals::validate_refs(
+                        &all_refs,
+                        &local_ids,
+                        &external_ids,
+                    );
+                }
+                Err(e) => {
+                    eprintln!("  warning: could not load externals for cross-repo validation: {e}");
+                }
+            }
+        }
+    }
+
     let errors = diagnostics
         .iter()
         .filter(|d| d.severity == Severity::Error)
@@ -852,6 +894,7 @@ fn cmd_validate(cli: &Cli, format: &str) -> Result<bool> {
         .iter()
         .filter(|d| d.severity == Severity::Info)
         .count();
+    let cross_errors = cross_repo_broken.len();
 
     if format == "json" {
         let diag_json: Vec<serde_json::Value> = diagnostics
@@ -864,12 +907,23 @@ fn cmd_validate(cli: &Cli, format: &str) -> Result<bool> {
                 })
             })
             .collect();
+        let cross_json: Vec<serde_json::Value> = cross_repo_broken
+            .iter()
+            .map(|b| {
+                serde_json::json!({
+                    "reference": b.reference,
+                    "reason": format!("{:?}", b.reason),
+                })
+            })
+            .collect();
         let output = serde_json::json!({
             "command": "validate",
             "errors": errors,
             "warnings": warnings,
             "infos": infos,
+            "cross_repo_broken": cross_errors,
             "diagnostics": diag_json,
+            "broken_cross_refs": cross_json,
         });
         println!("{}", serde_json::to_string_pretty(&output).unwrap());
     } else {
@@ -883,15 +937,27 @@ fn cmd_validate(cli: &Cli, format: &str) -> Result<bool> {
 
         print_diagnostics(&diagnostics);
 
+        if !cross_repo_broken.is_empty() {
+            println!();
+            println!("Cross-repo link issues:");
+            for b in &cross_repo_broken {
+                eprintln!("  broken cross-ref: {} — {:?}", b.reference, b.reason);
+            }
+        }
+
         println!();
-        if errors > 0 {
-            println!("Result: FAIL ({} errors, {} warnings)", errors, warnings);
+        let total_errors = errors + cross_errors;
+        if total_errors > 0 {
+            println!(
+                "Result: FAIL ({} errors, {} warnings, {} broken cross-refs)",
+                errors, warnings, cross_errors
+            );
         } else {
             println!("Result: PASS ({} warnings)", warnings);
         }
     }
 
-    Ok(errors == 0)
+    Ok(errors == 0 && cross_errors == 0)
 }
 
 /// List artifacts.
