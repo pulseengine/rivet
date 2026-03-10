@@ -1,7 +1,10 @@
 // rivet-core/src/externals.rs
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+use serde::{Deserialize, Serialize};
 
 use crate::model::ExternalProject;
 
@@ -140,7 +143,7 @@ pub fn sync_external(
 
 /// Sync all externals declared in the project config.
 pub fn sync_all(
-    externals: &std::collections::BTreeMap<String, ExternalProject>,
+    externals: &BTreeMap<String, ExternalProject>,
     project_dir: &Path,
 ) -> Result<Vec<(String, PathBuf)>, crate::error::Error> {
     let cache_dir = project_dir.join(".rivet/repos");
@@ -206,12 +209,12 @@ pub struct ResolvedExternal {
 
 /// Load all external projects from cache and return their artifacts.
 pub fn load_all_externals(
-    externals: &std::collections::BTreeMap<String, ExternalProject>,
+    externals: &BTreeMap<String, ExternalProject>,
     project_dir: &Path,
 ) -> Result<Vec<ResolvedExternal>, crate::error::Error> {
     let cache_dir = project_dir.join(".rivet/repos");
     let mut resolved = Vec::new();
-    for (_name, ext) in externals {
+    for ext in externals.values() {
         let ext_dir = if let Some(ref local_path) = ext.path {
             let p = if Path::new(local_path).is_relative() {
                 project_dir.join(local_path)
@@ -252,7 +255,7 @@ pub enum BrokenRefReason {
 pub fn validate_refs(
     refs: &[&str],
     local_ids: &std::collections::HashSet<String>,
-    external_ids: &std::collections::BTreeMap<String, std::collections::HashSet<String>>,
+    external_ids: &BTreeMap<String, std::collections::HashSet<String>>,
 ) -> Vec<BrokenRef> {
     let mut broken = Vec::new();
     for r in refs {
@@ -283,6 +286,84 @@ pub fn validate_refs(
         }
     }
     broken
+}
+
+/// A lockfile pinning externals to exact commits.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Lockfile {
+    pub pins: BTreeMap<String, LockEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LockEntry {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git: Option<String>,
+    pub commit: String,
+    pub prefix: String,
+}
+
+/// Read the current commit SHA of a git repository.
+pub fn git_head_sha(repo_dir: &Path) -> Result<String, crate::error::Error> {
+    let output = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(repo_dir)
+        .output()
+        .map_err(|e| crate::error::Error::Io(format!("git rev-parse: {e}")))?;
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+/// Generate a lockfile from current external state.
+pub fn generate_lockfile(
+    externals: &BTreeMap<String, ExternalProject>,
+    project_dir: &Path,
+) -> Result<Lockfile, crate::error::Error> {
+    let cache_dir = project_dir.join(".rivet/repos");
+    let mut pins = BTreeMap::new();
+    for (name, ext) in externals {
+        let ext_dir = if let Some(ref local_path) = ext.path {
+            let p = if Path::new(local_path).is_relative() {
+                project_dir.join(local_path)
+            } else {
+                PathBuf::from(local_path)
+            };
+            p.canonicalize().unwrap_or(p)
+        } else {
+            cache_dir.join(&ext.prefix)
+        };
+        let commit = git_head_sha(&ext_dir)?;
+        pins.insert(
+            name.clone(),
+            LockEntry {
+                git: ext.git.clone(),
+                commit,
+                prefix: ext.prefix.clone(),
+            },
+        );
+    }
+    Ok(Lockfile { pins })
+}
+
+/// Write lockfile to `rivet.lock`.
+pub fn write_lockfile(lock: &Lockfile, project_dir: &Path) -> Result<(), crate::error::Error> {
+    let path = project_dir.join("rivet.lock");
+    let yaml = serde_yaml::to_string(lock)
+        .map_err(|e| crate::error::Error::Schema(format!("serialize lockfile: {e}")))?;
+    std::fs::write(&path, yaml)
+        .map_err(|e| crate::error::Error::Io(format!("write rivet.lock: {e}")))?;
+    Ok(())
+}
+
+/// Read lockfile from `rivet.lock`.
+pub fn read_lockfile(project_dir: &Path) -> Result<Option<Lockfile>, crate::error::Error> {
+    let path = project_dir.join("rivet.lock");
+    if !path.exists() {
+        return Ok(None);
+    }
+    let content = std::fs::read_to_string(&path)
+        .map_err(|e| crate::error::Error::Io(format!("read rivet.lock: {e}")))?;
+    let lock: Lockfile = serde_yaml::from_str(&content)
+        .map_err(|e| crate::error::Error::Schema(format!("parse rivet.lock: {e}")))?;
+    Ok(Some(lock))
 }
 
 /// Recursively copy a directory (used on non-unix platforms instead of symlinks).
@@ -501,6 +582,64 @@ mod tests {
             broken2[2].reason,
             BrokenRefReason::NotFoundLocally("MISSING-001".into())
         );
+    }
+
+    #[test]
+    fn lockfile_roundtrip() {
+        let mut pins = BTreeMap::new();
+        pins.insert(
+            "rivet".into(),
+            LockEntry {
+                git: Some("https://github.com/pulseengine/rivet".into()),
+                commit: "abc123def456".into(),
+                prefix: "rivet".into(),
+            },
+        );
+        pins.insert(
+            "meld".into(),
+            LockEntry {
+                git: None,
+                commit: "789abc012def".into(),
+                prefix: "meld".into(),
+            },
+        );
+
+        let lock = Lockfile { pins };
+        let yaml = serde_yaml::to_string(&lock).unwrap();
+        let parsed: Lockfile = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(parsed.pins.len(), 2);
+        assert_eq!(parsed.pins["rivet"].commit, "abc123def456");
+        assert!(parsed.pins["rivet"].git.is_some());
+        assert!(parsed.pins["meld"].git.is_none());
+    }
+
+    #[test]
+    fn lockfile_write_and_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut pins = BTreeMap::new();
+        pins.insert(
+            "ext".into(),
+            LockEntry {
+                git: Some("https://example.com/ext.git".into()),
+                commit: "deadbeef".into(),
+                prefix: "ext".into(),
+            },
+        );
+        let lock = Lockfile { pins };
+        write_lockfile(&lock, dir.path()).unwrap();
+
+        let read_back = read_lockfile(dir.path()).unwrap();
+        assert!(read_back.is_some());
+        let read_back = read_back.unwrap();
+        assert_eq!(read_back.pins.len(), 1);
+        assert_eq!(read_back.pins["ext"].commit, "deadbeef");
+    }
+
+    #[test]
+    fn read_lockfile_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = read_lockfile(dir.path()).unwrap();
+        assert!(result.is_none());
     }
 
     #[test]
