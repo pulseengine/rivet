@@ -251,3 +251,39 @@ artifacts:
     fields:
       priority: must
       category: functional
+
+  - id: REQ-020
+    type: requirement
+    title: Cross-repository artifact linking via prefixed IDs
+    status: draft
+    description: >
+      Rivet projects must be able to declare external dependencies on other
+      rivet repositories and reference their artifacts using prefix:ID syntax.
+    tags: [cross-repo, traceability]
+    fields:
+      priority: must
+      category: functional
+
+  - id: REQ-021
+    type: requirement
+    title: Distributed baselining via convention tags
+    status: draft
+    description: >
+      Multiple rivet repositories must be able to form consistent baselines
+      using git tags without requiring a central platform repository.
+    tags: [cross-repo, baseline]
+    fields:
+      priority: should
+      category: functional
+
+  - id: REQ-022
+    type: requirement
+    title: Single-binary WASM asset embedding
+    status: draft
+    description: >
+      The rivet binary must optionally embed all WASM and JavaScript assets
+      so it can be distributed as a single self-contained executable.
+    tags: [packaging, wasm]
+    fields:
+      priority: should
+      category: functional

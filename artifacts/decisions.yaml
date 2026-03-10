@@ -301,3 +301,68 @@ artifacts:
         No exemption mechanism (all commits must reference artifacts).
         Rejected because it creates excessive friction for routine
         maintenance commits that have no traceability value.
+
+  - id: DD-014
+    type: design-decision
+    title: Prefixed IDs over URI-style references
+    status: accepted
+    description: >
+      Cross-repo links use prefix:ID syntax (e.g., rivet:REQ-001) rather than
+      full URIs. Simpler to type, more readable in YAML.
+    links:
+      - type: satisfies
+        target: REQ-020
+    tags: [cross-repo]
+    fields:
+      decision: Use prefix:ID syntax with prefix declared in rivet.yaml
+      rationale: >
+        Simpler and more readable than URIs. Prefix is a local alias
+        configured per project, matching sphinx-needs id_prefix pattern.
+
+  - id: DD-015
+    type: design-decision
+    title: Mesh topology over hub-and-spoke
+    status: accepted
+    description: >
+      Any repo can link to any other repo directly. No central authority required.
+    links:
+      - type: satisfies
+        target: REQ-020
+    tags: [cross-repo]
+    fields:
+      decision: Any repo can link to any other repo directly
+      rationale: >
+        Avoids central authority requirement. Matches distributed team
+        workflows. Transitive resolution handles indirect dependencies.
+
+  - id: DD-016
+    type: design-decision
+    title: Distributed baselining over centralized manifest
+    status: accepted
+    description: >
+      Repos tag themselves with baseline/* tags; consistency verified not enforced.
+    links:
+      - type: satisfies
+        target: REQ-021
+    tags: [cross-repo, baseline]
+    fields:
+      decision: Repos tag themselves with baseline/* tags; consistency verified not enforced
+      rationale: >
+        No platform repo required. Each repo joins baselines independently.
+        Matches OSLC global configuration model where contributions are optional.
+
+  - id: DD-017
+    type: design-decision
+    title: Transitive dependency resolution
+    status: accepted
+    description: >
+      Declare direct dependencies only; discover transitive deps automatically.
+    links:
+      - type: satisfies
+        target: REQ-020
+    tags: [cross-repo]
+    fields:
+      decision: Declare direct dependencies only; discover transitively
+      rationale: >
+        Scales naturally. Avoids redundant declarations. Similar to cargo/npm
+        dependency resolution.

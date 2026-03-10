@@ -514,3 +514,66 @@ artifacts:
         target: DD-012
     fields:
       phase: phase-3
+
+  - id: FEAT-033
+    type: feature
+    title: Externals config block and prefix resolution
+    status: draft
+    links:
+      - type: satisfies
+        target: REQ-020
+    tags: [cross-repo]
+
+  - id: FEAT-034
+    type: feature
+    title: rivet sync — fetch external repos
+    status: draft
+    links:
+      - type: satisfies
+        target: REQ-020
+    tags: [cross-repo, cli]
+
+  - id: FEAT-035
+    type: feature
+    title: rivet lock — pin externals to commits
+    status: draft
+    links:
+      - type: satisfies
+        target: REQ-020
+    tags: [cross-repo, cli]
+
+  - id: FEAT-036
+    type: feature
+    title: rivet baseline verify — cross-repo validation
+    status: draft
+    links:
+      - type: satisfies
+        target: REQ-021
+    tags: [cross-repo, baseline, cli]
+
+  - id: FEAT-037
+    type: feature
+    title: Embedded WASM/JS assets for single binary
+    status: draft
+    links:
+      - type: satisfies
+        target: REQ-022
+    tags: [packaging, wasm]
+
+  - id: FEAT-038
+    type: feature
+    title: Cross-repo link validation in rivet validate
+    status: draft
+    links:
+      - type: satisfies
+        target: REQ-020
+    tags: [cross-repo, validation]
+
+  - id: FEAT-039
+    type: feature
+    title: Dashboard external project browsing
+    status: draft
+    links:
+      - type: satisfies
+        target: REQ-020
+    tags: [cross-repo, dashboard]

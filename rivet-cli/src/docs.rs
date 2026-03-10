@@ -87,6 +87,12 @@ const TOPICS: &[DocTopic] = &[
         category: "Schemas",
         content: embedded::SCHEMA_AADL,
     },
+    DocTopic {
+        slug: "cross-repo",
+        title: "Cross-Repository Linking",
+        category: "Reference",
+        content: CROSS_REPO_DOC,
+    },
 ];
 
 // ── Embedded documentation ──────────────────────────────────────────────
@@ -590,6 +596,59 @@ are not considered orphans even without trailers.
 Use `trace-exempt-artifacts` to list artifact IDs that should not appear in
 the "unimplemented" report — useful when retrofitting traceability onto an
 existing project where historical commits lack trailers.
+"#;
+
+const CROSS_REPO_DOC: &str = r#"# Cross-Repository Linking
+
+Rivet supports linking artifacts across multiple git repositories using
+prefixed IDs. Each project declares its external dependencies in `rivet.yaml`
+and references foreign artifacts with `prefix:ID` syntax.
+
+## Configuration
+
+Add an `externals` block to `rivet.yaml`:
+
+```yaml
+externals:
+  meld:
+    url: https://github.com/pulseengine/meld.git
+    path: .rivet/externals/meld    # local cache directory
+  spar:
+    url: https://github.com/pulseengine/spar.git
+    path: .rivet/externals/spar
+```
+
+## Referencing External Artifacts
+
+Use `prefix:ID` syntax in link targets:
+
+```yaml
+links:
+  - type: satisfies
+    target: meld:LOSS-001
+  - type: allocated-from
+    target: spar:ARCH-005
+```
+
+## Commands
+
+- `rivet sync`             — Fetch/update external repositories
+- `rivet lock`             — Pin externals to specific commits
+- `rivet baseline verify`  — Verify cross-repo baseline consistency
+- `rivet validate`         — Validates cross-repo links alongside local ones
+
+## Topology
+
+Rivet uses a mesh topology: any repo can link to any other repo directly.
+No central authority or hub repository is required. Transitive dependencies
+are discovered automatically — if A depends on B and B depends on C, rivet
+resolves the full chain.
+
+## Distributed Baselines
+
+Repos participate in baselines by tagging themselves with `baseline/*` tags
+(e.g., `baseline/v2.0`). Consistency is verified but not enforced — each
+repo joins baselines independently.
 "#;
 
 // ── Public API ──────────────────────────────────────────────────────────
