@@ -46,6 +46,12 @@ const TOPICS: &[DocTopic] = &[
         content: DOCUMENTS_DOC,
     },
     DocTopic {
+        slug: "commit-traceability",
+        title: "Commit-to-artifact traceability via git trailers",
+        category: "Reference",
+        content: COMMIT_TRACEABILITY_DOC,
+    },
+    DocTopic {
         slug: "schema/common",
         title: "Common base fields and link types",
         category: "Schemas",
@@ -216,6 +222,8 @@ rivet matrix --from X --to Y  Traceability matrix between types
 rivet diff                  Compare artifact versions
 rivet export -f FORMAT      Export to reqif or generic-yaml
 rivet serve [-P PORT]       Start HTMX dashboard (default: 3000)
+rivet commits [--since N]   Commit-artifact traceability analysis
+rivet commit-msg-check F    Validate commit message trailers (hook)
 ```
 
 ## Schema Commands
@@ -458,6 +466,130 @@ Documents participate in validation:
 - **Broken references**: `[[ID]]` pointing to nonexistent artifacts are warnings
 - **Coverage**: The doc-linkage view shows which artifacts are referenced in docs
 - **Orphan detection**: Artifacts never referenced in any document are flagged
+"#;
+
+const COMMIT_TRACEABILITY_DOC: &str = r#"# Commit-to-Artifact Traceability
+
+Rivet tracks which git commits implement, fix, verify, or otherwise relate
+to artifacts using **git trailers** — standard key-value pairs in commit
+message footers.
+
+## Configuration
+
+Add a `commits:` block to `rivet.yaml`:
+
+```yaml
+commits:
+  format: trailers                # Only "trailers" is supported currently
+  trailers:                       # Maps trailer key → link type
+    Implements: implements
+    Fixes: fixes
+    Verifies: verifies
+    Satisfies: satisfies
+    Refs: traces-to
+  exempt-types:                   # Conventional-commit types that skip checks
+    - chore
+    - style
+    - ci
+    - docs
+    - build
+  skip-trailer: "Trace: skip"    # Explicit opt-out trailer
+  traced-paths:                   # Only commits touching these paths are orphans
+    - src/
+  trace-exempt-artifacts: []      # Artifacts that won't be flagged as unimplemented
+```
+
+## Commit Message Format
+
+Reference artifacts using configured trailer keys in the commit footer:
+
+```
+feat(parser): add streaming token support
+
+Reworked the parser to handle streaming tokens for better
+memory efficiency in large files.
+
+Implements: FEAT-042
+Fixes: REQ-015
+```
+
+Multiple artifact IDs can be listed on one line, separated by commas:
+
+```
+Implements: FEAT-042, FEAT-043
+Verifies: REQ-015, REQ-016
+```
+
+## Exemption Mechanisms
+
+There are two ways to opt out of trailer requirements:
+
+1. **Conventional-commit type exemption:** Commits whose type (the prefix
+   before `:`) matches `exempt-types` are automatically exempt. For example,
+   `chore: update deps` is exempt if `chore` is in the list.
+
+2. **Explicit skip trailer:** Add the configured `skip-trailer` value to any
+   commit message to skip validation:
+
+   ```
+   refactor: rename internal helper
+
+   Trace: skip
+   ```
+
+## Pre-Commit Hook
+
+Rivet provides a commit-msg hook for the [pre-commit](https://pre-commit.com)
+framework. Add it to `.pre-commit-config.yaml`:
+
+```yaml
+- repo: local
+  hooks:
+    - id: rivet-commit-msg
+      name: rivet commit-msg check
+      entry: rivet commit-msg-check
+      language: system
+      stages: [commit-msg]
+      always_run: true
+```
+
+The hook validates each commit message:
+- Checks that at least one artifact trailer is present
+- Verifies that referenced artifact IDs exist in the project
+- Suggests close matches for typos (Levenshtein distance)
+- Passes exempt commits and those with the skip trailer
+
+## `rivet commits` Command
+
+Analyze the full git history for commit-artifact traceability:
+
+```
+rivet commits                    # Analyze all commits
+rivet commits --since 30        # Only last 30 days
+rivet commits --range main..dev  # Specific commit range
+rivet commits --format json      # Machine-readable output
+rivet commits --strict           # Exit 1 if any orphan or broken ref
+```
+
+### Report Sections
+
+1. **Linked commits** — Commits with valid artifact trailers
+2. **Broken references** — Commits referencing non-existent artifact IDs
+3. **Orphan commits** — Non-exempt commits touching `traced-paths` without trailers
+4. **Artifact coverage** — How many artifacts have at least one linked commit
+5. **Unimplemented artifacts** — Artifacts with no commit evidence (minus exemptions)
+
+### Path-Based Orphan Detection
+
+Only commits that modify files under `traced-paths` are flagged as orphans.
+Commits that only touch documentation, CI config, or other non-traced paths
+are not considered orphans even without trailers.
+
+### Exempt Artifact Whitelist
+
+Use `trace-exempt-artifacts` to list artifact IDs that should not appear in
+the "unimplemented" report — useful when retrofitting traceability onto an
+existing project where historical commits lack trailers.
 "#;
 
 // ── Public API ──────────────────────────────────────────────────────────

@@ -1,0 +1,78 @@
+# =============================================================================
+# STPA Step 1a — Losses
+# =============================================================================
+#
+# A loss involves something of value to stakeholders. Losses may include a
+# loss of human life or human injury, property damage, environmental
+# pollution, loss of mission, loss of reputation, loss of sensitive
+# information, or any other loss that is unacceptable to the stakeholders.
+#
+# Reference: STPA Handbook, §2.3.1
+#
+# System:      Rivet traceability management system
+# Boundary:    Rivet CLI + core library + OSLC client + ReqIF adapter +
+#              dashboard, interacting with external ALM tools, git repos,
+#              CI pipelines, and human operators.
+#
+# Stakeholders:
+#   - safety-engineers       (primary users, create/consume traceability)
+#   - certification-authorities (audit compliance evidence)
+#   - developers             (create/modify artifacts and code)
+#   - tool-administrators    (configure OSLC/ReqIF connections)
+#   - project-managers       (track coverage and compliance metrics)
+# =============================================================================
+
+losses:
+  - id: L-1
+    title: Loss of traceability integrity
+    description: >
+      Broken, missing, or stale links between requirements, design decisions,
+      implementation artifacts, and test evidence.  In safety-critical domains
+      (ISO 26262, DO-178C, ASPICE), incomplete traceability can mask gaps that
+      lead to fielded defects in safety-relevant functions.
+    stakeholders: [safety-engineers, certification-authorities, developers]
+
+  - id: L-2
+    title: Loss of compliance evidence
+    description: >
+      Inability to demonstrate regulatory compliance to an auditor.  If
+      traceability reports are incomplete, inconsistent, or fabricated, the
+      organization cannot pass certification audits, potentially blocking
+      product release or triggering recalls.
+    stakeholders: [certification-authorities, project-managers]
+
+  - id: L-3
+    title: Loss of data sovereignty
+    description: >
+      Artifact data corrupted, silently lost, or leaked through
+      synchronization with external tools.  When bidirectional sync
+      overwrites local authoritative data or exposes controlled-distribution
+      content to unauthorized systems, the organization loses control of its
+      engineering records.
+    stakeholders: [safety-engineers, tool-administrators, developers]
+
+  - id: L-4
+    title: Loss of engineering productivity
+    description: >
+      Engineers waste significant time on manual traceability repair,
+      debugging sync failures, or reconciling conflicting artifact versions
+      instead of performing value-adding engineering work.
+    stakeholders: [developers, project-managers]
+
+  - id: L-5
+    title: Loss of safety assurance
+    description: >
+      Safety-critical requirements are not properly tracked through design,
+      implementation, and verification, creating undetected gaps in the
+      safety argument.  This can result in hazardous system behavior reaching
+      production.
+    stakeholders: [safety-engineers, certification-authorities]
+
+  - id: L-6
+    title: Loss of audit trail
+    description: >
+      Inability to reconstruct the history of traceability decisions —
+      who changed a link, when, and why.  Without a reliable audit trail,
+      root-cause analysis after incidents is impaired and regulatory
+      post-market obligations cannot be met.
+    stakeholders: [certification-authorities, safety-engineers, project-managers]

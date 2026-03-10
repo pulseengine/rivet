@@ -988,8 +988,7 @@ See frontmatter.
     #[test]
     fn render_html_resolves_refs() {
         let doc = parse_document(SAMPLE_DOC, None).unwrap();
-        let html =
-            render_to_html(&doc, |id| id == "REQ-001" || id == "REQ-002", |_| None);
+        let html = render_to_html(&doc, |id| id == "REQ-001" || id == "REQ-002", |_| None);
         assert!(html.contains("artifact-ref"));
         assert!(html.contains("hx-get=\"/artifacts/REQ-001\""));
         assert!(html.contains("class=\"artifact-ref broken\""));
@@ -1059,14 +1058,8 @@ See frontmatter.
             html.contains("Test requirement"),
             "should contain artifact title"
         );
-        assert!(
-            html.contains("type-badge"),
-            "should contain type badge"
-        );
-        assert!(
-            html.contains("status-badge"),
-            "should contain status badge"
-        );
+        assert!(html.contains("type-badge"), "should contain type badge");
+        assert!(html.contains("status-badge"), "should contain status badge");
     }
 
     #[test]
@@ -1078,9 +1071,6 @@ See frontmatter.
             html.contains("artifact-ref broken"),
             "broken embed should have broken class"
         );
-        assert!(
-            html.contains("NOPE-999"),
-            "should show the broken ID"
-        );
+        assert!(html.contains("NOPE-999"), "should show the broken ID");
     }
 }

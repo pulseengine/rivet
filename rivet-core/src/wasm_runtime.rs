@@ -106,6 +106,15 @@ impl From<WasmError> for Error {
     }
 }
 
+/// A diagnostic produced by a WASM analysis pass (mirrors WIT `analysis-diagnostic`).
+#[derive(Debug, Clone)]
+pub struct AnalysisDiagnostic {
+    pub severity: String,
+    pub message: String,
+    pub component_path: String,
+    pub analysis_name: String,
+}
+
 // ---------------------------------------------------------------------------
 // Host state
 // ---------------------------------------------------------------------------
@@ -434,6 +443,73 @@ impl WasmAdapter {
             .call_render(&mut store, root, highlight)
             .map_err(|e| WasmError::Guest(e.to_string()))?
             .map_err(|e| WasmError::Guest(format!("render error: {:?}", e)))
+    }
+
+    /// Call the guest `analyze` function from the renderer interface.
+    ///
+    /// This creates a fresh WASI-enabled store, instantiates the component,
+    /// and calls `pulseengine:rivet/renderer.analyze` to run all registered
+    /// analysis passes on the AADL instance tree.
+    pub fn call_analyze(
+        &self,
+        root: &str,
+        aadl_dir: Option<&Path>,
+    ) -> Result<Vec<AnalysisDiagnostic>, WasmError> {
+        let mut wasi_builder = wasmtime_wasi::WasiCtxBuilder::new();
+        wasi_builder.inherit_stderr();
+
+        if let Some(dir) = aadl_dir {
+            wasi_builder
+                .preopened_dir(
+                    dir,
+                    ".",
+                    wasmtime_wasi::DirPerms::READ,
+                    wasmtime_wasi::FilePerms::READ,
+                )
+                .map_err(|e| WasmError::Instantiation(format!("preopened dir: {}", e)))?;
+        }
+
+        let state = HostState {
+            wasi: wasi_builder.build(),
+            table: wasmtime::component::ResourceTable::new(),
+            limiter: self
+                .runtime_config
+                .max_memory_bytes
+                .map(|max| MemoryLimiter { max_memory: max }),
+        };
+
+        let mut store = Store::new(&self.engine, state);
+
+        if let Some(fuel) = self.runtime_config.fuel {
+            store
+                .set_fuel(fuel)
+                .map_err(|e| WasmError::Instantiation(e.to_string()))?;
+        }
+        if self.runtime_config.max_memory_bytes.is_some() {
+            store.limiter(|state| state.limiter.as_mut().unwrap());
+        }
+
+        let linker = self.create_linker()?;
+
+        let bindings =
+            wit_bindings::SparComponent::instantiate(&mut store, &self.component, &linker)
+                .map_err(|e| WasmError::Instantiation(e.to_string()))?;
+
+        let diagnostics = bindings
+            .pulseengine_rivet_renderer()
+            .call_analyze(&mut store, root)
+            .map_err(|e| WasmError::Guest(e.to_string()))?
+            .map_err(|e| WasmError::Guest(format!("analyze error: {:?}", e)))?;
+
+        Ok(diagnostics
+            .into_iter()
+            .map(|d| AnalysisDiagnostic {
+                severity: d.severity,
+                message: d.message,
+                component_path: d.component_path,
+                analysis_name: d.analysis_name,
+            })
+            .collect())
     }
 
     /// Call the guest `export` function.

@@ -36,7 +36,7 @@ fn free_port() -> u16 {
 /// Start the rivet server and return (child, port).
 fn start_server() -> (Child, u16) {
     let port = free_port();
-    let child = Command::new(rivet_bin())
+    let mut child = Command::new(rivet_bin())
         .args(["serve", "--port", &port.to_string()])
         .current_dir(project_root())
         .stdout(std::process::Stdio::null())
@@ -52,6 +52,9 @@ fn start_server() -> (Child, u16) {
         }
         std::thread::sleep(Duration::from_millis(100));
     }
+    // Kill the child before panicking to avoid zombie processes.
+    let _ = child.kill();
+    let _ = child.wait();
     panic!("server did not start within 5 seconds on port {port}");
 }
 
@@ -62,17 +65,10 @@ fn fetch(port: u16, path: &str, htmx: bool) -> (u16, String, Vec<(String, String
 
     // Use a minimal HTTP/1.1 request via TcpStream
     use std::io::{Read, Write};
-    let mut stream =
-        std::net::TcpStream::connect(format!("127.0.0.1:{port}")).expect("connect");
-    stream
-        .set_read_timeout(Some(Duration::from_secs(5)))
-        .ok();
+    let mut stream = std::net::TcpStream::connect(format!("127.0.0.1:{port}")).expect("connect");
+    stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
 
-    let hx_header = if htmx {
-        "HX-Request: true\r\n"
-    } else {
-        ""
-    };
+    let hx_header = if htmx { "HX-Request: true\r\n" } else { "" };
     let request = format!(
         "GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n{hx_header}Connection: close\r\n\r\n"
     );
@@ -162,10 +158,7 @@ fn server_pages_push_url() {
 
     for page in &pages {
         let (status, body, _headers) = fetch(port, page, true);
-        assert!(
-            status == 200,
-            "GET {page} returned {status}, expected 200"
-        );
+        assert!(status == 200, "GET {page} returned {status}, expected 200");
         assert_links_push_url(&body, page);
     }
 
@@ -174,36 +167,29 @@ fn server_pages_push_url() {
 }
 
 #[test]
-fn non_htmx_request_redirects() {
+fn non_htmx_request_serves_full_page() {
     let (mut child, port) = start_server();
 
-    // A non-HTMX GET to /results should redirect via /?goto=
-    let (status, body, headers) = fetch(port, "/results", false);
+    // A non-HTMX GET to /results should return 200 with full page layout
+    // (wrap_full_page middleware wraps partial HTML in the shell)
+    let (status, body, _headers) = fetch(port, "/results", false);
 
-    // Should redirect (303) to /?goto=/results
     assert!(
-        status == 303 || status == 302 || status == 200,
-        "non-HTMX GET /results should redirect (303/302) or serve shell (200), got {status}"
+        status == 200,
+        "non-HTMX GET /results should return 200 with full page, got {status}"
     );
 
-    if status == 303 || status == 302 {
-        // Check Location header contains goto
-        let location = headers
-            .iter()
-            .find(|(k, _)| k.eq_ignore_ascii_case("location"))
-            .map(|(_, v)| v.as_str())
-            .unwrap_or("");
-        assert!(
-            location.contains("goto")
-                && (location.contains("/results") || location.contains("%2Fresults")),
-            "redirect Location must contain /?goto=/results, got: {location}"
-        );
-    } else {
-        assert!(
-            body.contains("goto") || body.contains("/results"),
-            "non-HTMX response must contain goto redirect for /results"
-        );
-    }
+    // Must contain the full page shell (nav, layout)
+    assert!(
+        body.contains("<nav>") || body.contains("Rivet"),
+        "non-HTMX response must contain the full page layout shell"
+    );
+
+    // Must also contain the actual page content (not empty placeholder)
+    assert!(
+        body.contains("results") || body.contains("Results"),
+        "non-HTMX response must contain the results page content"
+    );
 
     child.kill().ok();
     child.wait().ok();
@@ -215,8 +201,7 @@ fn reload_returns_hx_location() {
 
     // Simulate reload with HX-Current-URL header
     use std::io::{Read, Write};
-    let mut stream =
-        std::net::TcpStream::connect(format!("127.0.0.1:{port}")).expect("connect");
+    let mut stream = std::net::TcpStream::connect(format!("127.0.0.1:{port}")).expect("connect");
     stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
 
     let request = format!(

@@ -1,0 +1,99 @@
+# =============================================================================
+# STPA Step 1c — System-Level Constraints
+# =============================================================================
+#
+# System-level constraints specify the conditions that must be enforced to
+# prevent hazards.  Each constraint is the logical inversion of a hazard.
+#
+# Format: <System> & <Condition to Enforce> & <Link to Hazards>
+#
+# Reference: STPA Handbook, §2.3.3
+# =============================================================================
+
+system-constraints:
+  - id: SC-1
+    title: Rivet must validate all cross-references and report dangling links before any output
+    description: >
+      Every operation that produces output (reports, metrics, exports) must
+      first validate that all artifact links resolve to existing, correctly-
+      typed targets.  Dangling or type-mismatched links must be reported as
+      errors, not warnings.
+    hazards: [H-1]
+
+  - id: SC-2
+    title: Rivet must never silently discard artifacts or links during any operation
+    description: >
+      Every import, export, sync, and merge operation must account for all
+      input artifacts.  If an artifact cannot be processed, Rivet must emit
+      an explicit diagnostic and either fail the operation or quarantine the
+      unprocessable item — never silently drop it.
+    hazards: [H-2]
+
+  - id: SC-3
+    title: Rivet must compute coverage metrics only from validated, current data
+    description: >
+      Coverage matrices and statistics must be derived from link data that
+      has passed validation in the current session.  Cached or stale
+      metrics must be clearly labeled with their validation timestamp.
+    hazards: [H-3]
+
+  - id: SC-4
+    title: Rivet must verify semantic compatibility when mapping between schemas
+    description: >
+      Schema mappings (OSLC resource shapes, ReqIF SpecTypes, adapter
+      transforms) must be explicitly defined and validated before data
+      flows through them.  Unmapped or ambiguously mapped fields must
+      cause a hard error, not a silent default.
+    hazards: [H-4]
+
+  - id: SC-5
+    title: Rivet must detect and surface conflicting modifications before merging
+    description: >
+      When multiple sources modify the same artifact, Rivet must detect
+      the conflict (via timestamps, ETags, or content hashing), present
+      it to the user, and require explicit resolution before committing.
+    hazards: [H-5]
+
+  - id: SC-6
+    title: Rivet must generate compliance reports only from verified traceability data
+    description: >
+      Report generation must be gated on a successful validation pass.
+      If validation has not been run or has failed, report generation
+      must either fail or embed a prominent "UNVERIFIED" watermark.
+    hazards: [H-6]
+
+  - id: SC-7
+    title: Rivet must maintain a complete audit trail for all artifact modifications
+    description: >
+      Every change to an artifact (create, update, delete, link change)
+      must be attributable to a user or system process, timestamped, and
+      preserved in the git history.  Sync operations must record the
+      remote source and change event identifier.
+    hazards: [H-7]
+
+  - id: SC-8
+    title: Rivet must isolate sync errors and prevent cross-tool error propagation
+    description: >
+      Errors or corruptions detected during inbound sync must be
+      quarantined.  Rivet must not propagate unvalidated inbound data
+      to outbound sync channels or to local authoritative stores
+      without explicit user approval.
+    hazards: [H-8]
+
+  - id: SC-9
+    title: Rivet must preserve rich-text structure during import and export
+    description: >
+      When importing ReqIF XHTML or OSLC rich-text, Rivet must either
+      preserve the structural markup or explicitly warn that content
+      has been simplified, so users can verify no semantic information
+      was lost.
+    hazards: [H-4]
+
+  - id: SC-10
+    title: Rivet must validate external artifact existence before accepting links
+    description: >
+      When creating or updating links to external artifacts (OSLC URIs,
+      git commits, file references), Rivet must verify that the target
+      exists and is reachable at link-creation time, recording the
+      verification timestamp.
+    hazards: [H-1, H-3]

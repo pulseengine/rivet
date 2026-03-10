@@ -21,8 +21,7 @@ fn serve_rs_path() -> PathBuf {
 /// - Lines that already contain `hx-push-url`
 #[test]
 fn all_content_links_push_url() {
-    let source = std::fs::read_to_string(serve_rs_path())
-        .expect("failed to read serve.rs");
+    let source = std::fs::read_to_string(serve_rs_path()).expect("failed to read serve.rs");
 
     let mut violations = Vec::new();
 
@@ -36,8 +35,7 @@ fn all_content_links_push_url() {
 
         // Only check lines that have both hx-get and hx-target="#content"
         // (with escaped quotes as they appear in Rust string literals)
-        let has_hx_get = line.contains("hx-get=")
-            || line.contains("hx-get =");
+        let has_hx_get = line.contains("hx-get=") || line.contains("hx-get =");
         let has_content_target = line.contains(r##"hx-target="#content""##)
             || line.contains(r##"hx-target=\"#content\""##);
 
@@ -67,26 +65,29 @@ fn all_content_links_push_url() {
     );
 }
 
-/// Verify that the `redirect_non_htmx` middleware pattern is present.
-/// This ensures direct browser navigations (typing URL, F5 refresh) are
-/// redirected through `/?goto=` to load the full SPA shell.
+/// Verify that the `wrap_full_page` middleware pattern is present.
+/// This ensures direct browser navigations (typing URL, F5 refresh) get
+/// the full page layout with content already rendered (no redirect needed).
 #[test]
-fn redirect_middleware_exists() {
-    let source = std::fs::read_to_string(serve_rs_path())
-        .expect("failed to read serve.rs");
+fn wrap_middleware_exists() {
+    let source = std::fs::read_to_string(serve_rs_path()).expect("failed to read serve.rs");
 
     assert!(
-        source.contains("HX-Request")
-            || source.contains("hx-request")
-            || source.contains("redirect_non_htmx"),
-        "serve.rs must contain the redirect_non_htmx middleware \
-         or HX-Request header check for SPA navigation to work"
+        source.contains("hx-request") || source.contains("HX-Request"),
+        "serve.rs must check the HX-Request header to distinguish \
+         HTMX partial requests from direct browser navigations"
     );
 
     assert!(
-        source.contains("goto"),
-        "serve.rs must contain the /?goto= redirect pattern \
-         for browser refresh support"
+        source.contains("wrap_full_page"),
+        "serve.rs must contain the wrap_full_page middleware \
+         for direct-access full-page rendering"
+    );
+
+    assert!(
+        source.contains("page_layout"),
+        "wrap_full_page middleware must call page_layout to wrap \
+         partial HTML in the full shell"
     );
 }
 
@@ -94,8 +95,7 @@ fn redirect_middleware_exists() {
 /// so reloading stays on the current page instead of navigating to root.
 #[test]
 fn reload_uses_hx_location() {
-    let source = std::fs::read_to_string(serve_rs_path())
-        .expect("failed to read serve.rs");
+    let source = std::fs::read_to_string(serve_rs_path()).expect("failed to read serve.rs");
 
     // The reload handler should reference HX-Location for in-place reload
     assert!(
@@ -107,19 +107,5 @@ fn reload_uses_hx_location() {
     assert!(
         source.contains("HX-Current-URL") || source.contains("hx-current-url"),
         "reload handler must read HX-Current-URL to determine current page"
-    );
-}
-
-/// Verify that the goto redirect script includes history.replaceState
-/// so the URL bar shows the correct path after redirect.
-#[test]
-fn goto_fixes_url_bar() {
-    let source = std::fs::read_to_string(serve_rs_path())
-        .expect("failed to read serve.rs");
-
-    assert!(
-        source.contains("replaceState"),
-        "goto redirect must use history.replaceState to fix the URL bar \
-         after /?goto= redirect"
     );
 }

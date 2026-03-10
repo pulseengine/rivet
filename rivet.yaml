@@ -5,13 +5,64 @@ project:
     - common
     - dev
     - aadl
+    - stpa
 
 sources:
   - path: artifacts
     format: generic-yaml
+  - path: safety/stpa
+    format: stpa-yaml
 
 docs:
   - docs
   - arch
 
 results: results
+
+commits:
+  format: trailers
+  trailers:
+    Implements: implements
+    Fixes: fixes
+    Verifies: verifies
+    Satisfies: satisfies
+    Refs: traces-to
+  exempt-types:
+    - chore
+    - style
+    - ci
+    - docs
+    - build
+  skip-trailer: "Trace: skip"
+  traced-paths:
+    - rivet-core/src/
+    - rivet-cli/src/
+  trace-exempt-artifacts:
+    # Pre-existing artifacts before commit traceability was added.
+    # New artifacts (REQ-017..019, FEAT-029..032, DD-011..013) must earn coverage.
+    [ARCH-ADAPT-AADL, ARCH-ADAPT-GENERIC, ARCH-ADAPT-REQIF, ARCH-ADAPT-STPA, ARCH-ADAPT-WASM,
+     ARCH-CLI-001, ARCH-CORE-001, ARCH-CORE-ADAPTERS, ARCH-CORE-DIFF, ARCH-CORE-DOC,
+     ARCH-CORE-GRAPH, ARCH-CORE-MATRIX, ARCH-CORE-QUERY, ARCH-CORE-RESULTS, ARCH-CORE-SCHEMA,
+     ARCH-CORE-STORE, ARCH-CORE-VALIDATE, ARCH-DASH-001, ARCH-DASH-GRAPH, ARCH-SYS-001,
+     ARCH-SYS-002, CA-CI-1, CA-CI-2, CA-CLI-1, CA-CLI-2, CA-CLI-3, CA-CLI-4, CA-CORE-1, CA-CORE-2,
+     CA-CORE-3, CA-DASH-1, CA-DEV-1, CA-DEV-2, CA-DEV-3, CA-OSLC-1, CA-OSLC-2, CA-OSLC-3,
+     CA-REQIF-1, CA-REQIF-2, CC-C-1, CC-C-2, CC-C-3, CC-C-4, CC-C-5, CC-C-6, CC-C-7, CC-C-8,
+     CC-C-9, CC-D-1, CC-D-2, CC-I-1, CC-I-2, CC-I-3, CC-I-4, CC-L-1, CC-L-2, CC-L-3, CC-L-4,
+     CC-L-5, CC-O-1, CC-O-10, CC-O-2, CC-O-3, CC-O-4, CC-O-5, CC-O-6, CC-O-7, CC-O-8, CC-O-9,
+     CC-Q-1, CC-Q-2, CC-Q-3, CC-Q-4, CC-Q-5, CC-Q-6, CC-Q-7, CTRL-CI, CTRL-CLI, CTRL-CORE,
+     CTRL-DASH, CTRL-DEV, CTRL-OSLC, CTRL-REQIF, DD-001, DD-002, DD-003, DD-004, DD-005, DD-006,
+     DD-007, DD-008, DD-009, DD-010, FEAT-001, FEAT-002, FEAT-003, FEAT-004, FEAT-005, FEAT-006,
+     FEAT-007, FEAT-008, FEAT-009, FEAT-010, FEAT-011, FEAT-012, FEAT-013, FEAT-014, FEAT-015,
+     FEAT-016, FEAT-017, FEAT-018, FEAT-019, FEAT-020, FEAT-021, FEAT-022, FEAT-023, FEAT-024,
+     FEAT-025, FEAT-026, FEAT-027, FEAT-028, H-1, H-1.1, H-1.2, H-1.3, H-2, H-3, H-4, H-4.1, H-4.2,
+     H-4.3, H-5, H-6, H-7, H-8, L-1, L-2, L-3, L-4, L-5, L-6, LS-C-1, LS-C-2, LS-C-3, LS-C-4,
+     LS-CP-1, LS-CP-2, LS-I-1, LS-I-2, LS-L-1, LS-L-2, LS-O-1, LS-O-2, LS-O-3, LS-O-4, LS-O-5,
+     LS-O-6, LS-Q-1, LS-Q-2, LS-Q-3, PROC-ARTIFACTS, PROC-EXTERNAL, PROC-GITREPO, PROC-LINKGRAPH,
+     PROC-REPORTS, REQ-001, REQ-002, REQ-003, REQ-004, REQ-005, REQ-006, REQ-007, REQ-008, REQ-009,
+     REQ-010, REQ-011, REQ-012, REQ-013, REQ-014, REQ-015, REQ-016, SC-1, SC-10, SC-2, SC-3, SC-4,
+     SC-5, SC-6, SC-7, SC-8, SC-9, TEST-001, TEST-002, TEST-003, TEST-004, TEST-005, TEST-006,
+     TEST-007, TEST-008, TEST-009, TEST-010, UCA-C-1, UCA-C-2, UCA-C-3, UCA-C-4, UCA-C-5, UCA-C-6,
+     UCA-C-7, UCA-C-8, UCA-C-9, UCA-D-1, UCA-D-2, UCA-I-1, UCA-I-2, UCA-I-3, UCA-I-4, UCA-L-1,
+     UCA-L-2, UCA-L-3, UCA-L-4, UCA-L-5, UCA-O-1, UCA-O-10, UCA-O-2, UCA-O-3, UCA-O-4, UCA-O-5,
+     UCA-O-6, UCA-O-7, UCA-O-8, UCA-O-9, UCA-Q-1, UCA-Q-2, UCA-Q-3, UCA-Q-4, UCA-Q-5, UCA-Q-6,
+     UCA-Q-7]

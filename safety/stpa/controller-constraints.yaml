@@ -1,0 +1,327 @@
+# =============================================================================
+# STPA Step 3b — Controller Constraints
+# =============================================================================
+#
+# Each controller constraint is the logical inversion of a UCA.  It defines
+# what the controller MUST or MUST NOT do to prevent the associated hazard.
+#
+# Reference: STPA Handbook, §2.5
+# =============================================================================
+
+controller-constraints:
+
+  # =========================================================================
+  # Core Engine constraints
+  # =========================================================================
+  - id: CC-C-1
+    controller: CTRL-CORE
+    constraint: >
+      Core must validate all links whenever artifacts have been modified
+      since the last validation pass, before producing any output.
+    ucas: [UCA-C-1]
+    hazards: [H-1, H-3]
+
+  - id: CC-C-2
+    controller: CTRL-CORE
+    constraint: >
+      Core must rebuild the link graph after any OSLC sync or import
+      operation writes new or modified artifacts.
+    ucas: [UCA-C-2]
+    hazards: [H-1, H-3]
+
+  - id: CC-C-3
+    controller: CTRL-CORE
+    constraint: >
+      Core must validate schema conformance for all imported artifacts,
+      regardless of the import source.
+    ucas: [UCA-C-3]
+    hazards: [H-4, H-2]
+
+  - id: CC-C-4
+    controller: CTRL-CORE
+    constraint: >
+      Core must not report validation as passing when dangling links
+      exist in the link graph.
+    ucas: [UCA-C-4]
+    hazards: [H-1, H-3, H-6]
+
+  - id: CC-C-5
+    controller: CTRL-CORE
+    constraint: >
+      Core must not count unresolvable links as satisfied trace
+      relationships when computing coverage metrics.
+    ucas: [UCA-C-5]
+    hazards: [H-3, H-6]
+
+  - id: CC-C-6
+    controller: CTRL-CORE
+    constraint: >
+      Core must validate each artifact against the schema matching its
+      declared type, and must reject artifacts with unknown types.
+    ucas: [UCA-C-6]
+    hazards: [H-4, H-2]
+
+  - id: CC-C-7
+    controller: CTRL-CORE
+    constraint: >
+      Core must not begin validation until all configured artifact
+      sources have been fully loaded.
+    ucas: [UCA-C-7]
+    hazards: [H-1, H-3]
+
+  - id: CC-C-8
+    controller: CTRL-CORE
+    constraint: >
+      Core must not generate coverage reports from data that has not
+      been validated in the current session.
+    ucas: [UCA-C-8]
+    hazards: [H-3, H-6]
+
+  - id: CC-C-9
+    controller: CTRL-CORE
+    constraint: >
+      Core must report all validation errors found across all artifact
+      files, not terminate after the first error.
+    ucas: [UCA-C-9]
+    hazards: [H-1, H-3]
+
+  # =========================================================================
+  # OSLC Client constraints
+  # =========================================================================
+  - id: CC-O-1
+    controller: CTRL-OSLC
+    constraint: >
+      OSLC client must fetch and process all TRS change log entries
+      since the last sync cursor when triggered.
+    ucas: [UCA-O-1]
+    hazards: [H-1, H-5]
+
+  - id: CC-O-2
+    controller: CTRL-OSLC
+    constraint: >
+      OSLC client must push local modifications to the remote tool
+      when bidirectional sync is configured.
+    ucas: [UCA-O-2]
+    hazards: [H-5, H-1]
+
+  - id: CC-O-3
+    controller: CTRL-OSLC
+    constraint: >
+      OSLC client must report all sync failures with diagnostic
+      information to the CLI and developer.
+    ucas: [UCA-O-3]
+    hazards: [H-2, H-1]
+
+  - id: CC-O-4
+    controller: CTRL-OSLC
+    constraint: >
+      OSLC client must detect conflicts between local and remote
+      modifications and require explicit resolution before writing.
+    ucas: [UCA-O-4]
+    hazards: [H-5, H-3, H-7]
+
+  - id: CC-O-5
+    controller: CTRL-OSLC
+    constraint: >
+      OSLC client must not apply remote deletion events without user
+      confirmation when the deleted artifact is referenced by local links.
+    ucas: [UCA-O-5]
+    hazards: [H-2, H-1, H-5]
+
+  - id: CC-O-6
+    controller: CTRL-OSLC
+    constraint: >
+      OSLC client must validate incoming artifacts against the local
+      schema before writing them to the artifact store.
+    ucas: [UCA-O-6]
+    hazards: [H-8, H-4]
+
+  - id: CC-O-7
+    controller: CTRL-OSLC
+    constraint: >
+      OSLC client must not push artifacts that have not passed local
+      validation to the remote tool.
+    ucas: [UCA-O-7]
+    hazards: [H-8, H-4]
+
+  - id: CC-O-8
+    controller: CTRL-OSLC
+    constraint: >
+      OSLC client must complete sync before any compliance report
+      generation, or clearly indicate the sync state in the report.
+    ucas: [UCA-O-8]
+    hazards: [H-6, H-3]
+
+  - id: CC-O-9
+    controller: CTRL-OSLC
+    constraint: >
+      OSLC client must not sync during active local editing sessions,
+      or must use a staging area to avoid write conflicts.
+    ucas: [UCA-O-9]
+    hazards: [H-5, H-3]
+
+  - id: CC-O-10
+    controller: CTRL-OSLC
+    constraint: >
+      OSLC client must implement transactional sync — either apply
+      all change log entries atomically or roll back to the previous
+      consistent state on failure.
+    ucas: [UCA-O-10]
+    hazards: [H-2, H-1, H-5]
+
+  # =========================================================================
+  # ReqIF Adapter constraints
+  # =========================================================================
+  - id: CC-Q-1
+    controller: CTRL-REQIF
+    constraint: >
+      ReqIF adapter must parse all valid ReqIF 1.2 XML structures and
+      must not silently discard SpecObjects it cannot parse.
+    ucas: [UCA-Q-1]
+    hazards: [H-2]
+
+  - id: CC-Q-2
+    controller: CTRL-REQIF
+    constraint: >
+      ReqIF adapter must include deletion markers in exports for
+      artifacts that have been removed from the local store.
+    ucas: [UCA-Q-2]
+    hazards: [H-1, H-5]
+
+  - id: CC-Q-3
+    controller: CTRL-REQIF
+    constraint: >
+      ReqIF adapter must use explicitly defined schema mappings and
+      must reject unmapped attributes with a hard error.
+    ucas: [UCA-Q-3]
+    hazards: [H-4]
+
+  - id: CC-Q-4
+    controller: CTRL-REQIF
+    constraint: >
+      ReqIF adapter must detect previously imported artifacts by
+      identifier and update them rather than creating duplicates.
+    ucas: [UCA-Q-4]
+    hazards: [H-3, H-5]
+
+  - id: CC-Q-5
+    controller: CTRL-REQIF
+    constraint: >
+      ReqIF adapter must preserve structured content (XHTML, tables)
+      during export, or warn when content simplification occurs.
+    ucas: [UCA-Q-5]
+    hazards: [H-4]
+
+  - id: CC-Q-6
+    controller: CTRL-REQIF
+    constraint: >
+      ReqIF adapter must not process imports before schema definitions
+      and rivet.yaml configuration have been loaded.
+    ucas: [UCA-Q-6]
+    hazards: [H-4, H-2]
+
+  - id: CC-Q-7
+    controller: CTRL-REQIF
+    constraint: >
+      ReqIF adapter must continue processing remaining SpecObjects
+      after encountering a parse error, quarantining the failing
+      record and reporting it separately.
+    ucas: [UCA-Q-7]
+    hazards: [H-2]
+
+  # =========================================================================
+  # CLI constraints
+  # =========================================================================
+  - id: CC-L-1
+    controller: CTRL-CLI
+    constraint: >
+      CLI must display all validation warnings to the developer,
+      regardless of verbosity settings.
+    ucas: [UCA-L-1]
+    hazards: [H-1, H-3]
+
+  - id: CC-L-2
+    controller: CTRL-CLI
+    constraint: >
+      CLI must invoke validation before generating any report or
+      metric output, or clearly label the output as unvalidated.
+    ucas: [UCA-L-2]
+    hazards: [H-3, H-6]
+
+  - id: CC-L-3
+    controller: CTRL-CLI
+    constraint: >
+      CLI must not overwrite locally modified files during sync
+      without prompting the developer for confirmation.
+    ucas: [UCA-L-3]
+    hazards: [H-5, H-3, H-7]
+
+  - id: CC-L-4
+    controller: CTRL-CLI
+    constraint: >
+      CLI must select adapters based on explicit configuration,
+      not inference from file extension or path patterns.
+    ucas: [UCA-L-4]
+    hazards: [H-4, H-2]
+
+  - id: CC-L-5
+    controller: CTRL-CLI
+    constraint: >
+      CLI must not write sync results to files that are currently
+      being edited, or must use atomic file replacement.
+    ucas: [UCA-L-5]
+    hazards: [H-5, H-7]
+
+  # =========================================================================
+  # CI Pipeline constraints
+  # =========================================================================
+  - id: CC-I-1
+    controller: CTRL-CI
+    constraint: >
+      CI must run rivet validate on every pull request that modifies
+      artifact YAML files or schema definitions.
+    ucas: [UCA-I-1]
+    hazards: [H-1, H-3]
+
+  - id: CC-I-2
+    controller: CTRL-CI
+    constraint: >
+      CI must configure rivet validate as a required check that
+      blocks merge on failure.
+    ucas: [UCA-I-2]
+    hazards: [H-1, H-3, H-6]
+
+  - id: CC-I-3
+    controller: CTRL-CI
+    constraint: >
+      CI must correctly propagate the exit code from rivet validate
+      and fail the check on non-zero exit.
+    ucas: [UCA-I-3]
+    hazards: [H-3, H-6]
+
+  - id: CC-I-4
+    controller: CTRL-CI
+    constraint: >
+      CI must check out the latest PR revision before running
+      validation, without using cached artifact state.
+    ucas: [UCA-I-4]
+    hazards: [H-1, H-3]
+
+  # =========================================================================
+  # Dashboard constraints
+  # =========================================================================
+  - id: CC-D-1
+    controller: CTRL-DASH
+    constraint: >
+      Dashboard must display validation errors and warnings alongside
+      coverage metrics.
+    ucas: [UCA-D-1]
+    hazards: [H-3, H-6]
+
+  - id: CC-D-2
+    controller: CTRL-DASH
+    constraint: >
+      Dashboard must display the timestamp of the last validation run
+      and warn when displayed data may be stale.
+    ucas: [UCA-D-2]
+    hazards: [H-3, H-6]

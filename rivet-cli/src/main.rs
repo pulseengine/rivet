@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -219,6 +220,28 @@ enum Command {
     /// Generate .rivet/agent-context.md from current project state
     Context,
 
+    /// Validate a commit message for artifact trailers (pre-commit hook)
+    CommitMsgCheck {
+        /// Path to the commit message file
+        file: PathBuf,
+    },
+
+    /// Analyze git commit history for artifact traceability
+    Commits {
+        /// Only analyze commits after this date (YYYY-MM-DD)
+        #[arg(long)]
+        since: Option<String>,
+        /// Git revision range (e.g., "main..HEAD")
+        #[arg(long)]
+        range: Option<String>,
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
+        /// Promote warnings to errors
+        #[arg(long)]
+        strict: bool,
+    },
+
     /// Start the HTMX-powered dashboard server
     Serve {
         /// Port to listen on
@@ -323,9 +346,15 @@ fn run(cli: Cli) -> Result<bool> {
     if let Command::Context = &cli.command {
         return cmd_context(&cli);
     }
+    if let Command::CommitMsgCheck { file } = &cli.command {
+        return cmd_commit_msg_check(&cli, file);
+    }
 
     match &cli.command {
-        Command::Init { .. } | Command::Docs { .. } | Command::Context => unreachable!(),
+        Command::Init { .. }
+        | Command::Docs { .. }
+        | Command::Context
+        | Command::CommitMsgCheck { .. } => unreachable!(),
         Command::Stpa { path, schema } => cmd_stpa(path, schema.as_deref(), &cli),
         Command::Validate { format } => cmd_validate(&cli, format),
         Command::List {
@@ -347,6 +376,12 @@ fn run(cli: Cli) -> Result<bool> {
         }
         Command::Export { format, output } => cmd_export(&cli, format, output.as_deref()),
         Command::Schema { action } => cmd_schema(&cli, action),
+        Command::Commits {
+            since,
+            range,
+            format,
+            strict,
+        } => cmd_commits(&cli, since.as_deref(), range.as_deref(), format, *strict),
         Command::Serve { port } => {
             let port = *port;
             let (
@@ -1554,6 +1589,366 @@ fn cmd_context(cli: &Cli) -> Result<bool> {
         .with_context(|| format!("writing {}", context_path.display()))?;
     println!("Generated {}", context_path.display());
     Ok(true)
+}
+
+// ── commit-msg-check ─────────────────────────────────────────────────────
+
+fn cmd_commit_msg_check(cli: &Cli, file: &std::path::Path) -> Result<bool> {
+    use std::collections::BTreeMap;
+
+    // Read commit message file
+    let raw = std::fs::read_to_string(file)
+        .with_context(|| format!("reading commit message file '{}'", file.display()))?;
+
+    // Strip comment lines (lines starting with #)
+    let message: String = raw
+        .lines()
+        .filter(|line| !line.starts_with('#'))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let message = message.trim();
+
+    if message.is_empty() {
+        // Empty commit message — let git itself handle that
+        return Ok(true);
+    }
+
+    // Try to load rivet.yaml for commits config
+    let config_path = cli.project.join("rivet.yaml");
+    let config = match rivet_core::load_project_config(&config_path) {
+        Ok(c) => c,
+        Err(_) => {
+            // No rivet.yaml or invalid — pass silently
+            log::debug!("no rivet.yaml found, skipping commit-msg check");
+            return Ok(true);
+        }
+    };
+
+    let commits_cfg = match &config.commits {
+        Some(c) => c,
+        None => {
+            // No commits config — pass silently
+            log::debug!("no commits config in rivet.yaml, skipping commit-msg check");
+            return Ok(true);
+        }
+    };
+
+    // Extract subject (first line)
+    let subject = message.lines().next().unwrap_or("");
+
+    // Check exempt type
+    if let Some(ct) = rivet_core::commits::parse_commit_type(subject) {
+        if commits_cfg.exempt_types.iter().any(|et| et == &ct) {
+            log::debug!("commit type '{ct}' is exempt");
+            return Ok(true);
+        }
+    }
+
+    // Check skip trailer
+    if message
+        .lines()
+        .any(|line| line.trim() == commits_cfg.skip_trailer)
+    {
+        log::debug!("skip trailer found");
+        return Ok(true);
+    }
+
+    // Parse artifact trailers
+    let trailer_map: &BTreeMap<String, String> = &commits_cfg.trailers;
+    let (artifact_refs, _) =
+        rivet_core::commits::parse_commit_message(message, trailer_map, &commits_cfg.skip_trailer);
+
+    let all_ids: Vec<String> = artifact_refs.values().flatten().cloned().collect();
+
+    if all_ids.is_empty() {
+        eprintln!("error: commit message has no artifact trailers");
+        eprintln!();
+        eprintln!("Add one of the following trailers to your commit message:");
+        for (trailer_key, link_type) in trailer_map {
+            eprintln!("  {trailer_key}: <ARTIFACT-ID>    (link type: {link_type})");
+        }
+        eprintln!();
+        eprintln!("Or add '{}' to skip this check.", commits_cfg.skip_trailer);
+        if !commits_cfg.exempt_types.is_empty() {
+            eprintln!(
+                "Exempt commit types: {}",
+                commits_cfg.exempt_types.join(", ")
+            );
+        }
+        return Ok(false);
+    }
+
+    // Load store to validate artifact IDs
+    let schemas_dir = resolve_schemas_dir(cli);
+    let schema = match rivet_core::load_schemas(&config.project.schemas, &schemas_dir) {
+        Ok(s) => s,
+        Err(e) => {
+            log::warn!("could not load schemas: {e}; skipping ID validation");
+            return Ok(true);
+        }
+    };
+    let _ = schema; // we only need the store, not schema validation
+
+    let mut store = Store::new();
+    for source in &config.sources {
+        match rivet_core::load_artifacts(source, &cli.project) {
+            Ok(artifacts) => {
+                for a in artifacts {
+                    store.upsert(a);
+                }
+            }
+            Err(e) => {
+                log::warn!(
+                    "could not load source '{}': {e}; skipping ID validation",
+                    source.path
+                );
+                return Ok(true);
+            }
+        }
+    }
+
+    // Validate each referenced artifact ID
+    let known_ids: HashSet<String> = store.iter().map(|a| a.id.clone()).collect();
+    let mut unknown = Vec::new();
+    for id in &all_ids {
+        if !known_ids.contains(id) {
+            unknown.push(id.clone());
+        }
+    }
+
+    if unknown.is_empty() {
+        return Ok(true);
+    }
+
+    // Report unknown IDs with fuzzy suggestions
+    eprintln!("error: commit references unknown artifact IDs:");
+    for uid in &unknown {
+        eprint!("  {uid}");
+        // Find closest match via Levenshtein
+        let mut best: Option<(&str, usize)> = None;
+        for kid in &known_ids {
+            let d = levenshtein(uid, kid);
+            if d <= 3 {
+                match best {
+                    Some((_, bd)) if d < bd => best = Some((kid, d)),
+                    None => best = Some((kid, d)),
+                    _ => {}
+                }
+            }
+        }
+        if let Some((suggestion, _)) = best {
+            eprint!(" (did you mean '{suggestion}'?)");
+        }
+        eprintln!();
+    }
+    Ok(false)
+}
+
+// ── commits ──────────────────────────────────────────────────────────────
+
+fn cmd_commits(
+    cli: &Cli,
+    since: Option<&str>,
+    range: Option<&str>,
+    format: &str,
+    strict: bool,
+) -> Result<bool> {
+    use std::collections::BTreeMap;
+
+    // Load project config
+    let config_path = cli.project.join("rivet.yaml");
+    let config = rivet_core::load_project_config(&config_path)
+        .with_context(|| format!("loading {}", config_path.display()))?;
+
+    let commits_cfg = config
+        .commits
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("no 'commits' section in rivet.yaml"))?;
+
+    // Load artifacts into store
+    let schemas_dir = resolve_schemas_dir(cli);
+    let _schema = rivet_core::load_schemas(&config.project.schemas, &schemas_dir)
+        .context("loading schemas")?;
+
+    let mut store = Store::new();
+    for source in &config.sources {
+        let artifacts = rivet_core::load_artifacts(source, &cli.project)
+            .with_context(|| format!("loading source '{}'", source.path))?;
+        for a in artifacts {
+            store.upsert(a);
+        }
+    }
+
+    let known_ids: HashSet<String> = store.iter().map(|a| a.id.clone()).collect();
+
+    // Determine git range
+    let git_range = if let Some(r) = range {
+        r.to_string()
+    } else if let Some(s) = since {
+        format!("--since={s} HEAD")
+    } else {
+        "HEAD".to_string()
+    };
+
+    // Resolve project path for git
+    let project_path = std::fs::canonicalize(&cli.project).unwrap_or_else(|_| cli.project.clone());
+
+    let trailer_map: &BTreeMap<String, String> = &commits_cfg.trailers;
+
+    let commits = rivet_core::commits::git_log_commits(
+        &project_path,
+        &git_range,
+        trailer_map,
+        &commits_cfg.skip_trailer,
+    )
+    .context("running git log")?;
+
+    let analysis = rivet_core::commits::analyze_commits(
+        commits,
+        &known_ids,
+        &commits_cfg.exempt_types,
+        &commits_cfg.traced_paths,
+        &commits_cfg.trace_exempt_artifacts,
+        trailer_map,
+    );
+
+    if format == "json" {
+        return cmd_commits_json(&analysis, strict);
+    }
+
+    // Text output
+    let total = analysis.linked.len() + analysis.orphans.len() + analysis.exempt.len();
+
+    println!("Commit traceability analysis");
+    println!("============================");
+    println!();
+    println!("  Linked:       {:>4}", analysis.linked.len());
+    println!("  Orphan:       {:>4}", analysis.orphans.len());
+    println!("  Exempt:       {:>4}", analysis.exempt.len());
+    println!("  Broken refs:  {:>4}", analysis.broken_refs.len());
+    println!("  Total:        {:>4}", total);
+
+    if !analysis.broken_refs.is_empty() {
+        println!();
+        println!("Broken references:");
+        for br in &analysis.broken_refs {
+            let short = if br.hash.len() > 8 {
+                &br.hash[..8]
+            } else {
+                &br.hash
+            };
+            println!(
+                "  {short} {}: unknown ID '{}' (trailer: {})",
+                br.subject, br.missing_id, br.link_type
+            );
+        }
+    }
+
+    if !analysis.orphans.is_empty() {
+        println!();
+        println!("Orphan commits (no artifact trailers):");
+        for c in &analysis.orphans {
+            let short = if c.hash.len() > 8 {
+                &c.hash[..8]
+            } else {
+                &c.hash
+            };
+            println!("  {short} {}", c.subject);
+        }
+    }
+
+    if !analysis.unimplemented.is_empty() {
+        println!();
+        println!("Artifacts with no commit coverage:");
+        for id in &analysis.unimplemented {
+            println!("  {id}");
+        }
+    }
+
+    // Coverage table
+    if !known_ids.is_empty() {
+        let covered = analysis.artifact_coverage.len();
+        let trace_exempt_count = commits_cfg.trace_exempt_artifacts.len();
+        let trackable = known_ids.len() - trace_exempt_count;
+        let pct = if trackable > 0 {
+            (covered as f64 / trackable as f64) * 100.0
+        } else {
+            100.0
+        };
+        println!();
+        println!("Artifact coverage: {covered}/{trackable} ({pct:.1}%)");
+    }
+
+    // Exit code
+    let has_errors = !analysis.broken_refs.is_empty();
+    let has_warnings = !analysis.orphans.is_empty() || !analysis.unimplemented.is_empty();
+    let fail = has_errors || (strict && has_warnings);
+    Ok(!fail)
+}
+
+fn cmd_commits_json(analysis: &rivet_core::commits::CommitAnalysis, strict: bool) -> Result<bool> {
+    let json = serde_json::json!({
+        "summary": {
+            "linked": analysis.linked.len(),
+            "orphans": analysis.orphans.len(),
+            "exempt": analysis.exempt.len(),
+            "broken_refs": analysis.broken_refs.len(),
+        },
+        "broken_refs": analysis.broken_refs.iter().map(|br| {
+            serde_json::json!({
+                "hash": br.hash,
+                "subject": br.subject,
+                "missing_id": br.missing_id,
+                "link_type": br.link_type,
+            })
+        }).collect::<Vec<_>>(),
+        "orphans": analysis.orphans.iter().map(|c| {
+            serde_json::json!({
+                "hash": c.hash,
+                "subject": c.subject,
+                "date": c.date,
+            })
+        }).collect::<Vec<_>>(),
+        "unimplemented": analysis.unimplemented.iter().collect::<Vec<_>>(),
+        "artifact_coverage": analysis.artifact_coverage.iter().collect::<Vec<_>>(),
+    });
+
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&json).context("serializing JSON")?
+    );
+
+    let has_errors = !analysis.broken_refs.is_empty();
+    let has_warnings = !analysis.orphans.is_empty() || !analysis.unimplemented.is_empty();
+    let fail = has_errors || (strict && has_warnings);
+    Ok(!fail)
+}
+
+/// Compute Levenshtein edit distance between two strings.
+fn levenshtein(a: &str, b: &str) -> usize {
+    let a_len = a.len();
+    let b_len = b.len();
+
+    if a_len == 0 {
+        return b_len;
+    }
+    if b_len == 0 {
+        return a_len;
+    }
+
+    let mut prev: Vec<usize> = (0..=b_len).collect();
+    let mut curr = vec![0; b_len + 1];
+
+    for (i, ca) in a.chars().enumerate() {
+        curr[0] = i + 1;
+        for (j, cb) in b.chars().enumerate() {
+            let cost = if ca == cb { 0 } else { 1 };
+            curr[j + 1] = (prev[j] + cost).min(prev[j + 1] + 1).min(curr[j] + 1);
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+
+    prev[b_len]
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────

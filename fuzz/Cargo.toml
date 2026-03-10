@@ -1,0 +1,36 @@
+[package]
+name = "rivet-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+rivet-core = { path = "../rivet-core", default-features = false }
+serde_yaml = "0.9"
+
+# Prevent this from being included in workspace
+[workspace]
+
+[[bin]]
+name = "fuzz_yaml_artifact"
+path = "fuzz_targets/fuzz_yaml_artifact.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_schema_merge"
+path = "fuzz_targets/fuzz_schema_merge.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_reqif_import"
+path = "fuzz_targets/fuzz_reqif_import.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_document_parse"
+path = "fuzz_targets/fuzz_document_parse.rs"
+doc = false

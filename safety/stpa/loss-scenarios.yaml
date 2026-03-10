@@ -1,0 +1,419 @@
+# =============================================================================
+# STPA Step 4 — Loss Scenarios
+# =============================================================================
+#
+# A loss scenario describes the causal factors that can lead to unsafe
+# control actions and to hazards.  Each scenario tells a complete story:
+# what goes wrong, why it goes wrong, and what hazard results.
+#
+# Types:
+#   - inadequate-control-algorithm: the decision logic itself is flawed
+#   - inadequate-process-model: controller's beliefs don't match reality
+#   - control-path: control action is not executed or improperly executed
+#
+# Reference: STPA Handbook, §2.6
+# =============================================================================
+
+loss-scenarios:
+
+  # =========================================================================
+  # Core Engine scenarios
+  # =========================================================================
+  - id: LS-C-1
+    title: Validation skips cross-source link resolution
+    uca: UCA-C-4
+    type: inadequate-control-algorithm
+    hazards: [H-1, H-3, H-6]
+    scenario: >
+      The Core validation algorithm checks that each link target exists
+      within the same YAML file or directory, but does not resolve links
+      that cross source boundaries (e.g., a requirement in artifacts/
+      linking to a design decision in a different directory or OSLC-synced
+      source).  The link target exists in a different source that was
+      loaded, but the resolution algorithm only searches the local source.
+      Validation passes despite cross-source dangling links [UCA-C-4],
+      inflating coverage metrics [H-3] and producing misleading
+      compliance reports [H-6].
+    causal-factors:
+      - Link resolution algorithm scopes search to per-file or per-directory
+      - No integration test covers cross-source link resolution
+      - Original design assumed single-source artifact stores
+
+  - id: LS-C-2
+    title: Coverage counts untyped links as valid traces
+    uca: UCA-C-5
+    type: inadequate-control-algorithm
+    hazards: [H-3, H-6]
+    scenario: >
+      The Core coverage computation counts all edges in the link graph
+      as valid trace relationships, regardless of whether the link type
+      (satisfies, refines, verifies, implements) is semantically
+      appropriate for the coverage query.  An artifact with only
+      "related-to" links is counted as fully traced [UCA-C-5].
+      Coverage metrics show 100% when actual requirement-to-test
+      coverage is incomplete [H-3].
+    causal-factors:
+      - Coverage algorithm does not filter by link type semantics
+      - Schema does not enforce required link types per artifact type
+      - No distinction between informational and trace links
+
+  - id: LS-C-3
+    title: Schema fallback accepts unknown artifact types
+    uca: UCA-C-6
+    type: inadequate-process-model
+    hazards: [H-4, H-2]
+    scenario: >
+      Core's process model includes a set of known schemas loaded from
+      rivet.yaml.  When an imported artifact declares a type not present
+      in any loaded schema (e.g., "spec-object" from a ReqIF import that
+      wasn't mapped), Core's process model has no entry for this type.
+      The algorithm falls back to accepting the artifact without schema
+      validation [UCA-C-6], believing it is an extension type that does
+      not require validation.  The artifact may contain arbitrary fields
+      and invalid links [H-4].
+    process-model-flaw: >
+      Core believes that artifacts with unrecognized types are valid
+      extension types that do not require schema validation, when in
+      reality they are unmapped imports that should be rejected.
+    causal-factors:
+      - No explicit "unknown type" rejection in the validation pipeline
+      - Permissive default behavior chosen over strict validation
+      - ReqIF adapter may produce types not in the schema registry
+
+  - id: LS-C-4
+    title: Partial source loading during incremental validation
+    uca: UCA-C-7
+    type: inadequate-process-model
+    hazards: [H-1, H-3]
+    scenario: >
+      Developer runs `rivet validate` in a workspace where rivet.yaml
+      lists three source directories, but one directory is on a network
+      mount that is temporarily unavailable.  Core's process model marks
+      two sources as loaded but does not track that the third failed to
+      load.  Validation proceeds with only two sources [UCA-C-7],
+      reporting links to the third source as dangling when they are
+      actually valid but unreachable.  Worse, if the third source
+      contains new artifacts that satisfy previously-dangling links,
+      those links remain flagged as broken, eroding trust in the
+      validation output.
+    process-model-flaw: >
+      Core believes all configured sources have been loaded because it
+      does not track per-source loading status, when in reality one
+      source failed to mount/load.
+    causal-factors:
+      - No per-source load-status tracking in the process model
+      - Filesystem errors during directory traversal are logged but not fatal
+      - No pre-validation check that all sources are available
+
+  # =========================================================================
+  # OSLC Client scenarios
+  # =========================================================================
+  - id: LS-O-1
+    title: TRS change log cursor advances past failed entries
+    uca: UCA-O-10
+    type: inadequate-control-algorithm
+    hazards: [H-2, H-1, H-5]
+    scenario: >
+      The OSLC client processes TRS change log entries sequentially,
+      advancing its sync cursor after each entry.  When a network error
+      occurs mid-sync, the cursor has already advanced past entries that
+      were fetched but not fully written to the local store [UCA-O-10].
+      On the next sync, those entries are skipped because the cursor is
+      past them, and the corresponding artifact updates are permanently
+      lost [H-2].  The local store diverges from the external tool
+      without any indication to the developer.
+    causal-factors:
+      - Cursor advancement is not transactional with local writes
+      - No journal or write-ahead log for sync operations
+      - Retry logic starts from the current cursor, not from the last committed cursor
+
+  - id: LS-O-2
+    title: Last-writer-wins during concurrent modification
+    uca: UCA-O-4
+    type: inadequate-control-algorithm
+    hazards: [H-5, H-3, H-7]
+    scenario: >
+      A safety engineer modifies a requirement locally while the same
+      requirement is updated in Polarion by a systems engineer.  The
+      OSLC client fetches the Polarion version and writes it to the
+      local YAML file, overwriting the safety engineer's changes
+      [UCA-O-4].  The safety engineer's safety-related amendments to
+      the requirement (e.g., adding a safety integrity level or hazard
+      reference) are lost [H-5].  The git commit shows the overwrite,
+      but the safety engineer does not notice until the next review,
+      by which time a compliance report may have been generated from
+      the incomplete data [H-6].
+    causal-factors:
+      - No ETag or timestamp comparison before local writes
+      - No merge/diff presentation for conflicting changes
+      - OSLC client assumes remote is authoritative for all fields
+
+  - id: LS-O-3
+    title: Phantom deletion propagates through sync
+    uca: UCA-O-5
+    type: inadequate-process-model
+    hazards: [H-2, H-1, H-5]
+    scenario: >
+      An administrator in the external tool archives a module of
+      requirements (marking them as "obsolete" rather than deleting
+      them), but the tool's OSLC interface reports this as a deletion
+      event in the TRS change log.  The OSLC client's process model
+      does not distinguish between archival and deletion [UCA-O-5].
+      It removes the artifacts from the local store, creating dangling
+      links from design decisions and test cases that still reference
+      those requirements [H-1, H-2].
+    process-model-flaw: >
+      OSLC client believes a TRS deletion event means the artifact no
+      longer exists, when in reality it may have been archived or moved
+      to a different module and is still semantically valid.
+    causal-factors:
+      - TRS protocol does not distinguish deletion from archival
+      - No confirmation prompt before applying remote deletions
+      - No "soft delete" or quarantine mechanism for remotely-deleted artifacts
+
+  - id: LS-O-4
+    title: Semantic mismatch in status mapping
+    uca: UCA-O-6
+    type: inadequate-process-model
+    hazards: [H-8, H-4]
+    scenario: >
+      The external tool uses lifecycle statuses "Draft", "In Review",
+      "Approved", "Baselined", and "Obsolete".  Rivet's schema uses
+      "draft", "review", "approved", "released".  The OSLC client maps
+      "Baselined" to "approved" (closest match) rather than "released",
+      because its process model does not include "Baselined" as a known
+      status [UCA-O-6].  Artifacts that have been formally baselined
+      appear as merely "approved" in Rivet, causing auditors to question
+      whether the baselining step was performed [H-4].  Coverage queries
+      that filter by status="released" miss these artifacts [H-3].
+    process-model-flaw: >
+      OSLC client's status mapping table does not include all statuses
+      used by the external tool, causing it to map unknown statuses to
+      the closest known value rather than flagging a mapping gap.
+    causal-factors:
+      - Status mapping is hardcoded rather than configurable
+      - No validation that all remote statuses have explicit mappings
+      - External tool added new statuses after the mapping was created
+
+  - id: LS-O-5
+    title: Authentication token expiry during long sync
+    uca: UCA-O-3
+    type: control-path
+    scenario: >
+      The OSLC client begins a sync operation that takes several minutes
+      (large change log).  Midway through, the OAuth token expires.
+      Subsequent TRS page fetches return 401 Unauthorized, but the client
+      treats this as an empty page (no more changes) rather than an error.
+      The sync appears to complete successfully [UCA-O-3], but only half
+      the change log was processed.  The developer proceeds to generate
+      reports from the incomplete sync state [H-6, H-1].
+    hazards: [H-1, H-6]
+    causal-factors:
+      - HTTP 401 responses not distinguished from empty TRS pages
+      - No token refresh mechanism during long-running operations
+      - Sync completion is reported based on reaching an empty page rather than the TRS base URI
+
+  - id: LS-O-6
+    title: Error amplification through bidirectional sync chain
+    uca: UCA-O-7
+    type: inadequate-control-algorithm
+    hazards: [H-8, H-4]
+    scenario: >
+      A developer accidentally runs a bulk find-and-replace on local
+      YAML files that corrupts status fields (e.g., "approved" becomes
+      "approv").  The developer does not validate before pushing.  The
+      OSLC client's outbound sync pushes these corrupted artifacts to
+      the external tool [UCA-O-7].  A second team's Rivet instance,
+      also connected to the same external tool, syncs the corrupted
+      data inbound.  The corruption has now propagated from one
+      developer's local store to two external systems [H-8].
+    causal-factors:
+      - No pre-push validation gate in the OSLC client
+      - Outbound sync treats all local artifacts as authoritative
+      - No circuit-breaker to halt sync when error rates exceed a threshold
+
+  # =========================================================================
+  # ReqIF Adapter scenarios
+  # =========================================================================
+  - id: LS-Q-1
+    title: Interleaved XML elements cause parse failure
+    uca: UCA-Q-1
+    type: inadequate-control-algorithm
+    hazards: [H-2]
+    scenario: >
+      A ReqIF file exported from StrictDoc interleaves ATTRIBUTE-DEFINITION-
+      STRING and ATTRIBUTE-DEFINITION-ENUMERATION elements within the same
+      SPEC-ATTRIBUTES parent.  The XML deserializer (quick-xml) without the
+      overlapped-lists feature treats this as duplicate elements of the same
+      type and fails with a "duplicate field" error [UCA-Q-1].  All
+      artifacts in the file are lost [H-2].  This is a known bug that was
+      fixed by enabling the overlapped-lists feature, but similar
+      interleaving patterns in other ReqIF exports could trigger
+      analogous failures.
+    causal-factors:
+      - Serde deserialization assumes grouped (non-interleaved) XML elements
+      - ReqIF standard does not mandate element ordering within containers
+      - Parser was tested only against ReqIF exports with grouped elements
+
+  - id: LS-Q-2
+    title: UUID-based identifiers lose human readability
+    uca: UCA-Q-3
+    type: inadequate-process-model
+    hazards: [H-4]
+    scenario: >
+      A ReqIF file uses UUIDs as SpecObject identifiers (IDENTIFIER
+      attribute) while storing human-readable IDs in the ReqIF.ForeignID
+      attribute.  The ReqIF adapter's process model maps IDENTIFIER to
+      the artifact's id field, producing artifacts with UUID-based IDs
+      like "550e8400-e29b-41d4-a716-446655440000" [UCA-Q-3].  Links
+      created from these IDs are valid but unreadable.  When the adapter
+      should have used ReqIF.ForeignID (e.g., "ZEP-REQ-042") as the
+      artifact ID.
+    process-model-flaw: >
+      ReqIF adapter believes IDENTIFIER is always the human-readable
+      artifact ID, when some tools (StrictDoc, Polarion) use UUIDs as
+      IDENTIFIER and store the human ID in ReqIF.ForeignID.
+    causal-factors:
+      - ReqIF standard allows both patterns (UUID vs. human-readable IDENTIFIER)
+      - No configurable ID-source field in the adapter
+      - Fixed by adding ReqIF.ForeignID lookup, but other non-standard patterns may exist
+
+  - id: LS-Q-3
+    title: SpecRelation targets reference missing SpecObjects
+    uca: UCA-Q-7
+    type: control-path
+    scenario: >
+      A ReqIF file contains SpecRelations (links) whose SOURCE or TARGET
+      references point to SpecObjects in a different ReqIF file that was
+      not imported.  The ReqIF adapter resolves the UUID references
+      against only the current file's SpecObjects, finds no match, and
+      silently drops the links [UCA-Q-7].  The imported artifacts have
+      no parent links, breaking the traceability chain [H-1].  Coverage
+      metrics show zero parent coverage when links actually exist in
+      the cross-file context [H-3].
+    hazards: [H-1, H-3]
+    causal-factors:
+      - ReqIF import processes files independently, not as a correlated set
+      - Cross-file SpecRelation references are common in multi-module exports
+      - No warning emitted for unresolvable SpecRelation targets
+
+  # =========================================================================
+  # CLI scenarios
+  # =========================================================================
+  - id: LS-L-1
+    title: Sync races with editor file watches
+    uca: UCA-L-5
+    type: control-path
+    scenario: >
+      Developer has artifact YAML files open in VS Code with auto-save
+      enabled.  They run `rivet sync` which writes updated artifacts
+      to the same files.  VS Code detects the external file change and
+      either (a) reloads the file, losing the developer's unsaved edits,
+      or (b) prompts the developer, who accidentally chooses "overwrite"
+      and pushes their stale version back over the sync result.  In
+      either case, data is lost or corrupted [H-5, H-7].
+    hazards: [H-5, H-7]
+    causal-factors:
+      - CLI writes directly to working-tree YAML files, no staging area
+      - No file-locking mechanism to coordinate with editors
+      - No atomic write (write-to-temp-then-rename) pattern used
+
+  - id: LS-L-2
+    title: Wrong adapter selected for ambiguous file format
+    uca: UCA-L-4
+    type: inadequate-process-model
+    hazards: [H-4, H-2]
+    scenario: >
+      Developer runs `rivet import data.xml` without specifying an
+      adapter.  The CLI's process model infers the adapter from the
+      file extension (.xml → ReqIF adapter).  However, the file is
+      actually an OSLC RDF/XML resource description, not ReqIF.  The
+      ReqIF adapter fails to parse the RDF structure and either crashes
+      or produces garbage artifacts [UCA-L-4, H-4].
+    process-model-flaw: >
+      CLI believes .xml files are always ReqIF, when they could be
+      OSLC RDF/XML, generic XML, or other XML-based formats.
+    causal-factors:
+      - Adapter selection based on file extension rather than content sniffing
+      - No explicit --adapter flag required for ambiguous formats
+      - No content-type validation before adapter dispatch
+
+  # =========================================================================
+  # CI Pipeline scenarios
+  # =========================================================================
+  - id: LS-I-1
+    title: CI path filter excludes new artifact directories
+    uca: UCA-I-1
+    type: inadequate-control-algorithm
+    hazards: [H-1, H-3]
+    scenario: >
+      The CI workflow triggers rivet validate only when files in the
+      artifacts/ directory change.  A developer adds a new artifact
+      source directory (e.g., safety/stpa/) to rivet.yaml but does
+      not update the CI path filter.  Changes to STPA artifacts bypass
+      validation entirely [UCA-I-1].  Broken links in the STPA
+      artifacts are merged into main without detection [H-1, H-3].
+    causal-factors:
+      - CI path filters are manually maintained, not derived from rivet.yaml
+      - No CI test that validates the path filter matches all configured sources
+      - Adding a new source directory is a multi-step process with no checklist
+
+  - id: LS-I-2
+    title: CI caches stale artifacts across workflow runs
+    uca: UCA-I-4
+    type: inadequate-process-model
+    hazards: [H-1, H-3]
+    scenario: >
+      CI uses aggressive caching to speed up builds.  The cache key
+      includes the Cargo.lock hash but not the artifact YAML content.
+      When artifact files change but Cargo.lock does not, CI restores
+      a cached target/ directory that may include stale validation
+      state [UCA-I-4].  Validation appears to pass because it runs
+      against cached data that does not reflect the current PR's
+      changes [H-1, H-3].
+    process-model-flaw: >
+      CI believes the cache is valid if the build dependencies haven't
+      changed, not accounting for artifact data changes that affect
+      validation results.
+    causal-factors:
+      - Cache key does not include artifact file hashes
+      - rivet validate may read cached intermediate state
+      - No cache-busting mechanism for artifact-only changes
+
+  # =========================================================================
+  # Control-path scenarios (Type B — not tied to a specific UCA)
+  # =========================================================================
+  - id: LS-CP-1
+    title: Git merge silently resolves YAML conflicts incorrectly
+    type: control-path
+    hazards: [H-1, H-5, H-7]
+    scenario: >
+      Two branches modify different fields of the same artifact in
+      the same YAML file.  Git's line-based merge algorithm resolves
+      the merge automatically (no conflict markers), but the result
+      is semantically invalid — e.g., a link was added in one branch
+      while the artifact's type was changed in another, creating a
+      link type mismatch.  The merge commits without triggering
+      validation, and the invalid state reaches the main branch.
+    causal-factors:
+      - YAML is line-based but semantically structured; git merges lines, not structure
+      - Post-merge validation is not automatically triggered
+      - Pre-commit hooks may not run during merge commits
+
+  - id: LS-CP-2
+    title: Network partition during OSLC sync corrupts local state
+    type: control-path
+    hazards: [H-2, H-1]
+    scenario: >
+      The OSLC client is writing synced artifacts to local YAML files
+      when a network partition occurs.  The client has written 50 of
+      100 artifacts when the connection to the external tool is lost.
+      The 50 written artifacts are updated, but 50 remain stale.
+      The local store is now in a state that never existed in either
+      the pre-sync or post-sync world, with some artifacts reflecting
+      the new state and others reflecting the old state.  Links
+      between these two groups may be inconsistent.
+    causal-factors:
+      - No transactional write mechanism for bulk artifact updates
+      - Partial writes are committed to the working tree immediately
+      - No rollback capability for interrupted sync operations

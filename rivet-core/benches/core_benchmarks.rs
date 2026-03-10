@@ -13,9 +13,12 @@ use std::path::PathBuf;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 
+use rivet_core::diff::ArtifactDiff;
+use rivet_core::document;
 use rivet_core::links::LinkGraph;
 use rivet_core::matrix::{self, Direction};
 use rivet_core::model::{Artifact, Link};
+use rivet_core::query::{self, Query};
 use rivet_core::schema::Schema;
 use rivet_core::store::Store;
 use rivet_core::validate;
@@ -225,6 +228,196 @@ fn bench_traceability_matrix(c: &mut Criterion) {
     group.finish();
 }
 
+// ── Diff helpers ────────────────────────────────────────────────────────
+
+/// Build a pair of stores (base, head) that differ in a realistic way.
+///
+/// - ~10% of artifacts are added in head (not in base)
+/// - ~10% of artifacts are removed from head (only in base)
+/// - ~20% of common artifacts have modified titles
+/// - remaining ~60% are identical
+fn build_diff_stores(n: usize) -> (Store, Store) {
+    let added_count = n / 10;
+    let removed_count = n / 10;
+    let common_count = n - added_count - removed_count;
+    let modified_count = common_count / 3; // roughly 20% of total
+
+    let mut base = Store::new();
+    let mut head = Store::new();
+
+    // Common artifacts (some modified in head)
+    for i in 0..common_count {
+        let art_type = ARTIFACT_TYPES[i % ARTIFACT_TYPES.len()];
+        let base_art = Artifact {
+            id: format!("DIFF-{i}"),
+            artifact_type: art_type.to_string(),
+            title: format!("Artifact {i}"),
+            description: Some(format!("Description for artifact {i}")),
+            status: Some("approved".into()),
+            tags: vec!["common".into()],
+            links: vec![],
+            fields: BTreeMap::new(),
+            source_file: None,
+        };
+        base.upsert(base_art.clone());
+
+        if i < modified_count {
+            // Modified in head: change title and add a tag
+            let mut head_art = base_art;
+            head_art.title = format!("Modified artifact {i}");
+            head_art.tags.push("modified".into());
+            head.upsert(head_art);
+        } else {
+            head.upsert(base_art);
+        }
+    }
+
+    // Removed artifacts (only in base)
+    for i in 0..removed_count {
+        let idx = common_count + i;
+        let art = Artifact {
+            id: format!("DIFF-{idx}"),
+            artifact_type: "loss".to_string(),
+            title: format!("Removed artifact {i}"),
+            description: None,
+            status: Some("draft".into()),
+            tags: vec![],
+            links: vec![],
+            fields: BTreeMap::new(),
+            source_file: None,
+        };
+        base.upsert(art);
+    }
+
+    // Added artifacts (only in head)
+    for i in 0..added_count {
+        let idx = common_count + removed_count + i;
+        let art = Artifact {
+            id: format!("DIFF-{idx}"),
+            artifact_type: "hazard".to_string(),
+            title: format!("Added artifact {i}"),
+            description: None,
+            status: Some("draft".into()),
+            tags: vec!["new".into()],
+            links: vec![],
+            fields: BTreeMap::new(),
+            source_file: None,
+        };
+        head.upsert(art);
+    }
+
+    (base, head)
+}
+
+// ── Document helpers ────────────────────────────────────────────────────
+
+/// Generate a markdown document string with YAML frontmatter and `n` sections,
+/// each containing `[[ID]]` artifact references.
+fn generate_document(sections: usize) -> String {
+    let mut doc = String::new();
+
+    // YAML frontmatter
+    doc.push_str("---\n");
+    doc.push_str("id: BENCH-DOC-001\n");
+    doc.push_str("type: specification\n");
+    doc.push_str("title: Benchmark Specification Document\n");
+    doc.push_str("status: draft\n");
+    doc.push_str("glossary:\n");
+    doc.push_str("  STPA: Systems-Theoretic Process Analysis\n");
+    doc.push_str("  UCA: Unsafe Control Action\n");
+    doc.push_str("---\n\n");
+
+    doc.push_str("# Benchmark Specification Document\n\n");
+    doc.push_str("## Introduction\n\n");
+    doc.push_str("This is a benchmark document for measuring parse performance.\n\n");
+
+    for i in 0..sections {
+        doc.push_str(&format!("## Section {i}\n\n"));
+        doc.push_str(&format!(
+            "This section describes requirement [[REQ-{i}]] in detail.\n\n"
+        ));
+        doc.push_str(&format!(
+            "It also references [[HAZ-{i}]] and [[SC-{i}]] for traceability.\n\n"
+        ));
+        // Add some filler prose to make the document realistically sized
+        doc.push_str(
+            "Lorem ipsum dolor sit amet, consectetur adipiscing elit. \
+             Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. \
+             Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.\n\n",
+        );
+    }
+
+    doc
+}
+
+// ── New benchmarks ──────────────────────────────────────────────────────
+
+fn bench_diff(c: &mut Criterion) {
+    let mut group = c.benchmark_group("diff");
+
+    for &n in &[100, 1000, 10000] {
+        let (base, head) = build_diff_stores(n);
+
+        group.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, _| {
+            b.iter(|| {
+                let diff = ArtifactDiff::compute(&base, &head);
+                std::hint::black_box(diff)
+            });
+        });
+    }
+
+    group.finish();
+}
+
+fn bench_query(c: &mut Criterion) {
+    let mut group = c.benchmark_group("query");
+
+    for &n in &[100, 1000, 10000] {
+        let artifacts = generate_artifacts(n, 2);
+        let store = build_store(&artifacts);
+
+        // Query filters by type + status + tag (exercises multiple match arms)
+        let query = Query {
+            artifact_type: Some("hazard".into()),
+            status: Some("approved".into()),
+            tag: Some("bench".into()),
+            has_link_type: Some("leads-to-loss".into()),
+            missing_link_type: None,
+        };
+
+        group.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, _| {
+            b.iter(|| {
+                let results = query::execute(&store, &query);
+                std::hint::black_box(results)
+            });
+        });
+    }
+
+    group.finish();
+}
+
+fn bench_document_parse(c: &mut Criterion) {
+    let mut group = c.benchmark_group("document_parse");
+
+    // Scale by number of sections: 10, 100, 1000 (producing small/medium/large docs)
+    for &sections in &[10, 100, 1000] {
+        let content = generate_document(sections);
+
+        group.bench_with_input(
+            BenchmarkId::from_parameter(sections),
+            &content,
+            |b, content| {
+                b.iter(|| {
+                    let doc = document::parse_document(content, None).unwrap();
+                    std::hint::black_box(doc)
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
 // ── Criterion groups ────────────────────────────────────────────────────
 
 criterion_group!(
@@ -236,5 +429,8 @@ criterion_group!(
     bench_link_graph_build,
     bench_validate,
     bench_traceability_matrix,
+    bench_diff,
+    bench_query,
+    bench_document_parse,
 );
 criterion_main!(benches);

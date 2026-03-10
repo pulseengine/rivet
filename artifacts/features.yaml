@@ -441,3 +441,76 @@ artifacts:
         target: REQ-007
     fields:
       phase: phase-2
+
+  - id: FEAT-029
+    type: feature
+    title: "rivet commit-msg-check subcommand"
+    status: draft
+    description: >
+      Pre-commit hook entry point that validates a single commit message
+      file. Parses conventional-commit type for exemption, checks for
+      skip trailer, extracts artifact IDs from git trailers, and
+      validates they exist in the artifact store. Provides fuzzy-match
+      suggestions on typos.
+    tags: [cli, git, traceability, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-017
+      - type: satisfies
+        target: REQ-018
+    fields:
+      phase: phase-3
+
+  - id: FEAT-030
+    type: feature
+    title: "rivet commits subcommand"
+    status: draft
+    description: >
+      History analysis command that parses git log trailers, classifies
+      commits (linked, orphan, exempt, broken-ref), and produces five
+      reports: linked commits, broken references, orphan commits,
+      artifact commit coverage, and unimplemented artifacts. Supports
+      --since, --range, --json, and --strict flags.
+    tags: [cli, git, traceability, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-017
+      - type: satisfies
+        target: REQ-019
+    fields:
+      phase: phase-3
+
+  - id: FEAT-031
+    type: feature
+    title: Configurable trailer-to-link-type mapping
+    status: draft
+    description: >
+      Configuration in rivet.yaml that maps git trailer keys (Implements,
+      Fixes, Verifies, Satisfies, Refs) to existing schema link types.
+      Includes exempt-types list, skip-trailer token, traced-paths for
+      orphan detection, and trace-exempt-artifacts whitelist.
+    tags: [config, git, traceability, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-017
+    fields:
+      phase: phase-3
+
+  - id: FEAT-032
+    type: feature
+    title: Ephemeral commit node injection into link graph
+    status: draft
+    description: >
+      At analysis time, parsed commit data is injected as ephemeral
+      nodes into the petgraph link graph, wired to referenced artifacts
+      via the configured link types. Enables coverage computation,
+      reachability queries, and dashboard visualization without
+      materializing commit YAML files.
+    tags: [core, git, traceability, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-017
+      - type: implements
+        target: DD-012
+    fields:
+      phase: phase-3

@@ -1,0 +1,255 @@
+# =============================================================================
+# STPA Step 2 — Control Structure
+# =============================================================================
+#
+# A hierarchical control structure is a system model composed of feedback
+# control loops.  An inadequate control structure is one that does not
+# enforce the system-level constraints needed to prevent losses.
+#
+# Reference: STPA Handbook, §2.4
+#
+# Hierarchy (top → bottom):
+#   CTRL-DEV (human) → CTRL-CLI → CTRL-CORE → {CTRL-OSLC, CTRL-REQIF}
+#   CTRL-CI  (automated) → CTRL-CLI (via CLI invocation)
+#   CTRL-DASH (automated, read-only display)
+# =============================================================================
+
+controllers:
+  # --- Human controller ---
+  - id: CTRL-DEV
+    name: Developer / Safety Engineer
+    type: human-and-automated
+    description: >
+      Human operator who creates and maintains YAML artifact files,
+      invokes Rivet CLI commands, reviews validation output, resolves
+      conflicts, and makes traceability decisions.  May also interact
+      with external ALM tools directly.
+    control-actions:
+      - ca: CA-DEV-1
+        target: PROC-ARTIFACTS
+        action: Create, edit, or delete YAML artifact files
+      - ca: CA-DEV-2
+        target: CTRL-CLI
+        action: Invoke CLI commands (validate, sync, import, export, serve)
+      - ca: CA-DEV-3
+        target: PROC-GITREPO
+        action: Commit, push, merge artifact changes
+    feedback:
+      - from: CTRL-CLI
+        info: Validation results, sync status, error diagnostics
+      - from: CTRL-DASH
+        info: Coverage metrics, link graphs, artifact status
+      - from: PROC-GITREPO
+        info: Diff output, merge conflict markers
+    process-model:
+      - Current state of local artifact files
+      - Which artifacts have been modified since last validation
+      - Whether external tools have pending changes
+      - Coverage completeness of the traceability matrix
+
+  # --- CLI controller ---
+  - id: CTRL-CLI
+    name: Rivet CLI
+    type: automated
+    description: >
+      Command-line interface that parses user commands, orchestrates
+      core operations, manages adapter selection, and formats output.
+      Acts as the primary control boundary between the human operator
+      and Rivet's internal processing.
+    source-file: rivet-cli/src/main.rs
+    control-actions:
+      - ca: CA-CLI-1
+        target: CTRL-CORE
+        action: Invoke validation, link resolution, coverage computation
+      - ca: CA-CLI-2
+        target: CTRL-OSLC
+        action: Initiate OSLC sync operations
+      - ca: CA-CLI-3
+        target: CTRL-REQIF
+        action: Initiate ReqIF import or export
+      - ca: CA-CLI-4
+        target: PROC-ARTIFACTS
+        action: Write merged/synced artifacts to YAML files
+    feedback:
+      - from: CTRL-CORE
+        info: Validation results, resolved link graph, coverage metrics
+      - from: CTRL-OSLC
+        info: Sync completion status, conflict reports, error diagnostics
+      - from: CTRL-REQIF
+        info: Import/export completion status, mapping warnings
+    process-model:
+      - Which adapter to use for the current operation
+      - Current rivet.yaml configuration (schemas, sources, adapters)
+      - Whether the last operation succeeded or failed
+
+  # --- Core engine controller ---
+  - id: CTRL-CORE
+    name: Rivet Core Engine
+    type: automated
+    description: >
+      Library crate that performs schema validation, artifact parsing,
+      link resolution via petgraph, coverage computation, and diff
+      calculation.  The authoritative engine for all traceability logic.
+    source-file: rivet-core/src/lib.rs
+    control-actions:
+      - ca: CA-CORE-1
+        target: PROC-LINKGRAPH
+        action: Build and update the in-memory link graph
+      - ca: CA-CORE-2
+        target: PROC-ARTIFACTS
+        action: Validate artifacts against schemas
+      - ca: CA-CORE-3
+        target: PROC-REPORTS
+        action: Generate coverage matrices and statistics
+    feedback:
+      - from: PROC-ARTIFACTS
+        info: Parsed artifact data, file modification timestamps
+      - from: PROC-LINKGRAPH
+        info: Graph connectivity, cycle detection, reachability
+    process-model:
+      - Complete set of loaded artifacts and their schemas
+      - Link graph topology (nodes, edges, directionality)
+      - Schema definitions and valid link-type pairs
+      - Known artifact types and their required fields
+
+  # --- OSLC sync controller ---
+  - id: CTRL-OSLC
+    name: OSLC Client
+    type: automated
+    description: >
+      Synchronization client that connects to external ALM tools via
+      OSLC Core 3.0 and Tracked Resource Set (TRS) protocols.  Handles
+      bidirectional artifact sync, conflict detection, and change-log
+      processing.
+    control-actions:
+      - ca: CA-OSLC-1
+        target: PROC-EXTERNAL
+        action: Fetch remote artifacts and change logs via TRS
+      - ca: CA-OSLC-2
+        target: PROC-ARTIFACTS
+        action: Write synced artifacts to local YAML store
+      - ca: CA-OSLC-3
+        target: PROC-EXTERNAL
+        action: Push local changes to remote ALM tools
+    feedback:
+      - from: PROC-EXTERNAL
+        info: TRS change log entries, ETags, resource representations
+      - from: PROC-ARTIFACTS
+        info: Local artifact state for diff computation
+    process-model:
+      - Last-known sync cursor (TRS change log position)
+      - Remote artifact versions (ETags / timestamps)
+      - Mapping between local IDs and remote OSLC URIs
+      - Connection status and authentication state
+      - Which artifacts are locally authoritative vs. remotely authoritative
+
+  # --- ReqIF adapter controller ---
+  - id: CTRL-REQIF
+    name: ReqIF Adapter
+    type: automated
+    description: >
+      Import/export adapter for ReqIF 1.2 XML interchange format.
+      Parses SpecObjects, SpecRelations, and Specifications; maps
+      ReqIF attribute definitions to Rivet schema fields.
+    source-file: rivet-core/src/reqif.rs
+    control-actions:
+      - ca: CA-REQIF-1
+        target: PROC-ARTIFACTS
+        action: Write imported ReqIF artifacts as YAML
+      - ca: CA-REQIF-2
+        target: PROC-REPORTS
+        action: Generate ReqIF XML export from local artifacts
+    feedback:
+      - from: PROC-ARTIFACTS
+        info: Local artifact data for export
+    process-model:
+      - ReqIF attribute-definition-to-schema-field mapping
+      - SpecType-to-artifact-type mapping
+      - Enum value lookup tables
+      - Which ReqIF standard attributes are present (ForeignID, Name, Text)
+
+  # --- CI pipeline controller ---
+  - id: CTRL-CI
+    name: CI Pipeline
+    type: automated
+    description: >
+      Continuous integration system (GitHub Actions) that runs Rivet
+      validation as a quality gate on pull requests and merges.  Can
+      block merges if validation fails.
+    control-actions:
+      - ca: CA-CI-1
+        target: CTRL-CLI
+        action: Invoke rivet validate --strict on artifact changes
+      - ca: CA-CI-2
+        target: PROC-GITREPO
+        action: Block or allow merge based on validation result
+    feedback:
+      - from: CTRL-CLI
+        info: Validation exit code and diagnostic output
+      - from: PROC-GITREPO
+        info: Changed file list, PR metadata
+    process-model:
+      - Which files changed in the current PR
+      - Whether rivet validate passed or failed
+      - CI workflow configuration (which checks are required)
+
+  # --- Dashboard controller ---
+  - id: CTRL-DASH
+    name: Dashboard Server
+    type: automated
+    description: >
+      Axum + HTMX server that renders traceability data as interactive
+      HTML.  Primarily a read-only display controller — it does not
+      modify artifacts but influences developer decisions through the
+      information it presents.
+    source-file: rivet-cli/src/serve.rs
+    control-actions:
+      - ca: CA-DASH-1
+        target: CTRL-DEV
+        action: Display coverage metrics, link graphs, validation status
+    feedback:
+      - from: CTRL-CORE
+        info: Computed metrics, link graph, validation results
+      - from: PROC-ARTIFACTS
+        info: Raw artifact data for rendering
+    process-model:
+      - Cached rendering of current artifact state
+      - Last refresh timestamp
+      - Active filters and view state
+
+controlled-processes:
+  - id: PROC-ARTIFACTS
+    name: Local Artifact Store
+    description: >
+      YAML artifact files in the git working tree, organized by schema
+      domain (stpa, aspice, cybersecurity, dev, aadl).  The local
+      source of truth for all traceability data.
+
+  - id: PROC-LINKGRAPH
+    name: In-Memory Link Graph
+    description: >
+      Petgraph-based directed graph representing all resolved links
+      between artifacts.  Ephemeral — rebuilt from YAML on each
+      invocation.  Supports cycle detection, reachability, and
+      coverage queries.
+
+  - id: PROC-EXTERNAL
+    name: External ALM Tool Data
+    description: >
+      Artifact data residing in external tools (Polarion, DOORS,
+      codebeamer, StrictDoc) accessed via OSLC or ReqIF.  Rivet does
+      not control this data directly — it observes and syncs.
+
+  - id: PROC-REPORTS
+    name: Generated Reports and Metrics
+    description: >
+      Output artifacts: coverage matrices, compliance reports,
+      validation summaries, ReqIF exports.  Consumed by auditors,
+      project managers, and downstream tools.
+
+  - id: PROC-GITREPO
+    name: Git Repository
+    description: >
+      Version-controlled repository containing artifact YAML files,
+      configuration, and code.  Provides the audit trail via commit
+      history and enables conflict detection via merge semantics.

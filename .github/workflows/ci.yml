@@ -146,6 +146,61 @@ jobs:
         env:
           PROPTEST_CASES: "1000"
 
+  # ── Mutation testing ────────────────────────────────────────────────
+  mutants:
+    name: Mutation Testing
+    needs: [test]
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-mutants
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-mutants
+      - name: Run cargo-mutants on rivet-core
+        run: cargo mutants -p rivet-core --timeout 120 --jobs 4 --output mutants-out -- --lib
+      - name: Upload mutants report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutants-report
+          path: mutants-out/
+
+  # ── Fuzz testing (main only — too slow for PRs) ───────────────────
+  fuzz:
+    name: Fuzz Testing
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-fuzz
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+      - name: Run fuzz targets (30s each)
+        run: |
+          if [ ! -d fuzz ]; then
+            echo "::notice::No fuzz directory found — skipping"
+            exit 0
+          fi
+          cd fuzz
+          TARGETS=$(cargo +nightly fuzz list 2>/dev/null || true)
+          if [ -z "$TARGETS" ]; then
+            echo "::notice::No fuzz targets defined — skipping"
+            exit 0
+          fi
+          for target in $TARGETS; do
+            echo "::group::Fuzzing $target"
+            cargo +nightly fuzz run "$target" -- -max_total_time=30 || true
+            echo "::endgroup::"
+          done
+
   # ── Supply chain verification ───────────────────────────────────────
   supply-chain:
     name: Supply Chain (cargo-vet)
