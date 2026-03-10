@@ -41,6 +41,7 @@ criterion = { workspace = true }
 wiremock = "0.6"
 tokio = { workspace = true }
 tempfile = "3"
+serial_test = "3"
 
 [[bench]]
 name = "core_benchmarks"

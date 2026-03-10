@@ -22,7 +22,10 @@ externals:
     assert_eq!(ext.len(), 2);
 
     let rivet = &ext["rivet"];
-    assert_eq!(rivet.git.as_deref(), Some("https://github.com/pulseengine/rivet"));
+    assert_eq!(
+        rivet.git.as_deref(),
+        Some("https://github.com/pulseengine/rivet")
+    );
     assert_eq!(rivet.git_ref.as_deref(), Some("main"));
     assert_eq!(rivet.prefix, "rivet");
 

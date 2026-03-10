@@ -249,6 +249,22 @@ enum Command {
         port: u16,
     },
 
+    /// Sync external project dependencies into .rivet/repos/
+    Sync,
+
+    /// Pin external dependencies to exact commits in rivet.lock
+    Lock {
+        /// Update all pins to latest refs
+        #[arg(long)]
+        update: bool,
+    },
+
+    /// Manage distributed baselines across repos
+    Baseline {
+        #[command(subcommand)]
+        action: BaselineAction,
+    },
+
     /// Import artifacts using a custom WASM adapter component
     #[cfg(feature = "wasm")]
     Import {
@@ -294,6 +310,20 @@ enum SchemaAction {
         #[arg(short, long, default_value = "text")]
         format: String,
     },
+}
+
+#[derive(Debug, Subcommand)]
+enum BaselineAction {
+    /// Verify baseline consistency across all externals
+    Verify {
+        /// Baseline name (e.g., "v1.0")
+        name: String,
+        /// Fail on missing baseline tags (default: warn only)
+        #[arg(long)]
+        strict: bool,
+    },
+    /// List baselines found across externals
+    List,
 }
 
 fn main() -> ExitCode {
@@ -410,6 +440,12 @@ fn run(cli: Cli) -> Result<bool> {
             ))?;
             Ok(true)
         }
+        Command::Sync => cmd_sync(&cli),
+        Command::Lock { update } => cmd_lock(&cli, *update),
+        Command::Baseline { action } => match action {
+            BaselineAction::Verify { name, strict } => cmd_baseline_verify(&cli, name, *strict),
+            BaselineAction::List => cmd_baseline_list(&cli),
+        },
         #[cfg(feature = "wasm")]
         Command::Import {
             adapter,
@@ -872,15 +908,11 @@ fn cmd_validate(cli: &Cli, format: &str) -> Result<bool> {
                         .flat_map(|a| a.links.iter().map(|l| l.target.as_str()))
                         .collect();
 
-                    cross_repo_broken = rivet_core::externals::validate_refs(
-                        &all_refs,
-                        &local_ids,
-                        &external_ids,
-                    );
+                    cross_repo_broken =
+                        rivet_core::externals::validate_refs(&all_refs, &local_ids, &external_ids);
 
                     // Compute backlinks from external artifacts pointing to local artifacts
-                    backlinks =
-                        rivet_core::externals::compute_backlinks(&resolved, &local_ids);
+                    backlinks = rivet_core::externals::compute_backlinks(&resolved, &local_ids);
                 }
                 Err(e) => {
                     eprintln!("  warning: could not load externals for cross-repo validation: {e}");
@@ -905,8 +937,7 @@ fn cmd_validate(cli: &Cli, format: &str) -> Result<bool> {
 
     // Lifecycle completeness check
     let all_artifacts: Vec<_> = store.iter().cloned().collect();
-    let lifecycle_gaps =
-        rivet_core::lifecycle::check_lifecycle_completeness(&all_artifacts);
+    let lifecycle_gaps = rivet_core::lifecycle::check_lifecycle_completeness(&all_artifacts);
 
     let errors = diagnostics
         .iter()
@@ -1029,10 +1060,7 @@ fn cmd_validate(cli: &Cli, format: &str) -> Result<bool> {
                 backlinks.len()
             );
             for bl in &backlinks {
-                println!(
-                    "  {}:{} -> {}",
-                    bl.source_prefix, bl.source_id, bl.target
-                );
+                println!("  {}:{} -> {}", bl.source_prefix, bl.source_id, bl.target);
             }
         }
 
@@ -1063,10 +1091,7 @@ fn cmd_validate(cli: &Cli, format: &str) -> Result<bool> {
 
         if !lifecycle_gaps.is_empty() {
             println!();
-            println!(
-                "Lifecycle coverage gaps ({}):",
-                lifecycle_gaps.len()
-            );
+            println!("Lifecycle coverage gaps ({}):", lifecycle_gaps.len());
             for gap in &lifecycle_gaps {
                 eprintln!(
                     "  {} ({}, status: {}) — missing: {}",
@@ -2180,6 +2205,154 @@ fn resolve_schemas_dir(cli: &Cli) -> PathBuf {
 
         project_schemas
     }
+}
+
+fn cmd_sync(cli: &Cli) -> Result<bool> {
+    let config = rivet_core::load_project_config(&cli.project.join("rivet.yaml"))
+        .with_context(|| format!("loading {}", cli.project.join("rivet.yaml").display()))?;
+    let externals = config.externals.as_ref();
+    if externals.is_none() || externals.unwrap().is_empty() {
+        eprintln!("No externals declared in rivet.yaml");
+        return Ok(true);
+    }
+    let externals = externals.unwrap();
+
+    // Ensure .rivet/ is gitignored
+    let added = rivet_core::externals::ensure_gitignore(&cli.project)?;
+    if added {
+        eprintln!("Added .rivet/ to .gitignore");
+    }
+
+    let results = rivet_core::externals::sync_all(externals, &cli.project)?;
+    for (name, path) in &results {
+        eprintln!("  Synced {} → {}", name, path.display());
+    }
+    eprintln!("\n{} externals synced.", results.len());
+    Ok(true)
+}
+
+fn cmd_lock(cli: &Cli, _update: bool) -> Result<bool> {
+    let config = rivet_core::load_project_config(&cli.project.join("rivet.yaml"))
+        .with_context(|| format!("loading {}", cli.project.join("rivet.yaml").display()))?;
+    let externals = config.externals.as_ref();
+    if externals.is_none() || externals.unwrap().is_empty() {
+        eprintln!("No externals declared in rivet.yaml");
+        return Ok(true);
+    }
+    let lock = rivet_core::externals::generate_lockfile(externals.unwrap(), &cli.project)?;
+    rivet_core::externals::write_lockfile(&lock, &cli.project)?;
+    eprintln!("Wrote rivet.lock with {} pins", lock.pins.len());
+    Ok(true)
+}
+
+fn cmd_baseline_verify(cli: &Cli, name: &str, strict: bool) -> Result<bool> {
+    let config = rivet_core::load_project_config(&cli.project.join("rivet.yaml"))
+        .with_context(|| "Failed to load rivet.yaml")?;
+
+    let externals = match config.externals.as_ref() {
+        Some(e) if !e.is_empty() => e,
+        _ => {
+            eprintln!("No externals declared in rivet.yaml");
+            return Ok(true);
+        }
+    };
+
+    let verification = rivet_core::externals::verify_baseline(name, externals, &cli.project)?;
+
+    let mut all_present = true;
+
+    // Report local status
+    match &verification.local_status {
+        rivet_core::externals::BaselineStatus::Present { commit } => {
+            eprintln!(
+                "  local: baseline/{} @ {}",
+                name,
+                &commit[..8.min(commit.len())]
+            );
+        }
+        rivet_core::externals::BaselineStatus::Missing => {
+            eprintln!("  local: baseline/{} MISSING", name);
+            all_present = false;
+        }
+    }
+
+    // Report external statuses
+    for (prefix, status) in &verification.external_statuses {
+        match status {
+            rivet_core::externals::BaselineStatus::Present { commit } => {
+                eprintln!(
+                    "  {}: baseline/{} @ {}",
+                    prefix,
+                    name,
+                    &commit[..8.min(commit.len())]
+                );
+            }
+            rivet_core::externals::BaselineStatus::Missing => {
+                eprintln!("  {}: baseline/{} MISSING", prefix, name);
+                all_present = false;
+            }
+        }
+    }
+
+    if all_present {
+        eprintln!("\nBaseline {} verified — all repos tagged.", name);
+        Ok(true)
+    } else if strict {
+        eprintln!("\nBaseline {} FAILED — missing tags (strict mode).", name);
+        Ok(false)
+    } else {
+        eprintln!(
+            "\nBaseline {} partial — some repos missing tags (warning).",
+            name
+        );
+        Ok(true) // warnings don't fail
+    }
+}
+
+fn cmd_baseline_list(cli: &Cli) -> Result<bool> {
+    let config = rivet_core::load_project_config(&cli.project.join("rivet.yaml"))
+        .with_context(|| "Failed to load rivet.yaml")?;
+
+    // List local baselines
+    let local_tags = rivet_core::externals::list_baseline_tags(&cli.project)?;
+    eprintln!("Local baselines:");
+    if local_tags.is_empty() {
+        eprintln!("  (none)");
+    } else {
+        for tag in &local_tags {
+            eprintln!("  baseline/{}", tag);
+        }
+    }
+
+    // List external baselines
+    if let Some(externals) = config.externals.as_ref() {
+        let cache_dir = cli.project.join(".rivet/repos");
+        for ext in externals.values() {
+            let ext_dir = if let Some(ref local_path) = ext.path {
+                let p = if std::path::Path::new(local_path).is_relative() {
+                    cli.project.join(local_path)
+                } else {
+                    std::path::PathBuf::from(local_path)
+                };
+                p.canonicalize().unwrap_or(p)
+            } else {
+                cache_dir.join(&ext.prefix)
+            };
+            if ext_dir.exists() {
+                let tags = rivet_core::externals::list_baseline_tags(&ext_dir)?;
+                eprintln!("\n{} baselines:", ext.prefix);
+                if tags.is_empty() {
+                    eprintln!("  (none)");
+                } else {
+                    for tag in &tags {
+                        eprintln!("  baseline/{}", tag);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(true)
 }
 
 fn load_project(cli: &Cli) -> Result<(Store, rivet_core::schema::Schema, LinkGraph)> {

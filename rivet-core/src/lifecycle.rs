@@ -49,10 +49,11 @@ pub fn check_lifecycle_completeness(artifacts: &[Artifact]) -> Vec<LifecycleGap>
     }
 
     // Statuses that imply "this should be fully traced"
-    let traced_statuses: HashSet<&str> = ["implemented", "done", "approved", "accepted", "verified"]
-        .iter()
-        .copied()
-        .collect();
+    let traced_statuses: HashSet<&str> =
+        ["implemented", "done", "approved", "accepted", "verified"]
+            .iter()
+            .copied()
+            .collect();
 
     let mut gaps = Vec::new();
 
@@ -166,15 +167,19 @@ mod tests {
         // FEAT-001 has status "done" but no design-decision or aadl-component → gap too
         assert_eq!(gaps.len(), 2);
         let req_gap = gaps.iter().find(|g| g.artifact_id == "REQ-001").unwrap();
-        assert!(req_gap
-            .missing
-            .iter()
-            .any(|m| m.contains("aadl-component") || m.contains("design-decision")));
+        assert!(
+            req_gap
+                .missing
+                .iter()
+                .any(|m| m.contains("aadl-component") || m.contains("design-decision"))
+        );
         let feat_gap = gaps.iter().find(|g| g.artifact_id == "FEAT-001").unwrap();
-        assert!(feat_gap
-            .missing
-            .iter()
-            .any(|m| m.contains("no downstream artifacts found")));
+        assert!(
+            feat_gap
+                .missing
+                .iter()
+                .any(|m| m.contains("no downstream artifacts found"))
+        );
     }
 
     #[test]
@@ -193,12 +198,7 @@ mod tests {
     fn fully_covered_req_no_gap() {
         let artifacts = vec![
             make_artifact("REQ-001", "requirement", Some("implemented"), vec![]),
-            make_artifact(
-                "FEAT-001",
-                "feature",
-                None,
-                vec![("satisfies", "REQ-001")],
-            ),
+            make_artifact("FEAT-001", "feature", None, vec![("satisfies", "REQ-001")]),
             make_artifact(
                 "DD-001",
                 "design-decision",

@@ -25,10 +25,7 @@ pub fn parse_artifact_ref(s: &str) -> ArtifactRef {
     // Only split on first colon. The prefix must be purely alphabetic
     // (no digits, hyphens, or dots) to avoid confusion with IDs like "H-1.2".
     if let Some((prefix, id)) = s.split_once(':') {
-        if !prefix.is_empty()
-            && prefix.chars().all(|c| c.is_ascii_lowercase())
-            && !id.is_empty()
-        {
+        if !prefix.is_empty() && prefix.chars().all(|c| c.is_ascii_lowercase()) && !id.is_empty() {
             return ArtifactRef::External {
                 prefix: prefix.to_string(),
                 id: id.to_string(),
@@ -425,10 +422,9 @@ pub fn detect_version_conflicts(
         if let Ok(ext_config) = crate::load_project_config(&config_path) {
             if let Some(ref ext_externals) = ext_config.externals {
                 for (ext_name, ext_ext) in ext_externals {
-                    let repo_id = ext_ext
-                        .git
-                        .clone()
-                        .unwrap_or_else(|| ext_ext.path.clone().unwrap_or_else(|| ext_name.clone()));
+                    let repo_id = ext_ext.git.clone().unwrap_or_else(|| {
+                        ext_ext.path.clone().unwrap_or_else(|| ext_name.clone())
+                    });
                     let version = ext_ext.git_ref.clone().unwrap_or_else(|| "HEAD".into());
                     by_url.entry(repo_id).or_default().push(ConflictEntry {
                         declared_by: ext.prefix.clone(),
@@ -459,16 +455,114 @@ pub fn detect_version_conflicts(
     conflicts
 }
 
+/// Status of a baseline tag in a repository.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BaselineStatus {
+    Present { commit: String },
+    Missing,
+}
+
+impl BaselineStatus {
+    pub fn is_present(&self) -> bool {
+        matches!(self, BaselineStatus::Present { .. })
+    }
+}
+
+/// Check if a git repo has a specific baseline tag.
+pub fn check_baseline_tag(
+    repo_dir: &Path,
+    baseline_name: &str,
+) -> Result<BaselineStatus, crate::error::Error> {
+    let tag = format!("baseline/{baseline_name}");
+    let output = Command::new("git")
+        .args(["rev-parse", "--verify", &format!("refs/tags/{tag}")])
+        .current_dir(repo_dir)
+        .output()
+        .map_err(|e| crate::error::Error::Io(format!("git rev-parse: {e}")))?;
+
+    if output.status.success() {
+        let commit = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        Ok(BaselineStatus::Present { commit })
+    } else {
+        Ok(BaselineStatus::Missing)
+    }
+}
+
+/// List all baseline tags found in a repository.
+pub fn list_baseline_tags(repo_dir: &Path) -> Result<Vec<String>, crate::error::Error> {
+    let output = Command::new("git")
+        .args(["tag", "--list", "baseline/*"])
+        .current_dir(repo_dir)
+        .output()
+        .map_err(|e| crate::error::Error::Io(format!("git tag list: {e}")))?;
+
+    let tags = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(|l| l.trim_start_matches("baseline/").to_string())
+        .collect();
+    Ok(tags)
+}
+
+/// Result of verifying a baseline across repos.
+#[derive(Debug)]
+pub struct BaselineVerification {
+    pub baseline_name: String,
+    pub local_status: BaselineStatus,
+    pub external_statuses: Vec<(String, BaselineStatus)>,
+}
+
+/// Verify a baseline across the local repo and all externals.
+///
+/// Checks each repo for the `baseline/<name>` tag.
+/// Optionally syncs externals at their baseline tag for cross-link validation.
+pub fn verify_baseline(
+    baseline_name: &str,
+    externals: &BTreeMap<String, ExternalProject>,
+    project_dir: &Path,
+) -> Result<BaselineVerification, crate::error::Error> {
+    let cache_dir = project_dir.join(".rivet/repos");
+
+    // Check local repo
+    let local_status = check_baseline_tag(project_dir, baseline_name)?;
+
+    // Check each external
+    let mut external_statuses = Vec::new();
+    for ext in externals.values() {
+        let ext_dir = if let Some(ref local_path) = ext.path {
+            let p = if Path::new(local_path).is_relative() {
+                project_dir.join(local_path)
+            } else {
+                PathBuf::from(local_path)
+            };
+            p.canonicalize().unwrap_or(p)
+        } else {
+            cache_dir.join(&ext.prefix)
+        };
+
+        let status = if ext_dir.exists() {
+            check_baseline_tag(&ext_dir, baseline_name)?
+        } else {
+            BaselineStatus::Missing
+        };
+        external_statuses.push((ext.prefix.clone(), status));
+    }
+
+    Ok(BaselineVerification {
+        baseline_name: baseline_name.to_string(),
+        local_status,
+        external_statuses,
+    })
+}
+
 /// Recursively copy a directory (used on non-unix platforms instead of symlinks).
 #[cfg(not(unix))]
 fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), crate::error::Error> {
     std::fs::create_dir_all(dst)
         .map_err(|e| crate::error::Error::Io(format!("create dir: {e}")))?;
-    for entry in std::fs::read_dir(src)
-        .map_err(|e| crate::error::Error::Io(format!("read dir: {e}")))?
+    for entry in
+        std::fs::read_dir(src).map_err(|e| crate::error::Error::Io(format!("read dir: {e}")))?
     {
-        let entry =
-            entry.map_err(|e| crate::error::Error::Io(format!("read dir entry: {e}")))?;
+        let entry = entry.map_err(|e| crate::error::Error::Io(format!("read dir entry: {e}")))?;
         let ty = entry
             .file_type()
             .map_err(|e| crate::error::Error::Io(format!("file type: {e}")))?;
@@ -620,6 +714,7 @@ pub fn detect_circular_deps(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
     fn local_id_no_colon() {
@@ -661,6 +756,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn sync_local_path_external() {
         let dir = tempfile::tempdir().unwrap();
         // Create a fake external project with rivet.yaml and an artifact
@@ -726,6 +822,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn sync_all_multiple_externals() {
         let dir = tempfile::tempdir().unwrap();
 
@@ -773,8 +870,10 @@ mod tests {
         use std::collections::{BTreeMap, HashSet};
 
         // Local artifacts
-        let local_ids: HashSet<String> =
-            ["REQ-001", "FEAT-001"].iter().map(|s| s.to_string()).collect();
+        let local_ids: HashSet<String> = ["REQ-001", "FEAT-001"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
 
         // External artifacts keyed by prefix
         let mut external_ids: BTreeMap<String, HashSet<String>> = BTreeMap::new();
@@ -870,6 +969,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn load_external_artifacts() {
         let dir = tempfile::tempdir().unwrap();
         let ext_dir = dir.path().join("ext");
@@ -1025,7 +1125,11 @@ mod tests {
         let chain = &cycles[0].chain;
         assert!(chain.contains(&"a".to_string()));
         assert!(chain.contains(&"b".to_string()));
-        assert_eq!(chain.first(), chain.last(), "cycle must start and end with same node");
+        assert_eq!(
+            chain.first(),
+            chain.last(),
+            "cycle must start and end with same node"
+        );
     }
 
     #[test]
@@ -1116,6 +1220,126 @@ externals:
             "https://github.com/org/shared"
         );
         assert_eq!(conflicts[0].versions.len(), 2);
+    }
+
+    #[test]
+    fn baseline_status_is_present() {
+        let present = BaselineStatus::Present {
+            commit: "abc123".into(),
+        };
+        let missing = BaselineStatus::Missing;
+        assert!(present.is_present());
+        assert!(!missing.is_present());
+    }
+
+    #[test]
+    #[serial]
+    fn check_baseline_tag_in_git_repo() {
+        let dir = tempfile::tempdir().unwrap();
+        // Init a git repo with a baseline tag
+        std::process::Command::new("git")
+            .args(["init"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["config", "user.email", "test@test.com"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["config", "user.name", "Test"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["config", "tag.forceSignAnnotated", "false"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["config", "tag.gpgSign", "false"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        std::fs::write(dir.path().join("file.txt"), "hello").unwrap();
+        std::process::Command::new("git")
+            .args(["add", "."])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["commit", "-m", "init"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["tag", "baseline/v1.0"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+
+        let status = check_baseline_tag(dir.path(), "v1.0").unwrap();
+        assert!(status.is_present());
+
+        let missing = check_baseline_tag(dir.path(), "v2.0").unwrap();
+        assert!(!missing.is_present());
+    }
+
+    #[test]
+    #[serial]
+    fn list_baseline_tags_finds_tags() {
+        let dir = tempfile::tempdir().unwrap();
+        std::process::Command::new("git")
+            .args(["init"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["config", "user.email", "test@test.com"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["config", "user.name", "Test"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["config", "tag.forceSignAnnotated", "false"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["config", "tag.gpgSign", "false"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        std::fs::write(dir.path().join("file.txt"), "hello").unwrap();
+        std::process::Command::new("git")
+            .args(["add", "."])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["commit", "-m", "init"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["tag", "baseline/v1.0"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["tag", "baseline/v2.0"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+
+        let tags = list_baseline_tags(dir.path()).unwrap();
+        assert!(tags.contains(&"v1.0".to_string()));
+        assert!(tags.contains(&"v2.0".to_string()));
     }
 
     #[test]
