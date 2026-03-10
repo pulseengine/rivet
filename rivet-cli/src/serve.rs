@@ -6020,15 +6020,9 @@ fn load_store_from_git_ref(pp: &std::path::Path, gr: &str) -> Result<Store, Stri
         Ok(String::from_utf8_lossy(&o.stdout).to_string())
     };
 
-    // Compute the project path relative to the git repo root.
-    // This is needed because `git show REF:path` expects paths relative to
-    // the repo root, not the current directory.
-    let prefix = {
-        let out = rg(&["rev-parse", "--show-prefix"])?;
-        let p = out.trim().to_owned();
-        // p is e.g. "rivet/" or "" (if project is at repo root)
-        p
-    };
+    // Project path relative to git repo root (e.g. "rivet/" or "").
+    // Needed because `git show REF:path` expects repo-root-relative paths.
+    let prefix = rg(&["rev-parse", "--show-prefix"])?.trim().to_owned();
 
     let config_path = format!("{prefix}rivet.yaml");
     let cc = rg(&["show", &format!("{gr}:{config_path}")])?;
