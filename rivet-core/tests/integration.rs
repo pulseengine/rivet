@@ -1189,7 +1189,7 @@ fn strictdoc_reqif_import() {
         return;
     }
     let xml = std::fs::read_to_string(reqif_path).unwrap();
-    let arts = rivet_core::reqif::parse_reqif(&xml).unwrap();
+    let arts = rivet_core::reqif::parse_reqif(&xml, &std::collections::HashMap::new()).unwrap();
     // StrictDoc exports TEXT, SECTION, and REQUIREMENT types
     let reqs: Vec<_> = arts.iter().filter(|a| a.artifact_type == "requirement").collect();
     println!("Total artifacts: {}, Requirements: {}", arts.len(), reqs.len());

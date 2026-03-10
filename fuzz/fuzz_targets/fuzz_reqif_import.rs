@@ -11,5 +11,5 @@ fuzz_target!(|data: &[u8]| {
     // Feed arbitrary strings into the ReqIF XML parser.
     // Valid errors (malformed XML, missing elements) are expected — only
     // panics or infinite loops indicate real bugs.
-    let _ = parse_reqif(s);
+    let _ = parse_reqif(s, &std::collections::HashMap::new());
 });

@@ -497,8 +497,9 @@ impl Adapter for ReqIfAdapter {
     fn import(
         &self,
         source: &AdapterSource,
-        _config: &AdapterConfig,
+        config: &AdapterConfig,
     ) -> Result<Vec<Artifact>, Error> {
+        let type_map = build_type_map(config);
         let xml_str = match source {
             AdapterSource::Bytes(bytes) => std::str::from_utf8(bytes)
                 .map_err(|e| Error::Adapter(format!("invalid UTF-8: {e}")))?
@@ -506,10 +507,10 @@ impl Adapter for ReqIfAdapter {
             AdapterSource::Path(path) => std::fs::read_to_string(path)
                 .map_err(|e| Error::Io(format!("{}: {e}", path.display())))?,
             AdapterSource::Directory(dir) => {
-                return import_reqif_directory(dir);
+                return import_reqif_directory(dir, &type_map);
             }
         };
-        parse_reqif(&xml_str)
+        parse_reqif(&xml_str, &type_map)
     }
 
     fn export(&self, artifacts: &[Artifact], _config: &AdapterConfig) -> Result<Vec<u8>, Error> {
@@ -520,7 +521,27 @@ impl Adapter for ReqIfAdapter {
 
 // ── Import ──────────────────────────────────────────────────────────────
 
-fn import_reqif_directory(dir: &std::path::Path) -> Result<Vec<Artifact>, Error> {
+/// Build a type map from config entries with `type-map.` prefix.
+///
+/// Example config:
+///   type-map.requirement: sw-req
+///   type-map.section: documentation
+///
+/// Keys are lowercased to match the artifact_type normalization.
+fn build_type_map(config: &AdapterConfig) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    for (key, value) in &config.entries {
+        if let Some(from_type) = key.strip_prefix("type-map.") {
+            map.insert(from_type.to_lowercase(), value.clone());
+        }
+    }
+    map
+}
+
+fn import_reqif_directory(
+    dir: &std::path::Path,
+    type_map: &HashMap<String, String>,
+) -> Result<Vec<Artifact>, Error> {
     let mut artifacts = Vec::new();
     let entries =
         std::fs::read_dir(dir).map_err(|e| Error::Io(format!("{}: {e}", dir.display())))?;
@@ -534,12 +555,12 @@ fn import_reqif_directory(dir: &std::path::Path) -> Result<Vec<Artifact>, Error>
         {
             let content = std::fs::read_to_string(&path)
                 .map_err(|e| Error::Io(format!("{}: {e}", path.display())))?;
-            match parse_reqif(&content) {
+            match parse_reqif(&content, type_map) {
                 Ok(arts) => artifacts.extend(arts),
                 Err(e) => log::warn!("skipping {}: {e}", path.display()),
             }
         } else if path.is_dir() {
-            artifacts.extend(import_reqif_directory(&path)?);
+            artifacts.extend(import_reqif_directory(&path, type_map)?);
         }
     }
 
@@ -547,7 +568,9 @@ fn import_reqif_directory(dir: &std::path::Path) -> Result<Vec<Artifact>, Error>
 }
 
 /// Parse a ReqIF XML string into Rivet artifacts.
-pub fn parse_reqif(xml: &str) -> Result<Vec<Artifact>, Error> {
+///
+/// `type_map` remaps artifact types: e.g. `{"requirement" => "sw-req"}`.
+pub fn parse_reqif(xml: &str, type_map: &HashMap<String, String>) -> Result<Vec<Artifact>, Error> {
     let root: ReqIfRoot =
         xml_from_str(xml).map_err(|e| Error::Adapter(format!("ReqIF XML parse error: {e}")))?;
 
@@ -738,11 +761,17 @@ pub fn parse_reqif(xml: &str) -> Result<Vec<Artifact>, Error> {
         // Use ReqIF.Text or @DESC as description
         let description = reqif_text.or_else(|| obj.desc.clone());
 
+        let resolved_type = override_artifact_type
+            .unwrap_or(artifact_type)
+            .to_lowercase();
+        let mapped_type = type_map
+            .get(&resolved_type)
+            .cloned()
+            .unwrap_or(resolved_type);
+
         let artifact = Artifact {
             id,
-            artifact_type: override_artifact_type
-                .unwrap_or(artifact_type)
-                .to_lowercase(),
+            artifact_type: mapped_type,
             title,
             description,
             status,
@@ -1139,7 +1168,7 @@ mod tests {
   </CORE-CONTENT>
 </REQ-IF>"#;
 
-        let arts = parse_reqif(xml).unwrap();
+        let arts = parse_reqif(xml, &HashMap::new()).unwrap();
         assert_eq!(arts.len(), 1);
         assert_eq!(arts[0].id, "R-1");
         assert_eq!(arts[0].title, "First req");
@@ -1188,7 +1217,7 @@ mod tests {
   </CORE-CONTENT>
 </REQ-IF>"#;
 
-        let arts = parse_reqif(xml).unwrap();
+        let arts = parse_reqif(xml, &HashMap::new()).unwrap();
         assert_eq!(arts.len(), 1);
         assert_eq!(arts[0].status, Some("Draft".into()));
         // "component" field should be present despite duplicate ATTR-STATUS
@@ -1197,5 +1226,47 @@ mod tests {
             comp,
             Some(&serde_yaml::Value::String("Threads".into()))
         );
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_type_map_remaps_artifact_types() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<REQ-IF xmlns="http://www.omg.org/spec/ReqIF/20110401/reqif.xsd">
+  <THE-HEADER>
+    <REQ-IF-HEADER IDENTIFIER="map-test"/>
+  </THE-HEADER>
+  <CORE-CONTENT>
+    <REQ-IF-CONTENT>
+      <DATATYPES/>
+      <SPEC-TYPES>
+        <SPEC-OBJECT-TYPE IDENTIFIER="SOT-req" LONG-NAME="REQUIREMENT"/>
+        <SPEC-OBJECT-TYPE IDENTIFIER="SOT-sec" LONG-NAME="SECTION"/>
+      </SPEC-TYPES>
+      <SPEC-OBJECTS>
+        <SPEC-OBJECT IDENTIFIER="R-1" LONG-NAME="A requirement">
+          <TYPE><SPEC-OBJECT-TYPE-REF>SOT-req</SPEC-OBJECT-TYPE-REF></TYPE>
+        </SPEC-OBJECT>
+        <SPEC-OBJECT IDENTIFIER="S-1" LONG-NAME="A section">
+          <TYPE><SPEC-OBJECT-TYPE-REF>SOT-sec</SPEC-OBJECT-TYPE-REF></TYPE>
+        </SPEC-OBJECT>
+      </SPEC-OBJECTS>
+      <SPEC-RELATIONS/>
+    </REQ-IF-CONTENT>
+  </CORE-CONTENT>
+</REQ-IF>"#;
+
+        // Without type map — original types
+        let arts = parse_reqif(xml, &HashMap::new()).unwrap();
+        assert_eq!(arts[0].artifact_type, "requirement");
+        assert_eq!(arts[1].artifact_type, "section");
+
+        // With type map — remapped types
+        let mut type_map = HashMap::new();
+        type_map.insert("requirement".to_string(), "sw-req".to_string());
+        let arts = parse_reqif(xml, &type_map).unwrap();
+        assert_eq!(arts[0].artifact_type, "sw-req");
+        // Unmapped types pass through unchanged
+        assert_eq!(arts[1].artifact_type, "section");
     }
 }
