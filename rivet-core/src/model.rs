@@ -101,6 +101,22 @@ fn default_skip_trailer() -> String {
     "Trace: skip".into()
 }
 
+/// Configuration for a single external project dependency.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExternalProject {
+    /// Git clone URL (mutually exclusive with `path`).
+    #[serde(default)]
+    pub git: Option<String>,
+    /// Local filesystem path (mutually exclusive with `git`).
+    #[serde(default)]
+    pub path: Option<String>,
+    /// Git ref to checkout (branch, tag, or commit SHA).
+    #[serde(default, rename = "ref")]
+    pub git_ref: Option<String>,
+    /// Short prefix used in cross-links (e.g., "rivet" for "rivet:REQ-001").
+    pub prefix: String,
+}
+
 /// Project configuration loaded from `rivet.yaml`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectConfig {
@@ -116,6 +132,9 @@ pub struct ProjectConfig {
     /// Commit traceability configuration.
     #[serde(default)]
     pub commits: Option<CommitsConfig>,
+    /// External project dependencies for cross-repo linking.
+    #[serde(default)]
+    pub externals: Option<BTreeMap<String, ExternalProject>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
