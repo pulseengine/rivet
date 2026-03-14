@@ -35,6 +35,9 @@ regex = "1"
 # Graph
 petgraph = "0.6"
 
+# Incremental computation
+salsa = "0.26"
+
 # Logging
 log = "0.4"
 env_logger = "0.11"

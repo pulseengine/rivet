@@ -24,7 +24,7 @@ pub struct Link {
 /// Base fields (`id`, `title`, `description`, `status`, `tags`, `links`)
 /// are first-class struct members.  Domain-specific properties live in the
 /// `fields` map and are validated against the schema.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Artifact {
     /// Unique identifier.
     pub id: ArtifactId,
