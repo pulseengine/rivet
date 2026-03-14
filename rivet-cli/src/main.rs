@@ -184,13 +184,17 @@ enum Command {
 
     /// Export artifacts to a specified format
     Export {
-        /// Output format: "reqif", "generic-yaml"
+        /// Output format: "reqif", "generic-yaml", "html"
         #[arg(short, long)]
         format: String,
 
-        /// Output file path (stdout if omitted)
+        /// Output path: file for reqif/generic-yaml, directory for html (default: "dist")
         #[arg(short, long)]
         output: Option<PathBuf>,
+
+        /// Single-page mode: combine all HTML reports into one file (html format only)
+        #[arg(long)]
+        single_page: bool,
     },
 
     /// Introspect loaded schemas (types, links, rules)
@@ -404,7 +408,11 @@ fn run(cli: Cli) -> Result<bool> {
         Command::Diff { base, head, format } => {
             cmd_diff(&cli, base.as_deref(), head.as_deref(), format)
         }
-        Command::Export { format, output } => cmd_export(&cli, format, output.as_deref()),
+        Command::Export {
+            format,
+            output,
+            single_page,
+        } => cmd_export(&cli, format, output.as_deref(), *single_page),
         Command::Schema { action } => cmd_schema(&cli, action),
         Command::Commits {
             since,
@@ -1344,7 +1352,16 @@ fn cmd_matrix(
 }
 
 /// Export all project artifacts in the specified format.
-fn cmd_export(cli: &Cli, format: &str, output: Option<&std::path::Path>) -> Result<bool> {
+fn cmd_export(
+    cli: &Cli,
+    format: &str,
+    output: Option<&std::path::Path>,
+    single_page: bool,
+) -> Result<bool> {
+    if format == "html" {
+        return cmd_export_html(cli, output, single_page);
+    }
+
     use rivet_core::adapter::{Adapter, AdapterConfig};
 
     let (store, _, _) = load_project(cli)?;
@@ -1365,7 +1382,9 @@ fn cmd_export(cli: &Cli, format: &str, output: Option<&std::path::Path>) -> Resu
                 .map_err(|e| anyhow::anyhow!("{e}"))?
         }
         other => {
-            anyhow::bail!("unsupported export format: {other} (supported: reqif, generic-yaml)")
+            anyhow::bail!(
+                "unsupported export format: {other} (supported: reqif, generic-yaml, html)"
+            )
         }
     };
 
@@ -1381,6 +1400,71 @@ fn cmd_export(cli: &Cli, format: &str, output: Option<&std::path::Path>) -> Resu
         std::io::stdout()
             .write_all(&bytes)
             .context("writing to stdout")?;
+    }
+
+    Ok(true)
+}
+
+/// Export to a static HTML site (5 pages or single-page).
+fn cmd_export_html(cli: &Cli, output: Option<&std::path::Path>, single_page: bool) -> Result<bool> {
+    use rivet_core::export;
+
+    let (store, schema, graph) = load_project(cli)?;
+    let diagnostics = validate::validate(&store, &schema, &graph);
+
+    // Load project name
+    let config_path = cli.project.join("rivet.yaml");
+    let config = rivet_core::load_project_config(&config_path)
+        .with_context(|| format!("loading {}", config_path.display()))?;
+    let project_name = &config.project.name;
+    let version = env!("CARGO_PKG_VERSION");
+
+    let out_dir = output.unwrap_or(std::path::Path::new("dist"));
+
+    if single_page {
+        let html = export::render_single_page(
+            &store,
+            &schema,
+            &graph,
+            &diagnostics,
+            project_name,
+            version,
+        );
+        std::fs::create_dir_all(out_dir)
+            .with_context(|| format!("creating {}", out_dir.display()))?;
+        let path = out_dir.join("index.html");
+        std::fs::write(&path, &html).with_context(|| format!("writing {}", path.display()))?;
+        println!("Exported single-page report to {}", out_dir.display());
+    } else {
+        std::fs::create_dir_all(out_dir)
+            .with_context(|| format!("creating {}", out_dir.display()))?;
+
+        let pages: Vec<(&str, String)> = vec![
+            (
+                "index.html",
+                export::render_index(&store, &schema, &graph, &diagnostics, project_name, version),
+            ),
+            (
+                "requirements.html",
+                export::render_requirements(&store, &schema, &graph),
+            ),
+            (
+                "matrix.html",
+                export::render_traceability_matrix(&store, &schema, &graph),
+            ),
+            (
+                "coverage.html",
+                export::render_coverage(&store, &schema, &graph),
+            ),
+            ("validation.html", export::render_validation(&diagnostics)),
+        ];
+
+        for (filename, html) in &pages {
+            let path = out_dir.join(filename);
+            std::fs::write(&path, html).with_context(|| format!("writing {}", path.display()))?;
+        }
+
+        println!("Exported {} pages to {}/", pages.len(), out_dir.display());
     }
 
     Ok(true)
