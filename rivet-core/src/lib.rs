@@ -94,3 +94,4 @@ pub fn load_artifacts(
         other => Err(Error::Adapter(format!("unknown format: {}", other))),
     }
 }
+pub mod providers;
