@@ -33,6 +33,11 @@ impl std::fmt::Display for Diagnostic {
 pub fn validate(store: &Store, schema: &Schema, graph: &LinkGraph) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
+    // 0. Check conditional rule consistency (schema-level)
+    diagnostics.extend(crate::schema::check_conditional_consistency(
+        &schema.conditional_rules,
+    ));
+
     // 1. Check that every artifact has a known type
     for artifact in store.iter() {
         if schema.artifact_type(&artifact.artifact_type).is_none() {
@@ -174,7 +179,7 @@ pub fn validate(store: &Store, schema: &Schema, graph: &LinkGraph) -> Vec<Diagno
         });
     }
 
-    // 7. Check traceability rules
+    // 7. Check traceability rules (forward + backlink coverage)
     for rule in &schema.traceability_rules {
         for id in store.by_type(&rule.source_type) {
             // Forward link check
@@ -223,6 +228,15 @@ pub fn validate(store: &Store, schema: &Schema, graph: &LinkGraph) -> Vec<Diagno
         }
     }
 
+    // 8. Check conditional rules
+    for rule in &schema.conditional_rules {
+        for artifact in store.iter() {
+            if rule.when.matches_artifact(artifact) {
+                diagnostics.extend(rule.then.check(artifact, &rule.name, rule.severity.clone()));
+            }
+        }
+    }
+
     diagnostics
 }
 
@@ -249,4 +263,416 @@ pub fn validate_documents(doc_store: &DocumentStore, store: &Store) -> Vec<Diagn
     }
 
     diagnostics
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::links::LinkGraph;
+    use crate::model::{Artifact, Link};
+    use crate::schema::{
+        ArtifactTypeDef, Condition, ConditionalRule, Requirement, SchemaFile, Severity,
+    };
+    use std::collections::BTreeMap;
+
+    /// Helper: create a minimal artifact with given id, type, status, and optional fields.
+    fn make_artifact(
+        id: &str,
+        artifact_type: &str,
+        status: Option<&str>,
+        description: Option<&str>,
+        fields: Vec<(&str, &str)>,
+        links: Vec<Link>,
+    ) -> Artifact {
+        let mut field_map = BTreeMap::new();
+        for (k, v) in fields {
+            field_map.insert(k.to_string(), serde_yaml::Value::String(v.to_string()));
+        }
+        Artifact {
+            id: id.to_string(),
+            artifact_type: artifact_type.to_string(),
+            title: format!("Test {id}"),
+            description: description.map(|s| s.to_string()),
+            status: status.map(|s| s.to_string()),
+            tags: vec![],
+            links,
+            fields: field_map,
+            source_file: None,
+        }
+    }
+
+    /// Helper: create a minimal schema that knows about the "test" artifact type.
+    fn make_schema(conditional_rules: Vec<ConditionalRule>) -> Schema {
+        let file = SchemaFile {
+            schema: crate::schema::SchemaMetadata {
+                name: "test".to_string(),
+                version: "0.1.0".to_string(),
+                namespace: None,
+                description: None,
+                extends: vec![],
+            },
+            base_fields: vec![],
+            artifact_types: vec![ArtifactTypeDef {
+                name: "test".to_string(),
+                description: "Test type".to_string(),
+                fields: vec![],
+                link_fields: vec![],
+                aspice_process: None,
+            }],
+            link_types: vec![],
+            traceability_rules: vec![],
+            conditional_rules,
+        };
+        Schema::merge(&[file])
+    }
+
+    #[test]
+    fn condition_equals_matches_correct_status() {
+        let cond = Condition::Equals {
+            field: "status".to_string(),
+            value: "approved".to_string(),
+        };
+        let art = make_artifact("A-1", "test", Some("approved"), None, vec![], vec![]);
+        assert!(cond.matches_artifact(&art));
+    }
+
+    #[test]
+    fn condition_equals_does_not_match_wrong_status() {
+        let cond = Condition::Equals {
+            field: "status".to_string(),
+            value: "approved".to_string(),
+        };
+        let art = make_artifact("A-1", "test", Some("draft"), None, vec![], vec![]);
+        assert!(!cond.matches_artifact(&art));
+    }
+
+    #[test]
+    fn condition_equals_does_not_match_missing_status() {
+        let cond = Condition::Equals {
+            field: "status".to_string(),
+            value: "approved".to_string(),
+        };
+        let art = make_artifact("A-1", "test", None, None, vec![], vec![]);
+        assert!(!cond.matches_artifact(&art));
+    }
+
+    #[test]
+    fn condition_matches_regex() {
+        let cond = Condition::Matches {
+            field: "safety".to_string(),
+            pattern: "ASIL_.*".to_string(),
+        };
+        let art = make_artifact(
+            "A-1",
+            "test",
+            None,
+            None,
+            vec![("safety", "ASIL_B")],
+            vec![],
+        );
+        assert!(cond.matches_artifact(&art));
+    }
+
+    #[test]
+    fn condition_matches_regex_no_match() {
+        let cond = Condition::Matches {
+            field: "safety".to_string(),
+            pattern: "ASIL_.*".to_string(),
+        };
+        let art = make_artifact("A-1", "test", None, None, vec![("safety", "QM")], vec![]);
+        assert!(!cond.matches_artifact(&art));
+    }
+
+    #[test]
+    fn condition_exists_present_field() {
+        let cond = Condition::Exists {
+            field: "description".to_string(),
+        };
+        let art = make_artifact(
+            "A-1",
+            "test",
+            None,
+            Some("Has a description"),
+            vec![],
+            vec![],
+        );
+        assert!(cond.matches_artifact(&art));
+    }
+
+    #[test]
+    fn condition_exists_missing_field() {
+        let cond = Condition::Exists {
+            field: "description".to_string(),
+        };
+        let art = make_artifact("A-1", "test", None, None, vec![], vec![]);
+        assert!(!cond.matches_artifact(&art));
+    }
+
+    #[test]
+    fn required_fields_catches_missing_field() {
+        let req = Requirement::RequiredFields {
+            fields: vec!["description".to_string()],
+        };
+        let art = make_artifact("A-1", "test", Some("approved"), None, vec![], vec![]);
+        let diags = req.check(&art, "test-rule", Severity::Error);
+        assert_eq!(diags.len(), 1);
+        assert!(diags[0].message.contains("description"));
+        assert_eq!(diags[0].severity, Severity::Error);
+    }
+
+    #[test]
+    fn required_fields_passes_when_field_present() {
+        let req = Requirement::RequiredFields {
+            fields: vec!["description".to_string()],
+        };
+        let art = make_artifact(
+            "A-1",
+            "test",
+            Some("approved"),
+            Some("Has desc"),
+            vec![],
+            vec![],
+        );
+        let diags = req.check(&art, "test-rule", Severity::Error);
+        assert!(diags.is_empty());
+    }
+
+    #[test]
+    fn required_links_catches_missing_link() {
+        let req = Requirement::RequiredLinks {
+            link_types: vec!["mitigated_by".to_string()],
+        };
+        let art = make_artifact("A-1", "test", None, None, vec![], vec![]);
+        let diags = req.check(&art, "test-rule", Severity::Warning);
+        assert_eq!(diags.len(), 1);
+        assert!(diags[0].message.contains("mitigated_by"));
+        assert_eq!(diags[0].severity, Severity::Warning);
+    }
+
+    #[test]
+    fn required_links_passes_when_link_present() {
+        let req = Requirement::RequiredLinks {
+            link_types: vec!["mitigated_by".to_string()],
+        };
+        let links = vec![Link {
+            link_type: "mitigated_by".to_string(),
+            target: "MIT-1".to_string(),
+        }];
+        let art = make_artifact("A-1", "test", None, None, vec![], links);
+        let diags = req.check(&art, "test-rule", Severity::Warning);
+        assert!(diags.is_empty());
+    }
+
+    #[test]
+    fn conditional_rule_only_fires_when_condition_true() {
+        let rule = ConditionalRule {
+            name: "approved-needs-desc".to_string(),
+            description: None,
+            when: Condition::Equals {
+                field: "status".to_string(),
+                value: "approved".to_string(),
+            },
+            then: Requirement::RequiredFields {
+                fields: vec!["description".to_string()],
+            },
+            severity: Severity::Error,
+        };
+
+        let schema = make_schema(vec![rule]);
+
+        // Artifact with status=draft (condition NOT met) -- no description, no diagnostic
+        let mut store = Store::new();
+        store
+            .insert(make_artifact(
+                "A-1",
+                "test",
+                Some("draft"),
+                None,
+                vec![],
+                vec![],
+            ))
+            .unwrap();
+        let graph = LinkGraph::build(&store, &schema);
+        let diags = validate(&store, &schema, &graph);
+        let cond_diags: Vec<_> = diags
+            .iter()
+            .filter(|d| d.rule == "approved-needs-desc")
+            .collect();
+        assert!(cond_diags.is_empty(), "should not fire for draft status");
+
+        // Artifact with status=approved (condition met) -- no description, should fire
+        let mut store2 = Store::new();
+        store2
+            .insert(make_artifact(
+                "A-2",
+                "test",
+                Some("approved"),
+                None,
+                vec![],
+                vec![],
+            ))
+            .unwrap();
+        let graph2 = LinkGraph::build(&store2, &schema);
+        let diags2 = validate(&store2, &schema, &graph2);
+        let cond_diags2: Vec<_> = diags2
+            .iter()
+            .filter(|d| d.rule == "approved-needs-desc")
+            .collect();
+        assert_eq!(
+            cond_diags2.len(),
+            1,
+            "should fire for approved without desc"
+        );
+    }
+
+    #[test]
+    fn rule_with_warning_severity_produces_warning() {
+        let rule = ConditionalRule {
+            name: "warn-rule".to_string(),
+            description: None,
+            when: Condition::Equals {
+                field: "status".to_string(),
+                value: "approved".to_string(),
+            },
+            then: Requirement::RequiredFields {
+                fields: vec!["description".to_string()],
+            },
+            severity: Severity::Warning,
+        };
+
+        let schema = make_schema(vec![rule]);
+
+        let mut store = Store::new();
+        store
+            .insert(make_artifact(
+                "A-1",
+                "test",
+                Some("approved"),
+                None,
+                vec![],
+                vec![],
+            ))
+            .unwrap();
+        let graph = LinkGraph::build(&store, &schema);
+        let diags = validate(&store, &schema, &graph);
+        let cond_diags: Vec<_> = diags.iter().filter(|d| d.rule == "warn-rule").collect();
+        assert_eq!(cond_diags.len(), 1);
+        assert_eq!(cond_diags[0].severity, Severity::Warning);
+    }
+
+    #[test]
+    fn serde_roundtrip_conditional_rule_equals() {
+        let yaml = r#"
+name: test-rule
+when:
+  field: status
+  equals: approved
+then:
+  required-fields: [description]
+severity: warning
+"#;
+        let rule: ConditionalRule = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(rule.name, "test-rule");
+        assert!(matches!(rule.when, Condition::Equals { .. }));
+        assert!(matches!(rule.then, Requirement::RequiredFields { .. }));
+        assert_eq!(rule.severity, Severity::Warning);
+    }
+
+    #[test]
+    fn serde_roundtrip_conditional_rule_matches() {
+        let yaml = r#"
+name: asil-rule
+when:
+  field: safety
+  matches: "ASIL_.*"
+then:
+  required-links: [mitigated_by]
+severity: error
+"#;
+        let rule: ConditionalRule = serde_yaml::from_str(yaml).unwrap();
+        assert!(matches!(rule.when, Condition::Matches { .. }));
+        assert!(matches!(rule.then, Requirement::RequiredLinks { .. }));
+    }
+
+    #[test]
+    fn serde_roundtrip_conditional_rule_exists() {
+        let yaml = r#"
+name: exists-rule
+when:
+  field: rationale
+  exists: true
+then:
+  required-fields: [alternatives]
+"#;
+        let rule: ConditionalRule = serde_yaml::from_str(yaml).unwrap();
+        assert!(matches!(rule.when, Condition::Exists { .. }));
+        // Default severity should be Error
+        assert_eq!(rule.severity, Severity::Error);
+    }
+
+    #[test]
+    fn consistency_detects_duplicate_names() {
+        let rules = vec![
+            ConditionalRule {
+                name: "dup".to_string(),
+                description: None,
+                when: Condition::Equals {
+                    field: "status".to_string(),
+                    value: "a".to_string(),
+                },
+                then: Requirement::RequiredFields {
+                    fields: vec!["x".to_string()],
+                },
+                severity: Severity::Error,
+            },
+            ConditionalRule {
+                name: "dup".to_string(),
+                description: None,
+                when: Condition::Equals {
+                    field: "status".to_string(),
+                    value: "b".to_string(),
+                },
+                then: Requirement::RequiredFields {
+                    fields: vec!["y".to_string()],
+                },
+                severity: Severity::Error,
+            },
+        ];
+        let diags = crate::schema::check_conditional_consistency(&rules);
+        assert!(!diags.is_empty());
+        assert!(diags[0].message.contains("dup"));
+    }
+
+    #[test]
+    fn consistency_detects_overlapping_requirements() {
+        let rules = vec![
+            ConditionalRule {
+                name: "rule-a".to_string(),
+                description: None,
+                when: Condition::Equals {
+                    field: "status".to_string(),
+                    value: "approved".to_string(),
+                },
+                then: Requirement::RequiredFields {
+                    fields: vec!["description".to_string()],
+                },
+                severity: Severity::Error,
+            },
+            ConditionalRule {
+                name: "rule-b".to_string(),
+                description: None,
+                when: Condition::Equals {
+                    field: "status".to_string(),
+                    value: "approved".to_string(),
+                },
+                then: Requirement::RequiredFields {
+                    fields: vec!["description".to_string(), "rationale".to_string()],
+                },
+                severity: Severity::Warning,
+            },
+        ];
+        let diags = crate::schema::check_conditional_consistency(&rules);
+        assert!(!diags.is_empty());
+        assert!(diags[0].message.contains("overlapping"));
+    }
 }

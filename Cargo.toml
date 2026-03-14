@@ -26,6 +26,9 @@ thiserror = "2"
 # CLI
 clap = { version = "4", features = ["derive"] }
 
+# Regex
+regex = "1"
+
 # Graph
 petgraph = "0.6"
 
