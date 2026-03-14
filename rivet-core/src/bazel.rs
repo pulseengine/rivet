@@ -367,8 +367,10 @@ impl<'t> Parser<'t> {
                 let next_non_trivia = self.peek_non_trivia(1);
                 match next_non_trivia {
                     Some(SyntaxKind::LParen) => {
-                        let name = self.current_text();
-                        if matches!(name, "load" | "exports_files" | "package") {
+                        // Own the name string before any mutable borrow of self
+                        // (avoids Miri provenance issue with overlapping borrows).
+                        let name = self.current_text().to_owned();
+                        if matches!(name.as_str(), "load" | "exports_files" | "package") {
                             self.emit_error_until_end_of_statement(&format!(
                                 "unsupported: {name}() statement"
                             ));
