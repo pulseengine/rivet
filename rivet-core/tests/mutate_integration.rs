@@ -50,6 +50,7 @@ fn make_artifact(
 
 // ── Test: add valid artifact succeeds ────────────────────────────────────
 
+// rivet: verifies REQ-031
 #[test]
 fn test_add_valid_artifact_succeeds() {
     let schema = load_schema_files(&["common", "dev"]);
@@ -110,6 +111,7 @@ fn test_add_valid_artifact_with_fields_succeeds() {
 
 // ── Test: add with unknown type is rejected ──────────────────────────────
 
+// rivet: verifies REQ-031
 #[test]
 fn test_add_with_unknown_type_is_rejected() {
     let schema = load_schema_files(&["common", "dev"]);
@@ -134,6 +136,7 @@ fn test_add_with_unknown_type_is_rejected() {
 
 // ── Test: add with invalid field value is rejected ───────────────────────
 
+// rivet: verifies REQ-031
 #[test]
 fn test_add_with_invalid_field_value_is_rejected() {
     let schema = load_schema_files(&["common", "dev"]);
@@ -158,6 +161,7 @@ fn test_add_with_invalid_field_value_is_rejected() {
 
 // ── Test: link with invalid link type is rejected ────────────────────────
 
+// rivet: verifies REQ-031
 #[test]
 fn test_link_with_invalid_link_type_is_rejected() {
     let schema = load_schema_files(&["common", "dev"]);
@@ -199,6 +203,7 @@ fn test_link_with_invalid_link_type_is_rejected() {
 
 // ── Test: link with valid link type succeeds ─────────────────────────────
 
+// rivet: verifies REQ-031
 #[test]
 fn test_link_with_valid_link_type_succeeds() {
     let schema = load_schema_files(&["common", "dev"]);
@@ -273,6 +278,7 @@ fn test_link_missing_target_is_rejected() {
 
 // ── Test: remove with incoming links is rejected (unless force) ──────────
 
+// rivet: verifies REQ-031
 #[test]
 fn test_remove_with_incoming_links_rejected() {
     let schema = load_schema_files(&["common", "dev"]);
@@ -325,6 +331,7 @@ fn test_remove_with_incoming_links_rejected() {
 
 // ── Test: remove without backlinks succeeds ──────────────────────────────
 
+// rivet: verifies REQ-031
 #[test]
 fn test_remove_without_backlinks_succeeds() {
     let schema = load_schema_files(&["common", "dev"]);
@@ -363,6 +370,7 @@ fn test_remove_nonexistent_is_rejected() {
 
 // ── Test: next_id generates correct sequential IDs ───────────────────────
 
+// rivet: verifies REQ-031
 #[test]
 fn test_next_id_sequential() {
     let mut store = Store::new();
@@ -479,6 +487,7 @@ fn test_validate_unlink_missing_link() {
 
 // ── Test: YAML file manipulation — append_artifact ───────────────────────
 
+// rivet: verifies REQ-031
 #[test]
 fn test_append_artifact_to_file() {
     let dir = tempfile::tempdir().unwrap();
@@ -511,6 +520,7 @@ fn test_append_artifact_to_file() {
 
 // ── Test: YAML file manipulation — remove_artifact ───────────────────────
 
+// rivet: verifies REQ-031
 #[test]
 fn test_remove_artifact_from_file() {
     let dir = tempfile::tempdir().unwrap();

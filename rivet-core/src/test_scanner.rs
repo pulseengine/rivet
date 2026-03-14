@@ -360,6 +360,7 @@ mod tests {
 
     // ── Test: Rust comment marker ────────────────────────────────────────
 
+    // rivet: verifies REQ-026
     #[test]
     fn rust_comment_marker_detected() {
         let tmp = TempDir::new().unwrap();
@@ -384,6 +385,7 @@ fn test_something() {
 
     // ── Test: Rust attribute marker ──────────────────────────────────────
 
+    // rivet: verifies REQ-026
     #[test]
     fn rust_attribute_marker_detected() {
         let tmp = TempDir::new().unwrap();
@@ -406,6 +408,7 @@ fn test_bar() {
 
     // ── Test: Python comment marker ──────────────────────────────────────
 
+    // rivet: verifies REQ-026
     #[test]
     fn python_comment_marker_detected() {
         let tmp = TempDir::new().unwrap();
@@ -449,6 +452,7 @@ def test_decorated():
 
     // ── Test: Multiple markers in one file ───────────────────────────────
 
+    // rivet: verifies REQ-026
     #[test]
     fn multiple_markers_in_one_file() {
         let tmp = TempDir::new().unwrap();
@@ -508,6 +512,7 @@ fn main() {
 
     // ── Test: Marker with non-existent artifact -> broken_refs ───────────
 
+    // rivet: verifies REQ-026
     #[test]
     fn broken_ref_detection() {
         let tmp = TempDir::new().unwrap();
@@ -536,6 +541,7 @@ fn test_broken() {
 
     // ── Test: compute_test_coverage partitions correctly ─────────────────
 
+    // rivet: verifies REQ-026
     #[test]
     fn coverage_partitions_correctly() {
         let tmp = TempDir::new().unwrap();

@@ -56,8 +56,13 @@ quick-xml = { version = "0.37", features = ["serialize", "overlapped-lists"] }
 wasmtime = { version = "42", features = ["component-model"] }
 wasmtime-wasi = "42"
 
+<<<<<<< HEAD
 # Lossless syntax trees
 rowan = "0.16"
+=======
+# Incremental computation
+salsa = "0.26"
+>>>>>>> worktree-agent-abff73bb
 
 # Benchmarking
 criterion = { version = "0.5", features = ["html_reports"] }
