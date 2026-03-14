@@ -35,13 +35,21 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use crate::error::Error;
-use crate::markdown::render_markdown;
 
 // ---------------------------------------------------------------------------
 // Artifact embedding info
 // ---------------------------------------------------------------------------
 
-/// Minimal artifact info for embedding in documents.
+/// Link metadata for embedding in documents.
+#[derive(Debug, Clone)]
+pub struct LinkInfo {
+    pub link_type: String,
+    pub target_id: String,
+    pub target_title: String,
+    pub target_type: String,
+}
+
+/// Artifact info for embedding in documents.
 #[derive(Debug, Clone)]
 pub struct ArtifactInfo {
     pub id: String,
@@ -49,6 +57,14 @@ pub struct ArtifactInfo {
     pub art_type: String,
     pub status: String,
     pub description: String,
+    /// Arbitrary tags for categorization.
+    pub tags: Vec<String>,
+    /// Domain-specific fields as `(key, display_value)` pairs.
+    pub fields: Vec<(String, String)>,
+    /// Forward links from this artifact.
+    pub links: Vec<LinkInfo>,
+    /// Backward links (incoming) to this artifact.
+    pub backlinks: Vec<LinkInfo>,
 }
 
 // ---------------------------------------------------------------------------
@@ -699,44 +715,81 @@ fn resolve_inline(
             }
         }
 
-        // Artifact embedding: {{artifact:ID}}
-        if ch == '{' && text[i..].starts_with("{{artifact:") {
+        // Rich embed: {{artifact:ID[:modifier[:depth]]}} or {{links:ID}} or {{table:TYPE:FIELDS}}
+        if ch == '{' && text[i..].starts_with("{{") {
             if let Some(end) = text[i..].find("}}") {
-                let id = text[i + 11..i + end].trim();
-                if let Some(info) = artifact_info(id) {
-                    let desc_preview = if info.description.len() > 150 {
-                        format!("{}…", &info.description[..150])
+                let inner = text[i + 2..i + end].trim();
+
+                // {{links:ID}} — link tables only
+                if let Some(link_id) = inner.strip_prefix("links:") {
+                    let link_id = link_id.trim();
+                    if let Some(info) = artifact_info(link_id) {
+                        result.push_str(&render_links_only(&info));
                     } else {
-                        info.description.clone()
-                    };
-                    let desc_html = render_markdown(&desc_preview);
-                    result.push_str(&format!(
-                        "<div class=\"artifact-embed\">\
-                         <div class=\"artifact-embed-header\">\
-                         <a class=\"artifact-ref\" hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a>\
-                         <span class=\"type-badge\">{type_}</span>\
-                         <span class=\"status-badge\">{status}</span>\
-                         </div>\
-                         <div class=\"artifact-embed-title\">{title}</div>\
-                         <div class=\"artifact-embed-desc\">{desc}</div>\
-                         </div>",
-                        id = html_escape(id),
-                        type_ = html_escape(&info.art_type),
-                        status = html_escape(&info.status),
-                        title = html_escape(&info.title),
-                        desc = desc_html,
-                    ));
+                        result.push_str(&format!(
+                            "<span class=\"artifact-ref broken\">{{{{links:{}}}}}</span>",
+                            html_escape(link_id)
+                        ));
+                    }
                     let skip_to = i + end + 2;
                     while chars.peek().is_some_and(|&(j, _)| j < skip_to) {
                         chars.next();
                     }
                     continue;
-                } else {
-                    // Broken reference
-                    result.push_str(&format!(
-                        "<span class=\"artifact-ref broken\">{{{{artifact:{}}}}}</span>",
-                        html_escape(id)
-                    ));
+                }
+
+                // {{table:TYPE:FIELDS}} — table of all artifacts of a type
+                if let Some(table_spec) = inner.strip_prefix("table:") {
+                    let table_parts: Vec<&str> = table_spec.splitn(2, ':').collect();
+                    if table_parts.len() == 2 {
+                        let art_type = table_parts[0].trim();
+                        let field_names: Vec<&str> =
+                            table_parts[1].split(',').map(|f| f.trim()).collect();
+                        result.push_str(&render_table(art_type, &field_names, &artifact_info));
+                    }
+                    let skip_to = i + end + 2;
+                    while chars.peek().is_some_and(|&(j, _)| j < skip_to) {
+                        chars.next();
+                    }
+                    continue;
+                }
+
+                // {{artifact:ID[:modifier[:depth]]}}
+                if let Some(art_spec) = inner.strip_prefix("artifact:") {
+                    let parts: Vec<&str> = art_spec.splitn(3, ':').collect();
+                    let id = parts[0].trim();
+                    let modifier = parts.get(1).map(|s| s.trim()).unwrap_or("default");
+                    let depth: usize = parts
+                        .get(2)
+                        .and_then(|s| s.trim().parse().ok())
+                        .unwrap_or(3);
+
+                    if let Some(info) = artifact_info(id) {
+                        let rendered = match modifier {
+                            "full" => render_embed_full(&info),
+                            "links" => render_embed_links(&info),
+                            "upstream" => render_embed_trace(
+                                &info,
+                                TraceDirection::Upstream,
+                                depth,
+                                &artifact_info,
+                            ),
+                            "downstream" => render_embed_trace(
+                                &info,
+                                TraceDirection::Downstream,
+                                depth,
+                                &artifact_info,
+                            ),
+                            "chain" => render_embed_chain(&info, depth, &artifact_info),
+                            _ => render_embed_default(&info),
+                        };
+                        result.push_str(&rendered);
+                    } else {
+                        result.push_str(&format!(
+                            "<span class=\"artifact-ref broken\">{{{{artifact:{}}}}}</span>",
+                            html_escape(id)
+                        ));
+                    }
                     let skip_to = i + end + 2;
                     while chars.peek().is_some_and(|&(j, _)| j < skip_to) {
                         chars.next();
@@ -810,6 +863,396 @@ fn html_escape(s: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+}
+
+// ---------------------------------------------------------------------------
+// Rich embed rendering helpers
+// ---------------------------------------------------------------------------
+
+/// Direction for trace walking.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TraceDirection {
+    Upstream,
+    Downstream,
+}
+
+/// Render the default artifact embed card (type badge, status badge, title, truncated description).
+fn render_embed_default(info: &ArtifactInfo) -> String {
+    let desc_preview = if info.description.len() > 150 {
+        format!("{}…", &info.description[..150])
+    } else {
+        info.description.clone()
+    };
+    format!(
+        "<div class=\"artifact-embed\">\
+         <div class=\"artifact-embed-header\">\
+         <a class=\"artifact-ref\" hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a>\
+         <span class=\"type-badge\">{type_}</span>\
+         <span class=\"status-badge\">{status}</span>\
+         </div>\
+         <div class=\"artifact-embed-title\">{title}</div>\
+         <div class=\"artifact-embed-desc\">{desc}</div>\
+         </div>",
+        id = html_escape(&info.id),
+        type_ = html_escape(&info.art_type),
+        status = html_escape(&info.status),
+        title = html_escape(&info.title),
+        desc = html_escape(&desc_preview),
+    )
+}
+
+/// Render a full artifact embed: description, fields, tags, and all links.
+fn render_embed_full(info: &ArtifactInfo) -> String {
+    let mut html = String::new();
+    html.push_str("<div class=\"artifact-embed artifact-embed-full\">");
+
+    // Header
+    html.push_str("<div class=\"artifact-embed-header\">");
+    html.push_str(&format!(
+        "<a class=\"artifact-ref\" hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a>",
+        id = html_escape(&info.id),
+    ));
+    html.push_str(&format!(
+        "<span class=\"type-badge\">{}</span>",
+        html_escape(&info.art_type)
+    ));
+    html.push_str(&format!(
+        "<span class=\"status-badge\">{}</span>",
+        html_escape(&info.status)
+    ));
+    html.push_str("</div>");
+
+    // Title
+    html.push_str(&format!(
+        "<div class=\"artifact-embed-title\">{}</div>",
+        html_escape(&info.title)
+    ));
+
+    // Full description
+    if !info.description.is_empty() {
+        html.push_str(&format!(
+            "<div class=\"artifact-embed-desc\">{}</div>",
+            html_escape(&info.description)
+        ));
+    }
+
+    // Tags
+    if !info.tags.is_empty() {
+        html.push_str("<div class=\"artifact-embed-tags\">");
+        for tag in &info.tags {
+            html.push_str(&format!(
+                "<span class=\"badge badge-info\">{}</span>",
+                html_escape(tag)
+            ));
+        }
+        html.push_str("</div>");
+    }
+
+    // Fields
+    if !info.fields.is_empty() {
+        html.push_str("<dl class=\"artifact-embed-fields\">");
+        for (key, value) in &info.fields {
+            html.push_str(&format!(
+                "<dt>{}</dt><dd>{}</dd>",
+                html_escape(key),
+                html_escape(value)
+            ));
+        }
+        html.push_str("</dl>");
+    }
+
+    // Links
+    render_link_tables_into(&mut html, info);
+
+    html.push_str("</div>");
+    html
+}
+
+/// Render artifact card header + forward/backward link tables.
+fn render_embed_links(info: &ArtifactInfo) -> String {
+    let mut html = String::new();
+    html.push_str("<div class=\"artifact-embed artifact-embed-links\">");
+
+    // Header
+    html.push_str("<div class=\"artifact-embed-header\">");
+    html.push_str(&format!(
+        "<a class=\"artifact-ref\" hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a>",
+        id = html_escape(&info.id),
+    ));
+    html.push_str(&format!(
+        "<span class=\"type-badge\">{}</span>",
+        html_escape(&info.art_type)
+    ));
+    html.push_str(&format!(
+        "<span class=\"status-badge\">{}</span>",
+        html_escape(&info.status)
+    ));
+    html.push_str("</div>");
+
+    // Title
+    html.push_str(&format!(
+        "<div class=\"artifact-embed-title\">{}</div>",
+        html_escape(&info.title)
+    ));
+
+    // Link tables
+    render_link_tables_into(&mut html, info);
+
+    html.push_str("</div>");
+    html
+}
+
+/// Render only the link tables (no card header).
+fn render_links_only(info: &ArtifactInfo) -> String {
+    let mut html = String::new();
+    html.push_str("<div class=\"artifact-embed artifact-embed-links-only\">");
+    render_link_tables_into(&mut html, info);
+    html.push_str("</div>");
+    html
+}
+
+/// Append forward and backward link tables to `html`.
+fn render_link_tables_into(html: &mut String, info: &ArtifactInfo) {
+    if !info.links.is_empty() {
+        html.push_str("<div class=\"artifact-embed-link-section\">");
+        html.push_str("<strong>Outgoing Links</strong>");
+        html.push_str("<table class=\"artifact-embed-link-table\"><thead><tr><th>Type</th><th>Target</th><th>Title</th></tr></thead><tbody>");
+        for link in &info.links {
+            let lt = html_escape(&link.link_type);
+            let target = html_escape(&link.target_id);
+            let title = html_escape(&link.target_title);
+            html.push_str(&format!(
+                "<tr><td><span class=\"badge badge-info\">{lt}</span></td>\
+                 <td><a class=\"artifact-ref\" hx-get=\"/artifacts/{target}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{target}</a></td>\
+                 <td>{title}</td></tr>",
+            ));
+        }
+        html.push_str("</tbody></table></div>");
+    }
+
+    if !info.backlinks.is_empty() {
+        html.push_str("<div class=\"artifact-embed-link-section\">");
+        html.push_str("<strong>Incoming Links</strong>");
+        html.push_str("<table class=\"artifact-embed-link-table\"><thead><tr><th>Type</th><th>Source</th><th>Title</th></tr></thead><tbody>");
+        for link in &info.backlinks {
+            let lt = html_escape(&link.link_type);
+            let source = html_escape(&link.target_id);
+            let title = html_escape(&link.target_title);
+            html.push_str(&format!(
+                "<tr><td><span class=\"badge badge-info\">{lt}</span></td>\
+                 <td><a class=\"artifact-ref\" hx-get=\"/artifacts/{source}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{source}</a></td>\
+                 <td>{title}</td></tr>",
+            ));
+        }
+        html.push_str("</tbody></table></div>");
+    }
+}
+
+/// Render an upstream or downstream trace to a given depth.
+fn render_embed_trace(
+    info: &ArtifactInfo,
+    direction: TraceDirection,
+    depth: usize,
+    artifact_info: &impl Fn(&str) -> Option<ArtifactInfo>,
+) -> String {
+    let mut html = String::new();
+    let dir_label = match direction {
+        TraceDirection::Upstream => "Upstream",
+        TraceDirection::Downstream => "Downstream",
+    };
+    html.push_str(&format!(
+        "<div class=\"artifact-embed artifact-embed-trace\">\
+         <div class=\"artifact-embed-header\">\
+         <a class=\"artifact-ref\" hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a>\
+         <span class=\"type-badge\">{type_}</span>\
+         <span class=\"badge badge-info\">{dir_label} trace ({depth} levels)</span>\
+         </div>\
+         <div class=\"artifact-embed-title\">{title}</div>",
+        id = html_escape(&info.id),
+        type_ = html_escape(&info.art_type),
+        title = html_escape(&info.title),
+    ));
+
+    html.push_str("<ul class=\"artifact-trace-list\">");
+    walk_trace(&mut html, info, direction, depth, 0, artifact_info);
+    html.push_str("</ul>");
+
+    html.push_str("</div>");
+    html
+}
+
+/// Recursively walk the trace and render indented list items.
+fn walk_trace(
+    html: &mut String,
+    info: &ArtifactInfo,
+    direction: TraceDirection,
+    max_depth: usize,
+    current_depth: usize,
+    artifact_info: &impl Fn(&str) -> Option<ArtifactInfo>,
+) {
+    if current_depth >= max_depth {
+        return;
+    }
+
+    let neighbors: &[LinkInfo] = match direction {
+        TraceDirection::Upstream => &info.links,
+        TraceDirection::Downstream => &info.backlinks,
+    };
+
+    for link in neighbors {
+        let arrow = match direction {
+            TraceDirection::Upstream => "\u{2190}",   // ←
+            TraceDirection::Downstream => "\u{2192}", // →
+        };
+        html.push_str(&format!(
+            "<li>{arrow} <span class=\"badge badge-info\">{link_type}</span> \
+             <a class=\"artifact-ref\" hx-get=\"/artifacts/{target}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{target}</a> \
+             <span class=\"type-badge\">{target_type}</span> {target_title}",
+            link_type = html_escape(&link.link_type),
+            target = html_escape(&link.target_id),
+            target_type = html_escape(&link.target_type),
+            target_title = html_escape(&link.target_title),
+        ));
+
+        // Recurse into the next level
+        if current_depth + 1 < max_depth {
+            if let Some(next_info) = artifact_info(&link.target_id) {
+                let next_neighbors: &[LinkInfo] = match direction {
+                    TraceDirection::Upstream => &next_info.links,
+                    TraceDirection::Downstream => &next_info.backlinks,
+                };
+                if !next_neighbors.is_empty() {
+                    html.push_str("<ul class=\"artifact-trace-list\">");
+                    walk_trace(
+                        html,
+                        &next_info,
+                        direction,
+                        max_depth,
+                        current_depth + 1,
+                        artifact_info,
+                    );
+                    html.push_str("</ul>");
+                }
+            }
+        }
+
+        html.push_str("</li>");
+    }
+}
+
+/// Render a bidirectional trace chain (upstream + downstream).
+fn render_embed_chain(
+    info: &ArtifactInfo,
+    depth: usize,
+    artifact_info: &impl Fn(&str) -> Option<ArtifactInfo>,
+) -> String {
+    let mut html = String::new();
+    html.push_str(&format!(
+        "<div class=\"artifact-embed artifact-embed-chain\">\
+         <div class=\"artifact-embed-header\">\
+         <a class=\"artifact-ref\" hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a>\
+         <span class=\"type-badge\">{type_}</span>\
+         <span class=\"badge badge-info\">Trace chain ({depth} levels)</span>\
+         </div>\
+         <div class=\"artifact-embed-title\">{title}</div>",
+        id = html_escape(&info.id),
+        type_ = html_escape(&info.art_type),
+        title = html_escape(&info.title),
+    ));
+
+    // Upstream
+    if !info.links.is_empty() {
+        html.push_str("<div class=\"trace-section\"><strong>Upstream</strong>");
+        html.push_str("<ul class=\"artifact-trace-list\">");
+        walk_trace(
+            &mut html,
+            info,
+            TraceDirection::Upstream,
+            depth,
+            0,
+            artifact_info,
+        );
+        html.push_str("</ul></div>");
+    }
+
+    // Downstream
+    if !info.backlinks.is_empty() {
+        html.push_str("<div class=\"trace-section\"><strong>Downstream</strong>");
+        html.push_str("<ul class=\"artifact-trace-list\">");
+        walk_trace(
+            &mut html,
+            info,
+            TraceDirection::Downstream,
+            depth,
+            0,
+            artifact_info,
+        );
+        html.push_str("</ul></div>");
+    }
+
+    html.push_str("</div>");
+    html
+}
+
+/// Render a table of all artifacts of a given type showing specified columns.
+fn render_table(
+    art_type: &str,
+    field_names: &[&str],
+    artifact_info: &impl Fn(&str) -> Option<ArtifactInfo>,
+) -> String {
+    // We don't have direct access to the store here, so we iterate over
+    // artifact_info calls. The caller provides this closure backed by a Store.
+    // For the table embed we use a special convention: query info for
+    // "__type:{art_type}" which returns a synthetic ArtifactInfo whose
+    // `tags` field contains the list of IDs of that type.
+    // If that convention isn't available, render a placeholder.
+    let mut html = String::new();
+    html.push_str(&format!(
+        "<div class=\"artifact-embed artifact-embed-table\">\
+         <strong>{}</strong>",
+        html_escape(art_type)
+    ));
+
+    // Try the type-query convention
+    let type_query = format!("__type:{art_type}");
+    if let Some(type_info) = artifact_info(&type_query) {
+        // type_info.tags contains the list of artifact IDs
+        html.push_str("<table class=\"artifact-embed-link-table\"><thead><tr>");
+        for col in field_names {
+            html.push_str(&format!("<th>{}</th>", html_escape(col)));
+        }
+        html.push_str("</tr></thead><tbody>");
+
+        for aid in &type_info.tags {
+            if let Some(info) = artifact_info(aid) {
+                html.push_str("<tr>");
+                for col in field_names {
+                    let val = match *col {
+                        "id" => info.id.clone(),
+                        "title" => info.title.clone(),
+                        "status" => info.status.clone(),
+                        "type" => info.art_type.clone(),
+                        "description" => info.description.clone(),
+                        other => info
+                            .fields
+                            .iter()
+                            .find(|(k, _)| k == other)
+                            .map(|(_, v)| v.clone())
+                            .unwrap_or_default(),
+                    };
+                    html.push_str(&format!("<td>{}</td>", html_escape(&val)));
+                }
+                html.push_str("</tr>");
+            }
+        }
+
+        html.push_str("</tbody></table>");
+    } else {
+        html.push_str("<p class=\"meta\">Table embed requires store access.</p>");
+    }
+
+    html.push_str("</div>");
+    html
 }
 
 /// Result of parsing a `[text](url)` markdown link.
@@ -929,7 +1372,6 @@ This document specifies the system-level requirements.
 See frontmatter.
 "#;
 
-    // rivet: verifies REQ-007
     #[test]
     fn parse_frontmatter() {
         let doc = parse_document(SAMPLE_DOC, None).unwrap();
@@ -944,7 +1386,6 @@ See frontmatter.
         );
     }
 
-    // rivet: verifies REQ-007
     #[test]
     fn extract_references_from_body() {
         let doc = parse_document(SAMPLE_DOC, None).unwrap();
@@ -956,7 +1397,6 @@ See frontmatter.
         assert_eq!(ids, vec!["REQ-001", "REQ-002", "REQ-003"]);
     }
 
-    // rivet: verifies REQ-007
     #[test]
     fn extract_sections_hierarchy() {
         let doc = parse_document(SAMPLE_DOC, None).unwrap();
@@ -975,7 +1415,6 @@ See frontmatter.
         assert_eq!(doc.sections[4].artifact_ids, vec!["REQ-003"]);
     }
 
-    // rivet: verifies REQ-007
     #[test]
     fn multiple_refs_on_one_line() {
         let content = "---\nid: D-1\ntitle: T\n---\n[[A-1]] and [[B-2]] here\n";
@@ -985,14 +1424,12 @@ See frontmatter.
         assert_eq!(doc.references[1].artifact_id, "B-2");
     }
 
-    // rivet: verifies REQ-007
     #[test]
     fn missing_frontmatter_is_error() {
         let result = parse_document("# Just markdown\n\nNo frontmatter.", None);
         assert!(result.is_err());
     }
 
-    // rivet: verifies REQ-007
     #[test]
     fn render_html_resolves_refs() {
         let doc = parse_document(SAMPLE_DOC, None).unwrap();
@@ -1002,7 +1439,6 @@ See frontmatter.
         assert!(html.contains("class=\"artifact-ref broken\""));
     }
 
-    // rivet: verifies REQ-007
     #[test]
     fn render_html_headings() {
         let doc = parse_document(SAMPLE_DOC, None).unwrap();
@@ -1012,7 +1448,6 @@ See frontmatter.
         assert!(html.contains("<h3>"));
     }
 
-    // rivet: verifies REQ-001
     #[test]
     fn document_store() {
         let doc = parse_document(SAMPLE_DOC, None).unwrap();
@@ -1023,7 +1458,6 @@ See frontmatter.
         assert_eq!(store.all_references().len(), 3);
     }
 
-    // rivet: verifies REQ-007
     #[test]
     fn default_doc_type_when_omitted() {
         let content = "---\nid: D-1\ntitle: Test\n---\nBody.\n";
@@ -1041,18 +1475,52 @@ See frontmatter.
         assert!(!html.contains("<pre><code>root: FlightControl"));
     }
 
-    // rivet: verifies REQ-007
+    fn make_info(id: &str, title: &str, art_type: &str) -> ArtifactInfo {
+        ArtifactInfo {
+            id: id.into(),
+            title: title.into(),
+            art_type: art_type.into(),
+            status: "approved".into(),
+            description: format!("Description of {id}"),
+            tags: Vec::new(),
+            fields: Vec::new(),
+            links: Vec::new(),
+            backlinks: Vec::new(),
+        }
+    }
+
+    fn make_info_rich() -> ArtifactInfo {
+        ArtifactInfo {
+            id: "REQ-001".into(),
+            title: "Test requirement".into(),
+            art_type: "requirement".into(),
+            status: "approved".into(),
+            description: "A test requirement description".into(),
+            tags: vec!["safety".into(), "functional".into()],
+            fields: vec![
+                ("priority".into(), "high".into()),
+                ("rationale".into(), "needed for safety".into()),
+            ],
+            links: vec![LinkInfo {
+                link_type: "satisfies".into(),
+                target_id: "SYS-001".into(),
+                target_title: "System need".into(),
+                target_type: "system-requirement".into(),
+            }],
+            backlinks: vec![LinkInfo {
+                link_type: "satisfied-by".into(),
+                target_id: "DD-003".into(),
+                target_title: "Design element".into(),
+                target_type: "design-decision".into(),
+            }],
+        }
+    }
+
     #[test]
     fn artifact_embedding() {
         let info_fn = |id: &str| -> Option<ArtifactInfo> {
             if id == "REQ-001" {
-                Some(ArtifactInfo {
-                    id: "REQ-001".into(),
-                    title: "Test requirement".into(),
-                    art_type: "requirement".into(),
-                    status: "approved".into(),
-                    description: "A test requirement description".into(),
-                })
+                Some(make_info("REQ-001", "Test requirement", "requirement"))
             } else {
                 None
             }
@@ -1074,7 +1542,6 @@ See frontmatter.
         assert!(html.contains("status-badge"), "should contain status badge");
     }
 
-    // rivet: verifies REQ-007
     #[test]
     fn artifact_embedding_broken_ref() {
         let content = "---\nid: DOC-B\ntitle: Broken\n---\nSee {{artifact:NOPE-999}} here.\n";
@@ -1085,5 +1552,205 @@ See frontmatter.
             "broken embed should have broken class"
         );
         assert!(html.contains("NOPE-999"), "should show the broken ID");
+    }
+
+    // -- Rich embed tests ------------------------------------------------
+
+    fn rich_info_fn(id: &str) -> Option<ArtifactInfo> {
+        match id {
+            "REQ-001" => Some(make_info_rich()),
+            "SYS-001" => {
+                let mut info = make_info("SYS-001", "System need", "system-requirement");
+                info.links = vec![LinkInfo {
+                    link_type: "derives-from".into(),
+                    target_id: "STAKE-001".into(),
+                    target_title: "Stakeholder need".into(),
+                    target_type: "stakeholder-requirement".into(),
+                }];
+                Some(info)
+            }
+            "DD-003" => {
+                let mut info = make_info("DD-003", "Design element", "design-decision");
+                info.backlinks = vec![LinkInfo {
+                    link_type: "implemented-by".into(),
+                    target_id: "FEAT-007".into(),
+                    target_title: "Feature impl".into(),
+                    target_type: "feature".into(),
+                }];
+                Some(info)
+            }
+            "STAKE-001" => Some(make_info(
+                "STAKE-001",
+                "Stakeholder need",
+                "stakeholder-requirement",
+            )),
+            "FEAT-007" => Some(make_info("FEAT-007", "Feature impl", "feature")),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn embed_links_renders_outgoing_table() {
+        let content = "---\nid: DOC-L\ntitle: Links\n---\n{{artifact:REQ-001:links}}\n";
+        let doc = parse_document(content, None).unwrap();
+        let html = render_to_html(&doc, |_| true, rich_info_fn);
+        assert!(
+            html.contains("Outgoing Links"),
+            "should contain outgoing links heading"
+        );
+        assert!(
+            html.contains("SYS-001"),
+            "should contain forward link target"
+        );
+        assert!(html.contains("satisfies"), "should show link type");
+    }
+
+    #[test]
+    fn embed_links_renders_incoming_table() {
+        let content = "---\nid: DOC-L\ntitle: Links\n---\n{{artifact:REQ-001:links}}\n";
+        let doc = parse_document(content, None).unwrap();
+        let html = render_to_html(&doc, |_| true, rich_info_fn);
+        assert!(
+            html.contains("Incoming Links"),
+            "should contain incoming links heading"
+        );
+        assert!(html.contains("DD-003"), "should contain backlink source");
+        assert!(html.contains("satisfied-by"), "should show backlink type");
+    }
+
+    #[test]
+    fn embed_full_shows_description_tags_fields_links() {
+        let content = "---\nid: DOC-F\ntitle: Full\n---\n{{artifact:REQ-001:full}}\n";
+        let doc = parse_document(content, None).unwrap();
+        let html = render_to_html(&doc, |_| true, rich_info_fn);
+        assert!(
+            html.contains("artifact-embed-full"),
+            "should have full class"
+        );
+        assert!(
+            html.contains("A test requirement description"),
+            "should show full description"
+        );
+        assert!(html.contains("safety"), "should show tag 'safety'");
+        assert!(html.contains("functional"), "should show tag 'functional'");
+        assert!(html.contains("priority"), "should show field key");
+        assert!(html.contains("high"), "should show field value");
+        assert!(
+            html.contains("Outgoing Links"),
+            "should have outgoing links"
+        );
+        assert!(
+            html.contains("Incoming Links"),
+            "should have incoming links"
+        );
+    }
+
+    #[test]
+    fn embed_upstream_renders_trace() {
+        let content = "---\nid: DOC-U\ntitle: Upstream\n---\n{{artifact:REQ-001:upstream:2}}\n";
+        let doc = parse_document(content, None).unwrap();
+        let html = render_to_html(&doc, |_| true, rich_info_fn);
+        assert!(
+            html.contains("artifact-embed-trace"),
+            "should have trace class"
+        );
+        assert!(
+            html.contains("Upstream trace (2 levels)"),
+            "should show direction and depth"
+        );
+        assert!(html.contains("SYS-001"), "should trace to upstream target");
+        // Second level: SYS-001 has a derives-from link to STAKE-001
+        assert!(
+            html.contains("STAKE-001"),
+            "should trace 2nd level upstream"
+        );
+    }
+
+    #[test]
+    fn embed_downstream_renders_trace() {
+        let content = "---\nid: DOC-D\ntitle: Down\n---\n{{artifact:REQ-001:downstream:1}}\n";
+        let doc = parse_document(content, None).unwrap();
+        let html = render_to_html(&doc, |_| true, rich_info_fn);
+        assert!(
+            html.contains("artifact-embed-trace"),
+            "should have trace class"
+        );
+        assert!(
+            html.contains("Downstream trace (1 levels)"),
+            "should show direction and depth"
+        );
+        assert!(html.contains("DD-003"), "should trace to downstream source");
+        // Only 1 level deep — should not recurse into DD-003's backlinks
+        assert!(
+            !html.contains("FEAT-007"),
+            "should NOT trace beyond depth 1"
+        );
+    }
+
+    #[test]
+    fn embed_chain_renders_both_directions() {
+        let content = "---\nid: DOC-C\ntitle: Chain\n---\n{{artifact:REQ-001:chain}}\n";
+        let doc = parse_document(content, None).unwrap();
+        let html = render_to_html(&doc, |_| true, rich_info_fn);
+        assert!(
+            html.contains("artifact-embed-chain"),
+            "should have chain class"
+        );
+        assert!(html.contains("Upstream"), "should have upstream section");
+        assert!(
+            html.contains("Downstream"),
+            "should have downstream section"
+        );
+        assert!(html.contains("SYS-001"), "upstream should contain SYS-001");
+        assert!(html.contains("DD-003"), "downstream should contain DD-003");
+    }
+
+    #[test]
+    fn links_only_renders_tables_without_card_header() {
+        let content = "---\nid: DOC-LO\ntitle: LinksOnly\n---\n{{links:REQ-001}}\n";
+        let doc = parse_document(content, None).unwrap();
+        let html = render_to_html(&doc, |_| true, rich_info_fn);
+        assert!(
+            html.contains("artifact-embed-links-only"),
+            "should have links-only class"
+        );
+        assert!(
+            html.contains("Outgoing Links"),
+            "should contain outgoing table"
+        );
+        assert!(
+            html.contains("Incoming Links"),
+            "should contain incoming table"
+        );
+        // Should NOT contain a card header with type/status badges
+        assert!(
+            !html.contains("artifact-embed-header"),
+            "links-only should not have card header"
+        );
+    }
+
+    #[test]
+    fn unknown_modifier_falls_back_to_default() {
+        let content = "---\nid: DOC-X\ntitle: Unknown\n---\n{{artifact:REQ-001:bogus}}\n";
+        let doc = parse_document(content, None).unwrap();
+        let html = render_to_html(&doc, |_| true, rich_info_fn);
+        // Should fall back to the default card rendering
+        assert!(
+            html.contains("artifact-embed"),
+            "should contain embedded card"
+        );
+        assert!(
+            html.contains("artifact-embed-desc"),
+            "should have truncated description"
+        );
+        // Should NOT have the full/links/trace class markers
+        assert!(
+            !html.contains("artifact-embed-full"),
+            "should not use full rendering"
+        );
+        assert!(
+            !html.contains("artifact-embed-trace"),
+            "should not use trace rendering"
+        );
     }
 }
