@@ -196,6 +196,7 @@ mod tests {
                     severity: Severity::Error,
                 },
             ],
+            conditional_rules: vec![],
         };
         Schema::merge(&[file])
     }
