@@ -1022,6 +1022,7 @@ mod tests {
                 target_types: vec![],
             }],
             traceability_rules: vec![],
+            conditional_rules: vec![],
         };
 
         Schema::merge(&[schema_file])
