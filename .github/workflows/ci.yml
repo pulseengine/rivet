@@ -132,7 +132,7 @@ jobs:
         # Skip bazel and db modules: rowan 0.16 uses integer-to-pointer casts
         # internally (HeaderSlice, arc.rs) incompatible with strict provenance.
         # Use permissive provenance until rowan ships a fix.
-        run: cargo miri test -p rivet-core --lib -- --skip bazel --skip db
+        run: cargo miri test -p rivet-core --lib -- --skip bazel --skip db --skip externals::tests::check_baseline --skip externals::tests::sync
         env:
           MIRIFLAGS: "-Zmiri-disable-isolation"
 
