@@ -8,6 +8,7 @@ use clap::{Parser, Subcommand};
 use rivet_core::coverage;
 use rivet_core::diff::{ArtifactDiff, DiagnosticDiff};
 use rivet_core::document::{self, DocumentStore};
+use rivet_core::impact;
 use rivet_core::links::LinkGraph;
 use rivet_core::matrix::{self, Direction};
 use rivet_core::results::{self, ResultStore};
@@ -259,6 +260,25 @@ enum Command {
         update: bool,
     },
 
+    /// Analyze change impact between current state and a baseline
+    Impact {
+        /// Git ref to compare against (branch, tag, or commit)
+        #[arg(long)]
+        since: Option<String>,
+
+        /// Path to baseline project directory (containing rivet.yaml)
+        #[arg(long)]
+        baseline: Option<PathBuf>,
+
+        /// Maximum traversal depth (0 = direct only)
+        #[arg(long, default_value = "10")]
+        depth: usize,
+
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
     /// Manage distributed baselines across repos
     Baseline {
         #[command(subcommand)]
@@ -405,6 +425,12 @@ fn run(cli: Cli) -> Result<bool> {
             cmd_diff(&cli, base.as_deref(), head.as_deref(), format)
         }
         Command::Export { format, output } => cmd_export(&cli, format, output.as_deref()),
+        Command::Impact {
+            since,
+            baseline,
+            depth,
+            format,
+        } => cmd_impact(&cli, since.as_deref(), baseline.as_deref(), *depth, format),
         Command::Schema { action } => cmd_schema(&cli, action),
         Command::Commits {
             since,
@@ -1593,6 +1619,376 @@ fn cmd_diff(
     }
 
     Ok(true)
+}
+
+/// Analyze change impact between current state and a baseline.
+fn cmd_impact(
+    cli: &Cli,
+    since: Option<&str>,
+    baseline: Option<&std::path::Path>,
+    depth: usize,
+    format: &str,
+) -> Result<bool> {
+    let (current_store, _schema, graph) = load_project(cli)?;
+
+    // Load baseline store
+    let baseline_store = if let Some(git_ref) = since {
+        // Load from git ref using `git show <ref>:<file>` for each source file
+        load_baseline_from_git(cli, git_ref)?
+    } else if let Some(baseline_dir) = baseline {
+        // Load from a baseline directory
+        impact::load_baseline_from_dir(baseline_dir)
+            .with_context(|| format!("loading baseline from '{}'", baseline_dir.display()))?
+    } else {
+        anyhow::bail!("specify either --since <git-ref> or --baseline <path>");
+    };
+
+    let result = impact::compute_impact(&current_store, &baseline_store, &graph, depth);
+
+    if format == "json" {
+        let changed_json: Vec<serde_json::Value> = result
+            .changed
+            .iter()
+            .map(|c| {
+                let title = current_store
+                    .get(&c.id)
+                    .map(|a| a.title.as_str())
+                    .unwrap_or("");
+                serde_json::json!({
+                    "id": c.id,
+                    "title": title,
+                    "summary": c.change_summary,
+                })
+            })
+            .collect();
+        let direct_json: Vec<serde_json::Value> = result
+            .directly_affected
+            .iter()
+            .map(|a| {
+                let title = current_store
+                    .get(&a.id)
+                    .map(|ar| ar.title.as_str())
+                    .unwrap_or("");
+                serde_json::json!({
+                    "id": a.id,
+                    "title": title,
+                    "reason": a.reason_chain,
+                    "depth": a.depth,
+                })
+            })
+            .collect();
+        let transitive_json: Vec<serde_json::Value> = result
+            .transitively_affected
+            .iter()
+            .map(|a| {
+                let title = current_store
+                    .get(&a.id)
+                    .map(|ar| ar.title.as_str())
+                    .unwrap_or("");
+                serde_json::json!({
+                    "id": a.id,
+                    "title": title,
+                    "reason": a.reason_chain,
+                    "depth": a.depth,
+                })
+            })
+            .collect();
+        let output = serde_json::json!({
+            "command": "impact",
+            "changed": changed_json,
+            "directly_affected": direct_json,
+            "transitively_affected": transitive_json,
+            "added": result.added,
+            "removed": result.removed,
+            "summary": {
+                "changed": result.changed.len(),
+                "direct": result.directly_affected.len(),
+                "transitive": result.transitively_affected.len(),
+                "added": result.added.len(),
+                "removed": result.removed.len(),
+                "total": result.total(),
+            },
+        });
+        println!("{}", serde_json::to_string_pretty(&output).unwrap());
+    } else {
+        // Text output
+        if !result.changed.is_empty() {
+            println!("Changed artifacts ({}):", result.changed.len());
+            for c in &result.changed {
+                let title = current_store
+                    .get(&c.id)
+                    .map(|a| a.title.as_str())
+                    .unwrap_or("");
+                println!("  {:12} {} ({})", c.id, title, c.change_summary);
+            }
+        }
+
+        if !result.added.is_empty() {
+            println!("\nAdded artifacts ({}):", result.added.len());
+            for id in &result.added {
+                let title = current_store
+                    .get(id)
+                    .map(|a| a.title.as_str())
+                    .unwrap_or("");
+                println!("  {:12} {}", id, title);
+            }
+        }
+
+        if !result.removed.is_empty() {
+            println!("\nRemoved artifacts ({}):", result.removed.len());
+            for id in &result.removed {
+                println!("  {}", id);
+            }
+        }
+
+        if !result.directly_affected.is_empty() {
+            println!("\nDirectly affected ({}):", result.directly_affected.len());
+            for a in &result.directly_affected {
+                let title = current_store
+                    .get(&a.id)
+                    .map(|ar| ar.title.as_str())
+                    .unwrap_or("");
+                let reason = if a.reason_chain.is_empty() {
+                    String::new()
+                } else {
+                    format!(" ({})", a.reason_chain.join(" "))
+                };
+                println!("  {:12} {}{}", a.id, title, reason);
+            }
+        }
+
+        if !result.transitively_affected.is_empty() {
+            println!(
+                "\nTransitively affected ({}):",
+                result.transitively_affected.len()
+            );
+            for a in &result.transitively_affected {
+                let title = current_store
+                    .get(&a.id)
+                    .map(|ar| ar.title.as_str())
+                    .unwrap_or("");
+                let reason = if a.reason_chain.is_empty() {
+                    String::new()
+                } else {
+                    format!(" ({})", a.reason_chain.join(" "))
+                };
+                println!("  {:12} {}{}", a.id, title, reason);
+            }
+        }
+
+        println!(
+            "\nImpact summary: {} changed, {} direct, {} transitive, {} added, {} removed, {} total",
+            result.changed.len(),
+            result.directly_affected.len(),
+            result.transitively_affected.len(),
+            result.added.len(),
+            result.removed.len(),
+            result.total(),
+        );
+    }
+
+    Ok(true)
+}
+
+/// Load a baseline store from a git ref by extracting artifact files at that ref.
+fn load_baseline_from_git(cli: &Cli, git_ref: &str) -> Result<Store> {
+    let config_path = cli.project.join("rivet.yaml");
+
+    // Read rivet.yaml at the git ref
+    let config_content = git_show_file(&cli.project, git_ref, "rivet.yaml")
+        .with_context(|| format!("reading rivet.yaml at ref '{git_ref}'"))?;
+
+    let config: rivet_core::model::ProjectConfig = serde_yaml::from_str(&config_content)
+        .with_context(|| format!("parsing rivet.yaml at ref '{git_ref}'"))?;
+
+    // We need the current schemas to parse — load them from the working tree
+    let schemas_dir = resolve_schemas_dir(cli);
+    let _schema = rivet_core::load_schemas(&config.project.schemas, &schemas_dir)
+        .context("loading schemas")?;
+
+    // For each source, list files at the git ref and parse them
+    let mut store = Store::new();
+
+    for source in &config.sources {
+        let source_path = &source.path;
+
+        // List files in the source directory at the given ref
+        let files = git_ls_tree_files(&cli.project, git_ref, source_path)
+            .with_context(|| format!("listing files in '{source_path}' at ref '{git_ref}'"))?;
+
+        for file_path in &files {
+            // Only process YAML files
+            if !file_path.ends_with(".yaml") && !file_path.ends_with(".yml") {
+                continue;
+            }
+
+            let content = match git_show_file(&cli.project, git_ref, file_path) {
+                Ok(c) => c,
+                Err(e) => {
+                    log::warn!("could not read {file_path} at {git_ref}: {e}");
+                    continue;
+                }
+            };
+
+            // Parse using the appropriate adapter
+            let artifacts = match parse_yaml_content(&content, &source.format, file_path) {
+                Ok(a) => a,
+                Err(e) => {
+                    log::warn!("could not parse {file_path} at {git_ref}: {e}");
+                    continue;
+                }
+            };
+
+            for artifact in artifacts {
+                store.upsert(artifact);
+            }
+        }
+    }
+
+    // Also try to load artifacts from the current config if the baseline
+    // config path doesn't exist at git ref (fallback for comparison)
+    if store.is_empty() && config_path.exists() {
+        log::warn!("no artifacts loaded from git ref '{git_ref}', baseline may be empty");
+    }
+
+    Ok(store)
+}
+
+/// Run `git show <ref>:<path>` to get file contents at a git ref.
+fn git_show_file(repo_dir: &std::path::Path, git_ref: &str, path: &str) -> Result<String> {
+    let output = std::process::Command::new("git")
+        .args(["show", &format!("{git_ref}:{path}")])
+        .current_dir(repo_dir)
+        .output()
+        .context("running git show")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("git show {git_ref}:{path} failed: {stderr}");
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// Run `git ls-tree` to list files in a directory at a git ref.
+fn git_ls_tree_files(
+    repo_dir: &std::path::Path,
+    git_ref: &str,
+    dir_path: &str,
+) -> Result<Vec<String>> {
+    let output = std::process::Command::new("git")
+        .args(["ls-tree", "-r", "--name-only", git_ref, dir_path])
+        .current_dir(repo_dir)
+        .output()
+        .context("running git ls-tree")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("git ls-tree failed: {stderr}");
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let files: Vec<String> = stdout.lines().map(|l| l.to_string()).collect();
+    Ok(files)
+}
+
+/// Parse YAML content into artifacts using the specified format adapter.
+fn parse_yaml_content(
+    content: &str,
+    format: &str,
+    file_path: &str,
+) -> Result<Vec<rivet_core::model::Artifact>> {
+    match format {
+        "generic" | "generic-yaml" => {
+            // Parse as generic YAML artifacts
+            let wrapper: GenericYamlWrapper =
+                serde_yaml::from_str(content).with_context(|| format!("parsing {file_path}"))?;
+            let artifacts = wrapper
+                .artifacts
+                .into_iter()
+                .map(|raw| rivet_core::model::Artifact {
+                    id: raw.id,
+                    artifact_type: raw.r#type,
+                    title: raw.title,
+                    description: raw.description,
+                    status: raw.status,
+                    tags: raw.tags,
+                    links: raw
+                        .links
+                        .into_iter()
+                        .map(|l| rivet_core::model::Link {
+                            link_type: l.r#type,
+                            target: l.target,
+                        })
+                        .collect(),
+                    fields: raw.fields,
+                    source_file: Some(std::path::PathBuf::from(file_path)),
+                })
+                .collect();
+            Ok(artifacts)
+        }
+        "stpa-yaml" => {
+            // For STPA, fall back to generic parsing of the YAML structure
+            let wrapper: GenericYamlWrapper =
+                serde_yaml::from_str(content).with_context(|| format!("parsing {file_path}"))?;
+            let artifacts = wrapper
+                .artifacts
+                .into_iter()
+                .map(|raw| rivet_core::model::Artifact {
+                    id: raw.id,
+                    artifact_type: raw.r#type,
+                    title: raw.title,
+                    description: raw.description,
+                    status: raw.status,
+                    tags: raw.tags,
+                    links: raw
+                        .links
+                        .into_iter()
+                        .map(|l| rivet_core::model::Link {
+                            link_type: l.r#type,
+                            target: l.target,
+                        })
+                        .collect(),
+                    fields: raw.fields,
+                    source_file: Some(std::path::PathBuf::from(file_path)),
+                })
+                .collect();
+            Ok(artifacts)
+        }
+        other => anyhow::bail!("unsupported format for git baseline: {other}"),
+    }
+}
+
+/// Raw YAML structure for parsing artifact files from git show output.
+#[derive(serde::Deserialize)]
+struct GenericYamlWrapper {
+    #[serde(default)]
+    artifacts: Vec<RawArtifact>,
+}
+
+#[derive(serde::Deserialize)]
+struct RawArtifact {
+    id: String,
+    #[serde(rename = "type")]
+    r#type: String,
+    title: String,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    status: Option<String>,
+    #[serde(default)]
+    tags: Vec<String>,
+    #[serde(default)]
+    links: Vec<RawLink>,
+    #[serde(default, flatten)]
+    fields: std::collections::BTreeMap<String, serde_yaml::Value>,
+}
+
+#[derive(serde::Deserialize)]
+struct RawLink {
+    #[serde(rename = "type")]
+    r#type: String,
+    target: String,
 }
 
 /// Show built-in docs (no project load needed).
