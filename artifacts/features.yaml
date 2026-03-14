@@ -445,7 +445,7 @@ artifacts:
   - id: FEAT-029
     type: feature
     title: "rivet commit-msg-check subcommand"
-    status: draft
+    status: approved
     description: >
       Pre-commit hook entry point that validates a single commit message
       file. Parses conventional-commit type for exemption, checks for
@@ -464,7 +464,7 @@ artifacts:
   - id: FEAT-030
     type: feature
     title: "rivet commits subcommand"
-    status: draft
+    status: approved
     description: >
       History analysis command that parses git log trailers, classifies
       commits (linked, orphan, exempt, broken-ref), and produces five
@@ -483,7 +483,7 @@ artifacts:
   - id: FEAT-031
     type: feature
     title: Configurable trailer-to-link-type mapping
-    status: draft
+    status: approved
     description: >
       Configuration in rivet.yaml that maps git trailer keys (Implements,
       Fixes, Verifies, Satisfies, Refs) to existing schema link types.
@@ -499,7 +499,7 @@ artifacts:
   - id: FEAT-032
     type: feature
     title: Ephemeral commit node injection into link graph
-    status: draft
+    status: approved
     description: >
       At analysis time, parsed commit data is injected as ephemeral
       nodes into the petgraph link graph, wired to referenced artifacts
@@ -518,7 +518,7 @@ artifacts:
   - id: FEAT-033
     type: feature
     title: Externals config block and prefix resolution
-    status: draft
+    status: approved
     links:
       - type: satisfies
         target: REQ-020
@@ -527,7 +527,7 @@ artifacts:
   - id: FEAT-034
     type: feature
     title: rivet sync — fetch external repos
-    status: draft
+    status: approved
     links:
       - type: satisfies
         target: REQ-020
@@ -536,7 +536,7 @@ artifacts:
   - id: FEAT-035
     type: feature
     title: rivet lock — pin externals to commits
-    status: draft
+    status: approved
     links:
       - type: satisfies
         target: REQ-020
@@ -545,7 +545,7 @@ artifacts:
   - id: FEAT-036
     type: feature
     title: rivet baseline verify — cross-repo validation
-    status: draft
+    status: approved
     links:
       - type: satisfies
         target: REQ-021
@@ -554,7 +554,7 @@ artifacts:
   - id: FEAT-037
     type: feature
     title: Embedded WASM/JS assets for single binary
-    status: draft
+    status: approved
     links:
       - type: satisfies
         target: REQ-022
@@ -563,7 +563,7 @@ artifacts:
   - id: FEAT-038
     type: feature
     title: Cross-repo link validation in rivet validate
-    status: draft
+    status: approved
     links:
       - type: satisfies
         target: REQ-020
