@@ -3237,8 +3237,16 @@ fn cmd_lock(cli: &Cli, update: bool) -> Result<bool> {
         return Ok(true);
     }
     let lock = rivet_core::externals::generate_lockfile(externals.unwrap(), &cli.project)?;
+    for (name, entry) in &lock.pins {
+        let short_sha = &entry.commit[..8.min(entry.commit.len())];
+        let source = entry
+            .git
+            .as_deref()
+            .unwrap_or("(local path)");
+        eprintln!("  {name} -> {short_sha} ({source})");
+    }
     rivet_core::externals::write_lockfile(&lock, &cli.project)?;
-    eprintln!("Wrote rivet.lock with {} pins", lock.pins.len());
+    eprintln!("\nWrote rivet.lock with {} pins", lock.pins.len());
     Ok(true)
 }
 
