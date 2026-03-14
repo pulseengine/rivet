@@ -83,6 +83,10 @@ pub fn load_artifacts(
             let adapter = formats::aadl::AadlAdapter::new();
             adapter::Adapter::import(&adapter, &source_input, &adapter_config)
         }
+        "needs-json" => {
+            let adapter = formats::needs_json::NeedsJsonAdapter::new();
+            adapter::Adapter::import(&adapter, &source_input, &adapter_config)
+        }
         other => Err(Error::Adapter(format!("unknown format: {}", other))),
     }
 }
