@@ -280,6 +280,112 @@ enum Command {
         #[arg(long = "config", value_parser = parse_key_val)]
         config_entries: Vec<(String, String)>,
     },
+
+    /// Print the next available ID for a given artifact type or prefix
+    NextId {
+        /// Artifact type (e.g., requirement, feature, design-decision)
+        #[arg(short = 't', long, group = "id_source")]
+        r#type: Option<String>,
+
+        /// ID prefix directly (e.g., REQ, FEAT, DD)
+        #[arg(short, long, group = "id_source")]
+        prefix: Option<String>,
+
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
+    /// Add a new artifact to the project
+    Add {
+        /// Artifact type (e.g., requirement, feature, design-decision)
+        #[arg(short = 't', long)]
+        r#type: String,
+
+        /// Artifact title
+        #[arg(long)]
+        title: String,
+
+        /// Lifecycle status (default: draft)
+        #[arg(long, default_value = "draft")]
+        status: String,
+
+        /// Comma-separated tags
+        #[arg(long, value_delimiter = ',')]
+        tags: Vec<String>,
+
+        /// Field values as key=value pairs
+        #[arg(long = "field", value_parser = parse_key_val_mutation)]
+        fields: Vec<(String, String)>,
+
+        /// Target YAML file to append the artifact to
+        #[arg(long)]
+        file: Option<PathBuf>,
+    },
+
+    /// Add a link between two artifacts
+    Link {
+        /// Source artifact ID
+        source: String,
+
+        /// Link type (e.g., satisfies, implements, derives-from)
+        #[arg(short = 't', long = "type")]
+        link_type: String,
+
+        /// Target artifact ID
+        #[arg(long)]
+        target: String,
+    },
+
+    /// Remove a link between two artifacts
+    Unlink {
+        /// Source artifact ID
+        source: String,
+
+        /// Link type (e.g., satisfies, implements, derives-from)
+        #[arg(short = 't', long = "type")]
+        link_type: String,
+
+        /// Target artifact ID
+        #[arg(long)]
+        target: String,
+    },
+
+    /// Modify an existing artifact
+    Modify {
+        /// Artifact ID to modify
+        id: String,
+
+        /// Set the lifecycle status
+        #[arg(long)]
+        set_status: Option<String>,
+
+        /// Set the title
+        #[arg(long)]
+        set_title: Option<String>,
+
+        /// Add a tag
+        #[arg(long)]
+        add_tag: Vec<String>,
+
+        /// Remove a tag
+        #[arg(long)]
+        remove_tag: Vec<String>,
+
+        /// Set a field value (key=value)
+        #[arg(long = "set-field", value_parser = parse_key_val_mutation)]
+        set_fields: Vec<(String, String)>,
+    },
+
+    /// Remove an artifact from the project
+    Remove {
+        /// Artifact ID to remove
+        id: String,
+
+        /// Force removal even if other artifacts link to this one
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -452,6 +558,46 @@ fn run(cli: Cli) -> Result<bool> {
             source,
             config_entries,
         } => cmd_import(adapter, source, config_entries),
+        Command::NextId {
+            r#type,
+            prefix,
+            format,
+        } => cmd_next_id(&cli, r#type.as_deref(), prefix.as_deref(), format),
+        Command::Add {
+            r#type,
+            title,
+            status,
+            tags,
+            fields,
+            file,
+        } => cmd_add(&cli, r#type, title, status, tags, fields, file.as_deref()),
+        Command::Link {
+            source,
+            link_type,
+            target,
+        } => cmd_link(&cli, source, link_type, target),
+        Command::Unlink {
+            source,
+            link_type,
+            target,
+        } => cmd_unlink(&cli, source, link_type, target),
+        Command::Modify {
+            id,
+            set_status,
+            set_title,
+            add_tag,
+            remove_tag,
+            set_fields,
+        } => cmd_modify(
+            &cli,
+            id,
+            set_status.as_deref(),
+            set_title.as_deref(),
+            add_tag,
+            remove_tag,
+            set_fields,
+        ),
+        Command::Remove { id, force } => cmd_remove(&cli, id, *force),
     }
 }
 
@@ -2572,6 +2718,251 @@ fn cmd_import(
             artifact.id, artifact.artifact_type, artifact.title
         );
     }
+
+    Ok(true)
+}
+
+/// Parse a key=value pair for mutation commands.
+fn parse_key_val_mutation(s: &str) -> Result<(String, String), String> {
+    let pos = s
+        .find('=')
+        .ok_or_else(|| format!("invalid KEY=VALUE: no '=' found in '{s}'"))?;
+    Ok((s[..pos].to_string(), s[pos + 1..].to_string()))
+}
+
+/// Load project returning (store, schema) without building the link graph.
+fn load_project_config_and_store(
+    cli: &Cli,
+) -> Result<(
+    Store,
+    rivet_core::schema::Schema,
+    rivet_core::model::ProjectConfig,
+)> {
+    let config_path = cli.project.join("rivet.yaml");
+    let config = rivet_core::load_project_config(&config_path)
+        .with_context(|| format!("loading {}", config_path.display()))?;
+
+    let schemas_dir = resolve_schemas_dir(cli);
+    let schema = rivet_core::load_schemas(&config.project.schemas, &schemas_dir)
+        .context("loading schemas")?;
+
+    let mut store = Store::new();
+    for source in &config.sources {
+        let artifacts = rivet_core::load_artifacts(source, &cli.project)
+            .with_context(|| format!("loading source '{}'", source.path))?;
+        for artifact in artifacts {
+            store.upsert(artifact);
+        }
+    }
+
+    Ok((store, schema, config))
+}
+
+/// Print the next available ID for a given artifact type or prefix.
+fn cmd_next_id(
+    cli: &Cli,
+    artifact_type: Option<&str>,
+    prefix: Option<&str>,
+    format: &str,
+) -> Result<bool> {
+    use rivet_core::mutate;
+
+    let (store, _schema, _config) = load_project_config_and_store(cli)?;
+
+    let resolved_prefix = match (artifact_type, prefix) {
+        (Some(t), _) => mutate::prefix_for_type(t)
+            .map(|s| s.to_string())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "no known prefix for type '{}'. Use --prefix to specify one directly.",
+                    t
+                )
+            })?,
+        (_, Some(p)) => p.to_string(),
+        (None, None) => anyhow::bail!("either --type or --prefix must be specified"),
+    };
+
+    let next = mutate::next_id(&store, &resolved_prefix);
+
+    if format == "json" {
+        let json = serde_json::json!({
+            "next_id": next,
+            "prefix": resolved_prefix,
+        });
+        println!("{}", serde_json::to_string_pretty(&json)?);
+    } else {
+        println!("{next}");
+    }
+
+    Ok(true)
+}
+
+/// Add a new artifact to the project.
+fn cmd_add(
+    cli: &Cli,
+    artifact_type: &str,
+    title: &str,
+    status: &str,
+    tags: &[String],
+    fields: &[(String, String)],
+    file: Option<&std::path::Path>,
+) -> Result<bool> {
+    use rivet_core::model::Artifact;
+    use rivet_core::mutate;
+    use std::collections::BTreeMap;
+
+    let (store, schema, _config) = load_project_config_and_store(cli)?;
+
+    // Resolve prefix for the type
+    let prefix = mutate::prefix_for_type(artifact_type)
+        .ok_or_else(|| anyhow::anyhow!("no known prefix for type '{artifact_type}'"))?;
+
+    // Generate ID
+    let id = mutate::next_id(&store, prefix);
+
+    // Build fields map
+    let mut fields_map: BTreeMap<String, serde_yaml::Value> = BTreeMap::new();
+    for (key, value) in fields {
+        fields_map.insert(key.clone(), serde_yaml::Value::String(value.clone()));
+    }
+
+    let artifact = Artifact {
+        id: id.clone(),
+        artifact_type: artifact_type.to_string(),
+        title: title.to_string(),
+        description: None,
+        status: Some(status.to_string()),
+        tags: tags.to_vec(),
+        links: vec![],
+        fields: fields_map,
+        source_file: None,
+    };
+
+    // Validate before writing (DD-028)
+    mutate::validate_add(&artifact, &store, &schema).context("validation failed")?;
+
+    // Determine target file
+    let target_file = if let Some(f) = file {
+        cli.project.join(f)
+    } else {
+        mutate::find_file_for_type(artifact_type, &store).ok_or_else(|| {
+            anyhow::anyhow!(
+                "no existing file found for type '{}'. Use --file to specify one.",
+                artifact_type
+            )
+        })?
+    };
+
+    // Write to file
+    mutate::append_artifact_to_file(&artifact, &target_file)
+        .with_context(|| format!("writing to {}", target_file.display()))?;
+
+    println!("{id}");
+
+    Ok(true)
+}
+
+/// Add a link between two artifacts.
+fn cmd_link(cli: &Cli, source_id: &str, link_type: &str, target_id: &str) -> Result<bool> {
+    use rivet_core::model::Link;
+    use rivet_core::mutate;
+
+    let (store, schema, _config) = load_project_config_and_store(cli)?;
+
+    // Validate before writing (DD-028)
+    mutate::validate_link(source_id, link_type, target_id, &store, &schema)
+        .context("validation failed")?;
+
+    let source_file = mutate::find_source_file(source_id, &store)
+        .ok_or_else(|| anyhow::anyhow!("cannot determine source file for '{source_id}'"))?;
+
+    let link = Link {
+        link_type: link_type.to_string(),
+        target: target_id.to_string(),
+    };
+
+    mutate::add_link_to_file(source_id, &link, &source_file)
+        .with_context(|| format!("updating {}", source_file.display()))?;
+
+    println!("linked {} --[{}]--> {}", source_id, link_type, target_id);
+
+    Ok(true)
+}
+
+/// Remove a link between two artifacts.
+fn cmd_unlink(cli: &Cli, source_id: &str, link_type: &str, target_id: &str) -> Result<bool> {
+    use rivet_core::mutate;
+
+    let (store, _schema, _config) = load_project_config_and_store(cli)?;
+
+    // Validate the link exists
+    mutate::validate_unlink(source_id, link_type, target_id, &store)
+        .context("validation failed")?;
+
+    let source_file = mutate::find_source_file(source_id, &store)
+        .ok_or_else(|| anyhow::anyhow!("cannot determine source file for '{source_id}'"))?;
+
+    mutate::remove_link_from_file(source_id, link_type, target_id, &source_file)
+        .with_context(|| format!("updating {}", source_file.display()))?;
+
+    println!("unlinked {} --[{}]--> {}", source_id, link_type, target_id);
+
+    Ok(true)
+}
+
+/// Modify an existing artifact.
+fn cmd_modify(
+    cli: &Cli,
+    id: &str,
+    set_status: Option<&str>,
+    set_title: Option<&str>,
+    add_tags: &[String],
+    remove_tags: &[String],
+    set_fields: &[(String, String)],
+) -> Result<bool> {
+    use rivet_core::mutate::{self, ModifyParams};
+
+    let (store, schema, _config) = load_project_config_and_store(cli)?;
+
+    let params = ModifyParams {
+        set_status: set_status.map(|s| s.to_string()),
+        set_title: set_title.map(|s| s.to_string()),
+        add_tags: add_tags.to_vec(),
+        remove_tags: remove_tags.to_vec(),
+        set_fields: set_fields.to_vec(),
+    };
+
+    // Validate before writing (DD-028)
+    mutate::validate_modify(id, &params, &store, &schema).context("validation failed")?;
+
+    let source_file = mutate::find_source_file(id, &store)
+        .ok_or_else(|| anyhow::anyhow!("cannot determine source file for '{id}'"))?;
+
+    mutate::modify_artifact_in_file(id, &params, &source_file, &store)
+        .with_context(|| format!("updating {}", source_file.display()))?;
+
+    println!("modified {id}");
+
+    Ok(true)
+}
+
+/// Remove an artifact from the project.
+fn cmd_remove(cli: &Cli, id: &str, force: bool) -> Result<bool> {
+    use rivet_core::mutate;
+
+    let (store, schema, _config) = load_project_config_and_store(cli)?;
+    let graph = LinkGraph::build(&store, &schema);
+
+    // Validate before writing (DD-028)
+    mutate::validate_remove(id, force, &store, &graph).context("validation failed")?;
+
+    let source_file = mutate::find_source_file(id, &store)
+        .ok_or_else(|| anyhow::anyhow!("cannot determine source file for '{id}'"))?;
+
+    mutate::remove_artifact_from_file(id, &source_file)
+        .with_context(|| format!("updating {}", source_file.display()))?;
+
+    println!("removed {id}");
 
     Ok(true)
 }

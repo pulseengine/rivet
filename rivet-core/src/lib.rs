@@ -11,6 +11,7 @@ pub mod lifecycle;
 pub mod links;
 pub mod matrix;
 pub mod model;
+pub mod mutate;
 #[cfg(feature = "oslc")]
 pub mod oslc;
 pub mod query;
