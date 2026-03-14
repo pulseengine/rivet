@@ -221,6 +221,15 @@ jobs:
       - name: Check supply chain
         run: cargo vet --locked || echo "::warning::cargo-vet found unaudited crates — run 'cargo vet' locally"
 
+  # ── Kani bounded model checking (enable when Kani is available) ────
+  # kani:
+  #   name: Kani Proofs
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: model-checking/kani-github-action@v1
+  #     - run: cargo kani -p rivet-core
+
   # ── MSRV check ──────────────────────────────────────────────────────
   msrv:
     name: MSRV (1.89)

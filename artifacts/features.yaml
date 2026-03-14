@@ -577,3 +577,364 @@ artifacts:
       - type: satisfies
         target: REQ-020
     tags: [cross-repo, dashboard]
+
+  - id: FEAT-040
+    type: feature
+    title: Conditional validation rules in schema YAML
+    status: draft
+    description: >
+      Extend schema YAML with conditional-rules block supporting when/then
+      syntax. The "when" clause matches field values (equals, matches regex,
+      exists). The "then" clause enforces required-fields and required-links.
+      Validation engine evaluates conditional rules after static rules.
+    tags: [validation, schema, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-023
+      - type: implements
+        target: DD-018
+    fields:
+      phase: phase-3
+
+  - id: FEAT-041
+    type: feature
+    title: "rivet impact command"
+    status: draft
+    description: >
+      Change impact analysis command that computes content hashes for all
+      artifacts, diffs against a baseline (commit, tag, or rivet.lock),
+      and walks the link graph to report transitively affected artifacts.
+      Supports --since, --baseline, and --format json flags. Dashboard
+      integration highlights impacted artifacts in graph and matrix views.
+    tags: [cli, traceability, baseline, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-024
+      - type: implements
+        target: DD-019
+    fields:
+      phase: phase-3
+
+  - id: FEAT-042
+    type: feature
+    title: sphinx-needs JSON adapter (needs-json)
+    status: draft
+    description: >
+      Import adapter for sphinx-needs needs.json export format. Reads
+      needs.json, applies configurable type-mapping and id-transform
+      rules from rivet.yaml, and produces rivet artifacts with mapped
+      types, converted links, and preserved fields. Handles sphinx-needs
+      specifics like nested content, docname metadata, and underscore IDs.
+    tags: [adapter, interchange, migration, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-025
+      - type: implements
+        target: DD-020
+    fields:
+      phase: phase-3
+
+  - id: FEAT-043
+    type: feature
+    title: Test traceability source scanner
+    status: draft
+    description: >
+      Scans test source code for rivet traceability markers (Rust attributes,
+      Python decorators, comment tags) and test result files (JUnit XML,
+      cargo test JSON). Injects ephemeral test nodes into the link graph
+      with verifies links to referenced artifacts. Supports configurable
+      marker patterns per language and a coverage report via
+      rivet coverage --tests.
+    tags: [testing, traceability, automation, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-026
+      - type: implements
+        target: DD-021
+    fields:
+      phase: phase-3
+
+  - id: FEAT-044
+    type: feature
+    title: Build-system dependency providers
+    status: draft
+    description: >
+      Pluggable providers that read cross-repo dependency information from
+      build system manifests. Bazel provider parses MODULE.bazel for
+      bazel_dep() and git_override() entries. Nix provider parses flake.lock
+      for input pins. Custom JSON provider reads SCORE-style known_good.json.
+      All providers resolve repo URLs, pinned commits, and workspace paths
+      for use by cross-repo linking and source code traceability scanning.
+    tags: [cross-repo, bazel, nix, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-027
+      - type: implements
+        target: DD-022
+    fields:
+      phase: phase-3
+
+  - id: FEAT-045
+    type: feature
+    title: "rules_rivet Bazel module and Nix flake"
+    status: draft
+    description: >
+      Distribute rivet as a Bazel module (rules_rivet) with a rivet_validate()
+      test rule, and as a Nix flake with binary package output. The Bazel rule
+      runs rivet validate as a bazel test target without pulling Sphinx, Python,
+      LLVM, or JDK into the dependency graph. The Nix flake provides
+      nix run and nix develop integration.
+    tags: [packaging, bazel, nix, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-027
+      - type: satisfies
+        target: REQ-007
+    fields:
+      phase: phase-3
+
+  - id: FEAT-057
+    type: feature
+    title: SVG graph viewer with fullscreen, resize, and pop-out
+    status: draft
+    description: >
+      Dashboard SVG graph views (link graph, STPA control structure, AADL
+      diagrams) get a dedicated viewer with fullscreen toggle (F11 or button),
+      pop-out to separate browser window, resizable container with drag
+      handles, zoom-to-fit button, and minimap for large graphs. Currently
+      SVGs are rendered inline with fixed dimensions and no way to enlarge
+      or isolate them.
+    tags: [dashboard, ui, graph, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-007
+    fields:
+      phase: phase-3
+
+  - id: FEAT-052
+    type: feature
+    title: "rivet add — create artifacts from CLI"
+    status: draft
+    description: >
+      Create a new artifact from the command line with schema validation.
+      Auto-generates next available ID for the given type/prefix pattern.
+      Validates type exists in schema, required fields are present, status
+      is in allowed values. Appends to the appropriate YAML file based on
+      artifact type. Supports --type, --title, --status, --tags, --field,
+      and --description flags. Interactive mode prompts for required fields.
+    tags: [cli, mutation, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-031
+      - type: implements
+        target: DD-028
+    fields:
+      phase: phase-3
+
+  - id: FEAT-053
+    type: feature
+    title: "rivet modify — update artifact fields from CLI"
+    status: draft
+    description: >
+      Modify an existing artifact's fields, status, tags, title, or
+      description from the command line. Validates the artifact exists,
+      the new values conform to schema (allowed values, field types),
+      and the modification doesn't break link constraints. Supports
+      --set-field, --set-status, --set-title, --add-tag, --remove-tag.
+    tags: [cli, mutation, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-031
+      - type: implements
+        target: DD-028
+    fields:
+      phase: phase-3
+
+  - id: FEAT-054
+    type: feature
+    title: "rivet remove — delete artifacts from CLI"
+    status: draft
+    description: >
+      Remove an artifact by ID from its YAML file. Pre-validates that
+      no other artifacts link to the target (or --force to override
+      with a warning listing affected links). Updates the link graph
+      and reports any newly broken references. Refuses to remove
+      artifacts that are targets of traceability rules unless --force.
+    tags: [cli, mutation, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-031
+      - type: satisfies
+        target: SC-2
+      - type: implements
+        target: DD-028
+    fields:
+      phase: phase-3
+
+  - id: FEAT-055
+    type: feature
+    title: "rivet link / unlink — manage artifact links from CLI"
+    status: draft
+    description: >
+      Add or remove links between artifacts from the command line.
+      rivet link <source-id> --type <link-type> --target <target-id>
+      validates that both artifacts exist, the link type exists in
+      the schema, the link type is valid for the source and target
+      artifact types, and cardinality constraints are not violated.
+      rivet unlink removes an existing link with the same validations.
+      Supports cross-repo references (prefix:ID syntax).
+    tags: [cli, mutation, traceability, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-031
+      - type: satisfies
+        target: SC-1
+      - type: implements
+        target: DD-028
+    fields:
+      phase: phase-3
+
+  - id: FEAT-056
+    type: feature
+    title: "rivet next-id — compute next available artifact ID"
+    status: draft
+    description: >
+      Given an artifact type or ID prefix pattern, compute the next
+      available ID by scanning the store. Useful for scripting and
+      for the add command's auto-ID feature. rivet next-id --type requirement
+      returns REQ-031 (or whatever is next). rivet next-id --prefix FEAT
+      returns FEAT-057. Supports --format json for tooling integration.
+    tags: [cli, tooling, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-031
+      - type: satisfies
+        target: REQ-007
+    fields:
+      phase: phase-3
+
+  - id: FEAT-046
+    type: feature
+    title: MODULE.bazel rowan parser with Starlark subset grammar
+    status: draft
+    description: >
+      Hand-written lexer and recursive descent parser for the MODULE.bazel
+      Starlark subset. Produces rowan GreenNode CST with ~30 SyntaxKind
+      variants covering module(), bazel_dep(), git_override(),
+      archive_override(), local_path_override(), keyword arguments,
+      string/list/boolean literals, and comments. Error recovery produces
+      partial CST with diagnostic spans on malformed input.
+    tags: [parsing, rowan, bazel, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-028
+      - type: satisfies
+        target: REQ-027
+      - type: implements
+        target: DD-023
+    fields:
+      phase: phase-3
+
+  - id: FEAT-047
+    type: feature
+    title: salsa validation database with incremental query groups
+    status: draft
+    description: >
+      Restructure the validation pipeline as salsa tracked queries.
+      Input queries for file contents, tracked queries for parse_artifacts,
+      merged_schema, artifact_store, link_graph, evaluate_conditional_rules,
+      and validate. Phased adoption alongside existing serde_yaml pipeline
+      with feature flag for opt-in. Enables incremental revalidation,
+      free change impact analysis, and LSP-ready architecture.
+    tags: [validation, salsa, architecture, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-029
+      - type: satisfies
+        target: REQ-023
+      - type: implements
+        target: DD-024
+    fields:
+      phase: phase-3
+
+  - id: FEAT-048
+    type: feature
+    title: Conditional rule evaluation as salsa tracked queries
+    status: draft
+    description: >
+      Conditional validation rules (when/then syntax in schema YAML)
+      evaluated as individual salsa tracked queries per artifact-rule pair.
+      salsa dependency tracking ensures only affected rules re-evaluate
+      when an artifact field changes. Schema extension with
+      conditional-rules block supporting field equality, regex matching,
+      and existence checks in the when clause, and required-fields and
+      required-links in the then clause.
+    tags: [validation, schema, salsa, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-023
+      - type: implements
+        target: DD-018
+      - type: implements
+        target: DD-024
+    fields:
+      phase: phase-3
+
+  - id: FEAT-049
+    type: feature
+    title: Kani proof harnesses for core algorithms
+    status: draft
+    description: >
+      10-15 Kani proof harnesses proving panic freedom for core algorithms.
+      Targets: LinkGraph::build, parse_artifact_ref, Schema::merge,
+      validate cardinality checks, detect_circular_deps, MODULE.bazel
+      parser. CI job running Kani verification. Complements existing
+      proptest (random) and Miri (UB) with exhaustive bounded checking.
+    tags: [formal-verification, kani, testing, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-030
+      - type: implements
+        target: DD-025
+    fields:
+      phase: phase-3
+
+  - id: FEAT-050
+    type: feature
+    title: Verus soundness and completeness proofs for validation
+    status: draft
+    description: >
+      Verus requires/ensures annotations on core validation functions
+      proving soundness (PASS implies all rules satisfied) and completeness
+      (rule violated implies diagnostic emitted). Additional proofs for
+      backlink symmetry, conditional rule consistency, and reachability
+      correctness. Inline Rust annotations with SMT-based proof discharge.
+    tags: [formal-verification, verus, testing, phase-4]
+    links:
+      - type: satisfies
+        target: REQ-030
+      - type: implements
+        target: DD-026
+    fields:
+      phase: phase-4
+
+  - id: FEAT-051
+    type: feature
+    title: Rocq metamodel specification and satisfiability proofs
+    status: draft
+    description: >
+      Schema semantics modeled in Rocq via coq-of-rust translation of
+      Schema, TraceabilityRule, and ConditionalRule types. Theorems proven
+      for schema satisfiability (rules not contradictory), monotonicity
+      (adding artifacts preserves validity), link graph well-foundedness
+      (validation terminates), and ASPICE V-model completeness (schema
+      enforces full traceability chain). Serves as formal specification
+      for ISO 26262 TCL 1 tool qualification evidence.
+    tags: [formal-verification, rocq, metamodel, phase-4]
+    links:
+      - type: satisfies
+        target: REQ-030
+      - type: implements
+        target: DD-027
+    fields:
+      phase: phase-4

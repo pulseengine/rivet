@@ -97,3 +97,41 @@ system-constraints:
       exists and is reachable at link-creation time, recording the
       verification timestamp.
     hazards: [H-1, H-3]
+
+  - id: SC-11
+    title: Rivet incremental validation must produce identical results to full validation
+    description: >
+      For any set of inputs, incremental validation (via salsa dependency
+      tracking) must produce exactly the same diagnostics as a clean full
+      validation pass. If incremental and full results ever diverge, the
+      system must detect the divergence and fall back to full validation.
+    hazards: [H-9]
+
+  - id: SC-12
+    title: Rivet must verify conditional rule consistency before applying rules
+    description: >
+      When loading schemas with conditional rules, Rivet must check that
+      no combination of conditions can produce contradictory requirements
+      on a single artifact. Inconsistent rule sets must be rejected at
+      schema load time with a diagnostic identifying the conflicting rules.
+    hazards: [H-10]
+
+  - id: SC-13
+    title: Rivet build-system parsers must reject unrecognized constructs with diagnostics
+    description: >
+      The MODULE.bazel parser must emit a diagnostic for any Starlark
+      construct it does not support (load statements, variable references,
+      string concatenation, conditionals). Silently skipping constructs
+      is forbidden. The parser must report what it could not parse and
+      what dependencies may be missing from the result.
+    hazards: [H-11]
+
+  - id: SC-14
+    title: Rivet formal proofs must be validated against the implementation under test
+    description: >
+      Formal verification must prove properties of the actual compiled
+      code, not a separate model. Kani harnesses must call the real
+      functions. Verus annotations must be on the real implementations.
+      Rocq specifications must be generated from or validated against
+      the Rust source via coq-of-rust, not hand-written independently.
+    hazards: [H-12]
