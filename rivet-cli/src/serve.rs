@@ -319,6 +319,7 @@ pub async fn run(
         .route("/artifacts/{id}/graph", get(artifact_graph))
         .route("/validate", get(validate_view))
         .route("/matrix", get(matrix_view))
+        .route("/matrix/cell", get(matrix_cell_detail))
         .route("/graph", get(graph_view))
         .route("/stats", get(stats_view))
         .route("/coverage", get(coverage_view))
@@ -1027,6 +1028,20 @@ details.diff-row>.diff-detail{padding:.75rem 1.25rem;background:rgba(0,0,0,.01);
 .btn-secondary{background:transparent;color:var(--text-secondary);border:1px solid var(--border)}
 .btn-secondary:hover{background:rgba(0,0,0,.03);color:var(--text);text-decoration:none}
 
+/* ── SVG Viewer (fullscreen / popout / resize) ───────────────── */
+.svg-viewer{position:relative;border:1px solid var(--border);border-radius:6px;overflow:hidden;
+     resize:both;min-height:300px}
+.svg-viewer-toolbar{position:absolute;top:8px;right:8px;z-index:20;display:flex;gap:4px}
+.svg-viewer-toolbar button{background:rgba(0,0,0,0.6);color:#fff;border:1px solid rgba(255,255,255,0.2);
+     border-radius:4px;padding:4px 8px;cursor:pointer;font-size:16px;line-height:1;
+     transition:background var(--transition)}
+.svg-viewer-toolbar button:hover{background:rgba(0,0,0,0.8)}
+.svg-viewer.fullscreen{position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9999;
+     border-radius:0;background:var(--bg);resize:none}
+.svg-viewer.fullscreen .svg-viewer-toolbar{top:16px;right:16px}
+.svg-viewer .graph-container{border:none;border-radius:0}
+.svg-viewer.fullscreen .graph-container{height:100vh;min-height:100vh}
+
 /* ── Graph ────────────────────────────────────────────────────── */
 .graph-container{border-radius:var(--radius);overflow:hidden;background:#fafbfc;cursor:grab;
      height:calc(100vh - 280px);min-height:400px;position:relative;border:1px solid var(--border)}
@@ -1318,6 +1333,57 @@ details.trace-details[open]>summary .trace-chevron{transform:rotate(90deg)}
 .aadl-diag .diag-path{color:var(--text-secondary);font-family:var(--mono);font-size:.72rem;flex-shrink:0}
 .aadl-diag .diag-msg{color:var(--text);flex:1}
 .aadl-diag .diag-analysis{color:var(--text-secondary);font-size:.68rem;opacity:.7;flex-shrink:0}
+
+/* ── Sortable table headers ──────────────────────────────── */
+table.sortable th{cursor:pointer;user-select:none}
+table.sortable th:hover{color:var(--text)}
+
+/* ── Facet sidebar (artifact tag filtering) ──────────────── */
+.artifacts-layout{display:flex;gap:1.5rem;align-items:flex-start}
+.artifacts-main{flex:1;min-width:0}
+.facet-sidebar{width:220px;flex-shrink:0;background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);padding:1rem;position:sticky;top:1rem;max-height:calc(100vh - 4rem);overflow-y:auto}
+.facet-sidebar h3{font-size:.8rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;
+  color:var(--text-secondary);margin:0 0 .75rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)}
+.facet-list{display:flex;flex-direction:column;gap:.35rem}
+.facet-item{display:flex;align-items:center;gap:.4rem;font-size:.82rem;color:var(--text);
+  cursor:pointer;padding:.2rem .35rem;border-radius:4px;transition:background var(--transition)}
+.facet-item:hover{background:rgba(58,134,255,.06)}
+.facet-item input[type="checkbox"]{margin:0;accent-color:var(--accent);width:14px;height:14px;cursor:pointer}
+.facet-item .facet-count{margin-left:auto;font-size:.72rem;color:var(--text-secondary);
+  font-variant-numeric:tabular-nums;font-family:var(--mono)}
+
+/* ── Group-by header rows ────────────────────────────────── */
+.group-header-row td{background:rgba(58,134,255,.06);font-weight:600;font-size:.85rem;
+  color:var(--text);padding:.5rem .875rem;border-bottom:2px solid var(--border);letter-spacing:.02em}
+
+/* ── Document tree hierarchy ─────────────────────────────── */
+.doc-tree{margin-bottom:1.5rem}
+.doc-tree details{margin-bottom:.25rem}
+.doc-tree summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:.5rem;
+  padding:.5rem .75rem;border-radius:var(--radius-sm);font-weight:600;font-size:.9rem;
+  color:var(--text);transition:background var(--transition)}
+.doc-tree summary::-webkit-details-marker{display:none}
+.doc-tree summary:hover{background:rgba(58,134,255,.04)}
+.doc-tree summary .tree-chevron{transition:transform var(--transition);display:inline-flex;opacity:.4;font-size:.7rem}
+.doc-tree details[open]>summary .tree-chevron{transform:rotate(90deg)}
+.doc-tree summary .tree-count{font-size:.75rem;color:var(--text-secondary);font-weight:500;
+  font-variant-numeric:tabular-nums;margin-left:.25rem}
+.doc-tree ul{list-style:none;padding:0 0 0 1.5rem;margin:.25rem 0}
+.doc-tree li{margin:.15rem 0}
+.doc-tree li a{display:flex;align-items:center;gap:.5rem;padding:.35rem .75rem;border-radius:var(--radius-sm);
+  font-size:.88rem;color:var(--text);transition:background var(--transition);text-decoration:none}
+.doc-tree li a:hover{background:rgba(58,134,255,.04)}
+.doc-tree .doc-tree-id{font-family:var(--mono);font-size:.8rem;font-weight:500;color:var(--accent)}
+.doc-tree .doc-tree-status{font-size:.72rem}
+
+/* ── Matrix cell drill-down ──────────────────────────────── */
+.matrix-cell-clickable{cursor:pointer;transition:background var(--transition)}
+.matrix-cell-clickable:hover{background:rgba(58,134,255,.08)}
+.cell-detail{font-size:.82rem}
+.cell-detail ul{list-style:none;padding:.5rem;margin:0}
+.cell-detail li{padding:.25rem .5rem;border-bottom:1px solid var(--border)}
+.cell-detail li:last-child{border-bottom:none}
 "#;
 
 // ── Pan/zoom JS ──────────────────────────────────────────────────────────
@@ -1696,6 +1762,60 @@ const GRAPH_JS: &str = r#"
     // also hide when clicking (navigating away)
     document.body.addEventListener('click',function(){ hide(); },true);
   })();
+
+  // ── SVG viewer: fullscreen / popout / zoom-fit ──────────────
+  window.svgFullscreen=function(btn){
+    var viewer=btn.closest('.svg-viewer');
+    if(!viewer) return;
+    viewer.classList.toggle('fullscreen');
+    var isFS=viewer.classList.contains('fullscreen');
+    btn.textContent=isFS?'\u2715':'\u26F6';
+    btn.title=isFS?'Exit fullscreen':'Fullscreen';
+  };
+
+  window.svgPopout=function(btn){
+    var viewer=btn.closest('.svg-viewer');
+    if(!viewer) return;
+    var svg=viewer.querySelector('svg');
+    if(!svg) return;
+    var popup=window.open('','_blank','width=1200,height=800');
+    var doc=popup.document;
+    doc.open();
+    var style=doc.createElement('style');
+    style.textContent='body{margin:0;background:#fafbfc;display:flex;align-items:center;justify-content:center;min-height:100vh} svg{max-width:95vw;max-height:95vh}';
+    doc.head.appendChild(style);
+    doc.title='Rivet Graph';
+    doc.body.appendChild(svg.cloneNode(true));
+    doc.close();
+  };
+
+  window.svgZoomFit=function(btn){
+    var viewer=btn.closest('.svg-viewer');
+    if(!viewer) return;
+    var container=viewer.querySelector('.graph-container');
+    var svg=viewer.querySelector('svg');
+    if(!svg) return;
+    // Trigger the existing zoom-fit button if present
+    if(container){
+      var fitBtn=container.querySelector('.zoom-fit');
+      if(fitBtn){ fitBtn.click(); return; }
+    }
+    // Fallback: reset viewBox from bounding box
+    var bbox=svg.getBBox();
+    var pad=40;
+    svg.setAttribute('viewBox',
+      (bbox.x-pad)+' '+(bbox.y-pad)+' '+(bbox.width+pad*2)+' '+(bbox.height+pad*2));
+  };
+
+  document.addEventListener('keydown',function(e){
+    if(e.key==='Escape'){
+      document.querySelectorAll('.svg-viewer.fullscreen').forEach(function(v){
+        v.classList.remove('fullscreen');
+        var btn=v.querySelector('.svg-viewer-toolbar button[title="Exit fullscreen"]');
+        if(btn){ btn.textContent='\u26F6'; btn.title='Fullscreen'; }
+      });
+    }
+  });
 })();
 </script>
 "#;
@@ -2296,6 +2416,165 @@ function initTables(){
 }
 document.body.addEventListener('htmx:afterSwap', initTables);
 document.addEventListener('DOMContentLoaded', initTables);
+
+// ── Tag faceting (artifacts page) ──────────────────────────
+function initTagFacets(){
+  var sidebar=document.getElementById('tag-facets');
+  if(!sidebar) return;
+  var table=document.getElementById('artifacts-table');
+  if(!table) return;
+  var tbody=table.querySelector('tbody');
+  if(!tbody) return;
+  // Find the tag column index (data-col="tags")
+  var tagColIdx=-1;
+  var ths=table.querySelectorAll('thead th');
+  ths.forEach(function(th,i){ if(th.getAttribute('data-col')==='tags') tagColIdx=i; });
+  if(tagColIdx<0) return;
+
+  // Collect all unique tags with counts
+  var tagCounts={};
+  tbody.querySelectorAll('tr').forEach(function(row){
+    var cell=row.children[tagColIdx];
+    if(!cell) return;
+    var tags=cell.getAttribute('data-tags');
+    if(!tags) return;
+    tags.split(',').forEach(function(t){
+      t=t.trim();
+      if(t){ tagCounts[t]=(tagCounts[t]||0)+1; }
+    });
+  });
+
+  var tagNames=Object.keys(tagCounts).sort();
+  if(tagNames.length===0){
+    sidebar.textContent='No tags';
+    sidebar.style.cssText='font-size:.8rem;color:var(--text-secondary)';
+    return;
+  }
+
+  // Build facet checkboxes via DOM API
+  sidebar.textContent='';
+  var list=document.createElement('div');
+  list.className='facet-list';
+  tagNames.forEach(function(tag){
+    var label=document.createElement('label');
+    label.className='facet-item';
+    var cb=document.createElement('input');
+    cb.type='checkbox';
+    cb.value=tag;
+    cb.checked=true;
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(' '+tag+' '));
+    var cnt=document.createElement('span');
+    cnt.className='facet-count';
+    cnt.textContent=tagCounts[tag];
+    label.appendChild(cnt);
+    list.appendChild(label);
+  });
+  sidebar.appendChild(list);
+
+  // Filter rows when checkboxes change
+  sidebar.addEventListener('change',function(){
+    var checked=[];
+    sidebar.querySelectorAll('input[type="checkbox"]:checked').forEach(function(cb){ checked.push(cb.value); });
+    var allChecked=checked.length===tagNames.length;
+    tbody.querySelectorAll('tr').forEach(function(row){
+      if(row.classList.contains('group-header-row')){ row.style.display=''; return; }
+      if(allChecked){ row.style.display=''; return; }
+      var cell=row.children[tagColIdx];
+      if(!cell){ row.style.display='none'; return; }
+      var tags=(cell.getAttribute('data-tags')||'').split(',').map(function(t){return t.trim()}).filter(Boolean);
+      if(tags.length===0){ row.style.display=checked.length===0?'':'none'; return; }
+      var match=tags.some(function(t){ return checked.indexOf(t)!==-1; });
+      row.style.display=match?'':'none';
+    });
+  });
+}
+document.body.addEventListener('htmx:afterSwap', initTagFacets);
+document.addEventListener('DOMContentLoaded', initTagFacets);
+
+// ── Group-by (artifacts page) ──────────────────────────────
+window.groupArtifacts=function(field){
+  var table=document.getElementById('artifacts-table');
+  if(!table) return;
+  var tbody=table.querySelector('tbody');
+  if(!tbody) return;
+
+  // Remove existing group header rows
+  tbody.querySelectorAll('.group-header-row').forEach(function(r){ r.remove(); });
+
+  if(field==='none'){
+    // Restore original order: sort by ID (first column)
+    var rows=Array.from(tbody.querySelectorAll('tr'));
+    rows.sort(function(a,b){
+      var at=(a.children[0]||{}).textContent||'';
+      var bt=(b.children[0]||{}).textContent||'';
+      return at.localeCompare(bt);
+    });
+    rows.forEach(function(r){ tbody.appendChild(r); });
+    return;
+  }
+
+  // Find column index for grouping
+  var colMap={type:1, status:3, tag:-1};
+  var ths=table.querySelectorAll('thead th');
+  ths.forEach(function(th,i){ if(th.getAttribute('data-col')==='tags') colMap.tag=i; });
+  var colIdx=colMap[field];
+  if(colIdx===undefined||colIdx<0) return;
+
+  var rows=Array.from(tbody.querySelectorAll('tr'));
+  var groups={};
+  rows.forEach(function(row){
+    var key='';
+    if(field==='tag'){
+      var cell=row.children[colIdx];
+      var tags=(cell&&cell.getAttribute('data-tags'))||'';
+      key=tags.split(',')[0]||'(no tag)';
+      key=key.trim()||'(no tag)';
+    } else {
+      key=(row.children[colIdx]||{}).textContent||'(empty)';
+      key=key.trim()||'(empty)';
+    }
+    if(!groups[key]) groups[key]=[];
+    groups[key].push(row);
+  });
+
+  var colCount=ths.length;
+  var sortedKeys=Object.keys(groups).sort();
+  sortedKeys.forEach(function(key){
+    var hdr=document.createElement('tr');
+    hdr.className='group-header-row';
+    var td=document.createElement('td');
+    td.setAttribute('colspan',String(colCount));
+    td.textContent=key+' ('+groups[key].length+')';
+    hdr.appendChild(td);
+    tbody.appendChild(hdr);
+    groups[key].forEach(function(r){ tbody.appendChild(r); });
+  });
+};
+
+// ── Matrix cell drill-down ─────────────────────────────────
+function initMatrixDrilldown(){
+  document.querySelectorAll('.matrix-cell-clickable').forEach(function(cell){
+    if(cell._drilldown) return;
+    cell._drilldown=true;
+    cell.addEventListener('click',function(){
+      var detail=cell.nextElementSibling;
+      if(!detail||!detail.classList.contains('cell-detail')) return;
+      if(detail.childNodes.length>0){
+        detail.textContent='';
+        return;
+      }
+      var src=cell.getAttribute('data-source-type');
+      var tgt=cell.getAttribute('data-target-type');
+      var link=cell.getAttribute('data-link-type');
+      var dir=cell.getAttribute('data-direction');
+      var url='/matrix/cell?source_type='+encodeURIComponent(src)+'&target_type='+encodeURIComponent(tgt)+'&link_type='+encodeURIComponent(link)+'&direction='+encodeURIComponent(dir);
+      htmx.ajax('GET',url,{target:detail,swap:'innerHTML'});
+    });
+  });
+}
+document.body.addEventListener('htmx:afterSwap', initMatrixDrilldown);
+document.addEventListener('DOMContentLoaded', initMatrixDrilldown);
 </script>
 "#;
 
@@ -2763,15 +3042,34 @@ async fn artifacts_list(State(state): State<SharedState>) -> Html<String> {
     artifacts.sort_by(|a, b| a.id.cmp(&b.id));
 
     let mut html = String::from("<h2>Artifacts</h2>");
-    // Client-side filter input
-    html.push_str("<div style=\"position:relative;margin-bottom:1rem\">\
+
+    // Controls bar: search + group-by
+    html.push_str("<div style=\"display:flex;gap:1rem;align-items:center;margin-bottom:1rem;flex-wrap:wrap\">");
+    html.push_str("<div style=\"position:relative;flex:1;min-width:200px\">\
         <svg width=\"15\" height=\"15\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" style=\"position:absolute;left:.75rem;top:50%;transform:translateY(-50%);opacity:.4\"><circle cx=\"7\" cy=\"7\" r=\"4.5\"/><path d=\"M10.5 10.5L14 14\"/></svg>\
         <input type=\"search\" id=\"artifact-filter\" placeholder=\"Filter artifacts...\" \
         style=\"width:100%;padding:.6rem .75rem .6rem 2.25rem;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:.875rem;font-family:var(--font);background:var(--surface);color:var(--text);outline:none\" \
         oninput=\"filterTable(this.value)\">\
         </div>");
+    html.push_str("<div class=\"form-row\" style=\"margin-bottom:0\">\
+        <label for=\"group-by\" style=\"margin-right:.25rem\">Group by</label>\
+        <select id=\"group-by\" onchange=\"groupArtifacts(this.value)\" style=\"padding:.4rem .6rem;font-size:.82rem\">\
+        <option value=\"none\">No grouping</option>\
+        <option value=\"type\">Type</option>\
+        <option value=\"status\">Status</option>\
+        <option value=\"tag\">First tag</option>\
+        </select></div>");
+    html.push_str("</div>");
+
+    // Layout: sidebar + main table
+    html.push_str("<div class=\"artifacts-layout\">");
+
+    // Main table area
+    html.push_str("<div class=\"artifacts-main\">");
     html.push_str(
-        "<table id=\"artifacts-table\"><thead><tr><th>ID</th><th>Type</th><th>Title</th><th>Status</th><th>Links</th></tr></thead><tbody>",
+        "<table class=\"sortable\" id=\"artifacts-table\"><thead><tr>\
+         <th>ID</th><th>Type</th><th>Title</th><th>Status</th><th>Links</th><th data-col=\"tags\">Tags</th>\
+         </tr></thead><tbody>",
     );
 
     for a in &artifacts {
@@ -2782,18 +3080,36 @@ async fn artifacts_list(State(state): State<SharedState>) -> Html<String> {
             "obsolete" => format!("<span class=\"badge badge-error\">{status}</span>"),
             _ => format!("<span class=\"badge badge-info\">{status}</span>"),
         };
+        let tags_csv = a.tags.join(",");
+        let tags_display = if a.tags.is_empty() {
+            String::from("-")
+        } else {
+            a.tags
+                .iter()
+                .map(|t| {
+                    format!(
+                        "<span class=\"badge badge-info\" style=\"font-size:.68rem;margin:.1rem\">{}</span>",
+                        html_escape(t)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
         html.push_str(&format!(
             "<tr><td><a hx-get=\"/artifacts/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a></td>\
              <td>{}</td>\
              <td>{}</td>\
              <td>{}</td>\
-             <td>{}</td></tr>",
+             <td>{}</td>\
+             <td data-tags=\"{}\">{}</td></tr>",
             html_escape(&a.id),
             html_escape(&a.id),
             badge_for_type(&a.artifact_type),
             html_escape(&a.title),
             status_badge,
-            a.links.len()
+            a.links.len(),
+            html_escape(&tags_csv),
+            tags_display,
         ));
     }
 
@@ -2802,12 +3118,25 @@ async fn artifacts_list(State(state): State<SharedState>) -> Html<String> {
         "<p class=\"meta\">{} artifacts total</p>",
         artifacts.len()
     ));
+    html.push_str("</div>"); // end artifacts-main
+
+    // Facet sidebar
+    html.push_str(
+        "<div class=\"facet-sidebar\">\
+        <h3>Filter by tag</h3>\
+        <div id=\"tag-facets\"></div>\
+        </div>",
+    );
+
+    html.push_str("</div>"); // end artifacts-layout
+
     // Inline filter script
     html.push_str(
         "<script>\
         function filterTable(q){\
           q=q.toLowerCase();\
           document.querySelectorAll('#artifacts-table tbody tr').forEach(function(r){\
+            if(r.classList.contains('group-header-row')) return;\
             r.style.display=r.textContent.toLowerCase().includes(q)?'':'none';\
           });\
         }\
@@ -3236,9 +3565,14 @@ async fn graph_view(
     }
     html.push_str("</div>");
 
-    // SVG card with zoom controls
+    // SVG card with zoom controls + viewer toolbar
     html.push_str(
-        "<div class=\"card\" style=\"padding:0;position:relative\">\
+        "<div class=\"svg-viewer\" id=\"graph-viewer\">\
+        <div class=\"svg-viewer-toolbar\">\
+          <button onclick=\"svgZoomFit(this)\" title=\"Zoom to fit\">\u{229e}</button>\
+          <button onclick=\"svgFullscreen(this)\" title=\"Fullscreen\">\u{26f6}</button>\
+          <button onclick=\"svgPopout(this)\" title=\"Open in new window\">\u{2197}</button>\
+        </div>\
         <div class=\"graph-container\">\
         <div class=\"graph-controls\">\
           <button class=\"zoom-in\" title=\"Zoom in\">+</button>\
@@ -3381,9 +3715,14 @@ async fn artifact_graph(
     }
     html.push_str("</div>");
 
-    // SVG with zoom controls
+    // SVG with zoom controls + viewer toolbar
     html.push_str(
-        "<div class=\"card\" style=\"padding:0;position:relative\">\
+        "<div class=\"svg-viewer\" id=\"ego-graph-viewer\">\
+        <div class=\"svg-viewer-toolbar\">\
+          <button onclick=\"svgZoomFit(this)\" title=\"Zoom to fit\">\u{229e}</button>\
+          <button onclick=\"svgFullscreen(this)\" title=\"Fullscreen\">\u{26f6}</button>\
+          <button onclick=\"svgPopout(this)\" title=\"Open in new window\">\u{2197}</button>\
+        </div>\
         <div class=\"graph-container\">\
         <div class=\"graph-controls\">\
           <button class=\"zoom-in\" title=\"Zoom in\">+</button>\
@@ -3670,12 +4009,12 @@ async fn matrix_view(
             html_escape(link_type)
         ));
         html.push_str(&format!(
-            "<p>Coverage: {}/{} ({:.1}%)</p>",
+            "<p>Coverage: {}/{} ({:.1}%) &mdash; <span class=\"meta\">Click the count to drill down</span></p>",
             result.covered,
             result.total,
             result.coverage_pct()
         ));
-        html.push_str("<table><thead><tr><th>Source</th><th>Targets</th></tr></thead><tbody>");
+        html.push_str("<table class=\"sortable\"><thead><tr><th>Source</th><th>Targets</th><th>Count</th></tr></thead><tbody>");
 
         for row in &result.rows {
             let targets = if row.targets.is_empty() {
@@ -3694,16 +4033,95 @@ async fn matrix_view(
                     .join(", ")
             };
             html.push_str(&format!(
-                "<tr><td><a hx-get=\"/artifacts/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a></td><td>{}</td></tr>",
+                "<tr><td><a hx-get=\"/artifacts/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a></td><td>{}</td><td>{}</td></tr>",
                 html_escape(&row.source_id),
                 html_escape(&row.source_id),
-                targets
+                targets,
+                row.targets.len(),
             ));
         }
 
-        html.push_str("</tbody></table></div>");
+        html.push_str("</tbody></table>");
+
+        // Drill-down summary cell: overall type-to-type link count
+        let total_links: usize = result.rows.iter().map(|r| r.targets.len()).sum();
+        if total_links > 0 {
+            let dir_str = params.direction.as_deref().unwrap_or("backward");
+            html.push_str(&format!(
+                "<div style=\"margin-top:.75rem\">\
+                 <span class=\"matrix-cell-clickable badge badge-info\" style=\"cursor:pointer;font-size:.85rem;padding:.4rem .8rem\" \
+                 data-source-type=\"{}\" data-target-type=\"{}\" data-link-type=\"{}\" data-direction=\"{}\">\
+                 {total_links} total links \u{2014} click to expand</span>\
+                 <div class=\"cell-detail\" style=\"margin-top:.5rem\"></div>\
+                 </div>",
+                html_escape(from),
+                html_escape(to),
+                html_escape(link_type),
+                html_escape(dir_str),
+            ));
+        }
+
+        html.push_str("</div>");
     }
 
+    Html(html)
+}
+
+// ── Matrix cell drill-down ────────────────────────────────────────────────
+
+#[derive(Debug, serde::Deserialize)]
+struct MatrixCellParams {
+    source_type: String,
+    target_type: String,
+    link_type: String,
+    direction: Option<String>,
+}
+
+/// GET /matrix/cell — return a list of links for a source_type -> target_type pair.
+async fn matrix_cell_detail(
+    State(state): State<SharedState>,
+    Query(params): Query<MatrixCellParams>,
+) -> Html<String> {
+    let state = state.read().await;
+    let store = &state.store;
+    let direction = match params.direction.as_deref().unwrap_or("backward") {
+        "forward" | "fwd" => Direction::Forward,
+        _ => Direction::Backward,
+    };
+
+    let result = matrix::compute_matrix(
+        store,
+        &state.graph,
+        &params.source_type,
+        &params.target_type,
+        &params.link_type,
+        direction,
+    );
+
+    let mut html = String::from("<ul>");
+    for row in &result.rows {
+        if row.targets.is_empty() {
+            continue;
+        }
+        for t in &row.targets {
+            html.push_str(&format!(
+                "<li><a hx-get=\"/artifacts/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a> \
+                 &rarr; \
+                 <a hx-get=\"/artifacts/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a>\
+                 <span class=\"meta\" style=\"margin-left:.5rem\">{} &rarr; {}</span></li>",
+                html_escape(&row.source_id),
+                html_escape(&row.source_id),
+                html_escape(&t.id),
+                html_escape(&t.id),
+                html_escape(&row.source_title),
+                html_escape(&t.title),
+            ));
+        }
+    }
+    if result.rows.iter().all(|r| r.targets.is_empty()) {
+        html.push_str("<li class=\"meta\">No links found</li>");
+    }
+    html.push_str("</ul>");
     Html(html)
 }
 
@@ -3843,8 +4261,66 @@ async fn documents_list(State(state): State<SharedState>) -> Html<String> {
         return Html(html);
     }
 
+    // Group documents by doc_type for a tree view
+    let mut groups: BTreeMap<String, Vec<&rivet_core::document::Document>> = BTreeMap::new();
+    for doc in doc_store.iter() {
+        groups.entry(doc.doc_type.clone()).or_default().push(doc);
+    }
+
+    // Tree view
+    html.push_str("<div class=\"doc-tree\">");
+    for (doc_type, docs) in &groups {
+        html.push_str(&format!(
+            "<details open><summary><span class=\"tree-chevron\">&#9654;</span> {} {} <span class=\"tree-count\">({} doc{})</span></summary>",
+            badge_for_type(doc_type),
+            html_escape(doc_type),
+            docs.len(),
+            if docs.len() == 1 { "" } else { "s" },
+        ));
+        html.push_str("<ul>");
+        for doc in docs {
+            let status_badge = match doc.status.as_deref().unwrap_or("-") {
+                "approved" => "<span class=\"badge badge-ok doc-tree-status\">approved</span>",
+                "draft" => "<span class=\"badge badge-warn doc-tree-status\">draft</span>",
+                s => {
+                    // We can't easily return a formatted string from match arms with different
+                    // lifetimes, so we handle "other" inline below.
+                    let _ = s;
+                    ""
+                }
+            };
+            let other_badge = if status_badge.is_empty() {
+                let s = doc.status.as_deref().unwrap_or("-");
+                format!(
+                    "<span class=\"badge badge-info doc-tree-status\">{}</span>",
+                    html_escape(s)
+                )
+            } else {
+                String::new()
+            };
+            html.push_str(&format!(
+                "<li><a hx-get=\"/documents/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">\
+                 <span class=\"doc-tree-id\">{}</span>\
+                 {}\
+                 {}{}\
+                 <span class=\"meta\" style=\"margin-left:auto\">{} refs</span>\
+                 </a></li>",
+                html_escape(&doc.id),
+                html_escape(&doc.id),
+                html_escape(&doc.title),
+                status_badge,
+                other_badge,
+                doc.references.len(),
+            ));
+        }
+        html.push_str("</ul></details>");
+    }
+    html.push_str("</div>");
+
+    // Also keep a flat table for sorting/filtering
+    html.push_str("<div class=\"card\"><h3>All Documents</h3>");
     html.push_str(
-        "<table><thead><tr><th>ID</th><th>Type</th><th>Title</th><th>Status</th><th>Refs</th></tr></thead><tbody>",
+        "<table class=\"sortable\"><thead><tr><th>ID</th><th>Type</th><th>Title</th><th>Status</th><th>Refs</th></tr></thead><tbody>",
     );
 
     for doc in doc_store.iter() {
@@ -3869,7 +4345,7 @@ async fn documents_list(State(state): State<SharedState>) -> Html<String> {
         ));
     }
 
-    html.push_str("</tbody></table>");
+    html.push_str("</tbody></table></div>");
     html.push_str(&format!(
         "<p class=\"meta\">{} documents, {} total artifact references</p>",
         doc_store.len(),
@@ -6434,7 +6910,12 @@ async fn doc_linkage_view(State(state): State<SharedState>) -> Html<String> {
 
         let svg = render_svg(&gl, &svg_opts);
         html.push_str(
-            "<div class=\"card\" style=\"padding:0;position:relative\">\
+            "<div class=\"svg-viewer\" id=\"doc-graph-viewer\">\
+            <div class=\"svg-viewer-toolbar\">\
+              <button onclick=\"svgZoomFit(this)\" title=\"Zoom to fit\">\u{229e}</button>\
+              <button onclick=\"svgFullscreen(this)\" title=\"Fullscreen\">\u{26f6}</button>\
+              <button onclick=\"svgPopout(this)\" title=\"Open in new window\">\u{2197}</button>\
+            </div>\
             <div class=\"graph-container\">\
             <div class=\"graph-controls\">\
               <button class=\"zoom-in\" title=\"Zoom in\">+</button>\
