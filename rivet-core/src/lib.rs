@@ -7,6 +7,7 @@ pub mod diff;
 pub mod document;
 pub mod embedded;
 pub mod error;
+pub mod export;
 pub mod externals;
 pub mod formats;
 pub mod impact;
