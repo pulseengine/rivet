@@ -1310,6 +1310,7 @@ mod tests {
                 from_types: vec!["design-decision".into()],
                 severity: Severity::Warning,
             }],
+            conditional_rules: vec![],
         };
         Schema::merge(&[file])
     }
