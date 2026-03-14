@@ -133,6 +133,14 @@ enum Command {
         /// Exit with failure if overall coverage is below this percentage
         #[arg(long)]
         fail_under: Option<f64>,
+
+        /// Show test-to-requirement coverage from source markers
+        #[arg(long)]
+        tests: bool,
+
+        /// Directories to scan for test markers (default: src/ tests/)
+        #[arg(long = "scan-paths", value_delimiter = ',')]
+        scan_paths: Vec<PathBuf>,
     },
 
     /// Generate a traceability matrix
@@ -519,7 +527,18 @@ fn run(cli: Cli) -> Result<bool> {
             format,
         } => cmd_list(&cli, r#type.as_deref(), status.as_deref(), format),
         Command::Stats { format } => cmd_stats(&cli, format),
-        Command::Coverage { format, fail_under } => cmd_coverage(&cli, format, fail_under.as_ref()),
+        Command::Coverage {
+            format,
+            fail_under,
+            tests,
+            scan_paths,
+        } => {
+            if *tests {
+                cmd_coverage_tests(&cli, format, scan_paths)
+            } else {
+                cmd_coverage(&cli, format, fail_under.as_ref())
+            }
+        }
         Command::Matrix {
             from,
             to,
@@ -1438,6 +1457,116 @@ fn cmd_coverage(cli: &Cli, format: &str, fail_under: Option<&f64>) -> Result<boo
             return Ok(false);
         }
     }
+
+    Ok(true)
+}
+
+/// Test-to-requirement coverage via source markers.
+fn cmd_coverage_tests(cli: &Cli, format: &str, scan_paths: &[PathBuf]) -> Result<bool> {
+    use rivet_core::test_scanner;
+
+    let (store, _schema, _graph) = load_project(cli)?;
+
+    // Resolve scan paths: default to src/ and tests/ relative to project dir.
+    let paths: Vec<PathBuf> = if scan_paths.is_empty() {
+        let mut defaults = Vec::new();
+        let src = cli.project.join("src");
+        let tests = cli.project.join("tests");
+        if src.is_dir() {
+            defaults.push(src);
+        }
+        if tests.is_dir() {
+            defaults.push(tests);
+        }
+        // If neither exists, scan the project root.
+        if defaults.is_empty() {
+            defaults.push(cli.project.clone());
+        }
+        defaults
+    } else {
+        scan_paths
+            .iter()
+            .map(|p| {
+                if p.is_absolute() {
+                    p.clone()
+                } else {
+                    cli.project.join(p)
+                }
+            })
+            .collect()
+    };
+
+    let patterns = test_scanner::default_patterns();
+    let markers = test_scanner::scan_source_files(&paths, &patterns);
+    let coverage = test_scanner::compute_test_coverage(&markers, &store);
+
+    if format == "json" {
+        let json = serde_json::to_string_pretty(&coverage)
+            .map_err(|e| anyhow::anyhow!("json serialization: {e}"))?;
+        println!("{json}");
+        return Ok(true);
+    }
+
+    // Text output
+    println!("Test traceability coverage");
+    println!("==========================");
+    println!();
+
+    if !coverage.covered.is_empty() {
+        println!("Covered ({}):", coverage.covered.len());
+        for (id, markers) in &coverage.covered {
+            let label = if markers.len() == 1 {
+                "1 test marker".to_string()
+            } else {
+                format!("{} test markers", markers.len())
+            };
+            println!("  {id}  {label}");
+            for m in markers {
+                println!(
+                    "    {}:{}  {} ({})",
+                    m.file.display(),
+                    m.line,
+                    m.test_name,
+                    m.link_type,
+                );
+            }
+        }
+        println!();
+    }
+
+    if !coverage.uncovered.is_empty() {
+        println!("Uncovered ({}):", coverage.uncovered.len());
+        for id in &coverage.uncovered {
+            println!("  {id}  No test markers found");
+        }
+        println!();
+    }
+
+    if !coverage.broken_refs.is_empty() {
+        println!("Broken references ({}):", coverage.broken_refs.len());
+        for m in &coverage.broken_refs {
+            println!(
+                "  {}:{}  {} -> {} (not found)",
+                m.file.display(),
+                m.line,
+                m.test_name,
+                m.target_id,
+            );
+        }
+        println!();
+    }
+
+    let covered_count = coverage.covered.len();
+    let total_coverable = covered_count + coverage.uncovered.len();
+    let pct = if total_coverable > 0 {
+        (covered_count as f64 / total_coverable as f64) * 100.0
+    } else {
+        100.0
+    };
+    println!(
+        "Summary: {}/{} requirements have test coverage ({:.1}%)",
+        covered_count, total_coverable, pct,
+    );
 
     Ok(true)
 }
