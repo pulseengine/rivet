@@ -9,6 +9,7 @@ pub mod externals;
 pub mod formats;
 pub mod lifecycle;
 pub mod links;
+pub mod markdown;
 pub mod matrix;
 pub mod model;
 #[cfg(feature = "oslc")]
