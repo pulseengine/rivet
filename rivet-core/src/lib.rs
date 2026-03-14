@@ -1,4 +1,5 @@
 pub mod adapter;
+pub mod bazel;
 pub mod commits;
 pub mod coverage;
 pub mod diff;

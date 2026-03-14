@@ -2376,6 +2376,7 @@ dependencies = [
  "proptest",
  "quick-xml",
  "reqwest",
+ "rowan",
  "serde",
  "serde_json",
  "serde_yaml",
