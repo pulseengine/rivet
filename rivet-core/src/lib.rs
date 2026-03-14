@@ -8,6 +8,7 @@ pub mod embedded;
 pub mod error;
 pub mod externals;
 pub mod formats;
+pub mod impact;
 pub mod lifecycle;
 pub mod links;
 pub mod matrix;
