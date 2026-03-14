@@ -453,3 +453,21 @@ artifacts:
     fields:
       priority: should
       category: non-functional
+
+  - id: REQ-032
+    type: requirement
+    title: Markdown rendering in artifact descriptions
+    status: draft
+    tags: [rendering, markdown]
+    fields:
+      category: functional
+      priority: should
+
+  - id: REQ-033
+    type: requirement
+    title: Rich artifact embedding in documents with schema-driven link traversal
+    status: draft
+    tags: [documents, embedding, traceability]
+    fields:
+      category: functional
+      priority: should

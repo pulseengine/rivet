@@ -938,3 +938,36 @@ artifacts:
         target: DD-027
     fields:
       phase: phase-4
+
+  - id: FEAT-058
+    type: feature
+    title: Markdown rendering for artifact descriptions via pulldown-cmark
+    status: draft
+    tags: [rendering, markdown, phase-3]
+
+    links:
+      - type: satisfies
+        target: REQ-032
+      - type: implements
+        target: DD-029
+  - id: FEAT-059
+    type: feature
+    title: Rich artifact embed syntax with modifiers (full, links, upstream, downstream, chain, table)
+    status: draft
+    tags: [documents, embedding, phase-3]
+
+    links:
+      - type: satisfies
+        target: REQ-033
+      - type: implements
+        target: DD-030
+  - id: FEAT-060
+    type: feature
+    title: Enriched ArtifactInfo with links, backlinks, fields, and resolved titles
+    status: draft
+    tags: [documents, model, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-033
+      - type: satisfies
+        target: REQ-032

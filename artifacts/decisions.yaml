@@ -671,3 +671,25 @@ artifacts:
         metaprogramming but less Rust tooling maturity. F* via hacspec.
         Good for cryptographic properties but less natural for domain
         modeling.
+
+  - id: DD-029
+    type: design-decision
+    title: pulldown-cmark for artifact description rendering
+    status: draft
+    tags: [rendering, markdown, architecture]
+    fields:
+      rationale: CommonMark rendering via pulldown-cmark. Lightweight, no-alloc, already proven in the Rust ecosystem. Artifact descriptions contain markdown syntax that is currently escaped and displayed as plain text.
+
+    links:
+      - type: satisfies
+        target: REQ-032
+  - id: DD-030
+    type: design-decision
+    title: Schema-driven embed modifiers with link traversal depth
+    status: draft
+    tags: [documents, embedding, architecture]
+    fields:
+      rationale: Embed syntax uses colon-separated modifiers (full, links, upstream, downstream, chain) that the schema interprets. The schema defines which link types go up (satisfies, implements) vs down (satisfied-by, implemented-by). Traversal depth is configurable. Same syntax works in dashboard and static HTML export.
+    links:
+      - type: satisfies
+        target: REQ-033
