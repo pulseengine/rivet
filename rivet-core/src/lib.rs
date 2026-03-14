@@ -18,6 +18,7 @@ pub mod reqif;
 pub mod results;
 pub mod schema;
 pub mod store;
+pub mod test_scanner;
 pub mod validate;
 
 #[cfg(feature = "wasm")]
