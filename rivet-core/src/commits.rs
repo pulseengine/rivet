@@ -449,6 +449,7 @@ mod tests {
 
     // -- parse_commit_type --
 
+    // rivet: verifies REQ-017
     #[test]
     fn parse_type_feat() {
         assert_eq!(parse_commit_type("feat: add thing"), Some("feat".into()));
@@ -474,6 +475,7 @@ mod tests {
 
     // -- parse_trailers --
 
+    // rivet: verifies REQ-017
     #[test]
     fn parse_trailers_basic() {
         let msg = "subject\n\nSome body text.\n\nImplements: REQ-001\nFixes: REQ-002, REQ-003";
@@ -501,6 +503,7 @@ mod tests {
 
     // -- extract_artifact_ids --
 
+    // rivet: verifies REQ-017
     #[test]
     fn extract_single_id() {
         assert_eq!(extract_artifact_ids("REQ-001"), vec!["REQ-001"]);
@@ -529,6 +532,7 @@ mod tests {
 
     // -- parse_commit_message --
 
+    // rivet: verifies REQ-017
     #[test]
     fn parse_message_with_trailers() {
         let msg = "feat: add parser\n\nDetailed description.\n\nImplements: REQ-001, REQ-002\nFixes: DD-003";
@@ -563,6 +567,7 @@ mod tests {
 
     // -- parse_git_log_entry --
 
+    // rivet: verifies REQ-017
     #[test]
     fn parse_git_log_entry_basic() {
         let mut trailer_map = BTreeMap::new();
@@ -593,6 +598,7 @@ mod tests {
 
     // -- classify_commit_refs --
 
+    // rivet: verifies REQ-017
     #[test]
     fn classify_linked() {
         let mut refs = BTreeMap::new();
@@ -692,6 +698,7 @@ mod tests {
 
     // -- analyze_commits --
 
+    // rivet: verifies REQ-017
     #[test]
     fn analyze_full_scenario() {
         let known_ids: HashSet<String> = ["REQ-001", "REQ-002", "FEAT-010"]

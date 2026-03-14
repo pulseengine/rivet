@@ -9,6 +9,7 @@ use std::path::PathBuf;
 
 /// `load_embedded_schema("common")` parses successfully and has the expected
 /// schema name.
+// rivet: verifies REQ-010
 #[test]
 fn embedded_schema_common_loads() {
     let schema_file =
@@ -29,6 +30,7 @@ fn embedded_schema_dev_loads() {
 }
 
 /// All known embedded schemas load successfully.
+// rivet: verifies REQ-010
 #[test]
 fn all_embedded_schemas_load() {
     for name in rivet_core::embedded::SCHEMA_NAMES {
@@ -74,6 +76,7 @@ fn embedded_schema_lookup_some_for_known() {
 
 /// When the schemas directory does not contain the requested files,
 /// `load_schemas_with_fallback` falls back to the embedded copies.
+// rivet: verifies REQ-010
 #[test]
 fn schema_fallback_uses_embedded_when_dir_missing() {
     // Point at a directory that definitely does not contain schema YAML files.
@@ -184,6 +187,7 @@ fn schema_aadl_content_non_empty() {
 }
 
 /// All embedded schema constants are valid YAML that can be parsed into SchemaFile.
+// rivet: verifies REQ-010
 #[test]
 fn all_embedded_constants_parse_as_yaml() {
     let all: &[(&str, &str)] = &[

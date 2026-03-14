@@ -74,6 +74,7 @@ fn make_artifact_full(
 
 /// Load the project's own rivet.yaml, schemas, and artifacts, then validate.
 /// The project should pass validation (no errors, only warnings are acceptable).
+// rivet: verifies REQ-003
 #[test]
 fn test_dogfood_validate() {
     let root = project_root();
@@ -121,6 +122,7 @@ fn test_dogfood_validate() {
 // ── Generic YAML roundtrip ──────────────────────────────────────────────
 
 /// Create artifacts, export to generic YAML, reimport, verify identical content.
+// rivet: verifies REQ-001
 #[test]
 fn test_generic_yaml_roundtrip() {
     let original = vec![
@@ -193,6 +195,7 @@ fn test_generic_yaml_roundtrip() {
 // ── Schema merge preserves types ────────────────────────────────────────
 
 /// Load common + stpa + aspice, verify all types from each are present.
+// rivet: verifies REQ-010
 #[test]
 fn test_schema_merge_preserves_types() {
     let schema = load_schema_files(&["common", "stpa", "aspice"]);
@@ -274,6 +277,7 @@ fn test_schema_merge_preserves_types() {
 // ── Cybersecurity schema merge ───────────────────────────────────────────
 
 /// The cybersecurity schema loads and merges with common + aspice.
+// rivet: verifies REQ-010
 #[test]
 fn test_cybersecurity_schema_merge() {
     let schema = load_schema_files(&["common", "aspice", "cybersecurity"]);
@@ -316,6 +320,7 @@ fn test_cybersecurity_schema_merge() {
 // ── Traceability matrix ─────────────────────────────────────────────────
 
 /// Build a store with known artifacts and links, compute matrix, verify coverage.
+// rivet: verifies REQ-004
 #[test]
 fn test_traceability_matrix() {
     let schema = load_schema_files(&["common", "stpa"]);
@@ -391,6 +396,7 @@ fn test_traceability_matrix() {
 }
 
 /// Empty matrix has 100% coverage (vacuously true).
+// rivet: partially-verifies REQ-004
 #[test]
 fn test_traceability_matrix_empty() {
     let schema = load_schema_files(&["common"]);
@@ -414,6 +420,7 @@ fn test_traceability_matrix_empty() {
 
 /// Insert diverse artifacts and test filtering by type, status, tag,
 /// has_link_type, and missing_link_type.
+// rivet: verifies REQ-001
 #[test]
 fn test_query_filters() {
     let mut store = Store::new();
@@ -540,6 +547,7 @@ fn test_query_filters() {
 // ── Link graph integration ──────────────────────────────────────────────
 
 /// Verify backlinks, orphans, and reachability across a multi-type graph.
+// rivet: verifies REQ-004
 #[test]
 fn test_link_graph_integration() {
     let schema = load_schema_files(&["common", "stpa"]);
@@ -602,6 +610,7 @@ fn test_link_graph_integration() {
 // ── Validation of ASPICE types ──────────────────────────────────────────
 
 /// Verify that ASPICE traceability rules fire correctly.
+// rivet: verifies REQ-004
 #[test]
 fn test_aspice_traceability_rules() {
     let schema = load_schema_files(&["common", "aspice"]);
@@ -657,6 +666,7 @@ fn test_aspice_traceability_rules() {
 // ── Store upsert ────────────────────────────────────────────────────────
 
 /// Verify that upsert correctly overwrites an existing artifact.
+// rivet: verifies REQ-001
 #[test]
 fn test_store_upsert_overwrites() {
     let mut store = Store::new();
@@ -673,6 +683,7 @@ fn test_store_upsert_overwrites() {
 }
 
 /// Verify that upsert with type change updates the by_type index.
+// rivet: verifies REQ-001
 #[test]
 fn test_store_upsert_type_change() {
     let mut store = Store::new();
@@ -693,6 +704,7 @@ fn test_store_upsert_type_change() {
 
 /// Create artifacts with links and fields, export to ReqIF XML, reimport,
 /// verify that all data survives the round-trip.
+// rivet: verifies REQ-005
 #[test]
 fn test_reqif_roundtrip() {
     let original = vec![
@@ -819,6 +831,7 @@ fn test_reqif_roundtrip() {
 
 /// Verify that ReqIF-exported artifacts can be loaded into a Store and
 /// participate in link-graph analysis.
+// rivet: verifies REQ-005
 #[test]
 fn test_reqif_store_integration() {
     let artifacts = vec![
@@ -873,6 +886,7 @@ fn test_reqif_store_integration() {
 // ── Diff: identical stores ──────────────────────────────────────────────
 
 /// Two identical stores should produce an empty diff.
+// rivet: verifies REQ-001
 #[test]
 fn test_diff_identical_stores() {
     let mut base = Store::new();
@@ -899,6 +913,7 @@ fn test_diff_identical_stores() {
 // ── Diff: added artifact ────────────────────────────────────────────────
 
 /// An artifact present in head but not in base should appear as added.
+// rivet: verifies REQ-001
 #[test]
 fn test_diff_added_artifact() {
     let mut base = Store::new();
@@ -922,6 +937,7 @@ fn test_diff_added_artifact() {
 // ── Diff: removed artifact ──────────────────────────────────────────────
 
 /// An artifact present in base but not in head should appear as removed.
+// rivet: verifies REQ-001
 #[test]
 fn test_diff_removed_artifact() {
     let mut base = Store::new();
@@ -946,6 +962,7 @@ fn test_diff_removed_artifact() {
 
 /// Artifacts that exist in both stores but differ structurally should appear
 /// as modified with all changed fields recorded.
+// rivet: verifies REQ-001
 #[test]
 fn test_diff_modified_artifact() {
     let mut base = Store::new();
@@ -1037,6 +1054,7 @@ fn test_diff_modified_artifact() {
 
 /// Diagnostics that appear only in head are "new"; those only in base are
 /// "resolved".
+// rivet: verifies REQ-004
 #[test]
 fn test_diff_diagnostic_changes() {
     let base_diags = vec![
@@ -1091,6 +1109,7 @@ fn test_diff_diagnostic_changes() {
 
 // ── AADL diagram placeholder in documents ────────────────────────────────
 
+// rivet: verifies REQ-007
 #[test]
 fn document_with_aadl_block_renders_placeholder() {
     let doc_content = "---\nid: DOC-ARCH\ntitle: System Architecture\n---\n\n## Flight Control Architecture\n\nThe system uses the following AADL architecture:\n\n```aadl\nroot: FlightControl::Controller.Basic\n```\n\nThis design satisfies [[SYSREQ-001]].\n";
@@ -1166,6 +1185,7 @@ fn aadl_adapter_parses_spar_json() {
 
 // ── AADL schema ──────────────────────────────────────────────────────────
 
+// rivet: verifies REQ-010
 #[test]
 fn aadl_schema_loads() {
     let schemas_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

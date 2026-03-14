@@ -1,5 +1,6 @@
 use rivet_core::model::ProjectConfig;
 
+// rivet: verifies REQ-020
 #[test]
 fn externals_parsed_from_yaml() {
     let yaml = r#"

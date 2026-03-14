@@ -697,6 +697,7 @@ mod tests {
     use super::*;
     use serial_test::serial;
 
+    // rivet: verifies REQ-020
     #[test]
     fn local_id_no_colon() {
         assert_eq!(
@@ -705,6 +706,7 @@ mod tests {
         );
     }
 
+    // rivet: verifies REQ-020
     #[test]
     fn external_id_with_prefix() {
         assert_eq!(
@@ -736,6 +738,7 @@ mod tests {
         );
     }
 
+    // rivet: verifies REQ-020
     #[test]
     #[serial]
     fn sync_local_path_external() {
@@ -846,6 +849,7 @@ mod tests {
         assert!(dir.path().join(".rivet/repos/beta").exists());
     }
 
+    // rivet: verifies REQ-020
     #[test]
     fn validate_cross_repo_links() {
         use std::collections::{BTreeMap, HashSet};
@@ -891,6 +895,7 @@ mod tests {
         );
     }
 
+    // rivet: verifies REQ-020
     #[test]
     fn lockfile_roundtrip() {
         let mut pins = BTreeMap::new();
@@ -949,6 +954,7 @@ mod tests {
         assert!(result.is_none());
     }
 
+    // rivet: verifies REQ-020
     #[test]
     #[serial]
     fn load_external_artifacts() {
@@ -970,6 +976,7 @@ mod tests {
         assert!(artifacts.iter().any(|a| a.id == "EXT-002"));
     }
 
+    // rivet: verifies REQ-020
     #[test]
     fn compute_backlinks_finds_reverse_refs() {
         use crate::model::{Artifact, Link};
@@ -1074,6 +1081,7 @@ mod tests {
         assert!(backlinks.is_empty());
     }
 
+    // rivet: verifies REQ-020
     #[test]
     fn detect_circular_deps_finds_cycle() {
         // Test with actual temp dirs containing rivet.yaml files that reference each other
@@ -1150,6 +1158,7 @@ mod tests {
         assert_eq!(cycle.chain.first(), cycle.chain.last());
     }
 
+    // rivet: verifies REQ-020
     #[test]
     fn detect_version_conflict_same_url_different_ref() {
         let dir = tempfile::tempdir().unwrap();
@@ -1203,6 +1212,7 @@ externals:
         assert_eq!(conflicts[0].versions.len(), 2);
     }
 
+    // rivet: verifies REQ-021
     #[test]
     fn baseline_status_is_present() {
         let present = BaselineStatus::Present {
@@ -1213,6 +1223,7 @@ externals:
         assert!(!missing.is_present());
     }
 
+    // rivet: verifies REQ-021
     #[test]
     #[serial]
     fn check_baseline_tag_in_git_repo() {
@@ -1267,6 +1278,7 @@ externals:
         assert!(!missing.is_present());
     }
 
+    // rivet: verifies REQ-021
     #[test]
     #[serial]
     fn list_baseline_tags_finds_tags() {
