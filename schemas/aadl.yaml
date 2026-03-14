@@ -87,6 +87,65 @@ artifact-types:
         required: false
         cardinality: zero-or-many
 
+  - name: aadl-tool
+    description: >
+      An AADL ecosystem tool — captures what it does, what makes it
+      unique, and what capabilities spar could adopt from it.
+    fields:
+      - name: tool-url
+        type: string
+        required: false
+        description: Canonical URL for the tool or project
+      - name: origin
+        type: string
+        required: false
+        allowed-values: [academic, industry, open-source, government]
+      - name: maintainer
+        type: string
+        required: false
+        description: Organization or group maintaining the tool
+      - name: tool-status
+        type: string
+        required: true
+        allowed-values: [active, maintained, unmaintained, research-only, commercial]
+      - name: category
+        type: string
+        required: true
+        allowed-values:
+          - ide
+          - analysis
+          - verification
+          - code-generation
+          - scheduling
+          - safety
+          - optimization
+          - modeling
+          - simulation
+          - requirements
+      - name: capabilities
+        type: list<string>
+        required: true
+        description: What the tool does (list of capability strings)
+      - name: differentiator
+        type: text
+        required: false
+        description: What makes this tool unique or special
+      - name: adoption-potential
+        type: text
+        required: false
+        description: What spar could adopt from this tool and at what priority
+      - name: spar-status
+        type: string
+        required: false
+        allowed-values: [not-applicable, not-started, partial, equivalent, superior]
+        description: How spar compares for this tool's core capability
+    link-fields:
+      - name: competes-with
+        link-type: traces-to
+        target-types: [aadl-tool]
+        required: false
+        cardinality: zero-or-many
+
   - name: aadl-flow
     description: End-to-end flow with latency bounds
     fields:
