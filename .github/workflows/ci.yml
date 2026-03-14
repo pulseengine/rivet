@@ -129,7 +129,9 @@ jobs:
           components: miri
       - uses: Swatinem/rust-cache@v2
       - name: Run Miri
-        run: cargo miri test -p rivet-core --lib
+        # Exclude bazel module tests: rowan 0.16's HeaderSlice unsafe code
+        # triggers Miri stacked-borrows false positive (rowan-rs/rowan#234).
+        run: cargo miri test -p rivet-core --lib -- --skip bazel
         env:
           MIRIFLAGS: "-Zmiri-strict-provenance -Zmiri-disable-isolation"
 
