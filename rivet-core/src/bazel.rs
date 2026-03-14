@@ -532,31 +532,44 @@ impl<'t> Parser<'t> {
 
     /// Error recovery: wrap everything up to the next newline (or matching paren)
     /// in an Error node.
+    ///
+    /// Uses direct index access to `self.tokens[self.pos]` instead of
+    /// `self.current()` + `self.bump()` to avoid overlapping `&self` / `&mut self`
+    /// borrows that Miri flags as UB under strict provenance.
     fn emit_error_until_end_of_statement(&mut self, msg: &str) {
         self.errors.push(msg.to_string());
         self.builder.start_node(SyntaxKind::Error.into());
 
         let mut depth: i32 = 0;
         loop {
-            match self.current() {
-                None => break,
-                Some(SyntaxKind::Newline) if depth <= 0 => {
+            if self.pos >= self.tokens.len() {
+                break;
+            }
+            let kind = self.tokens[self.pos].kind;
+            match kind {
+                SyntaxKind::Newline if depth <= 0 => {
                     // Don't consume the newline itself — leave it for trivia.
                     break;
                 }
-                Some(SyntaxKind::LParen) | Some(SyntaxKind::LBracket) => {
+                SyntaxKind::LParen | SyntaxKind::LBracket => {
                     depth += 1;
-                    self.bump();
+                    let text = self.tokens[self.pos].text;
+                    self.builder.token(kind.into(), text);
+                    self.pos += 1;
                 }
-                Some(SyntaxKind::RParen) | Some(SyntaxKind::RBracket) => {
+                SyntaxKind::RParen | SyntaxKind::RBracket => {
                     depth -= 1;
-                    self.bump();
+                    let text = self.tokens[self.pos].text;
+                    self.builder.token(kind.into(), text);
+                    self.pos += 1;
                     if depth <= 0 {
                         break;
                     }
                 }
                 _ => {
-                    self.bump();
+                    let text = self.tokens[self.pos].text;
+                    self.builder.token(kind.into(), text);
+                    self.pos += 1;
                 }
             }
         }
