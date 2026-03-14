@@ -249,6 +249,22 @@ enum Command {
         port: u16,
     },
 
+    /// Sync external project dependencies into .rivet/repos/
+    Sync,
+
+    /// Pin external dependencies to exact commits in rivet.lock
+    Lock {
+        /// Update all pins to latest refs
+        #[arg(long)]
+        update: bool,
+    },
+
+    /// Manage distributed baselines across repos
+    Baseline {
+        #[command(subcommand)]
+        action: BaselineAction,
+    },
+
     /// Import artifacts using a custom WASM adapter component
     #[cfg(feature = "wasm")]
     Import {
@@ -294,6 +310,20 @@ enum SchemaAction {
         #[arg(short, long, default_value = "text")]
         format: String,
     },
+}
+
+#[derive(Debug, Subcommand)]
+enum BaselineAction {
+    /// Verify baseline consistency across all externals
+    Verify {
+        /// Baseline name (e.g., "v1.0")
+        name: String,
+        /// Fail on missing baseline tags (default: warn only)
+        #[arg(long)]
+        strict: bool,
+    },
+    /// List baselines found across externals
+    List,
 }
 
 fn main() -> ExitCode {
@@ -410,6 +440,12 @@ fn run(cli: Cli) -> Result<bool> {
             ))?;
             Ok(true)
         }
+        Command::Sync => cmd_sync(&cli),
+        Command::Lock { update } => cmd_lock(&cli, *update),
+        Command::Baseline { action } => match action {
+            BaselineAction::Verify { name, strict } => cmd_baseline_verify(&cli, name, *strict),
+            BaselineAction::List => cmd_baseline_list(&cli),
+        },
         #[cfg(feature = "wasm")]
         Command::Import {
             adapter,
@@ -840,6 +876,69 @@ fn cmd_validate(cli: &Cli, format: &str) -> Result<bool> {
     let mut diagnostics = validate::validate(&store, &schema, &graph);
     diagnostics.extend(validate::validate_documents(&doc_store, &store));
 
+    // Cross-repo link validation
+    let config_path = cli.project.join("rivet.yaml");
+    let config = rivet_core::load_project_config(&config_path)
+        .with_context(|| format!("loading {}", config_path.display()))?;
+
+    let mut cross_repo_broken: Vec<rivet_core::externals::BrokenRef> = Vec::new();
+    let mut backlinks: Vec<rivet_core::externals::CrossRepoBacklink> = Vec::new();
+    let mut circular_deps: Vec<rivet_core::externals::CircularDependency> = Vec::new();
+    let mut version_conflicts: Vec<rivet_core::externals::VersionConflict> = Vec::new();
+    if let Some(ref externals) = config.externals {
+        if !externals.is_empty() {
+            match rivet_core::externals::load_all_externals(externals, &cli.project) {
+                Ok(resolved) => {
+                    // Build external ID sets
+                    let mut external_ids: std::collections::BTreeMap<
+                        String,
+                        std::collections::HashSet<String>,
+                    > = std::collections::BTreeMap::new();
+                    for ext in &resolved {
+                        let ids: std::collections::HashSet<String> =
+                            ext.artifacts.iter().map(|a| a.id.clone()).collect();
+                        external_ids.insert(ext.prefix.clone(), ids);
+                    }
+
+                    // Collect local IDs and all link targets
+                    let local_ids: std::collections::HashSet<String> =
+                        store.iter().map(|a| a.id.clone()).collect();
+                    let all_refs: Vec<&str> = store
+                        .iter()
+                        .flat_map(|a| a.links.iter().map(|l| l.target.as_str()))
+                        .collect();
+
+                    cross_repo_broken =
+                        rivet_core::externals::validate_refs(&all_refs, &local_ids, &external_ids);
+
+                    // Compute backlinks from external artifacts pointing to local artifacts
+                    backlinks = rivet_core::externals::compute_backlinks(&resolved, &local_ids);
+                }
+                Err(e) => {
+                    eprintln!("  warning: could not load externals for cross-repo validation: {e}");
+                }
+            }
+
+            // Detect circular dependencies in the externals graph
+            circular_deps = rivet_core::externals::detect_circular_deps(
+                externals,
+                &config.project.name,
+                &cli.project,
+            );
+
+            // Detect version conflicts (same repo at different refs)
+            version_conflicts = rivet_core::externals::detect_version_conflicts(
+                externals,
+                &config.project.name,
+                &cli.project,
+            );
+        }
+    }
+
+    // Lifecycle completeness check
+    let all_artifacts: Vec<_> = store.iter().cloned().collect();
+    let lifecycle_gaps = rivet_core::lifecycle::check_lifecycle_completeness(&all_artifacts);
+
     let errors = diagnostics
         .iter()
         .filter(|d| d.severity == Severity::Error)
@@ -852,6 +951,7 @@ fn cmd_validate(cli: &Cli, format: &str) -> Result<bool> {
         .iter()
         .filter(|d| d.severity == Severity::Info)
         .count();
+    let cross_errors = cross_repo_broken.len();
 
     if format == "json" {
         let diag_json: Vec<serde_json::Value> = diagnostics
@@ -864,12 +964,74 @@ fn cmd_validate(cli: &Cli, format: &str) -> Result<bool> {
                 })
             })
             .collect();
+        let cross_json: Vec<serde_json::Value> = cross_repo_broken
+            .iter()
+            .map(|b| {
+                serde_json::json!({
+                    "reference": b.reference,
+                    "reason": format!("{:?}", b.reason),
+                })
+            })
+            .collect();
+        let backlinks_json: Vec<serde_json::Value> = backlinks
+            .iter()
+            .map(|bl| {
+                serde_json::json!({
+                    "source_prefix": bl.source_prefix,
+                    "source_id": bl.source_id,
+                    "target": bl.target,
+                })
+            })
+            .collect();
+        let cycles_json: Vec<serde_json::Value> = circular_deps
+            .iter()
+            .map(|c| {
+                serde_json::json!({
+                    "chain": c.chain,
+                })
+            })
+            .collect();
+        let conflicts_json: Vec<serde_json::Value> = version_conflicts
+            .iter()
+            .map(|c| {
+                serde_json::json!({
+                    "repo_identifier": c.repo_identifier,
+                    "versions": c.versions.iter().map(|v| {
+                        serde_json::json!({
+                            "declared_by": v.declared_by,
+                            "version": v.version,
+                        })
+                    }).collect::<Vec<_>>(),
+                })
+            })
+            .collect();
+        let lifecycle_json: Vec<serde_json::Value> = lifecycle_gaps
+            .iter()
+            .map(|g| {
+                serde_json::json!({
+                    "artifact_id": g.artifact_id,
+                    "artifact_type": g.artifact_type,
+                    "status": g.artifact_status,
+                    "missing": g.missing,
+                })
+            })
+            .collect();
         let output = serde_json::json!({
             "command": "validate",
             "errors": errors,
             "warnings": warnings,
             "infos": infos,
+            "cross_repo_broken": cross_errors,
+            "backlinks": backlinks.len(),
+            "circular_deps": circular_deps.len(),
+            "version_conflicts": version_conflicts.len(),
+            "lifecycle_gaps": lifecycle_gaps.len(),
             "diagnostics": diag_json,
+            "broken_cross_refs": cross_json,
+            "cross_repo_backlinks": backlinks_json,
+            "circular_dependencies": cycles_json,
+            "version_conflict_details": conflicts_json,
+            "lifecycle_coverage": lifecycle_json,
         });
         println!("{}", serde_json::to_string_pretty(&output).unwrap());
     } else {
@@ -883,15 +1045,77 @@ fn cmd_validate(cli: &Cli, format: &str) -> Result<bool> {
 
         print_diagnostics(&diagnostics);
 
+        if !cross_repo_broken.is_empty() {
+            println!();
+            println!("Cross-repo link issues:");
+            for b in &cross_repo_broken {
+                eprintln!("  broken cross-ref: {} — {:?}", b.reference, b.reason);
+            }
+        }
+
+        if !backlinks.is_empty() {
+            println!();
+            println!(
+                "Cross-repo backlinks: {} (external artifacts linking to local)",
+                backlinks.len()
+            );
+            for bl in &backlinks {
+                println!("  {}:{} -> {}", bl.source_prefix, bl.source_id, bl.target);
+            }
+        }
+
+        if !circular_deps.is_empty() {
+            println!();
+            println!(
+                "warning: {} circular dependency chain(s) detected in externals graph:",
+                circular_deps.len()
+            );
+            for cycle in &circular_deps {
+                println!("  {}", cycle.chain.join(" -> "));
+            }
+        }
+
+        if !version_conflicts.is_empty() {
+            println!();
+            println!(
+                "warning: {} version conflict(s) detected in externals:",
+                version_conflicts.len()
+            );
+            for c in &version_conflicts {
+                eprintln!("  {} referenced at different versions:", c.repo_identifier);
+                for entry in &c.versions {
+                    eprintln!("    {} declares ref: {}", entry.declared_by, entry.version);
+                }
+            }
+        }
+
+        if !lifecycle_gaps.is_empty() {
+            println!();
+            println!("Lifecycle coverage gaps ({}):", lifecycle_gaps.len());
+            for gap in &lifecycle_gaps {
+                eprintln!(
+                    "  {} ({}, status: {}) — missing: {}",
+                    gap.artifact_id,
+                    gap.artifact_type,
+                    gap.artifact_status.as_deref().unwrap_or("none"),
+                    gap.missing.join(", "),
+                );
+            }
+        }
+
         println!();
-        if errors > 0 {
-            println!("Result: FAIL ({} errors, {} warnings)", errors, warnings);
+        let total_errors = errors + cross_errors;
+        if total_errors > 0 {
+            println!(
+                "Result: FAIL ({} errors, {} warnings, {} broken cross-refs)",
+                errors, warnings, cross_errors
+            );
         } else {
             println!("Result: PASS ({} warnings)", warnings);
         }
     }
 
-    Ok(errors == 0)
+    Ok(errors == 0 && cross_errors == 0)
 }
 
 /// List artifacts.
@@ -1981,6 +2205,173 @@ fn resolve_schemas_dir(cli: &Cli) -> PathBuf {
 
         project_schemas
     }
+}
+
+fn cmd_sync(cli: &Cli) -> Result<bool> {
+    let config = rivet_core::load_project_config(&cli.project.join("rivet.yaml"))
+        .with_context(|| format!("loading {}", cli.project.join("rivet.yaml").display()))?;
+    let externals = config.externals.as_ref();
+    if externals.is_none() || externals.unwrap().is_empty() {
+        eprintln!("No externals declared in rivet.yaml");
+        return Ok(true);
+    }
+    let externals = externals.unwrap();
+
+    // Ensure .rivet/ is gitignored
+    let added = rivet_core::externals::ensure_gitignore(&cli.project)?;
+    if added {
+        eprintln!("Added .rivet/ to .gitignore");
+    }
+
+    let results = rivet_core::externals::sync_all(externals, &cli.project)?;
+    for (name, path) in &results {
+        eprintln!("  Synced {} → {}", name, path.display());
+    }
+    eprintln!("\n{} externals synced.", results.len());
+
+    // Check if a lockfile exists and warn about version drift
+    if let Some(lock) = rivet_core::externals::read_lockfile(&cli.project)? {
+        let cache_dir = cli.project.join(".rivet/repos");
+        for (name, entry) in &lock.pins {
+            if let Some(ext) = externals.get(name) {
+                let ext_dir =
+                    rivet_core::externals::resolve_external_dir(ext, &cache_dir, &cli.project);
+                if ext_dir.join(".git").exists() {
+                    if let Ok(current) = rivet_core::externals::git_head_sha(&ext_dir) {
+                        if current != entry.commit {
+                            eprintln!(
+                                "  Warning: {} is at {} but lockfile pins {}",
+                                name,
+                                &current[..8.min(current.len())],
+                                &entry.commit[..8.min(entry.commit.len())]
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(true)
+}
+
+fn cmd_lock(cli: &Cli, update: bool) -> Result<bool> {
+    if update {
+        eprintln!("Note: --update refreshes all pins to latest refs");
+    }
+    let config = rivet_core::load_project_config(&cli.project.join("rivet.yaml"))
+        .with_context(|| format!("loading {}", cli.project.join("rivet.yaml").display()))?;
+    let externals = config.externals.as_ref();
+    if externals.is_none() || externals.unwrap().is_empty() {
+        eprintln!("No externals declared in rivet.yaml");
+        return Ok(true);
+    }
+    let lock = rivet_core::externals::generate_lockfile(externals.unwrap(), &cli.project)?;
+    rivet_core::externals::write_lockfile(&lock, &cli.project)?;
+    eprintln!("Wrote rivet.lock with {} pins", lock.pins.len());
+    Ok(true)
+}
+
+fn cmd_baseline_verify(cli: &Cli, name: &str, strict: bool) -> Result<bool> {
+    let config = rivet_core::load_project_config(&cli.project.join("rivet.yaml"))
+        .with_context(|| "Failed to load rivet.yaml")?;
+
+    let externals = match config.externals.as_ref() {
+        Some(e) if !e.is_empty() => e,
+        _ => {
+            eprintln!("No externals declared in rivet.yaml");
+            return Ok(true);
+        }
+    };
+
+    let verification = rivet_core::externals::verify_baseline(name, externals, &cli.project)?;
+
+    let mut all_present = true;
+
+    // Report local status
+    match &verification.local_status {
+        rivet_core::externals::BaselineStatus::Present { commit } => {
+            eprintln!(
+                "  local: baseline/{} @ {}",
+                name,
+                &commit[..8.min(commit.len())]
+            );
+        }
+        rivet_core::externals::BaselineStatus::Missing => {
+            eprintln!("  local: baseline/{} MISSING", name);
+            all_present = false;
+        }
+    }
+
+    // Report external statuses
+    for (prefix, status) in &verification.external_statuses {
+        match status {
+            rivet_core::externals::BaselineStatus::Present { commit } => {
+                eprintln!(
+                    "  {}: baseline/{} @ {}",
+                    prefix,
+                    name,
+                    &commit[..8.min(commit.len())]
+                );
+            }
+            rivet_core::externals::BaselineStatus::Missing => {
+                eprintln!("  {}: baseline/{} MISSING", prefix, name);
+                all_present = false;
+            }
+        }
+    }
+
+    if all_present {
+        eprintln!("\nBaseline {} verified — all repos tagged.", name);
+        Ok(true)
+    } else if strict {
+        eprintln!("\nBaseline {} FAILED — missing tags (strict mode).", name);
+        Ok(false)
+    } else {
+        eprintln!(
+            "\nBaseline {} partial — some repos missing tags (warning).",
+            name
+        );
+        Ok(true) // warnings don't fail
+    }
+}
+
+fn cmd_baseline_list(cli: &Cli) -> Result<bool> {
+    let config = rivet_core::load_project_config(&cli.project.join("rivet.yaml"))
+        .with_context(|| "Failed to load rivet.yaml")?;
+
+    // List local baselines
+    let local_tags = rivet_core::externals::list_baseline_tags(&cli.project)?;
+    eprintln!("Local baselines:");
+    if local_tags.is_empty() {
+        eprintln!("  (none)");
+    } else {
+        for tag in &local_tags {
+            eprintln!("  baseline/{}", tag);
+        }
+    }
+
+    // List external baselines
+    if let Some(externals) = config.externals.as_ref() {
+        let cache_dir = cli.project.join(".rivet/repos");
+        for ext in externals.values() {
+            let ext_dir =
+                rivet_core::externals::resolve_external_dir(ext, &cache_dir, &cli.project);
+            if ext_dir.exists() {
+                let tags = rivet_core::externals::list_baseline_tags(&ext_dir)?;
+                eprintln!("\n{} baselines:", ext.prefix);
+                if tags.is_empty() {
+                    eprintln!("  (none)");
+                } else {
+                    for tag in &tags {
+                        eprintln!("  baseline/{}", tag);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(true)
 }
 
 fn load_project(cli: &Cli) -> Result<(Store, rivet_core::schema::Schema, LinkGraph)> {
