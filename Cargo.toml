@@ -47,6 +47,9 @@ quick-xml = { version = "0.37", features = ["serialize", "overlapped-lists"] }
 wasmtime = { version = "42", features = ["component-model"] }
 wasmtime-wasi = "42"
 
+# Lossless syntax trees
+rowan = "0.16"
+
 # Benchmarking
 criterion = { version = "0.5", features = ["html_reports"] }
 
