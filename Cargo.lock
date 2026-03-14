@@ -2401,10 +2401,7 @@ dependencies = [
  "quick-xml",
  "regex",
  "reqwest",
-<<<<<<< HEAD
  "rowan",
-=======
->>>>>>> worktree-agent-abff73bb
  "salsa",
  "serde",
  "serde_json",
