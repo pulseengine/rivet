@@ -59,6 +59,9 @@ wasmtime-wasi = "42"
 # Lossless syntax trees
 rowan = "0.16"
 
+# Markdown rendering
+pulldown-cmark = { version = "0.12", default-features = false, features = ["html"] }
+
 # Benchmarking
 criterion = { version = "0.5", features = ["html_reports"] }
 

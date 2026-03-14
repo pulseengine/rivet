@@ -13,6 +13,7 @@ pub mod formats;
 pub mod impact;
 pub mod lifecycle;
 pub mod links;
+pub mod markdown;
 pub mod matrix;
 pub mod model;
 pub mod mutate;

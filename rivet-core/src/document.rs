@@ -35,6 +35,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use crate::error::Error;
+use crate::markdown::render_markdown;
 
 // ---------------------------------------------------------------------------
 // Artifact embedding info
@@ -708,6 +709,7 @@ fn resolve_inline(
                     } else {
                         info.description.clone()
                     };
+                    let desc_html = render_markdown(&desc_preview);
                     result.push_str(&format!(
                         "<div class=\"artifact-embed\">\
                          <div class=\"artifact-embed-header\">\
@@ -722,7 +724,7 @@ fn resolve_inline(
                         type_ = html_escape(&info.art_type),
                         status = html_escape(&info.status),
                         title = html_escape(&info.title),
-                        desc = html_escape(&desc_preview),
+                        desc = desc_html,
                     ));
                     let skip_to = i + end + 2;
                     while chars.peek().is_some_and(|&(j, _)| j < skip_to) {

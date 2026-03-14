@@ -25,6 +25,7 @@ anyhow = { workspace = true }
 log = { workspace = true }
 quick-xml = { workspace = true }
 rowan = { workspace = true }
+pulldown-cmark = { workspace = true }
 
 # OSLC client (optional, behind "oslc" feature)
 reqwest = { workspace = true, optional = true }

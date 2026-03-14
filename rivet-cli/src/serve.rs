@@ -31,6 +31,7 @@ use rivet_core::diff::ArtifactDiff;
 use rivet_core::document::{self, DocumentStore};
 use rivet_core::formats::generic::GenericYamlAdapter;
 use rivet_core::links::LinkGraph;
+use rivet_core::markdown::{render_markdown, strip_html_tags};
 use rivet_core::matrix::{self, Direction};
 use rivet_core::model::ProjectConfig;
 use rivet_core::results::ResultStore;
@@ -1230,6 +1231,19 @@ details.trace-details[open]>summary .trace-chevron{transform:rotate(90deg)}
 .artifact-embed-header .artifact-ref{font-family:var(--mono);font-size:.85rem;font-weight:600}
 .artifact-embed-title{font-weight:600;font-size:.92rem;color:var(--text)}
 .artifact-embed-desc{font-size:.82rem;color:var(--text-secondary);margin-top:.25rem;line-height:1.5}
+
+/* ── Rendered markdown in descriptions ─────────────────────────── */
+.artifact-desc p{margin:.3em 0}
+.artifact-desc ul,.artifact-desc ol{margin:.3em 0;padding-left:1.5em}
+.artifact-desc code{background:rgba(255,255,255,.1);padding:.1em .3em;border-radius:3px;font-size:.9em}
+.artifact-desc pre{background:rgba(0,0,0,.3);padding:.5em;border-radius:4px;overflow-x:auto}
+.artifact-desc pre code{background:none;padding:0}
+.artifact-desc table{border-collapse:collapse;margin:.5em 0}
+.artifact-desc table td,.artifact-desc table th{border:1px solid var(--border);padding:.3em .6em}
+.artifact-desc del{opacity:.6}
+.artifact-desc blockquote{border-left:3px solid var(--border);margin:.5em 0;padding-left:.8em;opacity:.85}
+.artifact-embed-desc p{margin:.2em 0}
+.artifact-embed-desc code{background:rgba(255,255,255,.1);padding:.1em .2em;border-radius:2px;font-size:.9em}
 
 /* ── Diagram in artifact detail ────────────────────────────────── */
 .artifact-diagram{margin:1rem 0}
@@ -3185,8 +3199,14 @@ async fn artifact_preview(
         ));
     }
     if let Some(desc) = &artifact.description {
-        let snippet: String = desc.chars().take(160).collect();
-        let ellip = if desc.len() > 160 { "..." } else { "" };
+        let rendered = render_markdown(desc);
+        let plain = strip_html_tags(&rendered);
+        let snippet: String = plain.chars().take(160).collect();
+        let ellip = if plain.chars().count() > 160 {
+            "..."
+        } else {
+            ""
+        };
         html.push_str(&format!(
             "<div class=\"art-preview-desc\">{}{ellip}</div>",
             html_escape(&snippet)
@@ -3239,8 +3259,8 @@ async fn artifact_detail(State(state): State<SharedState>, Path(id): Path<String
     ));
     if let Some(desc) = &artifact.description {
         html.push_str(&format!(
-            "<dt>Description</dt><dd>{}</dd>",
-            html_escape(desc)
+            "<dt>Description</dt><dd class=\"artifact-desc\">{}</dd>",
+            render_markdown(desc)
         ));
     }
     if let Some(status) = &artifact.status {
@@ -7897,7 +7917,7 @@ async fn help_schema_list(State(state): State<SharedState>) -> Html<String> {
             <td>{proc}</td>\
             </tr>",
             name = t.name,
-            desc = html_escape(&t.description),
+            desc = render_markdown(&t.description),
             fields = t.fields.len(),
             links = t.link_fields.len(),
             proc = proc,
@@ -7949,7 +7969,7 @@ async fn help_links_view(State(state): State<SharedState>) -> Html<String> {
             "<tr><td><code>{}</code></td><td><code>{}</code></td><td>{}</td></tr>",
             html_escape(&l.name),
             html_escape(inv),
-            html_escape(&l.description),
+            render_markdown(&l.description),
         ));
     }
 
