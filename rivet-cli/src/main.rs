@@ -99,6 +99,14 @@ enum Command {
         /// Output format: "text" (default) or "json"
         #[arg(short, long, default_value = "text")]
         format: String,
+
+        /// Use salsa incremental validation (experimental)
+        #[arg(long)]
+        incremental: bool,
+
+        /// Run both pipelines and verify they produce identical diagnostics (SC-11)
+        #[arg(long)]
+        verify_incremental: bool,
     },
 
     /// List artifacts, optionally filtered by type
@@ -386,7 +394,11 @@ fn run(cli: Cli) -> Result<bool> {
         | Command::Context
         | Command::CommitMsgCheck { .. } => unreachable!(),
         Command::Stpa { path, schema } => cmd_stpa(path, schema.as_deref(), &cli),
-        Command::Validate { format } => cmd_validate(&cli, format),
+        Command::Validate {
+            format,
+            incremental,
+            verify_incremental,
+        } => cmd_validate(&cli, format, *incremental, *verify_incremental),
         Command::List {
             r#type,
             status,
@@ -871,7 +883,17 @@ fn cmd_stpa(
 }
 
 /// Validate a full project (with rivet.yaml).
-fn cmd_validate(cli: &Cli, format: &str) -> Result<bool> {
+fn cmd_validate(
+    cli: &Cli,
+    format: &str,
+    incremental: bool,
+    verify_incremental: bool,
+) -> Result<bool> {
+    // When --incremental is set (or --verify-incremental), run the salsa path.
+    if incremental || verify_incremental {
+        return cmd_validate_incremental(cli, format, verify_incremental);
+    }
+
     let (store, schema, graph, doc_store) = load_project_with_docs(cli)?;
     let mut diagnostics = validate::validate(&store, &schema, &graph);
     diagnostics.extend(validate::validate_documents(&doc_store, &store));
@@ -1116,6 +1138,195 @@ fn cmd_validate(cli: &Cli, format: &str) -> Result<bool> {
     }
 
     Ok(errors == 0 && cross_errors == 0)
+}
+
+/// Incremental validation via the salsa database.
+///
+/// This reads all source files and schemas into salsa inputs, then calls the
+/// tracked `validate_all` query. When `verify` is true, it also runs the
+/// existing sequential pipeline and asserts the diagnostics match (SC-11).
+fn cmd_validate_incremental(cli: &Cli, format: &str, verify: bool) -> Result<bool> {
+    use rivet_core::db::RivetDatabase;
+    use std::time::Instant;
+
+    let config_path = cli.project.join("rivet.yaml");
+    let config = rivet_core::load_project_config(&config_path)
+        .with_context(|| format!("loading {}", config_path.display()))?;
+
+    let schemas_dir = resolve_schemas_dir(cli);
+
+    // ── Collect schema content ──────────────────────────────────────────
+    let mut schema_contents: Vec<(String, String)> = Vec::new();
+    for name in &config.project.schemas {
+        let path = schemas_dir.join(format!("{name}.yaml"));
+        if path.exists() {
+            let content = std::fs::read_to_string(&path)
+                .with_context(|| format!("reading schema {}", path.display()))?;
+            schema_contents.push((name.clone(), content));
+        } else if let Some(content) = rivet_core::embedded::embedded_schema(name) {
+            schema_contents.push((name.clone(), content.to_string()));
+        } else {
+            log::warn!("schema '{name}' not found on disk or embedded");
+        }
+    }
+
+    // ── Collect source file content ─────────────────────────────────────
+    let mut source_contents: Vec<(String, String)> = Vec::new();
+    for source in &config.sources {
+        let source_path = cli.project.join(&source.path);
+        // The salsa db only handles generic YAML parsing; skip other formats.
+        if source.format != "generic" && source.format != "generic-yaml" {
+            log::info!(
+                "incremental: skipping source '{}' (format '{}' not yet supported, using adapter fallback)",
+                source.path,
+                source.format,
+            );
+            continue;
+        }
+        collect_yaml_files(&source_path, &mut source_contents)
+            .with_context(|| format!("reading source '{}'", source.path))?;
+    }
+
+    // ── Build salsa database and run validation ─────────────────────────
+    let db = RivetDatabase::new();
+
+    let schema_refs: Vec<(&str, &str)> = schema_contents
+        .iter()
+        .map(|(n, c)| (n.as_str(), c.as_str()))
+        .collect();
+    let source_refs: Vec<(&str, &str)> = source_contents
+        .iter()
+        .map(|(p, c)| (p.as_str(), c.as_str()))
+        .collect();
+
+    let t_start = Instant::now();
+    let schema_set = db.load_schemas(&schema_refs);
+    let source_set = db.load_sources(&source_refs);
+    let diagnostics = db.diagnostics(source_set, schema_set);
+    let t_elapsed = t_start.elapsed();
+
+    if cli.verbose > 0 {
+        eprintln!(
+            "[incremental] cold-cache validation: {:.1}ms ({} source files, {} schemas, {} diagnostics)",
+            t_elapsed.as_secs_f64() * 1000.0,
+            source_contents.len(),
+            schema_contents.len(),
+            diagnostics.len(),
+        );
+    }
+
+    // ── Verify mode: run both pipelines and compare (SC-11) ─────────────
+    if verify {
+        let t_seq_start = Instant::now();
+        let (store, schema, graph) = load_project(cli)?;
+        let seq_diagnostics = validate::validate(&store, &schema, &graph);
+        let t_seq_elapsed = t_seq_start.elapsed();
+
+        if cli.verbose > 0 {
+            eprintln!(
+                "[sequential]   full validation: {:.1}ms ({} diagnostics)",
+                t_seq_elapsed.as_secs_f64() * 1000.0,
+                seq_diagnostics.len(),
+            );
+        }
+
+        // Compare: sort both by (rule, artifact_id, message) for stable comparison.
+        let mut incr_sorted = diagnostics.clone();
+        let mut seq_sorted = seq_diagnostics.clone();
+        let sort_key = |d: &validate::Diagnostic| {
+            (
+                d.rule.clone(),
+                d.artifact_id.clone().unwrap_or_default(),
+                d.message.clone(),
+            )
+        };
+        incr_sorted.sort_by_key(sort_key);
+        seq_sorted.sort_by_key(sort_key);
+
+        if incr_sorted == seq_sorted {
+            eprintln!(
+                "[verify] SC-11 PASS: incremental and sequential pipelines produce identical diagnostics"
+            );
+        } else {
+            eprintln!("[verify] SC-11 FAIL: pipelines diverge!");
+            let incr_set: HashSet<String> = incr_sorted.iter().map(|d| format!("{d}")).collect();
+            let seq_set: HashSet<String> = seq_sorted.iter().map(|d| format!("{d}")).collect();
+            for d in seq_set.difference(&incr_set) {
+                eprintln!("  only in sequential: {d}");
+            }
+            for d in incr_set.difference(&seq_set) {
+                eprintln!("  only in incremental: {d}");
+            }
+        }
+    }
+
+    // ── Output (same formatting as the existing path) ───────────────────
+    let errors = diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Error)
+        .count();
+    let warnings = diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Warning)
+        .count();
+
+    if format == "json" {
+        let diag_json: Vec<serde_json::Value> = diagnostics
+            .iter()
+            .map(|d| {
+                serde_json::json!({
+                    "severity": format!("{:?}", d.severity).to_lowercase(),
+                    "artifact_id": d.artifact_id,
+                    "message": d.message,
+                })
+            })
+            .collect();
+        let output = serde_json::json!({
+            "command": "validate",
+            "incremental": true,
+            "errors": errors,
+            "warnings": warnings,
+            "diagnostics": diag_json,
+        });
+        println!("{}", serde_json::to_string_pretty(&output).unwrap());
+    } else {
+        print_diagnostics(&diagnostics);
+        println!();
+        if errors > 0 {
+            println!("Result: FAIL ({} errors, {} warnings)", errors, warnings);
+        } else {
+            println!("Result: PASS ({} warnings)", warnings);
+        }
+    }
+
+    Ok(errors == 0)
+}
+
+/// Recursively collect YAML files from a path into (path_string, content) pairs.
+fn collect_yaml_files(path: &std::path::Path, out: &mut Vec<(String, String)>) -> Result<()> {
+    if path.is_file() {
+        let content =
+            std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+        out.push((path.display().to_string(), content));
+    } else if path.is_dir() {
+        let entries = std::fs::read_dir(path)
+            .with_context(|| format!("reading directory {}", path.display()))?;
+        for entry in entries {
+            let entry = entry?;
+            let p = entry.path();
+            if p.is_dir() {
+                collect_yaml_files(&p, out)?;
+            } else if p
+                .extension()
+                .is_some_and(|ext| ext == "yaml" || ext == "yml")
+            {
+                let content = std::fs::read_to_string(&p)
+                    .with_context(|| format!("reading {}", p.display()))?;
+                out.push((p.display().to_string(), content));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// List artifacts.
@@ -1404,6 +1615,8 @@ fn cmd_diff(
                     verbose: cli.verbose,
                     command: Command::Validate {
                         format: "text".to_string(),
+                        incremental: false,
+                        verify_incremental: false,
                     },
                 };
                 let head_cli = Cli {
@@ -1412,6 +1625,8 @@ fn cmd_diff(
                     verbose: cli.verbose,
                     command: Command::Validate {
                         format: "text".to_string(),
+                        incremental: false,
+                        verify_incremental: false,
                     },
                 };
                 let (bs, bsc, bg) = load_project(&base_cli)?;

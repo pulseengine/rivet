@@ -1,6 +1,7 @@
 pub mod adapter;
 pub mod commits;
 pub mod coverage;
+pub mod db;
 pub mod diff;
 pub mod document;
 pub mod embedded;
