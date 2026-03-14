@@ -693,3 +693,75 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-033
+
+  - id: DD-031
+    type: design-decision
+    title: STPA-specific YAML adapter with domain-typed files
+    status: approved
+    description: >
+      Use a domain-specific YAML adapter for STPA artifacts rather than the
+      generic format. Each STPA concept (losses, hazards, system-constraints,
+      UCAs, controller-constraints, loss-scenarios) gets its own YAML file
+      with structure matching the STPA Handbook methodology.
+    tags: [adapter, stpa, architecture]
+    fields:
+      alternatives: Reuse the generic YAML adapter with type-prefixed keys. Rejected because it obscures the STPA methodology structure and makes manual editing harder for safety engineers who think in STPA terms.
+      rationale: STPA artifacts use a domain-specific YAML structure (losses.yaml, hazards.yaml, ucas.yaml) rather than the generic format, matching the STPA Handbook structure and enabling direct import from meld.
+
+    links:
+      - type: satisfies
+        target: REQ-002
+      - type: satisfies
+        target: REQ-001
+  - id: DD-032
+    type: design-decision
+    title: Canonical generic YAML format with explicit type and links array
+    status: approved
+    description: >
+      The generic YAML adapter uses a canonical format where each artifact
+      has explicit type, links array, and fields map. This serves as the
+      universal interchange format that all adapters can target and any
+      downstream tool can consume without domain-specific knowledge.
+    tags: [adapter, architecture]
+    fields:
+      alternatives: Per-domain YAML formats for each schema (ASPICE YAML, cybersecurity YAML). Rejected because it fragments tooling and requires adapter-per-domain rather than a single generic path.
+      rationale: The generic YAML adapter uses a single canonical format with explicit type, links array, and fields map per artifact. This provides a universal interchange format that any adapter can target and any tool can consume without domain-specific knowledge.
+
+    links:
+      - type: satisfies
+        target: REQ-001
+  - id: DD-033
+    type: design-decision
+    title: spar CLI JSON bridge for AADL import
+    status: approved
+    description: >
+      Import AADL architecture models via spar CLI JSON output rather than
+      parsing AADL directly. The JSON interchange format provides a clean
+      boundary between spar and rivet, avoiding tight coupling to spar's
+      internal salsa/rowan state.
+    tags: [adapter, aadl, architecture]
+    fields:
+      alternatives: Embed spar-parser as a Rust library dependency. Rejected because spar uses salsa and rowan with complex internal state that would tightly couple the two tools. CLI JSON is a clean boundary.
+      rationale: The AADL adapter imports architecture models via spar CLI JSON output rather than parsing AADL directly. This avoids duplicating spar's parser and leverages spar's analysis results (diagnostics, resolved references). The JSON interchange format is stable and version-negotiable between spar and rivet.
+
+    links:
+      - type: satisfies
+        target: REQ-001
+      - type: satisfies
+        target: REQ-005
+  - id: DD-034
+    type: design-decision
+    title: ReqIF XML round-trip with XHTML content preservation
+    status: approved
+    description: >
+      The ReqIF adapter preserves XHTML rich-text content during import and
+      export rather than flattening to plain text. This maintains round-trip
+      fidelity with Polarion, DOORS, and other tools that embed XHTML in
+      SpecObject attribute values.
+    tags: [adapter, reqif, architecture]
+    fields:
+      alternatives: Strip XHTML and store plain text only. Rejected because it loses formatting, tables, and embedded images that are semantically significant in requirements documents.
+      rationale: The ReqIF adapter preserves XHTML rich-text content during import/export rather than flattening to plain text. This is required for round-trip fidelity with tools like Polarion and DOORS that use embedded XHTML in SpecObject attribute values. Content is stored as-is in artifact fields and rendered in the dashboard.
+    links:
+      - type: satisfies
+        target: REQ-005

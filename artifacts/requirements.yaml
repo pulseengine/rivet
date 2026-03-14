@@ -50,6 +50,11 @@ artifacts:
       priority: must
       category: functional
 
+    links:
+      - type: satisfies
+        target: SC-1
+      - type: satisfies
+        target: SC-3
   - id: REQ-005
     type: requirement
     title: ReqIF 1.2 import/export
@@ -63,6 +68,11 @@ artifacts:
       priority: should
       category: interface
 
+    links:
+      - type: satisfies
+        target: SC-4
+      - type: satisfies
+        target: SC-9
   - id: REQ-006
     type: requirement
     title: OSLC-based tool synchronization
@@ -76,6 +86,11 @@ artifacts:
       priority: should
       category: interface
 
+    links:
+      - type: satisfies
+        target: SC-5
+      - type: satisfies
+        target: SC-8
   - id: REQ-007
     type: requirement
     title: CLI and serve pattern
@@ -114,6 +129,9 @@ artifacts:
       priority: should
       category: functional
 
+    links:
+      - type: satisfies
+        target: SC-6
   - id: REQ-010
     type: requirement
     title: Schema-driven validation
@@ -127,6 +145,9 @@ artifacts:
       priority: must
       category: functional
 
+    links:
+      - type: satisfies
+        target: SC-1
   - id: REQ-011
     type: requirement
     title: Rust edition 2024 with MSRV 1.85
@@ -195,6 +216,9 @@ artifacts:
       priority: must
       category: functional
 
+    links:
+      - type: satisfies
+        target: SC-4
   - id: REQ-016
     type: requirement
     title: Cybersecurity schema (ISO 21434 / ASPICE SEC.1-4)
@@ -209,6 +233,9 @@ artifacts:
       priority: should
       category: functional
 
+    links:
+      - type: satisfies
+        target: SC-4
   - id: REQ-017
     type: requirement
     title: Commit-to-artifact traceability
@@ -224,6 +251,9 @@ artifacts:
       priority: must
       category: functional
 
+    links:
+      - type: satisfies
+        target: SC-7
   - id: REQ-018
     type: requirement
     title: Commit message validation at commit time
@@ -238,6 +268,9 @@ artifacts:
       priority: must
       category: functional
 
+    links:
+      - type: satisfies
+        target: SC-7
   - id: REQ-019
     type: requirement
     title: Orphan commit detection
@@ -252,6 +285,9 @@ artifacts:
       priority: must
       category: functional
 
+    links:
+      - type: satisfies
+        target: SC-7
   - id: REQ-020
     type: requirement
     title: Cross-repository artifact linking via prefixed IDs
@@ -264,6 +300,9 @@ artifacts:
       priority: must
       category: functional
 
+    links:
+      - type: satisfies
+        target: SC-10
   - id: REQ-021
     type: requirement
     title: Distributed baselining via convention tags
@@ -276,6 +315,9 @@ artifacts:
       priority: should
       category: functional
 
+    links:
+      - type: satisfies
+        target: SC-10
   - id: REQ-022
     type: requirement
     title: Single-binary WASM asset embedding
@@ -324,6 +366,9 @@ artifacts:
       category: functional
       upstream-ref: "eclipse-score/docs-as-code#314, eclipse-score/process_description#535"
 
+    links:
+      - type: satisfies
+        target: SC-3
   - id: REQ-025
     type: requirement
     title: sphinx-needs JSON import
@@ -339,6 +384,9 @@ artifacts:
       category: interface
       upstream-ref: "eclipse-score/score#1695"
 
+    links:
+      - type: satisfies
+        target: SC-4
   - id: REQ-026
     type: requirement
     title: Test-to-requirement traceability extraction
@@ -355,6 +403,9 @@ artifacts:
       category: functional
       upstream-ref: "eclipse-score/score#2521, eclipse-score/score#2619"
 
+    links:
+      - type: satisfies
+        target: SC-7
   - id: REQ-027
     type: requirement
     title: Build-system-aware cross-repo discovery
@@ -372,6 +423,9 @@ artifacts:
       category: functional
       upstream-ref: "eclipse-score/reference_integration (known_good.json)"
 
+    links:
+      - type: satisfies
+        target: SC-10
   - id: REQ-028
     type: requirement
     title: Diagnostic-quality parsing with lossless syntax trees
