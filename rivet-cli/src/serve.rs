@@ -3940,18 +3940,11 @@ async fn document_detail(State(state): State<SharedState>, Path(id): Path<String
 
     // Rendered body
     html.push_str("<div class=\"card\"><div class=\"doc-body\">");
+    let graph = &state.graph;
     let body_html = document::render_to_html(
         doc,
         |aid| store.contains(aid),
-        |aid| {
-            store.get(aid).map(|a| document::ArtifactInfo {
-                id: a.id.clone(),
-                title: a.title.clone(),
-                art_type: a.artifact_type.clone(),
-                status: a.status.clone().unwrap_or_default(),
-                description: a.description.clone().unwrap_or_default(),
-            })
-        },
+        |aid| build_artifact_info(aid, store, graph),
     );
     // Rewrite relative image src to serve through /docs-asset/
     let body_html = rewrite_image_paths(&body_html);
@@ -5473,18 +5466,11 @@ async fn source_file_view(
     if is_markdown && content.starts_with("---") {
         if let Ok(doc) = rivet_core::document::parse_document(&content, Some(&full_path)) {
             html.push_str("<div class=\"card\"><div class=\"doc-body\">");
+            let graph = &state.graph;
             let body_html = document::render_to_html(
                 &doc,
                 |aid| store.contains(aid),
-                |aid| {
-                    store.get(aid).map(|a| document::ArtifactInfo {
-                        id: a.id.clone(),
-                        title: a.title.clone(),
-                        art_type: a.artifact_type.clone(),
-                        status: a.status.clone().unwrap_or_default(),
-                        description: a.description.clone().unwrap_or_default(),
-                    })
-                },
+                |aid| build_artifact_info(aid, store, graph),
             );
             let body_html = rewrite_image_paths(&body_html);
             html.push_str(&body_html);
@@ -6964,6 +6950,107 @@ async fn traceability_history(
         }
         _ => Html("<div class=\"trace-history\"><span style=\"color:var(--text-secondary);font-size:.78rem\">Git history unavailable</span></div>".to_string()),
     }
+}
+
+/// Build an `ArtifactInfo` for embedding from the store and link graph.
+///
+/// Handles the special `__type:{type}` convention used by the `{{table:TYPE:FIELDS}}`
+/// embed: returns a synthetic `ArtifactInfo` whose `tags` list contains all artifact IDs
+/// of the requested type.
+fn build_artifact_info(
+    id: &str,
+    store: &rivet_core::store::Store,
+    graph: &rivet_core::links::LinkGraph,
+) -> Option<document::ArtifactInfo> {
+    // Special convention for {{table:TYPE:FIELDS}} embed
+    if let Some(art_type) = id.strip_prefix("__type:") {
+        let ids: Vec<String> = store.by_type(art_type).to_vec();
+        if ids.is_empty() {
+            return None;
+        }
+        return Some(document::ArtifactInfo {
+            id: format!("__type:{art_type}"),
+            title: String::new(),
+            art_type: art_type.to_string(),
+            status: String::new(),
+            description: String::new(),
+            tags: ids,
+            fields: Vec::new(),
+            links: Vec::new(),
+            backlinks: Vec::new(),
+        });
+    }
+
+    let a = store.get(id)?;
+
+    // Forward links
+    let links: Vec<document::LinkInfo> = a
+        .links
+        .iter()
+        .map(|link| {
+            let (target_title, target_type) = store
+                .get(&link.target)
+                .map(|t| (t.title.clone(), t.artifact_type.clone()))
+                .unwrap_or_default();
+            document::LinkInfo {
+                link_type: link.link_type.clone(),
+                target_id: link.target.clone(),
+                target_title,
+                target_type,
+            }
+        })
+        .collect();
+
+    // Backlinks
+    let backlinks: Vec<document::LinkInfo> = graph
+        .backlinks_to(id)
+        .iter()
+        .map(|bl| {
+            let (source_title, source_type) = store
+                .get(&bl.source)
+                .map(|s| (s.title.clone(), s.artifact_type.clone()))
+                .unwrap_or_default();
+            let display_type = bl
+                .inverse_type
+                .as_deref()
+                .unwrap_or(&bl.link_type)
+                .to_string();
+            document::LinkInfo {
+                link_type: display_type,
+                target_id: bl.source.clone(),
+                target_title: source_title,
+                target_type: source_type,
+            }
+        })
+        .collect();
+
+    // Fields: convert BTreeMap<String, Value> to Vec<(String, String)>
+    let fields: Vec<(String, String)> = a
+        .fields
+        .iter()
+        .map(|(k, v)| {
+            let display = match v {
+                serde_yaml::Value::String(s) => s.clone(),
+                serde_yaml::Value::Bool(b) => b.to_string(),
+                serde_yaml::Value::Number(n) => n.to_string(),
+                serde_yaml::Value::Null => String::new(),
+                other => format!("{other:?}"),
+            };
+            (k.clone(), display)
+        })
+        .collect();
+
+    Some(document::ArtifactInfo {
+        id: a.id.clone(),
+        title: a.title.clone(),
+        art_type: a.artifact_type.clone(),
+        status: a.status.clone().unwrap_or_default(),
+        description: a.description.clone().unwrap_or_default(),
+        tags: a.tags.clone(),
+        fields,
+        links,
+        backlinks,
+    })
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────
