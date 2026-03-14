@@ -705,7 +705,9 @@ Repos participate in baselines by tagging: `git tag baseline/v1.0`
 - **DD-017**: Transitive dependency resolution — declare direct deps only
 "#;
 
-const STPA_DOC: &str = concat!(include_str!("../../schemas/stpa.yaml"), r#"
+const STPA_DOC: &str = concat!(
+    include_str!("../../schemas/stpa.yaml"),
+    r#"
 
 ## References
 
@@ -714,9 +716,12 @@ const STPA_DOC: &str = concat!(include_str!("../../schemas/stpa.yaml"), r#"
   https://psas.scripts.mit.edu/home/get_file.php?name=STPA_handbook.pdf
 - Leveson, N.G. (2011). *Engineering a Safer World*.
   MIT Press. https://mitpress.mit.edu/9780262533690/
-"#);
+"#
+);
 
-const ASPICE_DOC: &str = concat!(include_str!("../../schemas/aspice.yaml"), r#"
+const ASPICE_DOC: &str = concat!(
+    include_str!("../../schemas/aspice.yaml"),
+    r#"
 
 ## References
 
@@ -725,9 +730,12 @@ const ASPICE_DOC: &str = concat!(include_str!("../../schemas/aspice.yaml"), r#"
   https://www.automotivespice.com/
 - intacs — International Assessor Certification Scheme.
   https://www.intacs.info/
-"#);
+"#
+);
 
-const CYBERSECURITY_DOC: &str = concat!(include_str!("../../schemas/cybersecurity.yaml"), r#"
+const CYBERSECURITY_DOC: &str = concat!(
+    include_str!("../../schemas/cybersecurity.yaml"),
+    r#"
 
 ## References
 
@@ -736,7 +744,8 @@ const CYBERSECURITY_DOC: &str = concat!(include_str!("../../schemas/cybersecurit
 - UNECE WP.29 Regulation No. 155 — Cyber security and cyber security
   management system.
   https://unece.org/transport/documents/2021/03/standards/un-regulation-no-155
-"#);
+"#
+);
 
 // ── Public API ──────────────────────────────────────────────────────────
 

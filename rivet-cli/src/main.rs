@@ -2228,10 +2228,37 @@ fn cmd_sync(cli: &Cli) -> Result<bool> {
         eprintln!("  Synced {} → {}", name, path.display());
     }
     eprintln!("\n{} externals synced.", results.len());
+
+    // Check if a lockfile exists and warn about version drift
+    if let Some(lock) = rivet_core::externals::read_lockfile(&cli.project)? {
+        let cache_dir = cli.project.join(".rivet/repos");
+        for (name, entry) in &lock.pins {
+            if let Some(ext) = externals.get(name) {
+                let ext_dir =
+                    rivet_core::externals::resolve_external_dir(ext, &cache_dir, &cli.project);
+                if ext_dir.join(".git").exists() {
+                    if let Ok(current) = rivet_core::externals::git_head_sha(&ext_dir) {
+                        if current != entry.commit {
+                            eprintln!(
+                                "  Warning: {} is at {} but lockfile pins {}",
+                                name,
+                                &current[..8.min(current.len())],
+                                &entry.commit[..8.min(entry.commit.len())]
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     Ok(true)
 }
 
-fn cmd_lock(cli: &Cli, _update: bool) -> Result<bool> {
+fn cmd_lock(cli: &Cli, update: bool) -> Result<bool> {
+    if update {
+        eprintln!("Note: --update refreshes all pins to latest refs");
+    }
     let config = rivet_core::load_project_config(&cli.project.join("rivet.yaml"))
         .with_context(|| format!("loading {}", cli.project.join("rivet.yaml").display()))?;
     let externals = config.externals.as_ref();
@@ -2328,16 +2355,8 @@ fn cmd_baseline_list(cli: &Cli) -> Result<bool> {
     if let Some(externals) = config.externals.as_ref() {
         let cache_dir = cli.project.join(".rivet/repos");
         for ext in externals.values() {
-            let ext_dir = if let Some(ref local_path) = ext.path {
-                let p = if std::path::Path::new(local_path).is_relative() {
-                    cli.project.join(local_path)
-                } else {
-                    std::path::PathBuf::from(local_path)
-                };
-                p.canonicalize().unwrap_or(p)
-            } else {
-                cache_dir.join(&ext.prefix)
-            };
+            let ext_dir =
+                rivet_core::externals::resolve_external_dir(ext, &cache_dir, &cli.project);
             if ext_dir.exists() {
                 let tags = rivet_core::externals::list_baseline_tags(&ext_dir)?;
                 eprintln!("\n{} baselines:", ext.prefix);

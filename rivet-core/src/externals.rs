@@ -113,7 +113,12 @@ pub fn sync_external(
         } else {
             // Clone fresh
             let output = Command::new("git")
-                .args(["clone", git_url, dest.to_str().unwrap_or(".")])
+                .args([
+                    "clone",
+                    git_url,
+                    dest.to_str()
+                        .ok_or_else(|| crate::error::Error::Io("invalid cache path".into()))?,
+                ])
                 .output()
                 .map_err(|e| crate::error::Error::Io(format!("git clone: {e}")))?;
             if !output.status.success() {
@@ -136,6 +141,27 @@ pub fn sync_external(
     Err(crate::error::Error::Io(
         "external must have either 'git' or 'path'".into(),
     ))
+}
+
+/// Resolve the directory for an external project.
+///
+/// For `path` externals: resolves relative to project_dir, canonicalizes.
+/// For `git` externals: returns `cache_dir/<prefix>`.
+pub fn resolve_external_dir(
+    ext: &ExternalProject,
+    cache_dir: &Path,
+    project_dir: &Path,
+) -> PathBuf {
+    if let Some(ref local_path) = ext.path {
+        let p = if Path::new(local_path).is_relative() {
+            project_dir.join(local_path)
+        } else {
+            PathBuf::from(local_path)
+        };
+        p.canonicalize().unwrap_or(p)
+    } else {
+        cache_dir.join(&ext.prefix)
+    }
 }
 
 /// Sync all externals declared in the project config.
@@ -212,16 +238,7 @@ pub fn load_all_externals(
     let cache_dir = project_dir.join(".rivet/repos");
     let mut resolved = Vec::new();
     for ext in externals.values() {
-        let ext_dir = if let Some(ref local_path) = ext.path {
-            let p = if Path::new(local_path).is_relative() {
-                project_dir.join(local_path)
-            } else {
-                PathBuf::from(local_path)
-            };
-            p.canonicalize().unwrap_or(p)
-        } else {
-            cache_dir.join(&ext.prefix)
-        };
+        let ext_dir = resolve_external_dir(ext, &cache_dir, project_dir);
         let artifacts = load_external_project(&ext_dir)?;
         resolved.push(ResolvedExternal {
             prefix: ext.prefix.clone(),
@@ -317,16 +334,7 @@ pub fn generate_lockfile(
     let cache_dir = project_dir.join(".rivet/repos");
     let mut pins = BTreeMap::new();
     for (name, ext) in externals {
-        let ext_dir = if let Some(ref local_path) = ext.path {
-            let p = if Path::new(local_path).is_relative() {
-                project_dir.join(local_path)
-            } else {
-                PathBuf::from(local_path)
-            };
-            p.canonicalize().unwrap_or(p)
-        } else {
-            cache_dir.join(&ext.prefix)
-        };
+        let ext_dir = resolve_external_dir(ext, &cache_dir, project_dir);
         let commit = git_head_sha(&ext_dir)?;
         pins.insert(
             name.clone(),
@@ -408,16 +416,7 @@ pub fn detect_version_conflicts(
     // Add transitive dependencies (from each external's own rivet.yaml)
     let cache_dir = project_dir.join(".rivet/repos");
     for ext in externals.values() {
-        let ext_dir = if let Some(ref local_path) = ext.path {
-            let p = if Path::new(local_path).is_relative() {
-                project_dir.join(local_path)
-            } else {
-                PathBuf::from(local_path)
-            };
-            p.canonicalize().unwrap_or(p)
-        } else {
-            cache_dir.join(&ext.prefix)
-        };
+        let ext_dir = resolve_external_dir(ext, &cache_dir, project_dir);
         let config_path = ext_dir.join("rivet.yaml");
         if let Ok(ext_config) = crate::load_project_config(&config_path) {
             if let Some(ref ext_externals) = ext_config.externals {
@@ -528,16 +527,7 @@ pub fn verify_baseline(
     // Check each external
     let mut external_statuses = Vec::new();
     for ext in externals.values() {
-        let ext_dir = if let Some(ref local_path) = ext.path {
-            let p = if Path::new(local_path).is_relative() {
-                project_dir.join(local_path)
-            } else {
-                PathBuf::from(local_path)
-            };
-            p.canonicalize().unwrap_or(p)
-        } else {
-            cache_dir.join(&ext.prefix)
-        };
+        let ext_dir = resolve_external_dir(ext, &cache_dir, project_dir);
 
         let status = if ext_dir.exists() {
             check_baseline_tag(&ext_dir, baseline_name)?
@@ -654,16 +644,7 @@ pub fn detect_circular_deps(
 
     // Add edges from each external's own externals
     for ext in externals.values() {
-        let ext_dir = if let Some(ref local_path) = ext.path {
-            let p = if std::path::Path::new(local_path).is_relative() {
-                project_dir.join(local_path)
-            } else {
-                std::path::PathBuf::from(local_path)
-            };
-            p.canonicalize().unwrap_or(p)
-        } else {
-            cache_dir.join(&ext.prefix)
-        };
+        let ext_dir = resolve_external_dir(ext, &cache_dir, project_dir);
         let config_path = ext_dir.join("rivet.yaml");
         if let Ok(ext_config) = crate::load_project_config(&config_path) {
             if let Some(ref ext_externals) = ext_config.externals {
