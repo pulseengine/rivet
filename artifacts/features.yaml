@@ -12,6 +12,8 @@ artifacts:
         target: REQ-002
       - type: satisfies
         target: REQ-001
+      - type: implements
+        target: DD-031
     fields:
       phase: phase-1
 
@@ -26,6 +28,8 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-001
+      - type: implements
+        target: DD-032
     fields:
       phase: phase-1
 
@@ -144,6 +148,8 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-005
+      - type: implements
+        target: DD-034
     fields:
       phase: phase-2
 
@@ -277,6 +283,8 @@ artifacts:
         target: REQ-001
       - type: satisfies
         target: REQ-005
+      - type: implements
+        target: DD-033
     fields:
       phase: phase-2
 
@@ -519,6 +527,11 @@ artifacts:
     type: feature
     title: Externals config block and prefix resolution
     status: approved
+    description: >
+      Defines the [externals] block in rivet.yaml where each external repo
+      is declared with a name, git URL, ref, and artifact path. Resolves
+      prefix:ID syntax in link targets to locate artifacts in the
+      corresponding external repository.
     links:
       - type: satisfies
         target: REQ-020
@@ -528,6 +541,10 @@ artifacts:
     type: feature
     title: rivet sync — fetch external repos
     status: approved
+    description: >
+      Clones or fetches external repositories declared in rivet.yaml into
+      .rivet/repos/<name>/, checks out the configured ref, and makes their
+      artifacts available for cross-repo link resolution and validation.
     links:
       - type: satisfies
         target: REQ-020
@@ -537,6 +554,10 @@ artifacts:
     type: feature
     title: rivet lock — pin externals to commits
     status: approved
+    description: >
+      Generates rivet.lock containing pinned commit SHAs for each external
+      repository. Ensures reproducible cross-repo validation by recording
+      the exact commit used at lock time.
     links:
       - type: satisfies
         target: REQ-020
@@ -546,6 +567,10 @@ artifacts:
     type: feature
     title: rivet baseline verify — cross-repo validation
     status: approved
+    description: >
+      Verifies that baseline/* convention tags exist across all external
+      repositories and that pinned commits in rivet.lock match the tagged
+      commits. Reports mismatches and missing baselines.
     links:
       - type: satisfies
         target: REQ-021
@@ -555,6 +580,10 @@ artifacts:
     type: feature
     title: Embedded WASM/JS assets for single binary
     status: approved
+    description: >
+      Embeds spar WASM module and JavaScript glue code into the rivet binary
+      via include_bytes! and include_str! macros, enabling single-binary
+      distribution without external asset files.
     links:
       - type: satisfies
         target: REQ-022
@@ -564,6 +593,11 @@ artifacts:
     type: feature
     title: Cross-repo link validation in rivet validate
     status: approved
+    description: >
+      Extends rivet validate with cross-repo link checks including
+      validate_refs (external artifact existence), detect_circular_deps
+      (cycles across repo boundaries), and detect_version_conflicts
+      (divergent pins for the same external).
     links:
       - type: satisfies
         target: REQ-020
@@ -581,7 +615,7 @@ artifacts:
   - id: FEAT-040
     type: feature
     title: Conditional validation rules in schema YAML
-    status: draft
+    status: approved
     description: >
       Extend schema YAML with conditional-rules block supporting when/then
       syntax. The "when" clause matches field values (equals, matches regex,
@@ -599,7 +633,7 @@ artifacts:
   - id: FEAT-041
     type: feature
     title: "rivet impact command"
-    status: draft
+    status: approved
     description: >
       Change impact analysis command that computes content hashes for all
       artifacts, diffs against a baseline (commit, tag, or rivet.lock),
@@ -618,7 +652,7 @@ artifacts:
   - id: FEAT-042
     type: feature
     title: sphinx-needs JSON adapter (needs-json)
-    status: draft
+    status: approved
     description: >
       Import adapter for sphinx-needs needs.json export format. Reads
       needs.json, applies configurable type-mapping and id-transform
@@ -637,7 +671,7 @@ artifacts:
   - id: FEAT-043
     type: feature
     title: Test traceability source scanner
-    status: draft
+    status: approved
     description: >
       Scans test source code for rivet traceability markers (Rust attributes,
       Python decorators, comment tags) and test result files (JUnit XML,
@@ -657,7 +691,7 @@ artifacts:
   - id: FEAT-044
     type: feature
     title: Build-system dependency providers
-    status: draft
+    status: approved
     description: >
       Pluggable providers that read cross-repo dependency information from
       build system manifests. Bazel provider parses MODULE.bazel for
@@ -696,7 +730,7 @@ artifacts:
   - id: FEAT-057
     type: feature
     title: SVG graph viewer with fullscreen, resize, and pop-out
-    status: draft
+    status: approved
     description: >
       Dashboard SVG graph views (link graph, STPA control structure, AADL
       diagrams) get a dedicated viewer with fullscreen toggle (F11 or button),
@@ -714,7 +748,7 @@ artifacts:
   - id: FEAT-052
     type: feature
     title: "rivet add — create artifacts from CLI"
-    status: draft
+    status: approved
     description: >
       Create a new artifact from the command line with schema validation.
       Auto-generates next available ID for the given type/prefix pattern.
@@ -734,7 +768,7 @@ artifacts:
   - id: FEAT-053
     type: feature
     title: "rivet modify — update artifact fields from CLI"
-    status: draft
+    status: approved
     description: >
       Modify an existing artifact's fields, status, tags, title, or
       description from the command line. Validates the artifact exists,
@@ -753,7 +787,7 @@ artifacts:
   - id: FEAT-054
     type: feature
     title: "rivet remove — delete artifacts from CLI"
-    status: draft
+    status: approved
     description: >
       Remove an artifact by ID from its YAML file. Pre-validates that
       no other artifacts link to the target (or --force to override
@@ -774,7 +808,7 @@ artifacts:
   - id: FEAT-055
     type: feature
     title: "rivet link / unlink — manage artifact links from CLI"
-    status: draft
+    status: approved
     description: >
       Add or remove links between artifacts from the command line.
       rivet link <source-id> --type <link-type> --target <target-id>
@@ -797,7 +831,7 @@ artifacts:
   - id: FEAT-056
     type: feature
     title: "rivet next-id — compute next available artifact ID"
-    status: draft
+    status: approved
     description: >
       Given an artifact type or ID prefix pattern, compute the next
       available ID by scanning the store. Useful for scripting and
@@ -816,7 +850,7 @@ artifacts:
   - id: FEAT-046
     type: feature
     title: MODULE.bazel rowan parser with Starlark subset grammar
-    status: draft
+    status: approved
     description: >
       Hand-written lexer and recursive descent parser for the MODULE.bazel
       Starlark subset. Produces rowan GreenNode CST with ~30 SyntaxKind
@@ -838,7 +872,7 @@ artifacts:
   - id: FEAT-047
     type: feature
     title: salsa validation database with incremental query groups
-    status: draft
+    status: approved
     description: >
       Restructure the validation pipeline as salsa tracked queries.
       Input queries for file contents, tracked queries for parse_artifacts,
@@ -883,7 +917,7 @@ artifacts:
   - id: FEAT-049
     type: feature
     title: Kani proof harnesses for core algorithms
-    status: draft
+    status: approved
     description: >
       10-15 Kani proof harnesses proving panic freedom for core algorithms.
       Targets: LinkGraph::build, parse_artifact_ref, Schema::merge,
@@ -909,14 +943,14 @@ artifacts:
       (rule violated implies diagnostic emitted). Additional proofs for
       backlink symmetry, conditional rule consistency, and reachability
       correctness. Inline Rust annotations with SMT-based proof discharge.
-    tags: [formal-verification, verus, testing, phase-4]
+    tags: [formal-verification, verus, testing, future]
     links:
       - type: satisfies
         target: REQ-030
       - type: implements
         target: DD-026
     fields:
-      phase: phase-4
+      phase: future
 
   - id: FEAT-051
     type: feature
@@ -930,41 +964,54 @@ artifacts:
       (validation terminates), and ASPICE V-model completeness (schema
       enforces full traceability chain). Serves as formal specification
       for ISO 26262 TCL 1 tool qualification evidence.
-    tags: [formal-verification, rocq, metamodel, phase-4]
+    tags: [formal-verification, rocq, metamodel, future]
     links:
       - type: satisfies
         target: REQ-030
       - type: implements
         target: DD-027
     fields:
-      phase: phase-4
+      phase: future
 
   - id: FEAT-058
     type: feature
     title: Markdown rendering for artifact descriptions via pulldown-cmark
-    status: draft
+    status: approved
+    description: >
+      Renders artifact description fields as Markdown using pulldown-cmark.
+      Supports headings, lists, code blocks, links, and emphasis in both
+      the dashboard detail view and document generation output.
     tags: [rendering, markdown, phase-3]
-
     links:
       - type: satisfies
         target: REQ-032
       - type: implements
         target: DD-029
+
   - id: FEAT-059
     type: feature
     title: Rich artifact embed syntax with modifiers (full, links, upstream, downstream, chain, table)
-    status: draft
+    status: approved
+    description: >
+      Extends the document embed directive with modifier syntax supporting
+      full, links, upstream, downstream, chain, and table display modes.
+      Enables flexible artifact rendering within generated documents.
     tags: [documents, embedding, phase-3]
-
     links:
       - type: satisfies
         target: REQ-033
       - type: implements
         target: DD-030
+
   - id: FEAT-060
     type: feature
     title: Enriched ArtifactInfo with links, backlinks, fields, and resolved titles
-    status: draft
+    status: approved
+    description: >
+      Provides an enriched ArtifactInfo struct that resolves forward links,
+      backlinks, custom fields, and referenced artifact titles at query time.
+      Used by document generation and dashboard views for complete artifact
+      context without separate lookups.
     tags: [documents, model, phase-3]
     links:
       - type: satisfies
