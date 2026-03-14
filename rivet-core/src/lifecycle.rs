@@ -138,6 +138,7 @@ mod tests {
         }
     }
 
+    // rivet: verifies REQ-004
     #[test]
     fn implemented_req_without_downstream_reports_gap() {
         let artifacts = vec![make_artifact(
@@ -151,6 +152,7 @@ mod tests {
         assert_eq!(gaps[0].artifact_id, "REQ-001");
     }
 
+    // rivet: verifies REQ-004
     #[test]
     fn implemented_req_with_feature_has_partial_coverage() {
         let artifacts = vec![
@@ -182,6 +184,7 @@ mod tests {
         );
     }
 
+    // rivet: partially-verifies REQ-004
     #[test]
     fn draft_req_not_checked() {
         let artifacts = vec![make_artifact(
@@ -194,6 +197,7 @@ mod tests {
         assert!(gaps.is_empty()); // draft status not checked
     }
 
+    // rivet: verifies REQ-004
     #[test]
     fn fully_covered_req_no_gap() {
         let artifacts = vec![

@@ -396,6 +396,7 @@ fn test_traceability_matrix() {
 }
 
 /// Empty matrix has 100% coverage (vacuously true).
+// rivet: partially-verifies REQ-004
 #[test]
 fn test_traceability_matrix_empty() {
     let schema = load_schema_files(&["common"]);
@@ -419,6 +420,7 @@ fn test_traceability_matrix_empty() {
 
 /// Insert diverse artifacts and test filtering by type, status, tag,
 /// has_link_type, and missing_link_type.
+// rivet: verifies REQ-001
 #[test]
 fn test_query_filters() {
     let mut store = Store::new();
@@ -681,6 +683,7 @@ fn test_store_upsert_overwrites() {
 }
 
 /// Verify that upsert with type change updates the by_type index.
+// rivet: verifies REQ-001
 #[test]
 fn test_store_upsert_type_change() {
     let mut store = Store::new();
@@ -828,6 +831,7 @@ fn test_reqif_roundtrip() {
 
 /// Verify that ReqIF-exported artifacts can be loaded into a Store and
 /// participate in link-graph analysis.
+// rivet: verifies REQ-005
 #[test]
 fn test_reqif_store_integration() {
     let artifacts = vec![
@@ -909,6 +913,7 @@ fn test_diff_identical_stores() {
 // ── Diff: added artifact ────────────────────────────────────────────────
 
 /// An artifact present in head but not in base should appear as added.
+// rivet: verifies REQ-001
 #[test]
 fn test_diff_added_artifact() {
     let mut base = Store::new();
@@ -932,6 +937,7 @@ fn test_diff_added_artifact() {
 // ── Diff: removed artifact ──────────────────────────────────────────────
 
 /// An artifact present in base but not in head should appear as removed.
+// rivet: verifies REQ-001
 #[test]
 fn test_diff_removed_artifact() {
     let mut base = Store::new();
@@ -956,6 +962,7 @@ fn test_diff_removed_artifact() {
 
 /// Artifacts that exist in both stores but differ structurally should appear
 /// as modified with all changed fields recorded.
+// rivet: verifies REQ-001
 #[test]
 fn test_diff_modified_artifact() {
     let mut base = Store::new();
@@ -1047,6 +1054,7 @@ fn test_diff_modified_artifact() {
 
 /// Diagnostics that appear only in head are "new"; those only in base are
 /// "resolved".
+// rivet: verifies REQ-004
 #[test]
 fn test_diff_diagnostic_changes() {
     let base_diags = vec![

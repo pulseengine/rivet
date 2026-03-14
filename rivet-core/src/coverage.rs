@@ -215,6 +215,7 @@ mod tests {
         }
     }
 
+    // rivet: verifies REQ-004
     #[test]
     fn full_coverage() {
         let schema = test_schema();
@@ -254,6 +255,7 @@ mod tests {
         assert!((report.overall_coverage() - 100.0).abs() < f64::EPSILON);
     }
 
+    // rivet: verifies REQ-004
     #[test]
     fn partial_coverage() {
         let schema = test_schema();
@@ -289,6 +291,7 @@ mod tests {
         assert!((report.overall_coverage() - 66.666_666_666_666_66).abs() < 0.01);
     }
 
+    // rivet: verifies REQ-004
     #[test]
     fn zero_artifacts_gives_100_percent() {
         let schema = test_schema();
@@ -304,6 +307,7 @@ mod tests {
         assert!((report.overall_coverage() - 100.0).abs() < f64::EPSILON);
     }
 
+    // rivet: partially-verifies REQ-004
     #[test]
     fn to_json_roundtrip() {
         let schema = test_schema();

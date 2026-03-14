@@ -19,6 +19,7 @@ fn load_stpa_schema() -> Schema {
 
 /// Verify the STPA adapter can round-trip: load artifacts, build store,
 /// resolve links, and validate without errors.
+// rivet: verifies REQ-002
 #[test]
 fn test_stpa_schema_loads() {
     let schema = load_stpa_schema();
@@ -42,6 +43,7 @@ fn test_stpa_schema_loads() {
     );
 }
 
+// rivet: verifies REQ-001
 #[test]
 fn test_store_insert_and_lookup() {
     let mut store = Store::new();
@@ -62,6 +64,7 @@ fn test_store_insert_and_lookup() {
     assert_eq!(store.by_type("loss").len(), 1);
 }
 
+// rivet: verifies REQ-001
 #[test]
 fn test_duplicate_id_rejected() {
     let mut store = Store::new();
@@ -92,6 +95,7 @@ fn test_duplicate_id_rejected() {
     assert!(store.insert(dup).is_err());
 }
 
+// rivet: verifies REQ-004
 #[test]
 fn test_broken_link_detected() {
     let schema = load_stpa_schema();
@@ -118,6 +122,7 @@ fn test_broken_link_detected() {
     assert_eq!(graph.broken[0].target, "L-NONEXISTENT");
 }
 
+// rivet: verifies REQ-004
 #[test]
 fn test_validation_catches_unknown_type() {
     let schema = load_stpa_schema();

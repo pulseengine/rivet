@@ -927,6 +927,7 @@ This document specifies the system-level requirements.
 See frontmatter.
 "#;
 
+    // rivet: verifies REQ-007
     #[test]
     fn parse_frontmatter() {
         let doc = parse_document(SAMPLE_DOC, None).unwrap();
@@ -941,6 +942,7 @@ See frontmatter.
         );
     }
 
+    // rivet: verifies REQ-007
     #[test]
     fn extract_references_from_body() {
         let doc = parse_document(SAMPLE_DOC, None).unwrap();
@@ -952,6 +954,7 @@ See frontmatter.
         assert_eq!(ids, vec!["REQ-001", "REQ-002", "REQ-003"]);
     }
 
+    // rivet: verifies REQ-007
     #[test]
     fn extract_sections_hierarchy() {
         let doc = parse_document(SAMPLE_DOC, None).unwrap();
@@ -970,6 +973,7 @@ See frontmatter.
         assert_eq!(doc.sections[4].artifact_ids, vec!["REQ-003"]);
     }
 
+    // rivet: verifies REQ-007
     #[test]
     fn multiple_refs_on_one_line() {
         let content = "---\nid: D-1\ntitle: T\n---\n[[A-1]] and [[B-2]] here\n";
@@ -979,12 +983,14 @@ See frontmatter.
         assert_eq!(doc.references[1].artifact_id, "B-2");
     }
 
+    // rivet: verifies REQ-007
     #[test]
     fn missing_frontmatter_is_error() {
         let result = parse_document("# Just markdown\n\nNo frontmatter.", None);
         assert!(result.is_err());
     }
 
+    // rivet: verifies REQ-007
     #[test]
     fn render_html_resolves_refs() {
         let doc = parse_document(SAMPLE_DOC, None).unwrap();
@@ -994,6 +1000,7 @@ See frontmatter.
         assert!(html.contains("class=\"artifact-ref broken\""));
     }
 
+    // rivet: verifies REQ-007
     #[test]
     fn render_html_headings() {
         let doc = parse_document(SAMPLE_DOC, None).unwrap();
@@ -1003,6 +1010,7 @@ See frontmatter.
         assert!(html.contains("<h3>"));
     }
 
+    // rivet: verifies REQ-001
     #[test]
     fn document_store() {
         let doc = parse_document(SAMPLE_DOC, None).unwrap();
@@ -1013,6 +1021,7 @@ See frontmatter.
         assert_eq!(store.all_references().len(), 3);
     }
 
+    // rivet: verifies REQ-007
     #[test]
     fn default_doc_type_when_omitted() {
         let content = "---\nid: D-1\ntitle: Test\n---\nBody.\n";
@@ -1030,6 +1039,7 @@ See frontmatter.
         assert!(!html.contains("<pre><code>root: FlightControl"));
     }
 
+    // rivet: verifies REQ-007
     #[test]
     fn artifact_embedding() {
         let info_fn = |id: &str| -> Option<ArtifactInfo> {
@@ -1062,6 +1072,7 @@ See frontmatter.
         assert!(html.contains("status-badge"), "should contain status badge");
     }
 
+    // rivet: verifies REQ-007
     #[test]
     fn artifact_embedding_broken_ref() {
         let content = "---\nid: DOC-B\ntitle: Broken\n---\nSee {{artifact:NOPE-999}} here.\n";
