@@ -433,7 +433,7 @@ impl YamlEditor {
     ///
     /// The output preserves the exact original formatting for any lines that
     /// were not modified.
-    pub fn to_string(&self) -> String {
+    fn render_impl(&self) -> String {
         if self.lines.is_empty() {
             return String::new();
         }
@@ -446,7 +446,7 @@ impl YamlEditor {
 
 impl std::fmt::Display for YamlEditor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.to_string())
+        f.write_str(&self.render_impl())
     }
 }
 
