@@ -7,8 +7,9 @@
 #   - Navigation bar present on every page
 #   - Footer with version present on every page
 #   - Anchor links within pages resolve to existing ids
-#   - Cross-page links reference valid files
-#   - Single-page mode produces a single index.html with all sections
+#   - Cross-page links reference valid files and anchors
+#   - Single-page mode produces one index.html with all sections
+#   - Pages are self-contained (embedded CSS, no external deps)
 #
 # Usage:
 #   bash tests/playwright-export.sh
@@ -46,10 +47,10 @@ echo "==> Building rivet and generating multi-page HTML export..."
 echo ""
 echo "── Multi-page export checks ──"
 
-# ── 1. Verify expected files exist ──────────────────────────────────────
+# ── 1. Verify core pages exist ──────────────────────────────────────────
 
-EXPECTED_FILES="index.html requirements.html matrix.html coverage.html validation.html"
-for f in $EXPECTED_FILES; do
+CORE_PAGES="index.html requirements.html documents.html matrix.html coverage.html validation.html"
+for f in $CORE_PAGES; do
   if [ -f "$EXPORT_DIR/$f" ]; then
     pass "$f exists"
   else
@@ -93,23 +94,19 @@ for f in "$EXPORT_DIR"/*.html; do
   fi
 done
 
-# ── 5. Navigation bar contains references to all pages ─────────────────
+# ── 5. Nav references all core pages ──────────────────────────────────
 
 for f in "$EXPORT_DIR"/*.html; do
   base=$(basename "$f")
   all_found=true
-  for target in requirements.html matrix.html coverage.html validation.html; do
-    if ! grep -q "$target" "$f"; then
-      # The active page shows as <strong> instead of a link, so check label too
-      label=$(echo "$target" | sed 's/\.html//' | sed 's/./\U&/')
-      if ! grep -qi "$label" "$f" 2>/dev/null; then
-        fail "$base nav missing reference to $target"
-        all_found=false
-      fi
+  for label in Overview Requirements Documents Matrix Coverage Validation; do
+    if ! grep -q "$label" "$f"; then
+      fail "$base nav missing label '$label'"
+      all_found=false
     fi
   done
   if $all_found; then
-    pass "$base nav references all pages"
+    pass "$base nav references all core pages"
   fi
 done
 
@@ -166,7 +163,7 @@ for f in "$EXPORT_DIR"/*.html; do
   fi
 done
 
-# ── 10. Anchor links within requirements.html resolve ─────────────────
+# ── 10. Anchor link integrity and cross-page link validation ──────────
 
 echo ""
 echo "── Anchor link integrity ──"
@@ -174,7 +171,7 @@ echo "── Anchor link integrity ──"
 python3 << 'PYEOF'
 import re, sys, os, glob as gl
 
-export_dir = os.environ.get("EXPORT_DIR", sys.argv[1] if len(sys.argv) > 1 else "")
+export_dir = os.environ["EXPORT_DIR"]
 
 # --- requirements.html internal anchors ---
 req_path = os.path.join(export_dir, "requirements.html")
@@ -186,7 +183,7 @@ if os.path.exists(req_path):
     id_set = set(ids)
     broken = [h for h in hrefs if h not in id_set]
     if broken:
-        print(f"  \033[31mFAIL\033[0m  requirements.html has {len(broken)} broken anchor links: {broken[:5]}")
+        print(f"  \033[31mFAIL\033[0m  requirements.html: {len(broken)} broken anchors: {broken[:5]}")
         sys.exit(1)
     print(f"  \033[32mPASS\033[0m  requirements.html: {len(hrefs)} anchor links all resolve ({len(ids)} ids)")
 else:
@@ -212,7 +209,7 @@ if errors:
     for e in errors[:10]:
         print(f"  \033[31mFAIL\033[0m  {e}")
     sys.exit(1)
-print(f"  \033[32mPASS\033[0m  All cross-page file links reference existing files")
+print(f"  \033[32mPASS\033[0m  All cross-page file links reference existing files ({len(file_basenames)} pages)")
 
 # --- Cross-page anchor links resolve ---
 file_ids = {}
@@ -243,6 +240,20 @@ print(f"  \033[32mPASS\033[0m  All cross-page anchor links resolve")
 PYEOF
 PASS=$((PASS + 3))
 
+# ── 11. No external JavaScript dependencies ──────────────────────────
+
+echo ""
+echo "── Self-containment checks ──"
+
+for f in "$EXPORT_DIR"/*.html; do
+  base=$(basename "$f")
+  if grep -qE '<script[^>]+src=' "$f" 2>/dev/null; then
+    fail "$base has external script dependency"
+  else
+    pass "$base has no external script dependencies"
+  fi
+done
+
 # ── Single-page export ────────────────────────────────────────────────
 
 echo ""
@@ -252,7 +263,7 @@ echo "==> Generating single-page HTML export..."
 echo ""
 echo "── Single-page export checks ──"
 
-# ── 11. Single-page index.html exists ─────────────────────────────────
+# ── 12. Single-page index.html exists ─────────────────────────────────
 
 if [ -f "$SINGLE_DIR/index.html" ]; then
   pass "single-page index.html exists"
@@ -260,7 +271,7 @@ else
   fail "single-page index.html missing"
 fi
 
-# ── 12. Only one HTML file in single-page mode ───────────────────────
+# ── 13. Only one HTML file in single-page mode ───────────────────────
 
 HTML_COUNT=$(find "$SINGLE_DIR" -name '*.html' | wc -l | tr -d ' ')
 if [ "$HTML_COUNT" -eq 1 ]; then
@@ -269,9 +280,9 @@ else
   fail "single-page mode produced $HTML_COUNT HTML files (expected 1)"
 fi
 
-# ── 13. Single page has all required section ids ─────────────────────
+# ── 14. Single page has all required section ids ─────────────────────
 
-for section in index requirements matrix coverage validation; do
+for section in index requirements documents matrix coverage validation; do
   if grep -q "id=\"$section\"" "$SINGLE_DIR/index.html"; then
     pass "single-page has section #$section"
   else
@@ -279,7 +290,7 @@ for section in index requirements matrix coverage validation; do
   fi
 done
 
-# ── 14. Single-page nav uses fragment anchors ─────────────────────────
+# ── 15. Single-page nav uses fragment anchors ─────────────────────────
 
 if grep -q 'href="#requirements"' "$SINGLE_DIR/index.html"; then
   pass "single-page nav uses fragment anchors"
@@ -287,7 +298,7 @@ else
   fail "single-page nav does not use fragment anchors"
 fi
 
-# ── 15. Single-page has footer ────────────────────────────────────────
+# ── 16. Single-page has footer ────────────────────────────────────────
 
 if grep -q '<footer' "$SINGLE_DIR/index.html" && \
    grep -q 'Generated by Rivet' "$SINGLE_DIR/index.html"; then
@@ -296,7 +307,7 @@ else
   fail "single-page missing footer or version"
 fi
 
-# ── 16. Single-page has nav ──────────────────────────────────────────
+# ── 17. Single-page has nav ──────────────────────────────────────────
 
 if grep -q '<nav' "$SINGLE_DIR/index.html"; then
   pass "single-page has navigation bar"
@@ -304,7 +315,7 @@ else
   fail "single-page missing navigation bar"
 fi
 
-# ── 17. Single-page has embedded CSS ─────────────────────────────────
+# ── 18. Single-page has embedded CSS ─────────────────────────────────
 
 if grep -q '<style>' "$SINGLE_DIR/index.html"; then
   pass "single-page has embedded CSS"
@@ -312,7 +323,7 @@ else
   fail "single-page missing embedded CSS"
 fi
 
-# ── 18. Single-page has valid HTML structure ─────────────────────────
+# ── 19. Single-page has valid HTML structure ─────────────────────────
 
 if grep -q '<!DOCTYPE html>' "$SINGLE_DIR/index.html" && \
    grep -q '</html>' "$SINGLE_DIR/index.html"; then
@@ -321,13 +332,12 @@ else
   fail "single-page missing HTML document structure"
 fi
 
-# ── 19. Single-page internal anchor links resolve ────────────────────
+# ── 20. Single-page internal anchor links resolve ────────────────────
 
 python3 << 'PYEOF2'
 import re, sys, os
 
-single_dir = os.environ.get("SINGLE_DIR", "")
-path = os.path.join(single_dir, "index.html")
+path = os.path.join(os.environ["SINGLE_DIR"], "index.html")
 if not os.path.exists(path):
     print("  \033[31mFAIL\033[0m  single-page index.html not found")
     sys.exit(1)
@@ -339,25 +349,19 @@ hrefs = re.findall(r'href="#([^"]+)"', html)
 ids = set(re.findall(r'id="([^"]+)"', html))
 broken = [h for h in hrefs if h not in ids]
 if broken:
-    print(f"  \033[31mFAIL\033[0m  single-page has {len(broken)} broken anchor links: {broken[:5]}")
+    print(f"  \033[31mFAIL\033[0m  single-page: {len(broken)} broken anchor links: {broken[:5]}")
     sys.exit(1)
 print(f"  \033[32mPASS\033[0m  single-page: {len(hrefs)} anchor links all resolve ({len(ids)} ids)")
 PYEOF2
 PASS=$((PASS + 1))
 
-# ── 20. No external JavaScript dependencies ──────────────────────────
+# ── 21. No external JS in single-page ────────────────────────────────
 
-echo ""
-echo "── Self-containment checks ──"
-
-for f in "$EXPORT_DIR"/*.html "$SINGLE_DIR/index.html"; do
-  base=$(basename "$f")
-  if grep -qE '<script[^>]+src=' "$f" 2>/dev/null; then
-    fail "$base has external script dependency"
-  else
-    pass "$base has no external script dependencies"
-  fi
-done
+if grep -qE '<script[^>]+src=' "$SINGLE_DIR/index.html" 2>/dev/null; then
+  fail "single-page has external script dependency"
+else
+  pass "single-page has no external script dependencies"
+fi
 
 # ── Summary ───────────────────────────────────────────────────────────
 

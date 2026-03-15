@@ -1362,6 +1362,7 @@ fn rewrite_artifact_links(html: &str, req_href: &str) -> String {
 }
 
 /// Combine all reports into a single HTML page with internal anchors.
+#[allow(clippy::too_many_arguments)]
 pub fn render_single_page(
     store: &Store,
     schema: &Schema,
@@ -1987,6 +1988,7 @@ mod tests {
     #[test]
     fn single_page_contains_all_sections() {
         let (store, schema, graph, diagnostics) = test_fixtures();
+        let doc_store = DocumentStore::new();
         let html = render_single_page(
             &store,
             &schema,
@@ -1995,11 +1997,13 @@ mod tests {
             "SingleTest",
             "0.1.0",
             &default_config(),
+            &doc_store,
         );
 
         assert!(html.contains("<!DOCTYPE html>"));
         assert!(html.contains("id=\"index\""));
         assert!(html.contains("id=\"requirements\""));
+        assert!(html.contains("id=\"documents\""));
         assert!(html.contains("id=\"matrix\""));
         assert!(html.contains("id=\"coverage\""));
         assert!(html.contains("id=\"validation\""));
@@ -2157,7 +2161,7 @@ mod tests {
 
     #[test]
     fn rewrite_artifact_links_replaces_htmx() {
-        let input = r#"<a class="artifact-ref" hx-get="/artifacts/REQ-001" hx-target="#content" href="#">REQ-001</a>"#;
+        let input = r##"<a class="artifact-ref" hx-get="/artifacts/REQ-001" hx-target="#content" href="#">REQ-001</a>"##;
         let result = rewrite_artifact_links(input, "./requirements.html");
         assert!(result.contains("./requirements.html#art-REQ-001"));
         assert!(!result.contains("hx-get"));
