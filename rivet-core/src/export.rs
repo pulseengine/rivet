@@ -1285,78 +1285,44 @@ fn render_section_validation(diagnostics: &[Diagnostic], timestamp: &str) -> Str
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Artifact, Link};
-    use crate::schema::{SchemaFile, SchemaMetadata, TraceabilityRule};
+    use crate::model::Artifact;
+    use crate::schema::{Severity, TraceabilityRule};
+    use crate::test_helpers::{artifact_with_links, minimal_schema};
 
     fn test_schema() -> Schema {
-        let file = SchemaFile {
-            schema: SchemaMetadata {
-                name: "test".into(),
-                version: "0.1.0".into(),
-                namespace: None,
-                description: None,
-                extends: vec![],
-            },
-            base_fields: vec![],
-            artifact_types: vec![],
-            link_types: vec![],
-            traceability_rules: vec![TraceabilityRule {
-                name: "req-to-dd".into(),
-                description: "Requirements must be satisfied by design decisions".into(),
-                source_type: "requirement".into(),
-                required_link: None,
-                required_backlink: Some("satisfies".into()),
-                target_types: vec![],
-                from_types: vec!["design-decision".into()],
-                severity: Severity::Warning,
-            }],
-            conditional_rules: vec![],
-        };
+        let mut file = minimal_schema("test");
+        file.traceability_rules = vec![TraceabilityRule {
+            name: "req-to-dd".into(),
+            description: "Requirements must be satisfied by design decisions".into(),
+            source_type: "requirement".into(),
+            required_link: None,
+            required_backlink: Some("satisfies".into()),
+            target_types: vec![],
+            from_types: vec!["design-decision".into()],
+            severity: Severity::Warning,
+        }];
         Schema::merge(&[file])
     }
 
-    fn make_artifact(id: &str, atype: &str, links: Vec<Link>) -> Artifact {
-        Artifact {
-            id: id.into(),
-            artifact_type: atype.into(),
-            title: format!("Title for {id}"),
-            description: Some(format!("Description of {id}")),
-            status: Some("draft".into()),
-            tags: vec!["core".into()],
-            links,
-            fields: Default::default(),
-            source_file: None,
-        }
+    fn make_artifact(id: &str, atype: &str, links: &[(&str, &str)]) -> Artifact {
+        let mut a = artifact_with_links(id, atype, links);
+        a.title = format!("Title for {id}");
+        a.description = Some(format!("Description of {id}"));
+        a.status = Some("draft".into());
+        a.tags = vec!["core".into()];
+        a
     }
 
     fn test_fixtures() -> (Store, Schema, LinkGraph, Vec<Diagnostic>) {
         let schema = test_schema();
         let mut store = Store::new();
+        store.insert(make_artifact("REQ-001", "requirement", &[])).unwrap();
+        store.insert(make_artifact("REQ-002", "requirement", &[])).unwrap();
         store
-            .insert(make_artifact("REQ-001", "requirement", vec![]))
+            .insert(make_artifact("DD-001", "design-decision", &[("satisfies", "REQ-001")]))
             .unwrap();
         store
-            .insert(make_artifact("REQ-002", "requirement", vec![]))
-            .unwrap();
-        store
-            .insert(make_artifact(
-                "DD-001",
-                "design-decision",
-                vec![Link {
-                    link_type: "satisfies".into(),
-                    target: "REQ-001".into(),
-                }],
-            ))
-            .unwrap();
-        store
-            .insert(make_artifact(
-                "FEAT-001",
-                "feature",
-                vec![Link {
-                    link_type: "implements".into(),
-                    target: "REQ-001".into(),
-                }],
-            ))
+            .insert(make_artifact("FEAT-001", "feature", &[("implements", "REQ-001")]))
             .unwrap();
 
         let graph = LinkGraph::build(&store, &schema);

@@ -765,3 +765,19 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-005
+
+  - id: DD-035
+    type: design-decision
+    title: Indentation-aware YAML CST editor built against YAML 1.2.2 spec
+    status: draft
+    tags: [yaml, parsing, architecture]
+    fields:
+      rationale: >
+        Safe YAML editing requires understanding indentation structure
+        (YAML 1.2.2 Chapters 6-8 structural, flow, and block productions).
+        Lossless CST preserves comments, blank lines, and formatting.
+        Replaces fragile string manipulation that caused field placement
+        corruption.
+    links:
+      - type: satisfies
+        target: REQ-034

@@ -128,10 +128,9 @@ pub fn check_lifecycle_completeness(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Artifact, Link};
-    use crate::schema::{Schema, SchemaFile, SchemaMetadata, TraceabilityRule, Severity};
+    use crate::schema::{Schema, Severity, TraceabilityRule};
     use crate::store::Store;
-    use std::collections::BTreeMap;
+    use crate::test_helpers::{artifact_with_links, minimal_schema};
 
     fn make_artifact(
         id: &str,
@@ -139,40 +138,14 @@ mod tests {
         status: Option<&str>,
         links: Vec<(&str, &str)>,
     ) -> Artifact {
-        Artifact {
-            id: id.into(),
-            artifact_type: atype.into(),
-            title: format!("Test {id}"),
-            description: None,
-            status: status.map(|s| s.into()),
-            tags: vec![],
-            links: links
-                .into_iter()
-                .map(|(lt, t)| Link {
-                    link_type: lt.into(),
-                    target: t.into(),
-                })
-                .collect(),
-            fields: BTreeMap::new(),
-            source_file: None,
-        }
+        let mut a = artifact_with_links(id, atype, &links);
+        a.status = status.map(|s| s.into());
+        a
     }
 
     fn make_schema_with_rules(rules: Vec<TraceabilityRule>) -> Schema {
-        let file = SchemaFile {
-            schema: SchemaMetadata {
-                name: "test".into(),
-                version: "0.1.0".into(),
-                namespace: None,
-                description: None,
-                extends: vec![],
-            },
-            base_fields: vec![],
-            artifact_types: vec![],
-            link_types: vec![],
-            traceability_rules: rules,
-            conditional_rules: vec![],
-        };
+        let mut file = minimal_schema("test");
+        file.traceability_rules = rules;
         Schema::merge(&[file])
     }
 

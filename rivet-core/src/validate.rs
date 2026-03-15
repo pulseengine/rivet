@@ -288,11 +288,12 @@ mod tests {
     use crate::links::LinkGraph;
     use crate::model::{Artifact, Link};
     use crate::schema::{
-        ArtifactTypeDef, Condition, ConditionalRule, Requirement, SchemaFile, Severity,
+        ArtifactTypeDef, Condition, ConditionalRule, Requirement, Severity,
     };
+    use crate::test_helpers::{minimal_artifact, minimal_schema};
     use std::collections::BTreeMap;
 
-    /// Helper: create a minimal artifact with given id, type, status, and optional fields.
+    /// Helper: create an artifact with given id, type, status, optional fields, and links.
     fn make_artifact(
         id: &str,
         artifact_type: &str,
@@ -305,41 +306,25 @@ mod tests {
         for (k, v) in fields {
             field_map.insert(k.to_string(), serde_yaml::Value::String(v.to_string()));
         }
-        Artifact {
-            id: id.to_string(),
-            artifact_type: artifact_type.to_string(),
-            title: format!("Test {id}"),
-            description: description.map(|s| s.to_string()),
-            status: status.map(|s| s.to_string()),
-            tags: vec![],
-            links,
-            fields: field_map,
-            source_file: None,
-        }
+        let mut a = minimal_artifact(id, artifact_type);
+        a.description = description.map(|s| s.to_string());
+        a.status = status.map(|s| s.to_string());
+        a.links = links;
+        a.fields = field_map;
+        a
     }
 
     /// Helper: create a minimal schema that knows about the "test" artifact type.
     fn make_schema(conditional_rules: Vec<ConditionalRule>) -> Schema {
-        let file = SchemaFile {
-            schema: crate::schema::SchemaMetadata {
-                name: "test".to_string(),
-                version: "0.1.0".to_string(),
-                namespace: None,
-                description: None,
-                extends: vec![],
-            },
-            base_fields: vec![],
-            artifact_types: vec![ArtifactTypeDef {
-                name: "test".to_string(),
-                description: "Test type".to_string(),
-                fields: vec![],
-                link_fields: vec![],
-                aspice_process: None,
-            }],
-            link_types: vec![],
-            traceability_rules: vec![],
-            conditional_rules,
-        };
+        let mut file = minimal_schema("test");
+        file.artifact_types = vec![ArtifactTypeDef {
+            name: "test".to_string(),
+            description: "Test type".to_string(),
+            fields: vec![],
+            link_fields: vec![],
+            aspice_process: None,
+        }];
+        file.conditional_rules = conditional_rules;
         Schema::merge(&[file])
     }
 

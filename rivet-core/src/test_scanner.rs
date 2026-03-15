@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use regex::Regex;
 use serde::Serialize;
 
+use crate::schema::Schema;
 use crate::store::Store;
 
 // ---------------------------------------------------------------------------
@@ -264,10 +265,18 @@ fn scan_file(path: &Path, patterns: &[MarkerPattern], markers: &mut Vec<TestMark
 
 /// Compute test coverage by cross-referencing markers against the store.
 ///
-/// Artifacts that have a prefix matching requirement-like types (REQ, SYSREQ,
-/// SWREQ, etc.) are considered "coverable".  Markers referencing IDs that do
-/// not exist in the store land in `broken_refs`.
-pub fn compute_test_coverage(markers: &[TestMarker], store: &Store) -> TestCoverage {
+/// An artifact type is "coverable" (i.e. should be verified by tests) if the
+/// schema defines a traceability rule with a `required-backlink` that contains
+/// "verifies" for that type. This is derived from the schema rather than
+/// hardcoded prefixes.
+///
+/// If `schema` is `None`, all artifacts in the store are considered coverable.
+/// Markers referencing IDs that do not exist in the store land in `broken_refs`.
+pub fn compute_test_coverage(
+    markers: &[TestMarker],
+    store: &Store,
+    schema: Option<&Schema>,
+) -> TestCoverage {
     // Group markers by target artifact ID.
     let mut by_id: BTreeMap<String, Vec<TestMarker>> = BTreeMap::new();
     let mut broken_refs = Vec::new();
@@ -283,11 +292,29 @@ pub fn compute_test_coverage(markers: &[TestMarker], store: &Store) -> TestCover
         }
     }
 
-    // Determine which artifacts are "coverable" (requirement-like).
-    let coverable_prefixes = ["REQ", "SYSREQ", "SWREQ", "HREQ", "HWREQ"];
+    // Determine which artifact types are "coverable" from the schema.
+    // A type is coverable if any traceability rule has a `required-backlink`
+    // containing "verifies" (or similar) for that source-type.
+    let coverable_types: std::collections::HashSet<&str> = match schema {
+        Some(s) => s
+            .traceability_rules
+            .iter()
+            .filter(|rule| {
+                rule.required_backlink
+                    .as_deref()
+                    .is_some_and(|bl| bl.contains("verifies"))
+            })
+            .map(|rule| rule.source_type.as_str())
+            .collect(),
+        None => {
+            // No schema: treat all artifact types as coverable.
+            store.types().collect()
+        }
+    };
+
     let mut coverable_ids: Vec<String> = store
         .iter()
-        .filter(|a| coverable_prefixes.iter().any(|pfx| a.id.starts_with(pfx)))
+        .filter(|a| coverable_types.contains(a.artifact_type.as_str()))
         .map(|a| a.id.clone())
         .collect();
     coverable_ids.sort();
@@ -533,7 +560,7 @@ fn test_broken() {
         let mut store = Store::new();
         store.insert(make_artifact("REQ-001")).unwrap();
 
-        let coverage = compute_test_coverage(&markers, &store);
+        let coverage = compute_test_coverage(&markers, &store, None);
         assert_eq!(coverage.broken_refs.len(), 1);
         assert_eq!(coverage.broken_refs[0].target_id, "REQ-999");
         assert!(coverage.covered.is_empty());
@@ -574,7 +601,7 @@ fn test_third() {
         store.insert(make_artifact("REQ-002")).unwrap();
         store.insert(make_artifact("REQ-003")).unwrap();
 
-        let coverage = compute_test_coverage(&markers, &store);
+        let coverage = compute_test_coverage(&markers, &store, None);
 
         // REQ-001 has 2 markers, REQ-003 has 1
         assert_eq!(coverage.covered.len(), 2);

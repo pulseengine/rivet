@@ -18,46 +18,35 @@ use crate::store::Store;
 
 // ── ID generation ────────────────────────────────────────────────────────
 
-/// Well-known mapping from artifact type names to ID prefixes.
-pub fn prefix_for_type(artifact_type: &str) -> Option<&'static str> {
-    match artifact_type {
-        "requirement" => Some("REQ"),
-        "feature" => Some("FEAT"),
-        "design-decision" => Some("DD"),
-        "system-req" => Some("SYSREQ"),
-        "sw-req" => Some("SWREQ"),
-        "sw-arch-component" => Some("SWARCH"),
-        "sw-detailed-design" => Some("SWDD"),
-        "loss" => Some("L"),
-        "hazard" => Some("H"),
-        "sub-hazard" => Some("SH"),
-        "system-constraint" => Some("SC"),
-        "controller" => Some("CTRL"),
-        "uca" => Some("UCA"),
-        "controller-constraint" => Some("CC"),
-        "loss-scenario" => Some("LS"),
-        "causal-factor" => Some("CF"),
-        "countermeasure" => Some("CM"),
-        "asset" => Some("ASSET"),
-        "threat-scenario" => Some("TS"),
-        "risk-assessment" => Some("RA"),
-        "cybersecurity-goal" => Some("SECGOAL"),
-        "cybersecurity-req" => Some("SECREQ"),
-        "cybersecurity-design" => Some("SECDES"),
-        "cybersecurity-implementation" => Some("SECIMPL"),
-        "cybersecurity-verification" => Some("SECVER"),
-        "aadl-component" => Some("AADL"),
-        "aadl-connection" => Some("AADLCONN"),
-        "aadl-analysis-result" => Some("AADLRES"),
-        "unit-verification" => Some("UVER"),
-        "sw-integration-verification" => Some("SWINTVER"),
-        "sw-verification" => Some("SWVER"),
-        "sys-integration-verification" => Some("SYSINTVER"),
-        "sys-verification" => Some("SYSVER"),
-        "verification-execution" => Some("VEXEC"),
-        "verification-verdict" => Some("VVERD"),
-        _ => None,
+/// Derive the ID prefix for an artifact type by inspecting existing artifacts
+/// in the store.
+///
+/// Scans all artifacts of the given type, extracts the prefix from their IDs
+/// (the part before the last `-NNN` numeric suffix), and returns the first
+/// consistent prefix found.
+///
+/// **Fallback:** if the store has no artifacts of this type, generates a prefix
+/// by uppercasing the type name and stripping hyphens (e.g. `"sw-req"` becomes
+/// `"SWREQ"`).
+pub fn prefix_for_type(artifact_type: &str, store: &Store) -> String {
+    // Scan existing artifacts of this type to learn the prefix convention.
+    for id_str in store.by_type(artifact_type) {
+        if let Some(dash_pos) = id_str.rfind('-') {
+            let prefix = &id_str[..dash_pos];
+            let suffix = &id_str[dash_pos + 1..];
+            // Verify the suffix is purely numeric (i.e. this is a PREFIX-NNN id).
+            if !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit()) {
+                return prefix.to_string();
+            }
+        }
     }
+
+    // Fallback: uppercase the type name with hyphens removed.
+    artifact_type
+        .split('-')
+        .flat_map(|seg| seg.chars())
+        .map(|c| c.to_ascii_uppercase())
+        .collect()
 }
 
 /// Scan the store for the highest numeric suffix with the given prefix and
@@ -411,16 +400,10 @@ fn render_artifact_yaml(artifact: &Artifact) -> String {
 }
 
 /// Add a link entry to an artifact in its YAML file.
+///
+/// Delegates to [`crate::yaml_edit`] for indentation-safe editing.
 pub fn add_link_to_file(source_id: &str, link: &Link, file_path: &Path) -> Result<(), Error> {
-    let content = std::fs::read_to_string(file_path)
-        .map_err(|e| Error::Io(format!("{}: {}", file_path.display(), e)))?;
-
-    let new_content = insert_link_in_yaml(&content, source_id, link)?;
-
-    std::fs::write(file_path, &new_content)
-        .map_err(|e| Error::Io(format!("{}: {}", file_path.display(), e)))?;
-
-    Ok(())
+    crate::yaml_edit::add_link_to_file(source_id, link, file_path)
 }
 
 /// Insert a link entry into the YAML content for a specific artifact.
@@ -536,21 +519,15 @@ fn insert_link_in_yaml(content: &str, artifact_id: &str, link: &Link) -> Result<
 }
 
 /// Remove a link from an artifact in its YAML file.
+///
+/// Delegates to [`crate::yaml_edit`] for indentation-safe editing.
 pub fn remove_link_from_file(
     source_id: &str,
     link_type: &str,
     target_id: &str,
     file_path: &Path,
 ) -> Result<(), Error> {
-    let content = std::fs::read_to_string(file_path)
-        .map_err(|e| Error::Io(format!("{}: {}", file_path.display(), e)))?;
-
-    let new_content = remove_link_in_yaml(&content, source_id, link_type, target_id)?;
-
-    std::fs::write(file_path, &new_content)
-        .map_err(|e| Error::Io(format!("{}: {}", file_path.display(), e)))?;
-
-    Ok(())
+    crate::yaml_edit::remove_link_from_file(source_id, link_type, target_id, file_path)
 }
 
 /// Remove a matching link entry from YAML content.
@@ -632,21 +609,15 @@ fn remove_link_in_yaml(
 }
 
 /// Modify an artifact in its YAML file.
+///
+/// Delegates to [`crate::yaml_edit`] for indentation-safe editing.
 pub fn modify_artifact_in_file(
     id: &str,
     params: &ModifyParams,
     file_path: &Path,
     store: &Store,
 ) -> Result<(), Error> {
-    let content = std::fs::read_to_string(file_path)
-        .map_err(|e| Error::Io(format!("{}: {}", file_path.display(), e)))?;
-
-    let new_content = modify_artifact_in_yaml(&content, id, params, store)?;
-
-    std::fs::write(file_path, &new_content)
-        .map_err(|e| Error::Io(format!("{}: {}", file_path.display(), e)))?;
-
-    Ok(())
+    crate::yaml_edit::modify_artifact_in_file(id, params, file_path, store)
 }
 
 /// Apply modify params to YAML content for a specific artifact.
@@ -882,16 +853,10 @@ fn insert_field_after(
 }
 
 /// Remove an artifact from its YAML file.
+///
+/// Delegates to [`crate::yaml_edit`] for indentation-safe editing.
 pub fn remove_artifact_from_file(artifact_id: &str, file_path: &Path) -> Result<(), Error> {
-    let content = std::fs::read_to_string(file_path)
-        .map_err(|e| Error::Io(format!("{}: {}", file_path.display(), e)))?;
-
-    let new_content = remove_artifact_in_yaml(&content, artifact_id)?;
-
-    std::fs::write(file_path, &new_content)
-        .map_err(|e| Error::Io(format!("{}: {}", file_path.display(), e)))?;
-
-    Ok(())
+    crate::yaml_edit::remove_artifact_from_file(artifact_id, file_path)
 }
 
 /// Remove an artifact from YAML content.
@@ -974,104 +939,66 @@ fn remove_artifact_in_yaml(content: &str, artifact_id: &str) -> Result<String, E
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::schema::*;
+    use crate::test_helpers::{artifact_with_links, artifact_with_status, minimal_artifact, minimal_schema};
     use std::collections::BTreeMap;
 
     fn make_test_schema() -> Schema {
-        use crate::schema::*;
-
-        let schema_file = SchemaFile {
-            schema: SchemaMetadata {
-                name: "test".to_string(),
-                version: "0.1.0".to_string(),
-                namespace: None,
-                description: None,
-                extends: vec![],
+        let mut schema_file = minimal_schema("test");
+        schema_file.artifact_types = vec![
+            ArtifactTypeDef {
+                name: "requirement".to_string(),
+                description: "A requirement".to_string(),
+                fields: vec![FieldDef {
+                    name: "priority".to_string(),
+                    field_type: "string".to_string(),
+                    required: false,
+                    description: None,
+                    allowed_values: Some(vec![
+                        "must".to_string(),
+                        "should".to_string(),
+                        "could".to_string(),
+                    ]),
+                }],
+                link_fields: vec![],
+                aspice_process: None,
             },
-            base_fields: vec![],
-            artifact_types: vec![
-                ArtifactTypeDef {
-                    name: "requirement".to_string(),
-                    description: "A requirement".to_string(),
-                    fields: vec![FieldDef {
-                        name: "priority".to_string(),
-                        field_type: "string".to_string(),
-                        required: false,
-                        description: None,
-                        allowed_values: Some(vec![
-                            "must".to_string(),
-                            "should".to_string(),
-                            "could".to_string(),
-                        ]),
-                    }],
-                    link_fields: vec![],
-                    aspice_process: None,
-                },
-                ArtifactTypeDef {
-                    name: "feature".to_string(),
-                    description: "A feature".to_string(),
-                    fields: vec![],
-                    link_fields: vec![],
-                    aspice_process: None,
-                },
-            ],
-            link_types: vec![LinkTypeDef {
-                name: "satisfies".to_string(),
-                inverse: Some("satisfied-by".to_string()),
-                description: "Source satisfies target".to_string(),
-                source_types: vec![],
-                target_types: vec![],
-            }],
-            traceability_rules: vec![],
-            conditional_rules: vec![],
-        };
+            ArtifactTypeDef {
+                name: "feature".to_string(),
+                description: "A feature".to_string(),
+                fields: vec![],
+                link_fields: vec![],
+                aspice_process: None,
+            },
+        ];
+        schema_file.link_types = vec![LinkTypeDef {
+            name: "satisfies".to_string(),
+            inverse: Some("satisfied-by".to_string()),
+            description: "Source satisfies target".to_string(),
+            source_types: vec![],
+            target_types: vec![],
+        }];
 
         Schema::merge(&[schema_file])
     }
 
     fn make_test_store() -> Store {
         let mut store = Store::new();
-        store
-            .insert(Artifact {
-                id: "REQ-001".to_string(),
-                artifact_type: "requirement".to_string(),
-                title: "First req".to_string(),
-                description: None,
-                status: Some("draft".to_string()),
-                tags: vec![],
-                links: vec![],
-                fields: BTreeMap::new(),
-                source_file: Some(PathBuf::from("artifacts/requirements.yaml")),
-            })
-            .unwrap();
-        store
-            .insert(Artifact {
-                id: "REQ-002".to_string(),
-                artifact_type: "requirement".to_string(),
-                title: "Second req".to_string(),
-                description: None,
-                status: None,
-                tags: vec![],
-                links: vec![],
-                fields: BTreeMap::new(),
-                source_file: Some(PathBuf::from("artifacts/requirements.yaml")),
-            })
-            .unwrap();
-        store
-            .insert(Artifact {
-                id: "FEAT-001".to_string(),
-                artifact_type: "feature".to_string(),
-                title: "First feature".to_string(),
-                description: None,
-                status: None,
-                tags: vec![],
-                links: vec![Link {
-                    link_type: "satisfies".to_string(),
-                    target: "REQ-001".to_string(),
-                }],
-                fields: BTreeMap::new(),
-                source_file: Some(PathBuf::from("artifacts/features.yaml")),
-            })
-            .unwrap();
+        let mut req1 = artifact_with_status("REQ-001", "requirement", "draft");
+        req1.title = "First req".to_string();
+        req1.source_file = Some(PathBuf::from("artifacts/requirements.yaml"));
+        store.insert(req1).unwrap();
+
+        let mut req2 = minimal_artifact("REQ-002", "requirement");
+        req2.title = "Second req".to_string();
+        req2.source_file = Some(PathBuf::from("artifacts/requirements.yaml"));
+        store.insert(req2).unwrap();
+
+        let mut feat1 = artifact_with_links("FEAT-001", "feature", &[("satisfies", "REQ-001")]);
+        feat1.title = "First feature".to_string();
+        feat1.source_file = Some(PathBuf::from("artifacts/features.yaml"));
+        store.insert(feat1).unwrap();
+
         store
     }
 
@@ -1084,11 +1011,20 @@ mod tests {
     }
 
     #[test]
-    fn test_prefix_for_type() {
-        assert_eq!(prefix_for_type("requirement"), Some("REQ"));
-        assert_eq!(prefix_for_type("feature"), Some("FEAT"));
-        assert_eq!(prefix_for_type("design-decision"), Some("DD"));
-        assert_eq!(prefix_for_type("unknown-xyz"), None);
+    fn test_prefix_for_type_from_store() {
+        let store = make_test_store();
+        // Derives prefix from existing artifacts in the store.
+        assert_eq!(prefix_for_type("requirement", &store), "REQ");
+        assert_eq!(prefix_for_type("feature", &store), "FEAT");
+    }
+
+    #[test]
+    fn test_prefix_for_type_fallback() {
+        let store = Store::new();
+        // No artifacts — falls back to uppercased type name with hyphens removed.
+        assert_eq!(prefix_for_type("requirement", &store), "REQUIREMENT");
+        assert_eq!(prefix_for_type("design-decision", &store), "DESIGNDECISION");
+        assert_eq!(prefix_for_type("sw-req", &store), "SWREQ");
     }
 
     #[test]
@@ -1096,17 +1032,7 @@ mod tests {
         let schema = make_test_schema();
         let store = make_test_store();
 
-        let artifact = Artifact {
-            id: "REQ-003".to_string(),
-            artifact_type: "requirement".to_string(),
-            title: "New requirement".to_string(),
-            description: None,
-            status: Some("draft".to_string()),
-            tags: vec![],
-            links: vec![],
-            fields: BTreeMap::new(),
-            source_file: None,
-        };
+        let artifact = artifact_with_status("REQ-003", "requirement", "draft");
 
         assert!(validate_add(&artifact, &store, &schema).is_ok());
     }
@@ -1116,17 +1042,7 @@ mod tests {
         let schema = make_test_schema();
         let store = make_test_store();
 
-        let artifact = Artifact {
-            id: "FOO-001".to_string(),
-            artifact_type: "nonexistent-type".to_string(),
-            title: "Bad type".to_string(),
-            description: None,
-            status: None,
-            tags: vec![],
-            links: vec![],
-            fields: BTreeMap::new(),
-            source_file: None,
-        };
+        let artifact = minimal_artifact("FOO-001", "nonexistent-type");
 
         let err = validate_add(&artifact, &store, &schema).unwrap_err();
         assert!(
@@ -1140,17 +1056,7 @@ mod tests {
         let schema = make_test_schema();
         let store = make_test_store();
 
-        let artifact = Artifact {
-            id: "REQ-001".to_string(),
-            artifact_type: "requirement".to_string(),
-            title: "Duplicate".to_string(),
-            description: None,
-            status: None,
-            tags: vec![],
-            links: vec![],
-            fields: BTreeMap::new(),
-            source_file: None,
-        };
+        let artifact = minimal_artifact("REQ-001", "requirement");
 
         let err = validate_add(&artifact, &store, &schema).unwrap_err();
         assert!(err.to_string().contains("already exists"));
@@ -1167,17 +1073,9 @@ mod tests {
             serde_yaml::Value::String("critical".to_string()),
         );
 
-        let artifact = Artifact {
-            id: "REQ-099".to_string(),
-            artifact_type: "requirement".to_string(),
-            title: "Bad field value".to_string(),
-            description: None,
-            status: None,
-            tags: vec![],
-            links: vec![],
-            fields,
-            source_file: None,
-        };
+        let mut artifact = minimal_artifact("REQ-099", "requirement");
+        artifact.title = "Bad field value".to_string();
+        artifact.fields = fields;
 
         let err = validate_add(&artifact, &store, &schema).unwrap_err();
         assert!(err.to_string().contains("allowed"));
@@ -1256,20 +1154,11 @@ mod tests {
 
     #[test]
     fn test_render_artifact_yaml() {
-        let artifact = Artifact {
-            id: "REQ-099".to_string(),
-            artifact_type: "requirement".to_string(),
-            title: "Test artifact".to_string(),
-            description: Some("A description".to_string()),
-            status: Some("draft".to_string()),
-            tags: vec!["core".to_string(), "test".to_string()],
-            links: vec![Link {
-                link_type: "satisfies".to_string(),
-                target: "REQ-001".to_string(),
-            }],
-            fields: BTreeMap::new(),
-            source_file: None,
-        };
+        let mut artifact = artifact_with_links("REQ-099", "requirement", &[("satisfies", "REQ-001")]);
+        artifact.title = "Test artifact".to_string();
+        artifact.description = Some("A description".to_string());
+        artifact.status = Some("draft".to_string());
+        artifact.tags = vec!["core".to_string(), "test".to_string()];
 
         let yaml = render_artifact_yaml(&artifact);
         assert!(yaml.contains("- id: REQ-099"));

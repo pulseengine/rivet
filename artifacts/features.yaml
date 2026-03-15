@@ -1021,3 +1021,14 @@ artifacts:
         target: REQ-033
       - type: satisfies
         target: REQ-032
+
+  - id: FEAT-061
+    type: feature
+    title: yaml_edit.rs — lossless YAML artifact file editor per YAML 1.2.2
+    status: draft
+    tags: [yaml, parsing, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-034
+      - type: implements
+        target: DD-035

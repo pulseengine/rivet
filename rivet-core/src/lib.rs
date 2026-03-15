@@ -26,6 +26,10 @@ pub mod schema;
 pub mod store;
 pub mod test_scanner;
 pub mod validate;
+pub mod yaml_edit;
+
+#[cfg(test)]
+pub mod test_helpers;
 
 #[cfg(kani)]
 mod proofs;

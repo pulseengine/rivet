@@ -416,19 +416,57 @@ fn test_next_id_empty_store() {
     assert_eq!(next, "REQ-001");
 }
 
-// ── Test: prefix_for_type mappings ───────────────────────────────────────
+// ── Test: prefix_for_type derives from store ─────────────────────────────
 
 #[test]
-fn test_prefix_for_type_known_types() {
-    assert_eq!(mutate::prefix_for_type("requirement"), Some("REQ"));
-    assert_eq!(mutate::prefix_for_type("feature"), Some("FEAT"));
-    assert_eq!(mutate::prefix_for_type("design-decision"), Some("DD"));
-    assert_eq!(mutate::prefix_for_type("system-req"), Some("SYSREQ"));
-    assert_eq!(mutate::prefix_for_type("sw-req"), Some("SWREQ"));
-    assert_eq!(mutate::prefix_for_type("loss"), Some("L"));
-    assert_eq!(mutate::prefix_for_type("hazard"), Some("H"));
-    assert_eq!(mutate::prefix_for_type("threat-scenario"), Some("TS"));
-    assert_eq!(mutate::prefix_for_type("aadl-component"), Some("AADL"));
+fn test_prefix_for_type_derives_from_store() {
+    let mut store = Store::new();
+    store
+        .insert(make_artifact(
+            "REQ-001",
+            "requirement",
+            "First requirement",
+            vec![],
+            BTreeMap::new(),
+        ))
+        .unwrap();
+    store
+        .insert(make_artifact(
+            "FEAT-010",
+            "feature",
+            "A feature",
+            vec![],
+            BTreeMap::new(),
+        ))
+        .unwrap();
+    store
+        .insert(make_artifact(
+            "DD-005",
+            "design-decision",
+            "A decision",
+            vec![],
+            BTreeMap::new(),
+        ))
+        .unwrap();
+    assert_eq!(mutate::prefix_for_type("requirement", &store), "REQ");
+    assert_eq!(mutate::prefix_for_type("feature", &store), "FEAT");
+    assert_eq!(mutate::prefix_for_type("design-decision", &store), "DD");
+}
+
+#[test]
+fn test_prefix_for_type_fallback_no_artifacts() {
+    let store = Store::new();
+    // No artifacts in store — falls back to uppercased, hyphens removed.
+    assert_eq!(mutate::prefix_for_type("requirement", &store), "REQUIREMENT");
+    assert_eq!(
+        mutate::prefix_for_type("design-decision", &store),
+        "DESIGNDECISION"
+    );
+    assert_eq!(mutate::prefix_for_type("sw-req", &store), "SWREQ");
+    assert_eq!(
+        mutate::prefix_for_type("aadl-component", &store),
+        "AADLCOMPONENT"
+    );
 }
 
 // ── Test: validate_modify rejects invalid field values ───────────────────

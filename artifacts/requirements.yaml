@@ -525,3 +525,15 @@ artifacts:
     fields:
       category: functional
       priority: should
+
+  - id: REQ-034
+    type: requirement
+    title: YAML 1.2.2 spec-compliant artifact file editing
+    status: draft
+    tags: [yaml, parsing, spec-compliance]
+    fields:
+      category: functional
+      priority: must
+    links:
+      - type: satisfies
+        target: SC-2

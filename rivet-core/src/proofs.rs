@@ -52,6 +52,7 @@ mod proofs {
             artifact_types: vec![],
             link_types: vec![],
             traceability_rules: vec![],
+            conditional_rules: vec![],
         }])
     }
 
@@ -90,6 +91,7 @@ mod proofs {
                 from_types: vec![],
                 severity: Severity::Warning,
             }],
+            conditional_rules: vec![],
         }])
     }
 
@@ -291,6 +293,7 @@ mod proofs {
             }],
             link_types: vec![],
             traceability_rules: vec![],
+            conditional_rules: vec![],
         }]);
 
         // Build a store with an artifact of that type, with a symbolic
@@ -403,6 +406,7 @@ mod proofs {
                 target_types: vec![],
             }],
             traceability_rules: vec![],
+            conditional_rules: vec![],
         };
 
         let single = Schema::merge(&[file.clone()]);

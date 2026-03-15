@@ -1685,7 +1685,7 @@ fn cmd_coverage(cli: &Cli, format: &str, fail_under: Option<&f64>) -> Result<boo
 fn cmd_coverage_tests(cli: &Cli, format: &str, scan_paths: &[PathBuf]) -> Result<bool> {
     use rivet_core::test_scanner;
 
-    let (store, _schema, _graph) = load_project(cli)?;
+    let (store, schema, _graph) = load_project(cli)?;
 
     // Resolve scan paths: default to src/ and tests/ relative to project dir.
     let paths: Vec<PathBuf> = if scan_paths.is_empty() {
@@ -1718,7 +1718,7 @@ fn cmd_coverage_tests(cli: &Cli, format: &str, scan_paths: &[PathBuf]) -> Result
 
     let patterns = test_scanner::default_patterns();
     let markers = test_scanner::scan_source_files(&paths, &patterns);
-    let coverage = test_scanner::compute_test_coverage(&markers, &store);
+    let coverage = test_scanner::compute_test_coverage(&markers, &store, Some(&schema));
 
     if format == "json" {
         let json = serde_json::to_string_pretty(&coverage)
@@ -3600,14 +3600,7 @@ fn cmd_next_id(
     let (store, _schema, _config) = load_project_config_and_store(cli)?;
 
     let resolved_prefix = match (artifact_type, prefix) {
-        (Some(t), _) => mutate::prefix_for_type(t)
-            .map(|s| s.to_string())
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "no known prefix for type '{}'. Use --prefix to specify one directly.",
-                    t
-                )
-            })?,
+        (Some(t), _) => mutate::prefix_for_type(t, &store),
         (_, Some(p)) => p.to_string(),
         (None, None) => anyhow::bail!("either --type or --prefix must be specified"),
     };
@@ -3644,11 +3637,10 @@ fn cmd_add(
     let (store, schema, _config) = load_project_config_and_store(cli)?;
 
     // Resolve prefix for the type
-    let prefix = mutate::prefix_for_type(artifact_type)
-        .ok_or_else(|| anyhow::anyhow!("no known prefix for type '{artifact_type}'"))?;
+    let prefix = mutate::prefix_for_type(artifact_type, &store);
 
     // Generate ID
-    let id = mutate::next_id(&store, prefix);
+    let id = mutate::next_id(&store, &prefix);
 
     // Build fields map
     let mut fields_map: BTreeMap<String, serde_yaml::Value> = BTreeMap::new();
