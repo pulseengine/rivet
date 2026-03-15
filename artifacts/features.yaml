@@ -894,7 +894,7 @@ artifacts:
   - id: FEAT-048
     type: feature
     title: Conditional rule evaluation as salsa tracked queries
-    status: draft
+    status: approved
     description: >
       Conditional validation rules (when/then syntax in schema YAML)
       evaluated as individual salsa tracked queries per artifact-rule pair.

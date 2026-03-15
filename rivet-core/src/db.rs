@@ -144,11 +144,7 @@ pub fn evaluate_conditional_rules(
     for rule in &schema.conditional_rules {
         for artifact in store.iter() {
             if rule.when.matches_artifact(artifact) {
-                diagnostics.extend(rule.then.check(
-                    artifact,
-                    &rule.name,
-                    rule.severity.clone(),
-                ));
+                diagnostics.extend(rule.then.check(artifact, &rule.name, rule.severity.clone()));
             }
         }
     }
@@ -697,10 +693,7 @@ artifacts:
             1,
             "expected 1 conditional diagnostic for approved artifact without description, got: {diags:?}"
         );
-        assert_eq!(
-            cond_diags[0].artifact_id.as_deref(),
-            Some("REQ-010"),
-        );
+        assert_eq!(cond_diags[0].artifact_id.as_deref(), Some("REQ-010"),);
         assert_eq!(cond_diags[0].severity, crate::schema::Severity::Error);
     }
 
@@ -729,7 +722,7 @@ artifacts:
 
     #[test]
     fn adding_conditional_rule_triggers_reevaluation() {
-        let mut db = RivetDatabase::new();
+        let db = RivetDatabase::new();
         let sources = db.load_sources(&[("reqs.yaml", SOURCE_REQ_APPROVED_NO_DESC)]);
 
         // Start without conditional rules.
