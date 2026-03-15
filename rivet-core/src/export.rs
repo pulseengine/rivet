@@ -36,7 +36,7 @@ pub enum ExportTheme {
     Light,
 }
 
-/// A version entry for the version switcher dropdown.
+/// A version entry for the version switcher dropdown (used in config.js).
 #[derive(Debug, Clone)]
 pub struct VersionEntry {
     /// Label shown in the dropdown (e.g. "v0.1.0").
@@ -46,34 +46,89 @@ pub struct VersionEntry {
 }
 
 /// Configuration for HTML export rendering.
+///
+/// Deployment-specific settings (homepage, version label, version switcher
+/// entries) are written to a separate `config.js` file so that the HTML
+/// can be generated once and deployed anywhere without rebuilding.
 #[derive(Debug, Clone, Default)]
 pub struct ExportConfig {
     /// Visual theme.
     pub theme: ExportTheme,
-    /// Base path prefix for all links (e.g. `/projects/rivet/v0.1.0/`).
-    /// When set, navigation hrefs are prefixed with this path.
-    pub base_path: Option<String>,
     /// When true, skip Google Fonts import and use system fonts only.
     pub offline: bool,
-    /// URL for the home/back link (e.g. `https://pulseengine.eu/projects/`).
-    pub homepage: Option<String>,
-    /// Version label shown in the version switcher (e.g. "v0.1.0").
-    pub version_label: Option<String>,
-    /// Other versions for the version switcher dropdown.
-    pub versions: Vec<VersionEntry>,
 }
 
-impl ExportConfig {
-    /// Resolve a sibling page href respecting `base_path`.
-    fn page_href(&self, filename: &str) -> String {
-        match &self.base_path {
-            Some(base) => {
-                let base = base.trim_end_matches('/');
-                format!("{base}/{filename}")
-            }
-            None => format!("./{filename}"),
+// ── Runtime config.js generation ────────────────────────────────────────
+
+/// Generate the contents of `config.js` for deployment-time configuration.
+///
+/// This file is loaded by each HTML page and populates the homepage link
+/// and version switcher at DOMContentLoaded.  Deployers can edit it
+/// without rebuilding the HTML.
+pub fn generate_config_js(
+    homepage: Option<&str>,
+    version_label: &str,
+    versions: &[VersionEntry],
+    project_name: &str,
+) -> String {
+    let mut out = String::from(
+        "// Rivet Export Configuration\n\
+         // Edit this file to customize the deployment. No rebuild needed.\n\
+         var RIVET_EXPORT = {\n",
+    );
+
+    // homepage
+    writeln!(
+        out,
+        "  // Link back to the project portal (set to \"\" to hide)\n  homepage: \"{}\",",
+        js_escape(homepage.unwrap_or("")),
+    )
+    .unwrap();
+
+    // versionLabel
+    writeln!(
+        out,
+        "\n  // Label shown in the version switcher\n  versionLabel: \"{}\",",
+        js_escape(version_label),
+    )
+    .unwrap();
+
+    // versions array
+    out.push_str(
+        "\n  // Other versions for the switcher dropdown\n  // Paths are relative to this directory\n  versions: [\n",
+    );
+    if versions.is_empty() {
+        out.push_str("    // { \"label\": \"v0.1.0\", \"path\": \"../v0.1.0/\" },\n");
+    } else {
+        for v in versions {
+            writeln!(
+                out,
+                "    {{ \"label\": \"{}\", \"path\": \"{}\" }},",
+                js_escape(&v.label),
+                js_escape(&v.path),
+            )
+            .unwrap();
         }
     }
+    out.push_str("  ],\n");
+
+    // projectName
+    writeln!(
+        out,
+        "\n  // Project display name (shown in homepage back-link)\n  projectName: \"{}\"",
+        js_escape(project_name),
+    )
+    .unwrap();
+    out.push_str("};\n");
+    out
+}
+
+/// Escape a string for embedding inside a JavaScript string literal.
+fn js_escape(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
 }
 
 // ── Shared CSS ──────────────────────────────────────────────────────────
@@ -343,6 +398,35 @@ fn html_escape(s: &str) -> String {
         .replace('"', "&quot;")
 }
 
+/// Inline script that reads `window.RIVET_EXPORT` (from config.js) and
+/// populates the nav bar placeholders at DOMContentLoaded.
+const CONFIG_RUNTIME_SCRIPT: &str = r#"
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  var cfg = window.RIVET_EXPORT || {};
+  var homeEl = document.getElementById('home-link');
+  if (homeEl && cfg.homepage) {
+    homeEl.href = cfg.homepage;
+    homeEl.textContent = '\u{2190} ' + (cfg.projectName || 'Home');
+    homeEl.style.display = '';
+  }
+  var sel = document.getElementById('version-select');
+  if (sel && cfg.versionLabel) {
+    sel.options[0].textContent = cfg.versionLabel;
+  }
+  if (sel && cfg.versions && cfg.versions.length > 0) {
+    cfg.versions.forEach(function(v) {
+      var opt = document.createElement('option');
+      opt.value = v.path;
+      opt.textContent = v.label;
+      sel.appendChild(opt);
+    });
+    sel.parentElement.style.display = '';
+  }
+});
+</script>
+"#;
+
 fn page_header(title: &str, config: &ExportConfig, is_single_page: bool) -> String {
     if is_single_page {
         return String::new();
@@ -356,13 +440,16 @@ fn page_header(title: &str, config: &ExportConfig, is_single_page: bool) -> Stri
          <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n\
          <title>{title} — Rivet Export</title>\n\
          <style>{css}</style>\n\
+         <script src=\"./config.js\"></script>\n\
+         {runtime}\
          </head>\n\
          <body>\n",
         title = html_escape(title),
+        runtime = CONFIG_RUNTIME_SCRIPT,
     )
 }
 
-fn nav_bar(active: &str, config: &ExportConfig, is_single_page: bool) -> String {
+fn nav_bar(active: &str, _config: &ExportConfig, is_single_page: bool) -> String {
     let pages = [
         ("index", "Overview", "index.html"),
         ("requirements", "Requirements", "requirements.html"),
@@ -374,46 +461,17 @@ fn nav_bar(active: &str, config: &ExportConfig, is_single_page: bool) -> String 
 
     let mut out = String::from("<header class=\"export-header\">\n<nav>\n");
 
-    // Homepage back-link
-    if let Some(ref url) = config.homepage {
-        let project_label = config
-            .version_label
-            .as_deref()
-            .unwrap_or("Rivet");
-        writeln!(
-            out,
-            "  <a href=\"{url}\" class=\"home-link\">&larr; {label}</a>",
-            url = html_escape(url),
-            label = html_escape(project_label),
-        )
-        .unwrap();
-    }
+    // Homepage back-link — hidden placeholder, populated by config.js at runtime
+    out.push_str("  <a id=\"home-link\" href=\"\" class=\"home-link\" style=\"display:none\"></a>\n");
 
-    // Version switcher
-    let current_label = config.version_label.as_deref().unwrap_or("dev");
-    if !config.versions.is_empty() || config.version_label.is_some() {
-        out.push_str("  <div class=\"version-switcher\">\n");
-        out.push_str("    <select onchange=\"location.href=this.value\">\n");
-        writeln!(
-            out,
-            "      <option value=\"./\" selected>{}</option>",
-            html_escape(current_label),
-        )
-        .unwrap();
-        for v in &config.versions {
-            writeln!(
-                out,
-                "      <option value=\"{}\">{}</option>",
-                html_escape(&v.path),
-                html_escape(&v.label),
-            )
-            .unwrap();
-        }
-        out.push_str("    </select>\n");
-        out.push_str("  </div>\n");
-    }
+    // Version switcher — hidden placeholder, populated by config.js at runtime
+    out.push_str("  <div class=\"version-switcher\" style=\"display:none\">\n");
+    out.push_str("    <select id=\"version-select\" onchange=\"if(this.value)location.href=this.value\">\n");
+    out.push_str("      <option value=\"\" selected>dev</option>\n");
+    out.push_str("    </select>\n");
+    out.push_str("  </div>\n");
 
-    // Navigation links
+    // Navigation links — all relative
     out.push_str("  <div class=\"nav-links\">\n");
     for (id, label, filename) in &pages {
         if *id == active {
@@ -421,8 +479,7 @@ fn nav_bar(active: &str, config: &ExportConfig, is_single_page: bool) -> String 
         } else if is_single_page {
             writeln!(out, "    <a href=\"#{id}\">{label}</a>").unwrap();
         } else {
-            let href = config.page_href(filename);
-            writeln!(out, "    <a href=\"{href}\">{label}</a>").unwrap();
+            writeln!(out, "    <a href=\"./{filename}\">{label}</a>").unwrap();
         }
     }
     out.push_str("  </div>\n");
@@ -605,11 +662,11 @@ pub fn render_index(
     out.push_str("</tbody></table>\n");
 
     // Navigation links
-    let req_href = config.page_href("requirements.html");
-    let docs_href = config.page_href("documents.html");
-    let matrix_href = config.page_href("matrix.html");
-    let cov_href = config.page_href("coverage.html");
-    let val_href = config.page_href("validation.html");
+    let req_href = "./requirements.html";
+    let docs_href = "./documents.html";
+    let matrix_href = "./matrix.html";
+    let cov_href = "./coverage.html";
+    let val_href = "./validation.html";
 
     out.push_str("<h2>Report Pages</h2>\n<ul>\n");
     writeln!(
@@ -991,7 +1048,7 @@ pub fn render_coverage(
         // Uncovered artifacts
         let has_uncovered = report.entries.iter().any(|e| !e.uncovered_ids.is_empty());
         if has_uncovered {
-            let req_href = config.page_href("requirements.html");
+            let req_href = "./requirements.html";
             out.push_str("<h2>Uncovered Artifacts</h2>\n");
             for entry in &report.entries {
                 if entry.uncovered_ids.is_empty() {
@@ -1075,7 +1132,7 @@ pub fn render_validation(diagnostics: &[Diagnostic], config: &ExportConfig) -> S
     writeln!(out, "<p>Validated at {timestamp}</p>").unwrap();
 
     // Diagnostics grouped by severity
-    let req_href = config.page_href("requirements.html");
+    let req_href = "./requirements.html";
     let severity_order = [Severity::Error, Severity::Warning, Severity::Info];
     let severity_labels = ["Errors", "Warnings", "Info"];
 
@@ -1156,7 +1213,7 @@ pub fn render_documents_index(
         .unwrap();
 
         for doc in doc_store.iter() {
-            let doc_href = config.page_href(&format!("doc-{}.html", doc.id));
+            let doc_href = format!("./doc-{}.html", doc.id);
             out.push_str("<div class=\"doc-card\">\n");
             writeln!(
                 out,
@@ -1226,8 +1283,8 @@ pub fn render_document_page(
     .unwrap();
 
     // Render the document body with resolved links for static export.
-    let req_href = config.page_href("requirements.html");
-    let body_html = render_document_body_for_export(doc, store, graph, &req_href);
+    let req_href = "./requirements.html";
+    let body_html = render_document_body_for_export(doc, store, graph, req_href);
     out.push_str("<div class=\"doc-body\">\n");
     out.push_str(&body_html);
     out.push_str("</div>\n");
@@ -2055,17 +2112,9 @@ mod tests {
     }
 
     #[test]
-    fn base_path_prefixes_links() {
-        let cfg = ExportConfig {
-            base_path: Some("/projects/rivet/v0.1.0/".into()),
-            ..Default::default()
-        };
-        assert_eq!(
-            cfg.page_href("requirements.html"),
-            "/projects/rivet/v0.1.0/requirements.html"
-        );
-
+    fn all_links_are_relative() {
         let (store, schema, graph, diagnostics) = test_fixtures();
+        let cfg = default_config();
         let html = render_index(
             &store,
             &schema,
@@ -2075,15 +2124,13 @@ mod tests {
             "0.1.0",
             &cfg,
         );
-        assert!(html.contains("/projects/rivet/v0.1.0/requirements.html"));
-        assert!(html.contains("/projects/rivet/v0.1.0/matrix.html"));
-    }
-
-    #[test]
-    fn default_config_uses_relative_links() {
-        let cfg = default_config();
-        assert_eq!(cfg.page_href("index.html"), "./index.html");
-        assert_eq!(cfg.page_href("requirements.html"), "./requirements.html");
+        assert!(html.contains("./requirements.html"));
+        assert!(html.contains("./matrix.html"));
+        assert!(html.contains("./coverage.html"));
+        assert!(html.contains("./documents.html"));
+        assert!(html.contains("./validation.html"));
+        // No absolute path prefixes
+        assert!(!html.contains("/projects/"));
     }
 
     #[test]
@@ -2169,33 +2216,15 @@ mod tests {
     }
 
     #[test]
-    fn version_switcher_renders_when_configured() {
-        let cfg = ExportConfig {
-            version_label: Some("v0.2.0".into()),
-            versions: vec![VersionEntry {
-                label: "v0.1.0".into(),
-                path: "../v0.1.0/".into(),
-            }],
-            ..Default::default()
-        };
+    fn nav_bar_has_hidden_placeholders() {
+        let cfg = default_config();
         let nav = nav_bar("index", &cfg, false);
+        // Home link is hidden placeholder
+        assert!(nav.contains("id=\"home-link\""));
+        assert!(nav.contains("style=\"display:none\""));
+        // Version switcher is hidden placeholder
+        assert!(nav.contains("id=\"version-select\""));
         assert!(nav.contains("version-switcher"));
-        assert!(nav.contains("v0.2.0"));
-        assert!(nav.contains("v0.1.0"));
-        assert!(nav.contains("../v0.1.0/"));
-    }
-
-    #[test]
-    fn homepage_link_renders_when_configured() {
-        let cfg = ExportConfig {
-            homepage: Some("https://example.com/projects/".into()),
-            version_label: Some("v1.0".into()),
-            ..Default::default()
-        };
-        let nav = nav_bar("index", &cfg, false);
-        assert!(nav.contains("home-link"));
-        assert!(nav.contains("https://example.com/projects/"));
-        assert!(nav.contains("v1.0"));
     }
 
     #[test]
@@ -2205,5 +2234,89 @@ mod tests {
         assert!(nav.contains("<header class=\"export-header\">"));
         assert!(nav.contains("</header>"));
         assert!(nav.contains("nav-links"));
+    }
+
+    #[test]
+    fn pages_include_config_js_script_tag() {
+        let cfg = default_config();
+        let (store, schema, graph, diagnostics) = test_fixtures();
+        let html = render_index(
+            &store,
+            &schema,
+            &graph,
+            &diagnostics,
+            "Test",
+            "0.1.0",
+            &cfg,
+        );
+        assert!(html.contains("<script src=\"./config.js\"></script>"));
+        // Inline runtime script is present
+        assert!(html.contains("RIVET_EXPORT"));
+        assert!(html.contains("DOMContentLoaded"));
+    }
+
+    #[test]
+    fn pages_work_without_config_js_graceful_degradation() {
+        // When config.js is missing, RIVET_EXPORT is undefined.
+        // The inline script uses `window.RIVET_EXPORT || {}` so it
+        // degrades gracefully — the home link and version switcher
+        // remain hidden (display:none).
+        let cfg = default_config();
+        let nav = nav_bar("index", &cfg, false);
+        // Both are hidden by default
+        assert!(nav.contains("id=\"home-link\""));
+        assert!(nav.contains("style=\"display:none\""));
+        // Navigation links still work
+        assert!(nav.contains("./requirements.html"));
+    }
+
+    #[test]
+    fn generate_config_js_default() {
+        let js = generate_config_js(None, "dev", &[], "rivet");
+        assert!(js.contains("RIVET_EXPORT"));
+        assert!(js.contains("homepage: \"\""));
+        assert!(js.contains("versionLabel: \"dev\""));
+        assert!(js.contains("projectName: \"rivet\""));
+        // Empty versions has comment placeholder
+        assert!(js.contains("// {"));
+    }
+
+    #[test]
+    fn generate_config_js_with_values() {
+        let versions = vec![
+            VersionEntry {
+                label: "v0.1.0".into(),
+                path: "../v0.1.0/".into(),
+            },
+            VersionEntry {
+                label: "v0.2.0".into(),
+                path: "../v0.2.0/".into(),
+            },
+        ];
+        let js = generate_config_js(
+            Some("https://example.com/projects/"),
+            "v0.3.0",
+            &versions,
+            "my-project",
+        );
+        assert!(js.contains("homepage: \"https://example.com/projects/\""));
+        assert!(js.contains("versionLabel: \"v0.3.0\""));
+        assert!(js.contains("\"label\": \"v0.1.0\""));
+        assert!(js.contains("\"path\": \"../v0.1.0/\""));
+        assert!(js.contains("\"label\": \"v0.2.0\""));
+        assert!(js.contains("projectName: \"my-project\""));
+    }
+
+    #[test]
+    fn generate_config_js_escapes_special_chars() {
+        let js = generate_config_js(
+            Some("https://example.com/\"test\""),
+            "v1.0\ninjection",
+            &[],
+            "proj\\name",
+        );
+        assert!(js.contains("\\\"test\\\""));
+        assert!(js.contains("v1.0\\ninjection"));
+        assert!(js.contains("proj\\\\name"));
     }
 }

@@ -217,23 +217,19 @@ enum Command {
         #[arg(long, default_value = "dark")]
         theme: String,
 
-        /// Base path prefix for links (e.g. "/projects/rivet/v0.1.0/")
-        #[arg(long)]
-        base_path: Option<String>,
-
         /// Offline mode: use system fonts only (no Google Fonts)
         #[arg(long)]
         offline: bool,
 
-        /// URL for the home/back link (e.g. "https://pulseengine.eu/projects/")
+        /// URL for the home/back link, written to config.js (e.g. "https://pulseengine.eu/projects/")
         #[arg(long)]
         homepage: Option<String>,
 
-        /// Version label shown in the version switcher (default: from rivet.yaml or "dev")
+        /// Version label for config.js version switcher (default: from rivet.yaml or "dev")
         #[arg(long)]
         version_label: Option<String>,
 
-        /// JSON array of version entries for the switcher: [{"label":"v0.1.0","path":"../v0.1.0/"}]
+        /// JSON array of version entries for config.js switcher: [{"label":"v0.1.0","path":"../v0.1.0/"}]
         #[arg(long)]
         versions: Option<String>,
     },
@@ -594,7 +590,6 @@ fn run(cli: Cli) -> Result<bool> {
             output,
             single_page,
             theme,
-            base_path,
             offline,
             homepage,
             version_label,
@@ -605,7 +600,6 @@ fn run(cli: Cli) -> Result<bool> {
             output.as_deref(),
             *single_page,
             theme,
-            base_path.as_deref(),
             *offline,
             homepage.as_deref(),
             version_label.as_deref(),
@@ -1913,7 +1907,6 @@ fn cmd_export(
     output: Option<&std::path::Path>,
     single_page: bool,
     theme: &str,
-    base_path: Option<&str>,
     offline: bool,
     homepage: Option<&str>,
     version_label: Option<&str>,
@@ -1925,7 +1918,6 @@ fn cmd_export(
             output,
             single_page,
             theme,
-            base_path,
             offline,
             homepage,
             version_label,
@@ -1976,14 +1968,13 @@ fn cmd_export(
     Ok(true)
 }
 
-/// Export to a static HTML site with document pages and version switcher.
+/// Export to a static HTML site with document pages and config.js.
 #[allow(clippy::too_many_arguments)]
 fn cmd_export_html(
     cli: &Cli,
     output: Option<&std::path::Path>,
     single_page: bool,
     theme: &str,
-    base_path: Option<&str>,
     offline: bool,
     homepage: Option<&str>,
     version_label: Option<&str>,
@@ -2035,11 +2026,7 @@ fn cmd_export_html(
 
     let export_config = ExportConfig {
         theme: export_theme,
-        base_path: base_path.map(String::from),
         offline,
-        homepage: homepage.map(String::from),
-        version_label: Some(resolved_version_label),
-        versions,
     };
 
     // Load documents from configured directories.
@@ -2055,6 +2042,9 @@ fn cmd_export_html(
 
     let out_dir = output.unwrap_or(std::path::Path::new("dist"));
 
+    std::fs::create_dir_all(out_dir)
+        .with_context(|| format!("creating {}", out_dir.display()))?;
+
     if single_page {
         let html = export::render_single_page(
             &store,
@@ -2066,15 +2056,10 @@ fn cmd_export_html(
             &export_config,
             &doc_store,
         );
-        std::fs::create_dir_all(out_dir)
-            .with_context(|| format!("creating {}", out_dir.display()))?;
         let path = out_dir.join("index.html");
         std::fs::write(&path, &html).with_context(|| format!("writing {}", path.display()))?;
         println!("Exported single-page report to {}", out_dir.display());
     } else {
-        std::fs::create_dir_all(out_dir)
-            .with_context(|| format!("creating {}", out_dir.display()))?;
-
         let mut pages: Vec<(String, String)> = vec![
             (
                 "index.html".to_string(),
@@ -2125,6 +2110,18 @@ fn cmd_export_html(
 
         println!("Exported {} pages to {}/", pages.len(), out_dir.display());
     }
+
+    // Write config.js alongside the HTML output.
+    let config_js = export::generate_config_js(
+        homepage,
+        &resolved_version_label,
+        &versions,
+        project_name,
+    );
+    let config_js_path = out_dir.join("config.js");
+    std::fs::write(&config_js_path, &config_js)
+        .with_context(|| format!("writing {}", config_js_path.display()))?;
+    println!("Wrote {}", config_js_path.display());
 
     Ok(true)
 }
