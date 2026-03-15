@@ -614,8 +614,6 @@ artifacts:
 
   - id: FEAT-040
     type: feature
-<<<<<<< HEAD
-<<<<<<< HEAD
     title: Conditional validation rules in schema YAML
     status: approved
     description: >
@@ -627,28 +625,10 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-023
-=======
-    title: Verus formal verification specs
-    status: draft
-    description: >
-      Verus-annotated specifications proving correctness properties of
-      the validation engine, link graph, coverage computation, and store.
-      Six properties: validation soundness, backlink symmetry, coverage
-      bounds, reachability correctness, store uniqueness, and
-      coverage-validation agreement.  Gated behind cfg(verus) and
-      verified via Bazel using pulseengine/rules_verus.
-    tags: [verification, formal-methods, phase-3]
-    links:
-      - type: satisfies
-        target: REQ-004
-      - type: satisfies
-        target: REQ-014
->>>>>>> worktree-agent-afe2b00b
       - type: implements
         target: DD-018
     fields:
       phase: phase-3
-<<<<<<< HEAD
 
   - id: FEAT-041
     type: feature
@@ -731,7 +711,7 @@ artifacts:
   - id: FEAT-045
     type: feature
     title: "rules_rivet Bazel module and Nix flake"
-    status: draft
+    status: approved
     description: >
       Distribute rivet as a Bazel module (rules_rivet) with a rivet_validate()
       test rule, and as a Nix flake with binary package output. The Bazel rule
@@ -924,25 +904,11 @@ artifacts:
       and existence checks in the when clause, and required-fields and
       required-links in the then clause.
     tags: [validation, schema, salsa, phase-3]
-=======
-    title: Rocq formal verification of validation semantics
-    status: draft
-    description: >
-      Mechanized proofs in Rocq (Coq) verifying key properties of the
-      validation engine: schema satisfiability, monotonicity of artifact
-      addition, validation termination, broken-link detection soundness,
-      store insert/lookup consistency, and backlink symmetry. Compiled
-      via Bazel using rules_rocq_rust with hermetic Nix toolchains.
-      Includes Schema.v (domain model, 10 theorems) and Validation.v
-      (engine properties, determinism, diagnostic bounds).
-    tags: [verification, formal-methods, rocq]
->>>>>>> worktree-agent-a70d0a06
     links:
       - type: satisfies
         target: REQ-023
       - type: implements
         target: DD-018
-<<<<<<< HEAD
       - type: implements
         target: DD-024
     fields:
@@ -970,7 +936,7 @@ artifacts:
   - id: FEAT-050
     type: feature
     title: Verus soundness and completeness proofs for validation
-    status: draft
+    status: approved
     description: >
       Verus requires/ensures annotations on core validation functions
       proving soundness (PASS implies all rules satisfied) and completeness
@@ -989,7 +955,7 @@ artifacts:
   - id: FEAT-051
     type: feature
     title: Rocq metamodel specification and satisfiability proofs
-    status: draft
+    status: approved
     description: >
       Schema semantics modeled in Rocq via coq-of-rust translation of
       Schema, TraceabilityRule, and ConditionalRule types. Theorems proven
@@ -1052,9 +1018,3 @@ artifacts:
         target: REQ-033
       - type: satisfies
         target: REQ-032
-=======
->>>>>>> worktree-agent-afe2b00b
-=======
-    fields:
-      phase: phase-3
->>>>>>> worktree-agent-a70d0a06
