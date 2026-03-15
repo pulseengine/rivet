@@ -93,6 +93,12 @@ const TOPICS: &[DocTopic] = &[
         category: "Reference",
         content: CROSS_REPO_DOC,
     },
+    DocTopic {
+        slug: "formal-verification",
+        title: "Formal Verification with Verus",
+        category: "Reference",
+        content: FORMAL_VERIFICATION_DOC,
+    },
 ];
 
 // ── Embedded documentation ──────────────────────────────────────────────
@@ -703,6 +709,106 @@ Repos participate in baselines by tagging: `git tag baseline/v1.0`
 - **DD-015**: Mesh topology — any repo links to any other
 - **DD-016**: Distributed baselining — repos tag themselves
 - **DD-017**: Transitive dependency resolution — declare direct deps only
+"#;
+
+const FORMAL_VERIFICATION_DOC: &str = r#"# Formal Verification with Verus
+
+## Overview
+
+Rivet uses [Verus](https://github.com/verus-lang/verus), an SMT-backed Rust
+verification tool, to formally prove correctness properties of its core
+algorithms.  Verus specifications live in `rivet-core/src/verus_specs.rs`
+and are verified via Bazel using `pulseengine/rules_verus`.
+
+## What is verified
+
+### Validation soundness
+If `validate()` returns zero error-severity diagnostics, then all
+traceability rules are satisfied, all artifact types are known, and
+no broken links exist.
+
+### Backlink symmetry
+For every forward link A -> B in the link graph, there exists a
+corresponding backlink B <- A.  This is the foundation of bidirectional
+traceability.
+
+### Coverage bounds
+The computed coverage percentage is always in [0.0, 100.0].  When no
+source artifacts exist, coverage is vacuously 100%.
+
+### Reachability correctness
+The transitive closure computed by `LinkGraph::reachable` is both
+*sound* (every returned ID is genuinely reachable) and *complete*
+(no reachable ID is missing).
+
+### Store uniqueness
+No two artifacts in the store share the same ID; inserting a fresh
+ID preserves the well-formedness invariant.
+
+### Coverage-validation agreement
+When coverage for a traceability rule is 100%, the validator emits no
+error diagnostics for that rule.
+
+## Architecture
+
+Specifications are written as Verus ghost types and `spec` / `proof`
+functions that mirror the real Rivet types (`Store`, `LinkGraph`,
+`Diagnostic`, `CoverageEntry`).  The ghost model uses Verus's verified
+standard library (`vstd`) with `Seq`, `Set`, and `Map` instead of
+`HashMap`/`Vec`.
+
+The module is gated behind `#[cfg(verus)]`, so:
+- `cargo build` / `cargo test` ignore it entirely
+- `bazel test //verus:rivet_specs_verify` invokes the Verus verifier
+
+## Prerequisites
+
+1. **Bazel 7+** — install via [Bazelisk](https://github.com/bazelbuild/bazelisk)
+2. **rustup** with a nightly toolchain (Verus pins its own nightly version)
+3. **rules_verus** configured in `MODULE.bazel` (see `verus/MODULE.bazel`)
+
+## Quick start
+
+```bash
+# One-time: install bazelisk
+brew install bazelisk        # macOS
+# or: go install github.com/bazelbuild/bazelisk@latest
+
+# Verify all specs
+bazel test //verus:rivet_specs_verify
+
+# Build stamp file (for downstream dependency)
+bazel build //verus:rivet_specs
+```
+
+## Adding new specifications
+
+1. Add `spec fn` or `proof fn` entries to `rivet-core/src/verus_specs.rs`
+   inside the `verus! { }` block.
+2. Run `bazel test //verus:rivet_specs_verify` to check.
+3. Failures surface as Z3 counterexamples in the Bazel test output.
+
+## CI integration
+
+Add to your CI pipeline:
+
+```yaml
+- name: Verus formal verification
+  run: bazel test //verus:rivet_specs_verify
+```
+
+The test target exits non-zero if any proof obligation fails.
+
+## Design decisions
+
+- **DD-018**: Verus over other tools (Kani, Prusti) because it supports
+  specification-level reasoning with ghost types and vstd, not just
+  bounded model checking.
+- Specs model Rivet types as ghost nats/sets rather than working directly
+  with `String`/`HashMap` because Verus's SMT backend reasons more
+  efficiently over mathematical types.
+- The `#[cfg(verus)]` gate means zero runtime cost and zero compilation
+  overhead for normal builds.
 "#;
 
 const STPA_DOC: &str = concat!(

@@ -577,3 +577,25 @@ artifacts:
       - type: satisfies
         target: REQ-020
     tags: [cross-repo, dashboard]
+
+  - id: FEAT-040
+    type: feature
+    title: Verus formal verification specs
+    status: draft
+    description: >
+      Verus-annotated specifications proving correctness properties of
+      the validation engine, link graph, coverage computation, and store.
+      Six properties: validation soundness, backlink symmetry, coverage
+      bounds, reachability correctness, store uniqueness, and
+      coverage-validation agreement.  Gated behind cfg(verus) and
+      verified via Bazel using pulseengine/rules_verus.
+    tags: [verification, formal-methods, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-004
+      - type: satisfies
+        target: REQ-014
+      - type: implements
+        target: DD-018
+    fields:
+      phase: phase-3

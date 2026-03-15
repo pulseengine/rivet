@@ -23,6 +23,9 @@ pub mod validate;
 #[cfg(feature = "wasm")]
 pub mod wasm_runtime;
 
+#[cfg(verus)]
+pub mod verus_specs;
+
 use std::path::Path;
 
 use error::Error;
