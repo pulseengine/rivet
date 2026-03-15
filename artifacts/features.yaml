@@ -606,7 +606,7 @@ artifacts:
   - id: FEAT-039
     type: feature
     title: Dashboard external project browsing
-    status: draft
+    status: approved
     links:
       - type: satisfies
         target: REQ-020

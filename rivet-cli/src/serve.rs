@@ -168,6 +168,17 @@ fn discover_siblings(project_path: &std::path::Path) -> Vec<SiblingProject> {
     siblings
 }
 
+/// Metadata for a loaded external project, displayed on the dashboard.
+struct ExternalInfo {
+    prefix: String,
+    /// Display source — git URL or local path.
+    source: String,
+    /// Whether the external has been synced (repo dir exists).
+    synced: bool,
+    /// Loaded artifacts (empty if not synced).
+    store: Store,
+}
+
 /// Shared application state loaded once at startup.
 struct AppState {
     store: Store,
@@ -182,6 +193,8 @@ struct AppState {
     schemas_dir: PathBuf,
     /// Resolved docs directories (for serving images/assets).
     doc_dirs: Vec<PathBuf>,
+    /// External projects loaded at startup (empty if none configured).
+    externals: Vec<ExternalInfo>,
 }
 
 /// Convenience alias so handler signatures stay compact.
@@ -235,6 +248,37 @@ fn reload_state(
         }
     }
 
+    // ── Load external projects ────────────────────────────────────────
+    let mut externals = Vec::new();
+    if let Some(ref ext_map) = config.externals {
+        let cache_dir = project_path.join(".rivet/repos");
+        for ext in ext_map.values() {
+            let source = ext
+                .git
+                .as_deref()
+                .or(ext.path.as_deref())
+                .unwrap_or("unknown")
+                .to_string();
+            let ext_dir =
+                rivet_core::externals::resolve_external_dir(ext, &cache_dir, project_path);
+            let synced = ext_dir.join("rivet.yaml").exists();
+            let mut ext_store = Store::new();
+            if synced {
+                if let Ok(artifacts) = rivet_core::externals::load_external_project(&ext_dir) {
+                    for a in artifacts {
+                        ext_store.upsert(a);
+                    }
+                }
+            }
+            externals.push(ExternalInfo {
+                prefix: ext.prefix.clone(),
+                source,
+                synced,
+                store: ext_store,
+            });
+        }
+    }
+
     let git = capture_git_info(project_path);
     let loaded_at = std::process::Command::new("date")
         .arg("+%H:%M:%S")
@@ -265,6 +309,7 @@ fn reload_state(
         project_path_buf: project_path.to_path_buf(),
         schemas_dir: schemas_dir.to_path_buf(),
         doc_dirs,
+        externals,
     })
 }
 
@@ -310,6 +355,7 @@ pub async fn run(
         project_path_buf: project_path,
         schemas_dir,
         doc_dirs,
+        externals: Vec::new(),
     }));
 
     let app = Router::new()
@@ -347,6 +393,8 @@ pub async fn run(
         .route("/help/schema/{name}", get(help_schema_show))
         .route("/help/links", get(help_links_view))
         .route("/help/rules", get(help_rules_view))
+        .route("/externals", get(externals_list))
+        .route("/externals/{prefix}", get(external_detail))
         .route("/docs-asset/{*path}", get(docs_asset))
         .route("/reload", post(reload_handler))
         .with_state(state.clone())
@@ -2642,6 +2690,19 @@ fn page_layout(content: &str, state: &AppState) -> Html<String> {
     } else {
         String::new()
     };
+    let ext_total: usize = state.externals.iter().map(|e| e.store.len()).sum();
+    let externals_nav = if !state.externals.is_empty() {
+        let badge = if ext_total > 0 {
+            format!("<span class=\"nav-badge\">{ext_total}</span>")
+        } else {
+            "<span class=\"nav-badge\">0</span>".to_string()
+        };
+        format!(
+            "<li><a hx-get=\"/externals\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\"><span class=\"nav-label\"><span class=\"nav-icon\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M14 8H9l-2-2H2v8h12z\"/><path d=\"M2 4V2h5l2 2\"/><circle cx=\"11\" cy=\"9\" r=\"2\"/></svg></span> Externals</span>{badge}</a></li>"
+        )
+    } else {
+        String::new()
+    };
     let version = env!("CARGO_PKG_VERSION");
 
     // Context bar
@@ -2752,6 +2813,7 @@ document.addEventListener('DOMContentLoaded',renderMermaid);
     <li><a hx-get="/results" hx-target="#content" hx-push-url="true" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12.5h12M3 9.5h2v3H3zM7 6.5h2v6H7zM11 3.5h2v9h-2z"/></svg></span> Results</span>{result_badge}</a></li>
     <li class="nav-divider"></li>
     <li><a hx-get="/diff" hx-target="#content" hx-push-url="true" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v10M10 3v10"/><path d="M2 8h3M11 8h3"/><circle cx="6" cy="5" r="1.5"/><circle cx="10" cy="11" r="1.5"/></svg></span> Diff</span></a></li>
+    {externals_nav}
     <li class="nav-divider"></li>
     <li><a hx-get="/help" hx-target="#content" hx-push-url="true" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><path d="M6 6.5a2 2 0 013.5 1.5c0 1-1.5 1.5-1.5 2.5M8 12.5v.01"/></svg></span> Help &amp; Docs</span></a></li>
   </ul>
@@ -3046,6 +3108,166 @@ fn stats_partial(state: &AppState) -> String {
     html
 }
 
+// ── Externals ────────────────────────────────────────────────────────────
+
+/// GET /externals — list all configured external projects.
+async fn externals_list(State(state): State<SharedState>) -> Html<String> {
+    let state = state.read().await;
+    let externals = &state.externals;
+
+    let mut html = String::from("<h2>External Projects</h2>");
+
+    if externals.is_empty() {
+        html.push_str(
+            "<div class=\"card\"><p>No external projects configured. \
+             Add an <code>externals</code> section to <code>rivet.yaml</code> to enable cross-repo linking.</p></div>",
+        );
+        return Html(html);
+    }
+
+    html.push_str(
+        "<div class=\"card\"><h3>Configured Externals</h3>\
+         <table><thead><tr><th>Prefix</th><th>Source</th><th>Status</th><th>Artifacts</th></tr></thead><tbody>",
+    );
+    for ext in externals {
+        let status_badge = if ext.synced {
+            "<span class=\"badge badge-ok\">synced</span>".to_string()
+        } else {
+            "<span class=\"badge badge-warn\">not synced</span>".to_string()
+        };
+        let prefix_link = if ext.synced && !ext.store.is_empty() {
+            format!(
+                "<a hx-get=\"/externals/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a>",
+                html_escape(&ext.prefix),
+                html_escape(&ext.prefix)
+            )
+        } else {
+            html_escape(&ext.prefix)
+        };
+        html.push_str(&format!(
+            "<tr><td><code>{prefix_link}</code></td>\
+             <td><code>{}</code></td>\
+             <td>{status_badge}</td>\
+             <td>{}</td></tr>",
+            html_escape(&ext.source),
+            ext.store.len(),
+        ));
+    }
+    html.push_str("</tbody></table></div>");
+
+    // Show a hint for un-synced externals
+    let any_unsynced = externals.iter().any(|e| !e.synced);
+    if any_unsynced {
+        html.push_str(
+            "<div class=\"card\" style=\"background:#fff8e1;border-color:#e6d48e\">\
+             <p style=\"color:#8b6914;margin:0\">Some externals are not synced. \
+             Run <code>rivet sync</code> to fetch them.</p></div>",
+        );
+    }
+
+    Html(html)
+}
+
+/// GET /externals/{prefix} — show artifacts from a specific external project.
+async fn external_detail(
+    State(state): State<SharedState>,
+    Path(prefix): Path<String>,
+) -> Html<String> {
+    let state = state.read().await;
+
+    let Some(ext) = state.externals.iter().find(|e| e.prefix == prefix) else {
+        return Html(format!(
+            "<h2>Not Found</h2><p>External project <code>{}</code> is not configured.</p>",
+            html_escape(&prefix)
+        ));
+    };
+
+    if !ext.synced {
+        return Html(format!(
+            "<h2>External: {}</h2>\
+             <div class=\"card\" style=\"background:#fff8e1;border-color:#e6d48e\">\
+             <p style=\"color:#8b6914;margin:0\">This external project has not been synced yet. \
+             Run <code>rivet sync</code> to fetch it.</p></div>",
+            html_escape(&ext.prefix)
+        ));
+    }
+
+    let mut html = format!(
+        "<h2>External: {}</h2>\
+         <p class=\"meta\">Source: <code>{}</code> &mdash; {} artifacts</p>",
+        html_escape(&ext.prefix),
+        html_escape(&ext.source),
+        ext.store.len(),
+    );
+
+    let mut artifacts: Vec<_> = ext.store.iter().collect();
+    artifacts.sort_by(|a, b| a.id.cmp(&b.id));
+
+    // Client-side filter
+    html.push_str("<div style=\"position:relative;margin-bottom:1rem\">\
+        <svg width=\"15\" height=\"15\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" style=\"position:absolute;left:.75rem;top:50%;transform:translateY(-50%);opacity:.4\"><circle cx=\"7\" cy=\"7\" r=\"4.5\"/><path d=\"M10.5 10.5L14 14\"/></svg>\
+        <input type=\"search\" id=\"ext-artifact-filter\" placeholder=\"Filter artifacts...\" \
+        style=\"width:100%;padding:.6rem .75rem .6rem 2.25rem;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:.875rem;font-family:var(--font);background:var(--surface);color:var(--text);outline:none\" \
+        oninput=\"filterExtTable(this.value)\">\
+        </div>");
+
+    html.push_str(
+        "<table id=\"ext-artifacts-table\"><thead><tr><th>ID</th><th>Type</th><th>Title</th><th>Status</th><th>Links</th></tr></thead><tbody>",
+    );
+
+    for a in &artifacts {
+        let status = a.status.as_deref().unwrap_or("-");
+        let status_badge = match status {
+            "approved" => format!("<span class=\"badge badge-ok\">{status}</span>"),
+            "draft" => format!("<span class=\"badge badge-warn\">{status}</span>"),
+            "obsolete" => format!("<span class=\"badge badge-error\">{status}</span>"),
+            _ => format!("<span class=\"badge badge-info\">{status}</span>"),
+        };
+        // Link using cross-repo ID format: prefix:ID
+        let qualified_id = format!("{}:{}", ext.prefix, a.id);
+        html.push_str(&format!(
+            "<tr><td><a hx-get=\"/artifacts/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a></td>\
+             <td>{}</td>\
+             <td>{}</td>\
+             <td>{}</td>\
+             <td>{}</td></tr>",
+            html_escape(&qualified_id),
+            html_escape(&a.id),
+            badge_for_type(&a.artifact_type),
+            html_escape(&a.title),
+            status_badge,
+            a.links.len()
+        ));
+    }
+
+    html.push_str("</tbody></table>");
+    html.push_str(&format!(
+        "<p class=\"meta\">{} artifacts total</p>",
+        artifacts.len()
+    ));
+
+    // Filter script
+    html.push_str(
+        "<script>\
+        function filterExtTable(q){\
+          q=q.toLowerCase();\
+          document.querySelectorAll('#ext-artifacts-table tbody tr').forEach(function(r){\
+            r.style.display=r.textContent.toLowerCase().includes(q)?'':'none';\
+          });\
+        }\
+        </script>",
+    );
+
+    // Back button
+    html.push_str(
+        "<div class=\"detail-actions\">\
+         <a class=\"btn btn-secondary\" hx-get=\"/externals\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">&larr; Back to externals</a>\
+         </div>",
+    );
+
+    Html(html)
+}
+
 // ── Artifacts ────────────────────────────────────────────────────────────
 
 async fn artifacts_list(State(state): State<SharedState>) -> Html<String> {
@@ -3239,7 +3461,17 @@ async fn artifact_detail(State(state): State<SharedState>, Path(id): Path<String
     let store = &state.store;
     let graph = &state.graph;
 
-    let Some(artifact) = store.get(&id) else {
+    let Some(artifact) = store.get(&id).or_else(|| {
+        // Try to resolve as cross-repo reference (prefix:id)
+        match rivet_core::externals::parse_artifact_ref(&id) {
+            rivet_core::externals::ArtifactRef::External { ref prefix, ref id } => state
+                .externals
+                .iter()
+                .find(|e| e.prefix == *prefix && e.synced)
+                .and_then(|e| e.store.get(id)),
+            _ => None,
+        }
+    }) else {
         return Html(format!(
             "<h2>Not Found</h2><p>Artifact <code>{}</code> does not exist.</p>",
             html_escape(&id)
@@ -3321,10 +3553,37 @@ async fn artifact_detail(State(state): State<SharedState>, Path(id): Path<String
                     html_escape(&link.target)
                 )
             } else {
-                format!(
-                    "{} <span class=\"badge badge-error\">broken</span>",
-                    html_escape(&link.target)
-                )
+                // Check if this is a cross-repo reference (prefix:id)
+                match rivet_core::externals::parse_artifact_ref(&link.target) {
+                    rivet_core::externals::ArtifactRef::External { ref prefix, ref id } => {
+                        let ext_exists = state
+                            .externals
+                            .iter()
+                            .any(|e| e.prefix == *prefix && e.synced && e.store.contains(id));
+                        if ext_exists {
+                            format!(
+                                "<a hx-get=\"/externals/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">\
+                                 <span class=\"badge badge-info\" style=\"margin-right:.35rem\">{}</span>{}</a>",
+                                html_escape(prefix),
+                                html_escape(prefix),
+                                html_escape(id),
+                            )
+                        } else {
+                            format!(
+                                "<span class=\"badge badge-info\" style=\"margin-right:.35rem\">{}</span>{} \
+                                 <span class=\"badge badge-warn\">external</span>",
+                                html_escape(prefix),
+                                html_escape(id),
+                            )
+                        }
+                    }
+                    rivet_core::externals::ArtifactRef::Local(_) => {
+                        format!(
+                            "{} <span class=\"badge badge-error\">broken</span>",
+                            html_escape(&link.target)
+                        )
+                    }
+                }
             };
             html.push_str(&format!(
                 "<tr><td><span class=\"link-pill\">{}</span></td><td>{}</td></tr>",
