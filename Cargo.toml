@@ -13,6 +13,9 @@ edition = "2024"
 license = "Apache-2.0"
 rust-version = "1.89"
 
+[workspace.lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
+
 [workspace.dependencies]
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -27,7 +30,7 @@ thiserror = "2"
 clap = { version = "4", features = ["derive"] }
 
 # Graph
-petgraph = "0.6"
+petgraph = "0.7"
 
 # Logging
 log = "0.4"
