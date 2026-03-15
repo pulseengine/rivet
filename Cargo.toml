@@ -33,7 +33,7 @@ clap = { version = "4", features = ["derive"] }
 regex = "1"
 
 # Graph
-petgraph = "0.6"
+petgraph = "0.7"
 
 # Incremental computation
 salsa = "0.26"

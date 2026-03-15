@@ -3746,6 +3746,7 @@ async fn graph_view(
                 label: n.clone(),
                 node_type: atype,
                 sublabel,
+                parent: None,
             }
         },
         &|_idx, e| EdgeInfo { label: e.clone() },
@@ -3947,6 +3948,7 @@ async fn artifact_graph(
                 label: n.clone(),
                 node_type: atype,
                 sublabel,
+                parent: None,
             }
         },
         &|_idx, e| EdgeInfo { label: e.clone() },
@@ -7167,6 +7169,7 @@ async fn doc_linkage_view(State(state): State<SharedState>) -> Html<String> {
                     label: label.clone(),
                     node_type: node_type.into(),
                     sublabel,
+                    parent: None,
                 }
             },
             &|_idx, e| EdgeInfo { label: e.clone() },
