@@ -1,0 +1,39 @@
+# Verus formal verification targets for Rivet.
+#
+# These targets invoke the Verus SMT-backed verifier on Rivet's
+# specification module.  Verification is separate from `cargo build`
+# and only runs under `bazel test`.
+#
+# Prerequisites:
+#   - rules_verus configured in MODULE.bazel (see verus/MODULE.bazel)
+#   - Rust toolchain 1.82.0-nightly (Verus's pinned version)
+#   - rustup available on PATH (for sysroot resolution)
+#
+# Usage:
+#   bazel build //verus:rivet_specs              # verify, produce stamp
+#   bazel test  //verus:rivet_specs_verify       # verify as test target
+
+load("@rules_verus//verus:defs.bzl", "verus_library", "verus_test")
+
+# ── Verified library ────────────────────────────────────────────────────
+#
+# Runs Verus on the specification module.  On success, produces a stamp
+# file that downstream targets can depend on as proof evidence.
+
+verus_library(
+    name = "rivet_specs",
+    srcs = ["//rivet-core/src:verus_specs.rs"],
+    crate_name = "rivet_verus_specs",
+    visibility = ["//visibility:public"],
+)
+
+# ── Verification test ───────────────────────────────────────────────────
+#
+# Same verification, wrapped as a Bazel test target so it can be included
+# in `bazel test //...` and CI pipelines.
+
+verus_test(
+    name = "rivet_specs_verify",
+    srcs = ["//rivet-core/src:verus_specs.rs"],
+    crate_name = "rivet_verus_specs",
+)

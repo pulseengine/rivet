@@ -369,6 +369,7 @@ artifacts:
 
   - id: DD-018
     type: design-decision
+<<<<<<< HEAD
     title: Schema-embedded conditional rules over external rule engine
     status: draft
     description: >
@@ -765,3 +766,32 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-005
+=======
+    title: Verus SMT-backed verification over bounded model checking
+    status: accepted
+    description: >
+      Use Verus for formal verification of core algorithm invariants rather
+      than Kani (bounded model checking) or Prusti (Viper-based).
+    links:
+      - type: satisfies
+        target: REQ-004
+      - type: satisfies
+        target: REQ-014
+    tags: [verification, formal-methods]
+    fields:
+      decision: >
+        Verus with ghost types and vstd for specification-level reasoning
+      rationale: >
+        Verus supports ghost types, spec functions, and proof functions that
+        let us state and prove mathematical properties (backlink symmetry,
+        coverage bounds, validation soundness) at a higher level of
+        abstraction than bounded model checking.  Kani is excellent for
+        finding concrete bugs but cannot prove universal properties.  Prusti
+        uses Viper which is less mature for Rust's ownership model.  Verus
+        integrates with Bazel via pulseengine/rules_verus for CI.
+      alternatives: >
+        Kani (bounded model checking) — proves properties up to a bound but
+        cannot prove universal quantification.  Prusti (Viper) — less mature
+        Rust support and weaker ecosystem integration.
+      source-ref: rivet-core/src/verus_specs.rs:1
+>>>>>>> worktree-agent-afe2b00b
