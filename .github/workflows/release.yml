@@ -1,4 +1,4 @@
-name: Release
+name: Release Test Evidence
 
 on:
   push:
@@ -12,112 +12,11 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # ── Cross-platform binary builds ──────────────────────────────────────
-  build-binaries:
-    name: Build ${{ matrix.target }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        include:
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            archive: tar.gz
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-            archive: tar.gz
-            cross: true
-          - target: x86_64-apple-darwin
-            os: macos-14
-            archive: tar.gz
-          - target: aarch64-apple-darwin
-            os: macos-latest
-            archive: tar.gz
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-            archive: zip
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: release-${{ matrix.target }}
-
-      - name: Install cross
-        if: matrix.cross
-        run: cargo install cross --git https://github.com/cross-rs/cross
-
-      - name: Build (native)
-        if: ${{ !matrix.cross }}
-        run: cargo build --release --target ${{ matrix.target }} -p rivet-cli
-
-      - name: Build (cross)
-        if: matrix.cross
-        run: cross build --release --target ${{ matrix.target }} -p rivet-cli
-
-      - name: Strip binary (Unix)
-        if: runner.os != 'Windows'
-        run: strip "target/${{ matrix.target }}/release/rivet" 2>/dev/null || true
-
-      - name: Package (tar.gz)
-        if: matrix.archive == 'tar.gz'
-        env:
-          TARGET: ${{ matrix.target }}
-        run: |
-          VERSION="${GITHUB_REF#refs/tags/}"
-          ARCHIVE="rivet-${VERSION}-${TARGET}.tar.gz"
-          mkdir -p staging
-          cp "target/${TARGET}/release/rivet" staging/
-          tar -czf "$ARCHIVE" -C staging .
-          echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
-
-      - name: Package (zip)
-        if: matrix.archive == 'zip'
-        shell: bash
-        env:
-          TARGET: ${{ matrix.target }}
-        run: |
-          VERSION="${GITHUB_REF#refs/tags/}"
-          ARCHIVE="rivet-${VERSION}-${TARGET}.zip"
-          mkdir -p staging
-          cp "target/${TARGET}/release/rivet.exe" staging/
-          cd staging && 7z a "../$ARCHIVE" . && cd ..
-          echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: binary-${{ matrix.target }}
-          path: ${{ env.ARCHIVE }}
-
-  # ── Compliance report (HTML export) ───────────────────────────────────
-  build-compliance:
-    name: Build compliance report
+  test-evidence:
+    name: Build Test Evidence Bundle
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-
-      - name: Generate compliance report
-        id: report
-        uses: ./.github/actions/compliance
-        with:
-          theme: dark
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: compliance-report
-          path: ${{ steps.report.outputs.archive-path }}
-
-  # ── Test evidence bundle ──────────────────────────────────────────────
-  build-test-evidence:
-    name: Build test evidence
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@nightly
         with:
@@ -125,29 +24,34 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Install tools
+      # Install tools: cargo-nextest for JUnit XML, cargo-llvm-cov for coverage
+      - name: Install cargo-nextest and cargo-llvm-cov
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest,cargo-llvm-cov
 
-      - name: Run tests with JUnit XML
+      # ── 1. Test suite with JUnit XML output ─────────────────────────────
+      - name: Run tests with JUnit XML output
         run: |
           mkdir -p test-evidence/test-results
           cargo nextest run --all --profile ci
           cp target/nextest/ci/junit.xml test-evidence/test-results/junit.xml
 
-      - name: Generate coverage
+      # ── 2. Code coverage (LCOV) ────────────────────────────────────────
+      - name: Generate code coverage (LCOV)
         run: |
           mkdir -p test-evidence/coverage
-          cargo llvm-cov --workspace --lcov --output-path test-evidence/coverage/lcov.info
-          cargo llvm-cov report --all-features --workspace > test-evidence/coverage/summary.txt
+          cargo llvm-cov --all-features --workspace --lcov --output-path test-evidence/coverage/lcov.info
+          cargo llvm-cov report --workspace > test-evidence/coverage/summary.txt
 
-      - name: Run benchmarks
+      # ── 3. Benchmarks (criterion HTML reports) ─────────────────────────
+      - name: Run criterion benchmarks
         run: |
           cargo bench --bench core_benchmarks -- --output-format=criterion
           mkdir -p test-evidence/benchmarks
           cp -r target/criterion/* test-evidence/benchmarks/ 2>/dev/null || true
 
+      # ── 4. Rivet validate ──────────────────────────────────────────────
       - name: Run rivet validate
         run: |
           mkdir -p test-evidence/validation
@@ -155,61 +59,45 @@ jobs:
           cargo run --release -- validate > test-evidence/validation/validate-output.txt 2>&1
           rc=$?
           set -e
+          echo "" >> test-evidence/validation/validate-output.txt
           echo "exit_code=${rc}" >> test-evidence/validation/validate-output.txt
 
-      - name: Generate metadata
+      # ── 5. Metadata ────────────────────────────────────────────────────
+      - name: Generate metadata.json
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
+          RUST_VERSION="$(rustc --version)"
+          OS_INFO="$(uname -srm)"
+          TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
           jq -n \
             --arg tag "${TAG}" \
             --arg commit "${GITHUB_SHA}" \
-            --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --arg rust_version "$(rustc --version)" \
-            --arg os "$(uname -srm)" \
+            --arg timestamp "${TIMESTAMP}" \
+            --arg rust_version "${RUST_VERSION}" \
+            --arg os "${OS_INFO}" \
             '{tag: $tag, commit: $commit, timestamp: $timestamp, rust_version: $rust_version, os: $os}' \
             > test-evidence/metadata.json
 
-      - name: Package
+      # ── 6. Package everything ──────────────────────────────────────────
+      - name: Package test evidence tarball
+        id: package
         run: |
-          VERSION="${GITHUB_REF#refs/tags/}"
-          tar czf "rivet-${VERSION}-test-evidence.tar.gz" test-evidence/
+          TAG="${GITHUB_REF#refs/tags/}"
+          ARCHIVE="test-evidence-${TAG}.tar.gz"
+          tar czf "${ARCHIVE}" test-evidence/
+          echo "archive=${ARCHIVE}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: test-evidence
-          path: rivet-*-test-evidence.tar.gz
-
-  # ── Create GitHub Release ─────────────────────────────────────────────
-  create-release:
-    name: Create GitHub Release
-    needs: [build-binaries, build-compliance, build-test-evidence]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Collect assets
-        run: |
-          mkdir -p release
-          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec mv {} release/ \;
-          ls -la release/
-
-      - name: Generate checksums
-        run: |
-          cd release
-          sha256sum * > SHA256SUMS.txt
-          cat SHA256SUMS.txt
-
-      - name: Create Release
+      # ── 7. Create GitHub Release with asset ────────────────────────────
+      - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          VERSION="${GITHUB_REF#refs/tags/}"
-          gh release create "$VERSION" \
-            --title "Rivet $VERSION" \
+          TAG="${{ steps.package.outputs.tag }}"
+          ARCHIVE="${{ steps.package.outputs.archive }}"
+
+          gh release create "${TAG}" \
+            --title "Release ${TAG}" \
             --generate-notes \
-            release/*
+            "${ARCHIVE}#Test Evidence (tar.gz)"
