@@ -150,6 +150,9 @@ pub struct ProjectMetadata {
 pub struct SourceConfig {
     pub path: String,
     pub format: String,
+    /// Path to a WASM adapter component (only used when `format: "wasm"`).
+    #[serde(default)]
+    pub adapter: Option<String>,
     #[serde(default)]
     pub config: BTreeMap<String, String>,
 }
