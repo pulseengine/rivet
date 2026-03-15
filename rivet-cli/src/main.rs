@@ -2103,6 +2103,12 @@ fn cmd_export_html(
             pages.push((filename, html));
         }
 
+        // Render README.html explaining the export.
+        pages.push((
+            "README.html".to_string(),
+            export::render_readme(&export_config),
+        ));
+
         for (filename, html) in &pages {
             let path = out_dir.join(filename);
             std::fs::write(&path, html).with_context(|| format!("writing {}", path.display()))?;

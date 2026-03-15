@@ -135,6 +135,12 @@ const TOPICS: &[DocTopic] = &[
         category: "Reference",
         content: FORMAL_VERIFICATION_DOC,
     },
+    DocTopic {
+        slug: "html-export",
+        title: "HTML export deployment and customization",
+        category: "Reference",
+        content: HTML_EXPORT_DOC,
+    },
 ];
 
 // ── Embedded documentation ──────────────────────────────────────────────
@@ -951,6 +957,233 @@ struct GrepMatch {
     context_before: Vec<String>,
     context_after: Vec<String>,
 }
+
+// ── HTML export documentation ───────────────────────────────────────────
+
+const HTML_EXPORT_DOC: &str = r#"# HTML Export — Deployment and Customization
+
+## Overview
+
+`rivet export --format html` generates a self-contained static site for
+compliance evidence and audit publishing. The export produces 11+ HTML pages:
+
+- **index.html** — dashboard with artifact counts, validation summary, coverage
+- **requirements.html** — all artifacts grouped by type with anchor IDs
+- **documents.html** — document index with links to individual document pages
+- **doc-{ID}.html** — individual documents with resolved `[[ID]]` links
+- **matrix.html** — traceability matrix (type x type)
+- **coverage.html** — per-rule traceability coverage
+- **validation.html** — diagnostics and rule check results
+- **config.js** — runtime configuration (edit after deployment, no rebuild)
+
+Pages are self-contained by default: CSS is embedded inline with no external
+dependencies. The site works offline and can be served by any static HTTP server.
+
+Runtime customization is done entirely through `config.js` — no rebuild needed.
+
+## Generated Files
+
+```
+dist/
+  config.js           # Runtime configuration (edit after deployment)
+  index.html          # Dashboard with artifact counts, validation, coverage
+  requirements.html   # All artifacts grouped by type with anchor IDs
+  documents.html      # Document index with links to individual docs
+  doc-{ID}.html       # Individual documents with resolved [[ID]] links
+  matrix.html         # Traceability matrix (type x type)
+  coverage.html       # Per-rule traceability coverage
+  validation.html     # Diagnostics and rule check results
+  README.html         # What this export is and how to customize it
+```
+
+## config.js Reference
+
+The `config.js` file is a plain JavaScript file loaded by every page. It sets
+deployment-specific values without rebuilding the HTML:
+
+```javascript
+var RIVET_EXPORT = {
+  // Back-link to project portal (empty string to hide)
+  homepage: "https://example.com/projects/",
+
+  // Display name in the homepage back-link
+  projectName: "My Project",
+
+  // Current version label in the version switcher
+  versionLabel: "v0.1.0",
+
+  // Other versions for the dropdown (paths relative to this directory)
+  versions: [
+    { "label": "v0.1.0", "path": "../v0.1.0/" },
+    { "label": "v0.2.0", "path": "../v0.2.0/" }
+  ],
+
+  // Optional: external CSS URL to replace embedded styles
+  // externalCss: "/main.css",
+};
+```
+
+When `config.js` is missing or `RIVET_EXPORT` is undefined, pages degrade
+gracefully: the homepage link and version switcher remain hidden, and
+embedded styles are used.
+
+## CSS Classes Reference
+
+### Layout
+
+| Class              | Description                                     |
+|--------------------|-------------------------------------------------|
+| `.export-header`   | Top navigation bar wrapper                      |
+| `.home-link`       | Homepage back-link (populated by config.js)      |
+| `.version-switcher`| Version dropdown container                       |
+| `.nav-links`       | Navigation link group (Overview, Requirements…) |
+| `.summary-grid`    | Dashboard summary cards grid                     |
+| `.summary-card`    | Individual summary card                          |
+
+### Artifacts
+
+| Class              | Description                                     |
+|--------------------|-------------------------------------------------|
+| `.artifact-section`| Individual artifact block                        |
+| `.artifact-id`     | Artifact ID heading                              |
+| `.artifact-meta`   | Metadata line (type, status)                     |
+| `.type-badge`      | Artifact type badge                              |
+| `.status-badge`    | Status badge                                     |
+| `.badge-approved`  | Status color: approved (green)                   |
+| `.badge-draft`     | Status color: draft (amber)                      |
+| `.badge-default`   | Status color: fallback (muted)                   |
+| `.tag`             | Artifact tag pill                                |
+| `.artifact-ref`    | Clickable artifact reference link                |
+
+### Documents
+
+| Class                    | Description                               |
+|--------------------------|-------------------------------------------|
+| `.doc-card`              | Document card on index page               |
+| `.doc-meta`              | Document metadata                         |
+| `.doc-body`              | Rendered document content                 |
+| `.artifact-embed`        | Embedded artifact card in documents       |
+| `.artifact-embed-header` | Embed header (ID + type)                  |
+| `.artifact-embed-title`  | Embed title line                          |
+| `.artifact-embed-desc`   | Embed description block                   |
+
+### Matrix
+
+| Class          | Description                                        |
+|----------------|----------------------------------------------------|
+| `.cell-green`  | Coverage-colored cell: linked (green)               |
+| `.cell-yellow` | Coverage-colored cell: partially linked (yellow)    |
+| `.cell-red`    | Coverage-colored cell: missing link (red)           |
+
+### Validation
+
+| Class              | Description                                     |
+|--------------------|-------------------------------------------------|
+| `.diag-list`       | Diagnostics list                                 |
+| `.diag-rule`       | Rule name in diagnostic                          |
+| `.severity-error`  | Severity color: error (red)                      |
+| `.severity-warning`| Severity color: warning (amber)                  |
+| `.severity-info`   | Severity color: info (accent blue)               |
+
+### Table of Contents
+
+| Class        | Description                                          |
+|--------------|------------------------------------------------------|
+| `.toc`       | Table of contents container                          |
+| `.toc-item`  | Individual TOC entry                                 |
+
+## Theming
+
+CSS custom properties control all colors and fonts. Override them in an
+external stylesheet to match your organization's branding:
+
+```css
+:root {
+  --bg: #0f1117;
+  --bg-card: rgba(26, 29, 39, 0.72);
+  --border: #252836;
+  --text: #e1e4ed;
+  --text-muted: #8b90a0;
+  --accent: #6c8cff;
+  --green: #4ade80;
+  --amber: #fbbf24;
+  --red: #f87171;
+  --font: "Atkinson Hyperlegible Next", system-ui, sans-serif;
+  --font-mono: "Atkinson Hyperlegible Mono", monospace;
+  --radius: 12px;
+}
+```
+
+To use an external CSS file from a parent site:
+
+```javascript
+// In config.js
+var RIVET_EXPORT = {
+  externalCss: "/main.css",  // replaces embedded styles
+};
+```
+
+When `externalCss` is set, all embedded `<style>` tags are removed and a
+`<link rel="stylesheet">` is injected pointing to the given URL. This lets
+you maintain a single CSS source for your entire site.
+
+## Deployment Examples
+
+### Static hosting (any web server)
+
+```bash
+rivet export --format html --output dist/
+# Copy to web server
+scp -r dist/ server:/var/www/compliance/
+# Edit config.js on the server
+```
+
+### GitHub Pages
+
+```bash
+rivet export --format html --output docs/compliance/
+git add docs/compliance/
+git push  # GitHub Pages serves it
+```
+
+### Under a parent site (e.g., pulseengine.eu)
+
+```bash
+rivet export --format html --output dist/
+cp -r dist/ /srv/pulseengine.eu/release/rivet/v0.1.0/compliance/
+# Edit config.js:
+# homepage: "https://pulseengine.eu/projects/"
+# externalCss: "/main.css"
+```
+
+### Multiple versions side by side
+
+```
+/release/rivet/
+  v0.1.0/compliance/  <- config.js has versions pointing to siblings
+  v0.2.0/compliance/
+  latest/compliance/   <- symlink to current
+```
+
+## CLI Flags
+
+```
+rivet export --format html [OPTIONS]
+
+Options:
+  --output <DIR>           Output directory (default: dist/)
+  --single-page            All reports in one HTML file
+  --theme <dark|light>     Color theme (default: dark)
+  --offline                Use system fonts (no Google Fonts)
+  --homepage <URL>         Homepage URL written to config.js
+  --version-label <LABEL>  Version label written to config.js
+  --versions <JSON>        Version entries written to config.js
+```
+
+When `--single-page` is used, all reports are combined into a single
+`index.html` with internal anchors.  `config.js` is not generated in
+single-page mode (everything is inline).
+"#;
 
 // ── Phase 3 documentation topics ────────────────────────────────────────
 
