@@ -95,6 +95,26 @@ pub fn load_artifacts(
             let adapter = formats::needs_json::NeedsJsonAdapter::new();
             adapter::Adapter::import(&adapter, &source_input, &adapter_config)
         }
+        #[cfg(feature = "wasm")]
+        "wasm" => {
+            let adapter_path = source.adapter.as_ref().ok_or_else(|| {
+                Error::Adapter(
+                    "format 'wasm' requires an 'adapter' field pointing to a .wasm component"
+                        .into(),
+                )
+            })?;
+            let wasm_path = base_dir.join(adapter_path);
+            let runtime = wasm_runtime::WasmAdapterRuntime::with_defaults()
+                .map_err(|e| Error::Adapter(format!("WASM runtime init failed: {e}")))?;
+            let wasm_adapter = runtime
+                .load_adapter(&wasm_path)
+                .map_err(|e| Error::Adapter(format!("failed to load WASM adapter: {e}")))?;
+            adapter::Adapter::import(&wasm_adapter, &source_input, &adapter_config)
+        }
+        #[cfg(not(feature = "wasm"))]
+        "wasm" => Err(Error::Adapter(
+            "WASM adapter support requires the 'wasm' feature flag".into(),
+        )),
         other => Err(Error::Adapter(format!("unknown format: {}", other))),
     }
 }

@@ -172,7 +172,7 @@ artifacts:
   - id: FEAT-012
     type: feature
     title: WASM adapter runtime
-    status: draft
+    status: approved
     description: >
       Load and execute WASM component adapters at runtime using
       the WIT-defined interface.
