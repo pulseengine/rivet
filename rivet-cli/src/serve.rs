@@ -1027,6 +1027,20 @@ details.diff-row>.diff-detail{padding:.75rem 1.25rem;background:rgba(0,0,0,.01);
 .btn-secondary{background:transparent;color:var(--text-secondary);border:1px solid var(--border)}
 .btn-secondary:hover{background:rgba(0,0,0,.03);color:var(--text);text-decoration:none}
 
+/* ── SVG Viewer (fullscreen / popout / resize) ───────────────── */
+.svg-viewer{position:relative;border:1px solid var(--border);border-radius:6px;overflow:hidden;
+     resize:both;min-height:300px}
+.svg-viewer-toolbar{position:absolute;top:8px;right:8px;z-index:20;display:flex;gap:4px}
+.svg-viewer-toolbar button{background:rgba(0,0,0,0.6);color:#fff;border:1px solid rgba(255,255,255,0.2);
+     border-radius:4px;padding:4px 8px;cursor:pointer;font-size:16px;line-height:1;
+     transition:background var(--transition)}
+.svg-viewer-toolbar button:hover{background:rgba(0,0,0,0.8)}
+.svg-viewer.fullscreen{position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9999;
+     border-radius:0;background:var(--bg);resize:none}
+.svg-viewer.fullscreen .svg-viewer-toolbar{top:16px;right:16px}
+.svg-viewer .graph-container{border:none;border-radius:0}
+.svg-viewer.fullscreen .graph-container{height:100vh;min-height:100vh}
+
 /* ── Graph ────────────────────────────────────────────────────── */
 .graph-container{border-radius:var(--radius);overflow:hidden;background:#fafbfc;cursor:grab;
      height:calc(100vh - 280px);min-height:400px;position:relative;border:1px solid var(--border)}
@@ -1696,6 +1710,60 @@ const GRAPH_JS: &str = r#"
     // also hide when clicking (navigating away)
     document.body.addEventListener('click',function(){ hide(); },true);
   })();
+
+  // ── SVG viewer: fullscreen / popout / zoom-fit ──────────────
+  window.svgFullscreen=function(btn){
+    var viewer=btn.closest('.svg-viewer');
+    if(!viewer) return;
+    viewer.classList.toggle('fullscreen');
+    var isFS=viewer.classList.contains('fullscreen');
+    btn.textContent=isFS?'\u2715':'\u26F6';
+    btn.title=isFS?'Exit fullscreen':'Fullscreen';
+  };
+
+  window.svgPopout=function(btn){
+    var viewer=btn.closest('.svg-viewer');
+    if(!viewer) return;
+    var svg=viewer.querySelector('svg');
+    if(!svg) return;
+    var popup=window.open('','_blank','width=1200,height=800');
+    var doc=popup.document;
+    doc.open();
+    var style=doc.createElement('style');
+    style.textContent='body{margin:0;background:#fafbfc;display:flex;align-items:center;justify-content:center;min-height:100vh} svg{max-width:95vw;max-height:95vh}';
+    doc.head.appendChild(style);
+    doc.title='Rivet Graph';
+    doc.body.appendChild(svg.cloneNode(true));
+    doc.close();
+  };
+
+  window.svgZoomFit=function(btn){
+    var viewer=btn.closest('.svg-viewer');
+    if(!viewer) return;
+    var container=viewer.querySelector('.graph-container');
+    var svg=viewer.querySelector('svg');
+    if(!svg) return;
+    // Trigger the existing zoom-fit button if present
+    if(container){
+      var fitBtn=container.querySelector('.zoom-fit');
+      if(fitBtn){ fitBtn.click(); return; }
+    }
+    // Fallback: reset viewBox from bounding box
+    var bbox=svg.getBBox();
+    var pad=40;
+    svg.setAttribute('viewBox',
+      (bbox.x-pad)+' '+(bbox.y-pad)+' '+(bbox.width+pad*2)+' '+(bbox.height+pad*2));
+  };
+
+  document.addEventListener('keydown',function(e){
+    if(e.key==='Escape'){
+      document.querySelectorAll('.svg-viewer.fullscreen').forEach(function(v){
+        v.classList.remove('fullscreen');
+        var btn=v.querySelector('.svg-viewer-toolbar button[title="Exit fullscreen"]');
+        if(btn){ btn.textContent='\u26F6'; btn.title='Fullscreen'; }
+      });
+    }
+  });
 })();
 </script>
 "#;
@@ -3138,6 +3206,7 @@ async fn graph_view(
                 label: n.clone(),
                 node_type: atype,
                 sublabel,
+                parent: None,
             }
         },
         &|_idx, e| EdgeInfo { label: e.clone() },
@@ -3236,9 +3305,14 @@ async fn graph_view(
     }
     html.push_str("</div>");
 
-    // SVG card with zoom controls
+    // SVG card with zoom controls + viewer toolbar
     html.push_str(
-        "<div class=\"card\" style=\"padding:0;position:relative\">\
+        "<div class=\"svg-viewer\" id=\"graph-viewer\">\
+        <div class=\"svg-viewer-toolbar\">\
+          <button onclick=\"svgZoomFit(this)\" title=\"Zoom to fit\">\u{229e}</button>\
+          <button onclick=\"svgFullscreen(this)\" title=\"Fullscreen\">\u{26f6}</button>\
+          <button onclick=\"svgPopout(this)\" title=\"Open in new window\">\u{2197}</button>\
+        </div>\
         <div class=\"graph-container\">\
         <div class=\"graph-controls\">\
           <button class=\"zoom-in\" title=\"Zoom in\">+</button>\
@@ -3334,6 +3408,7 @@ async fn artifact_graph(
                 label: n.clone(),
                 node_type: atype,
                 sublabel,
+                parent: None,
             }
         },
         &|_idx, e| EdgeInfo { label: e.clone() },
@@ -3381,9 +3456,14 @@ async fn artifact_graph(
     }
     html.push_str("</div>");
 
-    // SVG with zoom controls
+    // SVG with zoom controls + viewer toolbar
     html.push_str(
-        "<div class=\"card\" style=\"padding:0;position:relative\">\
+        "<div class=\"svg-viewer\" id=\"ego-graph-viewer\">\
+        <div class=\"svg-viewer-toolbar\">\
+          <button onclick=\"svgZoomFit(this)\" title=\"Zoom to fit\">\u{229e}</button>\
+          <button onclick=\"svgFullscreen(this)\" title=\"Fullscreen\">\u{26f6}</button>\
+          <button onclick=\"svgPopout(this)\" title=\"Open in new window\">\u{2197}</button>\
+        </div>\
         <div class=\"graph-container\">\
         <div class=\"graph-controls\">\
           <button class=\"zoom-in\" title=\"Zoom in\">+</button>\
@@ -6426,6 +6506,7 @@ async fn doc_linkage_view(State(state): State<SharedState>) -> Html<String> {
                     label: label.clone(),
                     node_type: node_type.into(),
                     sublabel,
+                    parent: None,
                 }
             },
             &|_idx, e| EdgeInfo { label: e.clone() },
@@ -6434,7 +6515,12 @@ async fn doc_linkage_view(State(state): State<SharedState>) -> Html<String> {
 
         let svg = render_svg(&gl, &svg_opts);
         html.push_str(
-            "<div class=\"card\" style=\"padding:0;position:relative\">\
+            "<div class=\"svg-viewer\" id=\"doc-graph-viewer\">\
+            <div class=\"svg-viewer-toolbar\">\
+              <button onclick=\"svgZoomFit(this)\" title=\"Zoom to fit\">\u{229e}</button>\
+              <button onclick=\"svgFullscreen(this)\" title=\"Fullscreen\">\u{26f6}</button>\
+              <button onclick=\"svgPopout(this)\" title=\"Open in new window\">\u{2197}</button>\
+            </div>\
             <div class=\"graph-container\">\
             <div class=\"graph-controls\">\
               <button class=\"zoom-in\" title=\"Zoom in\">+</button>\
