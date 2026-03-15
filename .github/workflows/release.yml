@@ -27,7 +27,7 @@ jobs:
             archive: tar.gz
             cross: true
           - target: x86_64-apple-darwin
-            os: macos-13
+            os: macos-14
             archive: tar.gz
           - target: aarch64-apple-darwin
             os: macos-latest
@@ -139,7 +139,7 @@ jobs:
       - name: Generate coverage
         run: |
           mkdir -p test-evidence/coverage
-          cargo llvm-cov --all-features --workspace --lcov --output-path test-evidence/coverage/lcov.info
+          cargo llvm-cov --workspace --lcov --output-path test-evidence/coverage/lcov.info
           cargo llvm-cov report --all-features --workspace > test-evidence/coverage/summary.txt
 
       - name: Run benchmarks
