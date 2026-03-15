@@ -93,6 +93,12 @@ const TOPICS: &[DocTopic] = &[
         category: "Reference",
         content: CROSS_REPO_DOC,
     },
+    DocTopic {
+        slug: "formal-verification",
+        title: "Formal Verification with Rocq (Coq)",
+        category: "Methodology",
+        content: FORMAL_VERIFICATION_DOC,
+    },
 ];
 
 // ── Embedded documentation ──────────────────────────────────────────────
@@ -703,6 +709,113 @@ Repos participate in baselines by tagging: `git tag baseline/v1.0`
 - **DD-015**: Mesh topology — any repo links to any other
 - **DD-016**: Distributed baselining — repos tag themselves
 - **DD-017**: Transitive dependency resolution — declare direct deps only
+"#;
+
+const FORMAL_VERIFICATION_DOC: &str = r#"# Formal Verification with Rocq (Coq)
+
+## Overview
+
+Rivet's validation engine semantics are formally verified using the
+Rocq theorem prover (formerly Coq). The proofs live in `proofs/rocq/`
+and are compiled via Bazel using `rules_rocq_rust`.
+
+This provides mechanized guarantees that go beyond testing:
+properties hold for **all** possible inputs, not just test cases.
+
+## What Is Verified
+
+### Schema.v — Core Metamodel (10 theorems)
+
+| Theorem | Property |
+|---------|----------|
+| `schema_satisfiable` | Any rule set admits a valid store |
+| `monotonicity_non_source` | Adding non-source artifacts preserves validity |
+| `validation_work_add_one` | Validation work is O(n * rules) |
+| `broken_link_detection_sound` | All broken links are reported |
+| `insert_then_get` | Inserted artifacts are retrievable |
+| `insert_preserves_old` | Insert does not affect other artifacts |
+| `insert_duplicate_fails` | Duplicate IDs are rejected |
+| `backlink_from_forward_link` | Forward links induce backlinks |
+| `vmodel_chain_two_steps` | Rule chains imply reachability |
+| `store_get_in` | Known artifacts are findable (unique IDs) |
+
+### Validation.v — Engine Properties
+
+| Theorem | Property |
+|---------|----------|
+| `validation_deterministic` | Same input produces same output |
+| `empty_store_no_diagnostics` | Empty store is always clean |
+| `check_broken_links_reports` | Broken links produce error diagnostics |
+| `check_broken_links_clean` | Valid links produce no diagnostics |
+| `check_broken_links_length` | At most one diagnostic per link |
+| `check_artifact_rules_length` | At most one diagnostic per rule |
+
+## Correspondence to Rust Code
+
+The Rocq specifications model these Rust types:
+
+| Rocq Type | Rust Type | Source |
+|-----------|-----------|--------|
+| `Artifact` | `model::Artifact` | `rivet-core/src/model.rs` |
+| `Link` | `model::Link` | `rivet-core/src/model.rs` |
+| `Store` | `store::Store` | `rivet-core/src/store.rs` |
+| `TraceRule` | `schema::TraceabilityRule` | `rivet-core/src/schema.rs` |
+| `Diagnostic` | `validate::Diagnostic` | `rivet-core/src/validate.rs` |
+| `Severity` | `schema::Severity` | `rivet-core/src/schema.rs` |
+
+## Building the Proofs
+
+### Prerequisites
+
+- Nix package manager (provides hermetic Rocq 9.0 toolchain)
+- Bazel 8+ with bzlmod enabled
+
+### Commands
+
+```bash
+# Compile all proofs
+bazel build //proofs/rocq:rivet_metamodel
+
+# Run proof verification test
+bazel test //proofs/rocq:rivet_metamodel_test
+
+# Compile individual files
+bazel build //proofs/rocq:rivet_schema
+bazel build //proofs/rocq:rivet_validation
+```
+
+### Bazel Integration
+
+The proofs use `rules_rocq_rust` from `pulseengine/rules_rocq_rust`:
+
+```starlark
+# proofs/rocq/MODULE.bazel
+bazel_dep(name = "rules_rocq_rust", version = "0.1.0")
+git_override(
+    module_name = "rules_rocq_rust",
+    remote = "https://github.com/pulseengine/rules_rocq_rust.git",
+    commit = "6a8da0bd...",
+)
+```
+
+## Design Rationale
+
+The formal model specifies **intended behavior** rather than translating
+Rust code directly (via rocq-of-rust). This is deliberate:
+
+1. **Abstraction** — The Rocq model captures essential properties without
+   coupling to HashMap internals, serde machinery, or error types.
+2. **Stability** — Refactoring Rust code does not break proofs as long
+   as the behavioral specification still holds.
+3. **Readability** — The Rocq types serve as a mathematical specification
+   document that complements the Rust implementation.
+
+## References
+
+- Rocq (Coq) Theorem Prover: https://rocq-prover.org/
+- rocq-of-rust (Rust-to-Rocq translator): https://github.com/formal-land/rocq-of-rust
+- rules_rocq_rust (Bazel rules): https://github.com/pulseengine/rules_rocq_rust
+- [[REQ-023]], [[DD-018]], [[FEAT-040]]
 "#;
 
 const STPA_DOC: &str = concat!(

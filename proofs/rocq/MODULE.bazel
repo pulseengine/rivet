@@ -1,0 +1,52 @@
+# Rivet Formal Verification — Rocq/Coq Proofs
+#
+# This module integrates rules_rocq_rust for compiling Rocq proof files
+# that formally verify properties of Rivet's validation engine.
+#
+# Prerequisites:
+#   - Nix package manager (provides hermetic Rocq 9.0 toolchain)
+#   - Bazel 8+ with bzlmod enabled
+#
+# Usage:
+#   bazel build //proofs/rocq:rivet_metamodel
+#   bazel test //proofs/rocq:rivet_metamodel_test
+
+module(
+    name = "rivet_proofs",
+    version = "0.1.0",
+)
+
+# rules_rocq_rust — Bazel rules for Rocq theorem proving
+bazel_dep(name = "rules_rocq_rust", version = "0.1.0")
+
+git_override(
+    module_name = "rules_rocq_rust",
+    remote = "https://github.com/pulseengine/rules_rocq_rust.git",
+    commit = "6a8da0bd30b5f80f811acefbf6ac5740a08d4a8c",
+)
+
+# Nix integration (required by rules_rocq_rust for hermetic toolchains)
+bazel_dep(name = "rules_nixpkgs_core", version = "0.13.0")
+
+nix_repo = use_extension(
+    "@rules_nixpkgs_core//extensions:repository.bzl",
+    "nix_repo",
+)
+nix_repo.github(
+    name = "nixpkgs",
+    org = "NixOS",
+    repo = "nixpkgs",
+    # nixos-unstable with Rocq 9.0.1 (pinned 2026-03-06)
+    commit = "aca4d95fce4914b3892661bcb80b8087293536c6",
+    sha256 = "",
+)
+use_repo(nix_repo, "nixpkgs")
+
+# Rocq toolchain — hermetic Rocq 9.0 via nixpkgs
+rocq = use_extension("@rules_rocq_rust//rocq:extensions.bzl", "rocq")
+rocq.toolchain(
+    version = "9.0",
+    strategy = "nix",
+)
+use_repo(rocq, "rocq_toolchains", "rocq_stdlib")
+register_toolchains("@rocq_toolchains//:all")

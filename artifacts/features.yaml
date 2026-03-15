@@ -577,3 +577,24 @@ artifacts:
       - type: satisfies
         target: REQ-020
     tags: [cross-repo, dashboard]
+
+  - id: FEAT-040
+    type: feature
+    title: Rocq formal verification of validation semantics
+    status: draft
+    description: >
+      Mechanized proofs in Rocq (Coq) verifying key properties of the
+      validation engine: schema satisfiability, monotonicity of artifact
+      addition, validation termination, broken-link detection soundness,
+      store insert/lookup consistency, and backlink symmetry. Compiled
+      via Bazel using rules_rocq_rust with hermetic Nix toolchains.
+      Includes Schema.v (domain model, 10 theorems) and Validation.v
+      (engine properties, determinism, diagnostic bounds).
+    tags: [verification, formal-methods, rocq]
+    links:
+      - type: satisfies
+        target: REQ-023
+      - type: implements
+        target: DD-018
+    fields:
+      phase: phase-3

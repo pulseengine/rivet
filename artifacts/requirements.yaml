@@ -287,3 +287,19 @@ artifacts:
     fields:
       priority: should
       category: functional
+
+  - id: REQ-023
+    type: requirement
+    title: Formal verification of validation semantics
+    status: draft
+    description: >
+      Key properties of the validation engine must be mechanically verified
+      using the Rocq (Coq) theorem prover. The formal model must cover
+      schema satisfiability, monotonicity of artifact addition, validation
+      termination, broken-link detection soundness, store insert/lookup
+      consistency, and backlink symmetry. Proofs must be compilable via
+      Bazel using rules_rocq_rust.
+    tags: [verification, formal-methods]
+    fields:
+      priority: should
+      category: non-functional

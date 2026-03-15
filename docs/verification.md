@@ -281,3 +281,22 @@ Requirements without direct test coverage ([[REQ-006]], [[REQ-008]],
 [[REQ-011]], [[REQ-012]], [[REQ-013]], [[REQ-014]]) are verified through CI
 quality gates, feature-gated integration tests, or benchmark KPIs rather than
 unit tests.
+
+## 10. Formal Verification (Rocq)
+
+[[REQ-023]] specifies mechanized verification of validation engine properties
+using the Rocq (Coq) theorem prover. The proofs live in `proofs/rocq/` and
+are compiled via Bazel using `rules_rocq_rust` ([[DD-018]], [[FEAT-040]]).
+
+| File | Theorems | Properties |
+|------|----------|------------|
+| `Schema.v` | 10 | Satisfiability, monotonicity, termination, broken-link soundness, store consistency, backlink symmetry, V-model reachability |
+| `Validation.v` | 6 | Determinism, empty-store cleanliness, broken-link reporting, diagnostic bounds |
+
+Unlike testing, formal verification proves properties for **all** possible
+inputs. The Rocq specifications model `Store`, `Schema`, `TraceabilityRule`,
+and `Diagnostic` as inductive types and prove that the validation algorithm
+satisfies its specification.
+
+Build with: `bazel build //proofs/rocq:rivet_metamodel`
+Test with: `bazel test //proofs/rocq:rivet_metamodel_test`
