@@ -529,3 +529,131 @@ dashboard-ucas:
 
   too-early-too-late: []
   stopped-too-soon: []
+
+# =============================================================================
+# Core Engine UCAs — Incremental validation (salsa)
+#                    CA-CORE-1 extended: incremental link graph rebuild
+#                    CA-CORE-2 extended: incremental validation
+# =============================================================================
+incremental-ucas:
+  control-action: Incrementally recompute validation via salsa dependency tracking
+  controller: CTRL-CORE
+
+  not-providing:
+    - id: UCA-C-10
+      description: >
+        Core salsa database does not invalidate link graph queries when
+        an artifact file is modified on disk.
+      context: >
+        Developer edits a YAML file, but the salsa input query for that
+        file is not updated. Subsequent validation returns cached results
+        from the previous file contents.
+      hazards: [H-9, H-1, H-3]
+      rationale: >
+        The fundamental incremental correctness property is violated:
+        stale cached validation results create false assurance.
+
+    - id: UCA-C-11
+      description: >
+        Core does not re-evaluate conditional rules when the field they
+        depend on changes.
+      context: >
+        A conditional rule checks "if status == approved then
+        verification-criteria required." An artifact's status changes
+        from draft to approved, but the conditional rule query is not
+        invalidated.
+      hazards: [H-9, H-1]
+      rationale: >
+        The newly-approved artifact lacks verification-criteria but
+        the conditional rule does not fire because salsa returns the
+        cached result from when the artifact was still draft.
+
+  providing:
+    - id: UCA-C-12
+      description: >
+        Core applies conditional validation rules that contradict each
+        other on the same artifact.
+      context: >
+        Schema defines rule A requiring field X when status=approved,
+        and rule B forbidding field X when safety=ASIL_B. An artifact
+        has both status=approved and safety=ASIL_B.
+      hazards: [H-10]
+      rationale: >
+        Contradictory rules make compliance impossible. Engineers
+        disable or work around rules, undermining the validation system.
+
+    - id: UCA-C-13
+      description: >
+        Core incremental validation produces different diagnostics than
+        a clean full validation pass for the same inputs.
+      context: >
+        A sequence of incremental changes accumulates stale intermediate
+        results that a fresh full pass would not produce.
+      hazards: [H-9, H-3]
+      rationale: >
+        Divergence between incremental and full results means the tool
+        cannot be trusted. Safety-critical tooling must be deterministic.
+
+  too-early-too-late:
+    - id: UCA-C-14
+      description: >
+        Core evaluates conditional rules before schema loading completes,
+        using an incomplete rule set.
+      context: >
+        Salsa query ordering allows conditional rule evaluation to
+        proceed before all schema files have been parsed and merged.
+      hazards: [H-9, H-10]
+      rationale: >
+        Missing conditional rules means violations go undetected.
+        Rules added later in the schema merge are never applied.
+
+  stopped-too-soon: []
+
+# =============================================================================
+# Parser UCAs — MODULE.bazel Starlark subset parser
+# =============================================================================
+parser-ucas:
+  control-action: Parse MODULE.bazel to discover cross-repo dependencies
+  controller: CTRL-CORE
+
+  not-providing:
+    - id: UCA-C-15
+      description: >
+        Parser does not extract git_override commit SHA, causing
+        cross-repo validation to run against the registry version
+        instead of the pinned override.
+      context: >
+        MODULE.bazel contains both bazel_dep(version="1.0") and
+        git_override(commit="abc123"). Parser extracts only bazel_dep.
+      hazards: [H-11, H-1]
+      rationale: >
+        Validation runs against the wrong version of the external repo,
+        producing coverage results that don't match the actual baseline.
+
+    - id: UCA-C-16
+      description: >
+        Parser does not emit a diagnostic when encountering unsupported
+        Starlark constructs, silently skipping them.
+      context: >
+        MODULE.bazel uses load() statements, string concatenation, or
+        variable references that the subset parser cannot handle.
+      hazards: [H-11]
+      rationale: >
+        Missing dependencies are not reported. Cross-repo validation
+        has blind spots where repos are not discovered.
+
+  providing:
+    - id: UCA-C-17
+      description: >
+        Parser extracts incorrect module name or version from a
+        bazel_dep() call due to malformed CST construction.
+      context: >
+        A parsing bug causes keyword argument values to be associated
+        with the wrong parameter names.
+      hazards: [H-11, H-1]
+      rationale: >
+        Cross-repo links resolve against a different module than
+        intended, producing silently incorrect traceability.
+
+  too-early-too-late: []
+  stopped-too-soon: []

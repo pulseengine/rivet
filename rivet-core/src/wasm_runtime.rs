@@ -46,6 +46,16 @@ mod wit_bindings {
     });
 }
 
+/// Type-safe bindings for the `rivet-adapter` world (adapter only, no renderer).
+/// Used for user-supplied WASM adapter components that implement the
+/// `pulseengine:rivet/adapter` interface.
+mod adapter_bindings {
+    wasmtime::component::bindgen!({
+        path: "../wit/adapter.wit",
+        world: "rivet-adapter",
+    });
+}
+
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
@@ -338,7 +348,7 @@ impl WasmAdapter {
         Ok(vec![])
     }
 
-    /// Call the guest `import` function.
+    /// Call the guest `import` function via generated bindings.
     ///
     /// This reads source data into bytes, sends them to the WASM guest, and
     /// converts the returned artifacts back into the host model.
@@ -352,35 +362,40 @@ impl WasmAdapter {
 
         let mut store = self.create_store()?;
         let linker = self.create_linker()?;
-        let instance = linker
-            .instantiate(&mut store, &self.component)
-            .map_err(|e| WasmError::Instantiation(e.to_string()))?;
 
-        let func = instance
-            .get_func(&mut store, "import")
-            .ok_or_else(|| WasmError::Guest("adapter does not export 'import' function".into()))?;
+        let bindings =
+            adapter_bindings::RivetAdapter::instantiate(&mut store, &self.component, &linker)
+                .map_err(|e| WasmError::Instantiation(e.to_string()))?;
 
-        // Build config entries as component values.
-        let config_entries: Vec<(String, String)> = config
-            .entries
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
+        // Build the WIT adapter-config from the host AdapterConfig.
+        let wit_config = adapter_bindings::pulseengine::rivet::types::AdapterConfig {
+            entries: config
+                .entries
+                .iter()
+                .map(
+                    |(k, v)| adapter_bindings::pulseengine::rivet::types::ConfigEntry {
+                        key: k.clone(),
+                        value: v.clone(),
+                    },
+                )
+                .collect(),
+        };
 
-        // TODO: Build proper component-model values for the function arguments
-        // and parse the result<list<artifact>, adapter-error> return type.
-        // This requires either `wasmtime::component::bindgen!` macro or manual
-        // Val construction matching the WIT types.
-        //
-        // Placeholder: log the call and return an error indicating this path
-        // is not yet fully wired up.
-        let _ = (func, source_bytes, config_entries);
-        Err(WasmError::Guest(
-            "WASM adapter import is not yet fully implemented — \
-             the component was loaded and validated, but host-guest \
-             data marshalling requires generated bindings"
-                .into(),
-        ))
+        let result = bindings
+            .pulseengine_rivet_adapter()
+            .call_import(&mut store, &source_bytes, &wit_config)
+            .map_err(|e| WasmError::Guest(e.to_string()))?;
+
+        match result {
+            Ok(wit_artifacts) => {
+                let artifacts = wit_artifacts
+                    .into_iter()
+                    .map(convert_wit_artifact_to_host)
+                    .collect();
+                Ok(artifacts)
+            }
+            Err(e) => Err(WasmError::Guest(format!("adapter import error: {:?}", e))),
+        }
     }
 
     /// Call the guest `render` function from the renderer interface.
@@ -512,7 +527,7 @@ impl WasmAdapter {
             .collect())
     }
 
-    /// Call the guest `export` function.
+    /// Call the guest `export` function via generated bindings.
     fn call_export(
         &self,
         artifacts: &[Artifact],
@@ -520,23 +535,37 @@ impl WasmAdapter {
     ) -> Result<Vec<u8>, WasmError> {
         let mut store = self.create_store()?;
         let linker = self.create_linker()?;
-        let instance = linker
-            .instantiate(&mut store, &self.component)
-            .map_err(|e| WasmError::Instantiation(e.to_string()))?;
 
-        let func = instance
-            .get_func(&mut store, "export")
-            .ok_or_else(|| WasmError::Guest("adapter does not export 'export' function".into()))?;
+        let bindings =
+            adapter_bindings::RivetAdapter::instantiate(&mut store, &self.component, &linker)
+                .map_err(|e| WasmError::Instantiation(e.to_string()))?;
 
-        // TODO: Convert host Artifact list to component-model values,
-        // invoke the function, and parse result<list<u8>, adapter-error>.
-        let _ = (func, artifacts, config);
-        Err(WasmError::Guest(
-            "WASM adapter export is not yet fully implemented — \
-             the component was loaded and validated, but host-guest \
-             data marshalling requires generated bindings"
-                .into(),
-        ))
+        // Convert host artifacts to WIT types.
+        let wit_artifacts: Vec<adapter_bindings::pulseengine::rivet::types::Artifact> =
+            artifacts.iter().map(convert_host_artifact_to_wit).collect();
+
+        let wit_config = adapter_bindings::pulseengine::rivet::types::AdapterConfig {
+            entries: config
+                .entries
+                .iter()
+                .map(
+                    |(k, v)| adapter_bindings::pulseengine::rivet::types::ConfigEntry {
+                        key: k.clone(),
+                        value: v.clone(),
+                    },
+                )
+                .collect(),
+        };
+
+        let result = bindings
+            .pulseengine_rivet_adapter()
+            .call_export(&mut store, &wit_artifacts, &wit_config)
+            .map_err(|e| WasmError::Guest(e.to_string()))?;
+
+        match result {
+            Ok(bytes) => Ok(bytes),
+            Err(e) => Err(WasmError::Guest(format!("adapter export error: {:?}", e))),
+        }
     }
 }
 
@@ -614,6 +643,120 @@ impl wasmtime::ResourceLimiter for MemoryLimiter {
         _maximum: Option<usize>,
     ) -> wasmtime::Result<bool> {
         Ok(true)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// WIT <-> Host type conversions
+// ---------------------------------------------------------------------------
+
+/// Convert a WIT artifact (from the WASM guest) into a host [`Artifact`].
+fn convert_wit_artifact_to_host(
+    wit: adapter_bindings::pulseengine::rivet::types::Artifact,
+) -> Artifact {
+    use crate::model::Link;
+
+    let links = wit
+        .links
+        .into_iter()
+        .map(|l| Link {
+            link_type: l.link_type,
+            target: l.target,
+        })
+        .collect();
+
+    let fields = wit
+        .fields
+        .into_iter()
+        .map(|f| {
+            let value = match f.value {
+                adapter_bindings::pulseengine::rivet::types::FieldValue::Text(s) => {
+                    serde_yaml::Value::String(s)
+                }
+                adapter_bindings::pulseengine::rivet::types::FieldValue::Number(n) => {
+                    serde_yaml::Value::Number(serde_yaml::Number::from(n))
+                }
+                adapter_bindings::pulseengine::rivet::types::FieldValue::Boolean(b) => {
+                    serde_yaml::Value::Bool(b)
+                }
+                adapter_bindings::pulseengine::rivet::types::FieldValue::TextList(list) => {
+                    serde_yaml::Value::Sequence(
+                        list.into_iter().map(serde_yaml::Value::String).collect(),
+                    )
+                }
+            };
+            (f.key, value)
+        })
+        .collect();
+
+    Artifact {
+        id: wit.id,
+        artifact_type: wit.artifact_type,
+        title: wit.title,
+        description: wit.description,
+        status: wit.status,
+        tags: wit.tags,
+        links,
+        fields,
+        source_file: None,
+    }
+}
+
+/// Convert a host [`Artifact`] into the WIT type for sending to the WASM guest.
+fn convert_host_artifact_to_wit(
+    host: &Artifact,
+) -> adapter_bindings::pulseengine::rivet::types::Artifact {
+    use adapter_bindings::pulseengine::rivet::types as wit;
+
+    let links = host
+        .links
+        .iter()
+        .map(|l| wit::Link {
+            link_type: l.link_type.clone(),
+            target: l.target.clone(),
+        })
+        .collect();
+
+    let fields = host
+        .fields
+        .iter()
+        .map(|(k, v)| wit::FieldEntry {
+            key: k.clone(),
+            value: yaml_value_to_wit_field(v),
+        })
+        .collect();
+
+    wit::Artifact {
+        id: host.id.clone(),
+        artifact_type: host.artifact_type.clone(),
+        title: host.title.clone(),
+        description: host.description.clone(),
+        status: host.status.clone(),
+        tags: host.tags.clone(),
+        links,
+        fields,
+    }
+}
+
+/// Convert a `serde_yaml::Value` to a WIT `FieldValue`.
+fn yaml_value_to_wit_field(
+    value: &serde_yaml::Value,
+) -> adapter_bindings::pulseengine::rivet::types::FieldValue {
+    use adapter_bindings::pulseengine::rivet::types::FieldValue;
+
+    match value {
+        serde_yaml::Value::String(s) => FieldValue::Text(s.clone()),
+        serde_yaml::Value::Bool(b) => FieldValue::Boolean(*b),
+        serde_yaml::Value::Number(n) => FieldValue::Number(n.as_f64().unwrap_or(0.0)),
+        serde_yaml::Value::Sequence(seq) => {
+            let strings: Vec<String> = seq
+                .iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect();
+            FieldValue::TextList(strings)
+        }
+        // For other YAML types (mapping, null, tagged), serialize as text.
+        other => FieldValue::Text(format!("{:?}", other)),
     }
 }
 
@@ -712,6 +855,86 @@ mod tests {
         match core_err {
             Error::Adapter(msg) => assert!(msg.contains("test error")),
             other => panic!("expected Adapter error, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn convert_wit_artifact_roundtrip() {
+        use adapter_bindings::pulseengine::rivet::types as wit;
+
+        let wit_artifact = wit::Artifact {
+            id: "REQ-001".into(),
+            artifact_type: "requirement".into(),
+            title: "Test requirement".into(),
+            description: Some("A test description".into()),
+            status: Some("draft".into()),
+            tags: vec!["safety".into(), "phase-1".into()],
+            links: vec![wit::Link {
+                link_type: "satisfies".into(),
+                target: "REQ-000".into(),
+            }],
+            fields: vec![wit::FieldEntry {
+                key: "priority".into(),
+                value: wit::FieldValue::Text("high".into()),
+            }],
+        };
+
+        let host = convert_wit_artifact_to_host(wit_artifact);
+        assert_eq!(host.id, "REQ-001");
+        assert_eq!(host.artifact_type, "requirement");
+        assert_eq!(host.title, "Test requirement");
+        assert_eq!(host.description.as_deref(), Some("A test description"));
+        assert_eq!(host.status.as_deref(), Some("draft"));
+        assert_eq!(host.tags, vec!["safety", "phase-1"]);
+        assert_eq!(host.links.len(), 1);
+        assert_eq!(host.links[0].link_type, "satisfies");
+        assert_eq!(host.links[0].target, "REQ-000");
+        assert_eq!(
+            host.fields.get("priority"),
+            Some(&serde_yaml::Value::String("high".into()))
+        );
+
+        // Round-trip back to WIT
+        let wit_back = convert_host_artifact_to_wit(&host);
+        assert_eq!(wit_back.id, "REQ-001");
+        assert_eq!(wit_back.artifact_type, "requirement");
+        assert_eq!(wit_back.links.len(), 1);
+        assert_eq!(wit_back.fields.len(), 1);
+    }
+
+    #[test]
+    fn yaml_value_to_wit_field_conversions() {
+        use adapter_bindings::pulseengine::rivet::types::FieldValue;
+
+        // String
+        let v = serde_yaml::Value::String("hello".into());
+        match yaml_value_to_wit_field(&v) {
+            FieldValue::Text(s) => assert_eq!(s, "hello"),
+            other => panic!("expected Text, got {:?}", other),
+        }
+
+        // Boolean
+        let v = serde_yaml::Value::Bool(true);
+        match yaml_value_to_wit_field(&v) {
+            FieldValue::Boolean(b) => assert!(b),
+            other => panic!("expected Boolean, got {:?}", other),
+        }
+
+        // Number
+        let v = serde_yaml::Value::Number(serde_yaml::Number::from(42));
+        match yaml_value_to_wit_field(&v) {
+            FieldValue::Number(n) => assert!((n - 42.0).abs() < f64::EPSILON),
+            other => panic!("expected Number, got {:?}", other),
+        }
+
+        // Sequence of strings
+        let v = serde_yaml::Value::Sequence(vec![
+            serde_yaml::Value::String("a".into()),
+            serde_yaml::Value::String("b".into()),
+        ]);
+        match yaml_value_to_wit_field(&v) {
+            FieldValue::TextList(list) => assert_eq!(list, vec!["a", "b"]),
+            other => panic!("expected TextList, got {:?}", other),
         }
     }
 

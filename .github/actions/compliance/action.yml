@@ -1,0 +1,210 @@
+name: Rivet Compliance Report
+description: >
+  Generate a self-contained HTML compliance report from rivet-managed artifacts.
+  Produces an archive with traceability matrix, coverage, validation, requirements
+  spec, and rendered documents — ready for audit evidence or static hosting.
+
+  See https://github.com/pulseengine/rivet for documentation.
+
+inputs:
+  # ── Report configuration ───────────────────────────────────────────
+  report-label:
+    description: >
+      Display label shown in the report header and version switcher
+      (e.g., "v0.1.0", "Sprint 42", "2026-Q1 Release"). This is purely
+      cosmetic — it does not select which code to build.
+      Defaults to the git tag if triggered by a tag push, or "dev".
+    required: false
+    default: ''
+
+  homepage:
+    description: >
+      URL for the "back" link in the report navigation bar. When set,
+      a "← {project}" link appears in the header pointing to this URL.
+      Example: "https://pulseengine.eu/projects/"
+    required: false
+    default: ''
+
+  other-versions:
+    description: >
+      JSON array of other report versions for the version switcher dropdown.
+      Each entry has "label" (display name) and "path" (relative URL to
+      that version's report directory).
+      Example: [{"label":"v0.1.0","path":"../v0.1.0/"},{"label":"latest","path":"../latest/"}]
+    required: false
+    default: '[]'
+
+  theme:
+    description: 'Color theme for the report: "dark" (PulseEngine style) or "light" (print-friendly).'
+    required: false
+    default: 'dark'
+
+  offline:
+    description: 'When true, uses system fonts instead of loading Google Fonts. For air-gapped environments.'
+    required: false
+    default: 'false'
+
+  # ── Rivet tool ─────────────────────────────────────────────────────
+  rivet-version:
+    description: >
+      Which rivet release to use for generating the report. Set to a
+      release tag (e.g., "v0.1.0") to download a pre-built binary, or
+      "source" to build from the repo's own rivet-cli crate (for
+      dogfooding). Defaults to "source" since rivet is not yet on crates.io.
+    required: false
+    default: 'source'
+
+  # ── Output ─────────────────────────────────────────────────────────
+  output:
+    description: 'Output directory for the generated HTML files.'
+    required: false
+    default: 'compliance'
+
+  archive:
+    description: 'When true, creates a tar.gz archive of the report directory.'
+    required: false
+    default: 'true'
+
+  archive-name:
+    description: >
+      Filename for the archive (without .tar.gz extension). Defaults to
+      "{project}-{label}-compliance-report" derived from rivet.yaml.
+    required: false
+    default: ''
+
+  project-dir:
+    description: 'Path to the directory containing rivet.yaml.'
+    required: false
+    default: '.'
+
+outputs:
+  report-dir:
+    description: 'Path to the directory containing the generated HTML files.'
+    value: ${{ steps.export.outputs.report-dir }}
+  archive-path:
+    description: 'Path to the tar.gz archive (only set when archive=true).'
+    value: ${{ steps.archive.outputs.archive-path }}
+  artifact-count:
+    description: 'Total number of artifacts found in the project.'
+    value: ${{ steps.stats.outputs.artifact-count }}
+  validation-result:
+    description: 'Validation outcome: "PASS" or "FAIL".'
+    value: ${{ steps.validate.outputs.result }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install Rivet
+      shell: bash
+      env:
+        RIVET_VERSION: ${{ inputs.rivet-version }}
+      run: |
+        if [ "$RIVET_VERSION" = "source" ]; then
+          echo "Building rivet from source..."
+          cargo build --release -p rivet-cli
+          cp target/release/rivet "$HOME/.cargo/bin/rivet"
+        else
+          echo "Downloading rivet ${RIVET_VERSION}..."
+          ARCH="$(uname -m)"
+          OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+          case "${OS}-${ARCH}" in
+            linux-x86_64)  TARGET="x86_64-unknown-linux-gnu" ;;
+            linux-aarch64) TARGET="aarch64-unknown-linux-gnu" ;;
+            darwin-x86_64) TARGET="x86_64-apple-darwin" ;;
+            darwin-arm64)  TARGET="aarch64-apple-darwin" ;;
+            *) echo "Unsupported platform: ${OS}-${ARCH}"; exit 1 ;;
+          esac
+          URL="https://github.com/pulseengine/rivet/releases/download/${RIVET_VERSION}/rivet-${RIVET_VERSION}-${TARGET}.tar.gz"
+          curl -sL "$URL" | tar xz -C "$HOME/.cargo/bin/"
+          chmod +x "$HOME/.cargo/bin/rivet"
+        fi
+        rivet --version
+
+    - name: Validate
+      id: validate
+      shell: bash
+      working-directory: ${{ inputs.project-dir }}
+      run: |
+        set +e
+        OUTPUT=$(rivet validate 2>&1)
+        RC=$?
+        set -e
+        echo "$OUTPUT"
+        if echo "$OUTPUT" | grep -q "Result: PASS"; then
+          echo "result=PASS" >> "$GITHUB_OUTPUT"
+        else
+          echo "result=FAIL" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Stats
+      id: stats
+      shell: bash
+      working-directory: ${{ inputs.project-dir }}
+      run: |
+        COUNT=$(rivet stats 2>&1 | grep TOTAL | awk '{print $2}')
+        echo "artifact-count=${COUNT}" >> "$GITHUB_OUTPUT"
+
+    - name: Determine report label
+      id: label
+      shell: bash
+      env:
+        INPUT_LABEL: ${{ inputs.report-label }}
+      run: |
+        LABEL="$INPUT_LABEL"
+        if [ -z "$LABEL" ]; then
+          LABEL="${GITHUB_REF#refs/tags/}"
+          if [ "$LABEL" = "$GITHUB_REF" ]; then
+            LABEL="dev"
+          fi
+        fi
+        echo "value=${LABEL}" >> "$GITHUB_OUTPUT"
+
+    - name: Export HTML report
+      id: export
+      shell: bash
+      working-directory: ${{ inputs.project-dir }}
+      env:
+        REPORT_LABEL: ${{ steps.label.outputs.value }}
+        REPORT_THEME: ${{ inputs.theme }}
+        REPORT_OUTPUT: ${{ inputs.output }}
+        REPORT_HOMEPAGE: ${{ inputs.homepage }}
+        REPORT_VERSIONS: ${{ inputs.other-versions }}
+        REPORT_OFFLINE: ${{ inputs.offline }}
+      run: |
+        ARGS="--format html --output ${REPORT_OUTPUT}"
+        ARGS="$ARGS --theme ${REPORT_THEME}"
+        ARGS="$ARGS --version-label ${REPORT_LABEL}"
+
+        if [ -n "$REPORT_HOMEPAGE" ]; then
+          ARGS="$ARGS --homepage ${REPORT_HOMEPAGE}"
+        fi
+
+        if [ "$REPORT_VERSIONS" != "[]" ]; then
+          ARGS="$ARGS --versions '${REPORT_VERSIONS}'"
+        fi
+
+        if [ "$REPORT_OFFLINE" = "true" ]; then
+          ARGS="$ARGS --offline"
+        fi
+
+        eval rivet export $ARGS
+        echo "report-dir=${REPORT_OUTPUT}" >> "$GITHUB_OUTPUT"
+
+    - name: Create archive
+      id: archive
+      if: inputs.archive == 'true'
+      shell: bash
+      working-directory: ${{ inputs.project-dir }}
+      env:
+        REPORT_LABEL: ${{ steps.label.outputs.value }}
+        ARCHIVE_NAME: ${{ inputs.archive-name }}
+        REPORT_OUTPUT: ${{ inputs.output }}
+      run: |
+        NAME="$ARCHIVE_NAME"
+        if [ -z "$NAME" ]; then
+          PROJECT=$(grep 'name:' rivet.yaml | head -1 | awk '{print $2}' | tr -d '"')
+          NAME="${PROJECT:-project}-${REPORT_LABEL}-compliance-report"
+        fi
+        tar -czf "${NAME}.tar.gz" -C "$REPORT_OUTPUT" .
+        echo "archive-path=${NAME}.tar.gz" >> "$GITHUB_OUTPUT"
+        echo "Created ${NAME}.tar.gz"

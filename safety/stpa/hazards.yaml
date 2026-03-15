@@ -82,6 +82,47 @@ hazards:
       incident.
     losses: [L-1, L-3, L-4]
 
+  - id: H-9
+    title: Rivet incremental validation returns stale results due to missed invalidation
+    description: >
+      The salsa incremental computation engine fails to invalidate a
+      cached validation result when an upstream input changes. The
+      validation reports PASS based on the previous state while the
+      current state contains violations. In a worst-case environment
+      where CI trusts incremental results, this silently passes a
+      broken traceability state.
+    losses: [L-1, L-2, L-5]
+
+  - id: H-10
+    title: Rivet conditional validation rules contradict, making compliance impossible
+    description: >
+      Two or more conditional rules fire on the same artifact and impose
+      contradictory requirements (e.g., rule A requires field X when
+      status=approved, rule B forbids field X when safety=ASIL_B).
+      No valid artifact configuration exists, but the tool does not
+      detect the inconsistency, causing perpetual validation failures
+      that engineers work around by disabling rules.
+    losses: [L-1, L-4, L-5]
+
+  - id: H-11
+    title: Rivet MODULE.bazel parser silently misparses dependency declarations
+    description: >
+      The Starlark subset parser incorrectly extracts module names,
+      versions, or git_override commits from MODULE.bazel. Cross-repo
+      validation runs against the wrong repo versions, reporting
+      traceability coverage against mismatched baselines.
+    losses: [L-1, L-2, L-5]
+
+  - id: H-12
+    title: Rivet formal proofs verify a model that diverges from the implementation
+    description: >
+      The Rocq metamodel specification or Verus annotations describe
+      properties of an idealized validation algorithm that differs from
+      the actual Rust implementation. Proofs pass but the implementation
+      has bugs that the proofs do not cover, creating false assurance
+      of correctness.
+    losses: [L-2, L-5]
+
 sub-hazards:
   # --- H-1 refinements: types of stale references ---
   - id: H-1.1
@@ -132,3 +173,39 @@ sub-hazards:
       ReqIF XHTML content or OSLC rich-text descriptions are stripped
       to plain text, losing tables, formulas, or embedded diagrams that
       are essential to understanding the requirement.
+
+  # --- H-9 refinements: incremental invalidation failures ---
+  - id: H-9.1
+    parent: H-9
+    title: Rivet salsa database does not track schema file changes as inputs
+    description: >
+      A schema file is modified (e.g., adding a conditional rule) but
+      the salsa input query for schemas is not invalidated. Validation
+      continues using the old schema, missing the new rule.
+
+  - id: H-9.2
+    parent: H-9
+    title: Rivet salsa database does not invalidate cross-repo link validation on external changes
+    description: >
+      An external repository's artifacts change (new commit fetched),
+      but the salsa queries for cross-repo link resolution are not
+      invalidated. Broken cross-repo links are not detected.
+
+  # --- H-11 refinements: parser misparse scenarios ---
+  - id: H-11.1
+    parent: H-11
+    title: Rivet parser ignores git_override and uses registry version instead
+    description: >
+      MODULE.bazel contains both bazel_dep(version="1.0") and
+      git_override(commit="abc123"). The parser extracts the registry
+      version but misses the override, causing validation against the
+      wrong repo checkout.
+
+  - id: H-11.2
+    parent: H-11
+    title: Rivet parser fails on valid Starlark syntax it does not support
+    description: >
+      MODULE.bazel uses string concatenation, variable references, or
+      load() statements that the Starlark subset parser does not handle.
+      The parser silently skips the unrecognized construct, missing a
+      dependency declaration.

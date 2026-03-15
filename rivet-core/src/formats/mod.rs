@@ -1,5 +1,6 @@
 pub mod aadl;
 pub mod generic;
+pub mod needs_json;
 pub mod stpa;
 
 // Note: The aadl module is always compiled. When the "aadl" feature is

@@ -243,6 +243,7 @@ mod tests {
         }
     }
 
+    // rivet: verifies REQ-009
     #[test]
     fn test_status_display() {
         assert_eq!(TestStatus::Pass.to_string(), "pass");
@@ -252,6 +253,7 @@ mod tests {
         assert_eq!(TestStatus::Blocked.to_string(), "blocked");
     }
 
+    // rivet: verifies REQ-009
     #[test]
     fn test_status_is_pass_fail() {
         assert!(TestStatus::Pass.is_pass());
@@ -267,6 +269,7 @@ mod tests {
         assert!(!TestStatus::Blocked.is_fail());
     }
 
+    // rivet: verifies REQ-009
     #[test]
     fn test_result_store_insert_and_sort() {
         let mut store = ResultStore::new();
@@ -293,6 +296,7 @@ mod tests {
         assert_eq!(store.runs()[1].run.id, "run-1");
     }
 
+    // rivet: verifies REQ-009
     #[test]
     fn test_latest_for() {
         let mut store = ResultStore::new();
@@ -315,6 +319,7 @@ mod tests {
         assert!(store.latest_for("NONEXISTENT").is_none());
     }
 
+    // rivet: verifies REQ-009
     #[test]
     fn test_history_for() {
         let mut store = ResultStore::new();
@@ -349,6 +354,7 @@ mod tests {
         assert_eq!(history_b[0].0.id, "run-3");
     }
 
+    // rivet: verifies REQ-009
     #[test]
     fn test_summary() {
         let mut store = ResultStore::new();
@@ -386,6 +392,7 @@ mod tests {
         assert!((summary.pass_rate() - 40.0).abs() < f64::EPSILON);
     }
 
+    // rivet: verifies REQ-009
     #[test]
     fn test_load_results_empty_dir() {
         let dir = std::env::temp_dir().join("rivet_test_empty_results");
@@ -403,6 +410,7 @@ mod tests {
         let _ = std::fs::remove_dir(&dir);
     }
 
+    // rivet: verifies REQ-009
     #[test]
     fn test_load_results_nonexistent_dir() {
         let dir = std::env::temp_dir().join("rivet_test_nonexistent_results_dir");
@@ -411,6 +419,7 @@ mod tests {
         assert!(runs.is_empty());
     }
 
+    // rivet: verifies REQ-009
     #[test]
     fn test_roundtrip_yaml() {
         let run_file = TestRunFile {

@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use regex::Regex;
 use serde::{Deserialize, Serialize};
+
+use crate::model::Artifact;
 
 use crate::error::Error;
 
@@ -19,6 +22,8 @@ pub struct SchemaFile {
     pub link_types: Vec<LinkTypeDef>,
     #[serde(default, rename = "traceability-rules")]
     pub traceability_rules: Vec<TraceabilityRule>,
+    #[serde(default, rename = "conditional-rules")]
+    pub conditional_rules: Vec<ConditionalRule>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -126,6 +131,349 @@ pub enum Severity {
     Error,
 }
 
+// ── Conditional rules ───────────────────────────────────────────────────
+
+fn default_severity() -> Severity {
+    Severity::Error
+}
+
+/// A conditional validation rule: when a condition is true, require something.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConditionalRule {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    pub when: Condition,
+    pub then: Requirement,
+    #[serde(default = "default_severity")]
+    pub severity: Severity,
+}
+
+/// A condition that tests an artifact field value.
+///
+/// YAML examples:
+/// ```yaml
+/// when:
+///   field: status
+///   equals: approved
+/// ```
+/// ```yaml
+/// when:
+///   field: safety
+///   matches: "ASIL_.*"
+/// ```
+/// ```yaml
+/// when:
+///   field: rationale
+///   exists: true
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(try_from = "ConditionRaw")]
+pub enum Condition {
+    Equals { field: String, value: String },
+    Matches { field: String, pattern: String },
+    Exists { field: String },
+}
+
+/// Raw intermediate form for deserializing `Condition` from flat YAML.
+#[derive(Deserialize)]
+struct ConditionRaw {
+    field: String,
+    #[serde(default)]
+    equals: Option<String>,
+    #[serde(default)]
+    matches: Option<String>,
+    #[serde(default)]
+    exists: Option<bool>,
+}
+
+impl TryFrom<ConditionRaw> for Condition {
+    type Error = String;
+
+    fn try_from(raw: ConditionRaw) -> Result<Self, Self::Error> {
+        let count =
+            raw.equals.is_some() as u8 + raw.matches.is_some() as u8 + raw.exists.is_some() as u8;
+        if count == 0 {
+            return Err("condition must have one of 'equals', 'matches', or 'exists'".to_string());
+        }
+        if count > 1 {
+            return Err(
+                "condition must have exactly one of 'equals', 'matches', or 'exists'".to_string(),
+            );
+        }
+        if let Some(value) = raw.equals {
+            Ok(Condition::Equals {
+                field: raw.field,
+                value,
+            })
+        } else if let Some(pattern) = raw.matches {
+            Ok(Condition::Matches {
+                field: raw.field,
+                pattern,
+            })
+        } else {
+            Ok(Condition::Exists { field: raw.field })
+        }
+    }
+}
+
+// Manual Serialize implementation for Condition → flat YAML output
+impl Condition {
+    /// Check whether an artifact satisfies this condition.
+    pub fn matches_artifact(&self, artifact: &Artifact) -> bool {
+        match self {
+            Condition::Equals { field, value } => {
+                get_field_value(artifact, field).is_some_and(|v| v == *value)
+            }
+            Condition::Matches { field, pattern } => {
+                let Ok(re) = Regex::new(pattern) else {
+                    return false;
+                };
+                get_field_value(artifact, field).is_some_and(|v| re.is_match(&v))
+            }
+            Condition::Exists { field } => get_field_value(artifact, field).is_some(),
+        }
+    }
+}
+
+/// Get a string value for a field from an artifact, checking base fields first.
+fn get_field_value(artifact: &Artifact, field: &str) -> Option<String> {
+    match field {
+        "status" => artifact.status.clone(),
+        "description" => artifact.description.clone(),
+        "title" => Some(artifact.title.clone()),
+        "id" => Some(artifact.id.clone()),
+        _ => {
+            // Check tags: if field == "tags", join them
+            if field == "tags" {
+                if artifact.tags.is_empty() {
+                    None
+                } else {
+                    Some(artifact.tags.join(","))
+                }
+            } else {
+                // Check fields map
+                artifact.fields.get(field).map(|v| match v {
+                    serde_yaml::Value::String(s) => s.clone(),
+                    serde_yaml::Value::Bool(b) => b.to_string(),
+                    serde_yaml::Value::Number(n) => n.to_string(),
+                    _ => format!("{v:?}"),
+                })
+            }
+        }
+    }
+}
+
+/// A requirement that must be met when a condition holds.
+///
+/// YAML examples:
+/// ```yaml
+/// then:
+///   required-fields: [verification-criteria]
+/// ```
+/// ```yaml
+/// then:
+///   required-links: [mitigated_by]
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(try_from = "RequirementRaw")]
+pub enum Requirement {
+    RequiredFields { fields: Vec<String> },
+    RequiredLinks { link_types: Vec<String> },
+}
+
+/// Raw intermediate form for deserializing `Requirement` from flat YAML.
+#[derive(Deserialize)]
+struct RequirementRaw {
+    #[serde(default, rename = "required-fields")]
+    required_fields: Option<Vec<String>>,
+    #[serde(default, rename = "required-links")]
+    required_links: Option<Vec<String>>,
+}
+
+impl TryFrom<RequirementRaw> for Requirement {
+    type Error = String;
+
+    fn try_from(raw: RequirementRaw) -> Result<Self, Self::Error> {
+        match (raw.required_fields, raw.required_links) {
+            (Some(fields), None) => Ok(Requirement::RequiredFields { fields }),
+            (None, Some(link_types)) => Ok(Requirement::RequiredLinks { link_types }),
+            (Some(_), Some(_)) => Err(
+                "requirement must have exactly one of 'required-fields' or 'required-links'"
+                    .to_string(),
+            ),
+            (None, None) => Err(
+                "requirement must have one of 'required-fields' or 'required-links'".to_string(),
+            ),
+        }
+    }
+}
+
+impl Requirement {
+    /// Check if an artifact meets this requirement.
+    ///
+    /// Returns `Some(Diagnostic)` if the requirement is NOT met.
+    pub fn check(
+        &self,
+        artifact: &Artifact,
+        rule_name: &str,
+        severity: Severity,
+    ) -> Vec<crate::validate::Diagnostic> {
+        let mut diags = Vec::new();
+        match self {
+            Requirement::RequiredFields { fields } => {
+                for field_name in fields {
+                    let has_field = get_field_value(artifact, field_name).is_some();
+                    if !has_field {
+                        diags.push(crate::validate::Diagnostic {
+                            severity: severity.clone(),
+                            artifact_id: Some(artifact.id.clone()),
+                            rule: rule_name.to_string(),
+                            message: format!(
+                                "conditional rule '{}': field '{}' is required when condition is met",
+                                rule_name, field_name
+                            ),
+                        });
+                    }
+                }
+            }
+            Requirement::RequiredLinks { link_types } => {
+                for lt in link_types {
+                    if !artifact.has_link_type(lt) {
+                        diags.push(crate::validate::Diagnostic {
+                            severity: severity.clone(),
+                            artifact_id: Some(artifact.id.clone()),
+                            rule: rule_name.to_string(),
+                            message: format!(
+                                "conditional rule '{}': link type '{}' is required when condition is met",
+                                rule_name, lt
+                            ),
+                        });
+                    }
+                }
+            }
+        }
+        diags
+    }
+}
+
+// ── Conditional rule consistency checks ────────────────────────────────
+
+/// Check conditional rules for internal consistency.
+///
+/// Currently detects:
+/// - Duplicate rule names
+/// - Rules with the same `when` condition that have overlapping required fields/links
+///   (future-proofing for contradictory requirements when "forbid" is added)
+pub fn check_conditional_consistency(
+    rules: &[ConditionalRule],
+) -> Vec<crate::validate::Diagnostic> {
+    let mut diagnostics = Vec::new();
+
+    // Check for duplicate rule names
+    let mut seen_names: HashMap<&str, usize> = HashMap::new();
+    for (i, rule) in rules.iter().enumerate() {
+        if let Some(&prev_idx) = seen_names.get(rule.name.as_str()) {
+            diagnostics.push(crate::validate::Diagnostic {
+                severity: Severity::Warning,
+                artifact_id: None,
+                rule: "conditional-rule-consistency".to_string(),
+                message: format!(
+                    "conditional rule '{}' is defined multiple times (indices {} and {})",
+                    rule.name, prev_idx, i
+                ),
+            });
+        } else {
+            seen_names.insert(&rule.name, i);
+        }
+    }
+
+    // Check for rules with equivalent conditions that have overlapping requirements.
+    // Two conditions are "equivalent" if they have the same variant and same field/value.
+    for i in 0..rules.len() {
+        for j in (i + 1)..rules.len() {
+            if conditions_equivalent(&rules[i].when, &rules[j].when) {
+                if let Some(overlap) = requirements_overlap(&rules[i].then, &rules[j].then) {
+                    diagnostics.push(crate::validate::Diagnostic {
+                        severity: Severity::Warning,
+                        artifact_id: None,
+                        rule: "conditional-rule-consistency".to_string(),
+                        message: format!(
+                            "conditional rules '{}' and '{}' have the same condition and overlapping requirements: {}",
+                            rules[i].name, rules[j].name, overlap
+                        ),
+                    });
+                }
+            }
+        }
+    }
+
+    diagnostics
+}
+
+/// Check if two conditions are semantically equivalent.
+fn conditions_equivalent(a: &Condition, b: &Condition) -> bool {
+    match (a, b) {
+        (
+            Condition::Equals {
+                field: f1,
+                value: v1,
+            },
+            Condition::Equals {
+                field: f2,
+                value: v2,
+            },
+        ) => f1 == f2 && v1 == v2,
+        (
+            Condition::Matches {
+                field: f1,
+                pattern: p1,
+            },
+            Condition::Matches {
+                field: f2,
+                pattern: p2,
+            },
+        ) => f1 == f2 && p1 == p2,
+        (Condition::Exists { field: f1 }, Condition::Exists { field: f2 }) => f1 == f2,
+        _ => false,
+    }
+}
+
+/// Check if two requirements overlap. Returns a description of the overlap if found.
+fn requirements_overlap(a: &Requirement, b: &Requirement) -> Option<String> {
+    match (a, b) {
+        (
+            Requirement::RequiredFields { fields: f1 },
+            Requirement::RequiredFields { fields: f2 },
+        ) => {
+            let overlap: Vec<&String> = f1.iter().filter(|f| f2.contains(f)).collect();
+            if overlap.is_empty() {
+                None
+            } else {
+                Some(format!(
+                    "both require fields: {:?}",
+                    overlap.iter().map(|s| s.as_str()).collect::<Vec<_>>()
+                ))
+            }
+        }
+        (
+            Requirement::RequiredLinks { link_types: l1 },
+            Requirement::RequiredLinks { link_types: l2 },
+        ) => {
+            let overlap: Vec<&String> = l1.iter().filter(|l| l2.contains(l)).collect();
+            if overlap.is_empty() {
+                None
+            } else {
+                Some(format!(
+                    "both require links: {:?}",
+                    overlap.iter().map(|s| s.as_str()).collect::<Vec<_>>()
+                ))
+            }
+        }
+        _ => None,
+    }
+}
+
 // ── Merged schema (the runtime view) ─────────────────────────────────────
 
 /// A merged schema built from one or more schema files.
@@ -136,6 +484,7 @@ pub struct Schema {
     pub link_types: HashMap<String, LinkTypeDef>,
     pub inverse_map: HashMap<String, String>,
     pub traceability_rules: Vec<TraceabilityRule>,
+    pub conditional_rules: Vec<ConditionalRule>,
 }
 
 impl Schema {
@@ -156,6 +505,7 @@ impl Schema {
         let mut link_types = HashMap::new();
         let mut inverse_map = HashMap::new();
         let mut traceability_rules = Vec::new();
+        let mut conditional_rules = Vec::new();
 
         for file in files {
             for at in &file.artifact_types {
@@ -169,6 +519,7 @@ impl Schema {
                 link_types.insert(lt.name.clone(), lt.clone());
             }
             traceability_rules.extend(file.traceability_rules.iter().cloned());
+            conditional_rules.extend(file.conditional_rules.iter().cloned());
         }
 
         Schema {
@@ -176,6 +527,7 @@ impl Schema {
             link_types,
             inverse_map,
             traceability_rules,
+            conditional_rules,
         }
     }
 

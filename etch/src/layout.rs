@@ -45,6 +45,10 @@ pub struct LayoutOptions {
     /// Force nodes whose `node_type` matches a key to a specific rank.
     /// Ranks are 0-based; lower ranks are rendered closer to the root.
     pub type_ranks: HashMap<String, usize>,
+    /// Padding inside container nodes (px).
+    pub container_padding: f64,
+    /// Height of the container header (for the label) (px).
+    pub container_header: f64,
 }
 
 impl Default for LayoutOptions {
@@ -56,6 +60,8 @@ impl Default for LayoutOptions {
             node_separation: 40.0,
             rank_direction: RankDirection::default(),
             type_ranks: HashMap::new(),
+            container_padding: 20.0,
+            container_header: 30.0,
         }
     }
 }
@@ -71,6 +77,11 @@ pub struct NodeInfo {
     pub node_type: String,
     /// Optional secondary text (e.g. a title below the ID).
     pub sublabel: Option<String>,
+    /// Optional parent container ID.  When set, this node is placed
+    /// *inside* the container whose [`NodeInfo::id`] matches.  The layout
+    /// algorithm lays out each container's children independently and then
+    /// sizes the container to fit its content.
+    pub parent: Option<String>,
 }
 
 /// Display-level information about an edge supplied by the caller.
@@ -101,6 +112,8 @@ pub struct LayoutNode {
     pub node_type: String,
     /// Optional secondary label.
     pub sublabel: Option<String>,
+    /// `true` when this node is a container with children laid out inside.
+    pub is_container: bool,
 }
 
 /// A routed edge produced by the layout algorithm.
@@ -164,6 +177,15 @@ pub fn layout<N, E>(
         .map(|idx| (idx, node_info(idx, &graph[idx])))
         .collect();
 
+    // Check if this is a compound graph (any node has a parent).
+    let has_compound = infos.values().any(|info| info.parent.is_some());
+
+    if has_compound {
+        return layout_compound(graph, &infos, edge_info, options);
+    }
+
+    // --- Flat layout (original algorithm) ---
+
     // Build NodeIndex → id map for edge routing.
     let idx_to_id: HashMap<NodeIndex, String> = infos
         .iter()
@@ -181,7 +203,8 @@ pub fn layout<N, E>(
     }
 
     // Phase 3 — coordinate assignment.
-    let (layout_nodes, total_w, total_h) = assign_coordinates(&rank_lists, &infos, &ranks, options);
+    let (layout_nodes, total_w, total_h) =
+        assign_coordinates(&rank_lists, &infos, &ranks, options, &HashMap::new());
 
     // Phase 4 — edge routing.
     let layout_edges = route_edges(graph, edge_info, &layout_nodes, &idx_to_id, options);
@@ -382,68 +405,106 @@ fn sweep_up<N, E>(
 // Phase 3: Coordinate assignment
 // ---------------------------------------------------------------------------
 
+/// Per-node size overrides for variable-size nodes (containers).
+fn node_size(
+    idx: NodeIndex,
+    options: &LayoutOptions,
+    size_overrides: &HashMap<NodeIndex, (f64, f64)>,
+) -> (f64, f64) {
+    size_overrides
+        .get(&idx)
+        .copied()
+        .unwrap_or((options.node_width, options.node_height))
+}
+
 fn assign_coordinates(
     rank_lists: &[Vec<NodeIndex>],
     infos: &HashMap<NodeIndex, NodeInfo>,
     ranks: &HashMap<NodeIndex, usize>,
     options: &LayoutOptions,
+    size_overrides: &HashMap<NodeIndex, (f64, f64)>,
 ) -> (Vec<LayoutNode>, f64, f64) {
     let mut nodes: Vec<LayoutNode> = Vec::new();
     let mut max_x: f64 = 0.0;
     let mut max_y: f64 = 0.0;
 
-    // Compute the maximum rank width so we can center narrower ranks.
+    // Compute per-rank width and height (max node height determines rank spacing).
     let rank_widths: Vec<f64> = rank_lists
         .iter()
         .map(|list| {
             if list.is_empty() {
-                0.0
-            } else {
-                list.len() as f64 * options.node_width
-                    + (list.len() as f64 - 1.0) * options.node_separation
+                return 0.0;
             }
+            let total_w: f64 = list
+                .iter()
+                .map(|&idx| node_size(idx, options, size_overrides).0)
+                .sum();
+            total_w + (list.len() as f64 - 1.0) * options.node_separation
+        })
+        .collect();
+
+    let rank_heights: Vec<f64> = rank_lists
+        .iter()
+        .map(|list| {
+            list.iter()
+                .map(|&idx| node_size(idx, options, size_overrides).1)
+                .fold(options.node_height, f64::max)
         })
         .collect();
 
     let global_max_width = rank_widths.iter().cloned().fold(0.0f64, f64::max);
 
+    // Cumulative Y offset per rank (for variable-height ranks).
+    let mut rank_y: Vec<f64> = Vec::with_capacity(rank_lists.len());
+    let mut cum_y = 0.0;
+    for (i, _) in rank_lists.iter().enumerate() {
+        rank_y.push(cum_y);
+        cum_y += rank_heights[i] + options.rank_separation;
+    }
+
     for (rank, list) in rank_lists.iter().enumerate() {
         let rank_width = rank_widths[rank];
         let x_offset = (global_max_width - rank_width) / 2.0;
 
-        for (pos, &idx) in list.iter().enumerate() {
+        let mut x_cursor = x_offset;
+        for &idx in list {
             let info = &infos[&idx];
+            let (nw, nh) = node_size(idx, options, size_overrides);
+            let is_container = size_overrides.contains_key(&idx);
+
             let (x, y) = match options.rank_direction {
                 RankDirection::TopToBottom => {
-                    let x = x_offset + pos as f64 * (options.node_width + options.node_separation);
-                    let y = rank as f64 * (options.node_height + options.rank_separation);
-                    (x, y)
+                    // Center node vertically within its rank row.
+                    let y = rank_y[rank] + (rank_heights[rank] - nh) / 2.0;
+                    (x_cursor, y)
                 }
                 RankDirection::LeftToRight => {
-                    let x = rank as f64 * (options.node_width + options.rank_separation);
-                    let y = x_offset + pos as f64 * (options.node_height + options.node_separation);
-                    (x, y)
+                    let x = rank_y[rank] + (rank_heights[rank] - nw) / 2.0;
+                    (x, x_cursor)
                 }
             };
 
-            if x + options.node_width > max_x {
-                max_x = x + options.node_width;
+            if x + nw > max_x {
+                max_x = x + nw;
             }
-            if y + options.node_height > max_y {
-                max_y = y + options.node_height;
+            if y + nh > max_y {
+                max_y = y + nh;
             }
 
             nodes.push(LayoutNode {
                 id: info.id.clone(),
                 x,
                 y,
-                width: options.node_width,
-                height: options.node_height,
+                width: nw,
+                height: nh,
                 rank: *ranks.get(&idx).unwrap_or(&rank),
                 label: info.label.clone(),
                 node_type: info.node_type.clone(),
                 sublabel: info.sublabel.clone(),
+                is_container,
             });
+
+            x_cursor += nw + options.node_separation;
         }
     }
 
@@ -541,6 +602,322 @@ fn compute_waypoints(
 }
 
 // ---------------------------------------------------------------------------
+// Compound (nested/hierarchical) layout
+// ---------------------------------------------------------------------------
+
+/// Recursive bottom-up compound layout.
+///
+/// 1. Build containment tree from `NodeInfo::parent`.
+/// 2. Bottom-up: lay out each container's children using Sugiyama, then size
+///    the container to fit its children + padding + header.
+/// 3. Lay out root-level nodes (some with variable sizes) using Sugiyama.
+/// 4. Translate all children to absolute coordinates.
+/// 5. Route edges globally.
+fn layout_compound<N, E>(
+    graph: &Graph<N, E>,
+    infos: &HashMap<NodeIndex, NodeInfo>,
+    edge_info: &impl Fn(EdgeIndex, &E) -> EdgeInfo,
+    options: &LayoutOptions,
+) -> GraphLayout {
+    let id_to_idx: HashMap<&str, NodeIndex> = infos
+        .iter()
+        .map(|(&idx, info)| (info.id.as_str(), idx))
+        .collect();
+
+    // Build children map: parent_idx → [child_idx, ...]
+    let mut children_of: HashMap<NodeIndex, Vec<NodeIndex>> = HashMap::new();
+    let mut root_nodes: Vec<NodeIndex> = Vec::new();
+
+    for (&idx, info) in infos {
+        match &info.parent {
+            Some(parent_id) => {
+                if let Some(&parent_idx) = id_to_idx.get(parent_id.as_str()) {
+                    children_of.entry(parent_idx).or_default().push(idx);
+                } else {
+                    root_nodes.push(idx); // parent not found, treat as root
+                }
+            }
+            None => root_nodes.push(idx),
+        }
+    }
+
+    root_nodes.sort_by(|a, b| infos[a].id.cmp(&infos[b].id));
+
+    // Find all containers and determine depth (for bottom-up ordering).
+    let containers: Vec<NodeIndex> = children_of.keys().copied().collect();
+    let container_depths = compute_container_depths(&containers, infos, &id_to_idx);
+
+    // Sort containers by depth (deepest first = bottom-up).
+    let mut sorted_containers: Vec<NodeIndex> = containers.clone();
+    sorted_containers.sort_by(|a, b| {
+        container_depths
+            .get(b)
+            .cmp(&container_depths.get(a))
+            .then_with(|| infos[a].id.cmp(&infos[b].id))
+    });
+
+    // Bottom-up: lay out each container's children, compute sizes.
+    let mut container_sizes: HashMap<NodeIndex, (f64, f64)> = HashMap::new();
+    let mut child_layouts: HashMap<NodeIndex, Vec<LayoutNode>> = HashMap::new();
+    let pad = options.container_padding;
+    let hdr = options.container_header;
+
+    for &container_idx in &sorted_containers {
+        let children = match children_of.get(&container_idx) {
+            Some(c) => c,
+            None => continue,
+        };
+
+        // Build sub-graph of just these children.
+        let child_set: std::collections::HashSet<NodeIndex> = children.iter().copied().collect();
+        let mut sub_graph: Graph<NodeIndex, ()> = Graph::new();
+        let mut orig_to_sub: HashMap<NodeIndex, NodeIndex> = HashMap::new();
+
+        for &child_idx in children {
+            let sub_idx = sub_graph.add_node(child_idx);
+            orig_to_sub.insert(child_idx, sub_idx);
+        }
+
+        // Add edges between children (skip edges to nodes outside this container).
+        for edge in graph.edge_references() {
+            let src = edge.source();
+            let tgt = edge.target();
+            if child_set.contains(&src) && child_set.contains(&tgt) {
+                if let (Some(&s), Some(&t)) = (orig_to_sub.get(&src), orig_to_sub.get(&tgt)) {
+                    sub_graph.add_edge(s, t, ());
+                }
+            }
+        }
+
+        // Build infos for sub-graph nodes (map sub_idx → original info).
+        let sub_infos: HashMap<NodeIndex, NodeInfo> = sub_graph
+            .node_indices()
+            .map(|sub_idx| {
+                let orig_idx = sub_graph[sub_idx];
+                (sub_idx, infos[&orig_idx].clone())
+            })
+            .collect();
+
+        // Sub-nodes that are themselves containers get their computed sizes.
+        let mut sub_sizes: HashMap<NodeIndex, (f64, f64)> = HashMap::new();
+        for &sub_idx in sub_infos.keys() {
+            let orig_idx = sub_graph[sub_idx];
+            if let Some(&size) = container_sizes.get(&orig_idx) {
+                sub_sizes.insert(sub_idx, size);
+            }
+        }
+
+        // Run flat layout on the sub-graph.
+        let sub_ranks = assign_ranks(&sub_graph, &sub_infos, options);
+        let mut sub_rank_lists = build_rank_lists(&sub_graph, &sub_ranks);
+        for _ in 0..4 {
+            sweep_down(&sub_graph, &mut sub_rank_lists, &sub_ranks);
+            sweep_up(&sub_graph, &mut sub_rank_lists, &sub_ranks);
+        }
+        let (mut sub_nodes, sub_w, sub_h) =
+            assign_coordinates(&sub_rank_lists, &sub_infos, &sub_ranks, options, &sub_sizes);
+
+        // Map sub-graph IDs back to original IDs and store child layouts.
+        // Sub-graph nodes are in relative coordinates (origin at 0,0).
+        // Merge any grandchild layouts into the flat list.
+        let mut all_children_nodes: Vec<LayoutNode> = Vec::new();
+        for sub_node in &mut sub_nodes {
+            let orig_idx_opt = sub_graph
+                .node_indices()
+                .find(|&si| sub_infos[&si].id == sub_node.id);
+            if let Some(sub_idx) = orig_idx_opt {
+                let orig_idx = sub_graph[sub_idx];
+                // If this child is itself a container, pull its laid-out children
+                // and translate them relative to this child's position.
+                if let Some(grandchildren) = child_layouts.remove(&orig_idx) {
+                    let offset_x = sub_node.x + pad;
+                    let offset_y = sub_node.y + hdr;
+                    for mut gc in grandchildren {
+                        gc.x += offset_x;
+                        gc.y += offset_y;
+                        all_children_nodes.push(gc);
+                    }
+                }
+            }
+            all_children_nodes.push(sub_node.clone());
+        }
+
+        // Container size = content + padding + header.
+        let container_w = sub_w + pad * 2.0;
+        let container_h = sub_h + pad + hdr;
+        container_sizes.insert(
+            container_idx,
+            (
+                container_w.max(options.node_width),
+                container_h.max(options.node_height),
+            ),
+        );
+        child_layouts.insert(container_idx, all_children_nodes);
+    }
+
+    // Now lay out the root level with variable sizes for containers.
+    let root_set: std::collections::HashSet<NodeIndex> = root_nodes.iter().copied().collect();
+    let mut root_graph: Graph<NodeIndex, ()> = Graph::new();
+    let mut orig_to_root: HashMap<NodeIndex, NodeIndex> = HashMap::new();
+
+    for &root_idx in &root_nodes {
+        let r_idx = root_graph.add_node(root_idx);
+        orig_to_root.insert(root_idx, r_idx);
+    }
+
+    // Add edges between root-level nodes.
+    // An edge between two nodes in different root-level subtrees
+    // becomes an edge between their root ancestors.
+    for edge in graph.edge_references() {
+        let src_root = find_root_ancestor(edge.source(), infos, &id_to_idx);
+        let tgt_root = find_root_ancestor(edge.target(), infos, &id_to_idx);
+        if src_root != tgt_root && root_set.contains(&src_root) && root_set.contains(&tgt_root) {
+            if let (Some(&s), Some(&t)) = (orig_to_root.get(&src_root), orig_to_root.get(&tgt_root))
+            {
+                // Avoid duplicate edges.
+                if !root_graph.contains_edge(s, t) {
+                    root_graph.add_edge(s, t, ());
+                }
+            }
+        }
+    }
+
+    let root_infos: HashMap<NodeIndex, NodeInfo> = root_graph
+        .node_indices()
+        .map(|r_idx| {
+            let orig_idx = root_graph[r_idx];
+            (r_idx, infos[&orig_idx].clone())
+        })
+        .collect();
+
+    let mut root_sizes: HashMap<NodeIndex, (f64, f64)> = HashMap::new();
+    for &r_idx in root_infos.keys() {
+        let orig_idx = root_graph[r_idx];
+        if let Some(&size) = container_sizes.get(&orig_idx) {
+            root_sizes.insert(r_idx, size);
+        }
+    }
+
+    let root_ranks = assign_ranks(&root_graph, &root_infos, options);
+    let mut root_rank_lists = build_rank_lists(&root_graph, &root_ranks);
+    for _ in 0..4 {
+        sweep_down(&root_graph, &mut root_rank_lists, &root_ranks);
+        sweep_up(&root_graph, &mut root_rank_lists, &root_ranks);
+    }
+    let (root_layout_nodes, total_w, total_h) = assign_coordinates(
+        &root_rank_lists,
+        &root_infos,
+        &root_ranks,
+        options,
+        &root_sizes,
+    );
+
+    // Build final node list: root nodes + translated children.
+    let mut all_nodes: Vec<LayoutNode> = Vec::new();
+
+    for root_node in &root_layout_nodes {
+        // Find original index for this root node.
+        let orig_idx = root_graph
+            .node_indices()
+            .find(|&ri| root_infos[&ri].id == root_node.id)
+            .map(|ri| root_graph[ri]);
+
+        if let Some(orig_idx) = orig_idx {
+            if let Some(children) = child_layouts.remove(&orig_idx) {
+                // Translate children to be inside this container.
+                let offset_x = root_node.x + pad;
+                let offset_y = root_node.y + hdr;
+                for mut child in children {
+                    child.x += offset_x;
+                    child.y += offset_y;
+                    all_nodes.push(child);
+                }
+            }
+        }
+
+        all_nodes.push(root_node.clone());
+    }
+
+    // Route edges globally using final positions.
+    let idx_to_id: HashMap<NodeIndex, String> = infos
+        .iter()
+        .map(|(&idx, info)| (idx, info.id.clone()))
+        .collect();
+    let layout_edges = route_edges(graph, edge_info, &all_nodes, &idx_to_id, options);
+
+    GraphLayout {
+        nodes: all_nodes,
+        edges: layout_edges,
+        width: total_w,
+        height: total_h,
+    }
+}
+
+/// Compute nesting depth for each container (0 = no parent, 1 = parent is root, etc.).
+fn compute_container_depths(
+    containers: &[NodeIndex],
+    infos: &HashMap<NodeIndex, NodeInfo>,
+    id_to_idx: &HashMap<&str, NodeIndex>,
+) -> HashMap<NodeIndex, usize> {
+    let container_set: std::collections::HashSet<NodeIndex> = containers.iter().copied().collect();
+    let mut depths: HashMap<NodeIndex, usize> = HashMap::new();
+
+    fn depth_of(
+        idx: NodeIndex,
+        infos: &HashMap<NodeIndex, NodeInfo>,
+        id_to_idx: &HashMap<&str, NodeIndex>,
+        container_set: &std::collections::HashSet<NodeIndex>,
+        cache: &mut HashMap<NodeIndex, usize>,
+    ) -> usize {
+        if let Some(&d) = cache.get(&idx) {
+            return d;
+        }
+        let d = match &infos[&idx].parent {
+            Some(parent_id) => {
+                if let Some(&parent_idx) = id_to_idx.get(parent_id.as_str()) {
+                    if container_set.contains(&parent_idx) {
+                        1 + depth_of(parent_idx, infos, id_to_idx, container_set, cache)
+                    } else {
+                        0
+                    }
+                } else {
+                    0
+                }
+            }
+            None => 0,
+        };
+        cache.insert(idx, d);
+        d
+    }
+
+    for &idx in containers {
+        depth_of(idx, infos, id_to_idx, &container_set, &mut depths);
+    }
+    depths
+}
+
+/// Walk up parent chain to find the root-level ancestor.
+fn find_root_ancestor(
+    idx: NodeIndex,
+    infos: &HashMap<NodeIndex, NodeInfo>,
+    id_to_idx: &HashMap<&str, NodeIndex>,
+) -> NodeIndex {
+    let mut current = idx;
+    loop {
+        match &infos[&current].parent {
+            Some(parent_id) => {
+                if let Some(&parent_idx) = id_to_idx.get(parent_id.as_str()) {
+                    current = parent_idx;
+                } else {
+                    return current;
+                }
+            }
+            None => return current,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -555,6 +932,7 @@ mod tests {
             label: label.to_string(),
             node_type: "default".into(),
             sublabel: None,
+            parent: None,
         }
     }
 
@@ -715,6 +1093,255 @@ mod tests {
 
         // In left-to-right layout, rank increases along x axis.
         assert!(node_a.x < node_b.x);
+    }
+
+    // -----------------------------------------------------------------------
+    // Compound (nested) layout tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn compound_one_level_nesting() {
+        // Container S with two children A, B inside; edge A→B.
+        let mut g = Graph::new();
+        let _s = g.add_node("S");
+        let a = g.add_node("A");
+        let b = g.add_node("B");
+        g.add_edge(a, b, "ab");
+
+        let result = layout(
+            &g,
+            &|_idx, n: &&str| NodeInfo {
+                id: n.to_string(),
+                label: n.to_string(),
+                node_type: "default".into(),
+                sublabel: None,
+                parent: if *n == "A" || *n == "B" {
+                    Some("S".into())
+                } else {
+                    None
+                },
+            },
+            &simple_edge_info,
+            &LayoutOptions::default(),
+        );
+
+        // Should have 3 nodes: S (container), A, B.
+        assert_eq!(result.nodes.len(), 3);
+
+        let node_s = result.nodes.iter().find(|n| n.id == "S").unwrap();
+        let node_a = result.nodes.iter().find(|n| n.id == "A").unwrap();
+        let node_b = result.nodes.iter().find(|n| n.id == "B").unwrap();
+
+        // S must be a container.
+        assert!(node_s.is_container, "S should be a container");
+        assert!(!node_a.is_container);
+        assert!(!node_b.is_container);
+
+        // Children must be positioned inside the container.
+        assert!(node_a.x >= node_s.x, "A.x should be inside S");
+        assert!(node_a.y >= node_s.y, "A.y should be inside S");
+        assert!(node_b.x >= node_s.x, "B.x should be inside S");
+        assert!(node_b.y >= node_s.y, "B.y should be inside S");
+
+        // Container must be large enough to contain children.
+        assert!(
+            node_s.width > 0.0 && node_s.height > 0.0,
+            "container should have positive size"
+        );
+        let s_right = node_s.x + node_s.width;
+        let s_bottom = node_s.y + node_s.height;
+        assert!(
+            node_a.x + node_a.width <= s_right + 1.0,
+            "A right edge should be inside S"
+        );
+        assert!(
+            node_b.x + node_b.width <= s_right + 1.0,
+            "B right edge should be inside S"
+        );
+        assert!(
+            node_b.y + node_b.height <= s_bottom + 1.0,
+            "B bottom edge should be inside S"
+        );
+    }
+
+    #[test]
+    fn compound_two_level_nesting() {
+        // Root R contains P; P contains T1, T2; edge T1→T2.
+        let mut g = Graph::new();
+        let _r = g.add_node("R");
+        let _p = g.add_node("P");
+        let t1 = g.add_node("T1");
+        let t2 = g.add_node("T2");
+        g.add_edge(t1, t2, "link");
+
+        let result = layout(
+            &g,
+            &|_idx, n: &&str| NodeInfo {
+                id: n.to_string(),
+                label: n.to_string(),
+                node_type: "default".into(),
+                sublabel: None,
+                parent: match *n {
+                    "P" => Some("R".into()),
+                    "T1" | "T2" => Some("P".into()),
+                    _ => None,
+                },
+            },
+            &simple_edge_info,
+            &LayoutOptions::default(),
+        );
+
+        assert_eq!(result.nodes.len(), 4);
+
+        let node_r = result.nodes.iter().find(|n| n.id == "R").unwrap();
+        let node_p = result.nodes.iter().find(|n| n.id == "P").unwrap();
+        let node_t1 = result.nodes.iter().find(|n| n.id == "T1").unwrap();
+        let node_t2 = result.nodes.iter().find(|n| n.id == "T2").unwrap();
+
+        // Both R and P are containers.
+        assert!(node_r.is_container);
+        assert!(node_p.is_container);
+        assert!(!node_t1.is_container);
+        assert!(!node_t2.is_container);
+
+        // P must be inside R.
+        assert!(node_p.x >= node_r.x);
+        assert!(node_p.y >= node_r.y);
+
+        // T1 and T2 must be inside P.
+        assert!(node_t1.x >= node_p.x);
+        assert!(node_t1.y >= node_p.y);
+        assert!(node_t2.x >= node_p.x);
+        assert!(node_t2.y >= node_p.y);
+
+        // Transitive: T1, T2 must also be inside R.
+        assert!(node_t1.x >= node_r.x);
+        assert!(node_t1.y >= node_r.y);
+    }
+
+    #[test]
+    fn compound_sibling_containers() {
+        // Two sibling containers P1, P2 at root level, each with one child.
+        let mut g = Graph::new();
+        let _p1 = g.add_node("P1");
+        let _p2 = g.add_node("P2");
+        let a = g.add_node("A");
+        let b = g.add_node("B");
+        g.add_edge(a, b, "cross");
+
+        let result = layout(
+            &g,
+            &|_idx, n: &&str| NodeInfo {
+                id: n.to_string(),
+                label: n.to_string(),
+                node_type: "default".into(),
+                sublabel: None,
+                parent: match *n {
+                    "A" => Some("P1".into()),
+                    "B" => Some("P2".into()),
+                    _ => None,
+                },
+            },
+            &simple_edge_info,
+            &LayoutOptions::default(),
+        );
+
+        let node_p1 = result.nodes.iter().find(|n| n.id == "P1").unwrap();
+        let node_p2 = result.nodes.iter().find(|n| n.id == "P2").unwrap();
+        let node_a = result.nodes.iter().find(|n| n.id == "A").unwrap();
+        let node_b = result.nodes.iter().find(|n| n.id == "B").unwrap();
+
+        assert!(node_p1.is_container);
+        assert!(node_p2.is_container);
+
+        // A inside P1, B inside P2.
+        assert!(node_a.x >= node_p1.x);
+        assert!(node_b.x >= node_p2.x);
+
+        // Cross-container edge should exist.
+        assert_eq!(result.edges.len(), 1);
+        assert_eq!(result.edges[0].source_id, "A");
+        assert_eq!(result.edges[0].target_id, "B");
+    }
+
+    #[test]
+    fn compound_container_larger_than_leaf() {
+        // A container with 3 children should be wider/taller than default leaf size.
+        let mut g = Graph::new();
+        let _s = g.add_node("S");
+        let a = g.add_node("A");
+        let b = g.add_node("B");
+        let c = g.add_node("C");
+        g.add_edge(a, b, "ab");
+        g.add_edge(b, c, "bc");
+
+        let opts = LayoutOptions::default();
+
+        let result = layout(
+            &g,
+            &|_idx, n: &&str| NodeInfo {
+                id: n.to_string(),
+                label: n.to_string(),
+                node_type: "default".into(),
+                sublabel: None,
+                parent: if *n != "S" { Some("S".into()) } else { None },
+            },
+            &simple_edge_info,
+            &opts,
+        );
+
+        let node_s = result.nodes.iter().find(|n| n.id == "S").unwrap();
+
+        // Container must be larger than a default leaf node.
+        assert!(
+            node_s.width > opts.node_width,
+            "container width {} should exceed default {}",
+            node_s.width,
+            opts.node_width
+        );
+        assert!(
+            node_s.height > opts.node_height,
+            "container height {} should exceed default {}",
+            node_s.height,
+            opts.node_height
+        );
+    }
+
+    #[test]
+    fn compound_mixed_root_and_container() {
+        // Mix of root-level leaf nodes and containers.
+        let mut g = Graph::new();
+        let _s = g.add_node("S");
+        let a = g.add_node("A");
+        let b = g.add_node("B");
+        let leaf = g.add_node("Leaf");
+        g.add_edge(a, b, "ab");
+        g.add_edge(_s, leaf, "s-leaf");
+
+        let result = layout(
+            &g,
+            &|_idx, n: &&str| NodeInfo {
+                id: n.to_string(),
+                label: n.to_string(),
+                node_type: "default".into(),
+                sublabel: None,
+                parent: match *n {
+                    "A" | "B" => Some("S".into()),
+                    _ => None,
+                },
+            },
+            &simple_edge_info,
+            &LayoutOptions::default(),
+        );
+
+        // All 4 nodes should be present.
+        assert_eq!(result.nodes.len(), 4);
+
+        let node_s = result.nodes.iter().find(|n| n.id == "S").unwrap();
+        let node_leaf = result.nodes.iter().find(|n| n.id == "Leaf").unwrap();
+
+        assert!(node_s.is_container);
+        assert!(!node_leaf.is_container);
     }
 
     #[test]

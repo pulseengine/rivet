@@ -81,3 +81,13 @@ traceability-rules:
     required-link: satisfies
     target-types: [requirement]
     severity: error
+
+conditional-rules:
+  - name: approved-needs-description
+    description: Approved artifacts should have a description
+    when:
+      field: status
+      equals: approved
+    then:
+      required-fields: [description]
+    severity: warning

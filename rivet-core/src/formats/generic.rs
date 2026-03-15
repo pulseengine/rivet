@@ -128,7 +128,7 @@ struct GenericLink {
     target: String,
 }
 
-fn parse_generic_yaml(content: &str, source: Option<&Path>) -> Result<Vec<Artifact>, Error> {
+pub fn parse_generic_yaml(content: &str, source: Option<&Path>) -> Result<Vec<Artifact>, Error> {
     let file: GenericFile = serde_yaml::from_str(content)?;
 
     Ok(file

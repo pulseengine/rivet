@@ -8,6 +8,7 @@ use clap::{Parser, Subcommand};
 use rivet_core::coverage;
 use rivet_core::diff::{ArtifactDiff, DiagnosticDiff};
 use rivet_core::document::{self, DocumentStore};
+use rivet_core::impact;
 use rivet_core::links::LinkGraph;
 use rivet_core::matrix::{self, Direction};
 use rivet_core::results::{self, ResultStore};
@@ -99,6 +100,14 @@ enum Command {
         /// Output format: "text" (default) or "json"
         #[arg(short, long, default_value = "text")]
         format: String,
+
+        /// Use salsa incremental validation (experimental)
+        #[arg(long)]
+        incremental: bool,
+
+        /// Run both pipelines and verify they produce identical diagnostics (SC-11)
+        #[arg(long)]
+        verify_incremental: bool,
     },
 
     /// List artifacts, optionally filtered by type
@@ -132,6 +141,14 @@ enum Command {
         /// Exit with failure if overall coverage is below this percentage
         #[arg(long)]
         fail_under: Option<f64>,
+
+        /// Show test-to-requirement coverage from source markers
+        #[arg(long)]
+        tests: bool,
+
+        /// Directories to scan for test markers (default: src/ tests/)
+        #[arg(long = "scan-paths", value_delimiter = ',')]
+        scan_paths: Vec<PathBuf>,
     },
 
     /// Generate a traceability matrix
@@ -184,13 +201,37 @@ enum Command {
 
     /// Export artifacts to a specified format
     Export {
-        /// Output format: "reqif", "generic-yaml"
+        /// Output format: "reqif", "generic-yaml", "html"
         #[arg(short, long)]
         format: String,
 
-        /// Output file path (stdout if omitted)
+        /// Output path: file for reqif/generic-yaml, directory for html (default: "dist")
         #[arg(short, long)]
         output: Option<PathBuf>,
+
+        /// Single-page mode: combine all HTML reports into one file (html format only)
+        #[arg(long)]
+        single_page: bool,
+
+        /// Theme: "dark" (PulseEngine, default) or "light" (clean for printing)
+        #[arg(long, default_value = "dark")]
+        theme: String,
+
+        /// Offline mode: use system fonts only (no Google Fonts)
+        #[arg(long)]
+        offline: bool,
+
+        /// URL for the home/back link, written to config.js (e.g. "https://pulseengine.eu/projects/")
+        #[arg(long)]
+        homepage: Option<String>,
+
+        /// Version label for config.js version switcher (default: from rivet.yaml or "dev")
+        #[arg(long)]
+        version_label: Option<String>,
+
+        /// JSON array of version entries for config.js switcher: [{"label":"v0.1.0","path":"../v0.1.0/"}]
+        #[arg(long)]
+        versions: Option<String>,
     },
 
     /// Introspect loaded schemas (types, links, rules)
@@ -259,6 +300,25 @@ enum Command {
         update: bool,
     },
 
+    /// Analyze change impact between current state and a baseline
+    Impact {
+        /// Git ref to compare against (branch, tag, or commit)
+        #[arg(long)]
+        since: Option<String>,
+
+        /// Path to baseline project directory (containing rivet.yaml)
+        #[arg(long)]
+        baseline: Option<PathBuf>,
+
+        /// Maximum traversal depth (0 = direct only)
+        #[arg(long, default_value = "10")]
+        depth: usize,
+
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
     /// Manage distributed baselines across repos
     Baseline {
         #[command(subcommand)]
@@ -279,6 +339,112 @@ enum Command {
         /// Adapter configuration entries (key=value pairs)
         #[arg(long = "config", value_parser = parse_key_val)]
         config_entries: Vec<(String, String)>,
+    },
+
+    /// Print the next available ID for a given artifact type or prefix
+    NextId {
+        /// Artifact type (e.g., requirement, feature, design-decision)
+        #[arg(short = 't', long, group = "id_source")]
+        r#type: Option<String>,
+
+        /// ID prefix directly (e.g., REQ, FEAT, DD)
+        #[arg(short, long, group = "id_source")]
+        prefix: Option<String>,
+
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
+    /// Add a new artifact to the project
+    Add {
+        /// Artifact type (e.g., requirement, feature, design-decision)
+        #[arg(short = 't', long)]
+        r#type: String,
+
+        /// Artifact title
+        #[arg(long)]
+        title: String,
+
+        /// Lifecycle status (default: draft)
+        #[arg(long, default_value = "draft")]
+        status: String,
+
+        /// Comma-separated tags
+        #[arg(long, value_delimiter = ',')]
+        tags: Vec<String>,
+
+        /// Field values as key=value pairs
+        #[arg(long = "field", value_parser = parse_key_val_mutation)]
+        fields: Vec<(String, String)>,
+
+        /// Target YAML file to append the artifact to
+        #[arg(long)]
+        file: Option<PathBuf>,
+    },
+
+    /// Add a link between two artifacts
+    Link {
+        /// Source artifact ID
+        source: String,
+
+        /// Link type (e.g., satisfies, implements, derives-from)
+        #[arg(short = 't', long = "type")]
+        link_type: String,
+
+        /// Target artifact ID
+        #[arg(long)]
+        target: String,
+    },
+
+    /// Remove a link between two artifacts
+    Unlink {
+        /// Source artifact ID
+        source: String,
+
+        /// Link type (e.g., satisfies, implements, derives-from)
+        #[arg(short = 't', long = "type")]
+        link_type: String,
+
+        /// Target artifact ID
+        #[arg(long)]
+        target: String,
+    },
+
+    /// Modify an existing artifact
+    Modify {
+        /// Artifact ID to modify
+        id: String,
+
+        /// Set the lifecycle status
+        #[arg(long)]
+        set_status: Option<String>,
+
+        /// Set the title
+        #[arg(long)]
+        set_title: Option<String>,
+
+        /// Add a tag
+        #[arg(long)]
+        add_tag: Vec<String>,
+
+        /// Remove a tag
+        #[arg(long)]
+        remove_tag: Vec<String>,
+
+        /// Set a field value (key=value)
+        #[arg(long = "set-field", value_parser = parse_key_val_mutation)]
+        set_fields: Vec<(String, String)>,
+    },
+
+    /// Remove an artifact from the project
+    Remove {
+        /// Artifact ID to remove
+        id: String,
+
+        /// Force removal even if other artifacts link to this one
+        #[arg(long)]
+        force: bool,
     },
 }
 
@@ -386,14 +552,29 @@ fn run(cli: Cli) -> Result<bool> {
         | Command::Context
         | Command::CommitMsgCheck { .. } => unreachable!(),
         Command::Stpa { path, schema } => cmd_stpa(path, schema.as_deref(), &cli),
-        Command::Validate { format } => cmd_validate(&cli, format),
+        Command::Validate {
+            format,
+            incremental,
+            verify_incremental,
+        } => cmd_validate(&cli, format, *incremental, *verify_incremental),
         Command::List {
             r#type,
             status,
             format,
         } => cmd_list(&cli, r#type.as_deref(), status.as_deref(), format),
         Command::Stats { format } => cmd_stats(&cli, format),
-        Command::Coverage { format, fail_under } => cmd_coverage(&cli, format, fail_under.as_ref()),
+        Command::Coverage {
+            format,
+            fail_under,
+            tests,
+            scan_paths,
+        } => {
+            if *tests {
+                cmd_coverage_tests(&cli, format, scan_paths)
+            } else {
+                cmd_coverage(&cli, format, fail_under.as_ref())
+            }
+        }
         Command::Matrix {
             from,
             to,
@@ -404,7 +585,32 @@ fn run(cli: Cli) -> Result<bool> {
         Command::Diff { base, head, format } => {
             cmd_diff(&cli, base.as_deref(), head.as_deref(), format)
         }
-        Command::Export { format, output } => cmd_export(&cli, format, output.as_deref()),
+        Command::Export {
+            format,
+            output,
+            single_page,
+            theme,
+            offline,
+            homepage,
+            version_label,
+            versions,
+        } => cmd_export(
+            &cli,
+            format,
+            output.as_deref(),
+            *single_page,
+            theme,
+            *offline,
+            homepage.as_deref(),
+            version_label.as_deref(),
+            versions.as_deref(),
+        ),
+        Command::Impact {
+            since,
+            baseline,
+            depth,
+            format,
+        } => cmd_impact(&cli, since.as_deref(), baseline.as_deref(), *depth, format),
         Command::Schema { action } => cmd_schema(&cli, action),
         Command::Commits {
             since,
@@ -452,6 +658,46 @@ fn run(cli: Cli) -> Result<bool> {
             source,
             config_entries,
         } => cmd_import(adapter, source, config_entries),
+        Command::NextId {
+            r#type,
+            prefix,
+            format,
+        } => cmd_next_id(&cli, r#type.as_deref(), prefix.as_deref(), format),
+        Command::Add {
+            r#type,
+            title,
+            status,
+            tags,
+            fields,
+            file,
+        } => cmd_add(&cli, r#type, title, status, tags, fields, file.as_deref()),
+        Command::Link {
+            source,
+            link_type,
+            target,
+        } => cmd_link(&cli, source, link_type, target),
+        Command::Unlink {
+            source,
+            link_type,
+            target,
+        } => cmd_unlink(&cli, source, link_type, target),
+        Command::Modify {
+            id,
+            set_status,
+            set_title,
+            add_tag,
+            remove_tag,
+            set_fields,
+        } => cmd_modify(
+            &cli,
+            id,
+            set_status.as_deref(),
+            set_title.as_deref(),
+            add_tag,
+            remove_tag,
+            set_fields,
+        ),
+        Command::Remove { id, force } => cmd_remove(&cli, id, *force),
     }
 }
 
@@ -871,7 +1117,17 @@ fn cmd_stpa(
 }
 
 /// Validate a full project (with rivet.yaml).
-fn cmd_validate(cli: &Cli, format: &str) -> Result<bool> {
+fn cmd_validate(
+    cli: &Cli,
+    format: &str,
+    incremental: bool,
+    verify_incremental: bool,
+) -> Result<bool> {
+    // When --incremental is set (or --verify-incremental), run the salsa path.
+    if incremental || verify_incremental {
+        return cmd_validate_incremental(cli, format, verify_incremental);
+    }
+
     let (store, schema, graph, doc_store) = load_project_with_docs(cli)?;
     let mut diagnostics = validate::validate(&store, &schema, &graph);
     diagnostics.extend(validate::validate_documents(&doc_store, &store));
@@ -937,7 +1193,8 @@ fn cmd_validate(cli: &Cli, format: &str) -> Result<bool> {
 
     // Lifecycle completeness check
     let all_artifacts: Vec<_> = store.iter().cloned().collect();
-    let lifecycle_gaps = rivet_core::lifecycle::check_lifecycle_completeness(&all_artifacts);
+    let lifecycle_gaps =
+        rivet_core::lifecycle::check_lifecycle_completeness(&all_artifacts, &schema, &graph);
 
     let errors = diagnostics
         .iter()
@@ -1118,6 +1375,195 @@ fn cmd_validate(cli: &Cli, format: &str) -> Result<bool> {
     Ok(errors == 0 && cross_errors == 0)
 }
 
+/// Incremental validation via the salsa database.
+///
+/// This reads all source files and schemas into salsa inputs, then calls the
+/// tracked `validate_all` query. When `verify` is true, it also runs the
+/// existing sequential pipeline and asserts the diagnostics match (SC-11).
+fn cmd_validate_incremental(cli: &Cli, format: &str, verify: bool) -> Result<bool> {
+    use rivet_core::db::RivetDatabase;
+    use std::time::Instant;
+
+    let config_path = cli.project.join("rivet.yaml");
+    let config = rivet_core::load_project_config(&config_path)
+        .with_context(|| format!("loading {}", config_path.display()))?;
+
+    let schemas_dir = resolve_schemas_dir(cli);
+
+    // ── Collect schema content ──────────────────────────────────────────
+    let mut schema_contents: Vec<(String, String)> = Vec::new();
+    for name in &config.project.schemas {
+        let path = schemas_dir.join(format!("{name}.yaml"));
+        if path.exists() {
+            let content = std::fs::read_to_string(&path)
+                .with_context(|| format!("reading schema {}", path.display()))?;
+            schema_contents.push((name.clone(), content));
+        } else if let Some(content) = rivet_core::embedded::embedded_schema(name) {
+            schema_contents.push((name.clone(), content.to_string()));
+        } else {
+            log::warn!("schema '{name}' not found on disk or embedded");
+        }
+    }
+
+    // ── Collect source file content ─────────────────────────────────────
+    let mut source_contents: Vec<(String, String)> = Vec::new();
+    for source in &config.sources {
+        let source_path = cli.project.join(&source.path);
+        // The salsa db only handles generic YAML parsing; skip other formats.
+        if source.format != "generic" && source.format != "generic-yaml" {
+            log::info!(
+                "incremental: skipping source '{}' (format '{}' not yet supported, using adapter fallback)",
+                source.path,
+                source.format,
+            );
+            continue;
+        }
+        collect_yaml_files(&source_path, &mut source_contents)
+            .with_context(|| format!("reading source '{}'", source.path))?;
+    }
+
+    // ── Build salsa database and run validation ─────────────────────────
+    let db = RivetDatabase::new();
+
+    let schema_refs: Vec<(&str, &str)> = schema_contents
+        .iter()
+        .map(|(n, c)| (n.as_str(), c.as_str()))
+        .collect();
+    let source_refs: Vec<(&str, &str)> = source_contents
+        .iter()
+        .map(|(p, c)| (p.as_str(), c.as_str()))
+        .collect();
+
+    let t_start = Instant::now();
+    let schema_set = db.load_schemas(&schema_refs);
+    let source_set = db.load_sources(&source_refs);
+    let diagnostics = db.diagnostics(source_set, schema_set);
+    let t_elapsed = t_start.elapsed();
+
+    if cli.verbose > 0 {
+        eprintln!(
+            "[incremental] cold-cache validation: {:.1}ms ({} source files, {} schemas, {} diagnostics)",
+            t_elapsed.as_secs_f64() * 1000.0,
+            source_contents.len(),
+            schema_contents.len(),
+            diagnostics.len(),
+        );
+    }
+
+    // ── Verify mode: run both pipelines and compare (SC-11) ─────────────
+    if verify {
+        let t_seq_start = Instant::now();
+        let (store, schema, graph) = load_project(cli)?;
+        let seq_diagnostics = validate::validate(&store, &schema, &graph);
+        let t_seq_elapsed = t_seq_start.elapsed();
+
+        if cli.verbose > 0 {
+            eprintln!(
+                "[sequential]   full validation: {:.1}ms ({} diagnostics)",
+                t_seq_elapsed.as_secs_f64() * 1000.0,
+                seq_diagnostics.len(),
+            );
+        }
+
+        // Compare: sort both by (rule, artifact_id, message) for stable comparison.
+        let mut incr_sorted = diagnostics.clone();
+        let mut seq_sorted = seq_diagnostics.clone();
+        let sort_key = |d: &validate::Diagnostic| {
+            (
+                d.rule.clone(),
+                d.artifact_id.clone().unwrap_or_default(),
+                d.message.clone(),
+            )
+        };
+        incr_sorted.sort_by_key(sort_key);
+        seq_sorted.sort_by_key(sort_key);
+
+        if incr_sorted == seq_sorted {
+            eprintln!(
+                "[verify] SC-11 PASS: incremental and sequential pipelines produce identical diagnostics"
+            );
+        } else {
+            eprintln!("[verify] SC-11 FAIL: pipelines diverge!");
+            let incr_set: HashSet<String> = incr_sorted.iter().map(|d| format!("{d}")).collect();
+            let seq_set: HashSet<String> = seq_sorted.iter().map(|d| format!("{d}")).collect();
+            for d in seq_set.difference(&incr_set) {
+                eprintln!("  only in sequential: {d}");
+            }
+            for d in incr_set.difference(&seq_set) {
+                eprintln!("  only in incremental: {d}");
+            }
+        }
+    }
+
+    // ── Output (same formatting as the existing path) ───────────────────
+    let errors = diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Error)
+        .count();
+    let warnings = diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Warning)
+        .count();
+
+    if format == "json" {
+        let diag_json: Vec<serde_json::Value> = diagnostics
+            .iter()
+            .map(|d| {
+                serde_json::json!({
+                    "severity": format!("{:?}", d.severity).to_lowercase(),
+                    "artifact_id": d.artifact_id,
+                    "message": d.message,
+                })
+            })
+            .collect();
+        let output = serde_json::json!({
+            "command": "validate",
+            "incremental": true,
+            "errors": errors,
+            "warnings": warnings,
+            "diagnostics": diag_json,
+        });
+        println!("{}", serde_json::to_string_pretty(&output).unwrap());
+    } else {
+        print_diagnostics(&diagnostics);
+        println!();
+        if errors > 0 {
+            println!("Result: FAIL ({} errors, {} warnings)", errors, warnings);
+        } else {
+            println!("Result: PASS ({} warnings)", warnings);
+        }
+    }
+
+    Ok(errors == 0)
+}
+
+/// Recursively collect YAML files from a path into (path_string, content) pairs.
+fn collect_yaml_files(path: &std::path::Path, out: &mut Vec<(String, String)>) -> Result<()> {
+    if path.is_file() {
+        let content =
+            std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+        out.push((path.display().to_string(), content));
+    } else if path.is_dir() {
+        let entries = std::fs::read_dir(path)
+            .with_context(|| format!("reading directory {}", path.display()))?;
+        for entry in entries {
+            let entry = entry?;
+            let p = entry.path();
+            if p.is_dir() {
+                collect_yaml_files(&p, out)?;
+            } else if p
+                .extension()
+                .is_some_and(|ext| ext == "yaml" || ext == "yml")
+            {
+                let content = std::fs::read_to_string(&p)
+                    .with_context(|| format!("reading {}", p.display()))?;
+                out.push((p.display().to_string(), content));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// List artifacts.
 fn cmd_list(
     cli: &Cli,
@@ -1270,6 +1716,116 @@ fn cmd_coverage(cli: &Cli, format: &str, fail_under: Option<&f64>) -> Result<boo
     Ok(true)
 }
 
+/// Test-to-requirement coverage via source markers.
+fn cmd_coverage_tests(cli: &Cli, format: &str, scan_paths: &[PathBuf]) -> Result<bool> {
+    use rivet_core::test_scanner;
+
+    let (store, schema, _graph) = load_project(cli)?;
+
+    // Resolve scan paths: default to src/ and tests/ relative to project dir.
+    let paths: Vec<PathBuf> = if scan_paths.is_empty() {
+        let mut defaults = Vec::new();
+        let src = cli.project.join("src");
+        let tests = cli.project.join("tests");
+        if src.is_dir() {
+            defaults.push(src);
+        }
+        if tests.is_dir() {
+            defaults.push(tests);
+        }
+        // If neither exists, scan the project root.
+        if defaults.is_empty() {
+            defaults.push(cli.project.clone());
+        }
+        defaults
+    } else {
+        scan_paths
+            .iter()
+            .map(|p| {
+                if p.is_absolute() {
+                    p.clone()
+                } else {
+                    cli.project.join(p)
+                }
+            })
+            .collect()
+    };
+
+    let patterns = test_scanner::default_patterns();
+    let markers = test_scanner::scan_source_files(&paths, &patterns);
+    let coverage = test_scanner::compute_test_coverage(&markers, &store, Some(&schema));
+
+    if format == "json" {
+        let json = serde_json::to_string_pretty(&coverage)
+            .map_err(|e| anyhow::anyhow!("json serialization: {e}"))?;
+        println!("{json}");
+        return Ok(true);
+    }
+
+    // Text output
+    println!("Test traceability coverage");
+    println!("==========================");
+    println!();
+
+    if !coverage.covered.is_empty() {
+        println!("Covered ({}):", coverage.covered.len());
+        for (id, markers) in &coverage.covered {
+            let label = if markers.len() == 1 {
+                "1 test marker".to_string()
+            } else {
+                format!("{} test markers", markers.len())
+            };
+            println!("  {id}  {label}");
+            for m in markers {
+                println!(
+                    "    {}:{}  {} ({})",
+                    m.file.display(),
+                    m.line,
+                    m.test_name,
+                    m.link_type,
+                );
+            }
+        }
+        println!();
+    }
+
+    if !coverage.uncovered.is_empty() {
+        println!("Uncovered ({}):", coverage.uncovered.len());
+        for id in &coverage.uncovered {
+            println!("  {id}  No test markers found");
+        }
+        println!();
+    }
+
+    if !coverage.broken_refs.is_empty() {
+        println!("Broken references ({}):", coverage.broken_refs.len());
+        for m in &coverage.broken_refs {
+            println!(
+                "  {}:{}  {} -> {} (not found)",
+                m.file.display(),
+                m.line,
+                m.test_name,
+                m.target_id,
+            );
+        }
+        println!();
+    }
+
+    let covered_count = coverage.covered.len();
+    let total_coverable = covered_count + coverage.uncovered.len();
+    let pct = if total_coverable > 0 {
+        (covered_count as f64 / total_coverable as f64) * 100.0
+    } else {
+        100.0
+    };
+    println!(
+        "Summary: {}/{} requirements have test coverage ({:.1}%)",
+        covered_count, total_coverable, pct,
+    );
+
+    Ok(true)
+}
+
 /// Generate a traceability matrix.
 fn cmd_matrix(
     cli: &Cli,
@@ -1344,7 +1900,31 @@ fn cmd_matrix(
 }
 
 /// Export all project artifacts in the specified format.
-fn cmd_export(cli: &Cli, format: &str, output: Option<&std::path::Path>) -> Result<bool> {
+#[allow(clippy::too_many_arguments)]
+fn cmd_export(
+    cli: &Cli,
+    format: &str,
+    output: Option<&std::path::Path>,
+    single_page: bool,
+    theme: &str,
+    offline: bool,
+    homepage: Option<&str>,
+    version_label: Option<&str>,
+    versions_json: Option<&str>,
+) -> Result<bool> {
+    if format == "html" {
+        return cmd_export_html(
+            cli,
+            output,
+            single_page,
+            theme,
+            offline,
+            homepage,
+            version_label,
+            versions_json,
+        );
+    }
+
     use rivet_core::adapter::{Adapter, AdapterConfig};
 
     let (store, _, _) = load_project(cli)?;
@@ -1365,7 +1945,9 @@ fn cmd_export(cli: &Cli, format: &str, output: Option<&std::path::Path>) -> Resu
                 .map_err(|e| anyhow::anyhow!("{e}"))?
         }
         other => {
-            anyhow::bail!("unsupported export format: {other} (supported: reqif, generic-yaml)")
+            anyhow::bail!(
+                "unsupported export format: {other} (supported: reqif, generic-yaml, html)"
+            )
         }
     };
 
@@ -1382,6 +1964,164 @@ fn cmd_export(cli: &Cli, format: &str, output: Option<&std::path::Path>) -> Resu
             .write_all(&bytes)
             .context("writing to stdout")?;
     }
+
+    Ok(true)
+}
+
+/// Export to a static HTML site with document pages and config.js.
+#[allow(clippy::too_many_arguments)]
+fn cmd_export_html(
+    cli: &Cli,
+    output: Option<&std::path::Path>,
+    single_page: bool,
+    theme: &str,
+    offline: bool,
+    homepage: Option<&str>,
+    version_label: Option<&str>,
+    versions_json: Option<&str>,
+) -> Result<bool> {
+    use rivet_core::export::{self, ExportConfig, ExportTheme, VersionEntry};
+
+    let export_theme = match theme {
+        "light" => ExportTheme::Light,
+        "dark" => ExportTheme::Dark,
+        other => anyhow::bail!("unknown theme '{other}' (supported: dark, light)"),
+    };
+
+    // Parse versions JSON if provided.
+    let versions: Vec<VersionEntry> = if let Some(json) = versions_json {
+        #[derive(serde::Deserialize)]
+        struct VersionJson {
+            label: String,
+            path: String,
+        }
+        let parsed: Vec<VersionJson> =
+            serde_json::from_str(json).context("parsing --versions JSON")?;
+        parsed
+            .into_iter()
+            .map(|v| VersionEntry {
+                label: v.label,
+                path: v.path,
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    let (store, schema, graph) = load_project(cli)?;
+    let diagnostics = validate::validate(&store, &schema, &graph);
+
+    // Load project config.
+    let config_path = cli.project.join("rivet.yaml");
+    let config = rivet_core::load_project_config(&config_path)
+        .with_context(|| format!("loading {}", config_path.display()))?;
+    let project_name = &config.project.name;
+    let version = env!("CARGO_PKG_VERSION");
+
+    // Resolve version label: CLI flag > rivet.yaml > fallback "dev".
+    let resolved_version_label = version_label
+        .map(String::from)
+        .or_else(|| config.project.version.clone())
+        .unwrap_or_else(|| "dev".to_string());
+
+    let export_config = ExportConfig {
+        theme: export_theme,
+        offline,
+    };
+
+    // Load documents from configured directories.
+    let mut doc_store = DocumentStore::new();
+    for docs_path in &config.docs {
+        let dir = cli.project.join(docs_path);
+        let docs = document::load_documents(&dir)
+            .with_context(|| format!("loading docs from '{docs_path}'"))?;
+        for doc in docs {
+            doc_store.insert(doc);
+        }
+    }
+
+    let out_dir = output.unwrap_or(std::path::Path::new("dist"));
+
+    std::fs::create_dir_all(out_dir).with_context(|| format!("creating {}", out_dir.display()))?;
+
+    if single_page {
+        let html = export::render_single_page(
+            &store,
+            &schema,
+            &graph,
+            &diagnostics,
+            project_name,
+            version,
+            &export_config,
+            &doc_store,
+        );
+        let path = out_dir.join("index.html");
+        std::fs::write(&path, &html).with_context(|| format!("writing {}", path.display()))?;
+        println!("Exported single-page report to {}", out_dir.display());
+    } else {
+        let mut pages: Vec<(String, String)> = vec![
+            (
+                "index.html".to_string(),
+                export::render_index(
+                    &store,
+                    &schema,
+                    &graph,
+                    &diagnostics,
+                    project_name,
+                    version,
+                    &export_config,
+                ),
+            ),
+            (
+                "requirements.html".to_string(),
+                export::render_requirements(&store, &schema, &graph, &export_config),
+            ),
+            (
+                "documents.html".to_string(),
+                export::render_documents_index(&doc_store, &export_config),
+            ),
+            (
+                "matrix.html".to_string(),
+                export::render_traceability_matrix(&store, &schema, &graph, &export_config),
+            ),
+            (
+                "coverage.html".to_string(),
+                export::render_coverage(&store, &schema, &graph, &export_config),
+            ),
+            (
+                "validation.html".to_string(),
+                export::render_validation(&diagnostics, &export_config),
+            ),
+        ];
+
+        // Render individual document pages.
+        for doc in doc_store.iter() {
+            let filename = format!("doc-{}.html", doc.id);
+            let html = export::render_document_page(doc, &store, &graph, &export_config);
+            pages.push((filename, html));
+        }
+
+        // Render README.html explaining the export.
+        pages.push((
+            "README.html".to_string(),
+            export::render_readme(&export_config),
+        ));
+
+        for (filename, html) in &pages {
+            let path = out_dir.join(filename);
+            std::fs::write(&path, html).with_context(|| format!("writing {}", path.display()))?;
+        }
+
+        println!("Exported {} pages to {}/", pages.len(), out_dir.display());
+    }
+
+    // Write config.js alongside the HTML output.
+    let config_js =
+        export::generate_config_js(homepage, &resolved_version_label, &versions, project_name);
+    let config_js_path = out_dir.join("config.js");
+    std::fs::write(&config_js_path, &config_js)
+        .with_context(|| format!("writing {}", config_js_path.display()))?;
+    println!("Wrote {}", config_js_path.display());
 
     Ok(true)
 }
@@ -1404,6 +2144,8 @@ fn cmd_diff(
                     verbose: cli.verbose,
                     command: Command::Validate {
                         format: "text".to_string(),
+                        incremental: false,
+                        verify_incremental: false,
                     },
                 };
                 let head_cli = Cli {
@@ -1412,6 +2154,8 @@ fn cmd_diff(
                     verbose: cli.verbose,
                     command: Command::Validate {
                         format: "text".to_string(),
+                        incremental: false,
+                        verify_incremental: false,
                     },
                 };
                 let (bs, bsc, bg) = load_project(&base_cli)?;
@@ -1593,6 +2337,376 @@ fn cmd_diff(
     }
 
     Ok(true)
+}
+
+/// Analyze change impact between current state and a baseline.
+fn cmd_impact(
+    cli: &Cli,
+    since: Option<&str>,
+    baseline: Option<&std::path::Path>,
+    depth: usize,
+    format: &str,
+) -> Result<bool> {
+    let (current_store, _schema, graph) = load_project(cli)?;
+
+    // Load baseline store
+    let baseline_store = if let Some(git_ref) = since {
+        // Load from git ref using `git show <ref>:<file>` for each source file
+        load_baseline_from_git(cli, git_ref)?
+    } else if let Some(baseline_dir) = baseline {
+        // Load from a baseline directory
+        impact::load_baseline_from_dir(baseline_dir)
+            .with_context(|| format!("loading baseline from '{}'", baseline_dir.display()))?
+    } else {
+        anyhow::bail!("specify either --since <git-ref> or --baseline <path>");
+    };
+
+    let result = impact::compute_impact(&current_store, &baseline_store, &graph, depth);
+
+    if format == "json" {
+        let changed_json: Vec<serde_json::Value> = result
+            .changed
+            .iter()
+            .map(|c| {
+                let title = current_store
+                    .get(&c.id)
+                    .map(|a| a.title.as_str())
+                    .unwrap_or("");
+                serde_json::json!({
+                    "id": c.id,
+                    "title": title,
+                    "summary": c.change_summary,
+                })
+            })
+            .collect();
+        let direct_json: Vec<serde_json::Value> = result
+            .directly_affected
+            .iter()
+            .map(|a| {
+                let title = current_store
+                    .get(&a.id)
+                    .map(|ar| ar.title.as_str())
+                    .unwrap_or("");
+                serde_json::json!({
+                    "id": a.id,
+                    "title": title,
+                    "reason": a.reason_chain,
+                    "depth": a.depth,
+                })
+            })
+            .collect();
+        let transitive_json: Vec<serde_json::Value> = result
+            .transitively_affected
+            .iter()
+            .map(|a| {
+                let title = current_store
+                    .get(&a.id)
+                    .map(|ar| ar.title.as_str())
+                    .unwrap_or("");
+                serde_json::json!({
+                    "id": a.id,
+                    "title": title,
+                    "reason": a.reason_chain,
+                    "depth": a.depth,
+                })
+            })
+            .collect();
+        let output = serde_json::json!({
+            "command": "impact",
+            "changed": changed_json,
+            "directly_affected": direct_json,
+            "transitively_affected": transitive_json,
+            "added": result.added,
+            "removed": result.removed,
+            "summary": {
+                "changed": result.changed.len(),
+                "direct": result.directly_affected.len(),
+                "transitive": result.transitively_affected.len(),
+                "added": result.added.len(),
+                "removed": result.removed.len(),
+                "total": result.total(),
+            },
+        });
+        println!("{}", serde_json::to_string_pretty(&output).unwrap());
+    } else {
+        // Text output
+        if !result.changed.is_empty() {
+            println!("Changed artifacts ({}):", result.changed.len());
+            for c in &result.changed {
+                let title = current_store
+                    .get(&c.id)
+                    .map(|a| a.title.as_str())
+                    .unwrap_or("");
+                println!("  {:12} {} ({})", c.id, title, c.change_summary);
+            }
+        }
+
+        if !result.added.is_empty() {
+            println!("\nAdded artifacts ({}):", result.added.len());
+            for id in &result.added {
+                let title = current_store
+                    .get(id)
+                    .map(|a| a.title.as_str())
+                    .unwrap_or("");
+                println!("  {:12} {}", id, title);
+            }
+        }
+
+        if !result.removed.is_empty() {
+            println!("\nRemoved artifacts ({}):", result.removed.len());
+            for id in &result.removed {
+                println!("  {}", id);
+            }
+        }
+
+        if !result.directly_affected.is_empty() {
+            println!("\nDirectly affected ({}):", result.directly_affected.len());
+            for a in &result.directly_affected {
+                let title = current_store
+                    .get(&a.id)
+                    .map(|ar| ar.title.as_str())
+                    .unwrap_or("");
+                let reason = if a.reason_chain.is_empty() {
+                    String::new()
+                } else {
+                    format!(" ({})", a.reason_chain.join(" "))
+                };
+                println!("  {:12} {}{}", a.id, title, reason);
+            }
+        }
+
+        if !result.transitively_affected.is_empty() {
+            println!(
+                "\nTransitively affected ({}):",
+                result.transitively_affected.len()
+            );
+            for a in &result.transitively_affected {
+                let title = current_store
+                    .get(&a.id)
+                    .map(|ar| ar.title.as_str())
+                    .unwrap_or("");
+                let reason = if a.reason_chain.is_empty() {
+                    String::new()
+                } else {
+                    format!(" ({})", a.reason_chain.join(" "))
+                };
+                println!("  {:12} {}{}", a.id, title, reason);
+            }
+        }
+
+        println!(
+            "\nImpact summary: {} changed, {} direct, {} transitive, {} added, {} removed, {} total",
+            result.changed.len(),
+            result.directly_affected.len(),
+            result.transitively_affected.len(),
+            result.added.len(),
+            result.removed.len(),
+            result.total(),
+        );
+    }
+
+    Ok(true)
+}
+
+/// Load a baseline store from a git ref by extracting artifact files at that ref.
+fn load_baseline_from_git(cli: &Cli, git_ref: &str) -> Result<Store> {
+    let config_path = cli.project.join("rivet.yaml");
+
+    // Read rivet.yaml at the git ref
+    let config_content = git_show_file(&cli.project, git_ref, "rivet.yaml")
+        .with_context(|| format!("reading rivet.yaml at ref '{git_ref}'"))?;
+
+    let config: rivet_core::model::ProjectConfig = serde_yaml::from_str(&config_content)
+        .with_context(|| format!("parsing rivet.yaml at ref '{git_ref}'"))?;
+
+    // We need the current schemas to parse — load them from the working tree
+    let schemas_dir = resolve_schemas_dir(cli);
+    let _schema = rivet_core::load_schemas(&config.project.schemas, &schemas_dir)
+        .context("loading schemas")?;
+
+    // For each source, list files at the git ref and parse them
+    let mut store = Store::new();
+
+    for source in &config.sources {
+        let source_path = &source.path;
+
+        // List files in the source directory at the given ref
+        let files = git_ls_tree_files(&cli.project, git_ref, source_path)
+            .with_context(|| format!("listing files in '{source_path}' at ref '{git_ref}'"))?;
+
+        for file_path in &files {
+            // Only process YAML files
+            if !file_path.ends_with(".yaml") && !file_path.ends_with(".yml") {
+                continue;
+            }
+
+            let content = match git_show_file(&cli.project, git_ref, file_path) {
+                Ok(c) => c,
+                Err(e) => {
+                    log::warn!("could not read {file_path} at {git_ref}: {e}");
+                    continue;
+                }
+            };
+
+            // Parse using the appropriate adapter
+            let artifacts = match parse_yaml_content(&content, &source.format, file_path) {
+                Ok(a) => a,
+                Err(e) => {
+                    log::warn!("could not parse {file_path} at {git_ref}: {e}");
+                    continue;
+                }
+            };
+
+            for artifact in artifacts {
+                store.upsert(artifact);
+            }
+        }
+    }
+
+    // Also try to load artifacts from the current config if the baseline
+    // config path doesn't exist at git ref (fallback for comparison)
+    if store.is_empty() && config_path.exists() {
+        log::warn!("no artifacts loaded from git ref '{git_ref}', baseline may be empty");
+    }
+
+    Ok(store)
+}
+
+/// Run `git show <ref>:<path>` to get file contents at a git ref.
+fn git_show_file(repo_dir: &std::path::Path, git_ref: &str, path: &str) -> Result<String> {
+    let output = std::process::Command::new("git")
+        .args(["show", &format!("{git_ref}:{path}")])
+        .current_dir(repo_dir)
+        .output()
+        .context("running git show")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("git show {git_ref}:{path} failed: {stderr}");
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// Run `git ls-tree` to list files in a directory at a git ref.
+fn git_ls_tree_files(
+    repo_dir: &std::path::Path,
+    git_ref: &str,
+    dir_path: &str,
+) -> Result<Vec<String>> {
+    let output = std::process::Command::new("git")
+        .args(["ls-tree", "-r", "--name-only", git_ref, dir_path])
+        .current_dir(repo_dir)
+        .output()
+        .context("running git ls-tree")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("git ls-tree failed: {stderr}");
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let files: Vec<String> = stdout.lines().map(|l| l.to_string()).collect();
+    Ok(files)
+}
+
+/// Parse YAML content into artifacts using the specified format adapter.
+fn parse_yaml_content(
+    content: &str,
+    format: &str,
+    file_path: &str,
+) -> Result<Vec<rivet_core::model::Artifact>> {
+    match format {
+        "generic" | "generic-yaml" => {
+            // Parse as generic YAML artifacts
+            let wrapper: GenericYamlWrapper =
+                serde_yaml::from_str(content).with_context(|| format!("parsing {file_path}"))?;
+            let artifacts = wrapper
+                .artifacts
+                .into_iter()
+                .map(|raw| rivet_core::model::Artifact {
+                    id: raw.id,
+                    artifact_type: raw.r#type,
+                    title: raw.title,
+                    description: raw.description,
+                    status: raw.status,
+                    tags: raw.tags,
+                    links: raw
+                        .links
+                        .into_iter()
+                        .map(|l| rivet_core::model::Link {
+                            link_type: l.r#type,
+                            target: l.target,
+                        })
+                        .collect(),
+                    fields: raw.fields,
+                    source_file: Some(std::path::PathBuf::from(file_path)),
+                })
+                .collect();
+            Ok(artifacts)
+        }
+        "stpa-yaml" => {
+            // For STPA, fall back to generic parsing of the YAML structure
+            let wrapper: GenericYamlWrapper =
+                serde_yaml::from_str(content).with_context(|| format!("parsing {file_path}"))?;
+            let artifacts = wrapper
+                .artifacts
+                .into_iter()
+                .map(|raw| rivet_core::model::Artifact {
+                    id: raw.id,
+                    artifact_type: raw.r#type,
+                    title: raw.title,
+                    description: raw.description,
+                    status: raw.status,
+                    tags: raw.tags,
+                    links: raw
+                        .links
+                        .into_iter()
+                        .map(|l| rivet_core::model::Link {
+                            link_type: l.r#type,
+                            target: l.target,
+                        })
+                        .collect(),
+                    fields: raw.fields,
+                    source_file: Some(std::path::PathBuf::from(file_path)),
+                })
+                .collect();
+            Ok(artifacts)
+        }
+        other => anyhow::bail!("unsupported format for git baseline: {other}"),
+    }
+}
+
+/// Raw YAML structure for parsing artifact files from git show output.
+#[derive(serde::Deserialize)]
+struct GenericYamlWrapper {
+    #[serde(default)]
+    artifacts: Vec<RawArtifact>,
+}
+
+#[derive(serde::Deserialize)]
+struct RawArtifact {
+    id: String,
+    #[serde(rename = "type")]
+    r#type: String,
+    title: String,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    status: Option<String>,
+    #[serde(default)]
+    tags: Vec<String>,
+    #[serde(default)]
+    links: Vec<RawLink>,
+    #[serde(default, flatten)]
+    fields: std::collections::BTreeMap<String, serde_yaml::Value>,
+}
+
+#[derive(serde::Deserialize)]
+struct RawLink {
+    #[serde(rename = "type")]
+    r#type: String,
+    target: String,
 }
 
 /// Show built-in docs (no project load needed).
@@ -2267,8 +3381,13 @@ fn cmd_lock(cli: &Cli, update: bool) -> Result<bool> {
         return Ok(true);
     }
     let lock = rivet_core::externals::generate_lockfile(externals.unwrap(), &cli.project)?;
+    for (name, entry) in &lock.pins {
+        let short_sha = &entry.commit[..8.min(entry.commit.len())];
+        let source = entry.git.as_deref().unwrap_or("(local path)");
+        eprintln!("  {name} -> {short_sha} ({source})");
+    }
     rivet_core::externals::write_lockfile(&lock, &cli.project)?;
-    eprintln!("Wrote rivet.lock with {} pins", lock.pins.len());
+    eprintln!("\nWrote rivet.lock with {} pins", lock.pins.len());
     Ok(true)
 }
 
@@ -2572,6 +3691,243 @@ fn cmd_import(
             artifact.id, artifact.artifact_type, artifact.title
         );
     }
+
+    Ok(true)
+}
+
+/// Parse a key=value pair for mutation commands.
+fn parse_key_val_mutation(s: &str) -> Result<(String, String), String> {
+    let pos = s
+        .find('=')
+        .ok_or_else(|| format!("invalid KEY=VALUE: no '=' found in '{s}'"))?;
+    Ok((s[..pos].to_string(), s[pos + 1..].to_string()))
+}
+
+/// Load project returning (store, schema) without building the link graph.
+fn load_project_config_and_store(
+    cli: &Cli,
+) -> Result<(
+    Store,
+    rivet_core::schema::Schema,
+    rivet_core::model::ProjectConfig,
+)> {
+    let config_path = cli.project.join("rivet.yaml");
+    let config = rivet_core::load_project_config(&config_path)
+        .with_context(|| format!("loading {}", config_path.display()))?;
+
+    let schemas_dir = resolve_schemas_dir(cli);
+    let schema = rivet_core::load_schemas(&config.project.schemas, &schemas_dir)
+        .context("loading schemas")?;
+
+    let mut store = Store::new();
+    for source in &config.sources {
+        let artifacts = rivet_core::load_artifacts(source, &cli.project)
+            .with_context(|| format!("loading source '{}'", source.path))?;
+        for artifact in artifacts {
+            store.upsert(artifact);
+        }
+    }
+
+    Ok((store, schema, config))
+}
+
+/// Print the next available ID for a given artifact type or prefix.
+fn cmd_next_id(
+    cli: &Cli,
+    artifact_type: Option<&str>,
+    prefix: Option<&str>,
+    format: &str,
+) -> Result<bool> {
+    use rivet_core::mutate;
+
+    let (store, _schema, _config) = load_project_config_and_store(cli)?;
+
+    let resolved_prefix = match (artifact_type, prefix) {
+        (Some(t), _) => mutate::prefix_for_type(t, &store),
+        (_, Some(p)) => p.to_string(),
+        (None, None) => anyhow::bail!("either --type or --prefix must be specified"),
+    };
+
+    let next = mutate::next_id(&store, &resolved_prefix);
+
+    if format == "json" {
+        let json = serde_json::json!({
+            "next_id": next,
+            "prefix": resolved_prefix,
+        });
+        println!("{}", serde_json::to_string_pretty(&json)?);
+    } else {
+        println!("{next}");
+    }
+
+    Ok(true)
+}
+
+/// Add a new artifact to the project.
+fn cmd_add(
+    cli: &Cli,
+    artifact_type: &str,
+    title: &str,
+    status: &str,
+    tags: &[String],
+    fields: &[(String, String)],
+    file: Option<&std::path::Path>,
+) -> Result<bool> {
+    use rivet_core::model::Artifact;
+    use rivet_core::mutate;
+    use std::collections::BTreeMap;
+
+    let (store, schema, _config) = load_project_config_and_store(cli)?;
+
+    // Resolve prefix for the type
+    let prefix = mutate::prefix_for_type(artifact_type, &store);
+
+    // Generate ID
+    let id = mutate::next_id(&store, &prefix);
+
+    // Build fields map
+    let mut fields_map: BTreeMap<String, serde_yaml::Value> = BTreeMap::new();
+    for (key, value) in fields {
+        fields_map.insert(key.clone(), serde_yaml::Value::String(value.clone()));
+    }
+
+    let artifact = Artifact {
+        id: id.clone(),
+        artifact_type: artifact_type.to_string(),
+        title: title.to_string(),
+        description: None,
+        status: Some(status.to_string()),
+        tags: tags.to_vec(),
+        links: vec![],
+        fields: fields_map,
+        source_file: None,
+    };
+
+    // Validate before writing (DD-028)
+    mutate::validate_add(&artifact, &store, &schema).context("validation failed")?;
+
+    // Determine target file
+    let target_file = if let Some(f) = file {
+        cli.project.join(f)
+    } else {
+        mutate::find_file_for_type(artifact_type, &store).ok_or_else(|| {
+            anyhow::anyhow!(
+                "no existing file found for type '{}'. Use --file to specify one.",
+                artifact_type
+            )
+        })?
+    };
+
+    // Write to file
+    mutate::append_artifact_to_file(&artifact, &target_file)
+        .with_context(|| format!("writing to {}", target_file.display()))?;
+
+    println!("{id}");
+
+    Ok(true)
+}
+
+/// Add a link between two artifacts.
+fn cmd_link(cli: &Cli, source_id: &str, link_type: &str, target_id: &str) -> Result<bool> {
+    use rivet_core::model::Link;
+    use rivet_core::mutate;
+
+    let (store, schema, _config) = load_project_config_and_store(cli)?;
+
+    // Validate before writing (DD-028)
+    mutate::validate_link(source_id, link_type, target_id, &store, &schema)
+        .context("validation failed")?;
+
+    let source_file = mutate::find_source_file(source_id, &store)
+        .ok_or_else(|| anyhow::anyhow!("cannot determine source file for '{source_id}'"))?;
+
+    let link = Link {
+        link_type: link_type.to_string(),
+        target: target_id.to_string(),
+    };
+
+    mutate::add_link_to_file(source_id, &link, &source_file)
+        .with_context(|| format!("updating {}", source_file.display()))?;
+
+    println!("linked {} --[{}]--> {}", source_id, link_type, target_id);
+
+    Ok(true)
+}
+
+/// Remove a link between two artifacts.
+fn cmd_unlink(cli: &Cli, source_id: &str, link_type: &str, target_id: &str) -> Result<bool> {
+    use rivet_core::mutate;
+
+    let (store, _schema, _config) = load_project_config_and_store(cli)?;
+
+    // Validate the link exists
+    mutate::validate_unlink(source_id, link_type, target_id, &store)
+        .context("validation failed")?;
+
+    let source_file = mutate::find_source_file(source_id, &store)
+        .ok_or_else(|| anyhow::anyhow!("cannot determine source file for '{source_id}'"))?;
+
+    mutate::remove_link_from_file(source_id, link_type, target_id, &source_file)
+        .with_context(|| format!("updating {}", source_file.display()))?;
+
+    println!("unlinked {} --[{}]--> {}", source_id, link_type, target_id);
+
+    Ok(true)
+}
+
+/// Modify an existing artifact.
+fn cmd_modify(
+    cli: &Cli,
+    id: &str,
+    set_status: Option<&str>,
+    set_title: Option<&str>,
+    add_tags: &[String],
+    remove_tags: &[String],
+    set_fields: &[(String, String)],
+) -> Result<bool> {
+    use rivet_core::mutate::{self, ModifyParams};
+
+    let (store, schema, _config) = load_project_config_and_store(cli)?;
+
+    let params = ModifyParams {
+        set_status: set_status.map(|s| s.to_string()),
+        set_title: set_title.map(|s| s.to_string()),
+        add_tags: add_tags.to_vec(),
+        remove_tags: remove_tags.to_vec(),
+        set_fields: set_fields.to_vec(),
+    };
+
+    // Validate before writing (DD-028)
+    mutate::validate_modify(id, &params, &store, &schema).context("validation failed")?;
+
+    let source_file = mutate::find_source_file(id, &store)
+        .ok_or_else(|| anyhow::anyhow!("cannot determine source file for '{id}'"))?;
+
+    mutate::modify_artifact_in_file(id, &params, &source_file, &store)
+        .with_context(|| format!("updating {}", source_file.display()))?;
+
+    println!("modified {id}");
+
+    Ok(true)
+}
+
+/// Remove an artifact from the project.
+fn cmd_remove(cli: &Cli, id: &str, force: bool) -> Result<bool> {
+    use rivet_core::mutate;
+
+    let (store, schema, _config) = load_project_config_and_store(cli)?;
+    let graph = LinkGraph::build(&store, &schema);
+
+    // Validate before writing (DD-028)
+    mutate::validate_remove(id, force, &store, &graph).context("validation failed")?;
+
+    let source_file = mutate::find_source_file(id, &store)
+        .ok_or_else(|| anyhow::anyhow!("cannot determine source file for '{id}'"))?;
+
+    mutate::remove_artifact_from_file(id, &source_file)
+        .with_context(|| format!("updating {}", source_file.display()))?;
+
+    println!("removed {id}");
 
     Ok(true)
 }

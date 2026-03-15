@@ -25,189 +25,64 @@ as specified by [[REQ-014]].
 
 ## 2. Test Suite Overview
 
-Rivet's test suite consists of 59 tests across four categories:
+The test suite is organized by ASPICE verification level. Actual test counts
+are maintained by the test runner — run `cargo test -- --list` for the
+current count.
 
-| Level | Category            | Test Count | File                          |
-|-------|---------------------|------------|-------------------------------|
-| SWE.4 | Unit tests          | 30         | `rivet-core/src/*.rs`         |
-| SWE.4 | Property tests      | 6          | `rivet-core/tests/proptest_core.rs` |
-| SWE.5 | Integration tests   | 18         | `rivet-core/tests/integration.rs`   |
-| SWE.5 | STPA roundtrip      | 5          | `rivet-core/tests/stpa_roundtrip.rs` |
-| SWE.6 | Benchmarks          | 7 groups   | `rivet-core/benches/`         |
-| SWE.6 | CI quality gates    | 10 stages  | `.github/workflows/`          |
-
-All 59 tests pass. Zero failures, zero ignored.
+| Level | Category            | Location                              |
+|-------|---------------------|---------------------------------------|
+| SWE.4 | Unit tests          | `rivet-core/src/*.rs` (`#[cfg(test)]` modules) |
+| SWE.4 | Property tests      | `rivet-core/tests/proptest_core.rs`   |
+| SWE.4 | Fuzz targets        | `fuzz/fuzz_targets/`                  |
+| SWE.5 | Integration tests   | `rivet-core/tests/integration.rs`     |
+| SWE.5 | STPA roundtrip      | `rivet-core/tests/stpa_roundtrip.rs`  |
+| SWE.6 | Benchmarks          | `rivet-core/benches/`                 |
+| SWE.6 | CI quality gates    | `.github/workflows/`                  |
 
 ## 3. Unit Tests (SWE.4)
 
 Unit tests live inside `#[cfg(test)]` modules within rivet-core source files.
-They verify individual module behavior in isolation.
+They verify individual module behavior in isolation. Key modules tested:
 
-### 3.1 Diff Module (5 tests)
+- **diff** (`diff.rs`) — structural diff between store snapshots. Verifies [[REQ-001]].
+- **document** (`document.rs`) — YAML frontmatter, wiki-link references, HTML rendering. Verifies [[REQ-001]], [[REQ-007]].
+- **results** (`results.rs`) — test results model, status predicates, YAML roundtrip. Verifies [[REQ-009]].
+- **reqif** (`reqif.rs`) — ReqIF 1.2 XML roundtrip, export validity, minimal parse. Verifies [[REQ-005]].
+- **coverage** (`coverage.rs`) — traceability coverage computation, edge cases. Verifies [[REQ-004]].
+- **store** (`store.rs`) — insert, lookup, by-type indexing, upsert. Verifies [[REQ-001]].
 
-File: `rivet-core/src/diff.rs`
-
-| Test                          | Verifies      |
-|-------------------------------|---------------|
-| `empty_diff`                  | [[REQ-001]]   |
-| `identical_stores`            | [[REQ-001]]   |
-| `added_artifact`              | [[REQ-001]]   |
-| `removed_artifact`            | [[REQ-001]]   |
-| `modified_title`              | [[REQ-001]]   |
-
-The diff module computes structural differences between two store snapshots.
-These tests verify that added, removed, modified, and unchanged artifacts are
-correctly classified.
-
-### 3.2 Document Module (9 tests)
-
-File: `rivet-core/src/document.rs`
-
-| Test                              | Verifies      |
-|-----------------------------------|---------------|
-| `parse_frontmatter`              | [[REQ-001]]   |
-| `missing_frontmatter_is_error`   | [[REQ-001]]   |
-| `document_store`                 | [[REQ-001]]   |
-| `render_html_headings`           | [[REQ-007]]   |
-| `render_html_resolves_refs`      | [[REQ-007]]   |
-| `default_doc_type_when_omitted`  | [[REQ-001]]   |
-| `multiple_refs_on_one_line`      | [[REQ-001]]   |
-| `extract_references_from_body`   | [[REQ-004]]   |
-| `extract_sections_hierarchy`     | [[REQ-007]]   |
-
-Document tests verify YAML frontmatter parsing, wiki-link reference extraction,
-HTML rendering, and the document store.
-
-### 3.3 Results Module (9 tests)
-
-File: `rivet-core/src/results.rs`
-
-| Test                              | Verifies      |
-|-----------------------------------|---------------|
-| `test_status_display`            | [[REQ-009]]   |
-| `test_status_is_pass_fail`       | [[REQ-009]]   |
-| `test_result_store_insert_and_sort` | [[REQ-009]] |
-| `test_latest_for`                | [[REQ-009]]   |
-| `test_history_for`               | [[REQ-009]]   |
-| `test_summary`                   | [[REQ-009]]   |
-| `test_load_results_empty_dir`    | [[REQ-009]]   |
-| `test_load_results_nonexistent_dir` | [[REQ-009]] |
-| `test_roundtrip_yaml`            | [[REQ-009]]   |
-
-These tests verify the test results model: status enum behavior, result store
-ordering, latest/history queries, aggregate statistics, YAML roundtrip
-serialization, and edge cases (empty/nonexistent directories).
-
-### 3.4 ReqIF Module (3 tests)
-
-File: `rivet-core/src/reqif.rs`
-
-| Test                              | Verifies      |
-|-----------------------------------|---------------|
-| `test_export_produces_valid_xml` | [[REQ-005]]   |
-| `test_parse_minimal_reqif`       | [[REQ-005]]   |
-| `test_roundtrip`                 | [[REQ-005]]   |
-
-These tests verify that ReqIF 1.2 XML export produces valid structure, that
-minimal ReqIF documents can be parsed, and that full roundtrip
-(export then import) preserves all artifact data.
-
-### 3.5 Coverage Module (4 tests)
-
-File: `rivet-core/src/coverage.rs`
-
-| Test                              | Verifies      |
-|-----------------------------------|---------------|
-| `full_coverage`                  | [[REQ-004]]   |
-| `partial_coverage`               | [[REQ-004]]   |
-| `zero_artifacts_gives_100_percent` | [[REQ-004]] |
-| `to_json_roundtrip`             | [[REQ-004]]   |
-
-Coverage tests verify the traceability coverage computation engine: full
-coverage detection, partial coverage percentage calculation, vacuous truth
-for empty sets, and JSON serialization roundtrip.
+Test-to-requirement tracing is done via `// rivet: verifies` markers in test
+source code (once [[FEAT-043]] ships) or via the TEST-* artifacts in
+`artifacts/verification.yaml`.
 
 ## 4. Property-Based Tests (SWE.4)
 
 File: `rivet-core/tests/proptest_core.rs`
 
 Property tests use proptest to verify invariants with randomized inputs.
-Each test runs 30-50 cases with generated data.
+CI runs at 1000 cases per property via `PROPTEST_CASES` env var.
 
-| Test                              | Verifies             |
-|-----------------------------------|----------------------|
-| `prop_store_insert_all_retrievable` | [[REQ-001]]       |
-| `prop_store_rejects_duplicates`  | [[REQ-001]]          |
-| `prop_schema_merge_idempotent`   | [[REQ-010]]          |
-| `prop_link_graph_backlink_symmetry` | [[REQ-004]]       |
-| `prop_validation_determinism`    | [[REQ-004]]          |
-| `prop_store_types_match_inserted` | [[REQ-001]]         |
+Key properties verified:
 
-These properties verify:
-
-- **Store consistency** -- Inserting N unique artifacts yields a store of
-  size N where every artifact is retrievable by ID and by-type counts match.
-- **Duplicate rejection** -- Inserting the same ID twice is rejected.
-- **Schema merge idempotence** -- Merging a schema with itself produces the
-  same artifact types, link types, and inverse maps.
-- **Backlink symmetry** -- Every forward link in the graph has a corresponding
-  backlink at the target node.
-- **Validation determinism** -- Running `validate()` twice on identical inputs
-  produces identical diagnostic output.
-- **Type iterator correctness** -- The `types()` iterator returns exactly the
-  set of types that have artifacts in the store.
+- **Store consistency** — inserting N unique artifacts yields retrievable store of size N
+- **Duplicate rejection** — inserting the same ID twice is rejected
+- **Schema merge idempotence** — merging a schema with itself preserves all types and inverses
+- **Backlink symmetry** — every forward link has a corresponding backlink ([[REQ-004]])
+- **Validation determinism** — `validate()` on identical inputs produces identical output
+- **Type iterator correctness** — `types()` returns exactly the set of inserted types
 
 ## 5. Integration Tests (SWE.5)
 
-File: `rivet-core/tests/integration.rs`
+Files: `rivet-core/tests/integration.rs`, `rivet-core/tests/stpa_roundtrip.rs`
 
 Integration tests exercise cross-module pipelines: loading real schemas,
 building stores, computing link graphs, running validation, and computing
 traceability matrices.
 
-| Test                              | Verifies                    |
-|-----------------------------------|-----------------------------|
-| `test_dogfood_validate`          | [[REQ-001]], [[REQ-010]]    |
-| `test_generic_yaml_roundtrip`    | [[REQ-001]]                 |
-| `test_schema_merge_preserves_types` | [[REQ-010]], [[REQ-003]] |
-| `test_cybersecurity_schema_merge` | [[REQ-016]]                |
-| `test_traceability_matrix`       | [[REQ-004]]                 |
-| `test_traceability_matrix_empty` | [[REQ-004]]                 |
-| `test_query_filters`             | [[REQ-007]]                 |
-| `test_link_graph_integration`    | [[REQ-004]]                 |
-| `test_aspice_traceability_rules` | [[REQ-003]], [[REQ-015]]    |
-| `test_store_upsert_overwrites`   | [[REQ-001]]                 |
-| `test_store_upsert_type_change`  | [[REQ-001]]                 |
-| `test_reqif_roundtrip`           | [[REQ-005]]                 |
-| `test_reqif_store_integration`   | [[REQ-005]]                 |
-| `test_diff_identical_stores`     | [[REQ-001]]                 |
-| `test_diff_added_artifact`       | [[REQ-001]]                 |
-| `test_diff_removed_artifact`     | [[REQ-001]]                 |
-| `test_diff_modified_artifact`    | [[REQ-001]]                 |
-| `test_diff_diagnostic_changes`   | [[REQ-004]]                 |
-
-### 5.1 Dogfood Validation
-
-The `test_dogfood_validate` test loads Rivet's own `rivet.yaml`, schemas, and
-artifacts, then runs the full validation pipeline. This test must pass with
-zero errors. It verifies that Rivet can validate itself -- the most direct
-form of dogfooding.
-
-### 5.2 STPA Roundtrip Tests
-
-File: `rivet-core/tests/stpa_roundtrip.rs`
-
-| Test                              | Verifies      |
-|-----------------------------------|---------------|
-| `test_stpa_schema_loads`         | [[REQ-002]]   |
-| `test_store_insert_and_lookup`   | [[REQ-001]]   |
-| `test_duplicate_id_rejected`     | [[REQ-001]]   |
-| `test_broken_link_detected`      | [[REQ-004]]   |
-| `test_validation_catches_unknown_type` | [[REQ-004]], [[REQ-010]] |
-
-These tests verify STPA-specific schema loading and validation: that all
-STPA artifact types and link types are present after schema load, that basic
-store operations work, and that broken links and unknown types are detected.
+The **dogfood validation** test (`test_dogfood_validate`) loads Rivet's own
+`rivet.yaml`, schemas, and artifacts, then runs the full validation pipeline.
+This test must pass with zero errors — it verifies that Rivet can validate
+itself, the most direct form of dogfooding.
 
 ## 6. OSLC Integration Tests
 
@@ -261,23 +136,111 @@ a qualification gate:
 | `coverage`     | `cargo llvm-cov`    | Code coverage metrics                  |
 | `msrv`         | MSRV 1.85 check     | Backward compatibility ([[REQ-011]])   |
 
-## 9. Requirement-to-Test Mapping Summary
+## 9. Requirement-to-Test Mapping
 
-| Requirement   | Unit | Integration | Property | Total |
-|---------------|------|-------------|----------|-------|
-| [[REQ-001]]   | 14   | 7           | 3        | 24    |
-| [[REQ-002]]   | 0    | 1           | 0        | 1     |
-| [[REQ-003]]   | 0    | 2           | 0        | 2     |
-| [[REQ-004]]   | 5    | 5           | 2        | 12    |
-| [[REQ-005]]   | 3    | 2           | 0        | 5     |
-| [[REQ-006]]   | 0    | 0 (gated)   | 0        | 0+    |
-| [[REQ-007]]   | 3    | 1           | 0        | 4     |
-| [[REQ-009]]   | 9    | 0           | 0        | 9     |
-| [[REQ-010]]   | 0    | 2           | 1        | 3     |
-| [[REQ-015]]   | 0    | 1           | 0        | 1     |
-| [[REQ-016]]   | 0    | 1           | 0        | 1     |
+Test-to-requirement traceability is tracked via TEST-* artifacts in
+`artifacts/verification.yaml` and (once implemented) via `// rivet: verifies`
+source markers scanned by [[FEAT-043]].
 
-Requirements without direct test coverage ([[REQ-006]], [[REQ-008]],
-[[REQ-011]], [[REQ-012]], [[REQ-013]], [[REQ-014]]) are verified through CI
-quality gates, feature-gated integration tests, or benchmark KPIs rather than
-unit tests.
+Run `rivet coverage` to see the current requirement-to-test coverage. Do not
+maintain test count tables manually — they are unmaintainable and immediately
+stale.
+
+## 10. Formal Verification Strategy (Phase 3)
+
+[[REQ-030]] specifies formal correctness guarantees at three levels, forming a
+verification pyramid that builds on the existing test infrastructure.
+
+### 10.1 Kani Bounded Model Checking
+
+[[DD-025]], [[FEAT-049]]
+
+Kani proof harnesses exhaustively check all inputs within configurable bounds.
+Each harness proves a specific property about the actual compiled code (per
+SC-14). Target: 10-15 harnesses covering:
+
+| Target | Property proven |
+|--------|----------------|
+| `parse_artifact_ref()` | No panics for any `&str` input |
+| `Schema::merge()` | No panics, all input types preserved |
+| `LinkGraph::build()` | No panics for any valid store+schema |
+| `LinkGraph::build()` | Backlink symmetry: forward A→B implies backward B←A |
+| `validate()` cardinality | All `Cardinality` enum arms handled |
+| `has_cycles()` | Terminates for graphs up to N nodes |
+| `reachable()` | Result is a subset of all nodes, terminates |
+| `orphans()` | Orphan set has no links or backlinks |
+| `detect_circular_deps()` | DFS terminates for any graph |
+| `Store::insert()` | Duplicate returns error |
+| `compute_coverage()` | Coverage always in `[0.0, 1.0]` |
+
+CI integration: new `kani` job using `model-checking/kani-github-action`.
+
+### 10.2 Verus Functional Correctness
+
+[[DD-026]], [[FEAT-050]]
+
+Inline `requires`/`ensures` annotations proving:
+
+- **Soundness:** If `validate()` returns no error diagnostics, all
+  traceability rules are satisfied for the given store and schema.
+- **Completeness:** For every traceability rule violation in the store,
+  `validate()` emits a corresponding diagnostic.
+- **Backlink symmetry:** `links_from(A)` contains B ↔ `backlinks_to(B)` contains A.
+- **Conditional rule consistency:** If two rules can co-fire on one artifact,
+  their `then` requirements do not contradict.
+- **Reachability correctness:** `reachable()` returns exactly the transitive
+  closure of the specified link type.
+
+### 10.3 Rocq Metamodel Specification
+
+[[DD-027]], [[FEAT-051]]
+
+Schema semantics modeled in Rocq via coq-of-rust translation:
+
+- **Schema satisfiability:** Given a set of traceability rules and conditional
+  rules, prove that at least one valid artifact configuration exists (the
+  rules are not contradictory).
+- **Monotonicity:** Adding an artifact to a valid store preserves validity of
+  previously valid artifacts (or formally characterizes when it doesn't).
+- **Well-foundedness:** The traceability rule evaluation terminates for any
+  finite set of artifacts and rules.
+- **ASPICE V-model completeness:** The `aspice.yaml` schema's rules enforce
+  the complete V-model chain from stakeholder requirements through system
+  and software requirements to design, implementation, and verification.
+
+### 10.4 Verification Pyramid
+
+```
+         ╱╲
+        ╱  ╲       Rocq / coq-of-rust
+       ╱ TQ ╲      Metamodel proofs: satisfiability, monotonicity
+      ╱──────╲     (ISO 26262 TCL 1 evidence)
+     ╱        ╲
+    ╱  Verus   ╲   Functional correctness
+   ╱  sound +   ╲  validate() is sound + complete
+  ╱  complete    ╲ (inline Rust proofs, SMT-backed)
+ ╱────────────────╲
+╱                  ╲
+╱  Kani  +  proptest ╲  Panic freedom + property testing
+╱  + fuzzing + Miri    ╲  (automated, CI-integrated)
+╱──────────────────────╲
+```
+
+Each layer builds on the one below. The existing test infrastructure (proptest,
+fuzzing, Miri, mutation testing) forms the base. Kani fills gaps with exhaustive
+bounded checking. Verus adds provable correctness. Rocq provides the deepest
+assurance for tool qualification.
+
+**STPA coverage:** H-12 (proof-model divergence), SC-14 (proofs verify actual
+implementation).
+
+## 11. Phase 3 Verification Approach
+
+Each phase 3 workstream adds verification at the appropriate level:
+
+- **[[REQ-023]] Conditional rules** — proptest for rule evaluation determinism, Kani for condition matching panic freedom, Rocq for rule consistency proofs
+- **[[REQ-025]] needs.json import** — fuzz target for malformed JSON, integration tests with real SCORE data
+- **[[REQ-028]] rowan parser** — fuzz target for arbitrary byte input, Kani for parser panic freedom, unit tests for each syntax kind
+- **[[REQ-029]] salsa incremental** — proptest comparing incremental vs full validation results, Verus soundness proof
+- **[[REQ-030]] formal verification** — the Kani/Verus/Rocq harnesses ARE the verification
+- **[[REQ-031]] CLI mutations** — proptest for random mutation sequences never producing invalid YAML, integration tests for all rejection cases

@@ -24,7 +24,7 @@ pub struct Link {
 /// Base fields (`id`, `title`, `description`, `status`, `tags`, `links`)
 /// are first-class struct members.  Domain-specific properties live in the
 /// `fields` map and are validated against the schema.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Artifact {
     /// Unique identifier.
     pub id: ArtifactId,
@@ -150,6 +150,9 @@ pub struct ProjectMetadata {
 pub struct SourceConfig {
     pub path: String,
     pub format: String,
+    /// Path to a WASM adapter component (only used when `format: "wasm"`).
+    #[serde(default)]
+    pub adapter: Option<String>,
     #[serde(default)]
     pub config: BTreeMap<String, String>,
 }

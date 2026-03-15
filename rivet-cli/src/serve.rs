@@ -31,6 +31,7 @@ use rivet_core::diff::ArtifactDiff;
 use rivet_core::document::{self, DocumentStore};
 use rivet_core::formats::generic::GenericYamlAdapter;
 use rivet_core::links::LinkGraph;
+use rivet_core::markdown::{render_markdown, strip_html_tags};
 use rivet_core::matrix::{self, Direction};
 use rivet_core::model::ProjectConfig;
 use rivet_core::results::ResultStore;
@@ -167,6 +168,17 @@ fn discover_siblings(project_path: &std::path::Path) -> Vec<SiblingProject> {
     siblings
 }
 
+/// Metadata for a loaded external project, displayed on the dashboard.
+struct ExternalInfo {
+    prefix: String,
+    /// Display source — git URL or local path.
+    source: String,
+    /// Whether the external has been synced (repo dir exists).
+    synced: bool,
+    /// Loaded artifacts (empty if not synced).
+    store: Store,
+}
+
 /// Shared application state loaded once at startup.
 struct AppState {
     store: Store,
@@ -181,6 +193,8 @@ struct AppState {
     schemas_dir: PathBuf,
     /// Resolved docs directories (for serving images/assets).
     doc_dirs: Vec<PathBuf>,
+    /// External projects loaded at startup (empty if none configured).
+    externals: Vec<ExternalInfo>,
 }
 
 /// Convenience alias so handler signatures stay compact.
@@ -234,6 +248,37 @@ fn reload_state(
         }
     }
 
+    // ── Load external projects ────────────────────────────────────────
+    let mut externals = Vec::new();
+    if let Some(ref ext_map) = config.externals {
+        let cache_dir = project_path.join(".rivet/repos");
+        for ext in ext_map.values() {
+            let source = ext
+                .git
+                .as_deref()
+                .or(ext.path.as_deref())
+                .unwrap_or("unknown")
+                .to_string();
+            let ext_dir =
+                rivet_core::externals::resolve_external_dir(ext, &cache_dir, project_path);
+            let synced = ext_dir.join("rivet.yaml").exists();
+            let mut ext_store = Store::new();
+            if synced {
+                if let Ok(artifacts) = rivet_core::externals::load_external_project(&ext_dir) {
+                    for a in artifacts {
+                        ext_store.upsert(a);
+                    }
+                }
+            }
+            externals.push(ExternalInfo {
+                prefix: ext.prefix.clone(),
+                source,
+                synced,
+                store: ext_store,
+            });
+        }
+    }
+
     let git = capture_git_info(project_path);
     let loaded_at = std::process::Command::new("date")
         .arg("+%H:%M:%S")
@@ -264,6 +309,7 @@ fn reload_state(
         project_path_buf: project_path.to_path_buf(),
         schemas_dir: schemas_dir.to_path_buf(),
         doc_dirs,
+        externals,
     })
 }
 
@@ -309,6 +355,7 @@ pub async fn run(
         project_path_buf: project_path,
         schemas_dir,
         doc_dirs,
+        externals: Vec::new(),
     }));
 
     let app = Router::new()
@@ -319,6 +366,7 @@ pub async fn run(
         .route("/artifacts/{id}/graph", get(artifact_graph))
         .route("/validate", get(validate_view))
         .route("/matrix", get(matrix_view))
+        .route("/matrix/cell", get(matrix_cell_detail))
         .route("/graph", get(graph_view))
         .route("/stats", get(stats_view))
         .route("/coverage", get(coverage_view))
@@ -345,6 +393,8 @@ pub async fn run(
         .route("/help/schema/{name}", get(help_schema_show))
         .route("/help/links", get(help_links_view))
         .route("/help/rules", get(help_rules_view))
+        .route("/externals", get(externals_list))
+        .route("/externals/{prefix}", get(external_detail))
         .route("/docs-asset/{*path}", get(docs_asset))
         .route("/reload", post(reload_handler))
         .with_state(state.clone())
@@ -1027,6 +1077,20 @@ details.diff-row>.diff-detail{padding:.75rem 1.25rem;background:rgba(0,0,0,.01);
 .btn-secondary{background:transparent;color:var(--text-secondary);border:1px solid var(--border)}
 .btn-secondary:hover{background:rgba(0,0,0,.03);color:var(--text);text-decoration:none}
 
+/* ── SVG Viewer (fullscreen / popout / resize) ───────────────── */
+.svg-viewer{position:relative;border:1px solid var(--border);border-radius:6px;overflow:hidden;
+     resize:both;min-height:300px}
+.svg-viewer-toolbar{position:absolute;top:8px;right:8px;z-index:20;display:flex;gap:4px}
+.svg-viewer-toolbar button{background:rgba(0,0,0,0.6);color:#fff;border:1px solid rgba(255,255,255,0.2);
+     border-radius:4px;padding:4px 8px;cursor:pointer;font-size:16px;line-height:1;
+     transition:background var(--transition)}
+.svg-viewer-toolbar button:hover{background:rgba(0,0,0,0.8)}
+.svg-viewer.fullscreen{position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9999;
+     border-radius:0;background:var(--bg);resize:none}
+.svg-viewer.fullscreen .svg-viewer-toolbar{top:16px;right:16px}
+.svg-viewer .graph-container{border:none;border-radius:0}
+.svg-viewer.fullscreen .graph-container{height:100vh;min-height:100vh}
+
 /* ── Graph ────────────────────────────────────────────────────── */
 .graph-container{border-radius:var(--radius);overflow:hidden;background:#fafbfc;cursor:grab;
      height:calc(100vh - 280px);min-height:400px;position:relative;border:1px solid var(--border)}
@@ -1216,6 +1280,19 @@ details.trace-details[open]>summary .trace-chevron{transform:rotate(90deg)}
 .artifact-embed-title{font-weight:600;font-size:.92rem;color:var(--text)}
 .artifact-embed-desc{font-size:.82rem;color:var(--text-secondary);margin-top:.25rem;line-height:1.5}
 
+/* ── Rendered markdown in descriptions ─────────────────────────── */
+.artifact-desc p{margin:.3em 0}
+.artifact-desc ul,.artifact-desc ol{margin:.3em 0;padding-left:1.5em}
+.artifact-desc code{background:rgba(255,255,255,.1);padding:.1em .3em;border-radius:3px;font-size:.9em}
+.artifact-desc pre{background:rgba(0,0,0,.3);padding:.5em;border-radius:4px;overflow-x:auto}
+.artifact-desc pre code{background:none;padding:0}
+.artifact-desc table{border-collapse:collapse;margin:.5em 0}
+.artifact-desc table td,.artifact-desc table th{border:1px solid var(--border);padding:.3em .6em}
+.artifact-desc del{opacity:.6}
+.artifact-desc blockquote{border-left:3px solid var(--border);margin:.5em 0;padding-left:.8em;opacity:.85}
+.artifact-embed-desc p{margin:.2em 0}
+.artifact-embed-desc code{background:rgba(255,255,255,.1);padding:.1em .2em;border-radius:2px;font-size:.9em}
+
 /* ── Diagram in artifact detail ────────────────────────────────── */
 .artifact-diagram{margin:1rem 0}
 .artifact-diagram .mermaid{background:var(--card-bg);padding:1rem;border-radius:var(--radius);
@@ -1318,6 +1395,57 @@ details.trace-details[open]>summary .trace-chevron{transform:rotate(90deg)}
 .aadl-diag .diag-path{color:var(--text-secondary);font-family:var(--mono);font-size:.72rem;flex-shrink:0}
 .aadl-diag .diag-msg{color:var(--text);flex:1}
 .aadl-diag .diag-analysis{color:var(--text-secondary);font-size:.68rem;opacity:.7;flex-shrink:0}
+
+/* ── Sortable table headers ──────────────────────────────── */
+table.sortable th{cursor:pointer;user-select:none}
+table.sortable th:hover{color:var(--text)}
+
+/* ── Facet sidebar (artifact tag filtering) ──────────────── */
+.artifacts-layout{display:flex;gap:1.5rem;align-items:flex-start}
+.artifacts-main{flex:1;min-width:0}
+.facet-sidebar{width:220px;flex-shrink:0;background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);padding:1rem;position:sticky;top:1rem;max-height:calc(100vh - 4rem);overflow-y:auto}
+.facet-sidebar h3{font-size:.8rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;
+  color:var(--text-secondary);margin:0 0 .75rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)}
+.facet-list{display:flex;flex-direction:column;gap:.35rem}
+.facet-item{display:flex;align-items:center;gap:.4rem;font-size:.82rem;color:var(--text);
+  cursor:pointer;padding:.2rem .35rem;border-radius:4px;transition:background var(--transition)}
+.facet-item:hover{background:rgba(58,134,255,.06)}
+.facet-item input[type="checkbox"]{margin:0;accent-color:var(--accent);width:14px;height:14px;cursor:pointer}
+.facet-item .facet-count{margin-left:auto;font-size:.72rem;color:var(--text-secondary);
+  font-variant-numeric:tabular-nums;font-family:var(--mono)}
+
+/* ── Group-by header rows ────────────────────────────────── */
+.group-header-row td{background:rgba(58,134,255,.06);font-weight:600;font-size:.85rem;
+  color:var(--text);padding:.5rem .875rem;border-bottom:2px solid var(--border);letter-spacing:.02em}
+
+/* ── Document tree hierarchy ─────────────────────────────── */
+.doc-tree{margin-bottom:1.5rem}
+.doc-tree details{margin-bottom:.25rem}
+.doc-tree summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:.5rem;
+  padding:.5rem .75rem;border-radius:var(--radius-sm);font-weight:600;font-size:.9rem;
+  color:var(--text);transition:background var(--transition)}
+.doc-tree summary::-webkit-details-marker{display:none}
+.doc-tree summary:hover{background:rgba(58,134,255,.04)}
+.doc-tree summary .tree-chevron{transition:transform var(--transition);display:inline-flex;opacity:.4;font-size:.7rem}
+.doc-tree details[open]>summary .tree-chevron{transform:rotate(90deg)}
+.doc-tree summary .tree-count{font-size:.75rem;color:var(--text-secondary);font-weight:500;
+  font-variant-numeric:tabular-nums;margin-left:.25rem}
+.doc-tree ul{list-style:none;padding:0 0 0 1.5rem;margin:.25rem 0}
+.doc-tree li{margin:.15rem 0}
+.doc-tree li a{display:flex;align-items:center;gap:.5rem;padding:.35rem .75rem;border-radius:var(--radius-sm);
+  font-size:.88rem;color:var(--text);transition:background var(--transition);text-decoration:none}
+.doc-tree li a:hover{background:rgba(58,134,255,.04)}
+.doc-tree .doc-tree-id{font-family:var(--mono);font-size:.8rem;font-weight:500;color:var(--accent)}
+.doc-tree .doc-tree-status{font-size:.72rem}
+
+/* ── Matrix cell drill-down ──────────────────────────────── */
+.matrix-cell-clickable{cursor:pointer;transition:background var(--transition)}
+.matrix-cell-clickable:hover{background:rgba(58,134,255,.08)}
+.cell-detail{font-size:.82rem}
+.cell-detail ul{list-style:none;padding:.5rem;margin:0}
+.cell-detail li{padding:.25rem .5rem;border-bottom:1px solid var(--border)}
+.cell-detail li:last-child{border-bottom:none}
 "#;
 
 // ── Pan/zoom JS ──────────────────────────────────────────────────────────
@@ -1696,6 +1824,60 @@ const GRAPH_JS: &str = r#"
     // also hide when clicking (navigating away)
     document.body.addEventListener('click',function(){ hide(); },true);
   })();
+
+  // ── SVG viewer: fullscreen / popout / zoom-fit ──────────────
+  window.svgFullscreen=function(btn){
+    var viewer=btn.closest('.svg-viewer');
+    if(!viewer) return;
+    viewer.classList.toggle('fullscreen');
+    var isFS=viewer.classList.contains('fullscreen');
+    btn.textContent=isFS?'\u2715':'\u26F6';
+    btn.title=isFS?'Exit fullscreen':'Fullscreen';
+  };
+
+  window.svgPopout=function(btn){
+    var viewer=btn.closest('.svg-viewer');
+    if(!viewer) return;
+    var svg=viewer.querySelector('svg');
+    if(!svg) return;
+    var popup=window.open('','_blank','width=1200,height=800');
+    var doc=popup.document;
+    doc.open();
+    var style=doc.createElement('style');
+    style.textContent='body{margin:0;background:#fafbfc;display:flex;align-items:center;justify-content:center;min-height:100vh} svg{max-width:95vw;max-height:95vh}';
+    doc.head.appendChild(style);
+    doc.title='Rivet Graph';
+    doc.body.appendChild(svg.cloneNode(true));
+    doc.close();
+  };
+
+  window.svgZoomFit=function(btn){
+    var viewer=btn.closest('.svg-viewer');
+    if(!viewer) return;
+    var container=viewer.querySelector('.graph-container');
+    var svg=viewer.querySelector('svg');
+    if(!svg) return;
+    // Trigger the existing zoom-fit button if present
+    if(container){
+      var fitBtn=container.querySelector('.zoom-fit');
+      if(fitBtn){ fitBtn.click(); return; }
+    }
+    // Fallback: reset viewBox from bounding box
+    var bbox=svg.getBBox();
+    var pad=40;
+    svg.setAttribute('viewBox',
+      (bbox.x-pad)+' '+(bbox.y-pad)+' '+(bbox.width+pad*2)+' '+(bbox.height+pad*2));
+  };
+
+  document.addEventListener('keydown',function(e){
+    if(e.key==='Escape'){
+      document.querySelectorAll('.svg-viewer.fullscreen').forEach(function(v){
+        v.classList.remove('fullscreen');
+        var btn=v.querySelector('.svg-viewer-toolbar button[title="Exit fullscreen"]');
+        if(btn){ btn.textContent='\u26F6'; btn.title='Fullscreen'; }
+      });
+    }
+  });
 })();
 </script>
 "#;
@@ -2296,6 +2478,165 @@ function initTables(){
 }
 document.body.addEventListener('htmx:afterSwap', initTables);
 document.addEventListener('DOMContentLoaded', initTables);
+
+// ── Tag faceting (artifacts page) ──────────────────────────
+function initTagFacets(){
+  var sidebar=document.getElementById('tag-facets');
+  if(!sidebar) return;
+  var table=document.getElementById('artifacts-table');
+  if(!table) return;
+  var tbody=table.querySelector('tbody');
+  if(!tbody) return;
+  // Find the tag column index (data-col="tags")
+  var tagColIdx=-1;
+  var ths=table.querySelectorAll('thead th');
+  ths.forEach(function(th,i){ if(th.getAttribute('data-col')==='tags') tagColIdx=i; });
+  if(tagColIdx<0) return;
+
+  // Collect all unique tags with counts
+  var tagCounts={};
+  tbody.querySelectorAll('tr').forEach(function(row){
+    var cell=row.children[tagColIdx];
+    if(!cell) return;
+    var tags=cell.getAttribute('data-tags');
+    if(!tags) return;
+    tags.split(',').forEach(function(t){
+      t=t.trim();
+      if(t){ tagCounts[t]=(tagCounts[t]||0)+1; }
+    });
+  });
+
+  var tagNames=Object.keys(tagCounts).sort();
+  if(tagNames.length===0){
+    sidebar.textContent='No tags';
+    sidebar.style.cssText='font-size:.8rem;color:var(--text-secondary)';
+    return;
+  }
+
+  // Build facet checkboxes via DOM API
+  sidebar.textContent='';
+  var list=document.createElement('div');
+  list.className='facet-list';
+  tagNames.forEach(function(tag){
+    var label=document.createElement('label');
+    label.className='facet-item';
+    var cb=document.createElement('input');
+    cb.type='checkbox';
+    cb.value=tag;
+    cb.checked=true;
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(' '+tag+' '));
+    var cnt=document.createElement('span');
+    cnt.className='facet-count';
+    cnt.textContent=tagCounts[tag];
+    label.appendChild(cnt);
+    list.appendChild(label);
+  });
+  sidebar.appendChild(list);
+
+  // Filter rows when checkboxes change
+  sidebar.addEventListener('change',function(){
+    var checked=[];
+    sidebar.querySelectorAll('input[type="checkbox"]:checked').forEach(function(cb){ checked.push(cb.value); });
+    var allChecked=checked.length===tagNames.length;
+    tbody.querySelectorAll('tr').forEach(function(row){
+      if(row.classList.contains('group-header-row')){ row.style.display=''; return; }
+      if(allChecked){ row.style.display=''; return; }
+      var cell=row.children[tagColIdx];
+      if(!cell){ row.style.display='none'; return; }
+      var tags=(cell.getAttribute('data-tags')||'').split(',').map(function(t){return t.trim()}).filter(Boolean);
+      if(tags.length===0){ row.style.display=checked.length===0?'':'none'; return; }
+      var match=tags.some(function(t){ return checked.indexOf(t)!==-1; });
+      row.style.display=match?'':'none';
+    });
+  });
+}
+document.body.addEventListener('htmx:afterSwap', initTagFacets);
+document.addEventListener('DOMContentLoaded', initTagFacets);
+
+// ── Group-by (artifacts page) ──────────────────────────────
+window.groupArtifacts=function(field){
+  var table=document.getElementById('artifacts-table');
+  if(!table) return;
+  var tbody=table.querySelector('tbody');
+  if(!tbody) return;
+
+  // Remove existing group header rows
+  tbody.querySelectorAll('.group-header-row').forEach(function(r){ r.remove(); });
+
+  if(field==='none'){
+    // Restore original order: sort by ID (first column)
+    var rows=Array.from(tbody.querySelectorAll('tr'));
+    rows.sort(function(a,b){
+      var at=(a.children[0]||{}).textContent||'';
+      var bt=(b.children[0]||{}).textContent||'';
+      return at.localeCompare(bt);
+    });
+    rows.forEach(function(r){ tbody.appendChild(r); });
+    return;
+  }
+
+  // Find column index for grouping
+  var colMap={type:1, status:3, tag:-1};
+  var ths=table.querySelectorAll('thead th');
+  ths.forEach(function(th,i){ if(th.getAttribute('data-col')==='tags') colMap.tag=i; });
+  var colIdx=colMap[field];
+  if(colIdx===undefined||colIdx<0) return;
+
+  var rows=Array.from(tbody.querySelectorAll('tr'));
+  var groups={};
+  rows.forEach(function(row){
+    var key='';
+    if(field==='tag'){
+      var cell=row.children[colIdx];
+      var tags=(cell&&cell.getAttribute('data-tags'))||'';
+      key=tags.split(',')[0]||'(no tag)';
+      key=key.trim()||'(no tag)';
+    } else {
+      key=(row.children[colIdx]||{}).textContent||'(empty)';
+      key=key.trim()||'(empty)';
+    }
+    if(!groups[key]) groups[key]=[];
+    groups[key].push(row);
+  });
+
+  var colCount=ths.length;
+  var sortedKeys=Object.keys(groups).sort();
+  sortedKeys.forEach(function(key){
+    var hdr=document.createElement('tr');
+    hdr.className='group-header-row';
+    var td=document.createElement('td');
+    td.setAttribute('colspan',String(colCount));
+    td.textContent=key+' ('+groups[key].length+')';
+    hdr.appendChild(td);
+    tbody.appendChild(hdr);
+    groups[key].forEach(function(r){ tbody.appendChild(r); });
+  });
+};
+
+// ── Matrix cell drill-down ─────────────────────────────────
+function initMatrixDrilldown(){
+  document.querySelectorAll('.matrix-cell-clickable').forEach(function(cell){
+    if(cell._drilldown) return;
+    cell._drilldown=true;
+    cell.addEventListener('click',function(){
+      var detail=cell.nextElementSibling;
+      if(!detail||!detail.classList.contains('cell-detail')) return;
+      if(detail.childNodes.length>0){
+        detail.textContent='';
+        return;
+      }
+      var src=cell.getAttribute('data-source-type');
+      var tgt=cell.getAttribute('data-target-type');
+      var link=cell.getAttribute('data-link-type');
+      var dir=cell.getAttribute('data-direction');
+      var url='/matrix/cell?source_type='+encodeURIComponent(src)+'&target_type='+encodeURIComponent(tgt)+'&link_type='+encodeURIComponent(link)+'&direction='+encodeURIComponent(dir);
+      htmx.ajax('GET',url,{target:detail,swap:'innerHTML'});
+    });
+  });
+}
+document.body.addEventListener('htmx:afterSwap', initMatrixDrilldown);
+document.addEventListener('DOMContentLoaded', initMatrixDrilldown);
 </script>
 "#;
 
@@ -2345,6 +2686,19 @@ fn page_layout(content: &str, state: &AppState) -> Html<String> {
     let stpa_nav = if stpa_count > 0 {
         format!(
             "<li><a hx-get=\"/stpa\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\"><span class=\"nav-label\"><span class=\"nav-icon\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M8 1.5l5.5 2.5v4c0 3.5-2.5 5.5-5.5 7-3-1.5-5.5-3.5-5.5-7V4z\"/><path d=\"M8 5v3M8 10.5h.01\"/></svg></span> STPA</span><span class=\"nav-badge\">{stpa_count}</span></a></li>"
+        )
+    } else {
+        String::new()
+    };
+    let ext_total: usize = state.externals.iter().map(|e| e.store.len()).sum();
+    let externals_nav = if !state.externals.is_empty() {
+        let badge = if ext_total > 0 {
+            format!("<span class=\"nav-badge\">{ext_total}</span>")
+        } else {
+            "<span class=\"nav-badge\">0</span>".to_string()
+        };
+        format!(
+            "<li><a hx-get=\"/externals\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\"><span class=\"nav-label\"><span class=\"nav-icon\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M14 8H9l-2-2H2v8h12z\"/><path d=\"M2 4V2h5l2 2\"/><circle cx=\"11\" cy=\"9\" r=\"2\"/></svg></span> Externals</span>{badge}</a></li>"
         )
     } else {
         String::new()
@@ -2459,6 +2813,7 @@ document.addEventListener('DOMContentLoaded',renderMermaid);
     <li><a hx-get="/results" hx-target="#content" hx-push-url="true" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12.5h12M3 9.5h2v3H3zM7 6.5h2v6H7zM11 3.5h2v9h-2z"/></svg></span> Results</span>{result_badge}</a></li>
     <li class="nav-divider"></li>
     <li><a hx-get="/diff" hx-target="#content" hx-push-url="true" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v10M10 3v10"/><path d="M2 8h3M11 8h3"/><circle cx="6" cy="5" r="1.5"/><circle cx="10" cy="11" r="1.5"/></svg></span> Diff</span></a></li>
+    {externals_nav}
     <li class="nav-divider"></li>
     <li><a hx-get="/help" hx-target="#content" hx-push-url="true" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><path d="M6 6.5a2 2 0 013.5 1.5c0 1-1.5 1.5-1.5 2.5M8 12.5v.01"/></svg></span> Help &amp; Docs</span></a></li>
   </ul>
@@ -2753,25 +3108,111 @@ fn stats_partial(state: &AppState) -> String {
     html
 }
 
-// ── Artifacts ────────────────────────────────────────────────────────────
+// ── Externals ────────────────────────────────────────────────────────────
 
-async fn artifacts_list(State(state): State<SharedState>) -> Html<String> {
+/// GET /externals — list all configured external projects.
+async fn externals_list(State(state): State<SharedState>) -> Html<String> {
     let state = state.read().await;
-    let store = &state.store;
+    let externals = &state.externals;
 
-    let mut artifacts: Vec<_> = store.iter().collect();
+    let mut html = String::from("<h2>External Projects</h2>");
+
+    if externals.is_empty() {
+        html.push_str(
+            "<div class=\"card\"><p>No external projects configured. \
+             Add an <code>externals</code> section to <code>rivet.yaml</code> to enable cross-repo linking.</p></div>",
+        );
+        return Html(html);
+    }
+
+    html.push_str(
+        "<div class=\"card\"><h3>Configured Externals</h3>\
+         <table><thead><tr><th>Prefix</th><th>Source</th><th>Status</th><th>Artifacts</th></tr></thead><tbody>",
+    );
+    for ext in externals {
+        let status_badge = if ext.synced {
+            "<span class=\"badge badge-ok\">synced</span>".to_string()
+        } else {
+            "<span class=\"badge badge-warn\">not synced</span>".to_string()
+        };
+        let prefix_link = if ext.synced && !ext.store.is_empty() {
+            format!(
+                "<a hx-get=\"/externals/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a>",
+                html_escape(&ext.prefix),
+                html_escape(&ext.prefix)
+            )
+        } else {
+            html_escape(&ext.prefix)
+        };
+        html.push_str(&format!(
+            "<tr><td><code>{prefix_link}</code></td>\
+             <td><code>{}</code></td>\
+             <td>{status_badge}</td>\
+             <td>{}</td></tr>",
+            html_escape(&ext.source),
+            ext.store.len(),
+        ));
+    }
+    html.push_str("</tbody></table></div>");
+
+    // Show a hint for un-synced externals
+    let any_unsynced = externals.iter().any(|e| !e.synced);
+    if any_unsynced {
+        html.push_str(
+            "<div class=\"card\" style=\"background:#fff8e1;border-color:#e6d48e\">\
+             <p style=\"color:#8b6914;margin:0\">Some externals are not synced. \
+             Run <code>rivet sync</code> to fetch them.</p></div>",
+        );
+    }
+
+    Html(html)
+}
+
+/// GET /externals/{prefix} — show artifacts from a specific external project.
+async fn external_detail(
+    State(state): State<SharedState>,
+    Path(prefix): Path<String>,
+) -> Html<String> {
+    let state = state.read().await;
+
+    let Some(ext) = state.externals.iter().find(|e| e.prefix == prefix) else {
+        return Html(format!(
+            "<h2>Not Found</h2><p>External project <code>{}</code> is not configured.</p>",
+            html_escape(&prefix)
+        ));
+    };
+
+    if !ext.synced {
+        return Html(format!(
+            "<h2>External: {}</h2>\
+             <div class=\"card\" style=\"background:#fff8e1;border-color:#e6d48e\">\
+             <p style=\"color:#8b6914;margin:0\">This external project has not been synced yet. \
+             Run <code>rivet sync</code> to fetch it.</p></div>",
+            html_escape(&ext.prefix)
+        ));
+    }
+
+    let mut html = format!(
+        "<h2>External: {}</h2>\
+         <p class=\"meta\">Source: <code>{}</code> &mdash; {} artifacts</p>",
+        html_escape(&ext.prefix),
+        html_escape(&ext.source),
+        ext.store.len(),
+    );
+
+    let mut artifacts: Vec<_> = ext.store.iter().collect();
     artifacts.sort_by(|a, b| a.id.cmp(&b.id));
 
-    let mut html = String::from("<h2>Artifacts</h2>");
-    // Client-side filter input
+    // Client-side filter
     html.push_str("<div style=\"position:relative;margin-bottom:1rem\">\
         <svg width=\"15\" height=\"15\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" style=\"position:absolute;left:.75rem;top:50%;transform:translateY(-50%);opacity:.4\"><circle cx=\"7\" cy=\"7\" r=\"4.5\"/><path d=\"M10.5 10.5L14 14\"/></svg>\
-        <input type=\"search\" id=\"artifact-filter\" placeholder=\"Filter artifacts...\" \
+        <input type=\"search\" id=\"ext-artifact-filter\" placeholder=\"Filter artifacts...\" \
         style=\"width:100%;padding:.6rem .75rem .6rem 2.25rem;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:.875rem;font-family:var(--font);background:var(--surface);color:var(--text);outline:none\" \
-        oninput=\"filterTable(this.value)\">\
+        oninput=\"filterExtTable(this.value)\">\
         </div>");
+
     html.push_str(
-        "<table id=\"artifacts-table\"><thead><tr><th>ID</th><th>Type</th><th>Title</th><th>Status</th><th>Links</th></tr></thead><tbody>",
+        "<table id=\"ext-artifacts-table\"><thead><tr><th>ID</th><th>Type</th><th>Title</th><th>Status</th><th>Links</th></tr></thead><tbody>",
     );
 
     for a in &artifacts {
@@ -2782,13 +3223,15 @@ async fn artifacts_list(State(state): State<SharedState>) -> Html<String> {
             "obsolete" => format!("<span class=\"badge badge-error\">{status}</span>"),
             _ => format!("<span class=\"badge badge-info\">{status}</span>"),
         };
+        // Link using cross-repo ID format: prefix:ID
+        let qualified_id = format!("{}:{}", ext.prefix, a.id);
         html.push_str(&format!(
             "<tr><td><a hx-get=\"/artifacts/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a></td>\
              <td>{}</td>\
              <td>{}</td>\
              <td>{}</td>\
              <td>{}</td></tr>",
-            html_escape(&a.id),
+            html_escape(&qualified_id),
             html_escape(&a.id),
             badge_for_type(&a.artifact_type),
             html_escape(&a.title),
@@ -2802,12 +3245,134 @@ async fn artifacts_list(State(state): State<SharedState>) -> Html<String> {
         "<p class=\"meta\">{} artifacts total</p>",
         artifacts.len()
     ));
+
+    // Filter script
+    html.push_str(
+        "<script>\
+        function filterExtTable(q){\
+          q=q.toLowerCase();\
+          document.querySelectorAll('#ext-artifacts-table tbody tr').forEach(function(r){\
+            r.style.display=r.textContent.toLowerCase().includes(q)?'':'none';\
+          });\
+        }\
+        </script>",
+    );
+
+    // Back button
+    html.push_str(
+        "<div class=\"detail-actions\">\
+         <a class=\"btn btn-secondary\" hx-get=\"/externals\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">&larr; Back to externals</a>\
+         </div>",
+    );
+
+    Html(html)
+}
+
+// ── Artifacts ────────────────────────────────────────────────────────────
+
+async fn artifacts_list(State(state): State<SharedState>) -> Html<String> {
+    let state = state.read().await;
+    let store = &state.store;
+
+    let mut artifacts: Vec<_> = store.iter().collect();
+    artifacts.sort_by(|a, b| a.id.cmp(&b.id));
+
+    let mut html = String::from("<h2>Artifacts</h2>");
+
+    // Controls bar: search + group-by
+    html.push_str("<div style=\"display:flex;gap:1rem;align-items:center;margin-bottom:1rem;flex-wrap:wrap\">");
+    html.push_str("<div style=\"position:relative;flex:1;min-width:200px\">\
+        <svg width=\"15\" height=\"15\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" style=\"position:absolute;left:.75rem;top:50%;transform:translateY(-50%);opacity:.4\"><circle cx=\"7\" cy=\"7\" r=\"4.5\"/><path d=\"M10.5 10.5L14 14\"/></svg>\
+        <input type=\"search\" id=\"artifact-filter\" placeholder=\"Filter artifacts...\" \
+        style=\"width:100%;padding:.6rem .75rem .6rem 2.25rem;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:.875rem;font-family:var(--font);background:var(--surface);color:var(--text);outline:none\" \
+        oninput=\"filterTable(this.value)\">\
+        </div>");
+    html.push_str("<div class=\"form-row\" style=\"margin-bottom:0\">\
+        <label for=\"group-by\" style=\"margin-right:.25rem\">Group by</label>\
+        <select id=\"group-by\" onchange=\"groupArtifacts(this.value)\" style=\"padding:.4rem .6rem;font-size:.82rem\">\
+        <option value=\"none\">No grouping</option>\
+        <option value=\"type\">Type</option>\
+        <option value=\"status\">Status</option>\
+        <option value=\"tag\">First tag</option>\
+        </select></div>");
+    html.push_str("</div>");
+
+    // Layout: sidebar + main table
+    html.push_str("<div class=\"artifacts-layout\">");
+
+    // Main table area
+    html.push_str("<div class=\"artifacts-main\">");
+    html.push_str(
+        "<table class=\"sortable\" id=\"artifacts-table\"><thead><tr>\
+         <th>ID</th><th>Type</th><th>Title</th><th>Status</th><th>Links</th><th data-col=\"tags\">Tags</th>\
+         </tr></thead><tbody>",
+    );
+
+    for a in &artifacts {
+        let status = a.status.as_deref().unwrap_or("-");
+        let status_badge = match status {
+            "approved" => format!("<span class=\"badge badge-ok\">{status}</span>"),
+            "draft" => format!("<span class=\"badge badge-warn\">{status}</span>"),
+            "obsolete" => format!("<span class=\"badge badge-error\">{status}</span>"),
+            _ => format!("<span class=\"badge badge-info\">{status}</span>"),
+        };
+        let tags_csv = a.tags.join(",");
+        let tags_display = if a.tags.is_empty() {
+            String::from("-")
+        } else {
+            a.tags
+                .iter()
+                .map(|t| {
+                    format!(
+                        "<span class=\"badge badge-info\" style=\"font-size:.68rem;margin:.1rem\">{}</span>",
+                        html_escape(t)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        html.push_str(&format!(
+            "<tr><td><a hx-get=\"/artifacts/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a></td>\
+             <td>{}</td>\
+             <td>{}</td>\
+             <td>{}</td>\
+             <td>{}</td>\
+             <td data-tags=\"{}\">{}</td></tr>",
+            html_escape(&a.id),
+            html_escape(&a.id),
+            badge_for_type(&a.artifact_type),
+            html_escape(&a.title),
+            status_badge,
+            a.links.len(),
+            html_escape(&tags_csv),
+            tags_display,
+        ));
+    }
+
+    html.push_str("</tbody></table>");
+    html.push_str(&format!(
+        "<p class=\"meta\">{} artifacts total</p>",
+        artifacts.len()
+    ));
+    html.push_str("</div>"); // end artifacts-main
+
+    // Facet sidebar
+    html.push_str(
+        "<div class=\"facet-sidebar\">\
+        <h3>Filter by tag</h3>\
+        <div id=\"tag-facets\"></div>\
+        </div>",
+    );
+
+    html.push_str("</div>"); // end artifacts-layout
+
     // Inline filter script
     html.push_str(
         "<script>\
         function filterTable(q){\
           q=q.toLowerCase();\
           document.querySelectorAll('#artifacts-table tbody tr').forEach(function(r){\
+            if(r.classList.contains('group-header-row')) return;\
             r.style.display=r.textContent.toLowerCase().includes(q)?'':'none';\
           });\
         }\
@@ -2856,8 +3421,14 @@ async fn artifact_preview(
         ));
     }
     if let Some(desc) = &artifact.description {
-        let snippet: String = desc.chars().take(160).collect();
-        let ellip = if desc.len() > 160 { "..." } else { "" };
+        let rendered = render_markdown(desc);
+        let plain = strip_html_tags(&rendered);
+        let snippet: String = plain.chars().take(160).collect();
+        let ellip = if plain.chars().count() > 160 {
+            "..."
+        } else {
+            ""
+        };
         html.push_str(&format!(
             "<div class=\"art-preview-desc\">{}{ellip}</div>",
             html_escape(&snippet)
@@ -2890,7 +3461,17 @@ async fn artifact_detail(State(state): State<SharedState>, Path(id): Path<String
     let store = &state.store;
     let graph = &state.graph;
 
-    let Some(artifact) = store.get(&id) else {
+    let Some(artifact) = store.get(&id).or_else(|| {
+        // Try to resolve as cross-repo reference (prefix:id)
+        match rivet_core::externals::parse_artifact_ref(&id) {
+            rivet_core::externals::ArtifactRef::External { ref prefix, ref id } => state
+                .externals
+                .iter()
+                .find(|e| e.prefix == *prefix && e.synced)
+                .and_then(|e| e.store.get(id)),
+            _ => None,
+        }
+    }) else {
         return Html(format!(
             "<h2>Not Found</h2><p>Artifact <code>{}</code> does not exist.</p>",
             html_escape(&id)
@@ -2910,8 +3491,8 @@ async fn artifact_detail(State(state): State<SharedState>, Path(id): Path<String
     ));
     if let Some(desc) = &artifact.description {
         html.push_str(&format!(
-            "<dt>Description</dt><dd>{}</dd>",
-            html_escape(desc)
+            "<dt>Description</dt><dd class=\"artifact-desc\">{}</dd>",
+            render_markdown(desc)
         ));
     }
     if let Some(status) = &artifact.status {
@@ -2972,10 +3553,37 @@ async fn artifact_detail(State(state): State<SharedState>, Path(id): Path<String
                     html_escape(&link.target)
                 )
             } else {
-                format!(
-                    "{} <span class=\"badge badge-error\">broken</span>",
-                    html_escape(&link.target)
-                )
+                // Check if this is a cross-repo reference (prefix:id)
+                match rivet_core::externals::parse_artifact_ref(&link.target) {
+                    rivet_core::externals::ArtifactRef::External { ref prefix, ref id } => {
+                        let ext_exists = state
+                            .externals
+                            .iter()
+                            .any(|e| e.prefix == *prefix && e.synced && e.store.contains(id));
+                        if ext_exists {
+                            format!(
+                                "<a hx-get=\"/externals/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">\
+                                 <span class=\"badge badge-info\" style=\"margin-right:.35rem\">{}</span>{}</a>",
+                                html_escape(prefix),
+                                html_escape(prefix),
+                                html_escape(id),
+                            )
+                        } else {
+                            format!(
+                                "<span class=\"badge badge-info\" style=\"margin-right:.35rem\">{}</span>{} \
+                                 <span class=\"badge badge-warn\">external</span>",
+                                html_escape(prefix),
+                                html_escape(id),
+                            )
+                        }
+                    }
+                    rivet_core::externals::ArtifactRef::Local(_) => {
+                        format!(
+                            "{} <span class=\"badge badge-error\">broken</span>",
+                            html_escape(&link.target)
+                        )
+                    }
+                }
             };
             html.push_str(&format!(
                 "<tr><td><span class=\"link-pill\">{}</span></td><td>{}</td></tr>",
@@ -3138,6 +3746,7 @@ async fn graph_view(
                 label: n.clone(),
                 node_type: atype,
                 sublabel,
+                parent: None,
             }
         },
         &|_idx, e| EdgeInfo { label: e.clone() },
@@ -3236,9 +3845,14 @@ async fn graph_view(
     }
     html.push_str("</div>");
 
-    // SVG card with zoom controls
+    // SVG card with zoom controls + viewer toolbar
     html.push_str(
-        "<div class=\"card\" style=\"padding:0;position:relative\">\
+        "<div class=\"svg-viewer\" id=\"graph-viewer\">\
+        <div class=\"svg-viewer-toolbar\">\
+          <button onclick=\"svgZoomFit(this)\" title=\"Zoom to fit\">\u{229e}</button>\
+          <button onclick=\"svgFullscreen(this)\" title=\"Fullscreen\">\u{26f6}</button>\
+          <button onclick=\"svgPopout(this)\" title=\"Open in new window\">\u{2197}</button>\
+        </div>\
         <div class=\"graph-container\">\
         <div class=\"graph-controls\">\
           <button class=\"zoom-in\" title=\"Zoom in\">+</button>\
@@ -3334,6 +3948,7 @@ async fn artifact_graph(
                 label: n.clone(),
                 node_type: atype,
                 sublabel,
+                parent: None,
             }
         },
         &|_idx, e| EdgeInfo { label: e.clone() },
@@ -3381,9 +3996,14 @@ async fn artifact_graph(
     }
     html.push_str("</div>");
 
-    // SVG with zoom controls
+    // SVG with zoom controls + viewer toolbar
     html.push_str(
-        "<div class=\"card\" style=\"padding:0;position:relative\">\
+        "<div class=\"svg-viewer\" id=\"ego-graph-viewer\">\
+        <div class=\"svg-viewer-toolbar\">\
+          <button onclick=\"svgZoomFit(this)\" title=\"Zoom to fit\">\u{229e}</button>\
+          <button onclick=\"svgFullscreen(this)\" title=\"Fullscreen\">\u{26f6}</button>\
+          <button onclick=\"svgPopout(this)\" title=\"Open in new window\">\u{2197}</button>\
+        </div>\
         <div class=\"graph-container\">\
         <div class=\"graph-controls\">\
           <button class=\"zoom-in\" title=\"Zoom in\">+</button>\
@@ -3670,12 +4290,12 @@ async fn matrix_view(
             html_escape(link_type)
         ));
         html.push_str(&format!(
-            "<p>Coverage: {}/{} ({:.1}%)</p>",
+            "<p>Coverage: {}/{} ({:.1}%) &mdash; <span class=\"meta\">Click the count to drill down</span></p>",
             result.covered,
             result.total,
             result.coverage_pct()
         ));
-        html.push_str("<table><thead><tr><th>Source</th><th>Targets</th></tr></thead><tbody>");
+        html.push_str("<table class=\"sortable\"><thead><tr><th>Source</th><th>Targets</th><th>Count</th></tr></thead><tbody>");
 
         for row in &result.rows {
             let targets = if row.targets.is_empty() {
@@ -3694,16 +4314,95 @@ async fn matrix_view(
                     .join(", ")
             };
             html.push_str(&format!(
-                "<tr><td><a hx-get=\"/artifacts/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a></td><td>{}</td></tr>",
+                "<tr><td><a hx-get=\"/artifacts/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a></td><td>{}</td><td>{}</td></tr>",
                 html_escape(&row.source_id),
                 html_escape(&row.source_id),
-                targets
+                targets,
+                row.targets.len(),
             ));
         }
 
-        html.push_str("</tbody></table></div>");
+        html.push_str("</tbody></table>");
+
+        // Drill-down summary cell: overall type-to-type link count
+        let total_links: usize = result.rows.iter().map(|r| r.targets.len()).sum();
+        if total_links > 0 {
+            let dir_str = params.direction.as_deref().unwrap_or("backward");
+            html.push_str(&format!(
+                "<div style=\"margin-top:.75rem\">\
+                 <span class=\"matrix-cell-clickable badge badge-info\" style=\"cursor:pointer;font-size:.85rem;padding:.4rem .8rem\" \
+                 data-source-type=\"{}\" data-target-type=\"{}\" data-link-type=\"{}\" data-direction=\"{}\">\
+                 {total_links} total links \u{2014} click to expand</span>\
+                 <div class=\"cell-detail\" style=\"margin-top:.5rem\"></div>\
+                 </div>",
+                html_escape(from),
+                html_escape(to),
+                html_escape(link_type),
+                html_escape(dir_str),
+            ));
+        }
+
+        html.push_str("</div>");
     }
 
+    Html(html)
+}
+
+// ── Matrix cell drill-down ────────────────────────────────────────────────
+
+#[derive(Debug, serde::Deserialize)]
+struct MatrixCellParams {
+    source_type: String,
+    target_type: String,
+    link_type: String,
+    direction: Option<String>,
+}
+
+/// GET /matrix/cell — return a list of links for a source_type -> target_type pair.
+async fn matrix_cell_detail(
+    State(state): State<SharedState>,
+    Query(params): Query<MatrixCellParams>,
+) -> Html<String> {
+    let state = state.read().await;
+    let store = &state.store;
+    let direction = match params.direction.as_deref().unwrap_or("backward") {
+        "forward" | "fwd" => Direction::Forward,
+        _ => Direction::Backward,
+    };
+
+    let result = matrix::compute_matrix(
+        store,
+        &state.graph,
+        &params.source_type,
+        &params.target_type,
+        &params.link_type,
+        direction,
+    );
+
+    let mut html = String::from("<ul>");
+    for row in &result.rows {
+        if row.targets.is_empty() {
+            continue;
+        }
+        for t in &row.targets {
+            html.push_str(&format!(
+                "<li><a hx-get=\"/artifacts/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a> \
+                 &rarr; \
+                 <a hx-get=\"/artifacts/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a>\
+                 <span class=\"meta\" style=\"margin-left:.5rem\">{} &rarr; {}</span></li>",
+                html_escape(&row.source_id),
+                html_escape(&row.source_id),
+                html_escape(&t.id),
+                html_escape(&t.id),
+                html_escape(&row.source_title),
+                html_escape(&t.title),
+            ));
+        }
+    }
+    if result.rows.iter().all(|r| r.targets.is_empty()) {
+        html.push_str("<li class=\"meta\">No links found</li>");
+    }
+    html.push_str("</ul>");
     Html(html)
 }
 
@@ -3843,8 +4542,66 @@ async fn documents_list(State(state): State<SharedState>) -> Html<String> {
         return Html(html);
     }
 
+    // Group documents by doc_type for a tree view
+    let mut groups: BTreeMap<String, Vec<&rivet_core::document::Document>> = BTreeMap::new();
+    for doc in doc_store.iter() {
+        groups.entry(doc.doc_type.clone()).or_default().push(doc);
+    }
+
+    // Tree view
+    html.push_str("<div class=\"doc-tree\">");
+    for (doc_type, docs) in &groups {
+        html.push_str(&format!(
+            "<details open><summary><span class=\"tree-chevron\">&#9654;</span> {} {} <span class=\"tree-count\">({} doc{})</span></summary>",
+            badge_for_type(doc_type),
+            html_escape(doc_type),
+            docs.len(),
+            if docs.len() == 1 { "" } else { "s" },
+        ));
+        html.push_str("<ul>");
+        for doc in docs {
+            let status_badge = match doc.status.as_deref().unwrap_or("-") {
+                "approved" => "<span class=\"badge badge-ok doc-tree-status\">approved</span>",
+                "draft" => "<span class=\"badge badge-warn doc-tree-status\">draft</span>",
+                s => {
+                    // We can't easily return a formatted string from match arms with different
+                    // lifetimes, so we handle "other" inline below.
+                    let _ = s;
+                    ""
+                }
+            };
+            let other_badge = if status_badge.is_empty() {
+                let s = doc.status.as_deref().unwrap_or("-");
+                format!(
+                    "<span class=\"badge badge-info doc-tree-status\">{}</span>",
+                    html_escape(s)
+                )
+            } else {
+                String::new()
+            };
+            html.push_str(&format!(
+                "<li><a hx-get=\"/documents/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">\
+                 <span class=\"doc-tree-id\">{}</span>\
+                 {}\
+                 {}{}\
+                 <span class=\"meta\" style=\"margin-left:auto\">{} refs</span>\
+                 </a></li>",
+                html_escape(&doc.id),
+                html_escape(&doc.id),
+                html_escape(&doc.title),
+                status_badge,
+                other_badge,
+                doc.references.len(),
+            ));
+        }
+        html.push_str("</ul></details>");
+    }
+    html.push_str("</div>");
+
+    // Also keep a flat table for sorting/filtering
+    html.push_str("<div class=\"card\"><h3>All Documents</h3>");
     html.push_str(
-        "<table><thead><tr><th>ID</th><th>Type</th><th>Title</th><th>Status</th><th>Refs</th></tr></thead><tbody>",
+        "<table class=\"sortable\"><thead><tr><th>ID</th><th>Type</th><th>Title</th><th>Status</th><th>Refs</th></tr></thead><tbody>",
     );
 
     for doc in doc_store.iter() {
@@ -3869,7 +4626,7 @@ async fn documents_list(State(state): State<SharedState>) -> Html<String> {
         ));
     }
 
-    html.push_str("</tbody></table>");
+    html.push_str("</tbody></table></div>");
     html.push_str(&format!(
         "<p class=\"meta\">{} documents, {} total artifact references</p>",
         doc_store.len(),
@@ -3940,18 +4697,11 @@ async fn document_detail(State(state): State<SharedState>, Path(id): Path<String
 
     // Rendered body
     html.push_str("<div class=\"card\"><div class=\"doc-body\">");
+    let graph = &state.graph;
     let body_html = document::render_to_html(
         doc,
         |aid| store.contains(aid),
-        |aid| {
-            store.get(aid).map(|a| document::ArtifactInfo {
-                id: a.id.clone(),
-                title: a.title.clone(),
-                art_type: a.artifact_type.clone(),
-                status: a.status.clone().unwrap_or_default(),
-                description: a.description.clone().unwrap_or_default(),
-            })
-        },
+        |aid| build_artifact_info(aid, store, graph),
     );
     // Rewrite relative image src to serve through /docs-asset/
     let body_html = rewrite_image_paths(&body_html);
@@ -5473,18 +6223,11 @@ async fn source_file_view(
     if is_markdown && content.starts_with("---") {
         if let Ok(doc) = rivet_core::document::parse_document(&content, Some(&full_path)) {
             html.push_str("<div class=\"card\"><div class=\"doc-body\">");
+            let graph = &state.graph;
             let body_html = document::render_to_html(
                 &doc,
                 |aid| store.contains(aid),
-                |aid| {
-                    store.get(aid).map(|a| document::ArtifactInfo {
-                        id: a.id.clone(),
-                        title: a.title.clone(),
-                        art_type: a.artifact_type.clone(),
-                        status: a.status.clone().unwrap_or_default(),
-                        description: a.description.clone().unwrap_or_default(),
-                    })
-                },
+                |aid| build_artifact_info(aid, store, graph),
             );
             let body_html = rewrite_image_paths(&body_html);
             html.push_str(&body_html);
@@ -6426,6 +7169,7 @@ async fn doc_linkage_view(State(state): State<SharedState>) -> Html<String> {
                     label: label.clone(),
                     node_type: node_type.into(),
                     sublabel,
+                    parent: None,
                 }
             },
             &|_idx, e| EdgeInfo { label: e.clone() },
@@ -6434,7 +7178,12 @@ async fn doc_linkage_view(State(state): State<SharedState>) -> Html<String> {
 
         let svg = render_svg(&gl, &svg_opts);
         html.push_str(
-            "<div class=\"card\" style=\"padding:0;position:relative\">\
+            "<div class=\"svg-viewer\" id=\"doc-graph-viewer\">\
+            <div class=\"svg-viewer-toolbar\">\
+              <button onclick=\"svgZoomFit(this)\" title=\"Zoom to fit\">\u{229e}</button>\
+              <button onclick=\"svgFullscreen(this)\" title=\"Fullscreen\">\u{26f6}</button>\
+              <button onclick=\"svgPopout(this)\" title=\"Open in new window\">\u{2197}</button>\
+            </div>\
             <div class=\"graph-container\">\
             <div class=\"graph-controls\">\
               <button class=\"zoom-in\" title=\"Zoom in\">+</button>\
@@ -6966,6 +7715,107 @@ async fn traceability_history(
     }
 }
 
+/// Build an `ArtifactInfo` for embedding from the store and link graph.
+///
+/// Handles the special `__type:{type}` convention used by the `{{table:TYPE:FIELDS}}`
+/// embed: returns a synthetic `ArtifactInfo` whose `tags` list contains all artifact IDs
+/// of the requested type.
+fn build_artifact_info(
+    id: &str,
+    store: &rivet_core::store::Store,
+    graph: &rivet_core::links::LinkGraph,
+) -> Option<document::ArtifactInfo> {
+    // Special convention for {{table:TYPE:FIELDS}} embed
+    if let Some(art_type) = id.strip_prefix("__type:") {
+        let ids: Vec<String> = store.by_type(art_type).to_vec();
+        if ids.is_empty() {
+            return None;
+        }
+        return Some(document::ArtifactInfo {
+            id: format!("__type:{art_type}"),
+            title: String::new(),
+            art_type: art_type.to_string(),
+            status: String::new(),
+            description: String::new(),
+            tags: ids,
+            fields: Vec::new(),
+            links: Vec::new(),
+            backlinks: Vec::new(),
+        });
+    }
+
+    let a = store.get(id)?;
+
+    // Forward links
+    let links: Vec<document::LinkInfo> = a
+        .links
+        .iter()
+        .map(|link| {
+            let (target_title, target_type) = store
+                .get(&link.target)
+                .map(|t| (t.title.clone(), t.artifact_type.clone()))
+                .unwrap_or_default();
+            document::LinkInfo {
+                link_type: link.link_type.clone(),
+                target_id: link.target.clone(),
+                target_title,
+                target_type,
+            }
+        })
+        .collect();
+
+    // Backlinks
+    let backlinks: Vec<document::LinkInfo> = graph
+        .backlinks_to(id)
+        .iter()
+        .map(|bl| {
+            let (source_title, source_type) = store
+                .get(&bl.source)
+                .map(|s| (s.title.clone(), s.artifact_type.clone()))
+                .unwrap_or_default();
+            let display_type = bl
+                .inverse_type
+                .as_deref()
+                .unwrap_or(&bl.link_type)
+                .to_string();
+            document::LinkInfo {
+                link_type: display_type,
+                target_id: bl.source.clone(),
+                target_title: source_title,
+                target_type: source_type,
+            }
+        })
+        .collect();
+
+    // Fields: convert BTreeMap<String, Value> to Vec<(String, String)>
+    let fields: Vec<(String, String)> = a
+        .fields
+        .iter()
+        .map(|(k, v)| {
+            let display = match v {
+                serde_yaml::Value::String(s) => s.clone(),
+                serde_yaml::Value::Bool(b) => b.to_string(),
+                serde_yaml::Value::Number(n) => n.to_string(),
+                serde_yaml::Value::Null => String::new(),
+                other => format!("{other:?}"),
+            };
+            (k.clone(), display)
+        })
+        .collect();
+
+    Some(document::ArtifactInfo {
+        id: a.id.clone(),
+        title: a.title.clone(),
+        art_type: a.artifact_type.clone(),
+        status: a.status.clone().unwrap_or_default(),
+        description: a.description.clone().unwrap_or_default(),
+        tags: a.tags.clone(),
+        fields,
+        links,
+        backlinks,
+    })
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────
 
 fn html_escape(s: &str) -> String {
@@ -7416,7 +8266,7 @@ async fn help_schema_list(State(state): State<SharedState>) -> Html<String> {
             <td>{proc}</td>\
             </tr>",
             name = t.name,
-            desc = html_escape(&t.description),
+            desc = render_markdown(&t.description),
             fields = t.fields.len(),
             links = t.link_fields.len(),
             proc = proc,
@@ -7468,7 +8318,7 @@ async fn help_links_view(State(state): State<SharedState>) -> Html<String> {
             "<tr><td><code>{}</code></td><td><code>{}</code></td><td>{}</td></tr>",
             html_escape(&l.name),
             html_escape(inv),
-            html_escape(&l.description),
+            render_markdown(&l.description),
         ));
     }
 

@@ -1,0 +1,876 @@
+# Eclipse SCORE metamodel schema
+#
+# Maps the full Eclipse SCORE (Safety-Certified Open-source Real-time Ecosystem)
+# metamodel into Rivet artifact types, link types, and traceability rules.
+#
+# SCORE targets ISO 26262 / ASIL-rated software and defines a V-model
+# traceability chain from stakeholder requirements through architecture,
+# implementation, and verification, with dedicated safety analysis types
+# (FMEA, DFA) and process support artifacts.
+#
+# Metamodel areas:
+#   Process      — tool support functions, workflows, guidance, tool requirements
+#   Requirements — stakeholder, feature, component, assumption-of-use
+#   Architecture — features (logical), components, modules, static/dynamic design
+#   Implementation — software units
+#   Safety       — FMEA entries, dependent failure analysis
+#   Verification — test specifications, executions, verdicts
+#   Documents    — general documents, architecture decision records
+#
+# References:
+#   https://eclipse-score.github.io/score/
+
+schema:
+  name: score
+  version: "0.1.0"
+  namespace: "http://pulseengine.dev/ns/score#"
+  extends: [common]
+  description: >
+    Eclipse SCORE metamodel artifact types and traceability rules for
+    safety-certified automotive software (ISO 26262, ASIL A-D).
+
+# ──────────────────────────────────────────────────────────────────────────
+# Artifact types
+# ──────────────────────────────────────────────────────────────────────────
+artifact-types:
+
+  # ── Process types ──────────────────────────────────────────────────────
+
+  - name: tsf
+    description: >
+      Tool support function — a capability provided by a development tool
+      that supports the SCORE workflow (e.g. build, lint, trace, test runner).
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+      - name: tool-name
+        type: string
+        required: false
+        description: Name of the tool providing this function
+      - name: tool-version
+        type: string
+        required: false
+        description: Version of the tool
+      - name: classification
+        type: string
+        required: false
+        allowed-values: [TI1, TI2, TI3]
+        description: Tool impact classification per ISO 26262-8
+    link-fields:
+      - name: fulfils
+        link-type: fulfils
+        target-types: [tool-req]
+        cardinality: zero-or-many
+
+  - name: workflow
+    description: >
+      A defined process workflow describing how artifacts are created,
+      reviewed, and released within the SCORE development process.
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+      - name: process-area
+        type: string
+        required: false
+        description: Process area this workflow belongs to
+    link-fields:
+      - name: uses
+        link-type: uses
+        target-types: [tsf, guidance]
+        cardinality: zero-or-many
+
+  - name: guidance
+    description: >
+      A guidance document providing instructions, templates, or conventions
+      for performing a development activity within SCORE.
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+      - name: guidance-type
+        type: string
+        required: false
+        allowed-values: [template, convention, instruction, checklist]
+    link-fields:
+      - name: belongs-to
+        link-type: belongs-to
+        target-types: [workflow]
+        cardinality: zero-or-many
+
+  - name: tool-req
+    description: >
+      A requirement on a development tool — specifies what a tool must do
+      to be qualified for use in the safety lifecycle.
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+      - name: safety-level
+        type: string
+        required: false
+        allowed-values: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
+    link-fields:
+      - name: satisfies
+        link-type: satisfies
+        target-types: [stkh-req, feat-req]
+        cardinality: zero-or-many
+      - name: complies
+        link-type: complies
+        cardinality: zero-or-many
+        description: Standards or regulations this tool requirement complies with
+
+  # ── Requirements ───────────────────────────────────────────────────────
+
+  - name: stkh-req
+    description: >
+      Stakeholder requirement — a high-level need or expectation from a
+      stakeholder that the system must address.
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+      - name: priority
+        type: string
+        required: false
+        allowed-values: [must, should, could, wont]
+      - name: safety-level
+        type: string
+        required: false
+        allowed-values: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
+      - name: source
+        type: string
+        required: false
+        description: Origin of the requirement (customer, regulation, standard)
+      - name: rationale
+        type: text
+        required: false
+    link-fields: []
+
+  - name: feat-req
+    description: >
+      Feature requirement — a requirement derived from stakeholder needs
+      that defines what a feature must provide.
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+      - name: priority
+        type: string
+        required: false
+        allowed-values: [must, should, could, wont]
+      - name: safety-level
+        type: string
+        required: false
+        allowed-values: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
+      - name: req-type
+        type: string
+        required: false
+        allowed-values: [functional, performance, interface, constraint, safety]
+      - name: verification-criteria
+        type: text
+        required: false
+    link-fields:
+      - name: satisfies
+        link-type: satisfies
+        target-types: [stkh-req]
+        required: true
+        cardinality: one-or-many
+
+  - name: comp-req
+    description: >
+      Component requirement — a technical requirement allocated to a
+      specific architectural component, derived from feature requirements.
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+      - name: priority
+        type: string
+        required: false
+        allowed-values: [must, should, could, wont]
+      - name: safety-level
+        type: string
+        required: false
+        allowed-values: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
+      - name: req-type
+        type: string
+        required: false
+        allowed-values: [functional, performance, interface, constraint, safety]
+      - name: verification-criteria
+        type: text
+        required: false
+    link-fields:
+      - name: satisfies
+        link-type: satisfies
+        target-types: [feat-req]
+        required: true
+        cardinality: one-or-many
+
+  - name: aou-req
+    description: >
+      Assumption of use requirement — a condition or constraint that must
+      hold for the system to operate safely. Documents the boundary
+      conditions and operating assumptions.
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+      - name: safety-level
+        type: string
+        required: false
+        allowed-values: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
+      - name: assumption-type
+        type: string
+        required: false
+        allowed-values: [environmental, operational, interface, integration]
+    link-fields:
+      - name: complies
+        link-type: complies
+        cardinality: zero-or-many
+      - name: belongs-to
+        link-type: belongs-to
+        target-types: [feat, comp]
+        cardinality: zero-or-many
+
+  # ── Architecture ───────────────────────────────────────────────────────
+
+  - name: feat
+    description: >
+      Feature — a logical architectural element representing a user-visible
+      capability. Acts as the top-level grouping in the logical architecture.
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+      - name: safety-level
+        type: string
+        required: false
+        allowed-values: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
+      - name: interfaces
+        type: structured
+        required: false
+        description: Provided and required interfaces
+    link-fields:
+      - name: satisfies
+        link-type: satisfies
+        target-types: [feat-req]
+        cardinality: zero-or-many
+
+  - name: comp
+    description: >
+      Component — a concrete architectural building block that realizes
+      one or more features. Maps to a deployable unit in the system.
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+      - name: safety-level
+        type: string
+        required: false
+        allowed-values: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
+      - name: component-type
+        type: string
+        required: false
+        allowed-values: [library, service, driver, middleware, application, platform]
+      - name: interfaces
+        type: structured
+        required: false
+        description: Provided and required interfaces
+    link-fields:
+      - name: realizes
+        link-type: realizes
+        target-types: [feat]
+        required: true
+        cardinality: one-or-many
+      - name: uses
+        link-type: uses
+        target-types: [comp]
+        cardinality: zero-or-many
+
+  - name: mod
+    description: >
+      Module — a fine-grained decomposition of a component into compilation
+      units or logical groupings of source files.
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+      - name: safety-level
+        type: string
+        required: false
+        allowed-values: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
+      - name: source-path
+        type: string
+        required: false
+        description: Path to the source directory or file for this module
+    link-fields:
+      - name: belongs-to
+        link-type: belongs-to
+        target-types: [comp]
+        required: true
+        cardinality: one-or-many
+      - name: uses
+        link-type: uses
+        target-types: [mod]
+        cardinality: zero-or-many
+
+  - name: dd-sta
+    description: >
+      Static detailed design — a view of the architecture showing the
+      structural relationships between components and modules (class
+      diagrams, package structure, data types).
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+      - name: safety-level
+        type: string
+        required: false
+        allowed-values: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
+      - name: view-type
+        type: string
+        required: false
+        allowed-values: [class-diagram, package-diagram, data-model, interface-spec]
+    link-fields:
+      - name: implements
+        link-type: implements
+        target-types: [comp-req]
+        cardinality: zero-or-many
+      - name: belongs-to
+        link-type: belongs-to
+        target-types: [comp, mod]
+        cardinality: zero-or-many
+
+  - name: dd-dyn
+    description: >
+      Dynamic detailed design — a view of the architecture showing
+      runtime behavior (sequence diagrams, state machines, activity flows).
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+      - name: safety-level
+        type: string
+        required: false
+        allowed-values: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
+      - name: view-type
+        type: string
+        required: false
+        allowed-values: [sequence-diagram, state-machine, activity-diagram, timing-diagram]
+    link-fields:
+      - name: implements
+        link-type: implements
+        target-types: [comp-req]
+        cardinality: zero-or-many
+      - name: belongs-to
+        link-type: belongs-to
+        target-types: [comp, mod]
+        cardinality: zero-or-many
+
+  # ── Implementation ─────────────────────────────────────────────────────
+
+  - name: sw-unit
+    description: >
+      Software unit — a single source file or compilation unit that
+      implements part of the detailed design.
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+      - name: safety-level
+        type: string
+        required: false
+        allowed-values: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
+      - name: source-file
+        type: string
+        required: false
+        description: Path to the source file
+      - name: language
+        type: string
+        required: false
+        allowed-values: [cpp, c, rust, python]
+    link-fields:
+      - name: implements
+        link-type: implements
+        target-types: [dd-sta, dd-dyn]
+        cardinality: zero-or-many
+      - name: belongs-to
+        link-type: belongs-to
+        target-types: [mod, comp]
+        cardinality: zero-or-many
+
+  # ── Safety analysis ────────────────────────────────────────────────────
+
+  - name: fmea-entry
+    description: >
+      FMEA failure mode — an entry in a Failure Mode and Effects Analysis
+      identifying a potential failure mode, its effects, severity, and
+      mitigations.
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+      - name: safety-level
+        type: string
+        required: false
+        allowed-values: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
+      - name: failure-mode
+        type: text
+        required: true
+        description: Description of the potential failure mode
+      - name: effect
+        type: text
+        required: false
+        description: Effect of the failure on the system or user
+      - name: cause
+        type: text
+        required: false
+        description: Root cause or mechanism of the failure
+      - name: severity
+        type: string
+        required: false
+        description: Severity rating (1-10 or category)
+      - name: occurrence
+        type: string
+        required: false
+        description: Occurrence/probability rating
+      - name: detection
+        type: string
+        required: false
+        description: Detection rating (ability to detect before harm)
+      - name: rpn
+        type: string
+        required: false
+        description: Risk Priority Number (severity x occurrence x detection)
+    link-fields:
+      - name: belongs-to
+        link-type: belongs-to
+        target-types: [comp, mod, feat]
+        cardinality: zero-or-many
+      - name: mitigated-by
+        link-type: mitigated-by
+        target-types: [comp-req, dd-sta, dd-dyn, sw-unit]
+        cardinality: zero-or-many
+      - name: violates
+        link-type: violates
+        target-types: [comp-req, feat-req]
+        cardinality: zero-or-many
+
+  - name: dfa-entry
+    description: >
+      Dependent failure analysis entry — documents analysis of common-cause
+      and cascading failures between components (ISO 26262-9 clause 7).
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+      - name: safety-level
+        type: string
+        required: false
+        allowed-values: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
+      - name: failure-type
+        type: string
+        required: false
+        allowed-values: [common-cause, cascading, coupling]
+        description: Type of dependent failure
+      - name: analysis
+        type: text
+        required: true
+        description: Description of the dependent failure analysis
+      - name: coupling-factor
+        type: text
+        required: false
+        description: Root cause coupling factor between dependent elements
+    link-fields:
+      - name: belongs-to
+        link-type: belongs-to
+        target-types: [comp, feat]
+        cardinality: zero-or-many
+      - name: mitigated-by
+        link-type: mitigated-by
+        target-types: [comp-req, dd-sta, dd-dyn, sw-unit]
+        cardinality: zero-or-many
+
+  # ── Verification ───────────────────────────────────────────────────────
+
+  - name: test-spec
+    description: >
+      Test specification — defines what to verify and the expected outcome.
+      May reference multiple requirement types and specify full or partial
+      verification coverage.
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+      - name: safety-level
+        type: string
+        required: false
+        allowed-values: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
+      - name: test-method
+        type: string
+        required: false
+        allowed-values:
+          - automated-test
+          - manual-test
+          - review
+          - static-analysis
+          - formal-verification
+          - simulation
+          - inspection
+      - name: preconditions
+        type: list<string>
+        required: false
+      - name: steps
+        type: structured
+        required: false
+      - name: expected-result
+        type: text
+        required: false
+    link-fields:
+      - name: fully-verifies
+        link-type: fully-verifies
+        target-types: [stkh-req, feat-req, comp-req, aou-req]
+        cardinality: zero-or-many
+      - name: partially-verifies
+        link-type: partially-verifies
+        target-types: [stkh-req, feat-req, comp-req, aou-req]
+        cardinality: zero-or-many
+      - name: belongs-to
+        link-type: belongs-to
+        target-types: [comp, feat]
+        cardinality: zero-or-many
+
+  - name: test-exec
+    description: >
+      Test execution — a record of running a test specification against
+      a specific version or configuration of the system.
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+      - name: version
+        type: string
+        required: true
+        description: Version or release identifier under test
+      - name: commit
+        type: string
+        required: false
+        description: Git commit SHA
+      - name: timestamp
+        type: string
+        required: true
+        description: When the execution occurred (ISO 8601)
+      - name: executor
+        type: string
+        required: false
+        description: Who or what ran the test (CI system, person)
+      - name: environment
+        type: structured
+        required: false
+        description: OS, toolchain, hardware configuration
+    link-fields:
+      - name: belongs-to
+        link-type: belongs-to
+        target-types: [test-spec]
+        required: true
+        cardinality: one-or-many
+
+  - name: test-verdict
+    description: >
+      Test verdict — the pass/fail outcome of a single test specification
+      within an execution run.
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+      - name: verdict
+        type: string
+        required: true
+        allowed-values: [pass, fail, blocked, skipped, error]
+      - name: duration-ms
+        type: number
+        required: false
+      - name: evidence
+        type: string
+        required: false
+        description: Path to log file or test artifact
+      - name: defect
+        type: string
+        required: false
+        description: Issue tracker reference for failures
+      - name: failure-reason
+        type: text
+        required: false
+    link-fields:
+      - name: belongs-to
+        link-type: belongs-to
+        target-types: [test-exec]
+        required: true
+        cardinality: exactly-one
+      - name: fulfils
+        link-type: fulfils
+        target-types: [test-spec]
+        required: true
+        cardinality: exactly-one
+
+  # ── Documents ──────────────────────────────────────────────────────────
+
+  - name: doc
+    description: >
+      Document — a general-purpose document artifact (specification,
+      plan, report, manual) managed within the SCORE lifecycle.
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+      - name: doc-type
+        type: string
+        required: false
+        allowed-values:
+          - specification
+          - plan
+          - report
+          - manual
+          - standard
+          - guideline
+      - name: version
+        type: string
+        required: false
+      - name: authors
+        type: list<string>
+        required: false
+    link-fields:
+      - name: belongs-to
+        link-type: belongs-to
+        target-types: [workflow, feat, comp]
+        cardinality: zero-or-many
+
+  - name: decision-record
+    description: >
+      Architecture decision record (ADR) — documents a significant
+      architectural or design decision, its context, alternatives
+      considered, and rationale.
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+      - name: rationale
+        type: text
+        required: true
+        description: Why this decision was made
+      - name: alternatives
+        type: text
+        required: false
+        description: Alternatives considered and why they were rejected
+      - name: consequences
+        type: text
+        required: false
+        description: Known consequences and trade-offs
+    link-fields:
+      - name: satisfies
+        link-type: satisfies
+        target-types: [feat-req, comp-req]
+        cardinality: zero-or-many
+      - name: belongs-to
+        link-type: belongs-to
+        target-types: [feat, comp]
+        cardinality: zero-or-many
+
+# ──────────────────────────────────────────────────────────────────────────
+# SCORE-specific link types
+#
+# Link types already defined in common.yaml and reused here:
+#   satisfies / satisfied-by
+#   implements / implemented-by
+#   mitigates / mitigated-by
+#   verifies / verified-by
+#
+# The following are SCORE-specific additions.
+# ──────────────────────────────────────────────────────────────────────────
+link-types:
+  - name: complies
+    inverse: complied-by
+    description: Source complies with the target (standard, regulation, norm)
+
+  - name: fulfils
+    inverse: fulfilled-by
+    description: Source fulfils the target (e.g. tool support function fulfils a tool requirement)
+    source-types: [tsf, test-verdict]
+    target-types: [tool-req, test-spec]
+
+  - name: belongs-to
+    inverse: consists-of
+    description: Source belongs to / is part of the target (compositional containment)
+
+  - name: uses
+    inverse: used-by
+    description: Source uses or depends on the target at runtime or build time
+
+  - name: violates
+    inverse: violated-by
+    description: Source violates the target (failure mode contradicts a requirement)
+    source-types: [fmea-entry]
+    target-types: [comp-req, feat-req]
+
+  - name: fully-verifies
+    inverse: fully-verified-by
+    description: Source fully verifies the target (complete verification coverage)
+    source-types: [test-spec]
+    target-types: [stkh-req, feat-req, comp-req, aou-req]
+
+  - name: partially-verifies
+    inverse: partially-verified-by
+    description: Source partially verifies the target (incomplete verification coverage)
+    source-types: [test-spec]
+    target-types: [stkh-req, feat-req, comp-req, aou-req]
+
+  - name: realizes
+    inverse: realized-by
+    description: Source realizes the target (component realizes a feature)
+    source-types: [comp]
+    target-types: [feat]
+
+# ──────────────────────────────────────────────────────────────────────────
+# SCORE traceability rules
+#
+# These encode the SCORE V-model traceability chain.
+# `rivet validate` checks these automatically.
+# ──────────────────────────────────────────────────────────────────────────
+traceability-rules:
+
+  # ── Requirement chain (top-down) ───────────────────────────────────────
+
+  - name: stkh-req-has-feat-req
+    description: Every stakeholder requirement must be satisfied by at least one feature requirement
+    source-type: stkh-req
+    required-backlink: satisfies
+    from-types: [feat-req]
+    severity: warning
+
+  - name: feat-req-derives-from-stkh
+    description: Every feature requirement must satisfy at least one stakeholder requirement
+    source-type: feat-req
+    required-link: satisfies
+    target-types: [stkh-req]
+    severity: error
+
+  - name: feat-req-has-comp-req
+    description: Every feature requirement must be satisfied by at least one component requirement
+    source-type: feat-req
+    required-backlink: satisfies
+    from-types: [comp-req]
+    severity: warning
+
+  - name: comp-req-derives-from-feat
+    description: Every component requirement must satisfy at least one feature requirement
+    source-type: comp-req
+    required-link: satisfies
+    target-types: [feat-req]
+    severity: error
+
+  # ── Design implementation ──────────────────────────────────────────────
+
+  - name: comp-req-has-design
+    description: Every component requirement must be implemented by a static or dynamic design
+    source-type: comp-req
+    required-backlink: implements
+    from-types: [dd-sta, dd-dyn]
+    severity: warning
+
+  # ── Architecture realization ───────────────────────────────────────────
+
+  - name: feat-has-comp
+    description: Every feature must be realized by at least one component
+    source-type: feat
+    required-backlink: realizes
+    from-types: [comp]
+    severity: warning
+
+  - name: comp-realizes-feat
+    description: Every component must realize at least one feature
+    source-type: comp
+    required-link: realizes
+    target-types: [feat]
+    severity: error
+
+  # ── Verification coverage ──────────────────────────────────────────────
+
+  - name: test-spec-verifies-req
+    description: >
+      Every test specification must fully or partially verify at least one
+      requirement (stakeholder, feature, component, or assumption of use)
+    source-type: test-spec
+    required-link: fully-verifies
+    target-types: [stkh-req, feat-req, comp-req, aou-req]
+    severity: warning
+
+  - name: feat-req-has-verification
+    description: Every feature requirement should be verified by at least one test specification
+    source-type: feat-req
+    required-backlink: fully-verifies
+    from-types: [test-spec]
+    severity: warning
+
+  - name: comp-req-has-verification
+    description: Every component requirement should be verified by at least one test specification
+    source-type: comp-req
+    required-backlink: fully-verifies
+    from-types: [test-spec]
+    severity: warning
+
+  # ── Module containment ─────────────────────────────────────────────────
+
+  - name: mod-belongs-to-comp
+    description: Every module must belong to at least one component
+    source-type: mod
+    required-link: belongs-to
+    target-types: [comp]
+    severity: error
+
+  # ── Safety analysis ────────────────────────────────────────────────────
+
+  - name: fmea-has-mitigation
+    description: Every FMEA entry should have at least one mitigation
+    source-type: fmea-entry
+    required-link: mitigated-by
+    target-types: [comp-req, dd-sta, dd-dyn, sw-unit]
+    severity: warning
+
+  # ── Test verdict chain ─────────────────────────────────────────────────
+
+  - name: verdict-has-exec
+    description: Every test verdict must belong to a test execution
+    source-type: test-verdict
+    required-link: belongs-to
+    target-types: [test-exec]
+    severity: error
+
+  - name: verdict-fulfils-spec
+    description: Every test verdict must fulfil a test specification
+    source-type: test-verdict
+    required-link: fulfils
+    target-types: [test-spec]
+    severity: error

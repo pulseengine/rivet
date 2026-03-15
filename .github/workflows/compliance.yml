@@ -1,0 +1,56 @@
+name: Compliance Report
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'Version label for the report'
+        type: string
+        default: ''
+      homepage:
+        description: 'Homepage URL for navigation back-link'
+        type: string
+        default: ''
+      theme:
+        description: 'Color theme (dark or light)'
+        type: string
+        default: 'dark'
+      offline:
+        description: 'Use system fonts only'
+        type: boolean
+        default: false
+    outputs:
+      archive-path:
+        description: 'Path to the compliance archive'
+        value: ${{ jobs.compliance.outputs.archive-path }}
+      validation-result:
+        description: 'PASS or FAIL'
+        value: ${{ jobs.compliance.outputs.validation-result }}
+
+jobs:
+  compliance:
+    name: Generate compliance report
+    runs-on: ubuntu-latest
+    outputs:
+      archive-path: ${{ steps.report.outputs.archive-path }}
+      validation-result: ${{ steps.report.outputs.validation-result }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Generate report
+        id: report
+        uses: pulseengine/rivet/.github/actions/compliance@main
+        with:
+          version: ${{ inputs.version }}
+          homepage: ${{ inputs.homepage }}
+          theme: ${{ inputs.theme }}
+          offline: ${{ inputs.offline }}
+
+      - name: Upload archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: compliance-report
+          path: ${{ steps.report.outputs.archive-path }}

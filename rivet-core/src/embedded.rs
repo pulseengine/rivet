@@ -14,9 +14,18 @@ pub const SCHEMA_STPA: &str = include_str!("../../schemas/stpa.yaml");
 pub const SCHEMA_ASPICE: &str = include_str!("../../schemas/aspice.yaml");
 pub const SCHEMA_CYBERSECURITY: &str = include_str!("../../schemas/cybersecurity.yaml");
 pub const SCHEMA_AADL: &str = include_str!("../../schemas/aadl.yaml");
+pub const SCHEMA_SCORE: &str = include_str!("../../schemas/score.yaml");
 
 /// All known built-in schema names.
-pub const SCHEMA_NAMES: &[&str] = &["common", "dev", "stpa", "aspice", "cybersecurity", "aadl"];
+pub const SCHEMA_NAMES: &[&str] = &[
+    "common",
+    "dev",
+    "stpa",
+    "aspice",
+    "cybersecurity",
+    "aadl",
+    "score",
+];
 
 /// Look up embedded schema content by name.
 pub fn embedded_schema(name: &str) -> Option<&'static str> {
@@ -27,6 +36,7 @@ pub fn embedded_schema(name: &str) -> Option<&'static str> {
         "aspice" => Some(SCHEMA_ASPICE),
         "cybersecurity" => Some(SCHEMA_CYBERSECURITY),
         "aadl" => Some(SCHEMA_AADL),
+        "score" => Some(SCHEMA_SCORE),
         _ => None,
     }
 }

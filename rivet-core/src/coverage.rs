@@ -159,76 +159,49 @@ pub fn compute_coverage(store: &Store, schema: &Schema, graph: &LinkGraph) -> Co
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Artifact, Link};
-    use crate::schema::{SchemaFile, SchemaMetadata, Severity, TraceabilityRule};
+    use crate::schema::{Severity, TraceabilityRule};
+    use crate::test_helpers::{artifact_with_links, minimal_artifact, minimal_schema};
 
     fn test_schema() -> Schema {
-        let file = SchemaFile {
-            schema: SchemaMetadata {
-                name: "test".into(),
-                version: "0.1.0".into(),
-                namespace: None,
-                description: None,
-                extends: vec![],
+        let mut file = minimal_schema("test");
+        file.traceability_rules = vec![
+            TraceabilityRule {
+                name: "req-coverage".into(),
+                description: "Every req should be satisfied".into(),
+                source_type: "requirement".into(),
+                required_link: None,
+                required_backlink: Some("satisfies".into()),
+                target_types: vec![],
+                from_types: vec!["design-decision".into()],
+                severity: Severity::Warning,
             },
-            base_fields: vec![],
-            artifact_types: vec![],
-            link_types: vec![],
-            traceability_rules: vec![
-                TraceabilityRule {
-                    name: "req-coverage".into(),
-                    description: "Every req should be satisfied".into(),
-                    source_type: "requirement".into(),
-                    required_link: None,
-                    required_backlink: Some("satisfies".into()),
-                    target_types: vec![],
-                    from_types: vec!["design-decision".into()],
-                    severity: Severity::Warning,
-                },
-                TraceabilityRule {
-                    name: "dd-justification".into(),
-                    description: "Every DD must satisfy a req".into(),
-                    source_type: "design-decision".into(),
-                    required_link: Some("satisfies".into()),
-                    required_backlink: None,
-                    target_types: vec!["requirement".into()],
-                    from_types: vec![],
-                    severity: Severity::Error,
-                },
-            ],
-        };
+            TraceabilityRule {
+                name: "dd-justification".into(),
+                description: "Every DD must satisfy a req".into(),
+                source_type: "design-decision".into(),
+                required_link: Some("satisfies".into()),
+                required_backlink: None,
+                target_types: vec!["requirement".into()],
+                from_types: vec![],
+                severity: Severity::Error,
+            },
+        ];
         Schema::merge(&[file])
     }
 
-    fn make_artifact(id: &str, atype: &str, links: Vec<Link>) -> Artifact {
-        Artifact {
-            id: id.into(),
-            artifact_type: atype.into(),
-            title: id.into(),
-            description: None,
-            status: None,
-            tags: vec![],
-            links,
-            fields: Default::default(),
-            source_file: None,
-        }
-    }
-
+    // rivet: verifies REQ-004
     #[test]
     fn full_coverage() {
         let schema = test_schema();
         let mut store = Store::new();
         store
-            .insert(make_artifact("REQ-001", "requirement", vec![]))
+            .insert(minimal_artifact("REQ-001", "requirement"))
             .unwrap();
         store
-            .insert(make_artifact(
+            .insert(artifact_with_links(
                 "DD-001",
                 "design-decision",
-                vec![Link {
-                    link_type: "satisfies".into(),
-                    target: "REQ-001".into(),
-                }],
+                &[("satisfies", "REQ-001")],
             ))
             .unwrap();
 
@@ -253,24 +226,22 @@ mod tests {
         assert!((report.overall_coverage() - 100.0).abs() < f64::EPSILON);
     }
 
+    // rivet: verifies REQ-004
     #[test]
     fn partial_coverage() {
         let schema = test_schema();
         let mut store = Store::new();
         store
-            .insert(make_artifact("REQ-001", "requirement", vec![]))
+            .insert(minimal_artifact("REQ-001", "requirement"))
             .unwrap();
         store
-            .insert(make_artifact("REQ-002", "requirement", vec![]))
+            .insert(minimal_artifact("REQ-002", "requirement"))
             .unwrap();
         store
-            .insert(make_artifact(
+            .insert(artifact_with_links(
                 "DD-001",
                 "design-decision",
-                vec![Link {
-                    link_type: "satisfies".into(),
-                    target: "REQ-001".into(),
-                }],
+                &[("satisfies", "REQ-001")],
             ))
             .unwrap();
 
@@ -288,6 +259,7 @@ mod tests {
         assert!((report.overall_coverage() - 66.666_666_666_666_66).abs() < 0.01);
     }
 
+    // rivet: verifies REQ-004
     #[test]
     fn zero_artifacts_gives_100_percent() {
         let schema = test_schema();
@@ -303,6 +275,7 @@ mod tests {
         assert!((report.overall_coverage() - 100.0).abs() < f64::EPSILON);
     }
 
+    // rivet: partially-verifies REQ-004
     #[test]
     fn to_json_roundtrip() {
         let schema = test_schema();
