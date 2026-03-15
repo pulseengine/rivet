@@ -101,31 +101,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
-      - name: Build rivet
-        run: cargo build --release -p rivet-cli
-
-      - name: Generate HTML export
-        run: ./target/release/rivet export --format html --output compliance/
-
-      - name: Write config.js
-        run: |
-          VERSION="${GITHUB_REF#refs/tags/}"
-          echo "var RIVET_EXPORT = {" > compliance/config.js
-          echo "  homepage: \"\"," >> compliance/config.js
-          echo "  projectName: \"rivet\"," >> compliance/config.js
-          echo "  versionLabel: \"${VERSION}\"," >> compliance/config.js
-          echo "  versions: []" >> compliance/config.js
-          echo "};" >> compliance/config.js
-
-      - name: Package
-        run: |
-          VERSION="${GITHUB_REF#refs/tags/}"
-          tar -czf "rivet-${VERSION}-compliance-report.tar.gz" -C compliance .
+      - name: Generate compliance report
+        id: report
+        uses: ./.github/actions/compliance
+        with:
+          theme: dark
 
       - uses: actions/upload-artifact@v4
         with:
           name: compliance-report
-          path: rivet-*-compliance-report.tar.gz
+          path: ${{ steps.report.outputs.archive-path }}
 
   # ── Test evidence bundle ──────────────────────────────────────────────
   build-test-evidence:

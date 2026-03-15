@@ -1,0 +1,152 @@
+name: Rivet Compliance Report
+description: >
+  Generate a self-contained HTML compliance report from rivet-managed artifacts.
+  Produces an archive with traceability matrix, coverage, validation, requirements
+  spec, and rendered documents — ready for audit evidence or static hosting.
+
+inputs:
+  version:
+    description: 'Version label for the report (e.g., v0.1.0). Defaults to git tag or "dev".'
+    required: false
+    default: ''
+  rivet-version:
+    description: 'Rivet version to install (e.g., 0.1.0). Defaults to latest.'
+    required: false
+    default: 'latest'
+  output:
+    description: 'Output directory for the HTML report.'
+    required: false
+    default: 'compliance'
+  theme:
+    description: 'Color theme: dark or light.'
+    required: false
+    default: 'dark'
+  homepage:
+    description: 'Homepage URL for the back-link in navigation.'
+    required: false
+    default: ''
+  versions-json:
+    description: 'JSON array of version entries for the version switcher, e.g., [{"label":"v0.1.0","path":"../v0.1.0/"}]'
+    required: false
+    default: '[]'
+  offline:
+    description: 'Use system fonts only (no Google Fonts).'
+    required: false
+    default: 'false'
+  archive:
+    description: 'Create a tar.gz archive of the report.'
+    required: false
+    default: 'true'
+  archive-name:
+    description: 'Name for the archive file (without extension).'
+    required: false
+    default: ''
+  project-dir:
+    description: 'Path to the rivet project directory (containing rivet.yaml).'
+    required: false
+    default: '.'
+
+outputs:
+  report-dir:
+    description: 'Path to the generated HTML report directory.'
+    value: ${{ steps.export.outputs.report-dir }}
+  archive-path:
+    description: 'Path to the archive file (if archive=true).'
+    value: ${{ steps.archive.outputs.archive-path }}
+  artifact-count:
+    description: 'Number of artifacts in the project.'
+    value: ${{ steps.stats.outputs.artifact-count }}
+  validation-result:
+    description: 'PASS or FAIL.'
+    value: ${{ steps.validate.outputs.result }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install Rivet
+      shell: bash
+      run: |
+        if [ "${{ inputs.rivet-version }}" = "latest" ]; then
+          cargo install rivet-cli 2>/dev/null || cargo install --git https://github.com/pulseengine/rivet rivet-cli
+        else
+          cargo install rivet-cli --version "${{ inputs.rivet-version }}" 2>/dev/null || \
+            cargo install --git https://github.com/pulseengine/rivet --tag "v${{ inputs.rivet-version }}" rivet-cli
+        fi
+
+    - name: Validate
+      id: validate
+      shell: bash
+      working-directory: ${{ inputs.project-dir }}
+      run: |
+        set +e
+        OUTPUT=$(rivet validate 2>&1)
+        RC=$?
+        set -e
+        echo "$OUTPUT"
+        if echo "$OUTPUT" | grep -q "Result: PASS"; then
+          echo "result=PASS" >> "$GITHUB_OUTPUT"
+        else
+          echo "result=FAIL" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Stats
+      id: stats
+      shell: bash
+      working-directory: ${{ inputs.project-dir }}
+      run: |
+        COUNT=$(rivet stats 2>&1 | grep TOTAL | awk '{print $2}')
+        echo "artifact-count=${COUNT}" >> "$GITHUB_OUTPUT"
+
+    - name: Determine version label
+      id: version
+      shell: bash
+      run: |
+        VERSION="${{ inputs.version }}"
+        if [ -z "$VERSION" ]; then
+          VERSION="${GITHUB_REF#refs/tags/}"
+          if [ "$VERSION" = "$GITHUB_REF" ]; then
+            VERSION="dev"
+          fi
+        fi
+        echo "label=${VERSION}" >> "$GITHUB_OUTPUT"
+
+    - name: Export HTML report
+      id: export
+      shell: bash
+      working-directory: ${{ inputs.project-dir }}
+      run: |
+        ARGS="--format html --output ${{ inputs.output }}"
+        ARGS="$ARGS --theme ${{ inputs.theme }}"
+        ARGS="$ARGS --version-label ${{ steps.version.outputs.label }}"
+
+        if [ -n "${{ inputs.homepage }}" ]; then
+          ARGS="$ARGS --homepage ${{ inputs.homepage }}"
+        fi
+
+        if [ "${{ inputs.versions-json }}" != "[]" ]; then
+          ARGS="$ARGS --versions '${{ inputs.versions-json }}'"
+        fi
+
+        if [ "${{ inputs.offline }}" = "true" ]; then
+          ARGS="$ARGS --offline"
+        fi
+
+        eval rivet export $ARGS
+        echo "report-dir=${{ inputs.output }}" >> "$GITHUB_OUTPUT"
+
+    - name: Create archive
+      id: archive
+      if: inputs.archive == 'true'
+      shell: bash
+      working-directory: ${{ inputs.project-dir }}
+      run: |
+        VERSION="${{ steps.version.outputs.label }}"
+        NAME="${{ inputs.archive-name }}"
+        if [ -z "$NAME" ]; then
+          # Derive from project name in rivet.yaml
+          PROJECT=$(grep 'name:' rivet.yaml | head -1 | awk '{print $2}' | tr -d '"')
+          NAME="${PROJECT:-rivet}-${VERSION}-compliance-report"
+        fi
+        tar -czf "${NAME}.tar.gz" -C "${{ inputs.output }}" .
+        echo "archive-path=${NAME}.tar.gz" >> "$GITHUB_OUTPUT"
+        echo "Created ${NAME}.tar.gz"
