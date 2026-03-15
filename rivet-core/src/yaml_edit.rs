@@ -137,7 +137,7 @@ impl YamlEditor {
         let line = &self.lines[field_line];
         let trimmed = line.trim();
         // Check if value is a block scalar indicator (> or |)
-        let after_colon = trimmed.splitn(2, ':').nth(1).map(|s| s.trim());
+        let after_colon = trimmed.split_once(':').map(|x| x.1.trim());
         match after_colon {
             Some(">") | Some("|") | Some(">-") | Some("|-") => {
                 // Content continues on subsequent lines with greater indentation
@@ -496,14 +496,14 @@ pub fn modify_artifact_yaml(
     if let Some(ref new_title) = params.set_title {
         editor
             .set_field(id, "title", new_title)
-            .map_err(|e| Error::Validation(e))?;
+            .map_err(Error::Validation)?;
     }
 
     // Set status
     if let Some(ref new_status) = params.set_status {
         editor
             .set_field(id, "status", new_status)
-            .map_err(|e| Error::Validation(e))?;
+            .map_err(Error::Validation)?;
     }
 
     // Handle tags
@@ -532,7 +532,7 @@ pub fn modify_artifact_yaml(
             let tags_value = format!("[{}]", current_tags.join(", "));
             editor
                 .set_field(id, "tags", &tags_value)
-                .map_err(|e| Error::Validation(e))?;
+                .map_err(Error::Validation)?;
         }
     }
 
@@ -622,7 +622,7 @@ pub fn add_link_to_file(source_id: &str, link: &Link, file_path: &Path) -> Resul
     let mut editor = YamlEditor::parse(&content);
     editor
         .add_link(source_id, &link.link_type, &link.target)
-        .map_err(|e| Error::Validation(e))?;
+        .map_err(Error::Validation)?;
 
     std::fs::write(file_path, editor.to_string())
         .map_err(|e| Error::Io(format!("{}: {}", file_path.display(), e)))?;
@@ -643,7 +643,7 @@ pub fn remove_link_from_file(
     let mut editor = YamlEditor::parse(&content);
     editor
         .remove_link(source_id, link_type, target_id)
-        .map_err(|e| Error::Validation(e))?;
+        .map_err(Error::Validation)?;
 
     std::fs::write(file_path, editor.to_string())
         .map_err(|e| Error::Io(format!("{}: {}", file_path.display(), e)))?;
@@ -659,7 +659,7 @@ pub fn remove_artifact_from_file(artifact_id: &str, file_path: &Path) -> Result<
     let mut editor = YamlEditor::parse(&content);
     editor
         .remove_artifact(artifact_id)
-        .map_err(|e| Error::Validation(e))?;
+        .map_err(Error::Validation)?;
 
     std::fs::write(file_path, editor.to_string())
         .map_err(|e| Error::Io(format!("{}: {}", file_path.display(), e)))?;
@@ -766,9 +766,9 @@ artifacts:
         let lines: Vec<&str> = output.lines().collect();
         let req001_start = lines.iter().position(|l| l.contains("REQ-001")).unwrap();
         let req002_start = lines.iter().position(|l| l.contains("REQ-002")).unwrap();
-        for i in req001_start..req002_start {
+        for line in lines.iter().take(req002_start).skip(req001_start) {
             assert!(
-                !lines[i].contains("status: draft"),
+                !line.contains("status: draft"),
                 "REQ-001 should no longer have 'status: draft'"
             );
         }
@@ -787,14 +787,14 @@ artifacts:
         let req002_start = lines.iter().position(|l| l.contains("REQ-002")).unwrap();
         // Find the status line within REQ-002
         let mut found_status = false;
-        for i in (req002_start + 1)..lines.len() {
-            if lines[i].contains("- id:") {
+        for line in lines.iter().skip(req002_start + 1) {
+            if line.contains("- id:") {
                 break;
             }
-            if lines[i].trim().starts_with("status: rejected") {
+            if line.trim().starts_with("status: rejected") {
                 found_status = true;
                 // Verify correct indentation (should match other fields)
-                let indent = lines[i].len() - lines[i].trim_start().len();
+                let indent = line.len() - line.trim_start().len();
                 assert_eq!(indent, 4, "status field should be at indent 4");
                 break;
             }
@@ -842,11 +842,11 @@ artifacts:
         let lines: Vec<&str> = output.lines().collect();
         let req002_start = lines.iter().position(|l| l.contains("REQ-002")).unwrap();
         let mut found_links = false;
-        for i in (req002_start + 1)..lines.len() {
-            if lines[i].contains("- id:") && !lines[i].contains("REQ-002") {
+        for line in lines.iter().skip(req002_start + 1) {
+            if line.contains("- id:") && !line.contains("REQ-002") {
                 break;
             }
-            if lines[i].trim() == "links:" {
+            if line.trim() == "links:" {
                 found_links = true;
             }
         }
@@ -912,8 +912,8 @@ artifacts:
         let feat011_start = lines.iter().position(|l| l.contains("FEAT-011")).unwrap();
 
         let mut status_line = None;
-        for i in (feat010_start + 1)..feat011_start {
-            if lines[i].trim().starts_with("status:") {
+        for (i, line) in lines.iter().enumerate().take(feat011_start).skip(feat010_start + 1) {
+            if line.trim().starts_with("status:") {
                 status_line = Some(i);
                 break;
             }

@@ -212,6 +212,30 @@ enum Command {
         /// Single-page mode: combine all HTML reports into one file (html format only)
         #[arg(long)]
         single_page: bool,
+
+        /// Theme: "dark" (PulseEngine, default) or "light" (clean for printing)
+        #[arg(long, default_value = "dark")]
+        theme: String,
+
+        /// Base path prefix for links (e.g. "/projects/rivet/v0.1.0/")
+        #[arg(long)]
+        base_path: Option<String>,
+
+        /// Offline mode: use system fonts only (no Google Fonts)
+        #[arg(long)]
+        offline: bool,
+
+        /// URL for the home/back link (e.g. "https://pulseengine.eu/projects/")
+        #[arg(long)]
+        homepage: Option<String>,
+
+        /// Version label shown in the version switcher (default: from rivet.yaml or "dev")
+        #[arg(long)]
+        version_label: Option<String>,
+
+        /// JSON array of version entries for the switcher: [{"label":"v0.1.0","path":"../v0.1.0/"}]
+        #[arg(long)]
+        versions: Option<String>,
     },
 
     /// Introspect loaded schemas (types, links, rules)
@@ -569,7 +593,24 @@ fn run(cli: Cli) -> Result<bool> {
             format,
             output,
             single_page,
-        } => cmd_export(&cli, format, output.as_deref(), *single_page),
+            theme,
+            base_path,
+            offline,
+            homepage,
+            version_label,
+            versions,
+        } => cmd_export(
+            &cli,
+            format,
+            output.as_deref(),
+            *single_page,
+            theme,
+            base_path.as_deref(),
+            *offline,
+            homepage.as_deref(),
+            version_label.as_deref(),
+            versions.as_deref(),
+        ),
         Command::Impact {
             since,
             baseline,
@@ -1865,14 +1906,31 @@ fn cmd_matrix(
 }
 
 /// Export all project artifacts in the specified format.
+#[allow(clippy::too_many_arguments)]
 fn cmd_export(
     cli: &Cli,
     format: &str,
     output: Option<&std::path::Path>,
     single_page: bool,
+    theme: &str,
+    base_path: Option<&str>,
+    offline: bool,
+    homepage: Option<&str>,
+    version_label: Option<&str>,
+    versions_json: Option<&str>,
 ) -> Result<bool> {
     if format == "html" {
-        return cmd_export_html(cli, output, single_page);
+        return cmd_export_html(
+            cli,
+            output,
+            single_page,
+            theme,
+            base_path,
+            offline,
+            homepage,
+            version_label,
+            versions_json,
+        );
     }
 
     use rivet_core::adapter::{Adapter, AdapterConfig};
@@ -1918,19 +1976,82 @@ fn cmd_export(
     Ok(true)
 }
 
-/// Export to a static HTML site (5 pages or single-page).
-fn cmd_export_html(cli: &Cli, output: Option<&std::path::Path>, single_page: bool) -> Result<bool> {
-    use rivet_core::export;
+/// Export to a static HTML site with document pages and version switcher.
+#[allow(clippy::too_many_arguments)]
+fn cmd_export_html(
+    cli: &Cli,
+    output: Option<&std::path::Path>,
+    single_page: bool,
+    theme: &str,
+    base_path: Option<&str>,
+    offline: bool,
+    homepage: Option<&str>,
+    version_label: Option<&str>,
+    versions_json: Option<&str>,
+) -> Result<bool> {
+    use rivet_core::export::{self, ExportConfig, ExportTheme, VersionEntry};
+
+    let export_theme = match theme {
+        "light" => ExportTheme::Light,
+        "dark" => ExportTheme::Dark,
+        other => anyhow::bail!("unknown theme '{other}' (supported: dark, light)"),
+    };
+
+    // Parse versions JSON if provided.
+    let versions: Vec<VersionEntry> = if let Some(json) = versions_json {
+        #[derive(serde::Deserialize)]
+        struct VersionJson {
+            label: String,
+            path: String,
+        }
+        let parsed: Vec<VersionJson> =
+            serde_json::from_str(json).context("parsing --versions JSON")?;
+        parsed
+            .into_iter()
+            .map(|v| VersionEntry {
+                label: v.label,
+                path: v.path,
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
 
     let (store, schema, graph) = load_project(cli)?;
     let diagnostics = validate::validate(&store, &schema, &graph);
 
-    // Load project name
+    // Load project config.
     let config_path = cli.project.join("rivet.yaml");
     let config = rivet_core::load_project_config(&config_path)
         .with_context(|| format!("loading {}", config_path.display()))?;
     let project_name = &config.project.name;
     let version = env!("CARGO_PKG_VERSION");
+
+    // Resolve version label: CLI flag > rivet.yaml > fallback "dev".
+    let resolved_version_label = version_label
+        .map(String::from)
+        .or_else(|| config.project.version.clone())
+        .unwrap_or_else(|| "dev".to_string());
+
+    let export_config = ExportConfig {
+        theme: export_theme,
+        base_path: base_path.map(String::from),
+        offline,
+        homepage: homepage.map(String::from),
+        version_label: Some(resolved_version_label),
+        versions,
+    };
+
+    // Load documents from configured directories.
+    let mut doc_store = DocumentStore::new();
+    for docs_path in &config.docs {
+        let dir = cli.project.join(docs_path);
+        let docs = document::load_documents(&dir)
+            .with_context(|| format!("loading docs from '{docs_path}'"))?;
+        for doc in docs {
+            doc_store.insert(doc);
+        }
+    }
 
     let out_dir = output.unwrap_or(std::path::Path::new("dist"));
 
@@ -1942,6 +2063,8 @@ fn cmd_export_html(cli: &Cli, output: Option<&std::path::Path>, single_page: boo
             &diagnostics,
             project_name,
             version,
+            &export_config,
+            &doc_store,
         );
         std::fs::create_dir_all(out_dir)
             .with_context(|| format!("creating {}", out_dir.display()))?;
@@ -1952,25 +2075,48 @@ fn cmd_export_html(cli: &Cli, output: Option<&std::path::Path>, single_page: boo
         std::fs::create_dir_all(out_dir)
             .with_context(|| format!("creating {}", out_dir.display()))?;
 
-        let pages: Vec<(&str, String)> = vec![
+        let mut pages: Vec<(String, String)> = vec![
             (
-                "index.html",
-                export::render_index(&store, &schema, &graph, &diagnostics, project_name, version),
+                "index.html".to_string(),
+                export::render_index(
+                    &store,
+                    &schema,
+                    &graph,
+                    &diagnostics,
+                    project_name,
+                    version,
+                    &export_config,
+                ),
             ),
             (
-                "requirements.html",
-                export::render_requirements(&store, &schema, &graph),
+                "requirements.html".to_string(),
+                export::render_requirements(&store, &schema, &graph, &export_config),
             ),
             (
-                "matrix.html",
-                export::render_traceability_matrix(&store, &schema, &graph),
+                "documents.html".to_string(),
+                export::render_documents_index(&doc_store, &export_config),
             ),
             (
-                "coverage.html",
-                export::render_coverage(&store, &schema, &graph),
+                "matrix.html".to_string(),
+                export::render_traceability_matrix(&store, &schema, &graph, &export_config),
             ),
-            ("validation.html", export::render_validation(&diagnostics)),
+            (
+                "coverage.html".to_string(),
+                export::render_coverage(&store, &schema, &graph, &export_config),
+            ),
+            (
+                "validation.html".to_string(),
+                export::render_validation(&diagnostics, &export_config),
+            ),
         ];
+
+        // Render individual document pages.
+        for doc in doc_store.iter() {
+            let filename = format!("doc-{}.html", doc.id);
+            let html =
+                export::render_document_page(doc, &store, &graph, &export_config);
+            pages.push((filename, html));
+        }
 
         for (filename, html) in &pages {
             let path = out_dir.join(filename);

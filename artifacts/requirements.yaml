@@ -537,3 +537,21 @@ artifacts:
     links:
       - type: satisfies
         target: SC-2
+
+  - id: REQ-035
+    type: requirement
+    title: HTML export includes rendered documents with resolved embeds
+    status: draft
+    tags: [export, documents]
+    fields:
+      category: functional
+      priority: must
+
+  - id: REQ-036
+    type: requirement
+    title: HTML export supports version switcher and homepage link
+    status: draft
+    tags: [export, navigation, versioning]
+    fields:
+      category: functional
+      priority: should
