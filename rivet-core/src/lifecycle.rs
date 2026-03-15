@@ -60,9 +60,10 @@ pub fn check_lifecycle_completeness(
     for artifact in artifacts {
         // Skip verification artifacts — those with verifies/partially-verifies
         // links are leaf nodes in the traceability chain
-        let is_verification = artifact.links.iter().any(|l| {
-            l.link_type.contains("verifies")
-        });
+        let is_verification = artifact
+            .links
+            .iter()
+            .any(|l| l.link_type.contains("verifies"));
         if is_verification {
             continue;
         }
@@ -208,7 +209,10 @@ mod tests {
         let gaps = check_lifecycle_completeness(&artifacts, &schema, &graph);
         // REQ-001 has a feature satisfying it — no gap for requirement
         let req_gaps: Vec<_> = gaps.iter().filter(|g| g.artifact_id == "REQ-001").collect();
-        assert!(req_gaps.is_empty(), "REQ with satisfying feature should have no gap");
+        assert!(
+            req_gaps.is_empty(),
+            "REQ with satisfying feature should have no gap"
+        );
     }
 
     // rivet: partially-verifies REQ-004
@@ -238,18 +242,16 @@ mod tests {
     // rivet: verifies REQ-004
     #[test]
     fn fully_covered_req_no_gap() {
-        let schema = make_schema_with_rules(vec![
-            TraceabilityRule {
-                name: "req-needs-feature".into(),
-                description: "reqs need features".into(),
-                source_type: "requirement".into(),
-                required_link: None,
-                required_backlink: Some("satisfies".into()),
-                target_types: vec![],
-                from_types: vec!["feature".into(), "design-decision".into()],
-                severity: Severity::Warning,
-            },
-        ]);
+        let schema = make_schema_with_rules(vec![TraceabilityRule {
+            name: "req-needs-feature".into(),
+            description: "reqs need features".into(),
+            source_type: "requirement".into(),
+            required_link: None,
+            required_backlink: Some("satisfies".into()),
+            target_types: vec![],
+            from_types: vec!["feature".into(), "design-decision".into()],
+            severity: Severity::Warning,
+        }]);
         let artifacts = vec![
             make_artifact("REQ-001", "requirement", Some("implemented"), vec![]),
             make_artifact("FEAT-001", "feature", None, vec![("satisfies", "REQ-001")]),

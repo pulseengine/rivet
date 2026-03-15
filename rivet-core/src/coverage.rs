@@ -160,7 +160,7 @@ pub fn compute_coverage(store: &Store, schema: &Schema, graph: &LinkGraph) -> Co
 mod tests {
     use super::*;
     use crate::schema::{Severity, TraceabilityRule};
-    use crate::test_helpers::{minimal_artifact, minimal_schema, artifact_with_links};
+    use crate::test_helpers::{artifact_with_links, minimal_artifact, minimal_schema};
 
     fn test_schema() -> Schema {
         let mut file = minimal_schema("test");
@@ -194,7 +194,9 @@ mod tests {
     fn full_coverage() {
         let schema = test_schema();
         let mut store = Store::new();
-        store.insert(minimal_artifact("REQ-001", "requirement")).unwrap();
+        store
+            .insert(minimal_artifact("REQ-001", "requirement"))
+            .unwrap();
         store
             .insert(artifact_with_links(
                 "DD-001",
@@ -229,8 +231,12 @@ mod tests {
     fn partial_coverage() {
         let schema = test_schema();
         let mut store = Store::new();
-        store.insert(minimal_artifact("REQ-001", "requirement")).unwrap();
-        store.insert(minimal_artifact("REQ-002", "requirement")).unwrap();
+        store
+            .insert(minimal_artifact("REQ-001", "requirement"))
+            .unwrap();
+        store
+            .insert(minimal_artifact("REQ-002", "requirement"))
+            .unwrap();
         store
             .insert(artifact_with_links(
                 "DD-001",

@@ -122,9 +122,7 @@ impl YamlEditor {
                 continue;
             }
             let this_indent = line.len() - line.trim_start().len();
-            if this_indent == field_indent
-                && (trimmed.starts_with(&key_prefix))
-            {
+            if this_indent == field_indent && (trimmed.starts_with(&key_prefix)) {
                 return Some(i);
             }
         }
@@ -180,7 +178,8 @@ impl YamlEditor {
             let scalar_end = self.block_scalar_end(field_line, block_end);
             let new_line = format!("{indent_str}{key}: {value}");
             // Replace the range [field_line, scalar_end) with the single new line
-            self.lines.splice(field_line..scalar_end, std::iter::once(new_line));
+            self.lines
+                .splice(field_line..scalar_end, std::iter::once(new_line));
         } else {
             // Insert new field. Place it after the last simple field before
             // any `links:`, `fields:`, or `tags:` section — or at the end
@@ -199,12 +198,7 @@ impl YamlEditor {
     /// title, status, description) and before complex sections (tags, links,
     /// fields). If the key itself is one of the complex ones, insert at the
     /// appropriate position.
-    fn find_insert_position(
-        &self,
-        block_start: usize,
-        block_end: usize,
-        key: &str,
-    ) -> usize {
+    fn find_insert_position(&self, block_start: usize, block_end: usize, key: &str) -> usize {
         let field_indent = self.field_indent(block_start);
 
         // Preferred ordering of base fields
@@ -226,8 +220,7 @@ impl YamlEditor {
             }
             // Extract key name
             if let Some(k) = trimmed.split(':').next() {
-                if base_order.contains(&k) || (!complex_keys.contains(&k) && !k.starts_with("- "))
-                {
+                if base_order.contains(&k) || (!complex_keys.contains(&k) && !k.starts_with("- ")) {
                     let end = self.block_scalar_end(i, block_end);
                     last_base_end = end;
                 }
@@ -258,12 +251,7 @@ impl YamlEditor {
     /// If the `links:` section exists, the new link is appended to it.
     /// If not, a new `links:` section is created at the end of the artifact
     /// block (before any trailing blank lines).
-    pub fn add_link(
-        &mut self,
-        id: &str,
-        link_type: &str,
-        target: &str,
-    ) -> Result<(), String> {
+    pub fn add_link(&mut self, id: &str, link_type: &str, target: &str) -> Result<(), String> {
         let (block_start, block_end) = self
             .find_artifact_block(id)
             .ok_or_else(|| format!("artifact '{id}' not found"))?;
@@ -299,7 +287,10 @@ impl YamlEditor {
             // before trailing blank lines.
             let mut insert_at = block_end;
             while insert_at > block_start + 1
-                && self.lines.get(insert_at - 1).is_some_and(|l| l.trim().is_empty())
+                && self
+                    .lines
+                    .get(insert_at - 1)
+                    .is_some_and(|l| l.trim().is_empty())
             {
                 insert_at -= 1;
             }
@@ -318,12 +309,7 @@ impl YamlEditor {
     ///
     /// Matches on both `type` and `target`. If the `links:` section becomes
     /// empty after removal, the `links:` header line is also removed.
-    pub fn remove_link(
-        &mut self,
-        id: &str,
-        link_type: &str,
-        target: &str,
-    ) -> Result<(), String> {
+    pub fn remove_link(&mut self, id: &str, link_type: &str, target: &str) -> Result<(), String> {
         let (block_start, block_end) = self
             .find_artifact_block(id)
             .ok_or_else(|| format!("artifact '{id}' not found"))?;
@@ -367,10 +353,9 @@ impl YamlEditor {
             i += 1;
         }
 
-        let link_start =
-            link_start.ok_or_else(|| {
-                format!("link '{link_type} -> {target}' not found in artifact '{id}'")
-            })?;
+        let link_start = link_start.ok_or_else(|| {
+            format!("link '{link_type} -> {target}' not found in artifact '{id}'")
+        })?;
         let link_end = link_end.unwrap();
 
         // Remove the link lines
@@ -381,8 +366,7 @@ impl YamlEditor {
         let (_, new_block_end) = self
             .find_artifact_block(id)
             .expect("artifact must still exist after link removal");
-        let links_line = self
-            .find_field_in_block(block_start, new_block_end, "links");
+        let links_line = self.find_field_in_block(block_start, new_block_end, "links");
         if let Some(ll) = links_line {
             let mut has_content = false;
             let mut k = ll + 1;
@@ -416,9 +400,7 @@ impl YamlEditor {
             .ok_or_else(|| format!("artifact '{id}' not found"))?;
 
         // Also remove a preceding blank line if it exists (visual separator)
-        let remove_start = if block_start > 0
-            && self.lines[block_start - 1].trim().is_empty()
-        {
+        let remove_start = if block_start > 0 && self.lines[block_start - 1].trim().is_empty() {
             block_start - 1
         } else {
             block_start
@@ -508,9 +490,9 @@ pub fn modify_artifact_yaml(
 
     // Handle tags
     if !params.add_tags.is_empty() || !params.remove_tags.is_empty() {
-        let artifact = store.get(id).ok_or_else(|| {
-            Error::Validation(format!("artifact '{id}' not found in store"))
-        })?;
+        let artifact = store
+            .get(id)
+            .ok_or_else(|| Error::Validation(format!("artifact '{id}' not found in store")))?;
         let mut current_tags = artifact.tags.clone();
         for tag in &params.remove_tags {
             current_tags.retain(|t| t != tag);
@@ -523,9 +505,7 @@ pub fn modify_artifact_yaml(
         if current_tags.is_empty() {
             // Remove the tags line entirely
             let (block_start, block_end) = editor.find_artifact_block(id).unwrap();
-            if let Some(tags_line) =
-                editor.find_field_in_block(block_start, block_end, "tags")
-            {
+            if let Some(tags_line) = editor.find_field_in_block(block_start, block_end, "tags") {
                 editor.lines.remove(tags_line);
             }
         } else {
@@ -543,9 +523,7 @@ pub fn modify_artifact_yaml(
         let (block_start, block_end) = editor.find_artifact_block(id).unwrap();
         let field_indent = editor.field_indent(block_start);
 
-        if let Some(fields_line) =
-            editor.find_field_in_block(block_start, block_end, "fields")
-        {
+        if let Some(fields_line) = editor.find_field_in_block(block_start, block_end, "fields") {
             // Look for the sub-key within the fields mapping
             let sub_indent = field_indent + 2;
             let sub_prefix = format!("{key}:");
@@ -561,8 +539,7 @@ pub fn modify_artifact_yaml(
                     break;
                 }
                 if this_indent == sub_indent && trimmed.starts_with(&sub_prefix) {
-                    editor.lines[i] =
-                        format!("{}{key}: {value}", " ".repeat(sub_indent));
+                    editor.lines[i] = format!("{}{key}: {value}", " ".repeat(sub_indent));
                     found = true;
                     break;
                 }
@@ -604,10 +581,9 @@ pub fn modify_artifact_yaml(
                 insert_at,
                 format!("{}{key}: {value}", " ".repeat(sub_indent)),
             );
-            editor.lines.insert(
-                insert_at,
-                format!("{}fields:", " ".repeat(field_indent)),
-            );
+            editor
+                .lines
+                .insert(insert_at, format!("{}fields:", " ".repeat(field_indent)));
         }
     }
 
@@ -834,9 +810,7 @@ artifacts:
     fn test_add_link_creates_links_section() {
         let mut editor = YamlEditor::parse(SAMPLE_YAML);
         // REQ-002 has no links section
-        editor
-            .add_link("REQ-002", "satisfies", "REQ-001")
-            .unwrap();
+        editor.add_link("REQ-002", "satisfies", "REQ-001").unwrap();
         let output = editor.to_string();
         // Verify the links section was created in REQ-002
         let lines: Vec<&str> = output.lines().collect();
@@ -850,7 +824,10 @@ artifacts:
                 found_links = true;
             }
         }
-        assert!(found_links, "links section should have been created for REQ-002");
+        assert!(
+            found_links,
+            "links section should have been created for REQ-002"
+        );
         assert!(output.contains("- type: satisfies"));
         assert!(output.contains("target: REQ-001"));
     }
@@ -858,9 +835,7 @@ artifacts:
     #[test]
     fn test_remove_link() {
         let mut editor = YamlEditor::parse(SAMPLE_YAML);
-        editor
-            .remove_link("REQ-001", "satisfies", "SC-1")
-            .unwrap();
+        editor.remove_link("REQ-001", "satisfies", "SC-1").unwrap();
         let output = editor.to_string();
         // The SC-1 link should be gone
         assert!(!output.contains("target: SC-1"));
@@ -901,9 +876,7 @@ artifacts:
     status: draft";
 
         let mut editor = YamlEditor::parse(content);
-        editor
-            .set_field("FEAT-010", "status", "approved")
-            .unwrap();
+        editor.set_field("FEAT-010", "status", "approved").unwrap();
         let output = editor.to_string();
 
         // The status should be inside the FEAT-010 block
@@ -912,7 +885,12 @@ artifacts:
         let feat011_start = lines.iter().position(|l| l.contains("FEAT-011")).unwrap();
 
         let mut status_line = None;
-        for (i, line) in lines.iter().enumerate().take(feat011_start).skip(feat010_start + 1) {
+        for (i, line) in lines
+            .iter()
+            .enumerate()
+            .take(feat011_start)
+            .skip(feat010_start + 1)
+        {
             if line.trim().starts_with("status:") {
                 status_line = Some(i);
                 break;
@@ -948,9 +926,7 @@ artifacts:
         target: SC-1";
 
         let mut editor = YamlEditor::parse(content);
-        editor
-            .remove_link("REQ-050", "satisfies", "SC-1")
-            .unwrap();
+        editor.remove_link("REQ-050", "satisfies", "SC-1").unwrap();
         let output = editor.to_string();
         // The links: header should be removed too
         assert!(!output.contains("links:"));
@@ -1036,9 +1012,7 @@ artifacts:
         editor
             .set_field("REQ-001", "title", "Updated title")
             .unwrap();
-        editor
-            .set_field("REQ-001", "status", "approved")
-            .unwrap();
+        editor.set_field("REQ-001", "status", "approved").unwrap();
         let output = editor.to_string();
         assert!(output.contains("title: Updated title"));
         assert!(output.contains("status: approved"));

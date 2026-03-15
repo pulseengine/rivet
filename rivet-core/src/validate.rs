@@ -287,9 +287,7 @@ mod tests {
     use super::*;
     use crate::links::LinkGraph;
     use crate::model::{Artifact, Link};
-    use crate::schema::{
-        ArtifactTypeDef, Condition, ConditionalRule, Requirement, Severity,
-    };
+    use crate::schema::{ArtifactTypeDef, Condition, ConditionalRule, Requirement, Severity};
     use crate::test_helpers::{minimal_artifact, minimal_schema};
     use std::collections::BTreeMap;
 

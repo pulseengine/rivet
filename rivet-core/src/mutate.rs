@@ -442,7 +442,9 @@ pub fn remove_artifact_from_file(artifact_id: &str, file_path: &Path) -> Result<
 mod tests {
     use super::*;
     use crate::schema::*;
-    use crate::test_helpers::{artifact_with_links, artifact_with_status, minimal_artifact, minimal_schema};
+    use crate::test_helpers::{
+        artifact_with_links, artifact_with_status, minimal_artifact, minimal_schema,
+    };
     use std::collections::BTreeMap;
 
     fn make_test_schema() -> Schema {
@@ -656,7 +658,8 @@ mod tests {
 
     #[test]
     fn test_render_artifact_yaml() {
-        let mut artifact = artifact_with_links("REQ-099", "requirement", &[("satisfies", "REQ-001")]);
+        let mut artifact =
+            artifact_with_links("REQ-099", "requirement", &[("satisfies", "REQ-001")]);
         artifact.title = "Test artifact".to_string();
         artifact.description = Some("A description".to_string());
         artifact.status = Some("draft".to_string());
@@ -671,5 +674,4 @@ mod tests {
         assert!(yaml.contains("- type: satisfies"));
         assert!(yaml.contains("target: REQ-001"));
     }
-
 }

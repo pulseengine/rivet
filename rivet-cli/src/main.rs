@@ -2042,8 +2042,7 @@ fn cmd_export_html(
 
     let out_dir = output.unwrap_or(std::path::Path::new("dist"));
 
-    std::fs::create_dir_all(out_dir)
-        .with_context(|| format!("creating {}", out_dir.display()))?;
+    std::fs::create_dir_all(out_dir).with_context(|| format!("creating {}", out_dir.display()))?;
 
     if single_page {
         let html = export::render_single_page(
@@ -2098,8 +2097,7 @@ fn cmd_export_html(
         // Render individual document pages.
         for doc in doc_store.iter() {
             let filename = format!("doc-{}.html", doc.id);
-            let html =
-                export::render_document_page(doc, &store, &graph, &export_config);
+            let html = export::render_document_page(doc, &store, &graph, &export_config);
             pages.push((filename, html));
         }
 
@@ -2118,12 +2116,8 @@ fn cmd_export_html(
     }
 
     // Write config.js alongside the HTML output.
-    let config_js = export::generate_config_js(
-        homepage,
-        &resolved_version_label,
-        &versions,
-        project_name,
-    );
+    let config_js =
+        export::generate_config_js(homepage, &resolved_version_label, &versions, project_name);
     let config_js_path = out_dir.join("config.js");
     std::fs::write(&config_js_path, &config_js)
         .with_context(|| format!("writing {}", config_js_path.display()))?;

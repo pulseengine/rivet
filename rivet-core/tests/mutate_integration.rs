@@ -457,7 +457,10 @@ fn test_prefix_for_type_derives_from_store() {
 fn test_prefix_for_type_fallback_no_artifacts() {
     let store = Store::new();
     // No artifacts in store — falls back to uppercased, hyphens removed.
-    assert_eq!(mutate::prefix_for_type("requirement", &store), "REQUIREMENT");
+    assert_eq!(
+        mutate::prefix_for_type("requirement", &store),
+        "REQUIREMENT"
+    );
     assert_eq!(
         mutate::prefix_for_type("design-decision", &store),
         "DESIGNDECISION"
