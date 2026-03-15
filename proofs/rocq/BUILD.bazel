@@ -1,0 +1,45 @@
+# Rivet Metamodel — Formal Verification with Rocq
+#
+# These targets compile the Rocq specifications and verify the proofs.
+# The specifications model rivet-core's validation engine and prove
+# key properties: satisfiability, monotonicity, termination, and
+# broken-link detection soundness.
+#
+# Build:   bazel build //proofs/rocq:rivet_metamodel
+# Test:    bazel test //proofs/rocq:rivet_metamodel_test
+# All:     bazel build //proofs/rocq:all
+
+load("@rules_rocq_rust//rocq:defs.bzl", "rocq_library", "rocq_proof_test")
+
+# Core metamodel library: domain types, store operations, traceability rules
+rocq_library(
+    name = "rivet_schema",
+    srcs = ["Schema.v"],
+)
+
+# Validation engine properties: determinism, broken-link soundness, bounds
+rocq_library(
+    name = "rivet_validation",
+    srcs = ["Validation.v"],
+    deps = [":rivet_schema"],
+)
+
+# Combined metamodel target
+rocq_library(
+    name = "rivet_metamodel",
+    srcs = [],
+    deps = [
+        ":rivet_schema",
+        ":rivet_validation",
+    ],
+)
+
+# Proof verification test — confirms all proofs compile and check
+rocq_proof_test(
+    name = "rivet_metamodel_test",
+    srcs = [
+        "Schema.v",
+        "Validation.v",
+    ],
+    deps = [":rivet_metamodel"],
+)

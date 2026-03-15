@@ -615,6 +615,7 @@ artifacts:
   - id: FEAT-040
     type: feature
 <<<<<<< HEAD
+<<<<<<< HEAD
     title: Conditional validation rules in schema YAML
     status: approved
     description: >
@@ -923,11 +924,25 @@ artifacts:
       and existence checks in the when clause, and required-fields and
       required-links in the then clause.
     tags: [validation, schema, salsa, phase-3]
+=======
+    title: Rocq formal verification of validation semantics
+    status: draft
+    description: >
+      Mechanized proofs in Rocq (Coq) verifying key properties of the
+      validation engine: schema satisfiability, monotonicity of artifact
+      addition, validation termination, broken-link detection soundness,
+      store insert/lookup consistency, and backlink symmetry. Compiled
+      via Bazel using rules_rocq_rust with hermetic Nix toolchains.
+      Includes Schema.v (domain model, 10 theorems) and Validation.v
+      (engine properties, determinism, diagnostic bounds).
+    tags: [verification, formal-methods, rocq]
+>>>>>>> worktree-agent-a70d0a06
     links:
       - type: satisfies
         target: REQ-023
       - type: implements
         target: DD-018
+<<<<<<< HEAD
       - type: implements
         target: DD-024
     fields:
@@ -1039,3 +1054,7 @@ artifacts:
         target: REQ-032
 =======
 >>>>>>> worktree-agent-afe2b00b
+=======
+    fields:
+      phase: phase-3
+>>>>>>> worktree-agent-a70d0a06

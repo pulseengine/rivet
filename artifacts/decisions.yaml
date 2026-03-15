@@ -370,6 +370,7 @@ artifacts:
   - id: DD-018
     type: design-decision
 <<<<<<< HEAD
+<<<<<<< HEAD
     title: Schema-embedded conditional rules over external rule engine
     status: draft
     description: >
@@ -795,3 +796,34 @@ artifacts:
         Rust support and weaker ecosystem integration.
       source-ref: rivet-core/src/verus_specs.rs:1
 >>>>>>> worktree-agent-afe2b00b
+=======
+    title: Rocq formal verification via rules_rocq_rust
+    status: accepted
+    description: >
+      Use the Rocq (Coq) theorem prover for mechanized verification of
+      validation engine properties. Proofs are compiled via Bazel using
+      pulseengine/rules_rocq_rust with hermetic Nix-based toolchains.
+      The formal model mirrors rivet-core Rust types (Store, Schema,
+      TraceabilityRule, Diagnostic) as Rocq inductive types and records.
+    links:
+      - type: satisfies
+        target: REQ-023
+    tags: [architecture, formal-methods, verification]
+    fields:
+      decision: >
+        Use Rocq/Coq with rules_rocq_rust Bazel rules for formal proofs.
+        Model core domain types as Rocq records. Prove properties about
+        the validation algorithm rather than translating Rust code directly.
+      rationale: >
+        Rocq provides the strongest mechanized proof guarantees. The
+        rules_rocq_rust Bazel integration provides hermetic reproducible
+        builds. Modeling the specification (not the implementation) avoids
+        fragile coupling to Rust code changes while still proving the
+        properties that matter for safety-critical traceability.
+      alternatives: >
+        (1) rocq-of-rust direct translation — rejected because rivet-core
+        uses HashMap, BTreeMap, and serde which produce impractical Rocq
+        terms. (2) Lean 4 — viable but no existing Bazel integration in
+        the PulseEngine toolchain. (3) TLA+ — model checking rather than
+        theorem proving; does not scale to unbounded stores.
+>>>>>>> worktree-agent-a70d0a06
