@@ -30,13 +30,39 @@ impl std::fmt::Display for Diagnostic {
 ///
 /// Returns a list of diagnostics (errors, warnings, info).
 /// The caller decides whether to fail on errors.
+///
+/// This is the full validation pipeline including conditional rules.
+/// For the salsa incremental layer, use [`validate_structural`] for phases
+/// 1-7 and [`evaluate_conditional_rules`](crate::db::evaluate_conditional_rules)
+/// for phase 8 as a separate tracked query.
 pub fn validate(store: &Store, schema: &Schema, graph: &LinkGraph) -> Vec<Diagnostic> {
-    let mut diagnostics = Vec::new();
+    let mut diagnostics = validate_structural(store, schema, graph);
 
     // 0. Check conditional rule consistency (schema-level)
     diagnostics.extend(crate::schema::check_conditional_consistency(
         &schema.conditional_rules,
     ));
+
+    // 8. Check conditional rules
+    for rule in &schema.conditional_rules {
+        for artifact in store.iter() {
+            if rule.when.matches_artifact(artifact) {
+                diagnostics.extend(rule.then.check(artifact, &rule.name, rule.severity.clone()));
+            }
+        }
+    }
+
+    diagnostics
+}
+
+/// Structural validation only (phases 1-7).
+///
+/// Validates types, required fields, allowed values, link cardinality,
+/// link target types, broken links, and traceability rules.
+/// Conditional rules (phase 8) are NOT included — the salsa layer runs
+/// those as a separate tracked query for finer-grained invalidation.
+pub fn validate_structural(store: &Store, schema: &Schema, graph: &LinkGraph) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
 
     // 1. Check that every artifact has a known type
     for artifact in store.iter() {
@@ -224,15 +250,6 @@ pub fn validate(store: &Store, schema: &Schema, graph: &LinkGraph) -> Vec<Diagno
                         message: rule.description.clone(),
                     });
                 }
-            }
-        }
-    }
-
-    // 8. Check conditional rules
-    for rule in &schema.conditional_rules {
-        for artifact in store.iter() {
-            if rule.when.matches_artifact(artifact) {
-                diagnostics.extend(rule.then.check(artifact, &rule.name, rule.severity.clone()));
             }
         }
     }

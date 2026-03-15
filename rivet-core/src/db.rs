@@ -79,9 +79,12 @@ pub fn parse_artifacts(db: &dyn salsa::Database, source: SourceFile) -> Vec<Arti
 
 /// Run full validation, returning all diagnostics.
 ///
-/// This is the top-level tracked query. It builds the store, schema, and
-/// link graph internally, then delegates to the existing `validate()`
-/// pipeline. Changing any input file or schema triggers recomputation.
+/// This is the top-level tracked query. It composes structural validation
+/// (phases 1-7) with conditional-rule evaluation (phase 8) as separate
+/// tracked queries. Salsa caches each independently — changing an
+/// artifact only re-evaluates conditional rules when the condition's
+/// input fields actually changed, and structural validation is unaffected
+/// by schema-only changes to conditional rules.
 ///
 /// The store and link graph construction is folded in here rather than
 /// being separate tracked functions because `Store` and `LinkGraph` do not
@@ -95,7 +98,62 @@ pub fn validate_all(
     schema_set: SchemaInputSet,
 ) -> Vec<Diagnostic> {
     let (store, schema, graph) = build_pipeline(db, source_set, schema_set);
-    crate::validate::validate(&store, &schema, &graph)
+
+    // Structural validation (phases 1-7)
+    let mut diagnostics = crate::validate::validate_structural(&store, &schema, &graph);
+
+    // Conditional rules (phase 8) — separate tracked query for finer
+    // invalidation granularity.
+    diagnostics.extend(evaluate_conditional_rules(db, source_set, schema_set));
+
+    diagnostics
+}
+
+/// Evaluate conditional validation rules as a separate tracked query.
+///
+/// This function is cached independently from structural validation.
+/// When only an artifact's field values change, salsa re-evaluates this
+/// function without re-running the (typically more expensive) structural
+/// validation. Conversely, when conditional rules are added or modified
+/// in the schema, only this function is re-evaluated — structural
+/// validation results are served from cache.
+///
+/// ## Salsa memoization note
+///
+/// Both `validate_all` and this function call `build_pipeline`, which is a
+/// plain (non-tracked) helper. The tracked functions that `build_pipeline`
+/// delegates to (`parse_artifacts`) are individually cached by salsa, so
+/// the repeated calls do NOT re-parse source files — only the lightweight
+/// store/schema assembly runs twice.
+#[salsa::tracked]
+pub fn evaluate_conditional_rules(
+    db: &dyn salsa::Database,
+    source_set: SourceFileSet,
+    schema_set: SchemaInputSet,
+) -> Vec<Diagnostic> {
+    let (store, schema, _graph) = build_pipeline(db, source_set, schema_set);
+
+    let mut diagnostics = Vec::new();
+
+    // Check rule consistency first (duplicate names, overlapping requirements)
+    diagnostics.extend(crate::schema::check_conditional_consistency(
+        &schema.conditional_rules,
+    ));
+
+    // Evaluate each conditional rule against each artifact
+    for rule in &schema.conditional_rules {
+        for artifact in store.iter() {
+            if rule.when.matches_artifact(artifact) {
+                diagnostics.extend(rule.then.check(
+                    artifact,
+                    &rule.name,
+                    rule.severity.clone(),
+                ));
+            }
+        }
+    }
+
+    diagnostics
 }
 
 // ── Internal helpers (non-tracked) ──────────────────────────────────────
@@ -225,6 +283,18 @@ impl RivetDatabase {
         schema_set: SchemaInputSet,
     ) -> Vec<Diagnostic> {
         validate_all(self, source_set, schema_set)
+    }
+
+    /// Get only the conditional-rule diagnostics (incrementally computed).
+    ///
+    /// Useful for inspecting conditional rule results separately from
+    /// structural validation.
+    pub fn conditional_diagnostics(
+        &self,
+        source_set: SourceFileSet,
+        schema_set: SchemaInputSet,
+    ) -> Vec<Diagnostic> {
+        evaluate_conditional_rules(self, source_set, schema_set)
     }
 }
 
@@ -506,5 +576,268 @@ artifacts:
         assert!(schema.artifact_type("design-decision").is_some());
         assert!(schema.link_type("satisfies").is_some());
         assert_eq!(schema.inverse_of("satisfies"), Some("satisfied-by"));
+    }
+
+    // ── Conditional rules tracked query tests ────────────────────────────
+
+    /// Schema with a conditional rule: approved artifacts must have a description.
+    const SCHEMA_WITH_CONDITIONAL: &str = r#"
+schema:
+  name: test-conditional
+  version: "0.1.0"
+artifact-types:
+  - name: requirement
+    description: A requirement
+    fields: []
+    link-fields: []
+  - name: design-decision
+    description: A design decision
+    fields: []
+    link-fields:
+      - name: satisfies
+        link-type: satisfies
+        target-types: [requirement]
+        required: false
+        cardinality: zero-or-many
+link-types:
+  - name: satisfies
+    description: Design satisfies a requirement
+    inverse: satisfied-by
+    source-types: [design-decision]
+    target-types: [requirement]
+traceability-rules:
+  - name: dd-must-satisfy
+    description: Every design decision must satisfy a requirement
+    source-type: design-decision
+    required-link: satisfies
+    target-types: [requirement]
+    severity: warning
+conditional-rules:
+  - name: approved-needs-desc
+    when:
+      field: status
+      equals: approved
+    then:
+      required-fields: [description]
+    severity: error
+"#;
+
+    /// Schema with duplicate conditional rule names (for consistency test).
+    const SCHEMA_WITH_DUP_RULES: &str = r#"
+schema:
+  name: test-dup
+  version: "0.1.0"
+artifact-types:
+  - name: requirement
+    description: A requirement
+    fields: []
+    link-fields: []
+conditional-rules:
+  - name: same-name
+    when:
+      field: status
+      equals: approved
+    then:
+      required-fields: [description]
+    severity: error
+  - name: same-name
+    when:
+      field: status
+      equals: draft
+    then:
+      required-fields: [rationale]
+    severity: warning
+"#;
+
+    /// Source with an approved requirement that has no description.
+    const SOURCE_REQ_APPROVED_NO_DESC: &str = r#"
+artifacts:
+  - id: REQ-010
+    type: requirement
+    title: Approved without description
+    status: approved
+"#;
+
+    /// Source with an approved requirement that has a description.
+    const SOURCE_REQ_APPROVED_WITH_DESC: &str = r#"
+artifacts:
+  - id: REQ-010
+    type: requirement
+    title: Approved with description
+    status: approved
+    description: This requirement is fully described
+"#;
+
+    /// Source with a draft requirement (condition should NOT match).
+    const SOURCE_REQ_DRAFT: &str = r#"
+artifacts:
+  - id: REQ-010
+    type: requirement
+    title: Draft requirement
+    status: draft
+"#;
+
+    // ── Test 11: evaluate_conditional_rules returns diagnostics ──────────
+
+    #[test]
+    fn conditional_rules_fire_for_matching_artifacts() {
+        let db = RivetDatabase::new();
+        let sources = db.load_sources(&[("reqs.yaml", SOURCE_REQ_APPROVED_NO_DESC)]);
+        let schemas = db.load_schemas(&[("test", SCHEMA_WITH_CONDITIONAL)]);
+
+        let diags = db.conditional_diagnostics(sources, schemas);
+
+        // REQ-010 is approved but has no description -> conditional rule fires.
+        let cond_diags: Vec<_> = diags
+            .iter()
+            .filter(|d| d.rule == "approved-needs-desc")
+            .collect();
+        assert_eq!(
+            cond_diags.len(),
+            1,
+            "expected 1 conditional diagnostic for approved artifact without description, got: {diags:?}"
+        );
+        assert_eq!(
+            cond_diags[0].artifact_id.as_deref(),
+            Some("REQ-010"),
+        );
+        assert_eq!(cond_diags[0].severity, crate::schema::Severity::Error);
+    }
+
+    // ── Test 12: conditional rules do not fire when condition is unmet ───
+
+    #[test]
+    fn conditional_rules_skip_non_matching_artifacts() {
+        let db = RivetDatabase::new();
+        let sources = db.load_sources(&[("reqs.yaml", SOURCE_REQ_DRAFT)]);
+        let schemas = db.load_schemas(&[("test", SCHEMA_WITH_CONDITIONAL)]);
+
+        let diags = db.conditional_diagnostics(sources, schemas);
+
+        // REQ-010 is draft -> condition (status=approved) not met -> no diagnostic.
+        let cond_diags: Vec<_> = diags
+            .iter()
+            .filter(|d| d.rule == "approved-needs-desc")
+            .collect();
+        assert!(
+            cond_diags.is_empty(),
+            "draft artifact should not trigger approved-needs-desc, got: {cond_diags:?}"
+        );
+    }
+
+    // ── Test 13: adding a conditional rule re-evaluates ──────────────────
+
+    #[test]
+    fn adding_conditional_rule_triggers_reevaluation() {
+        let mut db = RivetDatabase::new();
+        let sources = db.load_sources(&[("reqs.yaml", SOURCE_REQ_APPROVED_NO_DESC)]);
+
+        // Start without conditional rules.
+        let schemas = db.load_schemas(&[("test", TEST_SCHEMA)]);
+        let diags_before = db.conditional_diagnostics(sources, schemas);
+        let cond_before: Vec<_> = diags_before
+            .iter()
+            .filter(|d| d.rule == "approved-needs-desc")
+            .collect();
+        assert!(
+            cond_before.is_empty(),
+            "no conditional rules in schema -> no conditional diagnostics"
+        );
+
+        // Now load a schema with conditional rules.
+        let schemas_with_rules = db.load_schemas(&[("test", SCHEMA_WITH_CONDITIONAL)]);
+        let diags_after = db.conditional_diagnostics(sources, schemas_with_rules);
+        let cond_after: Vec<_> = diags_after
+            .iter()
+            .filter(|d| d.rule == "approved-needs-desc")
+            .collect();
+        assert_eq!(
+            cond_after.len(),
+            1,
+            "adding conditional rule should produce diagnostics"
+        );
+    }
+
+    // ── Test 14: conditional rules compose with structural validation ────
+
+    #[test]
+    fn conditional_and_structural_compose_in_validate_all() {
+        let db = RivetDatabase::new();
+
+        // DD-001 is unlinked (structural: dd-must-satisfy warning) and
+        // REQ-010 is approved without description (conditional: approved-needs-desc error).
+        let sources = db.load_sources(&[
+            ("reqs.yaml", SOURCE_REQ_APPROVED_NO_DESC),
+            ("design.yaml", SOURCE_DD_UNLINKED),
+        ]);
+        let schemas = db.load_schemas(&[("test", SCHEMA_WITH_CONDITIONAL)]);
+
+        let diags = db.diagnostics(sources, schemas);
+
+        // Should have the structural traceability warning.
+        let structural: Vec<_> = diags
+            .iter()
+            .filter(|d| d.rule == "dd-must-satisfy")
+            .collect();
+        assert!(
+            !structural.is_empty(),
+            "expected structural dd-must-satisfy warning in composed diagnostics"
+        );
+
+        // Should also have the conditional rule error.
+        let conditional: Vec<_> = diags
+            .iter()
+            .filter(|d| d.rule == "approved-needs-desc")
+            .collect();
+        assert!(
+            !conditional.is_empty(),
+            "expected conditional approved-needs-desc error in composed diagnostics"
+        );
+    }
+
+    // ── Test 15: rule consistency errors included in diagnostics ─────────
+
+    #[test]
+    fn rule_consistency_errors_in_conditional_diagnostics() {
+        let db = RivetDatabase::new();
+        let sources = db.load_sources(&[("reqs.yaml", SOURCE_REQ)]);
+        let schemas = db.load_schemas(&[("test", SCHEMA_WITH_DUP_RULES)]);
+
+        let diags = db.conditional_diagnostics(sources, schemas);
+
+        // Duplicate rule name "same-name" should produce a consistency warning.
+        let consistency: Vec<_> = diags
+            .iter()
+            .filter(|d| d.rule == "conditional-rule-consistency")
+            .collect();
+        assert!(
+            !consistency.is_empty(),
+            "expected consistency diagnostic for duplicate rule names, got: {diags:?}"
+        );
+        assert!(
+            consistency[0].message.contains("same-name"),
+            "consistency diagnostic should mention the duplicate name"
+        );
+    }
+
+    // ── Test 16: conditional diagnostics absent when requirement met ─────
+
+    #[test]
+    fn no_conditional_diagnostic_when_requirement_satisfied() {
+        let db = RivetDatabase::new();
+        let sources = db.load_sources(&[("reqs.yaml", SOURCE_REQ_APPROVED_WITH_DESC)]);
+        let schemas = db.load_schemas(&[("test", SCHEMA_WITH_CONDITIONAL)]);
+
+        let diags = db.conditional_diagnostics(sources, schemas);
+
+        // REQ-010 is approved and HAS a description -> no diagnostic.
+        let cond_diags: Vec<_> = diags
+            .iter()
+            .filter(|d| d.rule == "approved-needs-desc")
+            .collect();
+        assert!(
+            cond_diags.is_empty(),
+            "approved artifact with description should pass, got: {cond_diags:?}"
+        );
     }
 }
