@@ -93,6 +93,54 @@ const TOPICS: &[DocTopic] = &[
         category: "Reference",
         content: CROSS_REPO_DOC,
     },
+    DocTopic {
+        slug: "mutation",
+        title: "CLI mutation commands (add, modify, remove, link, unlink)",
+        category: "Reference",
+        content: MUTATION_DOC,
+    },
+    DocTopic {
+        slug: "conditional-rules",
+        title: "Conditional validation rules (when/then)",
+        category: "Reference",
+        content: CONDITIONAL_RULES_DOC,
+    },
+    DocTopic {
+        slug: "impact",
+        title: "Change impact analysis",
+        category: "Reference",
+        content: IMPACT_DOC,
+    },
+    DocTopic {
+        slug: "needs-json",
+        title: "sphinx-needs JSON import (migration from sphinx-needs)",
+        category: "Reference",
+        content: NEEDS_JSON_DOC,
+    },
+    DocTopic {
+        slug: "bazel",
+        title: "Bazel MODULE.bazel integration for cross-repo discovery",
+        category: "Reference",
+        content: BAZEL_DOC,
+    },
+    DocTopic {
+        slug: "schema/score",
+        title: "Eclipse SCORE metamodel schema (20 types)",
+        category: "Schemas",
+        content: embedded::SCHEMA_SCORE,
+    },
+    DocTopic {
+        slug: "formal-verification",
+        title: "Formal verification strategy (Kani, Verus, Rocq)",
+        category: "Reference",
+        content: FORMAL_VERIFICATION_DOC,
+    },
+    DocTopic {
+        slug: "html-export",
+        title: "HTML export deployment and customization",
+        category: "Reference",
+        content: HTML_EXPORT_DOC,
+    },
 ];
 
 // ── Embedded documentation ──────────────────────────────────────────────
@@ -909,3 +957,503 @@ struct GrepMatch {
     context_before: Vec<String>,
     context_after: Vec<String>,
 }
+
+// ── HTML export documentation ───────────────────────────────────────────
+
+const HTML_EXPORT_DOC: &str = r#"# HTML Export — Deployment and Customization
+
+## Overview
+
+`rivet export --format html` generates a self-contained static site for
+compliance evidence and audit publishing. The export produces 11+ HTML pages:
+
+- **index.html** — dashboard with artifact counts, validation summary, coverage
+- **requirements.html** — all artifacts grouped by type with anchor IDs
+- **documents.html** — document index with links to individual document pages
+- **doc-{ID}.html** — individual documents with resolved `[[ID]]` links
+- **matrix.html** — traceability matrix (type x type)
+- **coverage.html** — per-rule traceability coverage
+- **validation.html** — diagnostics and rule check results
+- **config.js** — runtime configuration (edit after deployment, no rebuild)
+
+Pages are self-contained by default: CSS is embedded inline with no external
+dependencies. The site works offline and can be served by any static HTTP server.
+
+Runtime customization is done entirely through `config.js` — no rebuild needed.
+
+## Generated Files
+
+```
+dist/
+  config.js           # Runtime configuration (edit after deployment)
+  index.html          # Dashboard with artifact counts, validation, coverage
+  requirements.html   # All artifacts grouped by type with anchor IDs
+  documents.html      # Document index with links to individual docs
+  doc-{ID}.html       # Individual documents with resolved [[ID]] links
+  matrix.html         # Traceability matrix (type x type)
+  coverage.html       # Per-rule traceability coverage
+  validation.html     # Diagnostics and rule check results
+  README.html         # What this export is and how to customize it
+```
+
+## config.js Reference
+
+The `config.js` file is a plain JavaScript file loaded by every page. It sets
+deployment-specific values without rebuilding the HTML:
+
+```javascript
+var RIVET_EXPORT = {
+  // Back-link to project portal (empty string to hide)
+  homepage: "https://example.com/projects/",
+
+  // Display name in the homepage back-link
+  projectName: "My Project",
+
+  // Current version label in the version switcher
+  versionLabel: "v0.1.0",
+
+  // Other versions for the dropdown (paths relative to this directory)
+  versions: [
+    { "label": "v0.1.0", "path": "../v0.1.0/" },
+    { "label": "v0.2.0", "path": "../v0.2.0/" }
+  ],
+
+  // Optional: external CSS URL to replace embedded styles
+  // externalCss: "/main.css",
+};
+```
+
+When `config.js` is missing or `RIVET_EXPORT` is undefined, pages degrade
+gracefully: the homepage link and version switcher remain hidden, and
+embedded styles are used.
+
+## CSS Classes Reference
+
+### Layout
+
+| Class              | Description                                     |
+|--------------------|-------------------------------------------------|
+| `.export-header`   | Top navigation bar wrapper                      |
+| `.home-link`       | Homepage back-link (populated by config.js)      |
+| `.version-switcher`| Version dropdown container                       |
+| `.nav-links`       | Navigation link group (Overview, Requirements…) |
+| `.summary-grid`    | Dashboard summary cards grid                     |
+| `.summary-card`    | Individual summary card                          |
+
+### Artifacts
+
+| Class              | Description                                     |
+|--------------------|-------------------------------------------------|
+| `.artifact-section`| Individual artifact block                        |
+| `.artifact-id`     | Artifact ID heading                              |
+| `.artifact-meta`   | Metadata line (type, status)                     |
+| `.type-badge`      | Artifact type badge                              |
+| `.status-badge`    | Status badge                                     |
+| `.badge-approved`  | Status color: approved (green)                   |
+| `.badge-draft`     | Status color: draft (amber)                      |
+| `.badge-default`   | Status color: fallback (muted)                   |
+| `.tag`             | Artifact tag pill                                |
+| `.artifact-ref`    | Clickable artifact reference link                |
+
+### Documents
+
+| Class                    | Description                               |
+|--------------------------|-------------------------------------------|
+| `.doc-card`              | Document card on index page               |
+| `.doc-meta`              | Document metadata                         |
+| `.doc-body`              | Rendered document content                 |
+| `.artifact-embed`        | Embedded artifact card in documents       |
+| `.artifact-embed-header` | Embed header (ID + type)                  |
+| `.artifact-embed-title`  | Embed title line                          |
+| `.artifact-embed-desc`   | Embed description block                   |
+
+### Matrix
+
+| Class          | Description                                        |
+|----------------|----------------------------------------------------|
+| `.cell-green`  | Coverage-colored cell: linked (green)               |
+| `.cell-yellow` | Coverage-colored cell: partially linked (yellow)    |
+| `.cell-red`    | Coverage-colored cell: missing link (red)           |
+
+### Validation
+
+| Class              | Description                                     |
+|--------------------|-------------------------------------------------|
+| `.diag-list`       | Diagnostics list                                 |
+| `.diag-rule`       | Rule name in diagnostic                          |
+| `.severity-error`  | Severity color: error (red)                      |
+| `.severity-warning`| Severity color: warning (amber)                  |
+| `.severity-info`   | Severity color: info (accent blue)               |
+
+### Table of Contents
+
+| Class        | Description                                          |
+|--------------|------------------------------------------------------|
+| `.toc`       | Table of contents container                          |
+| `.toc-item`  | Individual TOC entry                                 |
+
+## Theming
+
+CSS custom properties control all colors and fonts. Override them in an
+external stylesheet to match your organization's branding:
+
+```css
+:root {
+  --bg: #0f1117;
+  --bg-card: rgba(26, 29, 39, 0.72);
+  --border: #252836;
+  --text: #e1e4ed;
+  --text-muted: #8b90a0;
+  --accent: #6c8cff;
+  --green: #4ade80;
+  --amber: #fbbf24;
+  --red: #f87171;
+  --font: "Atkinson Hyperlegible Next", system-ui, sans-serif;
+  --font-mono: "Atkinson Hyperlegible Mono", monospace;
+  --radius: 12px;
+}
+```
+
+To use an external CSS file from a parent site:
+
+```javascript
+// In config.js
+var RIVET_EXPORT = {
+  externalCss: "/main.css",  // replaces embedded styles
+};
+```
+
+When `externalCss` is set, all embedded `<style>` tags are removed and a
+`<link rel="stylesheet">` is injected pointing to the given URL. This lets
+you maintain a single CSS source for your entire site.
+
+## Deployment Examples
+
+### Static hosting (any web server)
+
+```bash
+rivet export --format html --output dist/
+# Copy to web server
+scp -r dist/ server:/var/www/compliance/
+# Edit config.js on the server
+```
+
+### GitHub Pages
+
+```bash
+rivet export --format html --output docs/compliance/
+git add docs/compliance/
+git push  # GitHub Pages serves it
+```
+
+### Under a parent site (e.g., pulseengine.eu)
+
+```bash
+rivet export --format html --output dist/
+cp -r dist/ /srv/pulseengine.eu/release/rivet/v0.1.0/compliance/
+# Edit config.js:
+# homepage: "https://pulseengine.eu/projects/"
+# externalCss: "/main.css"
+```
+
+### Multiple versions side by side
+
+```
+/release/rivet/
+  v0.1.0/compliance/  <- config.js has versions pointing to siblings
+  v0.2.0/compliance/
+  latest/compliance/   <- symlink to current
+```
+
+## CLI Flags
+
+```
+rivet export --format html [OPTIONS]
+
+Options:
+  --output <DIR>           Output directory (default: dist/)
+  --single-page            All reports in one HTML file
+  --theme <dark|light>     Color theme (default: dark)
+  --offline                Use system fonts (no Google Fonts)
+  --homepage <URL>         Homepage URL written to config.js
+  --version-label <LABEL>  Version label written to config.js
+  --versions <JSON>        Version entries written to config.js
+```
+
+When `--single-page` is used, all reports are combined into a single
+`index.html` with internal anchors.  `config.js` is not generated in
+single-page mode (everything is inline).
+"#;
+
+// ── Phase 3 documentation topics ────────────────────────────────────────
+
+const MUTATION_DOC: &str = r#"# CLI Mutation Commands
+
+Schema-validated artifact management from the command line.
+All mutations are validated against the loaded schema BEFORE any file is written.
+If validation fails, no file is touched.
+
+## Commands
+
+### `rivet add`
+
+Create a new artifact with auto-generated ID:
+
+    rivet add --type requirement --title "My requirement" --status draft --tags safety,core
+    # → Created REQ-032
+
+Options: `--type` (required), `--title` (required), `--status`, `--tags t1,t2`,
+`--field key=value` (repeatable), `--file <target.yaml>`.
+
+### `rivet modify`
+
+Update an existing artifact's fields:
+
+    rivet modify REQ-023 --set-status approved --add-tag verified
+    rivet modify DD-018 --set-field rationale="Updated rationale"
+
+### `rivet link`
+
+Add a traceability link between artifacts:
+
+    rivet link REQ-023 --type satisfies --target SC-12
+    # Validates: both IDs exist, link type valid for source→target types
+
+### `rivet unlink`
+
+Remove an existing link:
+
+    rivet unlink REQ-023 --type satisfies --target SC-12
+
+### `rivet remove`
+
+Remove an artifact (checks for incoming links):
+
+    rivet remove FEAT-042          # Refuses if other artifacts link to it
+    rivet remove FEAT-042 --force  # Removes anyway, warns about broken links
+
+### `rivet next-id`
+
+Compute the next available ID for a type or prefix:
+
+    rivet next-id --type requirement   # → REQ-032
+    rivet next-id --prefix FEAT        # → FEAT-058
+    rivet next-id --type requirement --format json
+
+## Validation
+
+Every mutation validates against the loaded schema:
+- **add**: type exists, ID unique, required fields present, status in allowed values
+- **link**: source and target exist, link type exists, valid for source→target types
+- **modify**: artifact exists, new values conform to schema
+- **remove**: artifact exists, no incoming links (unless --force)
+
+Related: [[REQ-031]], [[DD-028]], [[FEAT-052]]..[[FEAT-056]]
+"#;
+
+const CONDITIONAL_RULES_DOC: &str = r#"# Conditional Validation Rules
+
+Schema extension for state-dependent validation using `when`/`then` syntax.
+
+## Schema Syntax
+
+```yaml
+conditional-rules:
+  - name: approved-requires-verification-criteria
+    description: Approved requirements must have verification criteria
+    when:
+      field: status
+      equals: approved
+    then:
+      required-fields: [verification-criteria]
+    severity: error
+
+  - name: asil-requires-mitigation
+    when:
+      field: safety
+      matches: "ASIL_.*"
+    then:
+      required-links: [mitigated_by]
+    severity: warning
+```
+
+## Condition Types
+
+- **equals**: `{ field: <name>, equals: <value> }` — exact string match
+- **matches**: `{ field: <name>, matches: <regex> }` — regex pattern match
+- **exists**: `{ field: <name>, exists: true }` — field is present and non-empty
+
+## Requirement Types
+
+- **required-fields**: `{ required-fields: [field1, field2] }` — fields must be present
+- **required-links**: `{ required-links: [link_type1] }` — outgoing links of type must exist
+
+## Rule Consistency
+
+At schema load time, rivet checks that conditional rules don't contradict
+each other. If two rules with the same condition impose conflicting
+requirements, the schema is rejected with a diagnostic.
+
+Related: [[REQ-023]], [[DD-018]], [[FEAT-040]]
+"#;
+
+const IMPACT_DOC: &str = r#"# Change Impact Analysis
+
+Detect which artifacts changed and compute the transitive set of affected
+artifacts via the link graph.
+
+## Usage
+
+    rivet impact --since main           # Compare against main branch
+    rivet impact --since v0.5.0         # Compare against a tag
+    rivet impact --baseline ./old/      # Compare against a directory
+    rivet impact --since HEAD~5 --depth 2  # Limit traversal depth
+    rivet impact --since main --format json
+
+## How It Works
+
+1. **Content hashing**: Each artifact gets a deterministic hash of its
+   title, description, status, fields, tags, and links.
+2. **Diff**: Changed artifacts are those with different hashes between
+   current state and baseline.
+3. **BFS traversal**: From each changed artifact, walks the link graph
+   (both forward and backward links) to find affected artifacts.
+4. **Depth separation**: Direct dependents (depth 1) vs transitive (depth 2+).
+
+## Output
+
+    Changed artifacts (2):
+      REQ-023  (status: draft → approved)
+      DD-018   (description modified)
+
+    Directly affected (1):
+      FEAT-040 (← satisfies REQ-023)
+
+    Impact summary: 2 changed, 1 direct, 0 transitive, 3 total
+
+Related: [[REQ-024]], [[DD-019]], [[FEAT-041]]
+"#;
+
+const NEEDS_JSON_DOC: &str = r#"# sphinx-needs JSON Import
+
+Import artifacts from sphinx-needs `needs.json` export files. Provides a
+migration path for projects using sphinx-needs-based toolchains like
+Eclipse SCORE.
+
+## Configuration
+
+```yaml
+sources:
+  - path: imported/needs.json
+    format: needs-json
+    config:
+      type-mapping.stkh_req: stkh-req
+      type-mapping.comp_req: comp-req
+      type-mapping.sw_req: sw-req
+      id-transform: underscores-to-dashes
+      link-type: satisfies
+```
+
+## Options
+
+- **type-mapping.<src>: <dst>** — Map sphinx-needs type names to rivet schema
+  types. Unmapped types default to underscore-to-dash conversion.
+- **id-transform** — `underscores-to-dashes` (default) or `preserve`.
+- **link-type** — Link type for the `links` array (default: `satisfies`).
+
+## How It Works
+
+1. Parses the `needs.json` structure (versions → needs map)
+2. Applies type mapping and ID transform to each need
+3. Converts `links` arrays to rivet `Link` structs
+4. Preserves extra fields (excluding sphinx-needs display metadata)
+5. Returns `Vec<Artifact>` ready for the standard pipeline
+
+## Migrating from sphinx-needs
+
+1. Export: `sphinx-build -b needs . _build` (produces `needs.json`)
+2. Add to rivet.yaml with type mappings matching your sphinx-needs types
+3. Run `rivet validate` to check all links resolve
+4. Iterate on type mappings until validation passes
+
+Related: [[REQ-025]], [[DD-020]], [[FEAT-042]]
+"#;
+
+const BAZEL_DOC: &str = r#"# Bazel MODULE.bazel Integration
+
+Parse Bazel MODULE.bazel files to discover cross-repo dependencies for
+traceability validation without requiring Bazel to be installed.
+
+## Supported Constructs
+
+The parser handles the MODULE.bazel subset of Starlark:
+
+- `module(name, version, compatibility_level)`
+- `bazel_dep(name, version, dev_dependency)`
+- `git_override(module_name, remote, commit)`
+- `archive_override(module_name, urls, strip_prefix, integrity)`
+- `local_path_override(module_name, path)`
+- `single_version_override(module_name, version)`
+
+Unsupported constructs (`load()`, variable assignments, conditionals) emit
+diagnostics and parsing continues with error recovery.
+
+## Architecture
+
+Three-layer parser using rowan for lossless CST:
+
+1. **Lexer** — Hand-written tokenizer producing `(SyntaxKind, &str)` pairs
+2. **Parser** — Recursive descent building rowan `GreenNode` CST
+3. **HIR** — Typed extraction: `BazelModule` with deps and overrides
+
+## Usage
+
+```rust
+use rivet_core::bazel::parse_module_bazel;
+
+let module = parse_module_bazel(source);
+for dep in &module.deps {
+    println!("{} @ {}", dep.name, dep.version);
+}
+for d in &module.diagnostics {
+    eprintln!("warning: {}", d);
+}
+```
+
+Related: [[REQ-027]], [[REQ-028]], [[DD-023]], [[FEAT-046]]
+"#;
+
+const FORMAL_VERIFICATION_DOC: &str = r#"# Formal Verification
+
+Rivet uses a three-layer verification pyramid to prove correctness of its
+validation engine, supporting ISO 26262 tool qualification at TCL 1.
+
+## Layer 1: Kani (Bounded Model Checking)
+
+Proof harnesses in `rivet-core/src/proofs.rs` behind `#[cfg(kani)]`.
+Proves absence of panics and basic properties for core algorithms:
+
+- `parse_artifact_ref()` — no panics for any string input
+- `Store::insert()` — no panics, duplicates return error
+- `Schema::merge()` — idempotent, no panics
+- `compute_coverage()` — percentage always in [0.0, 100.0]
+- `LinkGraph` — orphan detection, cycle detection correctness
+
+Run: `cargo kani -p rivet-core` (requires Kani installation)
+
+## Layer 2: Verus (Functional Correctness) — Planned
+
+Inline `requires`/`ensures` annotations proving:
+- Soundness: PASS implies all rules satisfied
+- Completeness: rule violated implies diagnostic emitted
+- Backlink symmetry: forward A→B implies backward B←A
+
+## Layer 3: Rocq (Metamodel Proofs) — Planned
+
+Schema semantics modeled in Rocq via coq-of-rust:
+- Schema satisfiability (rules not contradictory)
+- ASPICE V-model completeness
+- Validation termination
+
+Related: [[REQ-030]], [[DD-025]]..[[DD-027]], [[FEAT-049]]..[[FEAT-051]]
+"#;

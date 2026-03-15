@@ -25,7 +25,7 @@
 //!
 //! let gl = layout(
 //!     &g,
-//!     &|_idx, n| NodeInfo { id: n.to_string(), label: n.to_string(), node_type: "default".into(), sublabel: None },
+//!     &|_idx, n| NodeInfo { id: n.to_string(), label: n.to_string(), node_type: "default".into(), sublabel: None, parent: None },
 //!     &|_idx, e| EdgeInfo { label: e.to_string() },
 //!     &LayoutOptions::default(),
 //! );

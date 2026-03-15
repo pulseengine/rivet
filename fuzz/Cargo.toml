@@ -34,3 +34,8 @@ doc = false
 name = "fuzz_document_parse"
 path = "fuzz_targets/fuzz_document_parse.rs"
 doc = false
+
+[[bin]]
+name = "fuzz_needs_json_import"
+path = "fuzz_targets/fuzz_needs_json_import.rs"
+doc = false

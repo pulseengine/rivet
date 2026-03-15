@@ -1,5 +1,6 @@
 use rivet_core::model::ProjectConfig;
 
+// rivet: verifies REQ-017
 #[test]
 fn parse_commits_config_from_yaml() {
     let yaml = r#"

@@ -56,6 +56,7 @@ proptest! {
 
     /// Insert N artifacts with unique IDs, verify store.len() == N,
     /// all retrievable by ID, and by_type counts match.
+    // rivet: verifies REQ-001
     #[test]
     fn prop_store_insert_all_retrievable(ids in arb_unique_ids(20)) {
         let mut store = Store::new();
@@ -103,6 +104,7 @@ proptest! {
     }
 
     /// Duplicate inserts are rejected.
+    // rivet: verifies REQ-001
     #[test]
     fn prop_store_rejects_duplicates(id in arb_artifact_id()) {
         let mut store = Store::new();
@@ -138,6 +140,7 @@ proptest! {
 // ── Schema merge idempotence ────────────────────────────────────────────
 
 /// Merging a schema with itself produces the same set of types and link types.
+// rivet: verifies REQ-010
 #[test]
 fn prop_schema_merge_idempotent() {
     let schemas_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../schemas");
@@ -188,6 +191,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(30))]
 
     /// For every forward link in the graph, a corresponding backlink exists.
+    // rivet: verifies REQ-004
     #[test]
     fn prop_link_graph_backlink_symmetry(
         n in 5..20usize,
@@ -250,6 +254,7 @@ proptest! {
 // ── Validation determinism ──────────────────────────────────────────────
 
 /// Running validate twice on the same store+schema produces identical diagnostics.
+// rivet: verifies REQ-004
 #[test]
 fn prop_validation_determinism() {
     let schema = test_schema();
@@ -329,6 +334,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(30))]
 
     /// The types() iterator returns exactly the types that have artifacts.
+    // rivet: verifies REQ-001
     #[test]
     fn prop_store_types_match_inserted(
         type_indices in prop::collection::vec(0..TEST_TYPES.len(), 3..15),

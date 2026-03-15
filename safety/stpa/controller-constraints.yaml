@@ -325,3 +325,80 @@ controller-constraints:
       and warn when displayed data may be stale.
     ucas: [UCA-D-2]
     hazards: [H-3, H-6]
+
+  # =========================================================================
+  # Incremental validation constraints (salsa)
+  # =========================================================================
+  - id: CC-C-10
+    controller: CTRL-CORE
+    constraint: >
+      Core salsa database must invalidate all dependent queries when
+      an artifact source file is modified on disk, ensuring no stale
+      cached results are returned.
+    ucas: [UCA-C-10]
+    hazards: [H-9, H-1, H-3]
+
+  - id: CC-C-11
+    controller: CTRL-CORE
+    constraint: >
+      Core must re-evaluate all conditional rules whose when-clause
+      references a field that has changed, even if the artifact's
+      other fields are unchanged.
+    ucas: [UCA-C-11]
+    hazards: [H-9, H-1]
+
+  - id: CC-C-12
+    controller: CTRL-CORE
+    constraint: >
+      Core must detect contradictory conditional rules at schema load
+      time and reject the schema with a diagnostic identifying the
+      conflicting rules, before any validation occurs.
+    ucas: [UCA-C-12]
+    hazards: [H-10]
+
+  - id: CC-C-13
+    controller: CTRL-CORE
+    constraint: >
+      Core incremental validation must produce byte-identical diagnostic
+      output compared to a clean full validation pass for the same inputs.
+      A periodic full-revalidation check must verify this invariant.
+    ucas: [UCA-C-13]
+    hazards: [H-9, H-3]
+
+  - id: CC-C-14
+    controller: CTRL-CORE
+    constraint: >
+      Core must enforce that schema loading and merge complete before
+      conditional rule evaluation begins, via salsa query dependencies.
+    ucas: [UCA-C-14]
+    hazards: [H-9, H-10]
+
+  # =========================================================================
+  # MODULE.bazel parser constraints
+  # =========================================================================
+  - id: CC-C-15
+    controller: CTRL-CORE
+    constraint: >
+      Parser must extract git_override, archive_override, and
+      local_path_override declarations and apply them to override
+      the corresponding bazel_dep version/source.
+    ucas: [UCA-C-15]
+    hazards: [H-11, H-1]
+
+  - id: CC-C-16
+    controller: CTRL-CORE
+    constraint: >
+      Parser must emit a diagnostic for every Starlark construct it
+      does not support, listing what was skipped and what dependencies
+      may be missing from the result. Silent skip is forbidden.
+    ucas: [UCA-C-16]
+    hazards: [H-11]
+
+  - id: CC-C-17
+    controller: CTRL-CORE
+    constraint: >
+      Parser must associate keyword argument values with the correct
+      parameter names in the CST, verified by test cases covering all
+      supported function call types.
+    ucas: [UCA-C-17]
+    hazards: [H-11, H-1]

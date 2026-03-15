@@ -149,6 +149,7 @@ fn write_style(svg: &mut String, options: &SvgOptions) {
          \x20   .edge text {{ font-family: {font}; font-size: {}px; \
          fill: #555; text-anchor: middle; dominant-baseline: central; \
          font-weight: 500; }}\n\
+         \x20   .node.container rect {{ stroke-dasharray: 4 2; }}\n\
          \x20   .node:hover rect {{ filter: brightness(0.92); }}\n\
          \x20 </style>\n",
         fs - 2.0,
@@ -212,7 +213,13 @@ fn write_nodes(svg: &mut String, layout: &GraphLayout, options: &SvgOptions) {
 
     let default_fill = "#e8e8e8".to_string();
 
-    for node in &layout.nodes {
+    // Draw containers first (background), then leaf nodes on top.
+    let containers: Vec<&crate::layout::LayoutNode> =
+        layout.nodes.iter().filter(|n| n.is_container).collect();
+    let leaves: Vec<&crate::layout::LayoutNode> =
+        layout.nodes.iter().filter(|n| !n.is_container).collect();
+
+    for node in containers.iter().chain(leaves.iter()) {
         let fill = options
             .type_colors
             .get(&node.node_type)
@@ -226,9 +233,10 @@ fn write_nodes(svg: &mut String, layout: &GraphLayout, options: &SvgOptions) {
             }
         }
 
+        let class_suffix = if node.is_container { " container" } else { "" };
         writeln!(
             svg,
-            "      <g class=\"node type-{}\"{attrs}>",
+            "      <g class=\"node type-{}{class_suffix}\"{attrs}>",
             css_class_safe(&node.node_type),
         )
         .unwrap();
@@ -236,49 +244,101 @@ fn write_nodes(svg: &mut String, layout: &GraphLayout, options: &SvgOptions) {
         // Rectangle.
         let r = options.rounded_corners;
         let is_highlighted = options.highlight.as_ref().is_some_and(|h| h == &node.id);
-        let stroke_w = if is_highlighted { "3.0" } else { "1.5" };
+        let stroke_w = if is_highlighted {
+            "3.0"
+        } else if node.is_container {
+            "2.0"
+        } else {
+            "1.5"
+        };
         let stroke_c = if is_highlighted { "#ff6600" } else { "#333" };
+        let container_fill = if node.is_container {
+            // Lighten container fill for better contrast with children.
+            lighten_color(fill)
+        } else {
+            fill.to_string()
+        };
         writeln!(
             svg,
             "        <rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" \
-             rx=\"{r}\" ry=\"{r}\" fill=\"{fill}\" stroke=\"{stroke_c}\" stroke-width=\"{stroke_w}\" />",
+             rx=\"{r}\" ry=\"{r}\" fill=\"{container_fill}\" stroke=\"{stroke_c}\" stroke-width=\"{stroke_w}\" />",
             node.x, node.y, node.width, node.height,
         )
         .unwrap();
 
-        // Primary label.
-        let text_y = if node.sublabel.is_some() {
-            node.y + node.height / 2.0 - options.font_size * 0.45
-        } else {
-            node.y + node.height / 2.0
-        };
-        writeln!(
-            svg,
-            "        <text x=\"{}\" y=\"{text_y}\">{}</text>",
-            node.x + node.width / 2.0,
-            xml_escape(&node.label),
-        )
-        .unwrap();
-
-        // Sublabel.
-        if let Some(ref sub) = node.sublabel {
-            let sub_y = node.y + node.height / 2.0 + options.font_size * 0.65;
+        if node.is_container {
+            // Container: label in header bar.
+            let header_y = node.y + options.font_size + 4.0;
             writeln!(
                 svg,
-                "        <text class=\"sublabel\" x=\"{}\" y=\"{sub_y}\">{}</text>",
+                "        <text x=\"{}\" y=\"{header_y}\" font-weight=\"bold\">{}</text>",
                 node.x + node.width / 2.0,
-                xml_escape(sub),
+                xml_escape(&node.label),
             )
             .unwrap();
+            if let Some(ref sub) = node.sublabel {
+                let sub_y = header_y + options.font_size;
+                writeln!(
+                    svg,
+                    "        <text class=\"sublabel\" x=\"{}\" y=\"{sub_y}\">{}</text>",
+                    node.x + node.width / 2.0,
+                    xml_escape(sub),
+                )
+                .unwrap();
+            }
+        } else {
+            // Leaf node: label centered.
+            let text_y = if node.sublabel.is_some() {
+                node.y + node.height / 2.0 - options.font_size * 0.45
+            } else {
+                node.y + node.height / 2.0
+            };
+            writeln!(
+                svg,
+                "        <text x=\"{}\" y=\"{text_y}\">{}</text>",
+                node.x + node.width / 2.0,
+                xml_escape(&node.label),
+            )
+            .unwrap();
+            if let Some(ref sub) = node.sublabel {
+                let sub_y = node.y + node.height / 2.0 + options.font_size * 0.65;
+                writeln!(
+                    svg,
+                    "        <text class=\"sublabel\" x=\"{}\" y=\"{sub_y}\">{}</text>",
+                    node.x + node.width / 2.0,
+                    xml_escape(sub),
+                )
+                .unwrap();
+            }
         }
 
         // Tooltip.
-        writeln!(svg, "        <title>{}</title>", xml_escape(&node.id),).unwrap();
+        writeln!(svg, "        <title>{}</title>", xml_escape(&node.id)).unwrap();
 
         svg.push_str("      </g>\n");
     }
 
     svg.push_str("    </g>\n");
+}
+
+/// Lighten a hex color for container backgrounds (add transparency effect).
+fn lighten_color(hex: &str) -> String {
+    if !hex.starts_with('#') || hex.len() < 7 {
+        return format!("{hex}40"); // fallback: add alpha
+    }
+    let r = u8::from_str_radix(&hex[1..3], 16).unwrap_or(200);
+    let g = u8::from_str_radix(&hex[3..5], 16).unwrap_or(200);
+    let b = u8::from_str_radix(&hex[5..7], 16).unwrap_or(200);
+    // Blend toward white by 70%.
+    let lr = r as u16 + (255 - r as u16) * 70 / 100;
+    let lg = g as u16 + (255 - g as u16) * 70 / 100;
+    let lb = b as u16 + (255 - b as u16) * 70 / 100;
+    format!(
+        "#{:02x}{:02x}{:02x}",
+        lr.min(255) as u8,
+        lg.min(255) as u8,
+        lb.min(255) as u8
+    )
 }
 
 /// Build a smooth cubic bezier SVG path through the given waypoints.
@@ -353,6 +413,7 @@ mod tests {
                 label: n.to_string(),
                 node_type: "req".into(),
                 sublabel: Some("Title".into()),
+                parent: None,
             },
             &|_idx: EdgeIndex, e: &&str| EdgeInfo {
                 label: e.to_string(),
@@ -450,6 +511,75 @@ mod tests {
         let svg = render_svg(&gl, &SvgOptions::default());
         assert!(svg.contains("<title>A</title>"));
         assert!(svg.contains("<title>B</title>"));
+    }
+
+    #[test]
+    fn svg_compound_container_rendering() {
+        // Build a compound graph and verify container SVG output.
+        let mut g = Graph::new();
+        let _s = g.add_node("System");
+        let a = g.add_node("A");
+        let b = g.add_node("B");
+        g.add_edge(a, b, "conn");
+
+        let gl = layout(
+            &g,
+            &|_idx: NodeIndex, n: &&str| NodeInfo {
+                id: n.to_string(),
+                label: n.to_string(),
+                node_type: "system".into(),
+                sublabel: None,
+                parent: if *n == "A" || *n == "B" {
+                    Some("System".into())
+                } else {
+                    None
+                },
+            },
+            &|_idx: EdgeIndex, e: &&str| EdgeInfo {
+                label: e.to_string(),
+            },
+            &LayoutOptions::default(),
+        );
+
+        let mut colors = HashMap::new();
+        colors.insert("system".into(), "#4a90d9".into());
+        let svg = render_svg(
+            &gl,
+            &SvgOptions {
+                type_colors: colors,
+                ..Default::default()
+            },
+        );
+
+        // Container should have the "container" CSS class.
+        assert!(
+            svg.contains("container"),
+            "SVG should contain 'container' class"
+        );
+        // Container should use dashed stroke style (from CSS).
+        assert!(svg.contains("stroke-dasharray"));
+        // Container label should be bold.
+        assert!(svg.contains("font-weight=\"bold\""));
+        // Container fill should be lightened (not the original color).
+        assert!(
+            !svg.contains("fill=\"#4a90d9\"") || svg.contains("font-weight=\"bold\""),
+            "Container fill should be lightened"
+        );
+    }
+
+    #[test]
+    fn lighten_color_basic() {
+        let result = lighten_color("#000000");
+        // Black lightened 70% toward white should be ~#b3b3b3.
+        assert_eq!(result, "#b2b2b2");
+
+        let result = lighten_color("#ffffff");
+        // White stays white.
+        assert_eq!(result, "#ffffff");
+
+        let result = lighten_color("#ff0000");
+        // Red channel stays 255, G and B go up.
+        assert!(result.starts_with("#ff"));
     }
 
     #[test]

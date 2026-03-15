@@ -7,6 +7,7 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
+
 [features]
 default = ["aadl"]
 oslc = ["dep:reqwest", "dep:urlencoding"]
@@ -19,9 +20,13 @@ serde_yaml = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 petgraph = { workspace = true }
+regex = { workspace = true }
+salsa = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }
 quick-xml = { workspace = true }
+rowan = { workspace = true }
+pulldown-cmark = { workspace = true }
 
 # OSLC client (optional, behind "oslc" feature)
 reqwest = { workspace = true, optional = true }
@@ -42,6 +47,9 @@ wiremock = "0.6"
 tokio = { workspace = true }
 tempfile = "3"
 serial_test = "3"
+
+[lints]
+workspace = true
 
 [[bench]]
 name = "core_benchmarks"

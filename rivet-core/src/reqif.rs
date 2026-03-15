@@ -1093,6 +1093,7 @@ mod tests {
         ]
     }
 
+    // rivet: verifies REQ-005
     #[test]
     #[cfg_attr(miri, ignore)] // quick-xml uses unsafe/SIMD internals that Miri cannot interpret
     fn test_export_produces_valid_xml() {
@@ -1112,6 +1113,7 @@ mod tests {
         assert!(xml.contains(REQIF_NAMESPACE));
     }
 
+    // rivet: verifies REQ-005
     #[test]
     #[cfg_attr(miri, ignore)] // quick-xml uses unsafe/SIMD internals that Miri cannot interpret
     fn test_roundtrip() {
@@ -1145,6 +1147,7 @@ mod tests {
         }
     }
 
+    // rivet: verifies REQ-005
     #[test]
     #[cfg_attr(miri, ignore)] // quick-xml uses unsafe/SIMD internals that Miri cannot interpret
     fn test_parse_minimal_reqif() {
@@ -1180,6 +1183,7 @@ mod tests {
     /// StrictDoc exports may contain duplicate ATTRIBUTE-DEFINITION-STRING
     /// elements with the same IDENTIFIER. Rivet should tolerate this by
     /// keeping the first occurrence.
+    // rivet: verifies REQ-005
     #[test]
     #[cfg_attr(miri, ignore)]
     fn test_duplicate_attribute_definitions() {
@@ -1226,6 +1230,7 @@ mod tests {
         assert_eq!(comp, Some(&serde_yaml::Value::String("Threads".into())));
     }
 
+    // rivet: verifies REQ-005
     #[test]
     #[cfg_attr(miri, ignore)]
     fn test_type_map_remaps_artifact_types() {

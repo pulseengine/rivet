@@ -27,6 +27,7 @@ fn make_commit(
 
 /// Create 4 commits (linked, broken-ref, orphan, exempt-by-type), run
 /// `analyze_commits`, and assert all 5 report sections are correct.
+// rivet: verifies REQ-017
 #[test]
 fn full_analysis_reports() {
     // Known artifact IDs in the store.
@@ -137,6 +138,7 @@ fn full_analysis_reports() {
 
 /// Verify that artifacts listed in `trace_exempt_artifacts` do not appear in
 /// the `unimplemented` set, even when no commit references them.
+// rivet: verifies REQ-017
 #[test]
 fn trace_exempt_artifacts_excluded_from_unimplemented() {
     let known_ids: HashSet<String> = ["REQ-001", "REQ-002", "FEAT-010"]
@@ -195,6 +197,7 @@ fn trace_exempt_artifacts_excluded_from_unimplemented() {
 
 /// Verify that a commit with the skip trailer (`has_skip_trailer = true`) is
 /// classified as exempt regardless of its conventional-commit type.
+// rivet: verifies REQ-017
 #[test]
 fn skip_trailer_exemption() {
     let known_ids: HashSet<String> = ["REQ-001"].iter().map(|s| s.to_string()).collect();

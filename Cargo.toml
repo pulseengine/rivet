@@ -13,6 +13,9 @@ edition = "2024"
 license = "Apache-2.0"
 rust-version = "1.89"
 
+[workspace.lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)', 'cfg(verus)'] }
+
 [workspace.dependencies]
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -26,8 +29,14 @@ thiserror = "2"
 # CLI
 clap = { version = "4", features = ["derive"] }
 
+# Regex
+regex = "1"
+
 # Graph
-petgraph = "0.6"
+petgraph = "0.7"
+
+# Incremental computation
+salsa = "0.26"
 
 # Logging
 log = "0.4"
@@ -46,6 +55,12 @@ quick-xml = { version = "0.37", features = ["serialize", "overlapped-lists"] }
 # WASM component model
 wasmtime = { version = "42", features = ["component-model"] }
 wasmtime-wasi = "42"
+
+# Lossless syntax trees
+rowan = "0.16"
+
+# Markdown rendering
+pulldown-cmark = { version = "0.12", default-features = false, features = ["html"] }
 
 # Benchmarking
 criterion = { version = "0.5", features = ["html_reports"] }

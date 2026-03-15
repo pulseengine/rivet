@@ -65,4 +65,15 @@ commits:
      UCA-C-7, UCA-C-8, UCA-C-9, UCA-D-1, UCA-D-2, UCA-I-1, UCA-I-2, UCA-I-3, UCA-I-4, UCA-L-1,
      UCA-L-2, UCA-L-3, UCA-L-4, UCA-L-5, UCA-O-1, UCA-O-10, UCA-O-2, UCA-O-3, UCA-O-4, UCA-O-5,
      UCA-O-6, UCA-O-7, UCA-O-8, UCA-O-9, UCA-Q-1, UCA-Q-2, UCA-Q-3, UCA-Q-4, UCA-Q-5, UCA-Q-6,
-     UCA-Q-7]
+     UCA-Q-7,
+     # Phase 3 STPA and draft artifacts (no code implementation yet)
+     CC-C-10, CC-C-11, CC-C-12, CC-C-13, CC-C-14, CC-C-15, CC-C-16, CC-C-17,
+     H-9, H-9.1, H-9.2, H-10, H-11, H-11.1, H-11.2, H-12,
+     SC-11, SC-12, SC-13, SC-14,
+     UCA-C-10, UCA-C-11, UCA-C-12, UCA-C-13, UCA-C-14, UCA-C-15, UCA-C-16, UCA-C-17,
+     # Phase 3 planned features (draft, not yet implemented in code)
+     FEAT-043, FEAT-044, FEAT-045, FEAT-047, FEAT-048, FEAT-049, FEAT-050, FEAT-051,
+     FEAT-052, FEAT-053, FEAT-054, FEAT-055, FEAT-056, FEAT-057,
+     # Phase 3 planned requirements and decisions (draft)
+     DD-021, DD-022, DD-024, DD-025, DD-026, DD-027, DD-031, DD-032, DD-033, DD-034,
+     REQ-026, REQ-027, REQ-029]

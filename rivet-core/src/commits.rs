@@ -133,30 +133,98 @@ pub fn parse_trailers(message: &str) -> BTreeMap<String, Vec<String>> {
     result
 }
 
+/// Expand range references like "FEAT-052..056" into individual IDs.
+///
+/// Supports: `PREFIX-NNN..MMM` where NNN <= MMM and both are numeric.
+/// The prefix may contain multiple hyphen-separated segments (e.g. `UCA-C`).
+/// Returns the original string unchanged if it is not a valid range.
+///
+/// Zero-padding width is preserved from the start number.
+pub fn expand_artifact_range(reference: &str) -> Vec<String> {
+    // Look for ".." in the reference
+    let Some(dotdot) = reference.find("..") else {
+        return vec![reference.to_string()];
+    };
+
+    let before_dots = &reference[..dotdot];
+    let after_dots = &reference[dotdot + 2..];
+
+    // `before_dots` should be something like "FEAT-052" or "UCA-C-10"
+    // Find the last hyphen to split prefix from start number
+    let Some(last_hyphen) = before_dots.rfind('-') else {
+        return vec![reference.to_string()];
+    };
+
+    let prefix = &before_dots[..last_hyphen]; // e.g. "FEAT" or "UCA-C"
+    let start_str = &before_dots[last_hyphen + 1..]; // e.g. "052" or "10"
+
+    // Both start and end must be numeric
+    if start_str.is_empty()
+        || !start_str.chars().all(|c| c.is_ascii_digit())
+        || after_dots.is_empty()
+        || !after_dots.chars().all(|c| c.is_ascii_digit())
+    {
+        return vec![reference.to_string()];
+    }
+
+    let Ok(start) = start_str.parse::<u64>() else {
+        return vec![reference.to_string()];
+    };
+    let Ok(end) = after_dots.parse::<u64>() else {
+        return vec![reference.to_string()];
+    };
+
+    // Start must be <= end
+    if start > end {
+        return vec![reference.to_string()];
+    }
+
+    // Determine zero-padding width from the start number string
+    let pad_width = start_str.len();
+
+    (start..=end)
+        .map(|n| format!("{prefix}-{n:0>width$}", width = pad_width))
+        .collect()
+}
+
 /// Extract artifact IDs from a trailer value.
 ///
 /// Artifact IDs are uppercase-letter prefix + hyphen + digits, e.g.
 /// "REQ-001", "FEAT-42", "DD-007".  Multiple IDs can appear separated
-/// by commas or whitespace.
+/// by commas or whitespace.  Range syntax like "FEAT-052..056" is
+/// expanded into individual IDs.
 pub fn extract_artifact_ids(value: &str) -> Vec<String> {
     let mut ids = Vec::new();
     // Split on commas and whitespace
     for token in value.split(|c: char| c == ',' || c.is_ascii_whitespace()) {
         let token = token.trim();
-        if is_artifact_id(token) {
-            ids.push(token.to_string());
+        if token.is_empty() {
+            continue;
+        }
+        // Try range expansion first
+        let expanded = expand_artifact_range(token);
+        for id in &expanded {
+            if is_artifact_id(id) {
+                ids.push(id.clone());
+            }
         }
     }
     ids
 }
 
-/// Check whether a string looks like an artifact ID (PREFIX-DIGITS).
+/// Check whether a string looks like an artifact ID.
+///
+/// Matches simple IDs like `REQ-001` and compound-prefix IDs like
+/// `UCA-C-10`.  The last hyphen-separated segment must be all digits;
+/// all preceding segments must be non-empty uppercase ASCII.
 fn is_artifact_id(s: &str) -> bool {
-    if let Some(pos) = s.find('-') {
+    if let Some(pos) = s.rfind('-') {
         let prefix = &s[..pos];
         let suffix = &s[pos + 1..];
         !prefix.is_empty()
-            && prefix.chars().all(|c| c.is_ascii_uppercase())
+            && prefix
+                .split('-')
+                .all(|seg| !seg.is_empty() && seg.chars().all(|c| c.is_ascii_uppercase()))
             && !suffix.is_empty()
             && suffix.chars().all(|c| c.is_ascii_digit())
     } else {
@@ -449,6 +517,7 @@ mod tests {
 
     // -- parse_commit_type --
 
+    // rivet: verifies REQ-017
     #[test]
     fn parse_type_feat() {
         assert_eq!(parse_commit_type("feat: add thing"), Some("feat".into()));
@@ -474,6 +543,7 @@ mod tests {
 
     // -- parse_trailers --
 
+    // rivet: verifies REQ-017
     #[test]
     fn parse_trailers_basic() {
         let msg = "subject\n\nSome body text.\n\nImplements: REQ-001\nFixes: REQ-002, REQ-003";
@@ -501,6 +571,7 @@ mod tests {
 
     // -- extract_artifact_ids --
 
+    // rivet: verifies REQ-017
     #[test]
     fn extract_single_id() {
         assert_eq!(extract_artifact_ids("REQ-001"), vec!["REQ-001"]);
@@ -529,6 +600,7 @@ mod tests {
 
     // -- parse_commit_message --
 
+    // rivet: verifies REQ-017
     #[test]
     fn parse_message_with_trailers() {
         let msg = "feat: add parser\n\nDetailed description.\n\nImplements: REQ-001, REQ-002\nFixes: DD-003";
@@ -563,6 +635,7 @@ mod tests {
 
     // -- parse_git_log_entry --
 
+    // rivet: verifies REQ-017
     #[test]
     fn parse_git_log_entry_basic() {
         let mut trailer_map = BTreeMap::new();
@@ -593,6 +666,7 @@ mod tests {
 
     // -- classify_commit_refs --
 
+    // rivet: verifies REQ-017
     #[test]
     fn classify_linked() {
         let mut refs = BTreeMap::new();
@@ -692,6 +766,7 @@ mod tests {
 
     // -- analyze_commits --
 
+    // rivet: verifies REQ-017
     #[test]
     fn analyze_full_scenario() {
         let known_ids: HashSet<String> = ["REQ-001", "REQ-002", "FEAT-010"]
@@ -796,5 +871,108 @@ mod tests {
         // Unimplemented: REQ-002 is not covered, FEAT-010 is trace-exempt
         assert!(analysis.unimplemented.contains("REQ-002"));
         assert!(!analysis.unimplemented.contains("FEAT-010"));
+    }
+
+    // -- expand_artifact_range --
+
+    #[test]
+    fn range_feat_052_to_056() {
+        assert_eq!(
+            expand_artifact_range("FEAT-052..056"),
+            vec!["FEAT-052", "FEAT-053", "FEAT-054", "FEAT-055", "FEAT-056"]
+        );
+    }
+
+    #[test]
+    fn range_req_001_to_003() {
+        assert_eq!(
+            expand_artifact_range("REQ-001..003"),
+            vec!["REQ-001", "REQ-002", "REQ-003"]
+        );
+    }
+
+    #[test]
+    fn range_dd_018_to_021() {
+        assert_eq!(
+            expand_artifact_range("DD-018..021"),
+            vec!["DD-018", "DD-019", "DD-020", "DD-021"]
+        );
+    }
+
+    #[test]
+    fn range_no_zero_padding() {
+        assert_eq!(
+            expand_artifact_range("H-9..12"),
+            vec!["H-9", "H-10", "H-11", "H-12"]
+        );
+    }
+
+    #[test]
+    fn range_compound_prefix() {
+        assert_eq!(
+            expand_artifact_range("UCA-C-10..17"),
+            vec![
+                "UCA-C-10", "UCA-C-11", "UCA-C-12", "UCA-C-13", "UCA-C-14", "UCA-C-15", "UCA-C-16",
+                "UCA-C-17",
+            ]
+        );
+    }
+
+    #[test]
+    fn range_same_start_and_end() {
+        assert_eq!(expand_artifact_range("FEAT-001..001"), vec!["FEAT-001"]);
+    }
+
+    #[test]
+    fn range_start_greater_than_end() {
+        assert_eq!(
+            expand_artifact_range("FEAT-056..052"),
+            vec!["FEAT-056..052"]
+        );
+    }
+
+    #[test]
+    fn range_no_range_plain_id() {
+        assert_eq!(expand_artifact_range("FEAT-052"), vec!["FEAT-052"]);
+    }
+
+    #[test]
+    fn range_not_a_range_garbage() {
+        assert_eq!(expand_artifact_range("not-a-range"), vec!["not-a-range"]);
+    }
+
+    // -- is_artifact_id with compound prefixes --
+
+    #[test]
+    fn artifact_id_compound_prefix() {
+        assert!(is_artifact_id("UCA-C-10"));
+        assert!(is_artifact_id("UCA-C-1"));
+    }
+
+    // -- integration: extract_artifact_ids with ranges --
+
+    #[test]
+    fn extract_ids_with_range() {
+        let ids = extract_artifact_ids("FEAT-052..056, REQ-001");
+        assert_eq!(
+            ids,
+            vec![
+                "FEAT-052", "FEAT-053", "FEAT-054", "FEAT-055", "FEAT-056", "REQ-001",
+            ]
+        );
+    }
+
+    #[test]
+    fn extract_ids_range_in_commit_message() {
+        let msg = "feat: implement batch\n\nImplements: FEAT-052..056";
+        let mut trailer_map = BTreeMap::new();
+        trailer_map.insert("Implements".into(), "implements".into());
+
+        let (refs, _skip) = parse_commit_message(msg, &trailer_map, "Trace: skip");
+        let impl_ids = refs.get("implements").unwrap();
+        assert_eq!(
+            impl_ids,
+            &vec!["FEAT-052", "FEAT-053", "FEAT-054", "FEAT-055", "FEAT-056"]
+        );
     }
 }

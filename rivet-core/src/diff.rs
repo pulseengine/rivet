@@ -287,6 +287,7 @@ mod tests {
         }
     }
 
+    // rivet: verifies REQ-001
     #[test]
     fn empty_diff() {
         let a = Store::new();
@@ -296,6 +297,7 @@ mod tests {
         assert_eq!(diff.unchanged, 0);
     }
 
+    // rivet: verifies REQ-001
     #[test]
     fn identical_stores() {
         let mut a = Store::new();
@@ -307,6 +309,7 @@ mod tests {
         assert_eq!(diff.unchanged, 1);
     }
 
+    // rivet: verifies REQ-001
     #[test]
     fn added_artifact() {
         let base = Store::new();
@@ -319,6 +322,7 @@ mod tests {
         assert!(diff.modified.is_empty());
     }
 
+    // rivet: verifies REQ-001
     #[test]
     fn removed_artifact() {
         let mut base = Store::new();
@@ -330,6 +334,7 @@ mod tests {
         assert_eq!(diff.removed, vec!["R-1".to_string()]);
     }
 
+    // rivet: verifies REQ-001
     #[test]
     fn modified_title() {
         let mut base = Store::new();
