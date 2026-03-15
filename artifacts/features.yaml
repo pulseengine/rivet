@@ -611,6 +611,9 @@ artifacts:
       - type: satisfies
         target: REQ-020
     tags: [cross-repo, dashboard]
+    description: >
+      Dashboard section for browsing external project artifacts with sync
+      status, cross-repo link navigation, and conditional nav entry.
 
   - id: FEAT-040
     type: feature

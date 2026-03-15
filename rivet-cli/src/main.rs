@@ -1158,7 +1158,8 @@ fn cmd_validate(
 
     // Lifecycle completeness check
     let all_artifacts: Vec<_> = store.iter().cloned().collect();
-    let lifecycle_gaps = rivet_core::lifecycle::check_lifecycle_completeness(&all_artifacts);
+    let lifecycle_gaps =
+        rivet_core::lifecycle::check_lifecycle_completeness(&all_artifacts, &schema, &graph);
 
     let errors = diagnostics
         .iter()
