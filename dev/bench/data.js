@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1773601353042,
+  "lastUpdate": 1773605198781,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
@@ -575,6 +575,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1475872,
             "range": "± 38788",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8b2d5c5250a419da11826df4656b213d2d415627",
+          "message": "fix: full release workflow with spar WASM build (#31)\n\nProper multi-job release workflow:\n- build-binaries: 5 platforms with cross-compilation\n- build-compliance: HTML export via compliance action\n- build-test-evidence: clones spar, builds WASM, runs --all-features tests\n- create-release: collects all assets + SHA256SUMS\n\nCo-authored-by: Test <test@test.com>\nCo-authored-by: Claude Opus 4.6 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-03-15T21:00:27+01:00",
+          "tree_id": "98beb53c68cb6e2bdd007c952f63044bc51d26de",
+          "url": "https://github.com/pulseengine/rivet/commit/8b2d5c5250a419da11826df4656b213d2d415627"
+        },
+        "date": 1773605198363,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 82834,
+            "range": "± 526",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 1177728,
+            "range": "± 10110",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 52108103,
+            "range": "± 1509384",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2374,
+            "range": "± 15",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 29336,
+            "range": "± 296",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 433256,
+            "range": "± 2768",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 114,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 114,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 114,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 904065,
+            "range": "± 5213",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 193299,
+            "range": "± 4217",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 2219000,
+            "range": "± 8988",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 30633433,
+            "range": "± 4088994",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 42681,
+            "range": "± 584",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 480232,
+            "range": "± 2431",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 4905919,
+            "range": "± 173854",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4519,
+            "range": "± 17",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 60838,
+            "range": "± 226",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 802184,
+            "range": "± 6199",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 61909,
+            "range": "± 372",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 685792,
+            "range": "± 5113",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7406505,
+            "range": "± 150686",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 802,
+            "range": "± 30",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7752,
+            "range": "± 55",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 115960,
+            "range": "± 1269",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 23049,
+            "range": "± 104",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 159996,
+            "range": "± 1078",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1469864,
+            "range": "± 23237",
             "unit": "ns/iter"
           }
         ]
