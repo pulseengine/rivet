@@ -2761,11 +2761,12 @@ fn cmd_schema(cli: &Cli, action: &SchemaAction) -> Result<bool> {
 
 /// Generate .rivet/agent-context.md from project state.
 fn cmd_context(cli: &Cli) -> Result<bool> {
-    let config_path = cli.project.join("rivet.yaml");
-    let config = rivet_core::load_project_config(&config_path)
-        .with_context(|| format!("loading {}", config_path.display()))?;
-
-    let (store, schema, graph, doc_store) = load_project_with_docs(cli)?;
+    let ctx = ProjectContext::load_with_docs(cli)?;
+    let config = ctx.config;
+    let store = ctx.store;
+    let schema = ctx.schema;
+    let graph = ctx.graph;
+    let doc_store = ctx.doc_store.unwrap_or_default();
     let diagnostics = validate::validate(&store, &schema, &graph);
     let coverage_report = coverage::compute_coverage(&store, &schema, &graph);
 
@@ -3507,137 +3508,79 @@ fn cmd_baseline_list(cli: &Cli) -> Result<bool> {
     Ok(true)
 }
 
-fn load_project(cli: &Cli) -> Result<(Store, rivet_core::schema::Schema, LinkGraph)> {
-    let config_path = cli.project.join("rivet.yaml");
-    let config = rivet_core::load_project_config(&config_path)
-        .with_context(|| format!("loading {}", config_path.display()))?;
-
-    let schemas_dir = resolve_schemas_dir(cli);
-    let schema = rivet_core::load_schemas(&config.project.schemas, &schemas_dir)
-        .context("loading schemas")?;
-
-    let mut store = Store::new();
-    for source in &config.sources {
-        let artifacts = rivet_core::load_artifacts(source, &cli.project)
-            .with_context(|| format!("loading source '{}'", source.path))?;
-        for artifact in artifacts {
-            store.upsert(artifact);
-        }
-    }
-
-    let graph = LinkGraph::build(&store, &schema);
-    Ok((store, schema, graph))
+struct ProjectContext {
+    config: ProjectConfig,
+    store: Store,
+    schema: rivet_core::schema::Schema,
+    graph: LinkGraph,
+    doc_store: Option<DocumentStore>,
+    result_store: Option<ResultStore>,
 }
 
-fn load_project_with_docs(
-    cli: &Cli,
-) -> Result<(Store, rivet_core::schema::Schema, LinkGraph, DocumentStore)> {
-    let config_path = cli.project.join("rivet.yaml");
-    let config = rivet_core::load_project_config(&config_path)
-        .with_context(|| format!("loading {}", config_path.display()))?;
+impl ProjectContext {
+    /// Load project with artifacts, schema, and link graph.
+    fn load(cli: &Cli) -> Result<Self> {
+        let config_path = cli.project.join("rivet.yaml");
+        let config = rivet_core::load_project_config(&config_path)
+            .with_context(|| format!("loading {}", config_path.display()))?;
 
-    let schemas_dir = resolve_schemas_dir(cli);
-    let schema = rivet_core::load_schemas(&config.project.schemas, &schemas_dir)
-        .context("loading schemas")?;
+        let schemas_dir = resolve_schemas_dir(cli);
+        let schema = rivet_core::load_schemas(&config.project.schemas, &schemas_dir)
+            .context("loading schemas")?;
 
-    let mut store = Store::new();
-    for source in &config.sources {
-        let artifacts = rivet_core::load_artifacts(source, &cli.project)
-            .with_context(|| format!("loading source '{}'", source.path))?;
-        for artifact in artifacts {
-            store.upsert(artifact);
+        let mut store = Store::new();
+        for source in &config.sources {
+            let artifacts = rivet_core::load_artifacts(source, &cli.project)
+                .with_context(|| format!("loading source '{}'", source.path))?;
+            for artifact in artifacts {
+                store.upsert(artifact);
+            }
         }
+
+        let graph = LinkGraph::build(&store, &schema);
+        Ok(Self {
+            config,
+            store,
+            schema,
+            graph,
+            doc_store: None,
+            result_store: None,
+        })
     }
 
-    let graph = LinkGraph::build(&store, &schema);
+    /// Load project with artifacts, schema, link graph, and documents.
+    fn load_with_docs(cli: &Cli) -> Result<Self> {
+        let mut ctx = Self::load(cli)?;
 
-    // Load documents from configured directories.
-    let mut doc_store = DocumentStore::new();
-    for docs_path in &config.docs {
-        let dir = cli.project.join(docs_path);
-        let docs = document::load_documents(&dir)
-            .with_context(|| format!("loading docs from '{docs_path}'"))?;
-        for doc in docs {
-            doc_store.insert(doc);
+        let mut doc_store = DocumentStore::new();
+        for docs_path in &ctx.config.docs {
+            let dir = cli.project.join(docs_path);
+            let docs = document::load_documents(&dir)
+                .with_context(|| format!("loading docs from '{docs_path}'"))?;
+            for doc in docs {
+                doc_store.insert(doc);
+            }
         }
+        ctx.doc_store = Some(doc_store);
+        Ok(ctx)
     }
 
-    Ok((store, schema, graph, doc_store))
-}
+    /// Load project with artifacts, schema, link graph, documents, and test results.
+    fn load_full(cli: &Cli) -> Result<Self> {
+        let mut ctx = Self::load_with_docs(cli)?;
 
-#[allow(clippy::type_complexity)]
-fn load_project_full(
-    cli: &Cli,
-) -> Result<(
-    Store,
-    rivet_core::schema::Schema,
-    LinkGraph,
-    DocumentStore,
-    ResultStore,
-    String,
-    PathBuf,
-    PathBuf,
-    Vec<PathBuf>,
-)> {
-    let config_path = cli.project.join("rivet.yaml");
-    let config = rivet_core::load_project_config(&config_path)
-        .with_context(|| format!("loading {}", config_path.display()))?;
-
-    let schemas_dir = resolve_schemas_dir(cli);
-    let schema = rivet_core::load_schemas(&config.project.schemas, &schemas_dir)
-        .context("loading schemas")?;
-
-    let mut store = Store::new();
-    for source in &config.sources {
-        let artifacts = rivet_core::load_artifacts(source, &cli.project)
-            .with_context(|| format!("loading source '{}'", source.path))?;
-        for artifact in artifacts {
-            store.upsert(artifact);
+        let mut result_store = ResultStore::new();
+        if let Some(ref results_path) = ctx.config.results {
+            let dir = cli.project.join(results_path);
+            let runs = results::load_results(&dir)
+                .with_context(|| format!("loading results from '{results_path}'"))?;
+            for run in runs {
+                result_store.insert(run);
+            }
         }
+        ctx.result_store = Some(result_store);
+        Ok(ctx)
     }
-
-    let graph = LinkGraph::build(&store, &schema);
-
-    // Load documents
-    let mut doc_store = DocumentStore::new();
-    let mut doc_dirs = Vec::new();
-    for docs_path in &config.docs {
-        let dir = cli.project.join(docs_path);
-        if dir.is_dir() {
-            doc_dirs.push(dir.clone());
-        }
-        let docs = document::load_documents(&dir)
-            .with_context(|| format!("loading docs from '{docs_path}'"))?;
-        for doc in docs {
-            doc_store.insert(doc);
-        }
-    }
-
-    // Load test results
-    let mut result_store = ResultStore::new();
-    if let Some(ref results_path) = config.results {
-        let dir = cli.project.join(results_path);
-        let runs = results::load_results(&dir)
-            .with_context(|| format!("loading results from '{results_path}'"))?;
-        for run in runs {
-            result_store.insert(run);
-        }
-    }
-
-    let project_name = config.project.name.clone();
-    let project_path = std::fs::canonicalize(&cli.project).unwrap_or_else(|_| cli.project.clone());
-
-    Ok((
-        store,
-        schema,
-        graph,
-        doc_store,
-        result_store,
-        project_name,
-        project_path,
-        schemas_dir,
-        doc_dirs,
-    ))
 }
 
 fn print_stats(store: &Store) {
@@ -3717,34 +3660,6 @@ fn parse_key_val_mutation(s: &str) -> Result<(String, String), String> {
     Ok((s[..pos].to_string(), s[pos + 1..].to_string()))
 }
 
-/// Load project returning (store, schema) without building the link graph.
-fn load_project_config_and_store(
-    cli: &Cli,
-) -> Result<(
-    Store,
-    rivet_core::schema::Schema,
-    rivet_core::model::ProjectConfig,
-)> {
-    let config_path = cli.project.join("rivet.yaml");
-    let config = rivet_core::load_project_config(&config_path)
-        .with_context(|| format!("loading {}", config_path.display()))?;
-
-    let schemas_dir = resolve_schemas_dir(cli);
-    let schema = rivet_core::load_schemas(&config.project.schemas, &schemas_dir)
-        .context("loading schemas")?;
-
-    let mut store = Store::new();
-    for source in &config.sources {
-        let artifacts = rivet_core::load_artifacts(source, &cli.project)
-            .with_context(|| format!("loading source '{}'", source.path))?;
-        for artifact in artifacts {
-            store.upsert(artifact);
-        }
-    }
-
-    Ok((store, schema, config))
-}
-
 /// Print the next available ID for a given artifact type or prefix.
 fn cmd_next_id(
     cli: &Cli,
@@ -3754,7 +3669,8 @@ fn cmd_next_id(
 ) -> Result<bool> {
     use rivet_core::mutate;
 
-    let (store, _schema, _config) = load_project_config_and_store(cli)?;
+    let ctx = ProjectContext::load(cli)?;
+    let store = ctx.store;
 
     let resolved_prefix = match (artifact_type, prefix) {
         (Some(t), _) => mutate::prefix_for_type(t, &store),
@@ -3791,7 +3707,8 @@ fn cmd_add(
     use rivet_core::mutate;
     use std::collections::BTreeMap;
 
-    let (store, schema, _config) = load_project_config_and_store(cli)?;
+    let ctx = ProjectContext::load(cli)?;
+    let (store, schema) = (ctx.store, ctx.schema);
 
     // Resolve prefix for the type
     let prefix = mutate::prefix_for_type(artifact_type, &store);
@@ -3846,7 +3763,8 @@ fn cmd_link(cli: &Cli, source_id: &str, link_type: &str, target_id: &str) -> Res
     use rivet_core::model::Link;
     use rivet_core::mutate;
 
-    let (store, schema, _config) = load_project_config_and_store(cli)?;
+    let ctx = ProjectContext::load(cli)?;
+    let (store, schema) = (ctx.store, ctx.schema);
 
     // Validate before writing (DD-028)
     mutate::validate_link(source_id, link_type, target_id, &store, &schema)
@@ -3872,7 +3790,8 @@ fn cmd_link(cli: &Cli, source_id: &str, link_type: &str, target_id: &str) -> Res
 fn cmd_unlink(cli: &Cli, source_id: &str, link_type: &str, target_id: &str) -> Result<bool> {
     use rivet_core::mutate;
 
-    let (store, _schema, _config) = load_project_config_and_store(cli)?;
+    let ctx = ProjectContext::load(cli)?;
+    let store = ctx.store;
 
     // Validate the link exists
     mutate::validate_unlink(source_id, link_type, target_id, &store)
@@ -3901,7 +3820,8 @@ fn cmd_modify(
 ) -> Result<bool> {
     use rivet_core::mutate::{self, ModifyParams};
 
-    let (store, schema, _config) = load_project_config_and_store(cli)?;
+    let ctx = ProjectContext::load(cli)?;
+    let (store, schema) = (ctx.store, ctx.schema);
 
     let params = ModifyParams {
         set_status: set_status.map(|s| s.to_string()),
@@ -3929,8 +3849,8 @@ fn cmd_modify(
 fn cmd_remove(cli: &Cli, id: &str, force: bool) -> Result<bool> {
     use rivet_core::mutate;
 
-    let (store, schema, _config) = load_project_config_and_store(cli)?;
-    let graph = LinkGraph::build(&store, &schema);
+    let ctx = ProjectContext::load(cli)?;
+    let (store, _schema, graph) = (ctx.store, ctx.schema, ctx.graph);
 
     // Validate before writing (DD-028)
     mutate::validate_remove(id, force, &store, &graph).context("validation failed")?;
