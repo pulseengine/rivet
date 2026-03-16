@@ -9,14 +9,19 @@
 /// Enables tables, strikethrough, and task lists on top of the CommonMark base.
 /// Used for artifact descriptions, field values, and document content.
 pub fn render_markdown(input: &str) -> String {
-    use pulldown_cmark::{Options, Parser, html};
+    use pulldown_cmark::{Event, Options, Parser, html};
 
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_STRIKETHROUGH);
     options.insert(Options::ENABLE_TASKLISTS);
 
-    let parser = Parser::new_ext(input, options);
+    // Filter out raw HTML events to prevent XSS via markdown input.
+    // This strips <script>, <iframe>, and any other raw HTML while
+    // keeping the rendered markdown HTML produced by pulldown-cmark.
+    let parser = Parser::new_ext(input, options)
+        .filter(|event| !matches!(event, Event::Html(_) | Event::InlineHtml(_)));
+
     let mut html_output = String::new();
     html::push_html(&mut html_output, parser);
     html_output
@@ -106,6 +111,37 @@ mod tests {
         let input = "- [x] Done\n- [ ] Todo";
         let html = render_markdown(input);
         assert!(html.contains("type=\"checkbox\""), "got: {html}");
+    }
+
+    #[test]
+    fn raw_html_script_is_stripped() {
+        let html = render_markdown("<script>alert(1)</script>");
+        assert!(
+            !html.contains("<script>"),
+            "raw <script> must be stripped from markdown output, got: {html}"
+        );
+        assert!(
+            !html.contains("</script>"),
+            "closing </script> must be stripped, got: {html}"
+        );
+    }
+
+    #[test]
+    fn inline_html_is_stripped() {
+        let html = render_markdown("Hello <b>bold</b> world");
+        assert!(
+            !html.contains("<b>"),
+            "inline HTML tags must be stripped, got: {html}"
+        );
+    }
+
+    #[test]
+    fn raw_iframe_is_stripped() {
+        let html = render_markdown("<iframe src=\"https://evil.example.com\"></iframe>");
+        assert!(
+            !html.contains("<iframe"),
+            "raw <iframe> must be stripped from markdown output, got: {html}"
+        );
     }
 
     #[test]

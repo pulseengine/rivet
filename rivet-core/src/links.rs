@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use petgraph::graph::{DiGraph, NodeIndex};
 
@@ -149,24 +149,23 @@ impl LinkGraph {
     /// Compute all artifact IDs reachable from a given starting artifact
     /// following a specific link type.
     pub fn reachable(&self, start: &str, link_type: &str) -> Vec<ArtifactId> {
-        let mut visited = Vec::new();
-        let mut stack = vec![start.to_string()];
+        let mut visited = HashSet::new();
+        let mut queue = VecDeque::new();
+        queue.push_back(start.to_string());
 
-        while let Some(current) = stack.pop() {
-            if visited.contains(&current) {
+        while let Some(current) = queue.pop_front() {
+            if !visited.insert(current.clone()) {
                 continue;
             }
-            visited.push(current.clone());
-
             for link in self.links_from(&current) {
                 if link.link_type == link_type && !visited.contains(&link.target) {
-                    stack.push(link.target.clone());
+                    queue.push_back(link.target.clone());
                 }
             }
         }
 
         // Remove the start node from results
-        visited.retain(|id| id != start);
-        visited
+        visited.remove(start);
+        visited.into_iter().collect()
     }
 }

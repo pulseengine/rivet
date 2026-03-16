@@ -185,14 +185,15 @@ impl ResultStore {
 }
 
 /// Load all test run YAML files from a directory.
-pub fn load_results(dir: &Path) -> anyhow::Result<Vec<TestRun>> {
+pub fn load_results(dir: &Path) -> Result<Vec<TestRun>, crate::error::Error> {
     let mut runs = Vec::new();
 
     if !dir.exists() {
         return Ok(runs);
     }
 
-    let mut entries: Vec<_> = std::fs::read_dir(dir)?
+    let mut entries: Vec<_> = std::fs::read_dir(dir)
+        .map_err(|e| crate::error::Error::Results(format!("{}: {e}", dir.display())))?
         .filter_map(|e| e.ok())
         .filter(|e| {
             let p = e.path();
@@ -203,9 +204,10 @@ pub fn load_results(dir: &Path) -> anyhow::Result<Vec<TestRun>> {
 
     for entry in entries {
         let path = entry.path();
-        let content = std::fs::read_to_string(&path)?;
+        let content = std::fs::read_to_string(&path)
+            .map_err(|e| crate::error::Error::Results(format!("{}: {e}", path.display())))?;
         let file: TestRunFile = serde_yaml::from_str(&content)
-            .map_err(|e| anyhow::anyhow!("{}: {e}", path.display()))?;
+            .map_err(|e| crate::error::Error::Results(format!("{}: {e}", path.display())))?;
         runs.push(TestRun {
             run: file.run,
             results: file.results,

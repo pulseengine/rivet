@@ -307,7 +307,7 @@ artifacts:
   - id: FEAT-020
     type: feature
     title: AADL browser rendering (spar WASM)
-    status: draft
+    status: approved
     description: >
       Render AADL component diagrams in the dashboard using a spar WASM
       module compiled for the browser. Provides interactive visualization

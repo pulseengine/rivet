@@ -388,10 +388,24 @@ impl WasmAdapter {
 
         match result {
             Ok(wit_artifacts) => {
-                let artifacts = wit_artifacts
+                // Warn on suspiciously large result sets (potential DoS).
+                const MAX_ARTIFACTS_WARN: usize = 10_000;
+                if wit_artifacts.len() > MAX_ARTIFACTS_WARN {
+                    log::warn!(
+                        "WASM adapter returned {} artifacts (threshold: {}), possible DoS",
+                        wit_artifacts.len(),
+                        MAX_ARTIFACTS_WARN,
+                    );
+                }
+
+                let artifacts: Vec<Artifact> = wit_artifacts
                     .into_iter()
                     .map(convert_wit_artifact_to_host)
                     .collect();
+
+                // Validate and sanitize each returned artifact.
+                let artifacts = validate_wasm_artifacts(artifacts)?;
+
                 Ok(artifacts)
             }
             Err(e) => Err(WasmError::Guest(format!("adapter import error: {:?}", e))),
@@ -761,6 +775,65 @@ fn yaml_value_to_wit_field(
 }
 
 // ---------------------------------------------------------------------------
+// WASM output validation
+// ---------------------------------------------------------------------------
+
+/// Validate and sanitize artifacts returned by a WASM adapter.
+///
+/// - Rejects artifacts with empty `id` or `artifact_type`.
+/// - Strips HTML tags from `title` and `description` fields to prevent XSS.
+fn validate_wasm_artifacts(artifacts: Vec<Artifact>) -> Result<Vec<Artifact>, WasmError> {
+    let mut result = Vec::with_capacity(artifacts.len());
+
+    for mut artifact in artifacts {
+        // Reject empty IDs
+        if artifact.id.trim().is_empty() {
+            return Err(WasmError::Guest(
+                "WASM adapter returned artifact with empty ID".into(),
+            ));
+        }
+
+        // Reject empty artifact types
+        if artifact.artifact_type.trim().is_empty() {
+            return Err(WasmError::Guest(format!(
+                "WASM adapter returned artifact '{}' with empty type",
+                artifact.id,
+            )));
+        }
+
+        // Sanitize title — strip HTML tags to prevent XSS
+        artifact.title = strip_html_from_text(&artifact.title);
+
+        // Sanitize description
+        if let Some(ref desc) = artifact.description {
+            artifact.description = Some(strip_html_from_text(desc));
+        }
+
+        result.push(artifact);
+    }
+
+    Ok(result)
+}
+
+/// Strip HTML tags from plain text fields to prevent XSS injection.
+///
+/// This is a basic sanitizer for text that should never contain HTML.
+/// It removes `<tag>` sequences but preserves the text content between them.
+fn strip_html_from_text(input: &str) -> String {
+    let mut result = String::with_capacity(input.len());
+    let mut in_tag = false;
+    for ch in input.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if !in_tag => result.push(ch),
+            _ => {}
+        }
+    }
+    result
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -936,6 +1009,81 @@ mod tests {
             FieldValue::TextList(list) => assert_eq!(list, vec!["a", "b"]),
             other => panic!("expected TextList, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn validate_wasm_artifacts_rejects_empty_id() {
+        let artifacts = vec![Artifact {
+            id: "".into(),
+            artifact_type: "requirement".into(),
+            title: "Test".into(),
+            description: None,
+            status: None,
+            tags: vec![],
+            links: vec![],
+            fields: std::collections::BTreeMap::new(),
+            source_file: None,
+        }];
+        let result = validate_wasm_artifacts(artifacts);
+        assert!(result.is_err());
+        assert!(
+            format!("{:?}", result.unwrap_err()).contains("empty ID"),
+            "should mention empty ID"
+        );
+    }
+
+    #[test]
+    fn validate_wasm_artifacts_rejects_empty_type() {
+        let artifacts = vec![Artifact {
+            id: "REQ-001".into(),
+            artifact_type: "".into(),
+            title: "Test".into(),
+            description: None,
+            status: None,
+            tags: vec![],
+            links: vec![],
+            fields: std::collections::BTreeMap::new(),
+            source_file: None,
+        }];
+        let result = validate_wasm_artifacts(artifacts);
+        assert!(result.is_err());
+        assert!(
+            format!("{:?}", result.unwrap_err()).contains("empty type"),
+            "should mention empty type"
+        );
+    }
+
+    #[test]
+    fn validate_wasm_artifacts_strips_html_from_title() {
+        let artifacts = vec![Artifact {
+            id: "REQ-001".into(),
+            artifact_type: "requirement".into(),
+            title: "<script>alert(1)</script>Safe Title".into(),
+            description: Some("<img onerror=alert(1)>Description".into()),
+            status: None,
+            tags: vec![],
+            links: vec![],
+            fields: std::collections::BTreeMap::new(),
+            source_file: None,
+        }];
+        let result = validate_wasm_artifacts(artifacts).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].title, "alert(1)Safe Title");
+        assert!(!result[0].title.contains("<script>"));
+        let desc = result[0].description.as_deref().unwrap();
+        assert!(!desc.contains("<img"));
+        assert!(desc.contains("Description"));
+    }
+
+    #[test]
+    fn strip_html_from_text_removes_tags() {
+        assert_eq!(strip_html_from_text("<b>bold</b>"), "bold");
+        assert_eq!(
+            strip_html_from_text("<script>evil()</script>safe"),
+            "evil()safe"
+        );
+        assert_eq!(strip_html_from_text("no tags here"), "no tags here");
+        assert_eq!(strip_html_from_text(""), "");
     }
 
     /// End-to-end: load the spar WASM component, preopen a directory with

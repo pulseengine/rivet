@@ -135,3 +135,57 @@ system-constraints:
       Rocq specifications must be generated from or validated against
       the Rust source via coq-of-rust, not hand-written independently.
     hazards: [H-12]
+
+  - id: SC-15
+    title: Rivet must HTML-escape all artifact content before rendering in dashboard or document views
+    description: >
+      Every artifact field value (title, description, custom fields) and
+      document body content must be HTML-escaped before insertion into
+      HTML output. Script tags, event handlers, and other HTML injection
+      vectors must be neutralized. The escaping must occur at the output
+      boundary (rendering), not at the input boundary (parsing), to
+      ensure defense-in-depth.
+    hazards: [H-13]
+
+  - id: SC-16
+    title: Rivet must validate WASM adapter outputs against the source data independently
+    description: >
+      After a WASM adapter returns imported artifacts, the host must
+      verify that: (a) the number of returned artifacts is consistent
+      with the source data size, (b) all returned artifact IDs conform
+      to expected patterns, (c) no artifact IDs were injected that do
+      not correspond to source records. Schema validation alone is
+      insufficient because a compromised adapter could produce
+      schema-conforming but fabricated artifacts.
+    hazards: [H-14]
+
+  - id: SC-17
+    title: Rivet commit analysis must validate extracted artifact IDs against the known artifact set before counting coverage
+    description: >
+      The commit traceability engine must not count artifact references
+      that do not resolve to known artifacts in the store as coverage.
+      The is_artifact_id() heuristic must be supplemented with a
+      store.contains() check. Unresolved references must be reported
+      as broken refs, not counted as coverage.
+    hazards: [H-15]
+
+  - id: SC-18
+    title: Rivet dashboard must report reload failures and indicate stale data state
+    description: >
+      When a dashboard reload fails (due to YAML parse errors, schema
+      load failures, or filesystem issues), the server must: (a) return
+      an error response to the reload request, (b) display a visible
+      "stale data" banner on all dashboard pages until a successful
+      reload occurs, (c) log the specific error that caused the reload
+      failure.
+    hazards: [H-16]
+
+  - id: SC-19
+    title: Rivet must not execute git clone/fetch against untrusted URLs without hook protection
+    description: >
+      The externals sync operation must validate git URLs against an
+      allowlist or require explicit user confirmation before cloning
+      new repositories. Git clone operations must disable hooks in the
+      cloned repository (--config core.hooksPath=/dev/null) to prevent
+      arbitrary code execution.
+    hazards: [H-17]

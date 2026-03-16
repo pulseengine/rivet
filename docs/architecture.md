@@ -405,6 +405,79 @@ Source scanner ([[REQ-026]], [[DD-021]], [[FEAT-043]]) extracting traceability
 markers from test code. Ephemeral injection into the link graph, same pattern
 as commit traceability ([[DD-012]]).
 
+### 8.8 Security Hardening
+
+STPA-Sec analysis (H-13, H-14, H-17) identified four attack surfaces requiring
+hardening in the current architecture.
+
+#### 8.8.1 Content-Security-Policy Headers
+
+The dashboard server (serve.rs) must set a strict CSP header on all responses:
+
+```
+Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'
+```
+
+This mitigates XSS from H-13 even if HTML escaping is missed in one rendering
+path. The `'unsafe-inline'` exception for styles is required by the current
+inline CSS approach and should be removed once styles are extracted to a file.
+
+**STPA coverage:** SC-15 (HTML-escape all content), H-13 (XSS via unescaped
+artifact content).
+
+#### 8.8.2 Markdown HTML Sanitization
+
+The pulldown-cmark renderer in document.rs must sanitize raw HTML blocks. Two
+layers of defense:
+
+1. **Output escaping** -- All artifact field values (title, description, custom
+   fields) must be HTML-escaped at the output boundary before interpolation into
+   HTML. The `html_escape()` function in document.rs handles `&`, `<`, `>`, `"`.
+   serve.rs routes must use this function for all artifact-derived content.
+
+2. **Markdown raw HTML filtering** -- pulldown-cmark's `ENABLE_STRIKETHROUGH`
+   and similar extensions are safe, but `Event::Html` and `Event::InlineHtml`
+   events must be escaped or stripped. Image URLs must be restricted to
+   `http://`, `https://`, and relative paths (no `javascript:` or `data:`
+   schemes).
+
+**STPA coverage:** SC-15, H-13.1 (script injection), H-13.2 (image URL
+injection).
+
+#### 8.8.3 Git Clone Hook Protection
+
+The externals module (externals.rs) executes `git clone` and `git fetch` for
+cross-repo artifact linking ([[REQ-020]]). To prevent arbitrary code execution
+via git hooks (H-17), all git operations must:
+
+1. Pass `--config core.hooksPath=/dev/null` to disable post-checkout and other
+   hooks in cloned repositories.
+2. Use `--depth 1` for initial clones when only HEAD is needed, reducing the
+   attack surface from malicious repository history.
+3. Log the URL and commit SHA being fetched for audit trail purposes.
+
+**STPA coverage:** SC-19 (git clone hook protection), H-17 (arbitrary code
+execution via hooks), UCA-L-6.
+
+#### 8.8.4 WASM Adapter Output Validation
+
+The WASM runtime (wasm_runtime.rs) loads third-party adapter components that
+return imported artifacts. Beyond existing fuel metering and memory limits,
+the host must validate adapter output ([[REQ-008]]):
+
+1. **Count verification** -- The adapter must report the expected artifact count
+   as a separate return value. The host compares the declared count against the
+   actual returned count and rejects mismatches.
+2. **ID pattern check** -- All returned artifact IDs must match expected patterns
+   for the declared type. IDs that do not match the schema's ID prefix
+   conventions are flagged.
+3. **Schema validation** -- All returned artifacts pass full schema validation
+   before acceptance into the store (this already exists but is noted for
+   completeness).
+
+**STPA coverage:** SC-16 (WASM output validation), H-14 (untrusted adapter
+code), UCA-C-21.
+
 ## 9. Requirements Coverage
 
 This document addresses the following requirements:

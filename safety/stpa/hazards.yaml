@@ -123,6 +123,75 @@ hazards:
       of correctness.
     losses: [L-2, L-5]
 
+  - id: H-13
+    title: Rivet document renderer produces HTML containing unescaped artifact content
+    description: >
+      The markdown-to-HTML renderer in document.rs processes artifact
+      descriptions, titles, and field values into HTML output for the
+      dashboard and document views. If artifact content contains HTML
+      entities, script tags, or event handler attributes that are not
+      properly escaped, the rendered output enables cross-site scripting
+      (XSS) in the dashboard. In a worst-case environment where the
+      dashboard is used during an audit review or shared via screen
+      recording, injected scripts could alter displayed traceability
+      data, exfiltrate session information, or modify the visual
+      presentation of compliance metrics.
+    losses: [L-1, L-2, L-3]
+
+  - id: H-14
+    title: Rivet WASM adapter executes untrusted code that corrupts import results
+    description: >
+      The WASM runtime (wasm_runtime.rs) loads and executes third-party
+      adapter components. A compromised or buggy WASM adapter could
+      return fabricated artifacts, modify link targets, inject additional
+      artifacts, or silently drop artifacts during import. The host trusts
+      the adapter's output without independent verification against the
+      source data. In a worst-case environment where adapters are
+      distributed as binary components without source review, a supply
+      chain attack could introduce falsified traceability data.
+    losses: [L-1, L-3, L-5]
+
+  - id: H-15
+    title: Rivet commit traceability analysis produces false coverage from misidentified artifact references
+    description: >
+      The commit analysis engine (commits.rs) extracts artifact IDs from
+      git trailer values using pattern matching (PREFIX-DIGITS). False
+      positives occur when non-artifact strings match this pattern (e.g.,
+      "ISO-26262" parsed as artifact ID "ISO-26262", or "SHA-256" parsed
+      as "SHA-256"). False negatives occur when artifact IDs use
+      non-standard formats (e.g., "H-1.2", "UCA-C-10") that the regex
+      does not match. Both inflate or deflate commit-artifact coverage
+      metrics, misrepresenting implementation completeness.
+    losses: [L-1, L-2]
+
+  - id: H-16
+    title: Rivet dashboard serves stale data after hot-reload fails silently
+    description: >
+      The dashboard server (serve.rs) provides a reload endpoint that
+      re-reads all artifact files, schemas, and documents from disk. If
+      the reload encounters a parse error in one YAML file, it may fail
+      and leave the in-memory state unchanged without notifying the user.
+      The dashboard continues serving the pre-reload state while the
+      user believes they are viewing current data. In a worst-case
+      environment where an engineer has just fixed a validation error
+      and reloaded, they see the old (passing) state and conclude
+      their fix is working when it actually introduced a new error.
+    losses: [L-1, L-3, L-4]
+
+  - id: H-17
+    title: Rivet cross-repo sync clones arbitrary git repositories specified in rivet.yaml
+    description: >
+      The externals module (externals.rs) executes `git clone` and
+      `git fetch` commands against URLs specified in the project's
+      rivet.yaml configuration. A malicious or compromised rivet.yaml
+      could specify a git URL pointing to a hostile repository. The
+      clone/fetch operation may trigger git hooks, download large
+      volumes of data, or overwrite local state in the cache directory.
+      In a worst-case environment where rivet.yaml is modified in a
+      supply chain attack, the sync command becomes a vector for
+      arbitrary code execution via git hooks.
+    losses: [L-3, L-5]
+
 sub-hazards:
   # --- H-1 refinements: types of stale references ---
   - id: H-1.1
@@ -209,3 +278,23 @@ sub-hazards:
       load() statements that the Starlark subset parser does not handle.
       The parser silently skips the unrecognized construct, missing a
       dependency declaration.
+
+  # --- H-13 refinements: XSS rendering paths ---
+  - id: H-13.1
+    parent: H-13
+    title: Rivet dashboard renders artifact descriptions containing script injection
+    description: >
+      An artifact's description field contains `<script>` tags or
+      `onerror` attributes. The dashboard's HTML rendering pipeline
+      includes the content without sanitization in the artifact detail
+      view, enabling script execution in the viewer's browser.
+
+  - id: H-13.2
+    parent: H-13
+    title: Rivet document renderer passes markdown image URLs without validation
+    description: >
+      A markdown document references an image with a `javascript:` or
+      `data:` URL scheme. The parse_markdown_link function in document.rs
+      only allows http/https/# URLs, but the img tag rendering path may
+      not apply the same restriction, enabling script injection via
+      crafted image sources.

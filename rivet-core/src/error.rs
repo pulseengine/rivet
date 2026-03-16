@@ -22,4 +22,7 @@ pub enum Error {
 
     #[error("Not found: {0}")]
     NotFound(String),
+
+    #[error("Results error: {0}")]
+    Results(String),
 }
