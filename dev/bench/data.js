@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1773688117282,
+  "lastUpdate": 1773688363965,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
@@ -1343,6 +1343,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1471975,
             "range": "± 18381",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "08284a89dfa7ebbee28a98b6aa2439510d7ae0b8",
+          "message": "fix: Mermaid diagram rendering in HTML export (#35)\n\n* chore: v0.2.0 planning — 4 analysis docs, FEAT-020 promoted, AADL init fix\n\nPlan docs:\n- rowan-salsa-completion: 4-phase LSP-ready migration (22 work items)\n- formal-verification-completion: 37 proofs, Kani CI ready\n- coverage-gap-analysis: STPA gaps (23 new artifacts needed)\n- oslc-analysis: deprioritize OSLC, focus on ReqIF + needs.json\n\nFEAT-020 promoted to approved — Playwright verified AADL rendering.\nFixed initAadlDiagrams DOMContentLoaded trigger.\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* docs: STPA-Sec analysis — 5 new hazards, 15 UCAs, XSS/supply chain findings\n\nFresh STPA + STPA-Sec analysis identifying:\n- H-13: XSS via unescaped artifact content in dashboard/export\n- H-14: WASM adapter supply chain (untrusted code)\n- H-15: Commit traceability false positives\n- H-16: Dashboard stale data after reload failure\n- H-17: git clone code execution via rivet.yaml\n- 5 new system constraints (SC-15..19)\n- 15 new UCAs + 14 loss scenarios\n- OSLC lifecycle gap check results\n- Critical: no CSP header, no WASM signature verification\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* feat: STPA-Sec artifacts — 5 hazards, 15 UCAs, 13 loss scenarios, security hardening docs\n\nNew STPA analysis for v0.2.0 security hardening:\n- H-13..H-17: XSS, WASM supply chain, commit false positives, stale dashboard, git hooks\n- SC-15..SC-19: HTML escaping, WASM validation, ID store check, reload reporting, hook disable\n- 15 UCAs (UCA-D-3..D-4, UCA-C-18..C-25, UCA-L-6..L-7)\n- 13 loss scenarios (LS-C-5..C-15, LS-D-3, LS-L-3)\n- 13 controller constraints\n- Architecture section 8.8: Security Hardening\n- Verification section 12: STPA-Sec Test Requirements\n- 5 REQ→SC links for security constraints\n- 395 artifacts, PASS, 0 warnings\n\nImplements: SC-15, SC-16, SC-17, SC-18, SC-19\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* feat: security hardening — CSP, markdown sanitization, git hooks, WASM validation + code quality\n\nSecurity (S1-S4):\n- CSP header on all dashboard responses\n- Markdown raw HTML filtering (strips <script>, <iframe>, etc.)\n- git clone --config core.hooksPath=/dev/null on all sync operations\n- WASM adapter output validation (empty ID/type rejection, HTML stripping)\n\nCode quality (Q3 partial):\n- ProjectContext consolidation in main.rs\n\n408 tests, 0 failures.\n\nImplements: SC-15, SC-16, SC-17, SC-18, SC-19\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* fix: add Mermaid CDN to HTML export for diagram rendering\n\nMermaid diagrams in exported documents were rendered as raw text\nbecause no Mermaid JS was included. Now loads mermaid@11 from CDN\nwith dark theme and strict security. Skipped in --offline mode.\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Test <test@test.com>\nCo-authored-by: Claude Opus 4.6 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-03-16T20:06:36+01:00",
+          "tree_id": "0a267fad1141c43332a1edf1ab2339a356bd9b35",
+          "url": "https://github.com/pulseengine/rivet/commit/08284a89dfa7ebbee28a98b6aa2439510d7ae0b8"
+        },
+        "date": 1773688363523,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 83372,
+            "range": "± 389",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 1237195,
+            "range": "± 19489",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 51230693,
+            "range": "± 1610516",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2398,
+            "range": "± 9",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 27857,
+            "range": "± 135",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 448975,
+            "range": "± 2727",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 113,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 113,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 113,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 914863,
+            "range": "± 10580",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 188070,
+            "range": "± 878",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 2151419,
+            "range": "± 13442",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 29208713,
+            "range": "± 1415509",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 35630,
+            "range": "± 251",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 492435,
+            "range": "± 4224",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 5138067,
+            "range": "± 130349",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4374,
+            "range": "± 175",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 59054,
+            "range": "± 660",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 779602,
+            "range": "± 2025",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 60736,
+            "range": "± 248",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 672943,
+            "range": "± 2192",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7656022,
+            "range": "± 617099",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 800,
+            "range": "± 9",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7438,
+            "range": "± 35",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 107107,
+            "range": "± 819",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 22602,
+            "range": "± 100",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 158311,
+            "range": "± 1207",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1441878,
+            "range": "± 50694",
             "unit": "ns/iter"
           }
         ]
