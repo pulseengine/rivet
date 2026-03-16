@@ -196,6 +196,31 @@ fn non_htmx_request_serves_full_page() {
 }
 
 #[test]
+fn responses_include_csp_header() {
+    let (mut child, port) = start_server();
+
+    let (_status, _body, headers) = fetch(port, "/", false);
+
+    let csp = headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("content-security-policy"));
+
+    assert!(
+        csp.is_some(),
+        "Response must include Content-Security-Policy header. Headers: {headers:?}"
+    );
+
+    let csp_value = &csp.unwrap().1;
+    assert!(
+        csp_value.contains("default-src"),
+        "CSP header must contain default-src directive, got: {csp_value}"
+    );
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+#[test]
 fn reload_returns_hx_location() {
     let (mut child, port) = start_server();
 

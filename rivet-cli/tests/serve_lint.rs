@@ -91,6 +91,29 @@ fn wrap_middleware_exists() {
     );
 }
 
+/// Verify that the CSP (Content-Security-Policy) middleware is present.
+/// This prevents XSS attacks by restricting which resources the browser
+/// is allowed to load.
+#[test]
+fn csp_header_middleware_exists() {
+    let source = std::fs::read_to_string(serve_rs_path()).expect("failed to read serve.rs");
+
+    assert!(
+        source.contains("Content-Security-Policy"),
+        "serve.rs must set a Content-Security-Policy header on all responses"
+    );
+
+    assert!(
+        source.contains("default-src 'self'"),
+        "CSP must include a default-src directive"
+    );
+
+    assert!(
+        source.contains("script-src"),
+        "CSP must include a script-src directive"
+    );
+}
+
 /// Verify that the reload handler uses HX-Location (not HX-Refresh)
 /// so reloading stays on the current page instead of navigating to root.
 #[test]

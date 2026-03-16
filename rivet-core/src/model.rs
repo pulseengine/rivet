@@ -6,6 +6,15 @@ use serde::{Deserialize, Serialize};
 /// Unique identifier for an artifact (e.g., "L-1", "H-3.2", "SWREQ-012").
 pub type ArtifactId = String;
 
+/// Statuses that indicate an artifact should be fully traced in the lifecycle.
+pub const TRACED_STATUSES: &[&str] = &[
+    "implemented",
+    "done",
+    "approved",
+    "accepted",
+    "verified",
+];
+
 /// A typed, directional link from one artifact to another.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Link {

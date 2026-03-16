@@ -657,3 +657,253 @@ parser-ucas:
 
   too-early-too-late: []
   stopped-too-soon: []
+
+# =============================================================================
+# Dashboard UCAs — Document Rendering (STPA-Sec extension)
+# =============================================================================
+dashboard-rendering-ucas:
+  control-action: Render artifact content and documents as HTML
+  controller: CTRL-DASH
+
+  providing:
+    - id: UCA-D-3
+      description: >
+        Dashboard renders artifact description content containing HTML
+        injection without escaping.
+      context: >
+        An artifact's description field contains `<script>alert('xss')</script>`
+        or `<img onerror="...">`. The dashboard detail view renders this
+        content as raw HTML.
+      hazards: [H-13]
+      rationale: >
+        Script injection in the dashboard compromises the integrity of
+        all displayed traceability data for the current session.
+
+  not-providing:
+    - id: UCA-D-4
+      description: >
+        Dashboard does not display reload errors when hot-reload fails.
+      context: >
+        User clicks reload, a YAML parse error occurs in one file,
+        but the dashboard returns a success response and continues
+        showing the old state.
+      hazards: [H-16]
+      rationale: >
+        User believes they are viewing current data when the dashboard
+        is serving stale state from before the edit.
+
+  too-early-too-late: []
+  stopped-too-soon: []
+
+# =============================================================================
+# Core Engine UCAs — Commit Traceability (STPA-Sec extension)
+# =============================================================================
+commit-ucas:
+  control-action: Extract artifact references from git commit trailers
+  controller: CTRL-CORE
+
+  providing:
+    - id: UCA-C-18
+      description: >
+        Core commit analysis extracts false-positive artifact IDs from
+        trailer values that match the PREFIX-DIGITS pattern but are not
+        actual artifact identifiers.
+      context: >
+        A commit trailer contains "Implements: ISO-26262 compliance" and
+        the pattern matcher extracts "ISO-26262" as an artifact ID.
+      hazards: [H-15]
+      rationale: >
+        False positive artifact references inflate commit coverage
+        metrics, creating an illusion of implementation completeness.
+
+  not-providing:
+    - id: UCA-C-19
+      description: >
+        Core commit analysis fails to extract artifact IDs that use
+        sub-hazard notation (e.g., "H-1.2") or multi-letter suffixes
+        (e.g., "UCA-C-10").
+      context: >
+        A commit trailer contains "Refs: H-1.2, UCA-C-10" but the
+        is_artifact_id() function requires digits-only after the hyphen,
+        so neither ID is extracted.
+      hazards: [H-15, H-1]
+      rationale: >
+        False negative artifact references create coverage gaps. STPA
+        artifacts (the most safety-critical) are systematically missed
+        by the commit traceability engine.
+
+  too-early-too-late: []
+  stopped-too-soon: []
+
+# =============================================================================
+# Core Engine UCAs — Cross-Repo Dependencies (STPA-Sec extension)
+# =============================================================================
+cross-repo-ucas:
+  control-action: Discover and load external repository artifacts
+  controller: CTRL-CORE
+
+  not-providing:
+    - id: UCA-C-20
+      description: >
+        Core does not detect circular cross-repo dependencies during
+        external artifact loading.
+      context: >
+        Repo A declares repo B as external, and repo B declares repo A.
+        The sync process enters an infinite loop or stack overflow.
+      hazards: [H-11, H-1]
+      rationale: >
+        Circular dependencies cause the tool to hang or crash during
+        sync, preventing any validation from completing.
+
+  providing: []
+  too-early-too-late: []
+  stopped-too-soon: []
+
+# =============================================================================
+# Core Engine UCAs — WASM Runtime (STPA-Sec extension)
+# =============================================================================
+wasm-ucas:
+  control-action: Load and execute WASM adapter components for artifact import
+  controller: CTRL-CORE
+
+  not-providing: []
+
+  providing:
+    - id: UCA-C-21
+      description: >
+        Core WASM runtime does not validate that adapter-returned
+        artifacts correspond to actual records in the source data.
+      context: >
+        A WASM adapter returns 500 artifacts from a source file that
+        contains only 50 records. The additional 450 are fabricated.
+      hazards: [H-14]
+      rationale: >
+        Fabricated artifacts pass schema validation because they
+        conform to the declared types, but they introduce false
+        traceability links that inflate coverage.
+
+    - id: UCA-C-22
+      description: >
+        Core WASM runtime does not enforce fuel limits, allowing a
+        malicious adapter to consume unbounded CPU.
+      context: >
+        Fuel metering is configured but a bug in the fuel accounting
+        allows the adapter to execute indefinitely, causing a denial
+        of service.
+      hazards: [H-14]
+      rationale: >
+        Denial of service during import blocks all validation and
+        reporting operations.
+
+    - id: UCA-C-23
+      description: >
+        Core WASM runtime leaks host filesystem paths to the guest
+        adapter via WASI preopened directories.
+      context: >
+        The adapter is given access to the AADL directory via WASI
+        preopened dirs. The adapter reads files outside the intended
+        scope by exploiting symlinks or relative paths.
+      hazards: [H-14, H-17]
+      rationale: >
+        Information disclosure of host filesystem structure aids
+        further attacks. Arbitrary file read enables data exfiltration.
+
+  too-early-too-late: []
+  stopped-too-soon: []
+
+# =============================================================================
+# Core Engine UCAs — Lifecycle / Coverage (STPA-Sec extension)
+# =============================================================================
+lifecycle-ucas:
+  control-action: Check lifecycle completeness and downstream coverage
+  controller: CTRL-CORE
+
+  not-providing: []
+
+  providing:
+    - id: UCA-C-24
+      description: >
+        Core lifecycle completeness check uses a hardcoded downstream
+        type map that does not reflect the loaded schema's traceability
+        rules.
+      context: >
+        The lifecycle.rs module hardcodes expected_downstream() mappings
+        (requirement -> [feature, aadl-component, design-decision]).
+        A project using the cybersecurity schema has different downstream
+        expectations (e.g., threat-scenario -> countermeasure) that are
+        not represented.
+      hazards: [H-3, H-1]
+      rationale: >
+        Lifecycle gap analysis produces false negatives for schemas
+        other than the dev schema, missing genuine coverage gaps in
+        cybersecurity and STPA domains.
+
+  too-early-too-late: []
+  stopped-too-soon: []
+
+# =============================================================================
+# Core Engine UCAs — Document Validation (STPA-Sec extension)
+# =============================================================================
+document-validation-ucas:
+  control-action: Validate document references and embeds
+  controller: CTRL-CORE
+
+  not-providing:
+    - id: UCA-C-25
+      description: >
+        Core document validation only checks [[ID]] references but does
+        not validate {{artifact:ID}} embed references.
+      context: >
+        A document uses {{artifact:NOPE-999}} which renders as a broken
+        embed card in the dashboard, but validate_documents() does not
+        check this pattern, so no diagnostic is emitted.
+      hazards: [H-1, H-3]
+      rationale: >
+        Broken artifact embeds in documents are invisible to validation,
+        producing documents that appear complete but contain broken
+        references.
+
+  providing: []
+  too-early-too-late: []
+  stopped-too-soon: []
+
+# =============================================================================
+# CLI UCAs — External Sync (STPA-Sec extension)
+# =============================================================================
+external-sync-ucas:
+  control-action: Clone and fetch external git repositories for cross-repo linking
+  controller: CTRL-CLI
+
+  not-providing: []
+
+  providing:
+    - id: UCA-L-6
+      description: >
+        CLI sync command executes git clone against an arbitrary URL from
+        rivet.yaml without validating the URL or disabling git hooks.
+      context: >
+        A developer opens a project with a modified rivet.yaml containing
+        a malicious git URL. Running `rivet sync` clones the repository,
+        which includes a post-checkout hook that executes arbitrary code.
+      hazards: [H-17]
+      rationale: >
+        The rivet.yaml file is the trust boundary for external
+        dependencies. A compromised config file enables arbitrary
+        code execution on the developer's machine.
+
+    - id: UCA-L-7
+      description: >
+        CLI does not validate rivet.lock file integrity before using
+        pinned commit SHAs for external sync.
+      context: >
+        An attacker modifies rivet.lock to point to a different commit
+        SHA that contains compromised artifacts. The sync operation
+        checks out the attacker-controlled commit.
+      hazards: [H-17, H-14]
+      rationale: >
+        The lock file is meant to ensure reproducible baselines.
+        If it can be tampered with undetected, the baseline guarantee
+        is void.
+
+  too-early-too-late: []
+  stopped-too-soon: []

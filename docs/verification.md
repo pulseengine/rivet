@@ -244,3 +244,61 @@ Each phase 3 workstream adds verification at the appropriate level:
 - **[[REQ-029]] salsa incremental** — proptest comparing incremental vs full validation results, Verus soundness proof
 - **[[REQ-030]] formal verification** — the Kani/Verus/Rocq harnesses ARE the verification
 - **[[REQ-031]] CLI mutations** — proptest for random mutation sequences never producing invalid YAML, integration tests for all rejection cases
+
+## 12. STPA-Sec Test Requirements
+
+The STPA-Sec analysis (2026-03-16) identified security-relevant hazards that
+require dedicated test coverage. These tests supplement the existing functional
+test suite with adversarial input testing.
+
+### 12.1 XSS Prevention (H-13, SC-15)
+
+| Test | Description | Verifies |
+|------|-------------|----------|
+| `test_artifact_title_xss_escaped` | Artifact with title `<script>alert(1)</script>` renders escaped in dashboard HTML | SC-15, UCA-D-3 |
+| `test_artifact_description_xss_escaped` | Artifact description with `<img onerror="...">` is sanitized | SC-15, H-13.1 |
+| `test_document_markdown_raw_html_stripped` | Markdown `<script>` blocks are escaped or removed from rendered HTML | SC-15, H-13.1 |
+| `test_document_image_url_javascript_blocked` | Markdown image with `javascript:` URL scheme is rejected | SC-15, H-13.2 |
+| `test_csp_header_present` | Dashboard responses include Content-Security-Policy header | SC-15 |
+| `test_embed_card_xss_escaped` | `{{artifact:ID}}` embed with adversarial field values renders escaped | SC-15, UCA-C-25 |
+
+### 12.2 WASM Adapter Output Validation (H-14, SC-16)
+
+| Test | Description | Verifies |
+|------|-------------|----------|
+| `test_wasm_adapter_count_mismatch_rejected` | Adapter returning more artifacts than declared count is rejected | SC-16, UCA-C-21 |
+| `test_wasm_adapter_fabricated_ids_detected` | Adapter-returned IDs not matching expected patterns are flagged | SC-16, UCA-C-21 |
+| `test_wasm_fuel_exhaustion_returns_error` | Adapter exceeding fuel limit is terminated with error diagnostic | CC-C-22, UCA-C-22 |
+| `test_wasm_symlink_escape_blocked` | Adapter cannot read files outside preopened directories via symlinks | CC-C-23, UCA-C-23 |
+
+### 12.3 Commit Traceability Accuracy (H-15, SC-17)
+
+| Test | Description | Verifies |
+|------|-------------|----------|
+| `test_commit_iso_reference_not_artifact` | "ISO-26262" in trailer is not counted as artifact reference | SC-17, UCA-C-18 |
+| `test_commit_sub_hazard_id_extracted` | "H-1.2" in trailer is correctly extracted as artifact reference | CC-C-19, UCA-C-19 |
+| `test_commit_uca_id_extracted` | "UCA-C-10" in trailer is correctly extracted as artifact reference | CC-C-19, UCA-C-19 |
+| `test_commit_coverage_validates_against_store` | Only artifact IDs present in the store are counted as coverage | SC-17, UCA-C-18 |
+
+### 12.4 Dashboard Reload Failure Handling (H-16, SC-18)
+
+| Test | Description | Verifies |
+|------|-------------|----------|
+| `test_reload_yaml_error_returns_error_response` | Reload with malformed YAML returns HTTP error, not 200 OK | SC-18, UCA-D-4 |
+| `test_reload_failure_preserves_state` | After failed reload, dashboard serves previous valid state | SC-18 |
+| `test_stale_data_indicator_after_failed_reload` | Dashboard pages include stale-data banner after reload failure | SC-18 |
+
+### 12.5 Git Clone Hook Protection (H-17, SC-19)
+
+| Test | Description | Verifies |
+|------|-------------|----------|
+| `test_git_clone_disables_hooks` | `sync_external()` passes `--config core.hooksPath=/dev/null` to git clone | SC-19, UCA-L-6 |
+| `test_external_sync_logs_url_and_sha` | External sync logs the cloned URL and checkout SHA | SC-19 |
+| `test_circular_external_deps_detected` | Circular cross-repo dependencies produce a configuration error | CC-C-20, UCA-C-20 |
+
+### 12.6 Document Embed Validation (UCA-C-25)
+
+| Test | Description | Verifies |
+|------|-------------|----------|
+| `test_validate_documents_checks_embed_refs` | `{{artifact:NOPE-999}}` embed produces a validation diagnostic | CC-C-25, UCA-C-25 |
+| `test_validate_documents_checks_wiki_links` | Wiki-link to nonexistent ID produces a validation diagnostic (existing) | SC-1 |

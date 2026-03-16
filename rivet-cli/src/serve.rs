@@ -28,7 +28,7 @@ use etch::svg::{SvgOptions, render_svg};
 use rivet_core::adapter::{Adapter, AdapterConfig, AdapterSource};
 use rivet_core::coverage;
 use rivet_core::diff::ArtifactDiff;
-use rivet_core::document::{self, DocumentStore};
+use rivet_core::document::{self, html_escape, DocumentStore};
 use rivet_core::formats::generic::GenericYamlAdapter;
 use rivet_core::links::LinkGraph;
 use rivet_core::markdown::{render_markdown, strip_html_tags};
@@ -398,7 +398,18 @@ pub async fn run(
         .route("/docs-asset/{*path}", get(docs_asset))
         .route("/reload", post(reload_handler))
         .with_state(state.clone())
-        .layer(axum::middleware::from_fn_with_state(state, wrap_full_page));
+        .layer(axum::middleware::from_fn_with_state(state, wrap_full_page))
+        .layer(axum::middleware::map_response(
+            |mut response: axum::response::Response| async move {
+                response.headers_mut().insert(
+                    "Content-Security-Policy",
+                    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'"
+                        .parse()
+                        .unwrap(),
+                );
+                response
+            },
+        ));
 
     let addr = format!("0.0.0.0:{port}");
     eprintln!("rivet dashboard listening on http://localhost:{port}");
@@ -7817,13 +7828,6 @@ fn build_artifact_info(
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────
-
-fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-}
 
 /// Rewrite relative image `src` paths to serve through `/docs-asset/`.
 /// Leaves absolute URLs (http://, https://, //) unchanged.

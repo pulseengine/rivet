@@ -402,3 +402,116 @@ controller-constraints:
       supported function call types.
     ucas: [UCA-C-17]
     hazards: [H-11, H-1]
+
+  # =========================================================================
+  # STPA-Sec extension constraints
+  # =========================================================================
+  - id: CC-D-3
+    controller: CTRL-DASH
+    constraint: >
+      Dashboard must HTML-escape all artifact content (titles,
+      descriptions, field values) before rendering in HTML views.
+      No artifact content may be interpolated into HTML without
+      escaping.
+    ucas: [UCA-D-3]
+    hazards: [H-13]
+
+  - id: CC-D-4
+    controller: CTRL-DASH
+    constraint: >
+      Dashboard must return an error response when reload fails and
+      display a visible stale-data indicator until a successful reload
+      occurs.
+    ucas: [UCA-D-4]
+    hazards: [H-16]
+
+  - id: CC-C-18
+    controller: CTRL-CORE
+    constraint: >
+      Core commit analysis must validate extracted artifact IDs against
+      the known artifact store, not rely solely on pattern matching.
+      References that do not resolve to known artifacts must not be
+      counted as coverage.
+    ucas: [UCA-C-18]
+    hazards: [H-15]
+
+  - id: CC-C-19
+    controller: CTRL-CORE
+    constraint: >
+      Core commit analysis must support all artifact ID formats used
+      in the project, including sub-hazard notation (H-1.2), multi-segment
+      prefixes (UCA-C-10), and controller constraints (CC-L-5).
+    ucas: [UCA-C-19]
+    hazards: [H-15, H-1]
+
+  - id: CC-C-20
+    controller: CTRL-CORE
+    constraint: >
+      Core must detect circular cross-repo dependencies before
+      beginning artifact loading and report them as a configuration
+      error.
+    ucas: [UCA-C-20]
+    hazards: [H-11, H-1]
+
+  - id: CC-C-21
+    controller: CTRL-CORE
+    constraint: >
+      Core WASM runtime must validate adapter output artifact count
+      and IDs against the source data before accepting them into the
+      artifact store.
+    ucas: [UCA-C-21]
+    hazards: [H-14]
+
+  - id: CC-C-22
+    controller: CTRL-CORE
+    constraint: >
+      Core WASM runtime must enforce fuel limits and terminate
+      adapters that exceed their allocation, returning an error
+      diagnostic.
+    ucas: [UCA-C-22]
+    hazards: [H-14]
+
+  - id: CC-C-23
+    controller: CTRL-CORE
+    constraint: >
+      Core WASM runtime must restrict WASI preopened directories to
+      the minimum required paths and prevent symlink traversal
+      outside those paths.
+    ucas: [UCA-C-23]
+    hazards: [H-14, H-17]
+
+  - id: CC-C-24
+    controller: CTRL-CORE
+    constraint: >
+      Core lifecycle completeness check must derive expected downstream
+      types from the loaded schema's traceability rules, not from
+      hardcoded mappings.
+    ucas: [UCA-C-24]
+    hazards: [H-3, H-1]
+
+  - id: CC-C-25
+    controller: CTRL-CORE
+    constraint: >
+      Core document validation must check both [[ID]] wiki-link
+      references and {{artifact:ID}} embed references against the
+      artifact store.
+    ucas: [UCA-C-25]
+    hazards: [H-1, H-3]
+
+  - id: CC-L-6
+    controller: CTRL-CLI
+    constraint: >
+      CLI sync command must disable git hooks when cloning external
+      repositories (--config core.hooksPath=/dev/null) and must not
+      execute arbitrary URLs without user confirmation for new repos.
+    ucas: [UCA-L-6]
+    hazards: [H-17]
+
+  - id: CC-L-7
+    controller: CTRL-CLI
+    constraint: >
+      CLI must verify rivet.lock file integrity (content hashes of
+      external repo states) before using pinned commit SHAs for
+      external sync operations.
+    ucas: [UCA-L-7]
+    hazards: [H-17, H-14]

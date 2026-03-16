@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashSet};
 
 use crate::links::LinkGraph;
-use crate::model::Artifact;
+use crate::model::{Artifact, TRACED_STATUSES};
 use crate::schema::Schema;
 
 /// A gap in the lifecycle traceability chain.
@@ -43,11 +43,7 @@ pub fn check_lifecycle_completeness(
     }
 
     // Statuses that imply "this should be fully traced"
-    let traced_statuses: HashSet<&str> =
-        ["implemented", "done", "approved", "accepted", "verified"]
-            .iter()
-            .copied()
-            .collect();
+    let traced_statuses: HashSet<&str> = TRACED_STATUSES.iter().copied().collect();
 
     // Build artifact type lookup
     let artifact_type_map: BTreeMap<&str, &str> = artifacts

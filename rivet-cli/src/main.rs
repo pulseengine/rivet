@@ -11,6 +11,7 @@ use rivet_core::document::{self, DocumentStore};
 use rivet_core::impact;
 use rivet_core::links::LinkGraph;
 use rivet_core::matrix::{self, Direction};
+use rivet_core::model::ProjectConfig;
 use rivet_core::results::{self, ResultStore};
 use rivet_core::schema::Severity;
 use rivet_core::store::Store;
@@ -620,24 +621,25 @@ fn run(cli: Cli) -> Result<bool> {
         } => cmd_commits(&cli, since.as_deref(), range.as_deref(), format, *strict),
         Command::Serve { port } => {
             let port = *port;
-            let (
-                store,
-                schema,
-                graph,
-                doc_store,
-                result_store,
-                project_name,
-                project_path,
-                schemas_dir,
-                doc_dirs,
-            ) = load_project_full(&cli)?;
+            let ctx = ProjectContext::load_full(&cli)?;
+            let schemas_dir = resolve_schemas_dir(&cli);
+            let mut doc_dirs = Vec::new();
+            for docs_path in &ctx.config.docs {
+                let dir = cli.project.join(docs_path);
+                if dir.is_dir() {
+                    doc_dirs.push(dir);
+                }
+            }
+            let project_name = ctx.config.project.name.clone();
+            let project_path =
+                std::fs::canonicalize(&cli.project).unwrap_or_else(|_| cli.project.clone());
             let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
             rt.block_on(serve::run(
-                store,
-                schema,
-                graph,
-                doc_store,
-                result_store,
+                ctx.store,
+                ctx.schema,
+                ctx.graph,
+                ctx.doc_store.unwrap_or_default(),
+                ctx.result_store.unwrap_or_default(),
                 project_name,
                 project_path,
                 schemas_dir,
@@ -1128,15 +1130,20 @@ fn cmd_validate(
         return cmd_validate_incremental(cli, format, verify_incremental);
     }
 
-    let (store, schema, graph, doc_store) = load_project_with_docs(cli)?;
+    let ctx = ProjectContext::load_with_docs(cli)?;
+    let ProjectContext {
+        config,
+        store,
+        schema,
+        graph,
+        doc_store,
+        ..
+    } = ctx;
+    let doc_store = doc_store.unwrap_or_default();
     let mut diagnostics = validate::validate(&store, &schema, &graph);
     diagnostics.extend(validate::validate_documents(&doc_store, &store));
 
     // Cross-repo link validation
-    let config_path = cli.project.join("rivet.yaml");
-    let config = rivet_core::load_project_config(&config_path)
-        .with_context(|| format!("loading {}", config_path.display()))?;
-
     let mut cross_repo_broken: Vec<rivet_core::externals::BrokenRef> = Vec::new();
     let mut backlinks: Vec<rivet_core::externals::CrossRepoBacklink> = Vec::new();
     let mut circular_deps: Vec<rivet_core::externals::CircularDependency> = Vec::new();
@@ -1453,8 +1460,8 @@ fn cmd_validate_incremental(cli: &Cli, format: &str, verify: bool) -> Result<boo
     // ── Verify mode: run both pipelines and compare (SC-11) ─────────────
     if verify {
         let t_seq_start = Instant::now();
-        let (store, schema, graph) = load_project(cli)?;
-        let seq_diagnostics = validate::validate(&store, &schema, &graph);
+        let seq_ctx = ProjectContext::load(cli)?;
+        let seq_diagnostics = validate::validate(&seq_ctx.store, &seq_ctx.schema, &seq_ctx.graph);
         let t_seq_elapsed = t_seq_start.elapsed();
 
         if cli.verbose > 0 {
@@ -1571,7 +1578,8 @@ fn cmd_list(
     status_filter: Option<&str>,
     format: &str,
 ) -> Result<bool> {
-    let (store, _, _) = load_project(cli)?;
+    let ctx = ProjectContext::load(cli)?;
+    let store = ctx.store;
 
     let query = rivet_core::query::Query {
         artifact_type: type_filter.map(|s| s.to_string()),
@@ -1617,7 +1625,8 @@ fn cmd_list(
 
 /// Print summary statistics.
 fn cmd_stats(cli: &Cli, format: &str) -> Result<bool> {
-    let (store, _, graph) = load_project(cli)?;
+    let ctx = ProjectContext::load(cli)?;
+    let (store, graph) = (ctx.store, ctx.graph);
 
     let orphans = graph.orphans(&store);
 
@@ -1656,7 +1665,8 @@ fn cmd_stats(cli: &Cli, format: &str) -> Result<bool> {
 
 /// Show traceability coverage report.
 fn cmd_coverage(cli: &Cli, format: &str, fail_under: Option<&f64>) -> Result<bool> {
-    let (store, schema, graph) = load_project(cli)?;
+    let ctx = ProjectContext::load(cli)?;
+    let (store, schema, graph) = (ctx.store, ctx.schema, ctx.graph);
     let report = coverage::compute_coverage(&store, &schema, &graph);
 
     if format == "json" {
@@ -1720,7 +1730,8 @@ fn cmd_coverage(cli: &Cli, format: &str, fail_under: Option<&f64>) -> Result<boo
 fn cmd_coverage_tests(cli: &Cli, format: &str, scan_paths: &[PathBuf]) -> Result<bool> {
     use rivet_core::test_scanner;
 
-    let (store, schema, _graph) = load_project(cli)?;
+    let ctx = ProjectContext::load(cli)?;
+    let (store, schema) = (ctx.store, ctx.schema);
 
     // Resolve scan paths: default to src/ and tests/ relative to project dir.
     let paths: Vec<PathBuf> = if scan_paths.is_empty() {
@@ -1835,7 +1846,8 @@ fn cmd_matrix(
     direction: &str,
     format: &str,
 ) -> Result<bool> {
-    let (store, _schema, graph) = load_project(cli)?;
+    let ctx = ProjectContext::load(cli)?;
+    let (store, graph) = (ctx.store, ctx.graph);
 
     let dir = match direction {
         "forward" | "fwd" => Direction::Forward,
@@ -1927,8 +1939,8 @@ fn cmd_export(
 
     use rivet_core::adapter::{Adapter, AdapterConfig};
 
-    let (store, _, _) = load_project(cli)?;
-    let artifacts: Vec<_> = store.iter().cloned().collect();
+    let ctx = ProjectContext::load(cli)?;
+    let artifacts: Vec<_> = ctx.store.iter().cloned().collect();
     let config = AdapterConfig::default();
 
     let bytes = match format {
@@ -2008,7 +2020,8 @@ fn cmd_export_html(
         Vec::new()
     };
 
-    let (store, schema, graph) = load_project(cli)?;
+    let ctx = ProjectContext::load(cli)?;
+    let (store, schema, graph) = (ctx.store, ctx.schema, ctx.graph);
     let diagnostics = validate::validate(&store, &schema, &graph);
 
     // Load project config.
@@ -2158,17 +2171,17 @@ fn cmd_diff(
                         verify_incremental: false,
                     },
                 };
-                let (bs, bsc, bg) = load_project(&base_cli)?;
-                let (hs, hsc, hg) = load_project(&head_cli)?;
-                (bs, bsc, bg, hs, hsc, hg)
+                let bc = ProjectContext::load(&base_cli)?;
+                let hc = ProjectContext::load(&head_cli)?;
+                (bc.store, bc.schema, bc.graph, hc.store, hc.schema, hc.graph)
             }
             _ => {
                 // Default: load the project twice (same working tree). This
                 // is a placeholder — a future version will compare against
                 // the last clean git state.
-                let (s1, sc1, g1) = load_project(cli)?;
-                let (s2, sc2, g2) = load_project(cli)?;
-                (s1, sc1, g1, s2, sc2, g2)
+                let c1 = ProjectContext::load(cli)?;
+                let c2 = ProjectContext::load(cli)?;
+                (c1.store, c1.schema, c1.graph, c2.store, c2.schema, c2.graph)
             }
         };
 
@@ -2347,7 +2360,8 @@ fn cmd_impact(
     depth: usize,
     format: &str,
 ) -> Result<bool> {
-    let (current_store, _schema, graph) = load_project(cli)?;
+    let ctx = ProjectContext::load(cli)?;
+    let (current_store, graph) = (ctx.store, ctx.graph);
 
     // Load baseline store
     let baseline_store = if let Some(git_ref) = since {

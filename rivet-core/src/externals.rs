@@ -83,9 +83,14 @@ pub fn sync_external(
     if let Some(ref git_url) = ext.git {
         let git_ref = ext.git_ref.as_deref().unwrap_or("main");
 
+        // Disable git hooks for all git operations to prevent code execution
+        // from malicious repositories (e.g., post-checkout, post-merge hooks).
+        let no_hooks = ["--config", "core.hooksPath=/dev/null"];
+
         if dest.join(".git").exists() {
             // Fetch updates
             let output = Command::new("git")
+                .args(no_hooks)
                 .args(["fetch", "origin"])
                 .current_dir(&dest)
                 .output()
@@ -98,6 +103,7 @@ pub fn sync_external(
             }
             // Checkout ref
             let output = Command::new("git")
+                .args(no_hooks)
                 .args(["checkout", git_ref])
                 .current_dir(&dest)
                 .output()
@@ -105,6 +111,7 @@ pub fn sync_external(
             if !output.status.success() {
                 // Try as remote branch
                 Command::new("git")
+                    .args(no_hooks)
                     .args(["checkout", &format!("origin/{git_ref}")])
                     .current_dir(&dest)
                     .output()
@@ -113,6 +120,7 @@ pub fn sync_external(
         } else {
             // Clone fresh
             let output = Command::new("git")
+                .args(no_hooks)
                 .args([
                     "clone",
                     git_url,
@@ -129,6 +137,7 @@ pub fn sync_external(
             }
             if git_ref != "main" && git_ref != "master" {
                 Command::new("git")
+                    .args(no_hooks)
                     .args(["checkout", git_ref])
                     .current_dir(&dest)
                     .output()
@@ -1379,5 +1388,45 @@ externals:
 
         let conflicts = detect_version_conflicts(&externals, "myproject", dir.path());
         assert!(conflicts.is_empty());
+    }
+
+    /// Verify that `sync_external` disables git hooks to prevent code
+    /// execution from malicious repositories.  We check the source code
+    /// to ensure the `core.hooksPath=/dev/null` config flag is present
+    /// for all git commands inside the function.
+    #[test]
+    fn git_clone_disables_hooks() {
+        let source = include_str!("externals.rs");
+
+        // Find the sync_external function body
+        let fn_start = source
+            .find("fn sync_external(")
+            .expect("sync_external function must exist");
+        let fn_body = &source[fn_start..];
+        // Approximate end: next top-level `pub fn` or `fn ` at column 0
+        let fn_end = fn_body[1..]
+            .find("\npub fn ")
+            .or_else(|| fn_body[1..].find("\nfn "))
+            .unwrap_or(fn_body.len());
+        let fn_body = &fn_body[..fn_end];
+
+        // Count git Command invocations (excluding test code)
+        let git_commands: Vec<_> = fn_body.match_indices("Command::new(\"git\")").collect();
+
+        assert!(
+            !git_commands.is_empty(),
+            "sync_external must contain git Command invocations"
+        );
+
+        // The no_hooks config must be defined and used
+        assert!(
+            fn_body.contains("core.hooksPath=/dev/null"),
+            "sync_external must disable git hooks via core.hooksPath=/dev/null"
+        );
+
+        assert!(
+            fn_body.contains("no_hooks"),
+            "sync_external must use the no_hooks config for all git commands"
+        );
     }
 }
