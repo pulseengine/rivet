@@ -58,7 +58,7 @@ artifacts:
   - id: REQ-005
     type: requirement
     title: ReqIF 1.2 import/export
-    status: draft
+    status: approved
     description: >
       Support OMG ReqIF 1.2 XML format for cross-organization requirements
       interchange. Import ReqIF into trace artifacts, export trace artifacts
@@ -119,7 +119,7 @@ artifacts:
   - id: REQ-009
     type: requirement
     title: Test results as release evidence
-    status: draft
+    status: approved
     description: >
       Tie test execution results (JUnit XML, coverage reports) to
       GitHub releases as per-version evidence. Support fetching and
@@ -291,7 +291,7 @@ artifacts:
   - id: REQ-020
     type: requirement
     title: Cross-repository artifact linking via prefixed IDs
-    status: draft
+    status: approved
     description: >
       Rivet projects must be able to declare external dependencies on other
       rivet repositories and reference their artifacts using prefix:ID syntax.
@@ -306,7 +306,7 @@ artifacts:
   - id: REQ-021
     type: requirement
     title: Distributed baselining via convention tags
-    status: draft
+    status: approved
     description: >
       Multiple rivet repositories must be able to form consistent baselines
       using git tags without requiring a central platform repository.
@@ -333,7 +333,7 @@ artifacts:
   - id: REQ-023
     type: requirement
     title: Conditional validation rules
-    status: draft
+    status: approved
     description: >
       The validation engine must support conditional rules where field
       requirements or link cardinality depend on the value of another field.
@@ -354,7 +354,7 @@ artifacts:
   - id: REQ-024
     type: requirement
     title: Change impact analysis
-    status: draft
+    status: approved
     description: >
       The system must detect which artifacts changed between two baselines
       or commits and compute the transitive set of downstream artifacts
@@ -372,7 +372,7 @@ artifacts:
   - id: REQ-025
     type: requirement
     title: sphinx-needs JSON import
-    status: draft
+    status: approved
     description: >
       The system must import artifacts from the sphinx-needs needs.json
       export format, mapping sphinx-needs types, links, and fields to
@@ -390,7 +390,7 @@ artifacts:
   - id: REQ-026
     type: requirement
     title: Test-to-requirement traceability extraction
-    status: draft
+    status: approved
     description: >
       The system must extract traceability markers from test source code
       and test results, linking test cases to requirements without requiring
@@ -409,7 +409,7 @@ artifacts:
   - id: REQ-027
     type: requirement
     title: Build-system-aware cross-repo discovery
-    status: draft
+    status: approved
     description: >
       The system must discover cross-repo dependencies from build system
       manifests (Bazel MODULE.bazel, Nix flake.lock, or custom manifests)
@@ -429,7 +429,7 @@ artifacts:
   - id: REQ-028
     type: requirement
     title: Diagnostic-quality parsing with lossless syntax trees
-    status: draft
+    status: approved
     description: >
       All parsers for build-system manifests and configuration files must
       produce lossless concrete syntax trees (CST) with full span information
@@ -447,7 +447,7 @@ artifacts:
   - id: REQ-029
     type: requirement
     title: Incremental validation via dependency-tracked computation
-    status: draft
+    status: approved
     description: >
       The validation pipeline must support incremental recomputation where
       changing a single artifact file only re-evaluates affected validation
@@ -467,7 +467,7 @@ artifacts:
   - id: REQ-031
     type: requirement
     title: Schema-validated artifact mutation from CLI
-    status: draft
+    status: approved
     description: >
       The CLI must provide commands to create, modify, remove, link, and
       unlink artifacts directly, with full schema validation at write time.
@@ -511,7 +511,9 @@ artifacts:
   - id: REQ-032
     type: requirement
     title: Markdown rendering in artifact descriptions
-    status: draft
+    status: approved
+    description: >
+      Artifact descriptions rendered as CommonMark HTML via pulldown-cmark with tables, strikethrough, task lists, and code blocks.
     tags: [rendering, markdown]
     fields:
       category: functional
@@ -520,7 +522,9 @@ artifacts:
   - id: REQ-033
     type: requirement
     title: Rich artifact embedding in documents with schema-driven link traversal
-    status: draft
+    status: approved
+    description: >
+      Document embeds support modifiers (full, links, upstream, downstream, chain, table) with schema-driven link traversal.
     tags: [documents, embedding, traceability]
     fields:
       category: functional
@@ -529,7 +533,9 @@ artifacts:
   - id: REQ-034
     type: requirement
     title: YAML 1.2.2 spec-compliant artifact file editing
-    status: draft
+    status: approved
+    description: >
+      YAML artifact file editing uses indentation-aware parser per YAML 1.2.2 spec for lossless modification.
     tags: [yaml, parsing, spec-compliance]
     fields:
       category: functional
@@ -541,7 +547,9 @@ artifacts:
   - id: REQ-035
     type: requirement
     title: HTML export includes rendered documents with resolved embeds
-    status: draft
+    status: approved
+    description: >
+      HTML export includes rendered documents with resolved wiki-links and artifact embeds as static pages.
     tags: [export, documents]
     fields:
       category: functional
@@ -550,7 +558,9 @@ artifacts:
   - id: REQ-036
     type: requirement
     title: HTML export supports version switcher and homepage link
-    status: draft
+    status: approved
+    description: >
+      HTML export supports runtime config.js for version switcher dropdown and homepage back-link.
     tags: [export, navigation, versioning]
     fields:
       category: functional
