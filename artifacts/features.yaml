@@ -1025,10 +1025,34 @@ artifacts:
   - id: FEAT-061
     type: feature
     title: yaml_edit.rs — lossless YAML artifact file editor per YAML 1.2.2
-    status: draft
+    status: approved
+    description: >
+      Indentation-aware YAML editor (yaml_edit.rs) for safe artifact file modification per YAML 1.2.2.
     tags: [yaml, parsing, phase-3]
     links:
       - type: satisfies
         target: REQ-034
       - type: implements
         target: DD-035
+
+  - id: FEAT-062
+    type: feature
+    title: Document pages in HTML export with resolved wiki-links and embeds
+    status: approved
+    description: >
+      Document pages in HTML export with resolved [[ID]] wiki-links and {{artifact:ID}} embeds.
+    tags: [export, documents, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-035
+
+  - id: FEAT-063
+    type: feature
+    title: Version switcher and homepage link in HTML export via config.js
+    status: approved
+    description: >
+      Version switcher dropdown and homepage link populated from config.js at page load.
+    tags: [export, navigation, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-036
