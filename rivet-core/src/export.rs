@@ -456,10 +456,19 @@ fn page_header(title: &str, config: &ExportConfig, is_single_page: bool) -> Stri
          <style>{css}</style>\n\
          <script src=\"./config.js\"></script>\n\
          {runtime}\
+         {mermaid}\
          </head>\n\
          <body>\n",
         title = html_escape(title),
         runtime = CONFIG_RUNTIME_SCRIPT,
+        mermaid = if config.offline {
+            ""
+        } else {
+            "<script type=\"module\">\
+             import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';\
+             mermaid.initialize({startOnLoad:true,theme:'dark',securityLevel:'strict'});\
+             </script>"
+        },
     )
 }
 
