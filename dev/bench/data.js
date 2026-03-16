@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1773606400945,
+  "lastUpdate": 1773641757552,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
@@ -959,6 +959,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1476659,
             "range": "± 38963",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4e34c0ca06e6c33df976a49317ee585c62af7aa7",
+          "message": "chore: bump to 0.2.0-dev, audit artifacts (#33)\n\n- Version: 0.1.0 → 0.2.0-dev\n- Promoted 17 requirements from draft to approved (REQ-005..036)\n- Promoted FEAT-061 (yaml_edit) to approved\n- Created FEAT-062 (export document pages), FEAT-063 (version switcher)\n- Added descriptions to 8 artifacts missing them\n- Closed issue #21 (build-system validation — implemented)\n- 346 artifacts, 0 warnings, 71/73 features approved, 33/36 reqs approved\n\nRemaining draft: REQ-006 (OSLC), REQ-022 (WASM embed), REQ-030 (formal proofs),\nFEAT-011 (OSLC client), FEAT-020 (AADL browser rendering)\n\nCo-authored-by: Test <test@test.com>\nCo-authored-by: Claude Opus 4.6 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-03-16T07:09:38+01:00",
+          "tree_id": "b5e7571257a9bdec50888c02f67b238364de518d",
+          "url": "https://github.com/pulseengine/rivet/commit/4e34c0ca06e6c33df976a49317ee585c62af7aa7"
+        },
+        "date": 1773641756704,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 82200,
+            "range": "± 755",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 1187776,
+            "range": "± 45200",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 55068840,
+            "range": "± 2987998",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2312,
+            "range": "± 37",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 30739,
+            "range": "± 450",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 444529,
+            "range": "± 6039",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 112,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 112,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 112,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 923996,
+            "range": "± 5448",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 194426,
+            "range": "± 2388",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 2158795,
+            "range": "± 83015",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 42080535,
+            "range": "± 7589839",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 35748,
+            "range": "± 348",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 487818,
+            "range": "± 3013",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 6401858,
+            "range": "± 1624095",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4365,
+            "range": "± 13",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 60292,
+            "range": "± 322",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 808491,
+            "range": "± 67706",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 61246,
+            "range": "± 446",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 689084,
+            "range": "± 4619",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 9123355,
+            "range": "± 1554944",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 827,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7948,
+            "range": "± 53",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 112323,
+            "range": "± 1309",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 23500,
+            "range": "± 255",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 158839,
+            "range": "± 1061",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1485066,
+            "range": "± 26811",
             "unit": "ns/iter"
           }
         ]
