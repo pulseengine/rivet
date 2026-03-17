@@ -70,6 +70,86 @@ impl Default for LayoutOptions {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Port types
+// ---------------------------------------------------------------------------
+
+/// Side of the node where a port is positioned.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum PortSide {
+    Left,
+    Right,
+    Top,
+    Bottom,
+    /// Let the layout algorithm choose based on direction.
+    #[default]
+    Auto,
+}
+
+/// Direction of data flow through a port.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PortDirection {
+    In,
+    Out,
+    InOut,
+}
+
+/// Visual category of a port (determines color in SVG rendering).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum PortType {
+    /// Data port (blue #4a90d9).
+    #[default]
+    Data,
+    /// Event port (orange #e67e22).
+    Event,
+    /// Event-data port (green #27ae60).
+    EventData,
+    /// Access port (gray #999).
+    Access,
+    /// Feature group (purple #9b59b6).
+    Group,
+    /// Abstract feature (dark gray #666).
+    Abstract,
+}
+
+/// Display-level information about a port on a node.
+#[derive(Debug, Clone)]
+pub struct PortInfo {
+    /// Unique identifier within the owning node.
+    pub id: String,
+    /// Label rendered next to the port circle.
+    pub label: String,
+    /// Which side of the node this port appears on.
+    pub side: PortSide,
+    /// Direction of data flow.
+    pub direction: PortDirection,
+    /// Visual category (determines color).
+    pub port_type: PortType,
+}
+
+/// A positioned port on a layout node.
+#[derive(Debug, Clone)]
+pub struct LayoutPort {
+    /// Port identifier.
+    pub id: String,
+    /// Label text.
+    pub label: String,
+    /// X coordinate of port center (absolute).
+    pub x: f64,
+    /// Y coordinate of port center (absolute).
+    pub y: f64,
+    /// Which side of the node.
+    pub side: PortSide,
+    /// Direction indicator.
+    pub direction: PortDirection,
+    /// Visual type.
+    pub port_type: PortType,
+}
+
+// ---------------------------------------------------------------------------
+// Node / Edge / Layout types
+// ---------------------------------------------------------------------------
+
 /// Display-level information about a node supplied by the caller.
 #[derive(Debug, Clone)]
 pub struct NodeInfo {
@@ -86,6 +166,9 @@ pub struct NodeInfo {
     /// algorithm lays out each container's children independently and then
     /// sizes the container to fit its content.
     pub parent: Option<String>,
+    /// Ports on this node.  Empty for nodes without explicit ports;
+    /// edges then connect to node centers (backward compatible).
+    pub ports: Vec<PortInfo>,
 }
 
 /// Display-level information about an edge supplied by the caller.
@@ -93,6 +176,10 @@ pub struct NodeInfo {
 pub struct EdgeInfo {
     /// Label rendered along the edge path.
     pub label: String,
+    /// Source port ID (within source node).  `None` = connect to node center.
+    pub source_port: Option<String>,
+    /// Target port ID (within target node).  `None` = connect to node center.
+    pub target_port: Option<String>,
 }
 
 /// A positioned node produced by the layout algorithm.
@@ -118,6 +205,8 @@ pub struct LayoutNode {
     pub sublabel: Option<String>,
     /// `true` when this node is a container with children laid out inside.
     pub is_container: bool,
+    /// Positioned ports on this node.
+    pub ports: Vec<LayoutPort>,
 }
 
 /// A routed edge produced by the layout algorithm.
@@ -131,6 +220,10 @@ pub struct LayoutEdge {
     pub label: String,
     /// Ordered polyline waypoints `(x, y)`.
     pub points: Vec<(f64, f64)>,
+    /// Source port ID if edge connects to a specific port.
+    pub source_port: Option<String>,
+    /// Target port ID if edge connects to a specific port.
+    pub target_port: Option<String>,
 }
 
 /// Complete layout result.
@@ -197,6 +290,7 @@ pub fn layout<N, E>(
                 node_type: String::new(),
                 sublabel: None,
                 is_container: false,
+                ports: Vec::new(),
             }],
             edges: Vec::new(),
             width: 500.0,
@@ -535,6 +629,7 @@ fn assign_coordinates(
                 node_type: info.node_type.clone(),
                 sublabel: info.sublabel.clone(),
                 is_container,
+                ports: Vec::new(),
             });
 
             x_cursor += nw + options.node_separation;
@@ -591,6 +686,8 @@ fn route_edges<N, E>(
             target_id: tgt_id.clone(),
             label: info.label,
             points,
+            source_port: None,
+            target_port: None,
         });
     }
 
@@ -968,12 +1065,15 @@ mod tests {
             node_type: "default".into(),
             sublabel: None,
             parent: None,
+            ports: vec![],
         }
     }
 
     fn simple_edge_info(_idx: EdgeIndex, label: &&str) -> EdgeInfo {
         EdgeInfo {
             label: label.to_string(),
+            source_port: None,
+            target_port: None,
         }
     }
 
@@ -1155,6 +1255,7 @@ mod tests {
                 } else {
                     None
                 },
+                ports: vec![],
             },
             &simple_edge_info,
             &LayoutOptions::default(),
@@ -1221,6 +1322,7 @@ mod tests {
                     "T1" | "T2" => Some("P".into()),
                     _ => None,
                 },
+                ports: vec![],
             },
             &simple_edge_info,
             &LayoutOptions::default(),
@@ -1276,6 +1378,7 @@ mod tests {
                     "B" => Some("P2".into()),
                     _ => None,
                 },
+                ports: vec![],
             },
             &simple_edge_info,
             &LayoutOptions::default(),
@@ -1320,6 +1423,7 @@ mod tests {
                 node_type: "default".into(),
                 sublabel: None,
                 parent: if *n != "S" { Some("S".into()) } else { None },
+                ports: vec![],
             },
             &simple_edge_info,
             &opts,
@@ -1364,6 +1468,7 @@ mod tests {
                     "A" | "B" => Some("S".into()),
                     _ => None,
                 },
+                ports: vec![],
             },
             &simple_edge_info,
             &LayoutOptions::default(),
@@ -1423,6 +1528,7 @@ mod tests {
             node_type: "default".into(),
             sublabel: None,
             parent: if *n != "S" { Some("S".into()) } else { None },
+            ports: vec![],
         };
 
         let first = layout(&g, &node_info, &simple_edge_info, &LayoutOptions::default());
@@ -1472,6 +1578,7 @@ mod tests {
             node_type: "default".into(),
             sublabel: None,
             parent: None,
+            ports: vec![],
         }
     }
 
@@ -1479,6 +1586,8 @@ mod tests {
     fn string_edge_info(_idx: EdgeIndex, label: &String) -> EdgeInfo {
         EdgeInfo {
             label: label.clone(),
+            source_port: None,
+            target_port: None,
         }
     }
 

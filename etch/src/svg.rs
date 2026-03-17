@@ -416,9 +416,12 @@ mod tests {
                 node_type: "req".into(),
                 sublabel: Some("Title".into()),
                 parent: None,
+                ports: vec![],
             },
             &|_idx: EdgeIndex, e: &&str| EdgeInfo {
                 label: e.to_string(),
+                source_port: None,
+                target_port: None,
             },
             &LayoutOptions::default(),
         )
@@ -536,9 +539,12 @@ mod tests {
                 } else {
                     None
                 },
+                ports: vec![],
             },
             &|_idx: EdgeIndex, e: &&str| EdgeInfo {
                 label: e.to_string(),
+                source_port: None,
+                target_port: None,
             },
             &LayoutOptions::default(),
         );

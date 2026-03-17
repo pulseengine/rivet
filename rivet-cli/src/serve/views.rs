@@ -680,6 +680,7 @@ pub(crate) async fn graph_view(
                     node_type: atype,
                     sublabel,
                     parent: None,
+                    ports: vec![],
                 },
             )
         })
@@ -704,9 +705,14 @@ pub(crate) async fn graph_view(
                     node_type: String::new(),
                     sublabel: None,
                     parent: None,
+                    ports: vec![],
                 })
             },
-            &|_idx, e| EdgeInfo { label: e.clone() },
+            &|_idx, e| EdgeInfo {
+                label: e.clone(),
+                source_port: None,
+                target_port: None,
+            },
             &layout_opts,
         );
         let svg = render_svg(&gl, &svg_opts);
@@ -899,9 +905,14 @@ pub(crate) async fn artifact_graph(
                 node_type: atype,
                 sublabel,
                 parent: None,
+                ports: vec![],
             }
         },
-        &|_idx, e| EdgeInfo { label: e.clone() },
+        &|_idx, e| EdgeInfo {
+            label: e.clone(),
+            source_port: None,
+            target_port: None,
+        },
         &layout_opts,
     );
 
@@ -4000,9 +4011,14 @@ pub(crate) async fn doc_linkage_view(State(state): State<SharedState>) -> Html<S
                     node_type: node_type.into(),
                     sublabel,
                     parent: None,
+                    ports: vec![],
                 }
             },
-            &|_idx, e| EdgeInfo { label: e.clone() },
+            &|_idx, e| EdgeInfo {
+                label: e.clone(),
+                source_port: None,
+                target_port: None,
+            },
             &layout_opts,
         );
 
