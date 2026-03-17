@@ -6,9 +6,24 @@
 
 use std::path::PathBuf;
 
-/// Return the path to `serve.rs` relative to the workspace.
-fn serve_rs_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/serve.rs")
+/// Return the path to the `serve/` module directory.
+fn serve_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/serve")
+}
+
+/// Read and concatenate all `.rs` source files in the serve module.
+fn read_serve_sources() -> String {
+    let dir = serve_dir();
+    let mut combined = String::new();
+    for entry in std::fs::read_dir(&dir).expect("failed to read serve/ dir") {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        if path.extension().is_some_and(|e| e == "rs") {
+            combined.push_str(&std::fs::read_to_string(&path).unwrap_or_default());
+            combined.push('\n');
+        }
+    }
+    combined
 }
 
 /// Every `hx-get` link that targets `#content` MUST also include
@@ -21,7 +36,7 @@ fn serve_rs_path() -> PathBuf {
 /// - Lines that already contain `hx-push-url`
 #[test]
 fn all_content_links_push_url() {
-    let source = std::fs::read_to_string(serve_rs_path()).expect("failed to read serve.rs");
+    let source = read_serve_sources();
 
     let mut violations = Vec::new();
 
@@ -70,17 +85,17 @@ fn all_content_links_push_url() {
 /// the full page layout with content already rendered (no redirect needed).
 #[test]
 fn wrap_middleware_exists() {
-    let source = std::fs::read_to_string(serve_rs_path()).expect("failed to read serve.rs");
+    let source = read_serve_sources();
 
     assert!(
         source.contains("hx-request") || source.contains("HX-Request"),
-        "serve.rs must check the HX-Request header to distinguish \
+        "serve module must check the HX-Request header to distinguish \
          HTMX partial requests from direct browser navigations"
     );
 
     assert!(
         source.contains("wrap_full_page"),
-        "serve.rs must contain the wrap_full_page middleware \
+        "serve module must contain the wrap_full_page middleware \
          for direct-access full-page rendering"
     );
 
@@ -95,7 +110,7 @@ fn wrap_middleware_exists() {
 /// so reloading stays on the current page instead of navigating to root.
 #[test]
 fn reload_uses_hx_location() {
-    let source = std::fs::read_to_string(serve_rs_path()).expect("failed to read serve.rs");
+    let source = read_serve_sources();
 
     // The reload handler should reference HX-Location for in-place reload
     assert!(
