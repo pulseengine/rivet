@@ -527,6 +527,21 @@ dashboard-ucas:
         Stale metrics mislead developers and auditors about the
         current state of traceability.
 
+    - id: UCA-D-3
+      description: >
+        Dashboard provides full unfiltered graph visualization when artifact
+        count exceeds the layout engine's capacity, causing the Sugiyama
+        algorithm to exhaust memory or block the async runtime.
+      context: >
+        Project contains 500+ artifacts and user navigates to /graph without
+        type filters or focus. The layout runs synchronously on the tokio
+        runtime thread.
+      hazards: [H-13]
+      rationale: >
+        The O(N² log N) barycenter heuristic with 4 sweep iterations becomes
+        prohibitively expensive above ~300 nodes. Running it on the async
+        runtime blocks all other dashboard requests.
+
   too-early-too-late: []
   stopped-too-soon: []
 

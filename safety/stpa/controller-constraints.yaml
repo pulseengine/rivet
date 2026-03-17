@@ -326,6 +326,16 @@ controller-constraints:
     ucas: [UCA-D-2]
     hazards: [H-3, H-6]
 
+  - id: CC-D-3
+    controller: CTRL-DASH
+    constraint: >
+      Dashboard must enforce a node budget on graph layout, display a
+      helpful message when exceeded, and provide filter/focus controls
+      to narrow the view. Layout computation must run in spawn_blocking
+      to avoid blocking the async runtime.
+    ucas: [UCA-D-3]
+    hazards: [H-13]
+
   # =========================================================================
   # Incremental validation constraints (salsa)
   # =========================================================================

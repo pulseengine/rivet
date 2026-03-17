@@ -123,6 +123,16 @@ hazards:
       of correctness.
     losses: [L-2, L-5]
 
+  - id: H-13
+    title: Rivet dashboard becomes unresponsive when artifact count exceeds layout engine capacity
+    description: >
+      When a project contains hundreds or thousands of artifacts, the graph
+      layout algorithm (O(N² log N) Sugiyama) exhausts memory or blocks the
+      async runtime, causing the dashboard to hang or crash. Engineers lose
+      the ability to visualize and navigate traceability, defeating the
+      tool's purpose.
+    losses: [L-4, L-5]
+
 sub-hazards:
   # --- H-1 refinements: types of stale references ---
   - id: H-1.1

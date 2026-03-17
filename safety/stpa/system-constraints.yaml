@@ -135,3 +135,13 @@ system-constraints:
       Rocq specifications must be generated from or validated against
       the Rust source via coq-of-rust, not hand-written independently.
     hazards: [H-12]
+
+  - id: SC-15
+    title: Dashboard must degrade gracefully when artifact count exceeds rendering thresholds
+    description: >
+      The dashboard must impose node budgets on graph layout, paginate
+      large artifact lists, and progressively disclose detail rather than
+      attempting to render everything at once. Layout computation must run
+      outside the async runtime to prevent blocking other requests.
+    hazards: [H-13]
+    spec-baseline: "v0.2.0"
