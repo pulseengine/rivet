@@ -431,11 +431,24 @@ fn build_bezier_path(points: &[(f64, f64)]) -> String {
     let (x0, y0) = points[0];
     write!(d, "M {x0} {y0}").unwrap();
 
-    if points.len() == 2 {
+    // Check if all segments are axis-aligned (orthogonal routing)
+    let is_orthogonal = points.len() >= 2
+        && points.windows(2).all(|w| {
+            let dx = (w[0].0 - w[1].0).abs();
+            let dy = (w[0].1 - w[1].1).abs();
+            dx < 0.1 || dy < 0.1
+        });
+
+    if is_orthogonal {
+        // Polyline with straight segments (L commands)
+        for &(x, y) in &points[1..] {
+            write!(d, " L {x} {y}").unwrap();
+        }
+    } else if points.len() == 2 {
         let (x1, y1) = points[1];
         write!(d, " L {x1} {y1}").unwrap();
     } else {
-        // Simple cubic bezier: for each segment use vertical tangent handles.
+        // Cubic bezier: for each segment use vertical tangent handles.
         for i in 0..points.len() - 1 {
             let (x1, y1) = points[i];
             let (x2, y2) = points[i + 1];
@@ -668,6 +681,47 @@ mod tests {
         let result = lighten_color("#ff0000");
         // Red channel stays 255, G and B go up.
         assert!(result.starts_with("#ff"));
+    }
+
+    #[test]
+    fn svg_orthogonal_edges_use_line_commands() {
+        let mut g = Graph::new();
+        let a = g.add_node("A");
+        let b = g.add_node("B");
+        g.add_edge(a, b, "ab");
+
+        let gl = layout(
+            &g,
+            &|_idx: NodeIndex, n: &&str| NodeInfo {
+                id: n.to_string(),
+                label: n.to_string(),
+                node_type: "default".into(),
+                sublabel: None,
+                parent: None,
+                ports: vec![],
+            },
+            &|_idx: EdgeIndex, e: &&str| EdgeInfo {
+                label: e.to_string(),
+                source_port: None,
+                target_port: None,
+            },
+            &LayoutOptions {
+                edge_routing: crate::layout::EdgeRouting::Orthogonal,
+                ..Default::default()
+            },
+        );
+
+        let svg = render_svg(&gl, &SvgOptions::default());
+        // Orthogonal edges should use L (line-to) commands, not C (cubic)
+        assert!(
+            svg.contains(" L "),
+            "orthogonal edges should use L commands"
+        );
+        // Should NOT contain C commands for orthogonal edges
+        assert!(
+            !svg.contains(" C "),
+            "orthogonal edges should not use C (bezier) commands"
+        );
     }
 
     #[test]
