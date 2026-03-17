@@ -21,7 +21,10 @@ use rivet_core::schema::Severity;
 use rivet_core::store::Store;
 use rivet_core::validate;
 
-use super::components::{FilterBarConfig, ViewParams, filter_bar};
+use super::components::{
+    Column, FilterBarConfig, TableConfig, ViewParams, filter_bar, paginate, pagination,
+    sortable_table,
+};
 use super::layout::page_layout;
 use super::{
     AppState, SharedState, badge_for_type, html_escape, linkify_source_refs, rewrite_image_paths,
@@ -286,64 +289,147 @@ fn stats_partial(state: &AppState) -> String {
 
 // ── Artifacts ────────────────────────────────────────────────────────────
 
-pub(crate) async fn artifacts_list(State(state): State<SharedState>) -> Html<String> {
+pub(crate) async fn artifacts_list(
+    State(state): State<SharedState>,
+    Query(params): Query<ViewParams>,
+) -> Html<String> {
     let state = state.read().await;
     let store = &state.store;
 
-    let mut artifacts: Vec<_> = store.iter().collect();
-    artifacts.sort_by(|a, b| a.id.cmp(&b.id));
+    // Collect all unique types and statuses for filter bar controls
+    let mut available_types: Vec<String> = store.types().map(|t| t.to_string()).collect();
+    available_types.sort();
+
+    let mut available_statuses: Vec<String> = {
+        let mut seen = std::collections::BTreeSet::new();
+        for a in store.iter() {
+            if let Some(s) = &a.status {
+                seen.insert(s.clone());
+            }
+        }
+        seen.into_iter().collect()
+    };
+    available_statuses.sort();
+
+    // Collect and apply filters
+    let active_types = params.type_list();
+    let active_status = params.status.as_deref().unwrap_or("");
+    let search_q = params.q.as_deref().unwrap_or("").to_lowercase();
+
+    let mut artifacts: Vec<_> = store
+        .iter()
+        .filter(|a| {
+            // Type filter
+            if !active_types.is_empty() && !active_types.contains(&a.artifact_type) {
+                return false;
+            }
+            // Status filter
+            if !active_status.is_empty() {
+                let art_status = a.status.as_deref().unwrap_or("");
+                if art_status != active_status {
+                    return false;
+                }
+            }
+            // Text search on ID and title
+            if !search_q.is_empty() {
+                let id_lower = a.id.to_lowercase();
+                let title_lower = a.title.to_lowercase();
+                if !id_lower.contains(&search_q) && !title_lower.contains(&search_q) {
+                    return false;
+                }
+            }
+            true
+        })
+        .collect();
+
+    // Apply sorting
+    let sort_col = params.sort.as_deref().unwrap_or("id");
+    let ascending = params.sort_ascending();
+    artifacts.sort_by(|a, b| {
+        let ord = match sort_col {
+            "type" => a.artifact_type.cmp(&b.artifact_type),
+            "title" => a.title.cmp(&b.title),
+            "status" => {
+                let sa = a.status.as_deref().unwrap_or("");
+                let sb = b.status.as_deref().unwrap_or("");
+                sa.cmp(sb)
+            }
+            "links" => a.links.len().cmp(&b.links.len()),
+            _ => a.id.cmp(&b.id),
+        };
+        if ascending { ord } else { ord.reverse() }
+    });
+
+    // Pagination
+    let (page_items, total_filtered) = paginate(&artifacts, &params);
+
+    // Build table rows
+    let rows: Vec<Vec<String>> = page_items
+        .iter()
+        .map(|a| {
+            let status = a.status.as_deref().unwrap_or("-");
+            let status_badge = match status {
+                "approved" => format!("<span class=\"badge badge-ok\">{status}</span>"),
+                "draft" => format!("<span class=\"badge badge-warn\">{status}</span>"),
+                "obsolete" => format!("<span class=\"badge badge-error\">{status}</span>"),
+                _ => format!("<span class=\"badge badge-info\">{status}</span>"),
+            };
+            vec![
+                format!(
+                    "<a hx-get=\"/artifacts/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a>",
+                    html_escape(&a.id),
+                    html_escape(&a.id)
+                ),
+                badge_for_type(&a.artifact_type),
+                html_escape(&a.title),
+                status_badge,
+                a.links.len().to_string(),
+            ]
+        })
+        .collect();
+
+    let columns = vec![
+        Column {
+            key: "id".into(),
+            label: "ID".into(),
+            sortable: true,
+        },
+        Column {
+            key: "type".into(),
+            label: "Type".into(),
+            sortable: true,
+        },
+        Column {
+            key: "title".into(),
+            label: "Title".into(),
+            sortable: true,
+        },
+        Column {
+            key: "status".into(),
+            label: "Status".into(),
+            sortable: true,
+        },
+        Column {
+            key: "links".into(),
+            label: "Links".into(),
+            sortable: true,
+        },
+    ];
 
     let mut html = String::from("<h2>Artifacts</h2>");
-    // Client-side filter input
-    html.push_str("<div style=\"position:relative;margin-bottom:1rem\">\
-        <svg width=\"15\" height=\"15\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" style=\"position:absolute;left:.75rem;top:50%;transform:translateY(-50%);opacity:.4\"><circle cx=\"7\" cy=\"7\" r=\"4.5\"/><path d=\"M10.5 10.5L14 14\"/></svg>\
-        <input type=\"search\" id=\"artifact-filter\" placeholder=\"Filter artifacts...\" \
-        style=\"width:100%;padding:.6rem .75rem .6rem 2.25rem;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:.875rem;font-family:var(--font);background:var(--surface);color:var(--text);outline:none\" \
-        oninput=\"filterTable(this.value)\">\
-        </div>");
-    html.push_str(
-        "<table id=\"artifacts-table\"><thead><tr><th>ID</th><th>Type</th><th>Title</th><th>Status</th><th>Links</th></tr></thead><tbody>",
-    );
-
-    for a in &artifacts {
-        let status = a.status.as_deref().unwrap_or("-");
-        let status_badge = match status {
-            "approved" => format!("<span class=\"badge badge-ok\">{status}</span>"),
-            "draft" => format!("<span class=\"badge badge-warn\">{status}</span>"),
-            "obsolete" => format!("<span class=\"badge badge-error\">{status}</span>"),
-            _ => format!("<span class=\"badge badge-info\">{status}</span>"),
-        };
-        html.push_str(&format!(
-            "<tr><td><a hx-get=\"/artifacts/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a></td>\
-             <td>{}</td>\
-             <td>{}</td>\
-             <td>{}</td>\
-             <td>{}</td></tr>",
-            html_escape(&a.id),
-            html_escape(&a.id),
-            badge_for_type(&a.artifact_type),
-            html_escape(&a.title),
-            status_badge,
-            a.links.len()
-        ));
-    }
-
-    html.push_str("</tbody></table>");
-    html.push_str(&format!(
-        "<p class=\"meta\">{} artifacts total</p>",
-        artifacts.len()
-    ));
-    // Inline filter script
-    html.push_str(
-        "<script>\
-        function filterTable(q){\
-          q=q.toLowerCase();\
-          document.querySelectorAll('#artifacts-table tbody tr').forEach(function(r){\
-            r.style.display=r.textContent.toLowerCase().includes(q)?'':'none';\
-          });\
-        }\
-        </script>",
-    );
+    html.push_str(&filter_bar(&FilterBarConfig {
+        base_url: "/artifacts",
+        available_types: &available_types,
+        available_statuses: &available_statuses,
+        params: &params,
+    }));
+    html.push_str(&sortable_table(&TableConfig {
+        base_url: "/artifacts",
+        columns: &columns,
+        rows: &rows,
+        params: &params,
+    }));
+    html.push_str(&pagination(total_filtered, &params, "/artifacts"));
 
     Html(html)
 }
