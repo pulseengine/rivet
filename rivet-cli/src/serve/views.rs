@@ -1170,78 +1170,324 @@ fn apply_filters_to_graph(
 
 // ── Validation ───────────────────────────────────────────────────────────
 
-pub(crate) async fn validate_view(State(state): State<SharedState>) -> Html<String> {
+pub(crate) async fn validate_view(
+    State(state): State<SharedState>,
+    Query(params): Query<ViewParams>,
+) -> Html<String> {
     let state = state.read().await;
-    let diagnostics = validate::validate(&state.store, &state.schema, &state.graph);
+    let all_diagnostics = validate::validate(&state.store, &state.schema, &state.graph);
 
-    let errors = diagnostics
+    // Summary counts are always over ALL diagnostics (unfiltered).
+    let errors_total = all_diagnostics
         .iter()
         .filter(|d| d.severity == Severity::Error)
         .count();
-    let warnings = diagnostics
+    let warnings_total = all_diagnostics
         .iter()
         .filter(|d| d.severity == Severity::Warning)
         .count();
-    let infos = diagnostics
+    let infos_total = all_diagnostics
         .iter()
         .filter(|d| d.severity == Severity::Info)
         .count();
 
     let mut html = String::from("<h2>Validation Results</h2>");
 
-    // Colored summary bar
-    let total_issues = errors + warnings + infos;
+    // Colored summary bar (unfiltered totals).
+    let total_issues = errors_total + warnings_total + infos_total;
     if total_issues == 0 {
         html.push_str("<div class=\"validation-bar pass\">All checks passed</div>");
     } else {
         html.push_str(&format!(
-            "<div class=\"validation-bar fail\">{total_issues} issue{} found &mdash; {errors} error{}, {warnings} warning{}, {infos} info</div>",
+            "<div class=\"validation-bar fail\">{total_issues} issue{} found &mdash; \
+             {errors_total} error{}, {warnings_total} warning{}, {infos_total} info</div>",
             if total_issues != 1 { "s" } else { "" },
-            if errors != 1 { "s" } else { "" },
-            if warnings != 1 { "s" } else { "" },
+            if errors_total != 1 { "s" } else { "" },
+            if warnings_total != 1 { "s" } else { "" },
         ));
     }
 
-    if diagnostics.is_empty() {
+    // ── Severity filter bar ────────────────────────────────────────────
+    // We repurpose the `status` param for severity selection and `types`
+    // param for artifact-type filtering. `q` is free-text search.
+    let active_severity = params.status.as_deref().unwrap_or("");
+    let active_types = params.type_list();
+    let search_q = params.q.as_deref().unwrap_or("").to_lowercase();
+
+    // Collect all artifact types that appear in diagnostics for type filter.
+    let mut diag_types: Vec<String> = {
+        let mut seen = std::collections::BTreeSet::new();
+        for d in &all_diagnostics {
+            if let Some(id) = &d.artifact_id
+                && let Some(a) = state.store.get(id)
+            {
+                seen.insert(a.artifact_type.clone());
+            }
+        }
+        seen.into_iter().collect()
+    };
+    diag_types.sort();
+
+    // Severity quick-filter buttons.
+    html.push_str(
+        "<div class=\"filter-bar card\" style=\"padding:.75rem 1rem;margin-bottom:1rem\">",
+    );
+    html.push_str("<div style=\"display:flex;flex-wrap:wrap;gap:.75rem;align-items:center\">");
+    html.push_str("<span style=\"font-size:.75rem;font-weight:600\">Severity:</span>");
+    for (val, label, badge_cls) in [
+        ("", "All", ""),
+        ("error", "Errors", "badge-error"),
+        ("warning", "Warnings", "badge-warn"),
+        ("info", "Info", "badge-info"),
+    ] {
+        let is_active = active_severity == val;
+        let qs = params.to_query_string(&[("status", val), ("page", "1")]);
+        let border = if is_active {
+            "border:2px solid var(--accent)"
+        } else {
+            "border:1px solid var(--border)"
+        };
+        let badge_part = if badge_cls.is_empty() {
+            String::new()
+        } else {
+            format!(
+                " <span class=\"badge {}\" style=\"font-size:.65rem\">{}</span>",
+                badge_cls, label
+            )
+        };
+        html.push_str(&format!(
+            "<a hx-get=\"/validate{qs}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" \
+             style=\"font-size:.75rem;padding:.2rem .5rem;border-radius:4px;{border};\
+             text-decoration:none;color:var(--text)\">{label}{badge_part}</a>",
+            qs = qs,
+            label = label,
+            border = border,
+            badge_part = badge_part,
+        ));
+    }
+
+    // Type filter checkboxes (only if we have type info).
+    if !diag_types.is_empty() {
+        html.push_str(
+            "<span style=\"font-size:.75rem;font-weight:600;margin-left:.5rem\">Type:</span>",
+        );
+        for t in &diag_types {
+            let checked = if active_types.contains(t) {
+                " checked"
+            } else {
+                ""
+            };
+            html.push_str(&format!(
+                "<label style=\"font-size:.75rem;display:flex;align-items:center;gap:.2rem;cursor:pointer\">\
+                 <input type=\"checkbox\" class=\"filter-type-v\" value=\"{t_esc}\"{checked}> {t_esc}</label>",
+                t_esc = html_escape(t),
+                checked = checked,
+            ));
+        }
+    }
+
+    // Search box.
+    let q_val = params.q.as_deref().unwrap_or("");
+    html.push_str(&format!(
+        "<div style=\"display:flex;align-items:center;gap:.25rem;flex:1;min-width:150px;margin-left:.5rem\">\
+         <span style=\"font-size:.75rem;font-weight:600\">Search:</span>\
+         <input type=\"search\" id=\"validate-search\" value=\"{}\" \
+         placeholder=\"ID or message...\" \
+         style=\"font-size:.75rem;padding:.2rem .4rem;font-family:var(--mono);flex:1;\
+         border:1px solid var(--border);border-radius:4px\">\
+         </div>",
+        html_escape(q_val),
+    ));
+
+    // Clear link.
+    html.push_str(
+        "<a href=\"/validate\" hx-get=\"/validate\" hx-target=\"#content\" hx-push-url=\"true\" \
+         style=\"font-size:.72rem;color:var(--accent);cursor:pointer;text-decoration:none\">Clear</a>",
+    );
+    html.push_str("</div></div>"); // inner flex + filter-bar
+
+    // JS: wire up type checkboxes + search box.
+    html.push_str(
+        r#"<script>
+(function() {
+  const base = '/validate';
+  function buildParams() {
+    const types = Array.from(document.querySelectorAll('.filter-type-v:checked')).map(c => c.value).join(',');
+    const status = new URLSearchParams(window.location.search).get('status') || '';
+    const q = (document.getElementById('validate-search') || {}).value || '';
+    let p = [];
+    if (types) p.push('types=' + encodeURIComponent(types));
+    if (status) p.push('status=' + encodeURIComponent(status));
+    if (q) p.push('q=' + encodeURIComponent(q));
+    return base + (p.length ? '?' + p.join('&') : '');
+  }
+  document.querySelectorAll('.filter-type-v').forEach(cb => {
+    cb.addEventListener('change', () => {
+      htmx.ajax('GET', buildParams(), {target: '#content', pushUrl: true});
+    });
+  });
+  const search = document.getElementById('validate-search');
+  if (search) {
+    let t;
+    search.addEventListener('input', () => {
+      clearTimeout(t);
+      t = setTimeout(() => htmx.ajax('GET', buildParams(), {target: '#content', pushUrl: true}), 300);
+    });
+  }
+})();
+</script>"#,
+    );
+
+    if all_diagnostics.is_empty() {
         html.push_str("<div class=\"card\"><p>No issues found.</p></div>");
         return Html(html);
     }
 
-    html.push_str(
-        "<table><thead><tr><th>Severity</th><th>Artifact</th><th>Rule</th><th>Message</th></tr></thead><tbody>",
-    );
-
-    // Show errors first, then warnings, then info
-    let mut sorted = diagnostics;
+    // ── Apply filters ──────────────────────────────────────────────────
+    // Sort: errors first, then warnings, then info (stable baseline).
+    let mut sorted = all_diagnostics;
     sorted.sort_by_key(|d| match d.severity {
         Severity::Error => 0,
         Severity::Warning => 1,
         Severity::Info => 2,
     });
 
-    for d in &sorted {
-        let sev = match d.severity {
-            Severity::Error => "<span class=\"badge badge-error\">ERROR</span>",
-            Severity::Warning => "<span class=\"badge badge-warn\">WARN</span>",
-            Severity::Info => "<span class=\"badge badge-info\">INFO</span>",
-        };
-        let art_id = d.artifact_id.as_deref().unwrap_or("-");
-        let art_link = if d.artifact_id.is_some() && state.store.contains(art_id) {
-            format!(
-                "<a hx-get=\"/artifacts/{art}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{art}</a>",
-                art = html_escape(art_id)
-            )
-        } else {
-            html_escape(art_id)
-        };
-        html.push_str(&format!(
-            "<tr><td>{sev}</td><td>{art_link}</td><td>{}</td><td>{}</td></tr>",
-            html_escape(&d.rule),
-            html_escape(&d.message)
-        ));
+    // Apply user sort override on top.
+    match params.sort.as_deref() {
+        Some("id") => {
+            let asc = params.sort_ascending();
+            sorted.sort_by(|a, b| {
+                let ai = a.artifact_id.as_deref().unwrap_or("");
+                let bi = b.artifact_id.as_deref().unwrap_or("");
+                if asc { ai.cmp(bi) } else { bi.cmp(ai) }
+            });
+        }
+        Some("severity") => {
+            let asc = params.sort_ascending();
+            sorted.sort_by_key(|d| {
+                let k = match d.severity {
+                    Severity::Error => 0usize,
+                    Severity::Warning => 1,
+                    Severity::Info => 2,
+                };
+                if asc { k } else { 2 - k }
+            });
+        }
+        Some("message") => {
+            let asc = params.sort_ascending();
+            sorted.sort_by(|a, b| {
+                if asc {
+                    a.message.cmp(&b.message)
+                } else {
+                    b.message.cmp(&a.message)
+                }
+            });
+        }
+        _ => {}
     }
 
-    html.push_str("</tbody></table>");
+    // Filter by severity (status param).
+    if !active_severity.is_empty() {
+        sorted.retain(|d| {
+            let sev = match d.severity {
+                Severity::Error => "error",
+                Severity::Warning => "warning",
+                Severity::Info => "info",
+            };
+            sev == active_severity
+        });
+    }
+
+    // Filter by artifact type (types param).
+    if !active_types.is_empty() {
+        sorted.retain(|d| {
+            if let Some(id) = &d.artifact_id
+                && let Some(a) = state.store.get(id)
+            {
+                return active_types.contains(&a.artifact_type);
+            }
+            false
+        });
+    }
+
+    // Filter by text query (q param).
+    if !search_q.is_empty() {
+        sorted.retain(|d| {
+            let id_match = d
+                .artifact_id
+                .as_deref()
+                .unwrap_or("")
+                .to_lowercase()
+                .contains(&search_q);
+            let msg_match = d.message.to_lowercase().contains(&search_q);
+            id_match || msg_match
+        });
+    }
+
+    // ── Paginate ───────────────────────────────────────────────────────
+    let (page_slice, total_filtered) = paginate(&sorted, &params);
+
+    html.push_str(&pagination(total_filtered, &params, "/validate"));
+
+    // ── Table ──────────────────────────────────────────────────────────
+    let columns = [
+        Column {
+            key: "severity".into(),
+            label: "Severity".into(),
+            sortable: true,
+        },
+        Column {
+            key: "id".into(),
+            label: "Artifact".into(),
+            sortable: true,
+        },
+        Column {
+            key: "rule".into(),
+            label: "Rule".into(),
+            sortable: false,
+        },
+        Column {
+            key: "message".into(),
+            label: "Message".into(),
+            sortable: true,
+        },
+    ];
+
+    let rows: Vec<Vec<String>> = page_slice
+        .iter()
+        .map(|d| {
+            let sev = match d.severity {
+                Severity::Error => "<span class=\"badge badge-error\">ERROR</span>".to_string(),
+                Severity::Warning => "<span class=\"badge badge-warn\">WARN</span>".to_string(),
+                Severity::Info => "<span class=\"badge badge-info\">INFO</span>".to_string(),
+            };
+            let art_id = d.artifact_id.as_deref().unwrap_or("-");
+            let art_link = if d.artifact_id.is_some() && state.store.contains(art_id) {
+                format!(
+                    "<a hx-get=\"/artifacts/{art}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{art}</a>",
+                    art = html_escape(art_id)
+                )
+            } else {
+                html_escape(art_id)
+            };
+            vec![
+                sev,
+                art_link,
+                html_escape(&d.rule),
+                html_escape(&d.message),
+            ]
+        })
+        .collect();
+
+    html.push_str(&sortable_table(&TableConfig {
+        base_url: "/validate",
+        columns: &columns,
+        rows: &rows,
+        params: &params,
+    }));
+
+    html.push_str(&pagination(total_filtered, &params, "/validate"));
+
     Html(html)
 }
 
@@ -4550,6 +4796,7 @@ fn render_trace_node(node: &TraceNode, depth: usize, project_path: &str) -> Stri
 pub(crate) async fn traceability_view(
     State(state): State<SharedState>,
     Query(params): Query<TraceParams>,
+    Query(view_params): Query<ViewParams>,
 ) -> Html<String> {
     let state = state.read().await;
     let store = &state.store;
@@ -4568,7 +4815,20 @@ pub(crate) async fn traceability_view(
     };
     let root_type = params.root_type.as_deref().unwrap_or(default_root);
     let status_filter = params.status.as_deref().unwrap_or("all");
-    let search_filter = params.search.as_deref().unwrap_or("").to_lowercase();
+
+    // `q` from ViewParams overrides the legacy `search` param if provided.
+    let search_filter = {
+        let q = view_params.q.as_deref().unwrap_or("").trim();
+        if !q.is_empty() {
+            q.to_lowercase()
+        } else {
+            params.search.as_deref().unwrap_or("").to_lowercase()
+        }
+    };
+
+    // ViewParams `types`: filter root artifacts to only those whose
+    // artifact_type matches one of the listed types.
+    let type_filter = view_params.type_list();
 
     // Get root artifacts
     let mut root_ids: Vec<&str> = store
@@ -4587,13 +4847,17 @@ pub(crate) async fn traceability_view(
                 if status_filter != "all" && a.status.as_deref().unwrap_or("") != status_filter {
                     return false;
                 }
-                // Search filter
+                // Text search filter (ID or title)
                 if !search_filter.is_empty() {
                     let id_match = id.to_lowercase().contains(&search_filter);
                     let title_match = a.title.to_lowercase().contains(&search_filter);
                     if !id_match && !title_match {
                         return false;
                     }
+                }
+                // ViewParams types filter
+                if !type_filter.is_empty() && !type_filter.contains(&a.artifact_type) {
+                    return false;
                 }
                 true
             } else {
@@ -4605,7 +4869,8 @@ pub(crate) async fn traceability_view(
     let mut html = String::from("<h2>Traceability Explorer</h2>");
 
     // ── Filter controls ──────────────────────────────────────────────
-    html.push_str("<div class=\"card\"><form class=\"form-row\" hx-get=\"/traceability\" hx-target=\"#content\">");
+    let q_val = view_params.q.as_deref().unwrap_or("");
+    html.push_str("<div class=\"card\"><form class=\"form-row\" hx-get=\"/traceability\" hx-target=\"#content\" hx-push-url=\"true\">");
     html.push_str("<div><label>Root type</label><select name=\"root_type\">");
     for t in &all_types {
         let sel = if *t == root_type { " selected" } else { "" };
@@ -4625,10 +4890,30 @@ pub(crate) async fn traceability_view(
         html.push_str(&format!("<option value=\"{val}\"{sel}>{label}</option>"));
     }
     html.push_str("</select></div>");
+    // Search uses `q` (ViewParams) so it is preserved in URL alongside other ViewParams.
     html.push_str(&format!(
-        "<div><label>Search</label><input type=\"text\" name=\"search\" placeholder=\"ID or title...\" value=\"{}\"></div>",
-        html_escape(&search_filter)
+        "<div><label>Search</label><input type=\"text\" name=\"q\" placeholder=\"ID or title...\" value=\"{}\"></div>",
+        html_escape(q_val)
     ));
+    // Type filter checkboxes — all artifact types in store.
+    if !all_types.is_empty() {
+        html.push_str("<div style=\"display:flex;flex-wrap:wrap;gap:.35rem;align-items:center\">");
+        html.push_str("<label style=\"font-size:.8rem;font-weight:600\">Filter types:</label>");
+        for t in &all_types {
+            let checked = if type_filter.contains(&t.to_string()) {
+                " checked"
+            } else {
+                ""
+            };
+            html.push_str(&format!(
+                "<label style=\"font-size:.75rem;display:flex;align-items:center;gap:.2rem;cursor:pointer\">\
+                 <input type=\"checkbox\" name=\"types\" value=\"{t_esc}\"{checked}> {t_esc}</label>",
+                t_esc = html_escape(t),
+                checked = checked,
+            ));
+        }
+        html.push_str("</div>");
+    }
     html.push_str("<div><label>&nbsp;</label><button type=\"submit\">Filter</button></div>");
     html.push_str("</form></div>");
 
