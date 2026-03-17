@@ -29,6 +29,16 @@ pub enum RankDirection {
     LeftToRight,
 }
 
+/// Edge routing strategy.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum EdgeRouting {
+    /// Orthogonal routing with right-angle bends.
+    #[default]
+    Orthogonal,
+    /// Cubic bezier curves (legacy behavior).
+    CubicBezier,
+}
+
 /// Options that control the layout algorithm.
 #[derive(Debug, Clone)]
 pub struct LayoutOptions {
@@ -52,6 +62,14 @@ pub struct LayoutOptions {
     /// Maximum number of nodes before the layout bails out with a
     /// sentinel "budget exceeded" node.  `None` means no limit.
     pub max_nodes: Option<usize>,
+    /// Edge routing strategy.
+    pub edge_routing: EdgeRouting,
+    /// Penalty for each bend in orthogonal routing (higher = fewer bends).
+    pub bend_penalty: f64,
+    /// Gap between parallel edge segments (px).
+    pub edge_separation: f64,
+    /// Minimum straight stub length leaving a port before any bend (px).
+    pub port_stub_length: f64,
 }
 
 impl Default for LayoutOptions {
@@ -66,6 +84,10 @@ impl Default for LayoutOptions {
             container_padding: 20.0,
             container_header: 30.0,
             max_nodes: None,
+            edge_routing: EdgeRouting::default(),
+            bend_penalty: 20.0,
+            edge_separation: 4.0,
+            port_stub_length: 10.0,
         }
     }
 }
