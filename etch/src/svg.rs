@@ -153,6 +153,14 @@ fn write_style(svg: &mut String, options: &SvgOptions) {
          font-weight: 500; }}\n\
          \x20   .node.container rect {{ stroke-dasharray: 4 2; }}\n\
          \x20   .node:hover rect {{ filter: brightness(0.92); }}\n\
+         \x20   .port circle {{ stroke: #333; stroke-width: 0.8; }}\n\
+         \x20   .port.data circle {{ fill: #4a90d9; }}\n\
+         \x20   .port.event circle {{ fill: #e67e22; }}\n\
+         \x20   .port.event-data circle {{ fill: #27ae60; }}\n\
+         \x20   .port.access circle {{ fill: #999; }}\n\
+         \x20   .port.group circle {{ fill: #9b59b6; }}\n\
+         \x20   .port.abstract circle {{ fill: #666; }}\n\
+         \x20   .port text {{ font-size: 9px; fill: #444; dominant-baseline: central; }}\n\
          \x20 </style>\n",
         fs - 2.0,
         fs - 2.0,
@@ -314,6 +322,76 @@ fn write_nodes(svg: &mut String, layout: &GraphLayout, options: &SvgOptions) {
             }
         }
 
+        // Ports.
+        for port in &node.ports {
+            let port_class = match port.port_type {
+                crate::layout::PortType::Data => "data",
+                crate::layout::PortType::Event => "event",
+                crate::layout::PortType::EventData => "event-data",
+                crate::layout::PortType::Access => "access",
+                crate::layout::PortType::Group => "group",
+                crate::layout::PortType::Abstract => "abstract",
+            };
+            writeln!(
+                svg,
+                "        <g class=\"port {port_class}\" data-port-id=\"{}\">",
+                xml_escape(&port.id),
+            )
+            .unwrap();
+            // Port circle
+            writeln!(
+                svg,
+                "          <circle cx=\"{}\" cy=\"{}\" r=\"3\" />",
+                port.x, port.y,
+            )
+            .unwrap();
+            // Direction indicator (small triangle)
+            let tri = match port.direction {
+                crate::layout::PortDirection::In => {
+                    // Inward-pointing triangle
+                    match port.side {
+                        crate::layout::PortSide::Left => {
+                            format!("M {} {} l 4 -2.5 l 0 5 Z", port.x + 4.0, port.y)
+                        }
+                        crate::layout::PortSide::Right => {
+                            format!("M {} {} l -4 -2.5 l 0 5 Z", port.x - 4.0, port.y)
+                        }
+                        _ => String::new(),
+                    }
+                }
+                crate::layout::PortDirection::Out => {
+                    // Outward-pointing triangle
+                    match port.side {
+                        crate::layout::PortSide::Left => {
+                            format!("M {} {} l -4 -2.5 l 0 5 Z", port.x - 4.0, port.y)
+                        }
+                        crate::layout::PortSide::Right => {
+                            format!("M {} {} l 4 -2.5 l 0 5 Z", port.x + 4.0, port.y)
+                        }
+                        _ => String::new(),
+                    }
+                }
+                crate::layout::PortDirection::InOut => String::new(),
+            };
+            if !tri.is_empty() {
+                writeln!(svg, "          <path d=\"{tri}\" fill=\"currentColor\" />").unwrap();
+            }
+            // Port label
+            let (lx, anchor) = match port.side {
+                crate::layout::PortSide::Left => (port.x + 6.0, "start"),
+                crate::layout::PortSide::Right => (port.x - 6.0, "end"),
+                _ => (port.x, "middle"),
+            };
+            writeln!(
+                svg,
+                "          <text x=\"{lx}\" y=\"{}\" text-anchor=\"{anchor}\">{}</text>",
+                port.y,
+                xml_escape(&port.label),
+            )
+            .unwrap();
+            svg.push_str("        </g>\n");
+        }
+
         // Tooltip.
         writeln!(svg, "        <title>{}</title>", xml_escape(&node.id)).unwrap();
 
@@ -398,7 +476,9 @@ fn css_class_safe(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layout::{EdgeInfo, LayoutOptions, NodeInfo, layout};
+    use crate::layout::{
+        EdgeInfo, LayoutOptions, NodeInfo, PortDirection, PortInfo, PortSide, PortType, layout,
+    };
     use petgraph::Graph;
     use petgraph::graph::{EdgeIndex, NodeIndex};
 
@@ -588,6 +668,75 @@ mod tests {
         let result = lighten_color("#ff0000");
         // Red channel stays 255, G and B go up.
         assert!(result.starts_with("#ff"));
+    }
+
+    #[test]
+    fn svg_renders_ports() {
+        let mut g = Graph::new();
+        let _a = g.add_node("A");
+
+        let gl = layout(
+            &g,
+            &|_idx: NodeIndex, _n: &&str| NodeInfo {
+                id: "A".into(),
+                label: "A".into(),
+                node_type: "default".into(),
+                sublabel: None,
+                parent: None,
+                ports: vec![
+                    PortInfo {
+                        id: "data_in".into(),
+                        label: "data_in".into(),
+                        side: PortSide::Left,
+                        direction: PortDirection::In,
+                        port_type: PortType::Data,
+                    },
+                    PortInfo {
+                        id: "event_out".into(),
+                        label: "event_out".into(),
+                        side: PortSide::Right,
+                        direction: PortDirection::Out,
+                        port_type: PortType::Event,
+                    },
+                ],
+            },
+            &|_idx: EdgeIndex, _e: &&str| EdgeInfo {
+                label: String::new(),
+                source_port: None,
+                target_port: None,
+            },
+            &LayoutOptions::default(),
+        );
+
+        let svg = render_svg(&gl, &SvgOptions::default());
+        // Port elements present
+        assert!(
+            svg.contains("class=\"port data\""),
+            "should have data port class"
+        );
+        assert!(
+            svg.contains("class=\"port event\""),
+            "should have event port class"
+        );
+        // Port circles present
+        assert!(svg.contains("<circle"), "should have port circles");
+        // Port labels present
+        assert!(svg.contains(">data_in<"), "should have port label");
+        assert!(svg.contains(">event_out<"), "should have port label");
+        // Port CSS styles present
+        assert!(
+            svg.contains(".port.data circle"),
+            "should have port data CSS"
+        );
+        assert!(
+            svg.contains(".port.event circle"),
+            "should have port event CSS"
+        );
+        // Direction indicator triangle
+        assert!(
+            svg.contains("<path d=\"M"),
+            "should have direction triangle"
+        );
     }
 
     #[test]
