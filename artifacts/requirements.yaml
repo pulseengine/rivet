@@ -453,3 +453,174 @@ artifacts:
     fields:
       priority: should
       category: non-functional
+
+  - id: REQ-032
+    type: requirement
+    title: Markdown rendering in artifact descriptions
+    status: approved
+    description: >
+      Artifact descriptions rendered as CommonMark HTML via pulldown-cmark with tables, strikethrough, task lists, and code blocks.
+    tags: [rendering, markdown]
+    fields:
+      category: functional
+      priority: should
+
+  - id: REQ-033
+    type: requirement
+    title: Rich artifact embedding in documents with schema-driven link traversal
+    status: approved
+    description: >
+      Document embeds support modifiers (full, links, upstream, downstream, chain, table) with schema-driven link traversal.
+    tags: [documents, embedding, traceability]
+    fields:
+      category: functional
+      priority: should
+
+  - id: REQ-034
+    type: requirement
+    title: YAML 1.2.2 spec-compliant artifact file editing
+    status: approved
+    description: >
+      YAML artifact file editing uses indentation-aware parser per YAML 1.2.2 spec for lossless modification.
+    tags: [yaml, parsing, spec-compliance]
+    fields:
+      category: functional
+      priority: must
+    links:
+      - type: satisfies
+        target: SC-2
+
+  - id: REQ-035
+    type: requirement
+    title: HTML export includes rendered documents with resolved embeds
+    status: approved
+    description: >
+      HTML export includes rendered documents with resolved wiki-links and artifact embeds as static pages.
+    tags: [export, documents]
+    fields:
+      category: functional
+      priority: must
+
+  - id: REQ-036
+    type: requirement
+    title: HTML export supports version switcher and homepage link
+    status: approved
+    description: >
+      HTML export supports runtime config.js for version switcher dropdown and homepage back-link.
+    tags: [export, navigation, versioning]
+    fields:
+      category: functional
+      priority: should
+
+  - id: REQ-037
+    type: requirement
+    title: Source code implementation traceability scanning
+    status: draft
+    description: >
+      The system must scan source code files (not just tests) for inline
+      traceability markers that link implementation code to artifacts.
+      Must support comment-based markers across multiple languages
+      (e.g., // Implements: REQ-001, # Satisfies: DD-005). Discovered
+      markers are injected as ephemeral nodes into the link graph,
+      following the same pattern as commit traceability (REQ-017) and
+      test traceability (REQ-026). This closes the gap between YAML
+      artifact specifications and actual implementation code.
+    tags: [traceability, source-code, automation]
+    fields:
+      priority: should
+      category: functional
+      upstream-ref: "OpenFastTrace source-code tag scanning (30+ languages)"
+
+  - id: REQ-038
+    type: requirement
+    title: Artifact revision tracking with link staleness detection
+    status: draft
+    description: >
+      Each artifact must carry a revision indicator (hash or explicit
+      version). When an artifact's content changes, all links targeting
+      that artifact from downstream artifacts must be flagged as stale
+      until the downstream artifact is reviewed and its link confirmed.
+      This is distinct from change impact analysis (REQ-024) which
+      operates between baselines — staleness operates per-link and
+      persists until explicitly cleared. Required by ISO 26262 part 8
+      change management and ASPICE SUP.10.
+    tags: [traceability, change-management, safety]
+    fields:
+      priority: should
+      category: functional
+      upstream-ref: "OpenFastTrace revision-based outdated/predated link detection"
+
+  - id: REQ-039
+    type: requirement
+    title: Deep recursive coverage analysis
+    status: draft
+    description: >
+      The coverage engine must distinguish between shallow coverage
+      (direct covering link exists) and deep coverage (covering item
+      is itself fully covered, recursively). An artifact is deeply
+      covered only when all required covering items are themselves
+      deeply covered. Cycle detection must prevent infinite recursion.
+      This catches situations where a test covers a requirement, but
+      the test itself has unmet coverage needs at a lower level.
+    tags: [validation, coverage, traceability]
+    fields:
+      priority: should
+      category: functional
+      upstream-ref: "OpenFastTrace deep vs shallow coverage distinction"
+
+  - id: REQ-040
+    type: requirement
+    title: Variant and product-line artifact filtering
+    status: draft
+    description: >
+      Artifacts must support variant annotations that declare which
+      product variants or configurations an artifact applies to.
+      Validation, coverage, and matrix commands must accept a variant
+      filter that restricts the artifact graph to a specific variant.
+      This enables product-line engineering where a platform shares
+      most requirements but variants diverge on specifics. Variant
+      definitions are declared in rivet.yaml; artifacts reference
+      variants via a field or tag convention.
+    tags: [product-line, automotive, filtering]
+    fields:
+      priority: should
+      category: functional
+      upstream-ref: "sphinx-needs needs_variants for product-line engineering"
+
+  - id: REQ-041
+    type: requirement
+    title: Artifact overlay files
+    status: draft
+    description: >
+      The system must support overlay files that extend existing
+      artifacts without modifying the original source file. An overlay
+      can add tags, links, fields, or status changes to artifacts
+      defined in another file. Overlays are merged at load time and
+      validated against the schema like any other mutation. This
+      enables multi-team workflows where a safety team adds safety
+      tags or links to artifacts owned by the development team without
+      editing their files.
+    tags: [multi-team, extensibility, workflow]
+    fields:
+      priority: could
+      category: functional
+      upstream-ref: "sphinx-needs needextend directive for post-hoc modification"
+
+  - id: REQ-042
+    type: requirement
+    title: Structured export for external visualization tools
+    status: draft
+    description: >
+      The system must export artifact data, coverage metrics, and
+      traceability graphs in formats consumable by external visualization
+      and BI tools. This includes metrics JSON (artifact counts by
+      type/status, coverage percentages per rule, validation summary)
+      for Grafana or Power BI dashboards, and PlantUML source for
+      traceability graph rendering. The goal is integration with
+      existing visualization ecosystems rather than building charting
+      capabilities into rivet itself.
+    tags: [export, integration, visualization]
+    fields:
+      priority: could
+      category: interface
+      upstream-ref: "sphinx-needs PlantUML/Matplotlib visualizations — plugin approach instead"
