@@ -6,6 +6,43 @@ use super::{AppState, html_escape};
 use rivet_core::schema::Severity;
 use rivet_core::validate;
 
+/// Render content in print-friendly layout (no nav, no HTMX, no JS).
+pub(crate) fn print_layout(content: &str, state: &AppState) -> Html<String> {
+    Html(format!(
+        r##"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{project} — Rivet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+{CSS}
+/* Print overrides */
+body {{ max-width: 900px; margin: 2rem auto; }}
+nav, .context-bar, .filter-bar, .pagination, .cmd-k-overlay, #loading-bar,
+.nav-search-hint, .footer {{ display: none !important; }}
+.shell {{ display: block; }}
+.content-area {{ margin: 0; padding: 0; }}
+a {{ color: inherit; }}
+@media print {{
+  body {{ margin: 0; font-size: 11pt; }}
+  a {{ text-decoration: none; }}
+  table {{ page-break-inside: auto; }}
+  tr {{ page-break-inside: avoid; }}
+}}
+</style>
+</head>
+<body>
+<main>{content}</main>
+</body>
+</html>"##,
+        project = html_escape(&state.context.project_name),
+    ))
+}
+
 pub(crate) fn page_layout(content: &str, state: &AppState) -> Html<String> {
     let artifact_count = state.store.len();
     let diagnostics = validate::validate(&state.store, &state.schema, &state.graph);
@@ -116,6 +153,14 @@ pub(crate) fn page_layout(content: &str, state: &AppState) -> Html<String> {
          onmouseover=\"this.style.background='rgba(58,134,255,.18)'\"\
          onmouseout=\"this.style.background='rgba(58,134,255,.08)'\"\
          >&#8635; Reload</button>\
+         <button onclick=\"window.open(location.pathname + (location.search ? location.search + '&amp;print=1' : '?print=1'), '_blank')\" \
+         style=\"margin-left:.3rem;padding:.15rem .5rem;font-size:.72rem;\
+         font-family:var(--mono);background:rgba(58,134,255,.08);color:var(--accent);border:1px solid var(--accent);\
+         border-radius:4px;cursor:pointer;font-weight:600;transition:all var(--transition)\"\
+         title=\"Open print-friendly view in new tab\"\
+         onmouseover=\"this.style.background='rgba(58,134,255,.18)'\"\
+         onmouseout=\"this.style.background='rgba(58,134,255,.08)'\"\
+         >&#128438; Print</button>\
          </div>",
         project = html_escape(&ctx.project_name),
         path = html_escape(&ctx.project_path),

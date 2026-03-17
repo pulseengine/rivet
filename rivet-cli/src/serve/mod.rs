@@ -363,7 +363,9 @@ async fn wrap_full_page(
     next: axum::middleware::Next,
 ) -> axum::response::Response {
     let path = req.uri().path().to_string();
+    let query = req.uri().query().unwrap_or("").to_string();
     let is_htmx = req.headers().contains_key("hx-request");
+    let is_print = query.contains("print=1") || query.contains("print=true");
     let method = req.method().clone();
 
     let response = next.run(req).await;
@@ -382,6 +384,9 @@ async fn wrap_full_page(
             .unwrap_or_default();
         let content = String::from_utf8_lossy(&bytes);
         let app = state.read().await;
+        if is_print {
+            return layout::print_layout(&content, &app).into_response();
+        }
         return page_layout(&content, &app).into_response();
     }
 
