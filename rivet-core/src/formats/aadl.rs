@@ -129,13 +129,13 @@ fn import_aadl_sources(
 
     // Run instance-level analyses if a root classifier is configured.
     let root_classifier = config.get("root-classifier");
-    if let Some(root_name) = root_classifier {
-        if let Some(instance) = db.instantiate(root_name) {
-            let instance_diags = run_instance_analyses(&instance);
-            for diag in &instance_diags {
-                artifacts.push(analysis_diagnostic_to_artifact(diag_index, diag));
-                diag_index += 1;
-            }
+    if let Some(root_name) = root_classifier
+        && let Some(instance) = db.instantiate(root_name)
+    {
+        let instance_diags = run_instance_analyses(&instance);
+        for diag in &instance_diags {
+            artifacts.push(analysis_diagnostic_to_artifact(diag_index, diag));
+            diag_index += 1;
         }
     }
 

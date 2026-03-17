@@ -24,13 +24,15 @@ pub enum ArtifactRef {
 pub fn parse_artifact_ref(s: &str) -> ArtifactRef {
     // Only split on first colon. The prefix must be purely alphabetic
     // (no digits, hyphens, or dots) to avoid confusion with IDs like "H-1.2".
-    if let Some((prefix, id)) = s.split_once(':') {
-        if !prefix.is_empty() && prefix.chars().all(|c| c.is_ascii_lowercase()) && !id.is_empty() {
-            return ArtifactRef::External {
-                prefix: prefix.to_string(),
-                id: id.to_string(),
-            };
-        }
+    if let Some((prefix, id)) = s.split_once(':')
+        && !prefix.is_empty()
+        && prefix.chars().all(|c| c.is_ascii_lowercase())
+        && !id.is_empty()
+    {
+        return ArtifactRef::External {
+            prefix: prefix.to_string(),
+            id: id.to_string(),
+        };
     }
     ArtifactRef::Local(s.to_string())
 }
@@ -418,18 +420,19 @@ pub fn detect_version_conflicts(
     for ext in externals.values() {
         let ext_dir = resolve_external_dir(ext, &cache_dir, project_dir);
         let config_path = ext_dir.join("rivet.yaml");
-        if let Ok(ext_config) = crate::load_project_config(&config_path) {
-            if let Some(ref ext_externals) = ext_config.externals {
-                for (ext_name, ext_ext) in ext_externals {
-                    let repo_id = ext_ext.git.clone().unwrap_or_else(|| {
-                        ext_ext.path.clone().unwrap_or_else(|| ext_name.clone())
-                    });
-                    let version = ext_ext.git_ref.clone().unwrap_or_else(|| "HEAD".into());
-                    by_url.entry(repo_id).or_default().push(ConflictEntry {
-                        declared_by: ext.prefix.clone(),
-                        version,
-                    });
-                }
+        if let Ok(ext_config) = crate::load_project_config(&config_path)
+            && let Some(ref ext_externals) = ext_config.externals
+        {
+            for (ext_name, ext_ext) in ext_externals {
+                let repo_id = ext_ext
+                    .git
+                    .clone()
+                    .unwrap_or_else(|| ext_ext.path.clone().unwrap_or_else(|| ext_name.clone()));
+                let version = ext_ext.git_ref.clone().unwrap_or_else(|| "HEAD".into());
+                by_url.entry(repo_id).or_default().push(ConflictEntry {
+                    declared_by: ext.prefix.clone(),
+                    version,
+                });
             }
         }
     }
@@ -646,11 +649,11 @@ pub fn detect_circular_deps(
     for ext in externals.values() {
         let ext_dir = resolve_external_dir(ext, &cache_dir, project_dir);
         let config_path = ext_dir.join("rivet.yaml");
-        if let Ok(ext_config) = crate::load_project_config(&config_path) {
-            if let Some(ref ext_externals) = ext_config.externals {
-                let ext_deps: Vec<String> = ext_externals.keys().cloned().collect();
-                graph.insert(ext.prefix.clone(), ext_deps);
-            }
+        if let Ok(ext_config) = crate::load_project_config(&config_path)
+            && let Some(ref ext_externals) = ext_config.externals
+        {
+            let ext_deps: Vec<String> = ext_externals.keys().cloned().collect();
+            graph.insert(ext.prefix.clone(), ext_deps);
         }
     }
 

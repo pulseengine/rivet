@@ -20,6 +20,9 @@ pub mod schema;
 pub mod store;
 pub mod validate;
 
+#[cfg(kani)]
+mod proofs;
+
 #[cfg(feature = "wasm")]
 pub mod wasm_runtime;
 

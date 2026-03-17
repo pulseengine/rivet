@@ -107,57 +107,57 @@ fn discover_siblings(project_path: &std::path::Path) -> Vec<SiblingProject> {
 
     // Check examples/ subdirectory
     let examples_dir = project_path.join("examples");
-    if examples_dir.is_dir() {
-        if let Ok(entries) = std::fs::read_dir(&examples_dir) {
-            for entry in entries.flatten() {
-                let p = entry.path();
-                if p.join("rivet.yaml").exists() {
-                    if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
-                        siblings.push(SiblingProject {
-                            name: name.to_string(),
-                            rel_path: format!("examples/{name}"),
-                        });
-                    }
-                }
+    if examples_dir.is_dir()
+        && let Ok(entries) = std::fs::read_dir(&examples_dir)
+    {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.join("rivet.yaml").exists()
+                && let Some(name) = p.file_name().and_then(|n| n.to_str())
+            {
+                siblings.push(SiblingProject {
+                    name: name.to_string(),
+                    rel_path: format!("examples/{name}"),
+                });
             }
         }
     }
 
     // If inside examples/, offer root project and peers
-    if let Some(parent) = project_path.parent() {
-        if parent.file_name().and_then(|n| n.to_str()) == Some("examples") {
-            if let Some(root) = parent.parent() {
-                if root.join("rivet.yaml").exists() {
-                    if let Ok(cfg) = std::fs::read_to_string(root.join("rivet.yaml")) {
-                        let root_name = cfg
-                            .lines()
-                            .find(|l| l.trim().starts_with("name:"))
-                            .map(|l| l.trim().trim_start_matches("name:").trim().to_string())
-                            .unwrap_or_else(|| {
-                                root.file_name()
-                                    .and_then(|n| n.to_str())
-                                    .unwrap_or("root")
-                                    .to_string()
-                            });
-                        siblings.push(SiblingProject {
-                            name: root_name,
-                            rel_path: root.display().to_string(),
-                        });
-                    }
-                }
-                // Peer examples
-                if let Ok(entries) = std::fs::read_dir(parent) {
-                    for entry in entries.flatten() {
-                        let p = entry.path();
-                        if p != project_path && p.join("rivet.yaml").exists() {
-                            if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
-                                siblings.push(SiblingProject {
-                                    name: name.to_string(),
-                                    rel_path: p.display().to_string(),
-                                });
-                            }
-                        }
-                    }
+    if let Some(parent) = project_path.parent()
+        && parent.file_name().and_then(|n| n.to_str()) == Some("examples")
+        && let Some(root) = parent.parent()
+    {
+        if root.join("rivet.yaml").exists()
+            && let Ok(cfg) = std::fs::read_to_string(root.join("rivet.yaml"))
+        {
+            let root_name = cfg
+                .lines()
+                .find(|l| l.trim().starts_with("name:"))
+                .map(|l| l.trim().trim_start_matches("name:").trim().to_string())
+                .unwrap_or_else(|| {
+                    root.file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("root")
+                        .to_string()
+                });
+            siblings.push(SiblingProject {
+                name: root_name,
+                rel_path: root.display().to_string(),
+            });
+        }
+        // Peer examples
+        if let Ok(entries) = std::fs::read_dir(parent) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p != project_path
+                    && p.join("rivet.yaml").exists()
+                    && let Some(name) = p.file_name().and_then(|n| n.to_str())
+                {
+                    siblings.push(SiblingProject {
+                        name: name.to_string(),
+                        rel_path: p.display().to_string(),
+                    });
                 }
             }
         }
@@ -648,24 +648,23 @@ async fn docs_asset(
     // Search through all doc directories for the requested file
     for dir in &state.doc_dirs {
         let file_path = dir.join(&path);
-        if file_path.is_file() {
-            if let Ok(bytes) = std::fs::read(&file_path) {
-                let content_type =
-                    match file_path.extension().and_then(|e| e.to_str()).unwrap_or("") {
-                        "png" => "image/png",
-                        "jpg" | "jpeg" => "image/jpeg",
-                        "gif" => "image/gif",
-                        "svg" => "image/svg+xml",
-                        "webp" => "image/webp",
-                        "pdf" => "application/pdf",
-                        _ => "application/octet-stream",
-                    };
-                return (
-                    axum::http::StatusCode::OK,
-                    [("Content-Type", content_type)],
-                    bytes,
-                );
-            }
+        if file_path.is_file()
+            && let Ok(bytes) = std::fs::read(&file_path)
+        {
+            let content_type = match file_path.extension().and_then(|e| e.to_str()).unwrap_or("") {
+                "png" => "image/png",
+                "jpg" | "jpeg" => "image/jpeg",
+                "gif" => "image/gif",
+                "svg" => "image/svg+xml",
+                "webp" => "image/webp",
+                "pdf" => "application/pdf",
+                _ => "application/octet-stream",
+            };
+            return (
+                axum::http::StatusCode::OK,
+                [("Content-Type", content_type)],
+                bytes,
+            );
         }
     }
 
@@ -2297,6 +2296,7 @@ window.highlightAadlNodes = function(artifactIds){
   });
 };
 
+document.addEventListener('DOMContentLoaded', initAadlDiagrams);
 document.body.addEventListener('htmx:afterSwap', initAadlDiagrams);
 
 // ── Table sort & filter ──────────────────────────────────
@@ -4170,31 +4170,31 @@ async fn search_view(
             });
             continue;
         }
-        if let Some(desc) = &artifact.description {
-            if desc.to_lowercase().contains(&query_lower) {
-                let desc_lower = desc.to_lowercase();
-                let pos = desc_lower.find(&query_lower).unwrap_or(0);
-                let start = pos.saturating_sub(40);
-                let end = (pos + query.len() + 40).min(desc.len());
-                let mut snippet = String::new();
-                if start > 0 {
-                    snippet.push_str("...");
-                }
-                snippet.push_str(&desc[start..end]);
-                if end < desc.len() {
-                    snippet.push_str("...");
-                }
-                hits.push(SearchHit {
-                    id: artifact.id.clone(),
-                    title: artifact.title.clone(),
-                    kind: "artifact",
-                    type_name: artifact.artifact_type.clone(),
-                    matched_field: "description",
-                    context: snippet,
-                    url: format!("/artifacts/{}", artifact.id),
-                });
-                continue;
+        if let Some(desc) = &artifact.description
+            && desc.to_lowercase().contains(&query_lower)
+        {
+            let desc_lower = desc.to_lowercase();
+            let pos = desc_lower.find(&query_lower).unwrap_or(0);
+            let start = pos.saturating_sub(40);
+            let end = (pos + query.len() + 40).min(desc.len());
+            let mut snippet = String::new();
+            if start > 0 {
+                snippet.push_str("...");
             }
+            snippet.push_str(&desc[start..end]);
+            if end < desc.len() {
+                snippet.push_str("...");
+            }
+            hits.push(SearchHit {
+                id: artifact.id.clone(),
+                title: artifact.title.clone(),
+                kind: "artifact",
+                type_name: artifact.artifact_type.clone(),
+                matched_field: "description",
+                context: snippet,
+                url: format!("/artifacts/{}", artifact.id),
+            });
+            continue;
         }
         for tag in &artifact.tags {
             if tag.to_lowercase().contains(&query_lower) {
@@ -5362,31 +5362,31 @@ fn artifacts_referencing_file(store: &rivet_core::store::Store, file_rel: &str) 
 
     for a in store.iter() {
         // Check source_file (existing behavior)
-        if let Some(sf) = &a.source_file {
-            if sf == rel || sf.ends_with(file_rel) {
+        if let Some(sf) = &a.source_file
+            && (sf == rel || sf.ends_with(file_rel))
+        {
+            refs.push(FileRef {
+                id: a.id.clone(),
+                artifact_type: a.artifact_type.clone(),
+                title: a.title.clone(),
+                line: None,
+                end_line: None,
+            });
+            continue;
+        }
+        // Scan string fields for file:line references matching this file
+        for value in a.fields.values() {
+            if let serde_yaml::Value::String(s) = value
+                && let Some((_file, line, end_line)) = extract_file_ref(s, file_rel)
+            {
                 refs.push(FileRef {
                     id: a.id.clone(),
                     artifact_type: a.artifact_type.clone(),
                     title: a.title.clone(),
-                    line: None,
-                    end_line: None,
+                    line,
+                    end_line,
                 });
-                continue;
-            }
-        }
-        // Scan string fields for file:line references matching this file
-        for value in a.fields.values() {
-            if let serde_yaml::Value::String(s) = value {
-                if let Some((_file, line, end_line)) = extract_file_ref(s, file_rel) {
-                    refs.push(FileRef {
-                        id: a.id.clone(),
-                        artifact_type: a.artifact_type.clone(),
-                        title: a.title.clone(),
-                        line,
-                        end_line,
-                    });
-                    break; // one ref per artifact is enough
-                }
+                break; // one ref per artifact is enough
             }
         }
     }
@@ -6428,13 +6428,13 @@ async fn doc_linkage_view(State(state): State<SharedState>) -> Html<String> {
         for (aid, src_node) in &art_to_node {
             if let Some(a) = store.get(aid) {
                 for link in &a.links {
-                    if let Some(tgt_node) = art_to_node.get(&link.target) {
-                        if tgt_node != src_node {
-                            edge_types
-                                .entry((src_node.clone(), tgt_node.clone()))
-                                .or_default()
-                                .insert(link.link_type.clone());
-                        }
+                    if let Some(tgt_node) = art_to_node.get(&link.target)
+                        && tgt_node != src_node
+                    {
+                        edge_types
+                            .entry((src_node.clone(), tgt_node.clone()))
+                            .or_default()
+                            .insert(link.link_type.clone());
                     }
                 }
             }
@@ -6555,10 +6555,11 @@ async fn doc_linkage_view(State(state): State<SharedState>) -> Html<String> {
         for aid in &doc.artifact_ids {
             if let Some(a) = store.get(aid) {
                 for link in &a.links {
-                    if let Some(target_doc) = art_to_doc.get(&link.target) {
-                        if target_doc != &doc.id {
-                            cross_link_count += 1;
-                            html.push_str(&format!(
+                    if let Some(target_doc) = art_to_doc.get(&link.target)
+                        && target_doc != &doc.id
+                    {
+                        cross_link_count += 1;
+                        html.push_str(&format!(
                                 "<tr><td><a hx-get=\"/documents/{src_doc}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{src_doc}</a></td>\
                                  <td><a hx-get=\"/artifacts/{aid}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{aid}</a></td>\
                                  <td><span class=\"link-pill\">{lt}</span></td>\
@@ -6569,7 +6570,6 @@ async fn doc_linkage_view(State(state): State<SharedState>) -> Html<String> {
                                 tgt = html_escape(&link.target),
                                 tgt_doc = html_escape(target_doc),
                             ));
-                        }
                     }
                 }
             }

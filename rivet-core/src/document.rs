@@ -654,61 +654,65 @@ fn resolve_inline(
 
     while let Some((i, ch)) = chars.next() {
         // Images: ![alt](url)
-        if ch == '!' && text[i..].starts_with("![") {
-            if let Some(link) = parse_markdown_link(&text[i + 1..]) {
-                let alt = html_escape(&link.text);
-                let src = html_escape(&link.url);
-                result.push_str(&format!(
-                    "<img src=\"{src}\" alt=\"{alt}\" style=\"max-width:100%;height:auto\" />"
-                ));
-                let skip_to = i + 1 + link.total_len;
-                while chars.peek().is_some_and(|&(j, _)| j < skip_to) {
-                    chars.next();
-                }
-                continue;
+        if ch == '!'
+            && text[i..].starts_with("![")
+            && let Some(link) = parse_markdown_link(&text[i + 1..])
+        {
+            let alt = html_escape(&link.text);
+            let src = html_escape(&link.url);
+            result.push_str(&format!(
+                "<img src=\"{src}\" alt=\"{alt}\" style=\"max-width:100%;height:auto\" />"
+            ));
+            let skip_to = i + 1 + link.total_len;
+            while chars.peek().is_some_and(|&(j, _)| j < skip_to) {
+                chars.next();
             }
+            continue;
         }
 
         // Inline code (backticks) — must come before bold/italic since content is literal.
-        if ch == '`' {
-            if let Some(end) = text[i + 1..].find('`') {
-                let inner = html_escape(&text[i + 1..i + 1 + end]);
-                result.push_str(&format!("<code>{inner}</code>"));
-                let skip_to = i + 1 + end + 1;
-                while chars.peek().is_some_and(|&(j, _)| j < skip_to) {
-                    chars.next();
-                }
-                continue;
+        if ch == '`'
+            && let Some(end) = text[i + 1..].find('`')
+        {
+            let inner = html_escape(&text[i + 1..i + 1 + end]);
+            result.push_str(&format!("<code>{inner}</code>"));
+            let skip_to = i + 1 + end + 1;
+            while chars.peek().is_some_and(|&(j, _)| j < skip_to) {
+                chars.next();
             }
+            continue;
         }
 
         // Markdown links [text](url) — must come before [[id]] artifact refs.
-        if ch == '[' && !text[i..].starts_with("[[") {
-            if let Some(link) = parse_markdown_link(&text[i..]) {
-                let text_part = html_escape(&link.text);
-                result.push_str(&format!(
-                    "<a href=\"{href}\">{text_part}</a>",
-                    href = html_escape(&link.url),
-                ));
-                let skip_to = i + link.total_len;
-                while chars.peek().is_some_and(|&(j, _)| j < skip_to) {
-                    chars.next();
-                }
-                continue;
+        if ch == '['
+            && !text[i..].starts_with("[[")
+            && let Some(link) = parse_markdown_link(&text[i..])
+        {
+            let text_part = html_escape(&link.text);
+            result.push_str(&format!(
+                "<a href=\"{href}\">{text_part}</a>",
+                href = html_escape(&link.url),
+            ));
+            let skip_to = i + link.total_len;
+            while chars.peek().is_some_and(|&(j, _)| j < skip_to) {
+                chars.next();
             }
+            continue;
         }
 
         // Artifact embedding: {{artifact:ID}}
-        if ch == '{' && text[i..].starts_with("{{artifact:") {
-            if let Some(end) = text[i..].find("}}") {
-                let id = text[i + 11..i + end].trim();
-                if let Some(info) = artifact_info(id) {
-                    let desc_preview = if info.description.len() > 150 {
-                        format!("{}…", &info.description[..150])
-                    } else {
-                        info.description.clone()
-                    };
-                    result.push_str(&format!(
+        if ch == '{'
+            && text[i..].starts_with("{{artifact:")
+            && let Some(end) = text[i..].find("}}")
+        {
+            let id = text[i + 11..i + end].trim();
+            if let Some(info) = artifact_info(id) {
+                let desc_preview = if info.description.len() > 150 {
+                    format!("{}…", &info.description[..150])
+                } else {
+                    info.description.clone()
+                };
+                result.push_str(&format!(
                         "<div class=\"artifact-embed\">\
                          <div class=\"artifact-embed-header\">\
                          <a class=\"artifact-ref\" hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a>\
@@ -724,23 +728,22 @@ fn resolve_inline(
                         title = html_escape(&info.title),
                         desc = html_escape(&desc_preview),
                     ));
-                    let skip_to = i + end + 2;
-                    while chars.peek().is_some_and(|&(j, _)| j < skip_to) {
-                        chars.next();
-                    }
-                    continue;
-                } else {
-                    // Broken reference
-                    result.push_str(&format!(
-                        "<span class=\"artifact-ref broken\">{{{{artifact:{}}}}}</span>",
-                        html_escape(id)
-                    ));
-                    let skip_to = i + end + 2;
-                    while chars.peek().is_some_and(|&(j, _)| j < skip_to) {
-                        chars.next();
-                    }
-                    continue;
+                let skip_to = i + end + 2;
+                while chars.peek().is_some_and(|&(j, _)| j < skip_to) {
+                    chars.next();
                 }
+                continue;
+            } else {
+                // Broken reference
+                result.push_str(&format!(
+                    "<span class=\"artifact-ref broken\">{{{{artifact:{}}}}}</span>",
+                    html_escape(id)
+                ));
+                let skip_to = i + end + 2;
+                while chars.peek().is_some_and(|&(j, _)| j < skip_to) {
+                    chars.next();
+                }
+                continue;
             }
         }
 

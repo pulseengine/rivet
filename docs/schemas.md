@@ -13,10 +13,14 @@ loads `common` plus one or more domain schemas.
 | `common`        | 0.1.0   | --    | --    | Base fields and link types            |
 | `dev`           | 0.1.0   | 3     | 2     | Software development tracking         |
 | `stpa`          | 0.1.0   | 10    | 7     | STPA safety analysis                  |
-| `aspice`        | 0.2.0   | 14    | 10    | Automotive SPICE V-model              |
-| `cybersecurity` | 0.1.0   | 10    | 10    | Cybersecurity (SEC.1-4 / ISO 21434)   |
+| `aspice`        | 0.2.0   | 13    | 10    | Automotive SPICE V-model              |
+| `cybersecurity` | 0.1.0   | 8     | 10    | Cybersecurity (SEC.1-4 / ISO 21434)   |
+| `aadl`          | 0.1.0   | 4     | 1     | AADL architecture (spar integration)  |
 
 Schemas are located in `schemas/` relative to the project directory.
+
+> **Do not hardcode type or rule counts in other documents.** Use `rivet schema list`
+> for current counts. The table above is maintained here as the single source of truth.
 
 ---
 

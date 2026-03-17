@@ -287,3 +287,169 @@ artifacts:
     fields:
       priority: should
       category: functional
+
+  - id: REQ-023
+    type: requirement
+    title: Conditional validation rules
+    status: draft
+    description: >
+      The validation engine must support conditional rules where field
+      requirements or link cardinality depend on the value of another field.
+      For example, an artifact with status "approved" must have a non-empty
+      verification-criteria field, or an artifact with safety level ASIL_B
+      must have mitigated_by links. This enables safety-critical constraint
+      enforcement that static per-type validation cannot express.
+      Contradictory conditional rules must be detected at schema load time.
+    tags: [validation, schema, safety]
+    links:
+      - type: satisfies
+        target: SC-12
+    fields:
+      priority: should
+      category: functional
+      upstream-ref: "eclipse-score/docs-as-code#180"
+
+  - id: REQ-024
+    type: requirement
+    title: Change impact analysis
+    status: draft
+    description: >
+      The system must detect which artifacts changed between two baselines
+      or commits and compute the transitive set of downstream artifacts
+      affected via the link graph. This supports change management workflows
+      required by ASPICE SUP.10 and ISO 26262 part 8.
+    tags: [traceability, baseline, safety]
+    fields:
+      priority: should
+      category: functional
+      upstream-ref: "eclipse-score/docs-as-code#314, eclipse-score/process_description#535"
+
+  - id: REQ-025
+    type: requirement
+    title: sphinx-needs JSON import
+    status: draft
+    description: >
+      The system must import artifacts from the sphinx-needs needs.json
+      export format, mapping sphinx-needs types, links, and fields to
+      rivet schema types via configurable mappings. This provides a
+      migration path for projects using sphinx-needs-based toolchains.
+    tags: [interchange, adapter, migration]
+    fields:
+      priority: should
+      category: interface
+      upstream-ref: "eclipse-score/score#1695"
+
+  - id: REQ-026
+    type: requirement
+    title: Test-to-requirement traceability extraction
+    status: draft
+    description: >
+      The system must extract traceability markers from test source code
+      and test results, linking test cases to requirements without requiring
+      manual YAML maintenance. Must support language-specific markers
+      (attributes, decorators, comments) and test result formats (JUnit XML,
+      cargo test JSON).
+    tags: [testing, traceability, automation]
+    fields:
+      priority: should
+      category: functional
+      upstream-ref: "eclipse-score/score#2521, eclipse-score/score#2619"
+
+  - id: REQ-027
+    type: requirement
+    title: Build-system-aware cross-repo discovery
+    status: draft
+    description: >
+      The system must discover cross-repo dependencies from build system
+      manifests (Bazel MODULE.bazel, Nix flake.lock, or custom manifests)
+      rather than requiring manual external declarations. This includes
+      resolving pinned commits, workspace paths, and source code locations
+      across the dependency graph for traceability validation and source
+      code linking.
+    tags: [cross-repo, bazel, nix, traceability]
+    fields:
+      priority: should
+      category: functional
+      upstream-ref: "eclipse-score/reference_integration (known_good.json)"
+
+  - id: REQ-028
+    type: requirement
+    title: Diagnostic-quality parsing with lossless syntax trees
+    status: draft
+    description: >
+      All parsers for build-system manifests and configuration files must
+      produce lossless concrete syntax trees (CST) with full span information
+      for byte-exact error reporting. Parsers must recover from errors and
+      produce partial results rather than failing completely. Uses rowan
+      for CST representation, consistent with the spar AADL toolchain.
+    tags: [parsing, rowan, diagnostics]
+    links:
+      - type: satisfies
+        target: SC-13
+    fields:
+      priority: must
+      category: non-functional
+
+  - id: REQ-029
+    type: requirement
+    title: Incremental validation via dependency-tracked computation
+    status: draft
+    description: >
+      The validation pipeline must support incremental recomputation where
+      changing a single artifact file only re-evaluates affected validation
+      rules, link graph edges, and coverage computations. Uses salsa for
+      dependency tracking, consistent with the spar AADL toolchain. This
+      enables sub-millisecond revalidation for IDE integration and efficient
+      conditional rule evaluation. Incremental results must be identical
+      to full validation results for the same inputs.
+    tags: [validation, salsa, incremental, performance]
+    links:
+      - type: satisfies
+        target: SC-11
+    fields:
+      priority: must
+      category: non-functional
+
+  - id: REQ-031
+    type: requirement
+    title: Schema-validated artifact mutation from CLI
+    status: draft
+    description: >
+      The CLI must provide commands to create, modify, remove, link, and
+      unlink artifacts directly, with full schema validation at write time.
+      All mutations must validate the artifact ID is unique (or exists for
+      modify), the type exists in the loaded schema, required fields are
+      present, link targets exist, link types are valid for the source and
+      target types, and status values are in the allowed set. The CLI must
+      write valid YAML that preserves existing file formatting and comments
+      where possible. This eliminates the need for external agents or manual
+      YAML editing to maintain artifacts correctly.
+    tags: [cli, mutation, validation, safety]
+    links:
+      - type: satisfies
+        target: SC-1
+      - type: satisfies
+        target: SC-2
+    fields:
+      priority: must
+      category: functional
+
+  - id: REQ-030
+    type: requirement
+    title: Formal correctness guarantees for validation engine
+    status: draft
+    description: >
+      Core validation algorithms must have formal correctness proofs at
+      three levels. Bounded model checking (Kani) for panic freedom.
+      Functional correctness proofs (Verus) for validation soundness
+      and completeness. Metamodel semantic proofs (Rocq/coq-of-rust)
+      for schema satisfiability and rule consistency. These proofs
+      serve as ISO 26262 tool qualification evidence at TCL 1.
+      Proofs must verify the actual implementation, not a separate model.
+    tags: [formal-verification, safety, tool-qualification]
+    links:
+      - type: satisfies
+        target: SC-14
+    fields:
+      priority: should
+      category: non-functional

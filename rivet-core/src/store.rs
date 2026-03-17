@@ -40,12 +40,11 @@ impl Store {
         let artifact_type = artifact.artifact_type.clone();
 
         // Remove from old type index if updating
-        if let Some(old) = self.artifacts.get(&id) {
-            if old.artifact_type != artifact_type {
-                if let Some(ids) = self.by_type.get_mut(&old.artifact_type) {
-                    ids.retain(|i| i != &id);
-                }
-            }
+        if let Some(old) = self.artifacts.get(&id)
+            && old.artifact_type != artifact_type
+            && let Some(ids) = self.by_type.get_mut(&old.artifact_type)
+        {
+            ids.retain(|i| i != &id);
         }
 
         self.artifacts.insert(id.clone(), artifact);

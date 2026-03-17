@@ -682,10 +682,11 @@ fn layout_compound<N, E>(
         for edge in graph.edge_references() {
             let src = edge.source();
             let tgt = edge.target();
-            if child_set.contains(&src) && child_set.contains(&tgt) {
-                if let (Some(&s), Some(&t)) = (orig_to_sub.get(&src), orig_to_sub.get(&tgt)) {
-                    sub_graph.add_edge(s, t, ());
-                }
+            if child_set.contains(&src)
+                && child_set.contains(&tgt)
+                && let (Some(&s), Some(&t)) = (orig_to_sub.get(&src), orig_to_sub.get(&tgt))
+            {
+                sub_graph.add_edge(s, t, ());
             }
         }
 
@@ -771,13 +772,14 @@ fn layout_compound<N, E>(
     for edge in graph.edge_references() {
         let src_root = find_root_ancestor(edge.source(), infos, &id_to_idx);
         let tgt_root = find_root_ancestor(edge.target(), infos, &id_to_idx);
-        if src_root != tgt_root && root_set.contains(&src_root) && root_set.contains(&tgt_root) {
-            if let (Some(&s), Some(&t)) = (orig_to_root.get(&src_root), orig_to_root.get(&tgt_root))
-            {
-                // Avoid duplicate edges.
-                if !root_graph.contains_edge(s, t) {
-                    root_graph.add_edge(s, t, ());
-                }
+        if src_root != tgt_root
+            && root_set.contains(&src_root)
+            && root_set.contains(&tgt_root)
+            && let (Some(&s), Some(&t)) = (orig_to_root.get(&src_root), orig_to_root.get(&tgt_root))
+        {
+            // Avoid duplicate edges.
+            if !root_graph.contains_edge(s, t) {
+                root_graph.add_edge(s, t, ());
             }
         }
     }
@@ -822,16 +824,16 @@ fn layout_compound<N, E>(
             .find(|&ri| root_infos[&ri].id == root_node.id)
             .map(|ri| root_graph[ri]);
 
-        if let Some(orig_idx) = orig_idx {
-            if let Some(children) = child_layouts.remove(&orig_idx) {
-                // Translate children to be inside this container.
-                let offset_x = root_node.x + pad;
-                let offset_y = root_node.y + hdr;
-                for mut child in children {
-                    child.x += offset_x;
-                    child.y += offset_y;
-                    all_nodes.push(child);
-                }
+        if let Some(orig_idx) = orig_idx
+            && let Some(children) = child_layouts.remove(&orig_idx)
+        {
+            // Translate children to be inside this container.
+            let offset_x = root_node.x + pad;
+            let offset_y = root_node.y + hdr;
+            for mut child in children {
+                child.x += offset_x;
+                child.y += offset_y;
+                all_nodes.push(child);
             }
         }
 

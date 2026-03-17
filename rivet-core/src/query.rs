@@ -15,30 +15,30 @@ pub struct Query {
 
 impl Query {
     pub fn matches(&self, artifact: &Artifact) -> bool {
-        if let Some(t) = &self.artifact_type {
-            if artifact.artifact_type != *t {
-                return false;
-            }
+        if let Some(t) = &self.artifact_type
+            && artifact.artifact_type != *t
+        {
+            return false;
         }
-        if let Some(s) = &self.status {
-            if artifact.status.as_deref() != Some(s.as_str()) {
-                return false;
-            }
+        if let Some(s) = &self.status
+            && artifact.status.as_deref() != Some(s.as_str())
+        {
+            return false;
         }
-        if let Some(tag) = &self.tag {
-            if !artifact.tags.contains(tag) {
-                return false;
-            }
+        if let Some(tag) = &self.tag
+            && !artifact.tags.contains(tag)
+        {
+            return false;
         }
-        if let Some(lt) = &self.has_link_type {
-            if !artifact.has_link_type(lt) {
-                return false;
-            }
+        if let Some(lt) = &self.has_link_type
+            && !artifact.has_link_type(lt)
+        {
+            return false;
         }
-        if let Some(lt) = &self.missing_link_type {
-            if artifact.has_link_type(lt) {
-                return false;
-            }
+        if let Some(lt) = &self.missing_link_type
+            && artifact.has_link_type(lt)
+        {
+            return false;
         }
         true
     }

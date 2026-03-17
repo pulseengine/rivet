@@ -16,6 +16,7 @@ use rivet_core::store::Store;
 use rivet_core::validate;
 
 mod docs;
+mod lsp;
 mod schema_cmd;
 mod serve;
 
@@ -249,6 +250,9 @@ enum Command {
         port: u16,
     },
 
+    /// Start the Language Server Protocol (LSP) server on stdin/stdout
+    Lsp,
+
     /// Sync external project dependencies into .rivet/repos/
     Sync,
 
@@ -438,6 +442,11 @@ fn run(cli: Cli) -> Result<bool> {
                 doc_dirs,
                 port,
             ))?;
+            Ok(true)
+        }
+        Command::Lsp => {
+            let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
+            rt.block_on(lsp::run_lsp());
             Ok(true)
         }
         Command::Sync => cmd_sync(&cli),
@@ -885,54 +894,54 @@ fn cmd_validate(cli: &Cli, format: &str) -> Result<bool> {
     let mut backlinks: Vec<rivet_core::externals::CrossRepoBacklink> = Vec::new();
     let mut circular_deps: Vec<rivet_core::externals::CircularDependency> = Vec::new();
     let mut version_conflicts: Vec<rivet_core::externals::VersionConflict> = Vec::new();
-    if let Some(ref externals) = config.externals {
-        if !externals.is_empty() {
-            match rivet_core::externals::load_all_externals(externals, &cli.project) {
-                Ok(resolved) => {
-                    // Build external ID sets
-                    let mut external_ids: std::collections::BTreeMap<
-                        String,
-                        std::collections::HashSet<String>,
-                    > = std::collections::BTreeMap::new();
-                    for ext in &resolved {
-                        let ids: std::collections::HashSet<String> =
-                            ext.artifacts.iter().map(|a| a.id.clone()).collect();
-                        external_ids.insert(ext.prefix.clone(), ids);
-                    }
-
-                    // Collect local IDs and all link targets
-                    let local_ids: std::collections::HashSet<String> =
-                        store.iter().map(|a| a.id.clone()).collect();
-                    let all_refs: Vec<&str> = store
-                        .iter()
-                        .flat_map(|a| a.links.iter().map(|l| l.target.as_str()))
-                        .collect();
-
-                    cross_repo_broken =
-                        rivet_core::externals::validate_refs(&all_refs, &local_ids, &external_ids);
-
-                    // Compute backlinks from external artifacts pointing to local artifacts
-                    backlinks = rivet_core::externals::compute_backlinks(&resolved, &local_ids);
+    if let Some(ref externals) = config.externals
+        && !externals.is_empty()
+    {
+        match rivet_core::externals::load_all_externals(externals, &cli.project) {
+            Ok(resolved) => {
+                // Build external ID sets
+                let mut external_ids: std::collections::BTreeMap<
+                    String,
+                    std::collections::HashSet<String>,
+                > = std::collections::BTreeMap::new();
+                for ext in &resolved {
+                    let ids: std::collections::HashSet<String> =
+                        ext.artifacts.iter().map(|a| a.id.clone()).collect();
+                    external_ids.insert(ext.prefix.clone(), ids);
                 }
-                Err(e) => {
-                    eprintln!("  warning: could not load externals for cross-repo validation: {e}");
-                }
+
+                // Collect local IDs and all link targets
+                let local_ids: std::collections::HashSet<String> =
+                    store.iter().map(|a| a.id.clone()).collect();
+                let all_refs: Vec<&str> = store
+                    .iter()
+                    .flat_map(|a| a.links.iter().map(|l| l.target.as_str()))
+                    .collect();
+
+                cross_repo_broken =
+                    rivet_core::externals::validate_refs(&all_refs, &local_ids, &external_ids);
+
+                // Compute backlinks from external artifacts pointing to local artifacts
+                backlinks = rivet_core::externals::compute_backlinks(&resolved, &local_ids);
             }
-
-            // Detect circular dependencies in the externals graph
-            circular_deps = rivet_core::externals::detect_circular_deps(
-                externals,
-                &config.project.name,
-                &cli.project,
-            );
-
-            // Detect version conflicts (same repo at different refs)
-            version_conflicts = rivet_core::externals::detect_version_conflicts(
-                externals,
-                &config.project.name,
-                &cli.project,
-            );
+            Err(e) => {
+                eprintln!("  warning: could not load externals for cross-repo validation: {e}");
+            }
         }
+
+        // Detect circular dependencies in the externals graph
+        circular_deps = rivet_core::externals::detect_circular_deps(
+            externals,
+            &config.project.name,
+            &cli.project,
+        );
+
+        // Detect version conflicts (same repo at different refs)
+        version_conflicts = rivet_core::externals::detect_version_conflicts(
+            externals,
+            &config.project.name,
+            &cli.project,
+        );
     }
 
     // Lifecycle completeness check
@@ -1861,11 +1870,11 @@ fn cmd_commit_msg_check(cli: &Cli, file: &std::path::Path) -> Result<bool> {
     let subject = message.lines().next().unwrap_or("");
 
     // Check exempt type
-    if let Some(ct) = rivet_core::commits::parse_commit_type(subject) {
-        if commits_cfg.exempt_types.iter().any(|et| et == &ct) {
-            log::debug!("commit type '{ct}' is exempt");
-            return Ok(true);
-        }
+    if let Some(ct) = rivet_core::commits::parse_commit_type(subject)
+        && commits_cfg.exempt_types.iter().any(|et| et == &ct)
+    {
+        log::debug!("commit type '{ct}' is exempt");
+        return Ok(true);
     }
 
     // Check skip trailer
@@ -2188,12 +2197,12 @@ fn resolve_schemas_dir(cli: &Cli) -> PathBuf {
         }
 
         // Try relative to the binary location
-        if let Ok(exe) = std::env::current_exe() {
-            if let Some(parent) = exe.parent() {
-                let bin_schemas = parent.join("../schemas");
-                if bin_schemas.exists() {
-                    return bin_schemas;
-                }
+        if let Ok(exe) = std::env::current_exe()
+            && let Some(parent) = exe.parent()
+        {
+            let bin_schemas = parent.join("../schemas");
+            if bin_schemas.exists() {
+                return bin_schemas;
             }
         }
 
@@ -2236,17 +2245,16 @@ fn cmd_sync(cli: &Cli) -> Result<bool> {
             if let Some(ext) = externals.get(name) {
                 let ext_dir =
                     rivet_core::externals::resolve_external_dir(ext, &cache_dir, &cli.project);
-                if ext_dir.join(".git").exists() {
-                    if let Ok(current) = rivet_core::externals::git_head_sha(&ext_dir) {
-                        if current != entry.commit {
-                            eprintln!(
-                                "  Warning: {} is at {} but lockfile pins {}",
-                                name,
-                                &current[..8.min(current.len())],
-                                &entry.commit[..8.min(entry.commit.len())]
-                            );
-                        }
-                    }
+                if ext_dir.join(".git").exists()
+                    && let Ok(current) = rivet_core::externals::git_head_sha(&ext_dir)
+                    && current != entry.commit
+                {
+                    eprintln!(
+                        "  Warning: {} is at {} but lockfile pins {}",
+                        name,
+                        &current[..8.min(current.len())],
+                        &entry.commit[..8.min(entry.commit.len())]
+                    );
                 }
             }
         }

@@ -36,6 +36,9 @@ petgraph = "0.7"
 log = "0.4"
 env_logger = "0.11"
 
+# LSP
+tower-lsp = "0.20"
+
 # HTTP / serve
 axum = "0.8"
 reqwest = { version = "0.12", features = ["json"] }

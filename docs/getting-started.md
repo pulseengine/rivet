@@ -525,18 +525,22 @@ rivet serve
 Rivet tracks its own development. The repository root contains:
 
 ```
-rivet.yaml           # Loads common + dev schemas
+rivet.yaml           # Loads common + dev + aadl + stpa schemas
 schemas/
   common.yaml        # Base link types
   dev.yaml           # requirement, design-decision, feature types
+  aadl.yaml          # AADL architecture types (spar integration)
+  stpa.yaml          # STPA safety analysis types
 artifacts/
-  requirements.yaml  # 12 requirements
-  decisions.yaml     # 6 design decisions
-  features.yaml      # 12 features
+  requirements.yaml  # Requirements
+  decisions.yaml     # Design decisions
+  features.yaml      # Features
+safety/stpa/         # STPA analysis artifacts
 ```
 
-Run `rivet validate` in the repo root to validate 30+ artifacts with traceability
-coverage checks.
+Run `rivet validate` in the repo root to validate all artifacts with traceability
+coverage checks. Run `rivet stats` for current counts — do not rely on hardcoded
+numbers in documentation as they go stale immediately.
 
 ### STPA analysis
 

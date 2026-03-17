@@ -85,14 +85,22 @@ root: RivetSystem::RivetCli.Impl
 | `oslc`       | OSLC client for discovery, query, CRUD, and sync (feature-gated) |
 | `wasm_runtime` | WASM component adapter runtime (feature-gated)                 |
 | `error`      | Unified error type for the library                               |
-| `formats/`   | Format-specific adapters: `generic` (YAML), `stpa` (STPA YAML)  |
+| `formats/`   | Format-specific adapters: `generic` (YAML), `stpa` (STPA YAML), `aadl` (spar JSON) |
+| `embedded`   | Embedded schema fallback for bundled schema access               |
+| `externals`  | Cross-repository artifact linking                                |
+| `lifecycle`  | Artifact lifecycle state management                              |
+| `commits`    | Git commit traceability tracking                                 |
+| `proofs`     | Kani bounded model checking proof harnesses                      |
 
 ### 2.2 rivet-cli Modules
 
 | Module  | Purpose                                                              |
 |---------|----------------------------------------------------------------------|
-| `main`  | CLI entry point, clap argument parsing, subcommand dispatch          |
-| `serve` | axum HTTP server with HTMX-rendered dashboard pages                  |
+| `main`       | CLI entry point, clap argument parsing, subcommand dispatch          |
+| `serve`      | axum HTTP server with HTMX-rendered dashboard pages                  |
+| `lsp`        | Language Server Protocol server (diagnostics, hover, go-to-definition) |
+| `docs`       | Documentation generation and browser commands                        |
+| `schema_cmd` | Schema subcommand handling (list, show, verify)                      |
 
 ## 3. Data Flow
 
@@ -266,13 +274,11 @@ traceability-rules:
 
 ### 5.2 Available Schemas
 
-| Schema          | Types | Link Types | Rules | Domain                         |
-|-----------------|-------|------------|-------|--------------------------------|
-| `common`        | 0     | 9          | 0     | Base fields and link types     |
-| `dev`           | 3     | 1          | 2     | Development tracking           |
-| `stpa`          | 10    | 5          | 7     | STPA safety analysis           |
-| `aspice`        | 14    | 2          | 10    | ASPICE v4.0 V-model            |
-| `cybersecurity` | 10    | 2          | 10    | SEC.1-4, ISO/SAE 21434         |
+See [schemas.md](schemas.md) for the canonical schema reference table with
+current type, link, and rule counts. Available schemas: `common` (base),
+`dev` (requirements/features), `stpa` (safety analysis), `aspice`
+(Automotive SPICE V-model), `cybersecurity` (SEC.1-4 / ISO 21434), `aadl`
+(AADL architecture via spar).
 
 ### 5.3 Merge Semantics
 
@@ -309,7 +315,103 @@ This architecture reflects the following key decisions:
 - [[DD-009]] -- Criterion benchmarks as KPI baselines
 - [[DD-010]] -- ASPICE 4.0 terminology and composable cybersecurity schema
 
-## 8. Requirements Coverage
+## 8. Phase 3 Architecture Extensions
+
+### 8.1 Incremental Validation (rowan + salsa)
+
+The validation pipeline (section 3) will be restructured as salsa tracked
+queries ([[REQ-029]], [[DD-024]]). Each step in the current sequential
+pipeline becomes a salsa query with automatic dependency tracking:
+
+```
+artifact_source(file)  →  parse_artifacts(file)  →  artifact_store()
+       ↓                                                    ↓
+merged_schema()  ────────────────→  evaluate_conditional_rules()
+                                            ↓
+                                    link_graph()  →  validate()
+```
+
+When a file changes, salsa re-evaluates only affected queries. This enables:
+- Sub-millisecond incremental revalidation for IDE integration
+- Free change impact analysis ([[REQ-024]], [[DD-019]]) — impacted artifacts
+  are exactly the invalidated salsa queries
+- Conditional rule evaluation ([[REQ-023]], [[DD-018]]) — rules re-fire only
+  when their dependent fields change
+
+rowan ([[REQ-028]], [[DD-023]]) provides lossless CST for new parsers
+(MODULE.bazel, future schema/artifact parsers). Same architecture as spar.
+
+**STPA coverage:** H-9 (stale incremental results), SC-11 (incremental must
+equal full validation), UCA-C-10..C-14, CC-C-10..C-14.
+
+### 8.2 CLI Mutation Commands
+
+New subcommands ([[REQ-031]], [[DD-028]]) for schema-validated artifact
+mutation: `add`, `modify`, `remove`, `link`, `unlink`, `next-id`.
+
+Architecture: new `rivet-core/src/mutate.rs` module with `validate_mutation()`
+pre-check before any file write. All mutations go through the full schema and
+store validation before touching disk.
+
+**STPA coverage:** Satisfies SC-1 (validate cross-references before output)
+and SC-2 (never silently discard artifacts).
+
+### 8.3 Build-System Integration
+
+Build-system providers ([[REQ-027]], [[DD-022]]) discover cross-repo
+dependencies from Bazel MODULE.bazel or Nix flake.lock. The MODULE.bazel
+parser ([[FEAT-046]]) uses rowan for a Starlark subset CST.
+
+Bazel integration path:
+1. Parse MODULE.bazel directly (no Bazel install needed, rowan CST)
+2. Optional: shell out to `bazel mod graph --output json` for resolved paths
+3. Resolve external repo filesystem paths via `output_base/external/`
+
+Nix integration: parse `flake.lock` JSON with serde_json.
+
+Distribution: `rules_rivet` Bazel module and Nix flake ([[FEAT-045]]).
+
+**STPA coverage:** H-11 (parser misparse), SC-13 (reject unrecognized
+constructs), UCA-C-15..C-17, CC-C-15..C-17.
+
+### 8.4 Formal Verification
+
+Three-layer verification pyramid ([[REQ-030]]):
+
+1. **Kani** ([[DD-025]], [[FEAT-049]]) — bounded model checking for panic
+   freedom. 10-15 proof harnesses for core algorithms. New CI job.
+2. **Verus** ([[DD-026]], [[FEAT-050]]) — inline functional correctness proofs.
+   Validation soundness (PASS → all rules satisfied) and completeness (rule
+   violated → diagnostic emitted).
+3. **Rocq** ([[DD-027]], [[FEAT-051]]) — metamodel semantic proofs via
+   coq-of-rust. Schema satisfiability, rule consistency, ASPICE V-model
+   completeness.
+
+**STPA coverage:** H-12 (proof-model divergence), SC-14 (proofs verify actual
+implementation).
+
+### 8.5 Conditional Validation Rules
+
+Schema extension ([[REQ-023]], [[DD-018]], [[FEAT-040]]) with `when`/`then`
+syntax for state-dependent validation. Rule consistency checking at schema
+load time per SC-12.
+
+**STPA coverage:** H-10 (contradictory rules), SC-12 (verify rule consistency
+before applying), UCA-C-12, CC-C-12.
+
+### 8.6 sphinx-needs Migration Path
+
+needs.json import adapter ([[REQ-025]], [[DD-020]], [[FEAT-042]]) with
+configurable type mapping. SCORE metamodel as a rivet schema. Enables
+zero-friction evaluation for sphinx-needs projects.
+
+### 8.7 Test-to-Requirement Traceability
+
+Source scanner ([[REQ-026]], [[DD-021]], [[FEAT-043]]) extracting traceability
+markers from test code. Ephemeral injection into the link graph, same pattern
+as commit traceability ([[DD-012]]).
+
+## 9. Requirements Coverage
 
 This document addresses the following requirements:
 
@@ -321,3 +423,12 @@ This document addresses the following requirements:
 - [[REQ-008]] -- WASM component adapters (section 3.2)
 - [[REQ-009]] -- Test results as release evidence (section 6)
 - [[REQ-010]] -- Schema-driven validation (section 5)
+- [[REQ-023]] -- Conditional validation rules (section 8.5)
+- [[REQ-024]] -- Change impact analysis (section 8.1)
+- [[REQ-025]] -- sphinx-needs JSON import (section 8.6)
+- [[REQ-026]] -- Test-to-requirement traceability (section 8.7)
+- [[REQ-027]] -- Build-system-aware cross-repo discovery (section 8.3)
+- [[REQ-028]] -- Diagnostic-quality parsing with rowan (section 8.1)
+- [[REQ-029]] -- Incremental validation via salsa (section 8.1)
+- [[REQ-030]] -- Formal correctness guarantees (section 8.4)
+- [[REQ-031]] -- Schema-validated CLI mutation (section 8.2)

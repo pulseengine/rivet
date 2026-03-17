@@ -366,3 +366,308 @@ artifacts:
       rationale: >
         Scales naturally. Avoids redundant declarations. Similar to cargo/npm
         dependency resolution.
+
+  - id: DD-018
+    type: design-decision
+    title: Schema-embedded conditional rules over external rule engine
+    status: draft
+    description: >
+      Conditional validation rules are expressed directly in schema YAML
+      using a when/then syntax, rather than using an external rule engine
+      (OPA, Drools) or embedding Lua/WASM scripting.
+    tags: [validation, schema]
+    links:
+      - type: satisfies
+        target: REQ-023
+    fields:
+      rationale: >
+        YAML-native rules keep the single-source-of-truth principle — the
+        schema file fully describes what is valid. An external rule engine
+        adds a deployment dependency and splits validation logic across
+        two systems. Eclipse SCORE's metamodel.yaml approach validates this
+        direction — their community prefers declarative YAML over code.
+      alternatives: >
+        OPA/Rego policies or embedded Lua scripting for validation rules.
+        Rejected because they add runtime dependencies and split validation
+        logic away from the schema that defines the types.
+
+  - id: DD-019
+    type: design-decision
+    title: Content hashing with graph traversal for impact analysis
+    status: draft
+    description: >
+      Change impact is computed by content-hashing each artifact (title +
+      description + fields + links), diffing hashes against a baseline,
+      and walking the petgraph link graph from changed nodes to find
+      transitively affected artifacts. No separate change-tracking database.
+    tags: [traceability, baseline]
+    links:
+      - type: satisfies
+        target: REQ-024
+    fields:
+      rationale: >
+        Combines two existing capabilities (rivet diff + petgraph reachability)
+        rather than adding infrastructure. Content hashing is deterministic
+        and git-friendly. Eclipse SCORE is waiting on sphinx-needs upstream
+        to implement hash-based versioned links — Rivet can implement this
+        natively since artifacts are plain data structures.
+      alternatives: >
+        Git-diff-based detection (parse YAML file diffs). Rejected because
+        YAML formatting changes produce false positives and it cannot detect
+        semantic changes (e.g., reordered fields that are logically identical).
+
+  - id: DD-020
+    type: design-decision
+    title: Configurable type mapping for needs.json import
+    status: draft
+    description: >
+      The needs-json adapter uses a user-defined type-mapping table in
+      rivet.yaml to convert sphinx-needs type names to rivet schema types,
+      rather than hard-coding a fixed mapping or auto-generating types.
+    tags: [interchange, adapter]
+    links:
+      - type: satisfies
+        target: REQ-025
+    fields:
+      rationale: >
+        Every sphinx-needs project defines its own custom types (SCORE has
+        50+). A fixed mapping would only work for one project. User-defined
+        mapping lets teams control how their specific types map to rivet
+        schemas. The same approach works for ID format transformation
+        (underscores to dashes, prefix stripping).
+      alternatives: >
+        Auto-generate rivet schema types from needs.json structure.
+        Rejected because it would create throwaway types that don't
+        align with any standard schema (aspice, stpa, cybersecurity).
+
+  - id: DD-021
+    type: design-decision
+    title: Ephemeral test nodes via source scanning over materialized YAML
+    status: draft
+    description: >
+      Test-to-requirement links are extracted from source code markers and
+      test results at analysis time, injected as ephemeral nodes into the
+      link graph — the same pattern used for commit traceability (DD-012).
+      No test artifact YAML files are generated.
+    tags: [testing, traceability]
+    links:
+      - type: satisfies
+        target: REQ-026
+    fields:
+      rationale: >
+        Test code is the source of truth for what tests exist and what they
+        verify. Materializing test YAML creates a redundant store that drifts
+        from the actual test suite. The ephemeral injection pattern is already
+        proven for commit nodes (DD-012) and avoids the maintenance burden
+        Eclipse SCORE faces with their manual test specification YAML.
+      alternatives: >
+        Generate test artifact YAML via a rivet sync-tests command.
+        Rejected because it creates thousands of files that must be
+        re-synced whenever tests change, duplicating DD-012's lesson.
+
+  - id: DD-022
+    type: design-decision
+    title: Build-system providers over rivet-specific externals config
+    status: draft
+    description: >
+      Cross-repo dependencies are discovered via pluggable build-system
+      providers (Bazel, Nix, custom JSON) rather than a rivet-specific
+      externals block. Each provider reads the build system's native
+      manifest to extract repo URLs, pinned revisions, and workspace
+      paths. Manual overrides are still supported for artifact-path
+      hints and repos not in the build graph.
+    tags: [cross-repo, bazel, nix]
+    links:
+      - type: satisfies
+        target: REQ-027
+      - type: satisfies
+        target: REQ-020
+    fields:
+      rationale: >
+        The build system is the source of truth for what depends on what
+        at which version. A parallel rivet-specific config drifts and
+        adds maintenance burden. Bazel MODULE.bazel, Nix flake.lock,
+        and SCORE's known_good.json all contain exactly the information
+        rivet needs. Reading them directly means zero-config cross-repo
+        validation for projects already using these build systems.
+        Source code linking across repos also requires knowing workspace
+        paths, which the build system already resolves.
+      alternatives: >
+        Rivet-only externals config with manual repo/ref declarations.
+        Kept as fallback for projects without Bazel or Nix, but not
+        the primary path for build-system-managed projects.
+
+  - id: DD-023
+    type: design-decision
+    title: rowan CST over serde deserialization for build-system parsers
+    status: draft
+    description: >
+      Build-system manifest parsers (MODULE.bazel Starlark subset) use
+      rowan for lossless concrete syntax trees rather than serde-based
+      deserialization or regex extraction. Hand-written lexer + recursive
+      descent parser, same architecture as spar-syntax.
+    tags: [parsing, rowan, architecture]
+    links:
+      - type: satisfies
+        target: REQ-028
+      - type: satisfies
+        target: REQ-027
+    fields:
+      rationale: >
+        rowan provides lossless CST with byte-exact spans for diagnostics,
+        error recovery for partial parses, and a proven architecture already
+        used in spar and rust-analyzer. Regex fails silently on malformed
+        input. serde requires well-formed input and loses positional info.
+        The MODULE.bazel Starlark subset is small (~30 syntax kinds) so
+        the parser is compact. The same rowan infrastructure will later
+        support schema and artifact file parsing for full LSP integration.
+      alternatives: >
+        Facebook starlark-rust crate (full interpreter, ~50k lines,
+        massive overkill). tree-sitter-starlark (adds C dependency,
+        grammar may not be maintained). Both rejected in favor of the
+        lightweight hand-written approach proven in spar.
+
+  - id: DD-024
+    type: design-decision
+    title: salsa incremental computation for the validation pipeline
+    status: draft
+    description: >
+      The validation pipeline is restructured as salsa tracked queries:
+      parse → store → link_graph → conditional_rules → validate. salsa's
+      dependency tracking enables incremental revalidation, free change
+      impact analysis, and LSP-ready architecture. Phased adoption alongside
+      existing serde_yaml pipeline.
+    tags: [validation, salsa, architecture]
+    links:
+      - type: satisfies
+        target: REQ-029
+      - type: satisfies
+        target: REQ-023
+      - type: satisfies
+        target: REQ-024
+    fields:
+      rationale: >
+        salsa provides automatic fine-grained dependency tracking between
+        computations. When one artifact changes, only affected validation
+        rules re-evaluate. This makes conditional rules (REQ-023) efficient
+        at scale and change impact analysis (REQ-024) free — impacted
+        artifacts are exactly the invalidated salsa queries. The same
+        database serves as an LSP backend for IDE integration. spar already
+        uses salsa 0.26 successfully for AADL incremental analysis.
+      alternatives: >
+        Manual invalidation tracking with dirty flags. Rejected because
+        it reimplements what salsa does correctly and is error-prone for
+        transitive dependencies. The phased approach keeps the existing
+        pipeline working during migration.
+
+  - id: DD-028
+    type: design-decision
+    title: Append-to-file mutation with schema pre-validation
+    status: draft
+    description: >
+      CLI mutation commands (add, modify, remove, link, unlink) load the
+      full schema and artifact store, validate the mutation against both,
+      then append to or modify the target YAML file. The mutation is
+      rejected with a diagnostic if it would violate any schema rule.
+      For STPA artifacts, the STPA-specific adapter handles the different
+      YAML structure (losses, hazards, ucas, etc.) transparently.
+    tags: [cli, mutation, architecture]
+    links:
+      - type: satisfies
+        target: REQ-031
+    fields:
+      rationale: >
+        Schema pre-validation at write time catches errors immediately
+        rather than at the next validate run. This makes the CLI the
+        authoritative mutation interface — safer than hand-editing YAML
+        or delegating to AI agents that may produce structurally valid
+        but semantically wrong artifacts. Appending preserves existing
+        file structure and comments.
+      alternatives: >
+        Full file rewrite via serde roundtrip. Rejected because serde
+        does not preserve comments, key ordering, or blank lines in
+        YAML. A rowan-based YAML CST editor could preserve formatting
+        but is a larger investment (future work for the salsa migration).
+
+  - id: DD-025
+    type: design-decision
+    title: Kani bounded model checking for panic freedom
+    status: draft
+    description: >
+      Core algorithms (link graph construction, schema merge, artifact
+      ref parsing, cycle detection, cardinality validation) are verified
+      panic-free via Kani proof harnesses. Kani exhaustively checks all
+      inputs within configurable bounds using CBMC.
+    tags: [formal-verification, kani]
+    links:
+      - type: satisfies
+        target: REQ-030
+    fields:
+      rationale: >
+        Kani is the lowest-effort highest-value formal verification tool
+        for Rust. Proof harnesses are ~10-30 lines each, similar to
+        proptest but exhaustive rather than random. Kani is already used
+        by AWS for safety-critical Rust (s2n-tls, Firecracker). It
+        complements existing proptest (random sampling) and Miri (UB
+        detection) with bounded exhaustive checking.
+      alternatives: >
+        Relying solely on proptest + fuzzing. Rejected because random
+        testing cannot prove absence of panics — only Kani's exhaustive
+        bounded checking can. Both are kept: proptest for quick CI,
+        Kani for proof.
+
+  - id: DD-026
+    type: design-decision
+    title: Verus inline proofs for validation soundness and completeness
+    status: draft
+    description: >
+      The validation engine's core functions are annotated with Verus
+      requires/ensures contracts proving soundness (PASS implies all
+      rules satisfied) and completeness (rule violation implies diagnostic
+      emitted). Verus uses SMT solving for automated proof discharge.
+    tags: [formal-verification, verus]
+    links:
+      - type: satisfies
+        target: REQ-030
+    fields:
+      rationale: >
+        Verus is Rust-native — proofs are inline annotations, not a
+        separate language. It understands Rust ownership and lifetimes
+        natively. Proving validation soundness and completeness is the
+        key property for ISO 26262 TCL 1 tool qualification. No other
+        traceability tool has this level of correctness evidence.
+      alternatives: >
+        Creusot (Why3-based). Similar capability but less Rust-native
+        integration. Prusti (Viper-based). Less mature for complex
+        data structures. Both viable but Verus has the strongest
+        Rust integration story.
+
+  - id: DD-027
+    type: design-decision
+    title: Rocq metamodel proofs for schema semantics
+    status: draft
+    description: >
+      Schema semantics (traceability rule systems, conditional rules,
+      link type algebra) are modeled in Rocq via coq-of-rust translation.
+      Properties proven include schema satisfiability, rule consistency,
+      monotonicity, and ASPICE V-model completeness. Rocq proofs serve
+      as the formal specification against which the Rust implementation
+      is validated.
+    tags: [formal-verification, rocq, metamodel]
+    links:
+      - type: satisfies
+        target: REQ-030
+    fields:
+      rationale: >
+        Rocq provides the deepest level of assurance — proving that the
+        validation rules themselves are mathematically consistent, not
+        just that the implementation is correct. Schema satisfiability
+        (rules don't contradict) is a property that cannot be proven
+        by testing or bounded model checking because it requires
+        universal quantification over all possible artifact configurations.
+        coq-of-rust translates Rust types to Rocq for specification.
+      alternatives: >
+        Lean4 via Aeneas translation. Viable alternative with better
+        metaprogramming but less Rust tooling maturity. F* via hacspec.
+        Good for cryptographic properties but less natural for domain
+        modeling.

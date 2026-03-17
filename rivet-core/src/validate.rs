@@ -70,22 +70,20 @@ pub fn validate(store: &Store, schema: &Schema, graph: &LinkGraph) -> Vec<Diagno
             }
 
             // 3. Check allowed values
-            if let Some(allowed) = &field.allowed_values {
-                if let Some(value) = artifact.fields.get(&field.name) {
-                    if let Some(s) = value.as_str() {
-                        if !allowed.contains(&s.to_string()) {
-                            diagnostics.push(Diagnostic {
-                                severity: Severity::Warning,
-                                artifact_id: Some(artifact.id.clone()),
-                                rule: "allowed-values".to_string(),
-                                message: format!(
-                                    "field '{}' has value '{}', allowed: {:?}",
-                                    field.name, s, allowed
-                                ),
-                            });
-                        }
-                    }
-                }
+            if let Some(allowed) = &field.allowed_values
+                && let Some(value) = artifact.fields.get(&field.name)
+                && let Some(s) = value.as_str()
+                && !allowed.contains(&s.to_string())
+            {
+                diagnostics.push(Diagnostic {
+                    severity: Severity::Warning,
+                    artifact_id: Some(artifact.id.clone()),
+                    rule: "allowed-values".to_string(),
+                    message: format!(
+                        "field '{}' has value '{}', allowed: {:?}",
+                        field.name, s, allowed
+                    ),
+                });
             }
         }
 
@@ -139,23 +137,22 @@ pub fn validate(store: &Store, schema: &Schema, graph: &LinkGraph) -> Vec<Diagno
                 if link.link_type != link_field.link_type {
                     continue;
                 }
-                if let Some(target) = store.get(&link.target) {
-                    if !link_field.target_types.is_empty()
-                        && !link_field.target_types.contains(&target.artifact_type)
-                    {
-                        diagnostics.push(Diagnostic {
-                            severity: Severity::Error,
-                            artifact_id: Some(artifact.id.clone()),
-                            rule: "link-target-type".to_string(),
-                            message: format!(
-                                "link '{}' targets '{}' (type '{}'), allowed target types: {:?}",
-                                link.link_type,
-                                link.target,
-                                target.artifact_type,
-                                link_field.target_types
-                            ),
-                        });
-                    }
+                if let Some(target) = store.get(&link.target)
+                    && !link_field.target_types.is_empty()
+                    && !link_field.target_types.contains(&target.artifact_type)
+                {
+                    diagnostics.push(Diagnostic {
+                        severity: Severity::Error,
+                        artifact_id: Some(artifact.id.clone()),
+                        rule: "link-target-type".to_string(),
+                        message: format!(
+                            "link '{}' targets '{}' (type '{}'), allowed target types: {:?}",
+                            link.link_type,
+                            link.target,
+                            target.artifact_type,
+                            link_field.target_types
+                        ),
+                    });
                 }
             }
         }
