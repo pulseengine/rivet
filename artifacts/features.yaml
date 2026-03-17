@@ -971,3 +971,85 @@ artifacts:
         target: REQ-010
     fields:
       phase: phase-3
+
+  # --- AI agent ergonomics (from agent testing feedback) ---
+
+  - id: FEAT-054
+    type: feature
+    title: "rivet add --link: create artifact with links in one command"
+    status: draft
+    description: >
+      Allow --link "type:target" flags on rivet add to create an artifact
+      with links in a single command. Eliminates the 2-3 follow-up rivet
+      link calls needed per artifact today. Biggest friction point for
+      AI agent workflows creating 20+ artifacts.
+    tags: [cli, agent-ergonomics, mutations, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-031
+    fields:
+      phase: phase-3
+
+  - id: FEAT-055
+    type: feature
+    title: "rivet batch: apply multiple mutations from YAML/JSON file"
+    status: draft
+    description: >
+      Batch mode that reads a YAML/JSON file of mutations (add, modify,
+      link, remove) and applies them atomically. Bridges the gap between
+      single-command CLI and hand-editing YAML for large artifact chains
+      (e.g., 20 artifacts + 40 links in one file).
+    tags: [cli, agent-ergonomics, mutations, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-031
+    fields:
+      phase: phase-3
+
+  - id: FEAT-056
+    type: feature
+    title: "JSON output for validate, coverage, context, and diff"
+    status: draft
+    description: >
+      Add --format json flag to validate, coverage, context, and diff
+      commands. Machine-readable output lets AI agents parse results
+      programmatically without regex. JSON schema documented so agents
+      know the structure.
+    tags: [cli, agent-ergonomics, json, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-042
+    fields:
+      phase: phase-3
+
+  - id: FEAT-057
+    type: feature
+    title: "rivet graph <id> --depth N: local link neighborhood CLI"
+    status: draft
+    description: >
+      CLI command to show the link neighborhood of a specific artifact
+      within N hops. Prints upstream and downstream chain as a tree.
+      More focused than rivet matrix for investigating one artifact.
+    tags: [cli, graph, traceability, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-004
+    fields:
+      phase: phase-3
+
+  - id: FEAT-058
+    type: feature
+    title: "rivet scaffold --chain: generate traceability skeleton"
+    status: draft
+    description: >
+      Given a root artifact and a sequence of types, generate draft
+      artifacts with the correct links forming a traceability chain.
+      E.g., rivet scaffold --chain CG-1 --through
+      "cybersecurity-req,cybersecurity-design,cybersecurity-implementation,
+      cybersecurity-verification" creates 4 linked draft artifacts.
+    tags: [cli, agent-ergonomics, automation, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-031
+    fields:
+      phase: phase-3
