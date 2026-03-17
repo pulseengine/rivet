@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1773688363965,
+  "lastUpdate": 1773778314527,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
@@ -1535,6 +1535,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1441878,
             "range": "± 50694",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "73f40553173781112551dee1d4fc38c083943da2",
+          "message": "feat(etch): port-aware layout, orthogonal routing, interactive HTML (#37)\n\n* test(serve): comprehensive Playwright E2E test suite — 53 tests\n\n8 spec files covering:\n- routes.spec.ts: smoke test 21 dashboard routes (HTTP 200, valid HTML)\n- navigation.spec.ts: direct URL, back/forward, reload button\n- artifacts.spec.ts: filter/sort/pagination via URL params\n- stpa.spec.ts: hierarchy, H-13 presence, filter bar, fold/unfold\n- graph.spec.ts: SVG rendering, focus, node budget\n- print-mode.spec.ts: ?print=1 strips nav/HTMX\n- url-state.spec.ts: filter/sort/page state survives reload\n- validation.spec.ts: severity filter, text search\n\nCI integration: Playwright job in ci.yml with Chromium, artifact upload.\n\nVerifies: FEAT-052\nRefs: REQ-007, SC-15\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* feat(etch): port-aware layout, orthogonal routing, interactive HTML\n\nMajor etch rendering upgrade with three capabilities:\n\nPort-aware layout (RENDER-REQ-002):\n- PortInfo, PortSide, PortDirection, PortType data model\n- position_ports() with side-aware placement and auto-resolution\n- Node height grows for port count, edge-to-port snapping\n- SVG rendering: circles, direction triangles, type colors\n\nOrthogonal edge routing (RENDER-REQ-001):\n- ortho.rs: visibility-graph A* router with obstacle avoidance\n- EdgeRouting::Orthogonal (default) vs CubicBezier (legacy)\n- SVG polyline L commands for axis-aligned segments\n\nInteractive HTML wrapper (RENDER-REQ-003, 005, 006):\n- html.rs + embedded JS: pan, zoom, selection, group highlight\n- Semantic zoom CSS classes, URL ?highlight= deep linking\n- Zero external dependencies\n\nBackward compatible: ports/source_port/target_port default to empty/None.\n\nTrace: skip\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Test <test@test.com>\nCo-authored-by: Claude Opus 4.6 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-03-17T21:05:14+01:00",
+          "tree_id": "1fb32b13cdb6a3d6953b5c899c80df40a2cfb095",
+          "url": "https://github.com/pulseengine/rivet/commit/73f40553173781112551dee1d4fc38c083943da2"
+        },
+        "date": 1773778314204,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 84151,
+            "range": "± 1898",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 1246673,
+            "range": "± 21168",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 57382065,
+            "range": "± 1618076",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2324,
+            "range": "± 10",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 29916,
+            "range": "± 182",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 437119,
+            "range": "± 2814",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 111,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 113,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 114,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 920388,
+            "range": "± 10896",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 192269,
+            "range": "± 1392",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 2168213,
+            "range": "± 15962",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 39100800,
+            "range": "± 4611439",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 35796,
+            "range": "± 188",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 490857,
+            "range": "± 1935",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 5446388,
+            "range": "± 407815",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4482,
+            "range": "± 43",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 61102,
+            "range": "± 354",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 800562,
+            "range": "± 4965",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 61792,
+            "range": "± 228",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 707531,
+            "range": "± 3733",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8690845,
+            "range": "± 362287",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 792,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7585,
+            "range": "± 49",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 106829,
+            "range": "± 1072",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 22189,
+            "range": "± 361",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 153744,
+            "range": "± 5492",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1431994,
+            "range": "± 21038",
             "unit": "ns/iter"
           }
         ]
