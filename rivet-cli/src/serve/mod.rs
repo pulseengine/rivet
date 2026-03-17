@@ -19,6 +19,8 @@ mod embedded_wasm {
     pub const CORE3_WASM: &[u8] = include_bytes!("../../assets/wasm/js/spar_wasm.core3.wasm");
 }
 
+#[allow(dead_code)]
+pub(crate) mod components;
 mod js;
 mod layout;
 mod styles;
