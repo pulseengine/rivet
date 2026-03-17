@@ -49,6 +49,9 @@ pub struct LayoutOptions {
     pub container_padding: f64,
     /// Height of the container header (for the label) (px).
     pub container_header: f64,
+    /// Maximum number of nodes before the layout bails out with a
+    /// sentinel "budget exceeded" node.  `None` means no limit.
+    pub max_nodes: Option<usize>,
 }
 
 impl Default for LayoutOptions {
@@ -62,6 +65,7 @@ impl Default for LayoutOptions {
             type_ranks: HashMap::new(),
             container_padding: 20.0,
             container_header: 30.0,
+            max_nodes: None,
         }
     }
 }
@@ -168,6 +172,35 @@ pub fn layout<N, E>(
             edges: Vec::new(),
             width: 0.0,
             height: 0.0,
+        };
+    }
+
+    // Budget check: bail out if the graph exceeds the node limit.
+    if options
+        .max_nodes
+        .is_some_and(|max| graph.node_count() > max)
+    {
+        let max = options.max_nodes.unwrap();
+        return GraphLayout {
+            nodes: vec![LayoutNode {
+                id: "__budget_exceeded__".into(),
+                label: format!(
+                    "Graph has {} nodes (budget: {}). Use type filters or focus on a specific artifact.",
+                    graph.node_count(),
+                    max
+                ),
+                x: 0.0,
+                y: 0.0,
+                width: 500.0,
+                height: 60.0,
+                rank: 0,
+                node_type: String::new(),
+                sublabel: None,
+                is_container: false,
+            }],
+            edges: Vec::new(),
+            width: 500.0,
+            height: 60.0,
         };
     }
 
@@ -1347,6 +1380,64 @@ mod tests {
     }
 
     #[test]
+    fn layout_is_deterministic() {
+        let mut g = Graph::new();
+        let a = g.add_node("A");
+        let b = g.add_node("B");
+        let c = g.add_node("C");
+        let d = g.add_node("D");
+        let e = g.add_node("E");
+        g.add_edge(a, b, "ab");
+        g.add_edge(a, c, "ac");
+        g.add_edge(b, d, "bd");
+        g.add_edge(c, d, "cd");
+        g.add_edge(d, e, "de");
+
+        let opts = LayoutOptions::default();
+        let first = layout(&g, &simple_node_info, &simple_edge_info, &opts);
+
+        for _ in 0..10 {
+            let result = layout(&g, &simple_node_info, &simple_edge_info, &opts);
+            assert_eq!(first.nodes.len(), result.nodes.len());
+            for (a, b) in first.nodes.iter().zip(result.nodes.iter()) {
+                assert_eq!(a.id, b.id);
+                assert!((a.x - b.x).abs() < 0.001, "x mismatch for {}", a.id);
+                assert!((a.y - b.y).abs() < 0.001, "y mismatch for {}", a.id);
+            }
+        }
+    }
+
+    #[test]
+    fn compound_layout_is_deterministic() {
+        let mut g = Graph::new();
+        let _s = g.add_node("S");
+        let a = g.add_node("A");
+        let b = g.add_node("B");
+        let c = g.add_node("C");
+        g.add_edge(a, b, "ab");
+        g.add_edge(b, c, "bc");
+
+        let node_info = |_idx: NodeIndex, n: &&str| NodeInfo {
+            id: n.to_string(),
+            label: n.to_string(),
+            node_type: "default".into(),
+            sublabel: None,
+            parent: if *n != "S" { Some("S".into()) } else { None },
+        };
+
+        let first = layout(&g, &node_info, &simple_edge_info, &LayoutOptions::default());
+
+        for _ in 0..10 {
+            let result = layout(&g, &node_info, &simple_edge_info, &LayoutOptions::default());
+            for (a, b) in first.nodes.iter().zip(result.nodes.iter()) {
+                assert_eq!(a.id, b.id);
+                assert!((a.x - b.x).abs() < 0.001, "x mismatch for {}", a.id);
+                assert!((a.y - b.y).abs() < 0.001, "y mismatch for {}", a.id);
+            }
+        }
+    }
+
+    #[test]
     fn multi_rank_edge_waypoints() {
         let mut g = Graph::new();
         let a = g.add_node("A");
@@ -1371,5 +1462,54 @@ mod tests {
 
         // A->C spans ranks 0..2, so should have 3 waypoints (start, mid, end).
         assert_eq!(long_edge.points.len(), 3);
+    }
+
+    #[allow(clippy::ptr_arg)]
+    fn string_node_info(_idx: NodeIndex, label: &String) -> NodeInfo {
+        NodeInfo {
+            id: label.clone(),
+            label: label.clone(),
+            node_type: "default".into(),
+            sublabel: None,
+            parent: None,
+        }
+    }
+
+    #[allow(clippy::ptr_arg)]
+    fn string_edge_info(_idx: EdgeIndex, label: &String) -> EdgeInfo {
+        EdgeInfo {
+            label: label.clone(),
+        }
+    }
+
+    #[test]
+    fn budget_exceeded_returns_sentinel() {
+        let mut g: Graph<String, String> = Graph::new();
+        for i in 0..10 {
+            g.add_node(format!("N-{i}"));
+        }
+        let opts = LayoutOptions {
+            max_nodes: Some(5),
+            ..Default::default()
+        };
+        let result = layout(&g, &string_node_info, &string_edge_info, &opts);
+        assert_eq!(result.nodes.len(), 1);
+        assert_eq!(result.nodes[0].id, "__budget_exceeded__");
+        assert!(result.nodes[0].label.contains("10 nodes"));
+        assert!(result.edges.is_empty());
+    }
+
+    #[test]
+    fn budget_allows_within_limit() {
+        let mut g: Graph<String, String> = Graph::new();
+        for i in 0..5 {
+            g.add_node(format!("N-{i}"));
+        }
+        let opts = LayoutOptions {
+            max_nodes: Some(10),
+            ..Default::default()
+        };
+        let result = layout(&g, &string_node_info, &string_edge_info, &opts);
+        assert_eq!(result.nodes.len(), 5);
     }
 }

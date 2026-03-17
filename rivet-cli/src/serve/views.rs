@@ -580,6 +580,8 @@ pub(crate) struct GraphParams {
     #[serde(default = "default_depth")]
     depth: usize,
     focus: Option<String>,
+    /// Maximum number of nodes before the layout bails out.  Default 300, max 1000.
+    budget: Option<usize>,
 }
 
 fn default_depth() -> usize {
@@ -640,17 +642,21 @@ pub(crate) async fn graph_view(
         ..SvgOptions::default()
     };
 
+    let budget = params.budget.unwrap_or(300).min(1000);
     let layout_opts = LayoutOptions {
         node_width: 200.0,
         node_height: 56.0,
         rank_separation: 90.0,
         node_separation: 30.0,
+        max_nodes: Some(budget),
         ..Default::default()
     };
 
-    let gl = pgv_layout::layout(
-        &sub,
-        &|_idx, n| {
+    // Pre-collect owned node/edge info while holding the read lock.
+    let node_infos: std::collections::HashMap<petgraph::graph::NodeIndex, NodeInfo> = sub
+        .node_indices()
+        .map(|idx| {
+            let n = &sub[idx];
             let atype = store
                 .get(n.as_str())
                 .map(|a| a.artifact_type.clone())
@@ -666,29 +672,48 @@ pub(crate) async fn graph_view(
             } else {
                 Some(title)
             };
-            NodeInfo {
-                id: n.clone(),
-                label: n.clone(),
-                node_type: atype,
-                sublabel,
-                parent: None,
-            }
-        },
-        &|_idx, e| EdgeInfo { label: e.clone() },
-        &layout_opts,
-    );
-
-    let svg = render_svg(&gl, &svg_opts);
-
-    // Collect which types are actually present for the legend
-    let present_types: std::collections::BTreeSet<String> = sub
-        .node_indices()
-        .filter_map(|idx| {
-            store
-                .get(sub[idx].as_str())
-                .map(|a| a.artifact_type.clone())
+            (
+                idx,
+                NodeInfo {
+                    id: n.clone(),
+                    label: n.clone(),
+                    node_type: atype,
+                    sublabel,
+                    parent: None,
+                },
+            )
         })
         .collect();
+
+    // Collect present types for the legend before sub is moved.
+    let present_types: std::collections::BTreeSet<String> = node_infos
+        .values()
+        .map(|info| info.node_type.clone())
+        .filter(|t| !t.is_empty())
+        .collect();
+
+    // Run layout + SVG render in spawn_blocking to avoid blocking the async runtime.
+    // Returns (svg_string, node_count, edge_count).
+    let (svg, node_count, edge_count) = tokio::task::spawn_blocking(move || {
+        let gl = pgv_layout::layout(
+            &sub,
+            &|idx, _n| {
+                node_infos.get(&idx).cloned().unwrap_or_else(|| NodeInfo {
+                    id: String::new(),
+                    label: String::new(),
+                    node_type: String::new(),
+                    sublabel: None,
+                    parent: None,
+                })
+            },
+            &|_idx, e| EdgeInfo { label: e.clone() },
+            &layout_opts,
+        );
+        let svg = render_svg(&gl, &svg_opts);
+        (svg, gl.nodes.len(), gl.edges.len())
+    })
+    .await
+    .unwrap();
 
     // Build filter controls
     let mut html = String::from("<h2>Traceability Graph</h2>");
@@ -790,8 +815,8 @@ pub(crate) async fn graph_view(
 
     html.push_str(&format!(
         "<p class=\"meta\">{} nodes, {} edges &mdash; scroll to zoom, drag to pan, click nodes to navigate</p>",
-        gl.nodes.len(),
-        gl.edges.len()
+        node_count,
+        edge_count
     ));
 
     Html(html)

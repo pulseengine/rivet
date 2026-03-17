@@ -70,7 +70,9 @@ pub fn render_svg(layout: &GraphLayout, options: &SvgOptions) -> String {
     let vb_w = layout.width + pad * 2.0;
     let vb_h = layout.height + pad * 2.0;
 
-    let mut svg = String::with_capacity(4096);
+    // Estimate ~500 bytes per node + ~200 bytes per edge + base overhead.
+    let estimated = 2048 + layout.nodes.len() * 500 + layout.edges.len() * 200;
+    let mut svg = String::with_capacity(estimated);
 
     // Opening <svg> tag.
     writeln!(
