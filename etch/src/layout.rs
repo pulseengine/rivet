@@ -29,6 +29,16 @@ pub enum RankDirection {
     LeftToRight,
 }
 
+/// Edge routing strategy.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum EdgeRouting {
+    /// Orthogonal routing with right-angle bends.
+    #[default]
+    Orthogonal,
+    /// Cubic bezier curves (legacy behavior).
+    CubicBezier,
+}
+
 /// Options that control the layout algorithm.
 #[derive(Debug, Clone)]
 pub struct LayoutOptions {
@@ -49,6 +59,14 @@ pub struct LayoutOptions {
     pub container_padding: f64,
     /// Height of the container header (for the label) (px).
     pub container_header: f64,
+    /// Edge routing strategy.
+    pub edge_routing: EdgeRouting,
+    /// Penalty for each bend in orthogonal routing (higher = fewer bends).
+    pub bend_penalty: f64,
+    /// Gap between parallel edge segments (px).
+    pub edge_separation: f64,
+    /// Minimum straight stub length leaving a port before any bend (px).
+    pub port_stub_length: f64,
 }
 
 impl Default for LayoutOptions {
@@ -62,9 +80,93 @@ impl Default for LayoutOptions {
             type_ranks: HashMap::new(),
             container_padding: 20.0,
             container_header: 30.0,
+            edge_routing: EdgeRouting::default(),
+            bend_penalty: 20.0,
+            edge_separation: 4.0,
+            port_stub_length: 10.0,
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Port types
+// ---------------------------------------------------------------------------
+
+/// Side of the node where a port is positioned.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum PortSide {
+    Left,
+    Right,
+    Top,
+    Bottom,
+    /// Let the layout algorithm choose based on direction.
+    #[default]
+    Auto,
+}
+
+/// Direction of data flow through a port.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PortDirection {
+    In,
+    Out,
+    InOut,
+}
+
+/// Visual category of a port (determines color in SVG rendering).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum PortType {
+    /// Data port (blue #4a90d9).
+    #[default]
+    Data,
+    /// Event port (orange #e67e22).
+    Event,
+    /// Event-data port (green #27ae60).
+    EventData,
+    /// Access port (gray #999).
+    Access,
+    /// Feature group (purple #9b59b6).
+    Group,
+    /// Abstract feature (dark gray #666).
+    Abstract,
+}
+
+/// Display-level information about a port on a node.
+#[derive(Debug, Clone)]
+pub struct PortInfo {
+    /// Unique identifier within the owning node.
+    pub id: String,
+    /// Label rendered next to the port circle.
+    pub label: String,
+    /// Which side of the node this port appears on.
+    pub side: PortSide,
+    /// Direction of data flow.
+    pub direction: PortDirection,
+    /// Visual category (determines color).
+    pub port_type: PortType,
+}
+
+/// A positioned port on a layout node.
+#[derive(Debug, Clone)]
+pub struct LayoutPort {
+    /// Port identifier.
+    pub id: String,
+    /// Label text.
+    pub label: String,
+    /// X coordinate of port center (absolute).
+    pub x: f64,
+    /// Y coordinate of port center (absolute).
+    pub y: f64,
+    /// Which side of the node.
+    pub side: PortSide,
+    /// Direction indicator.
+    pub direction: PortDirection,
+    /// Visual type.
+    pub port_type: PortType,
+}
+
+// ---------------------------------------------------------------------------
+// Node / Edge / Layout types
+// ---------------------------------------------------------------------------
 
 /// Display-level information about a node supplied by the caller.
 #[derive(Debug, Clone)]
@@ -82,6 +184,9 @@ pub struct NodeInfo {
     /// algorithm lays out each container's children independently and then
     /// sizes the container to fit its content.
     pub parent: Option<String>,
+    /// Ports on this node.  Empty for nodes without explicit ports;
+    /// edges then connect to node centers (backward compatible).
+    pub ports: Vec<PortInfo>,
 }
 
 /// Display-level information about an edge supplied by the caller.
@@ -89,6 +194,10 @@ pub struct NodeInfo {
 pub struct EdgeInfo {
     /// Label rendered along the edge path.
     pub label: String,
+    /// Source port ID (within source node).  `None` = connect to node center.
+    pub source_port: Option<String>,
+    /// Target port ID (within target node).  `None` = connect to node center.
+    pub target_port: Option<String>,
 }
 
 /// A positioned node produced by the layout algorithm.
@@ -114,6 +223,8 @@ pub struct LayoutNode {
     pub sublabel: Option<String>,
     /// `true` when this node is a container with children laid out inside.
     pub is_container: bool,
+    /// Positioned ports on this node.
+    pub ports: Vec<LayoutPort>,
 }
 
 /// A routed edge produced by the layout algorithm.
@@ -127,6 +238,10 @@ pub struct LayoutEdge {
     pub label: String,
     /// Ordered polyline waypoints `(x, y)`.
     pub points: Vec<(f64, f64)>,
+    /// Source port ID if edge connects to a specific port.
+    pub source_port: Option<String>,
+    /// Target port ID if edge connects to a specific port.
+    pub target_port: Option<String>,
 }
 
 /// Complete layout result.
@@ -405,16 +520,30 @@ fn sweep_up<N, E>(
 // Phase 3: Coordinate assignment
 // ---------------------------------------------------------------------------
 
-/// Per-node size overrides for variable-size nodes (containers).
+/// Per-node size, accounting for container overrides and port counts.
 fn node_size(
     idx: NodeIndex,
     options: &LayoutOptions,
     size_overrides: &HashMap<NodeIndex, (f64, f64)>,
+    infos: &HashMap<NodeIndex, NodeInfo>,
 ) -> (f64, f64) {
-    size_overrides
-        .get(&idx)
-        .copied()
-        .unwrap_or((options.node_width, options.node_height))
+    if let Some(&size) = size_overrides.get(&idx) {
+        return size;
+    }
+    let base_w = options.node_width;
+    let mut base_h = options.node_height;
+
+    // Grow height if ports need more space (12px per port + 8px padding)
+    if let Some(info) = infos.get(&idx) {
+        let (left, right) = resolved_side_counts(&info.ports);
+        let max_side = left.max(right);
+        if max_side > 0 {
+            let port_h = max_side as f64 * 12.0 + 8.0;
+            base_h = base_h.max(port_h);
+        }
+    }
+
+    (base_w, base_h)
 }
 
 fn assign_coordinates(
@@ -437,7 +566,7 @@ fn assign_coordinates(
             }
             let total_w: f64 = list
                 .iter()
-                .map(|&idx| node_size(idx, options, size_overrides).0)
+                .map(|&idx| node_size(idx, options, size_overrides, infos).0)
                 .sum();
             total_w + (list.len() as f64 - 1.0) * options.node_separation
         })
@@ -447,7 +576,7 @@ fn assign_coordinates(
         .iter()
         .map(|list| {
             list.iter()
-                .map(|&idx| node_size(idx, options, size_overrides).1)
+                .map(|&idx| node_size(idx, options, size_overrides, infos).1)
                 .fold(options.node_height, f64::max)
         })
         .collect();
@@ -469,7 +598,7 @@ fn assign_coordinates(
         let mut x_cursor = x_offset;
         for &idx in list {
             let info = &infos[&idx];
-            let (nw, nh) = node_size(idx, options, size_overrides);
+            let (nw, nh) = node_size(idx, options, size_overrides, infos);
             let is_container = size_overrides.contains_key(&idx);
 
             let (x, y) = match options.rank_direction {
@@ -491,7 +620,7 @@ fn assign_coordinates(
                 max_y = y + nh;
             }
 
-            nodes.push(LayoutNode {
+            let mut layout_node = LayoutNode {
                 id: info.id.clone(),
                 x,
                 y,
@@ -502,13 +631,136 @@ fn assign_coordinates(
                 node_type: info.node_type.clone(),
                 sublabel: info.sublabel.clone(),
                 is_container,
-            });
+                ports: Vec::new(),
+            };
+            layout_node.ports = position_ports(&layout_node, &info.ports);
+            nodes.push(layout_node);
 
             x_cursor += nw + options.node_separation;
         }
     }
 
     (nodes, max_x, max_y)
+}
+
+// ---------------------------------------------------------------------------
+// Port positioning
+// ---------------------------------------------------------------------------
+
+/// Compute positioned ports for a laid-out node.
+fn position_ports(node: &LayoutNode, ports: &[PortInfo]) -> Vec<LayoutPort> {
+    if ports.is_empty() {
+        return Vec::new();
+    }
+
+    // Resolve Auto sides based on direction
+    let resolved_side = |p: &PortInfo| -> PortSide {
+        match p.side {
+            PortSide::Auto => match p.direction {
+                PortDirection::In => PortSide::Left,
+                PortDirection::Out | PortDirection::InOut => PortSide::Right,
+            },
+            other => other,
+        }
+    };
+
+    let mut left: Vec<&PortInfo> = Vec::new();
+    let mut right: Vec<&PortInfo> = Vec::new();
+    let mut top: Vec<&PortInfo> = Vec::new();
+    let mut bottom: Vec<&PortInfo> = Vec::new();
+
+    for p in ports {
+        match resolved_side(p) {
+            PortSide::Left => left.push(p),
+            PortSide::Right => right.push(p),
+            PortSide::Top => top.push(p),
+            PortSide::Bottom => bottom.push(p),
+            PortSide::Auto => unreachable!(),
+        }
+    }
+
+    let mut result = Vec::new();
+
+    // Place ports evenly along each side
+    let place_vertical =
+        |ports: &[&PortInfo], fixed_x: f64, y_start: f64, y_len: f64| -> Vec<LayoutPort> {
+            let n = ports.len();
+            if n == 0 {
+                return vec![];
+            }
+            let spacing = y_len / (n as f64 + 1.0);
+            ports
+                .iter()
+                .enumerate()
+                .map(|(i, p)| LayoutPort {
+                    id: p.id.clone(),
+                    label: p.label.clone(),
+                    x: fixed_x,
+                    y: y_start + spacing * (i as f64 + 1.0),
+                    side: resolved_side(p),
+                    direction: p.direction,
+                    port_type: p.port_type,
+                })
+                .collect()
+        };
+
+    let place_horizontal =
+        |ports: &[&PortInfo], fixed_y: f64, x_start: f64, x_len: f64| -> Vec<LayoutPort> {
+            let n = ports.len();
+            if n == 0 {
+                return vec![];
+            }
+            let spacing = x_len / (n as f64 + 1.0);
+            ports
+                .iter()
+                .enumerate()
+                .map(|(i, p)| LayoutPort {
+                    id: p.id.clone(),
+                    label: p.label.clone(),
+                    x: x_start + spacing * (i as f64 + 1.0),
+                    y: fixed_y,
+                    side: resolved_side(p),
+                    direction: p.direction,
+                    port_type: p.port_type,
+                })
+                .collect()
+        };
+
+    result.extend(place_vertical(&left, node.x, node.y, node.height));
+    result.extend(place_vertical(
+        &right,
+        node.x + node.width,
+        node.y,
+        node.height,
+    ));
+    result.extend(place_horizontal(&top, node.y, node.x, node.width));
+    result.extend(place_horizontal(
+        &bottom,
+        node.y + node.height,
+        node.x,
+        node.width,
+    ));
+
+    result
+}
+
+/// Count ports per side after resolving Auto, returns (left, right).
+#[allow(dead_code)]
+fn resolved_side_counts(ports: &[PortInfo]) -> (usize, usize) {
+    let mut left = 0usize;
+    let mut right = 0usize;
+    for p in ports {
+        match p.side {
+            PortSide::Left => left += 1,
+            PortSide::Right => right += 1,
+            PortSide::Auto => match p.direction {
+                PortDirection::In => left += 1,
+                PortDirection::Out | PortDirection::InOut => right += 1,
+            },
+            _ => {} // Top/Bottom don't affect height
+        }
+    }
+    (left, right)
 }
 
 // ---------------------------------------------------------------------------
@@ -551,13 +803,51 @@ fn route_edges<N, E>(
             None => continue,
         };
 
-        let points = compute_waypoints(src_node, tgt_node, options);
+        // If ports are specified, snap to port positions
+        let src_point = info
+            .source_port
+            .as_ref()
+            .and_then(|pid| src_node.ports.iter().find(|p| p.id == *pid))
+            .map(|p| (p.x, p.y));
+        let tgt_point = info
+            .target_port
+            .as_ref()
+            .and_then(|pid| tgt_node.ports.iter().find(|p| p.id == *pid))
+            .map(|p| (p.x, p.y));
+
+        // Compute start/end points (port-aware or center-based)
+        let start = src_point.unwrap_or_else(|| {
+            (
+                src_node.x + src_node.width / 2.0,
+                src_node.y + src_node.height,
+            )
+        });
+        let end = tgt_point.unwrap_or_else(|| (tgt_node.x + tgt_node.width / 2.0, tgt_node.y));
+
+        let points = match options.edge_routing {
+            EdgeRouting::Orthogonal => crate::ortho::route_orthogonal(
+                layout_nodes,
+                start,
+                end,
+                options.bend_penalty,
+                options.port_stub_length,
+            ),
+            EdgeRouting::CubicBezier => {
+                if src_point.is_some() || tgt_point.is_some() {
+                    vec![start, end]
+                } else {
+                    compute_waypoints(src_node, tgt_node, options)
+                }
+            }
+        };
 
         edges.push(LayoutEdge {
             source_id: src_id.clone(),
             target_id: tgt_id.clone(),
             label: info.label,
             points,
+            source_port: info.source_port,
+            target_port: info.target_port,
         });
     }
 
@@ -933,12 +1223,15 @@ mod tests {
             node_type: "default".into(),
             sublabel: None,
             parent: None,
+            ports: vec![],
         }
     }
 
     fn simple_edge_info(_idx: EdgeIndex, label: &&str) -> EdgeInfo {
         EdgeInfo {
             label: label.to_string(),
+            source_port: None,
+            target_port: None,
         }
     }
 
@@ -1120,6 +1413,7 @@ mod tests {
                 } else {
                     None
                 },
+                ports: vec![],
             },
             &simple_edge_info,
             &LayoutOptions::default(),
@@ -1186,6 +1480,7 @@ mod tests {
                     "T1" | "T2" => Some("P".into()),
                     _ => None,
                 },
+                ports: vec![],
             },
             &simple_edge_info,
             &LayoutOptions::default(),
@@ -1241,6 +1536,7 @@ mod tests {
                     "B" => Some("P2".into()),
                     _ => None,
                 },
+                ports: vec![],
             },
             &simple_edge_info,
             &LayoutOptions::default(),
@@ -1285,6 +1581,7 @@ mod tests {
                 node_type: "default".into(),
                 sublabel: None,
                 parent: if *n != "S" { Some("S".into()) } else { None },
+                ports: vec![],
             },
             &simple_edge_info,
             &opts,
@@ -1329,6 +1626,7 @@ mod tests {
                     "A" | "B" => Some("S".into()),
                     _ => None,
                 },
+                ports: vec![],
             },
             &simple_edge_info,
             &LayoutOptions::default(),
@@ -1342,6 +1640,65 @@ mod tests {
 
         assert!(node_s.is_container);
         assert!(!node_leaf.is_container);
+    }
+
+    #[test]
+    fn layout_is_deterministic() {
+        let mut g = Graph::new();
+        let a = g.add_node("A");
+        let b = g.add_node("B");
+        let c = g.add_node("C");
+        let d = g.add_node("D");
+        let e = g.add_node("E");
+        g.add_edge(a, b, "ab");
+        g.add_edge(a, c, "ac");
+        g.add_edge(b, d, "bd");
+        g.add_edge(c, d, "cd");
+        g.add_edge(d, e, "de");
+
+        let opts = LayoutOptions::default();
+        let first = layout(&g, &simple_node_info, &simple_edge_info, &opts);
+
+        for _ in 0..10 {
+            let result = layout(&g, &simple_node_info, &simple_edge_info, &opts);
+            assert_eq!(first.nodes.len(), result.nodes.len());
+            for (a, b) in first.nodes.iter().zip(result.nodes.iter()) {
+                assert_eq!(a.id, b.id);
+                assert!((a.x - b.x).abs() < 0.001, "x mismatch for {}", a.id);
+                assert!((a.y - b.y).abs() < 0.001, "y mismatch for {}", a.id);
+            }
+        }
+    }
+
+    #[test]
+    fn compound_layout_is_deterministic() {
+        let mut g = Graph::new();
+        let _s = g.add_node("S");
+        let a = g.add_node("A");
+        let b = g.add_node("B");
+        let c = g.add_node("C");
+        g.add_edge(a, b, "ab");
+        g.add_edge(b, c, "bc");
+
+        let node_info = |_idx: NodeIndex, n: &&str| NodeInfo {
+            id: n.to_string(),
+            label: n.to_string(),
+            node_type: "default".into(),
+            sublabel: None,
+            parent: if *n != "S" { Some("S".into()) } else { None },
+            ports: vec![],
+        };
+
+        let first = layout(&g, &node_info, &simple_edge_info, &LayoutOptions::default());
+
+        for _ in 0..10 {
+            let result = layout(&g, &node_info, &simple_edge_info, &LayoutOptions::default());
+            for (a, b) in first.nodes.iter().zip(result.nodes.iter()) {
+                assert_eq!(a.id, b.id);
+                assert!((a.x - b.x).abs() < 0.001, "x mismatch for {}", a.id);
+                assert!((a.y - b.y).abs() < 0.001, "y mismatch for {}", a.id);
+            }
+        }
     }
 
     #[test]
@@ -1369,5 +1726,203 @@ mod tests {
 
         // A->C spans ranks 0..2, so should have 3 waypoints (start, mid, end).
         assert_eq!(long_edge.points.len(), 3);
+    }
+
+    // -----------------------------------------------------------------------
+    // Port positioning tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn ports_positioned_on_node_sides() {
+        let mut g = Graph::new();
+        let _a = g.add_node("A");
+
+        let result = layout(
+            &g,
+            &|_idx, _n: &&str| NodeInfo {
+                id: "A".into(),
+                label: "A".into(),
+                node_type: "default".into(),
+                sublabel: None,
+                parent: None,
+                ports: vec![
+                    PortInfo {
+                        id: "in1".into(),
+                        label: "in1".into(),
+                        side: PortSide::Left,
+                        direction: PortDirection::In,
+                        port_type: PortType::Data,
+                    },
+                    PortInfo {
+                        id: "out1".into(),
+                        label: "out1".into(),
+                        side: PortSide::Right,
+                        direction: PortDirection::Out,
+                        port_type: PortType::Data,
+                    },
+                ],
+            },
+            &simple_edge_info,
+            &LayoutOptions::default(),
+        );
+
+        let node = &result.nodes[0];
+        assert_eq!(node.ports.len(), 2);
+
+        let in_port = node.ports.iter().find(|p| p.id == "in1").unwrap();
+        let out_port = node.ports.iter().find(|p| p.id == "out1").unwrap();
+
+        // Left port at node's left edge
+        assert!(
+            (in_port.x - node.x).abs() < 1.0,
+            "in1 should be on left edge"
+        );
+        // Right port at node's right edge
+        assert!(
+            (out_port.x - (node.x + node.width)).abs() < 1.0,
+            "out1 should be on right edge"
+        );
+        // Both vertically within the node
+        assert!(in_port.y > node.y && in_port.y < node.y + node.height);
+        assert!(out_port.y > node.y && out_port.y < node.y + node.height);
+    }
+
+    #[test]
+    fn auto_ports_resolve_by_direction() {
+        let mut g = Graph::new();
+        let _a = g.add_node("A");
+
+        let result = layout(
+            &g,
+            &|_idx, _n: &&str| NodeInfo {
+                id: "A".into(),
+                label: "A".into(),
+                node_type: "default".into(),
+                sublabel: None,
+                parent: None,
+                ports: vec![
+                    PortInfo {
+                        id: "auto_in".into(),
+                        label: "auto_in".into(),
+                        side: PortSide::Auto,
+                        direction: PortDirection::In,
+                        port_type: PortType::Data,
+                    },
+                    PortInfo {
+                        id: "auto_out".into(),
+                        label: "auto_out".into(),
+                        side: PortSide::Auto,
+                        direction: PortDirection::Out,
+                        port_type: PortType::Event,
+                    },
+                ],
+            },
+            &simple_edge_info,
+            &LayoutOptions::default(),
+        );
+
+        let node = &result.nodes[0];
+        let in_port = node.ports.iter().find(|p| p.id == "auto_in").unwrap();
+        let out_port = node.ports.iter().find(|p| p.id == "auto_out").unwrap();
+
+        // Auto+In resolves to Left
+        assert_eq!(in_port.side, PortSide::Left);
+        assert!((in_port.x - node.x).abs() < 1.0);
+        // Auto+Out resolves to Right
+        assert_eq!(out_port.side, PortSide::Right);
+        assert!((out_port.x - (node.x + node.width)).abs() < 1.0);
+    }
+
+    #[test]
+    fn node_grows_for_many_ports() {
+        let mut g = Graph::new();
+        let _a = g.add_node("A");
+
+        let ports: Vec<PortInfo> = (0..6)
+            .map(|i| PortInfo {
+                id: format!("p{i}"),
+                label: format!("port_{i}"),
+                side: PortSide::Left,
+                direction: PortDirection::In,
+                port_type: PortType::Data,
+            })
+            .collect();
+
+        let result = layout(
+            &g,
+            &|_idx, _n: &&str| NodeInfo {
+                id: "A".into(),
+                label: "A".into(),
+                node_type: "default".into(),
+                sublabel: None,
+                parent: None,
+                ports: ports.clone(),
+            },
+            &simple_edge_info,
+            &LayoutOptions::default(),
+        );
+
+        let node = &result.nodes[0];
+        // 6 ports * 12px + 8px = 80px > default 50px
+        assert!(
+            node.height >= 80.0,
+            "node should grow for 6 ports, got {}",
+            node.height
+        );
+        assert_eq!(node.ports.len(), 6);
+    }
+
+    #[test]
+    fn edge_connects_to_ports() {
+        let mut g = Graph::new();
+        let a = g.add_node("A");
+        let b = g.add_node("B");
+        g.add_edge(a, b, "conn");
+
+        let result = layout(
+            &g,
+            &|_idx, n: &&str| NodeInfo {
+                id: n.to_string(),
+                label: n.to_string(),
+                node_type: "default".into(),
+                sublabel: None,
+                parent: None,
+                ports: vec![
+                    PortInfo {
+                        id: format!("{n}_out"),
+                        label: "out".into(),
+                        side: PortSide::Right,
+                        direction: PortDirection::Out,
+                        port_type: PortType::Data,
+                    },
+                    PortInfo {
+                        id: format!("{n}_in"),
+                        label: "in".into(),
+                        side: PortSide::Left,
+                        direction: PortDirection::In,
+                        port_type: PortType::Data,
+                    },
+                ],
+            },
+            &|_idx, _e: &&str| EdgeInfo {
+                label: "conn".into(),
+                source_port: Some("A_out".into()),
+                target_port: Some("B_in".into()),
+            },
+            &LayoutOptions::default(),
+        );
+
+        let edge = &result.edges[0];
+        assert_eq!(edge.source_port.as_deref(), Some("A_out"));
+        assert_eq!(edge.target_port.as_deref(), Some("B_in"));
+
+        // Edge start point should be near A's right port
+        let node_a = result.nodes.iter().find(|n| n.id == "A").unwrap();
+        let a_out = node_a.ports.iter().find(|p| p.id == "A_out").unwrap();
+        let start = edge.points[0];
+        assert!(
+            (start.0 - a_out.x).abs() < 2.0,
+            "edge should start at port x"
+        );
     }
 }

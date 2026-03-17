@@ -25,8 +25,8 @@
 //!
 //! let gl = layout(
 //!     &g,
-//!     &|_idx, n| NodeInfo { id: n.to_string(), label: n.to_string(), node_type: "default".into(), sublabel: None, parent: None },
-//!     &|_idx, e| EdgeInfo { label: e.to_string() },
+//!     &|_idx, n| NodeInfo { id: n.to_string(), label: n.to_string(), node_type: "default".into(), sublabel: None, parent: None, ports: vec![] },
+//!     &|_idx, e| EdgeInfo { label: e.to_string(), source_port: None, target_port: None },
 //!     &LayoutOptions::default(),
 //! );
 //!
@@ -35,5 +35,7 @@
 //! ```
 
 pub mod filter;
+pub mod html;
 pub mod layout;
+pub mod ortho;
 pub mod svg;

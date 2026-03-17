@@ -28,7 +28,7 @@ use etch::svg::{SvgOptions, render_svg};
 use rivet_core::adapter::{Adapter, AdapterConfig, AdapterSource};
 use rivet_core::coverage;
 use rivet_core::diff::ArtifactDiff;
-use rivet_core::document::{self, html_escape, DocumentStore};
+use rivet_core::document::{self, DocumentStore, html_escape};
 use rivet_core::formats::generic::GenericYamlAdapter;
 use rivet_core::links::LinkGraph;
 use rivet_core::markdown::{render_markdown, strip_html_tags};
@@ -3758,9 +3758,14 @@ async fn graph_view(
                 node_type: atype,
                 sublabel,
                 parent: None,
+                ports: vec![],
             }
         },
-        &|_idx, e| EdgeInfo { label: e.clone() },
+        &|_idx, e| EdgeInfo {
+            label: e.clone(),
+            source_port: None,
+            target_port: None,
+        },
         &layout_opts,
     );
 
@@ -3960,9 +3965,14 @@ async fn artifact_graph(
                 node_type: atype,
                 sublabel,
                 parent: None,
+                ports: vec![],
             }
         },
-        &|_idx, e| EdgeInfo { label: e.clone() },
+        &|_idx, e| EdgeInfo {
+            label: e.clone(),
+            source_port: None,
+            target_port: None,
+        },
         &layout_opts,
     );
 
@@ -7181,9 +7191,14 @@ async fn doc_linkage_view(State(state): State<SharedState>) -> Html<String> {
                     node_type: node_type.into(),
                     sublabel,
                     parent: None,
+                    ports: vec![],
                 }
             },
-            &|_idx, e| EdgeInfo { label: e.clone() },
+            &|_idx, e| EdgeInfo {
+                label: e.clone(),
+                source_port: None,
+                target_port: None,
+            },
             &layout_opts,
         );
 

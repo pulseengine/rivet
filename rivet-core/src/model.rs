@@ -7,13 +7,7 @@ use serde::{Deserialize, Serialize};
 pub type ArtifactId = String;
 
 /// Statuses that indicate an artifact should be fully traced in the lifecycle.
-pub const TRACED_STATUSES: &[&str] = &[
-    "implemented",
-    "done",
-    "approved",
-    "accepted",
-    "verified",
-];
+pub const TRACED_STATUSES: &[&str] = &["implemented", "done", "approved", "accepted", "verified"];
 
 /// A typed, directional link from one artifact to another.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
