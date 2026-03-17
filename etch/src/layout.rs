@@ -849,18 +849,30 @@ fn route_edges<N, E>(
             .and_then(|pid| tgt_node.ports.iter().find(|p| p.id == *pid))
             .map(|p| (p.x, p.y));
 
-        let points = if src_point.is_some() || tgt_point.is_some() {
-            // Port-aware: use port coordinates as endpoints
-            let start = src_point.unwrap_or_else(|| {
-                (
-                    src_node.x + src_node.width / 2.0,
-                    src_node.y + src_node.height,
-                )
-            });
-            let end = tgt_point.unwrap_or_else(|| (tgt_node.x + tgt_node.width / 2.0, tgt_node.y));
-            vec![start, end]
-        } else {
-            compute_waypoints(src_node, tgt_node, options)
+        // Compute start/end points (port-aware or center-based)
+        let start = src_point.unwrap_or_else(|| {
+            (
+                src_node.x + src_node.width / 2.0,
+                src_node.y + src_node.height,
+            )
+        });
+        let end = tgt_point.unwrap_or_else(|| (tgt_node.x + tgt_node.width / 2.0, tgt_node.y));
+
+        let points = match options.edge_routing {
+            EdgeRouting::Orthogonal => crate::ortho::route_orthogonal(
+                layout_nodes,
+                start,
+                end,
+                options.bend_penalty,
+                options.port_stub_length,
+            ),
+            EdgeRouting::CubicBezier => {
+                if src_point.is_some() || tgt_point.is_some() {
+                    vec![start, end]
+                } else {
+                    compute_waypoints(src_node, tgt_node, options)
+                }
+            }
         };
 
         edges.push(LayoutEdge {
