@@ -35,6 +35,7 @@
 //! ```
 
 pub mod filter;
+pub mod html;
 pub mod layout;
 pub mod ortho;
 pub mod svg;
