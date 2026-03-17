@@ -21,6 +21,7 @@ use rivet_core::schema::Severity;
 use rivet_core::store::Store;
 use rivet_core::validate;
 
+use super::components::{FilterBarConfig, ViewParams, filter_bar};
 use super::layout::page_layout;
 use super::{
     AppState, SharedState, badge_for_type, html_escape, linkify_source_refs, rewrite_image_paths,
@@ -2155,16 +2156,19 @@ pub(crate) async fn verification_view(State(state): State<SharedState>) -> Html<
 
 // ── STPA ─────────────────────────────────────────────────────────────────
 
-pub(crate) async fn stpa_view(State(state): State<SharedState>) -> Html<String> {
+pub(crate) async fn stpa_view(
+    State(state): State<SharedState>,
+    Query(params): Query<ViewParams>,
+) -> Html<String> {
     let state = state.read().await;
-    stpa_partial(&state)
+    stpa_partial(&state, &params)
 }
 
-fn stpa_partial(state: &AppState) -> Html<String> {
+fn stpa_partial(state: &AppState, params: &ViewParams) -> Html<String> {
     let store = &state.store;
     let graph = &state.graph;
 
-    let stpa_types = [
+    let stpa_type_list: &[(&str, &str)] = &[
         ("loss", "Losses"),
         ("hazard", "Hazards"),
         ("sub-hazard", "Sub-Hazards"),
@@ -2177,7 +2181,10 @@ fn stpa_partial(state: &AppState) -> Html<String> {
         ("loss-scenario", "Loss Scenarios"),
     ];
 
-    let total: usize = stpa_types.iter().map(|(t, _)| store.count_by_type(t)).sum();
+    let total: usize = stpa_type_list
+        .iter()
+        .map(|(t, _)| store.count_by_type(t))
+        .sum();
 
     let mut html = String::from("<h2>STPA Analysis</h2>");
 
@@ -2193,13 +2200,54 @@ fn stpa_partial(state: &AppState) -> Html<String> {
         return Html(html);
     }
 
-    // Summary stat cards
+    // ── Filter bar ──────────────────────────────────────────────────────
+    let available_types: Vec<String> = stpa_type_list.iter().map(|(t, _)| t.to_string()).collect();
+    // UCA type sub-filter values used as "status" in the filter bar
+    let uca_subtypes: Vec<String> = vec![
+        "not-providing".into(),
+        "providing".into(),
+        "too-early-too-late".into(),
+        "stopped-too-soon".into(),
+    ];
+    html.push_str(&filter_bar(&FilterBarConfig {
+        base_url: "/stpa",
+        available_types: &available_types,
+        available_statuses: &uca_subtypes,
+        params,
+    }));
+
+    // ── Active filters ───────────────────────────────────────────────────
+    let active_types = params.type_list();
+    let search_q = params.q.as_deref().unwrap_or("").to_lowercase();
+    let uca_subtype_filter = params.status.as_deref().unwrap_or("");
+
+    /// Returns true if an artifact ID/title passes the current search + type filters.
+    fn artifact_matches(
+        id: &str,
+        title: &str,
+        artifact_type: &str,
+        active_types: &[String],
+        search_q: &str,
+    ) -> bool {
+        if !active_types.is_empty() && !active_types.iter().any(|t| t == artifact_type) {
+            return false;
+        }
+        if !search_q.is_empty()
+            && !id.to_lowercase().contains(search_q)
+            && !title.to_lowercase().contains(search_q)
+        {
+            return false;
+        }
+        true
+    }
+
+    // ── Summary stat cards ───────────────────────────────────────────────
     html.push_str("<div class=\"stat-grid\">");
     let stat_colors = [
         "#dc3545", "#fd7e14", "#fd7e14", "#20c997", "#6f42c1", "#6610f2", "#17a2b8", "#e83e8c",
         "#20c997", "#e83e8c",
     ];
-    for (i, (type_name, label)) in stpa_types.iter().enumerate() {
+    for (i, (type_name, label)) in stpa_type_list.iter().enumerate() {
         let count = store.count_by_type(type_name);
         if count == 0 {
             continue;
@@ -2213,8 +2261,52 @@ fn stpa_partial(state: &AppState) -> Html<String> {
     }
     html.push_str("</div>");
 
-    // Hierarchy tree view
-    html.push_str("<div class=\"card\"><h3>STPA Hierarchy</h3><div class=\"stpa-tree\">");
+    // ── Determine open IDs ───────────────────────────────────────────────
+    // If no `open` param, default to expanding all losses and top-level hazards.
+    let open_ids: Vec<String> = if params.open.is_some() {
+        params.open_list()
+    } else {
+        // Default: open all losses and all hazards
+        let mut ids: Vec<String> = store.by_type("loss").to_vec();
+        for h in store.by_type("hazard") {
+            ids.push(h.clone());
+        }
+        ids.sort();
+        ids
+    };
+
+    // ── Build expand/collapse all URLs ───────────────────────────────────
+    // Collect all loss + hazard IDs for "expand all" at the hierarchy level
+    let all_tree_ids: Vec<String> = {
+        let mut ids: Vec<String> = store.by_type("loss").to_vec();
+        for h in store.by_type("hazard") {
+            ids.push(h.clone());
+        }
+        for u in store.by_type("uca") {
+            ids.push(u.clone());
+        }
+        ids.sort();
+        ids
+    };
+    let expand_qs = params.to_query_string(&[("open", &all_tree_ids.join(","))]);
+    let collapse_qs = params.to_query_string(&[("open", "")]);
+
+    // ── Hierarchy tree view ──────────────────────────────────────────────
+    html.push_str("<div class=\"card\"><h3>STPA Hierarchy</h3>");
+
+    // Expand/Collapse buttons
+    html.push_str(&format!(
+        "<div style=\"margin-bottom:.5rem;display:flex;gap:.5rem\">\
+         <a hx-get=\"/stpa{expand_qs}\" hx-target=\"#content\" hx-push-url=\"true\" \
+         href=\"#\" style=\"font-size:.72rem;color:var(--accent);text-decoration:none\">\
+         &#9654; Expand All</a>\
+         <a hx-get=\"/stpa{collapse_qs}\" hx-target=\"#content\" hx-push-url=\"true\" \
+         href=\"#\" style=\"font-size:.72rem;color:var(--accent);text-decoration:none\">\
+         &#9660; Collapse All</a>\
+         </div>"
+    ));
+
+    html.push_str("<div class=\"stpa-tree\">");
 
     let losses = store.by_type("loss");
     if losses.is_empty() {
@@ -2223,14 +2315,28 @@ fn stpa_partial(state: &AppState) -> Html<String> {
         );
     }
 
-    let mut sorted_losses: Vec<&str> = losses.iter().map(|s| s.as_str()).collect();
+    let mut sorted_losses: Vec<String> = losses.to_vec();
     sorted_losses.sort();
+
+    // Count visible losses for filtered-empty message
+    let mut visible_loss_count = 0usize;
 
     for loss_id in &sorted_losses {
         let Some(loss) = store.get(loss_id) else {
             continue;
         };
-        html.push_str("<details class=\"stpa-details\" open><summary>");
+
+        // Apply type + search filter at loss level
+        if !artifact_matches(loss_id, &loss.title, "loss", &active_types, &search_q) {
+            continue;
+        }
+        visible_loss_count += 1;
+
+        let loss_open = open_ids.iter().any(|id| id == loss_id);
+        let open_attr = if loss_open { " open" } else { "" };
+        html.push_str(&format!(
+            "<details class=\"stpa-details\"{open_attr}><summary>"
+        ));
         html.push_str("<span class=\"stpa-chevron\">&#9654;</span> ");
         html.push_str(&badge_for_type("loss"));
         html.push_str(&format!(
@@ -2254,7 +2360,29 @@ fn stpa_partial(state: &AppState) -> Html<String> {
                 let Some(hazard) = store.get(hazard_id) else {
                     continue;
                 };
-                html.push_str("<details class=\"stpa-details\" open><summary>");
+
+                // Filter hazards if type filter is active for hazard types
+                // (only hide when filtering specifically for non-hazard types)
+                let hazard_visible = active_types.is_empty()
+                    || active_types
+                        .iter()
+                        .any(|t| t == "hazard" || t == "sub-hazard")
+                    || artifact_matches(
+                        hazard_id,
+                        &hazard.title,
+                        &hazard.artifact_type,
+                        &active_types,
+                        &search_q,
+                    );
+                if !hazard_visible {
+                    continue;
+                }
+
+                let hazard_open = open_ids.iter().any(|id| id == *hazard_id);
+                let h_open_attr = if hazard_open { " open" } else { "" };
+                html.push_str(&format!(
+                    "<details class=\"stpa-details\"{h_open_attr}><summary>"
+                ));
                 html.push_str("<span class=\"stpa-chevron\">&#9654;</span> ");
                 html.push_str("<span class=\"stpa-link-label\">leads-to-loss</span>");
                 html.push_str(&badge_for_type(&hazard.artifact_type));
@@ -2316,8 +2444,32 @@ fn stpa_partial(state: &AppState) -> Html<String> {
                         let Some(uca) = store.get(uca_id) else {
                             continue;
                         };
-                        // Collapse below level 2
-                        html.push_str("<details class=\"stpa-details\"><summary>");
+
+                        // Apply UCA subtype filter
+                        if !uca_subtype_filter.is_empty() {
+                            let ut = uca
+                                .fields
+                                .get("uca-type")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
+                            if ut != uca_subtype_filter {
+                                continue;
+                            }
+                        }
+
+                        // Apply search filter to UCAs
+                        if !search_q.is_empty()
+                            && !uca_id.to_lowercase().contains(&search_q)
+                            && !uca.title.to_lowercase().contains(&search_q)
+                        {
+                            continue;
+                        }
+
+                        let uca_open = open_ids.iter().any(|id| id == *uca_id);
+                        let u_open_attr = if uca_open { " open" } else { "" };
+                        html.push_str(&format!(
+                            "<details class=\"stpa-details\"{u_open_attr}><summary>"
+                        ));
                         html.push_str("<span class=\"stpa-chevron\">&#9654;</span> ");
                         html.push_str("<span class=\"stpa-link-label\">leads-to-hazard</span>");
                         html.push_str(&badge_for_type("uca"));
@@ -2383,11 +2535,17 @@ fn stpa_partial(state: &AppState) -> Html<String> {
         html.push_str("</details>"); // Loss
     }
 
+    if visible_loss_count == 0 && !sorted_losses.is_empty() {
+        html.push_str(
+            "<p class=\"meta\" style=\"color:var(--text-secondary)\">No losses match the current filter.</p>",
+        );
+    }
+
     html.push_str("</div></div>"); // stpa-tree, card
 
-    // UCA Table
-    let uca_ids = store.by_type("uca");
-    if !uca_ids.is_empty() {
+    // ── UCA Table ────────────────────────────────────────────────────────
+    let all_uca_ids_slice = store.by_type("uca");
+    if !all_uca_ids_slice.is_empty() {
         html.push_str("<div class=\"card\"><h3>Unsafe Control Actions</h3>");
 
         struct UcaRow {
@@ -2399,8 +2557,8 @@ fn stpa_partial(state: &AppState) -> Html<String> {
         }
 
         let mut rows: Vec<UcaRow> = Vec::new();
-        for uca_id in uca_ids {
-            let Some(uca) = store.get(uca_id) else {
+        for uca_id in all_uca_ids_slice {
+            let Some(uca) = store.get(uca_id.as_str()) else {
                 continue;
             };
             let uca_type = uca
@@ -2409,6 +2567,25 @@ fn stpa_partial(state: &AppState) -> Html<String> {
                 .and_then(|v| v.as_str())
                 .unwrap_or("-")
                 .to_string();
+
+            // Apply UCA subtype filter to the table too
+            if !uca_subtype_filter.is_empty() && uca_type != uca_subtype_filter {
+                continue;
+            }
+
+            // Apply type filter (only show if "uca" is in types or no type filter)
+            if !active_types.is_empty() && !active_types.iter().any(|t| t == "uca") {
+                continue;
+            }
+
+            // Apply search filter
+            if !search_q.is_empty()
+                && !uca_id.to_lowercase().contains(&search_q)
+                && !uca.title.to_lowercase().contains(&search_q)
+            {
+                continue;
+            }
+
             let controller_links: Vec<&str> = uca
                 .links
                 .iter()
@@ -2452,64 +2629,71 @@ fn stpa_partial(state: &AppState) -> Html<String> {
                 .then(a.id.cmp(&b.id))
         });
 
-        html.push_str(
-            "<table class=\"stpa-uca-table\"><thead><tr>\
-             <th>ID</th><th>Control Action</th><th>UCA Type</th>\
-             <th>Description</th><th>Linked Hazards</th>\
-             </tr></thead><tbody>",
-        );
+        if rows.is_empty() {
+            html.push_str(
+                "<p class=\"meta\" style=\"color:var(--text-secondary)\">No UCAs match the current filter.</p>",
+            );
+        } else {
+            html.push_str(
+                "<table class=\"stpa-uca-table\"><thead><tr>\
+                 <th>ID</th><th>Control Action</th><th>UCA Type</th>\
+                 <th>Description</th><th>Linked Hazards</th>\
+                 </tr></thead><tbody>",
+            );
 
-        for row in &rows {
-            let type_class = match row.uca_type.as_str() {
-                "not-providing" => "uca-type-not-providing",
-                "providing" => "uca-type-providing",
-                "too-early-too-late" => "uca-type-too-early-too-late",
-                "stopped-too-soon" => "uca-type-stopped-too-soon",
-                _ => "",
-            };
-            let type_badge = if type_class.is_empty() {
-                html_escape(&row.uca_type)
-            } else {
-                format!(
-                    "<span class=\"uca-type-badge {type_class}\">{}</span>",
-                    html_escape(&row.uca_type),
-                )
-            };
-            let hazard_links: Vec<String> = row
-                .linked_hazards
-                .iter()
-                .map(|h| {
+            for row in &rows {
+                let type_class = match row.uca_type.as_str() {
+                    "not-providing" => "uca-type-not-providing",
+                    "providing" => "uca-type-providing",
+                    "too-early-too-late" => "uca-type-too-early-too-late",
+                    "stopped-too-soon" => "uca-type-stopped-too-soon",
+                    _ => "",
+                };
+                let type_badge = if type_class.is_empty() {
+                    html_escape(&row.uca_type)
+                } else {
+                    format!(
+                        "<span class=\"uca-type-badge {type_class}\">{}</span>",
+                        html_escape(&row.uca_type),
+                    )
+                };
+                let hazard_links: Vec<String> = row
+                    .linked_hazards
+                    .iter()
+                    .map(|h| {
+                        format!(
+                            "<a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" \
+                         style=\"font-family:var(--mono);font-size:.8rem\">{id}</a>",
+                            id = html_escape(h),
+                        )
+                    })
+                    .collect();
+                let ca_display = if row.control_action == "-" {
+                    "-".to_string()
+                } else {
                     format!(
                         "<a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" \
-                     style=\"font-family:var(--mono);font-size:.8rem\">{id}</a>",
-                        id = html_escape(h),
+                         style=\"font-family:var(--mono);font-size:.8rem\">{id}</a>",
+                        id = html_escape(&row.control_action),
                     )
-                })
-                .collect();
-            let ca_display = if row.control_action == "-" {
-                "-".to_string()
-            } else {
-                format!(
-                    "<a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" \
-                     style=\"font-family:var(--mono);font-size:.8rem\">{id}</a>",
-                    id = html_escape(&row.control_action),
-                )
-            };
-            html.push_str(&format!(
-                "<tr>\
-                 <td><a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a></td>\
-                 <td>{ca}</td>\
-                 <td>{type_badge}</td>\
-                 <td>{title}</td>\
-                 <td>{hazards}</td></tr>",
-                id = html_escape(&row.id),
-                ca = ca_display,
-                title = html_escape(&row.title),
-                hazards = hazard_links.join(", "),
-            ));
-        }
+                };
+                html.push_str(&format!(
+                    "<tr>\
+                     <td><a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a></td>\
+                     <td>{ca}</td>\
+                     <td>{type_badge}</td>\
+                     <td>{title}</td>\
+                     <td>{hazards}</td></tr>",
+                    id = html_escape(&row.id),
+                    ca = ca_display,
+                    title = html_escape(&row.title),
+                    hazards = hazard_links.join(", "),
+                ));
+            }
 
-        html.push_str("</tbody></table></div>");
+            html.push_str("</tbody></table>");
+        }
+        html.push_str("</div>");
     }
 
     html.push_str(&format!(
