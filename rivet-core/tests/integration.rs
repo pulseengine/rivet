@@ -1115,7 +1115,8 @@ fn document_with_aadl_block_renders_placeholder() {
     let doc_content = "---\nid: DOC-ARCH\ntitle: System Architecture\n---\n\n## Flight Control Architecture\n\nThe system uses the following AADL architecture:\n\n```aadl\nroot: FlightControl::Controller.Basic\n```\n\nThis design satisfies [[SYSREQ-001]].\n";
 
     let doc = rivet_core::document::parse_document(doc_content, None).unwrap();
-    let html = rivet_core::document::render_to_html(&doc, |id| id == "SYSREQ-001", |_| None);
+    let html =
+        rivet_core::document::render_to_html(&doc, |id| id == "SYSREQ-001", |_| None, |_| false);
 
     // AADL block becomes a diagram placeholder
     assert!(html.contains("class=\"aadl-diagram\""));

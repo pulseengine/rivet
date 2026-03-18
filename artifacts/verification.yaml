@@ -191,3 +191,101 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-1
+
+  - id: TEST-011
+    type: feature
+    title: Commit traceability tests
+    status: approved
+    description: >
+      Integration tests for commit-to-artifact traceability: trailer
+      parsing from git log, conventional commit type exemption matching,
+      Trace-skip opt-out, orphan commit detection for untraced commits
+      in traced paths, and commit coverage report generation.
+    tags: [testing, git, traceability, swe-5]
+    links:
+      - type: verifies
+        target: REQ-017
+      - type: verifies
+        target: REQ-018
+      - type: verifies
+        target: REQ-019
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-2
+
+  - id: TEST-012
+    type: feature
+    title: WASM asset embedding tests
+    status: approved
+    description: >
+      Tests verifying that HTMX and Mermaid JavaScript assets are embedded
+      in the Rust binary via include_str! and served from /assets/htmx.js
+      and /assets/mermaid.js with correct Content-Type and Cache-Control
+      headers. Playwright tests confirm no CDN requests are made.
+    tags: [testing, wasm, assets, swe-4]
+    links:
+      - type: verifies
+        target: REQ-022
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-2
+
+  - id: TEST-013
+    type: feature
+    title: Markdown rendering tests
+    status: approved
+    description: >
+      Unit tests for the markdown-to-HTML pipeline in document.rs:
+      heading level rendering, wiki-link [[ID]] resolution to artifact-ref
+      and doc-ref anchors, broken reference rendering as .artifact-ref.broken,
+      cross-document reference resolution when document_exists returns true,
+      and code block passthrough.
+    tags: [testing, markdown, documents, swe-4]
+    links:
+      - type: verifies
+        target: REQ-032
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-2
+
+  - id: TEST-014
+    type: feature
+    title: Rich artifact embedding and document schema-driven link traversal tests
+    status: approved
+    description: >
+      Integration tests for {{artifact:ID}} embed resolution in documents,
+      ArtifactInfo forward/backlink enrichment, and schema-driven link
+      traversal in document rendering. Verifies that embedded artifact
+      blocks include resolved link titles and field values.
+    tags: [testing, documents, embedding, swe-5]
+    links:
+      - type: verifies
+        target: REQ-033
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-2
+
+  - id: TEST-015
+    type: feature
+    title: HTML export document page tests
+    status: approved
+    description: >
+      Integration tests for the HTML export pipeline: document pages are
+      generated in docs/ subdirectory, wiki-links resolve to static .html
+      hrefs, artifact embeds render inline, and the export directory
+      contains the expected file structure. Verifies REQ-035 static
+      document rendering and REQ-036 config.js version switcher stub.
+    tags: [testing, export, documents, swe-5]
+    links:
+      - type: verifies
+        target: REQ-035
+      - type: verifies
+        target: REQ-036
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-2

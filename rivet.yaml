@@ -6,12 +6,15 @@ project:
     - dev
     - aadl
     - stpa
+    - stpa-sec
 
 sources:
   - path: artifacts
     format: generic-yaml
   - path: safety/stpa
     format: stpa-yaml
+  - path: safety/stpa-sec
+    format: generic-yaml
 
 docs:
   - docs
@@ -61,7 +64,9 @@ commits:
      PROC-REPORTS, REQ-001, REQ-002, REQ-003, REQ-004, REQ-005, REQ-006, REQ-007, REQ-008, REQ-009,
      REQ-010, REQ-011, REQ-012, REQ-013, REQ-014, REQ-015, REQ-016, SC-1, SC-10, SC-2, SC-3, SC-4,
      SC-5, SC-6, SC-7, SC-8, SC-9, TEST-001, TEST-002, TEST-003, TEST-004, TEST-005, TEST-006,
-     TEST-007, TEST-008, TEST-009, TEST-010, UCA-C-1, UCA-C-2, UCA-C-3, UCA-C-4, UCA-C-5, UCA-C-6,
+     TEST-007, TEST-008, TEST-009, TEST-010,
+     TEST-011, TEST-012, TEST-013, TEST-014, TEST-015,
+     UCA-C-1, UCA-C-2, UCA-C-3, UCA-C-4, UCA-C-5, UCA-C-6,
      UCA-C-7, UCA-C-8, UCA-C-9, UCA-D-1, UCA-D-2, UCA-I-1, UCA-I-2, UCA-I-3, UCA-I-4, UCA-L-1,
      UCA-L-2, UCA-L-3, UCA-L-4, UCA-L-5, UCA-O-1, UCA-O-10, UCA-O-2, UCA-O-3, UCA-O-4, UCA-O-5,
      UCA-O-6, UCA-O-7, UCA-O-8, UCA-O-9, UCA-Q-1, UCA-Q-2, UCA-Q-3, UCA-Q-4, UCA-Q-5, UCA-Q-6,
@@ -76,4 +81,12 @@ commits:
      FEAT-052, FEAT-053, FEAT-054, FEAT-055, FEAT-056, FEAT-057,
      # Phase 3 planned requirements and decisions (draft)
      DD-021, DD-022, DD-024, DD-025, DD-026, DD-027, DD-031, DD-032, DD-033, DD-034,
-     REQ-026, REQ-027, REQ-029]
+     DD-036, DD-037, DD-038,
+     FEAT-064, FEAT-065,
+     REQ-026, REQ-027, REQ-029,
+     # STPA-Sec artifacts (security analysis, no code traceability required)
+     SL-1, SL-2, SL-3, SL-4, SL-5,
+     SH-1, SH-2, SH-3, SH-4, SH-5, SH-6,
+     SSC-1, SSC-2, SSC-3, SSC-4, SSC-5, SSC-6,
+     SUCA-CLI-1, SUCA-CLI-2, SUCA-DASH-1, SUCA-DASH-2, SUCA-CORE-1, SUCA-OSLC-1, SUCA-OSLC-2,
+     SLS-1, SLS-2, SLS-3, SLS-4, SLS-5, SLS-6, SLS-7]

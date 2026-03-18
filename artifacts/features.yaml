@@ -1056,3 +1056,35 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-036
+
+  - id: FEAT-064
+    type: feature
+    title: Rust edition 2024 and MSRV 1.85 enforcement via Cargo.toml and CI
+    status: approved
+    description: >
+      All crates declare edition = "2024" and rust-version = "1.85" in
+      Cargo.toml. The CI pipeline includes an explicit MSRV check step that
+      compiles with the minimum toolchain to prevent accidental regressions.
+    tags: [toolchain, ci, phase-2]
+    links:
+      - type: satisfies
+        target: REQ-011
+    fields:
+      phase: phase-2
+
+  - id: FEAT-065
+    type: feature
+    title: Comprehensive CI quality gates workflow
+    status: approved
+    description: >
+      GitHub Actions workflow runs: cargo fmt (--check), cargo clippy (-D warnings),
+      cargo test, cargo audit, cargo deny (licenses, advisories, sources), tarpaulin
+      (coverage ≥70%), cargo miri (UB detection), cargo proptest, cargo vet
+      (supply chain), and MSRV check. Each gate runs independently to maximize
+      signal clarity on failure.
+    tags: [ci, quality, phase-2]
+    links:
+      - type: satisfies
+        target: REQ-012
+    fields:
+      phase: phase-2

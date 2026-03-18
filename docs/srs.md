@@ -5,7 +5,9 @@ title: System Requirements Specification
 status: draft
 glossary:
   STPA: Systems-Theoretic Process Analysis
+  STPA-Sec: STPA extended for adversarial/security analysis
   UCA: Unsafe Control Action
+  CIA: Confidentiality, Integrity, Availability (information security triad)
   ASPICE: Automotive SPICE
   OSLC: Open Services for Lifecycle Collaboration
   ReqIF: Requirements Interchange Format
@@ -82,24 +84,69 @@ audit, deny, vet, coverage).
 
 [[REQ-011]] pins Rust edition 2024 with MSRV 1.85.
 
-### 3.7 Traceability Flow
+### 3.7 V-Model Traceability Flow
 
-The following diagram shows the traceability chain from stakeholder needs
-through to verification evidence:
+The following diagram shows the ASPICE V-model traceability chain from
+stakeholder needs through to verification evidence:
 
 ```mermaid
-graph TD
-    REQ[Requirements] -->|satisfies| DD[Design Decisions]
-    REQ -->|allocated-to| ARCH[Architecture]
-    DD -->|implemented-by| FEAT[Features]
-    FEAT -->|verified-by| TEST[Test Artifacts]
-    TEST -->|evidence| RES[Test Results]
+graph LR
+    REQ[REQ<br/>Requirements] -->|satisfies| DD[DD<br/>Design Decisions]
+    REQ -->|allocated-to| ARCH[ARCH<br/>Architecture]
+    DD -->|implemented-by| FEAT[FEAT<br/>Features]
+    ARCH -->|allocated-from| FEAT
+    FEAT -->|verified-by| TEST[TEST<br/>Verification]
+    TEST -->|evidence| RES[Results<br/>Evidence]
     style REQ fill:#e8f4fd,stroke:#0550ae
+    style DD fill:#fff3cd,stroke:#856404
     style ARCH fill:#f0e6ff,stroke:#6639ba
+    style FEAT fill:#d1ecf1,stroke:#0c5460
     style TEST fill:#e6ffe6,stroke:#15713a
+    style RES fill:#f8d7da,stroke:#721c24
 ```
 
-### 3.8 Key Requirement Details
+Every requirement must trace to both a design decision and a feature
+implementation.  Every feature must be verified by at least one TEST artifact.
+
+### 3.8 STPA Safety Analysis
+
+Rivet's safety is analyzed using STPA (Systems-Theoretic Process Analysis),
+producing:
+
+- **[[L-1]]–[[L-6]]** — System losses (what we must prevent)
+- **[[H-1]]–[[H-12]]** — Hazards leading to those losses
+- **[[SC-1]]–[[SC-14]]** — System constraints preventing each hazard
+- Controllers, UCAs, controller constraints, and loss scenarios in `safety/stpa/`
+
+The STPA hierarchy is browsable from the **STPA** dashboard section.
+
+### 3.9 STPA-Sec Security Analysis
+
+Rivet is also analyzed under STPA-Sec — the adversarial extension of STPA
+described in Leveson & Thomas (STPA Handbook, 2018).  STPA-Sec adds one
+question at each analysis step: *how could an adversary introduce this
+unsafe condition?*
+
+The security analysis in `safety/stpa-sec/` covers:
+
+- **[[SL-1]]–[[SL-5]]** — Security losses (CIA-triad violations)
+- **[[SH-1]]–[[SH-6]]** — Security hazards (exploitable system states)
+- **[[SSC-1]]–[[SSC-6]]** — Security constraints (required mitigations)
+- **[[SUCA-CLI-1]]**, **[[SUCA-DASH-1]]**, etc. — Security UCAs with `adversarial-causation` fields
+- **[[SLS-1]]–[[SLS-7]]** — Security loss scenarios (concrete attack paths)
+
+Key threats identified:
+1. Supply-chain artifact injection via git remote compromise ([[SLS-1]])
+2. OSLC MITM with TLS certificate validation disabled ([[SLS-2]])
+3. XSS via crafted artifact description in dashboard or export ([[SLS-3]], [[SLS-4]])
+4. YAML bomb DoS in CI pipeline ([[SLS-5]])
+5. OSLC URL hijack by insider ([[SLS-6]])
+6. Unauthenticated dashboard exposed on CI runner ([[SLS-7]])
+
+The STPA-Sec analysis is browsable from the **STPA** dashboard section
+(scroll below the STPA hierarchy).
+
+### 3.10 Key Requirement Details
 
 The following requirement is the cornerstone of the system:
 

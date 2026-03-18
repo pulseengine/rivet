@@ -1772,19 +1772,16 @@ pub(crate) async fn documents_list(State(state): State<SharedState>) -> Html<Str
             } else {
                 String::new()
             };
+            let doc_id = html_escape(&doc.id);
             html.push_str(&format!(
-                "<li><a hx-get=\"/documents/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">\
-                 <span class=\"doc-tree-id\">{}</span>\
-                 {}\
-                 {}{}\
-                 <span class=\"meta\" style=\"margin-left:auto\">{} refs</span>\
+                "<li><a hx-get=\"/documents/{doc_id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/documents/{doc_id}\">\
+                 <span class=\"doc-tree-id\">{doc_id}</span>\
+                 {title}\
+                 {status_badge}{other_badge}\
+                 <span class=\"meta\" style=\"margin-left:auto\">{refs} refs</span>\
                  </a></li>",
-                html_escape(&doc.id),
-                html_escape(&doc.id),
-                html_escape(&doc.title),
-                status_badge,
-                other_badge,
-                doc.references.len(),
+                title = html_escape(&doc.title),
+                refs = doc.references.len(),
             ));
         }
         html.push_str("</ul></details>");
@@ -1804,18 +1801,16 @@ pub(crate) async fn documents_list(State(state): State<SharedState>) -> Html<Str
             "draft" => format!("<span class=\"badge badge-warn\">{status}</span>"),
             _ => format!("<span class=\"badge badge-info\">{status}</span>"),
         };
+        let doc_id = html_escape(&doc.id);
         html.push_str(&format!(
-            "<tr><td><a hx-get=\"/documents/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a></td>\
-             <td>{}</td>\
-             <td>{}</td>\
-             <td>{}</td>\
-             <td>{}</td></tr>",
-            html_escape(&doc.id),
-            html_escape(&doc.id),
-            badge_for_type(&doc.doc_type),
-            html_escape(&doc.title),
-            status_badge,
-            doc.references.len(),
+            "<tr><td><a hx-get=\"/documents/{doc_id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/documents/{doc_id}\">{doc_id}</a></td>\
+             <td>{type_badge}</td>\
+             <td>{title}</td>\
+             <td>{status_badge}</td>\
+             <td>{refs}</td></tr>",
+            type_badge = badge_for_type(&doc.doc_type),
+            title = html_escape(&doc.title),
+            refs = doc.references.len(),
         ));
     }
 
@@ -1898,6 +1893,7 @@ pub(crate) async fn document_detail(
         doc,
         |aid| store.contains(aid),
         |aid| build_artifact_info(aid, store, graph),
+        |did| state.doc_store.get(did).is_some(),
     );
     // Rewrite relative image src to serve through /docs-asset/
     let body_html = rewrite_image_paths(&body_html);
@@ -2878,6 +2874,356 @@ fn stpa_partial(state: &AppState) -> Html<String> {
         "<p class=\"meta\">{total} STPA artifacts total</p>"
     ));
 
+    // ── STPA-Sec section ────────────────────────────────────────────────
+    let sec_types = [
+        ("sec-loss", "Security Losses"),
+        ("sec-hazard", "Security Hazards"),
+        ("sec-constraint", "Security Constraints"),
+        ("sec-uca", "Security UCAs"),
+        ("sec-scenario", "Security Scenarios"),
+    ];
+    let sec_total: usize = sec_types.iter().map(|(t, _)| store.count_by_type(t)).sum();
+
+    if sec_total > 0 {
+        html.push_str(
+            "<hr style=\"margin:2rem 0;border:none;border-top:2px solid #fee2e2\">\
+             <h2 style=\"color:#991b1b\">STPA-Sec — Security Analysis</h2>\
+             <p style=\"color:var(--text-secondary);font-size:.9rem;margin-bottom:1rem\">\
+             STPA extended with adversarial threat modelling. Each security hazard includes \
+             CIA-triad impact; each security UCA includes an adversarial-causation field \
+             explaining how an attacker could introduce the unsafe condition.\
+             </p>",
+        );
+
+        // Stat cards
+        html.push_str("<div class=\"stat-grid\">");
+        let sec_colors = ["#ef4444", "#dc2626", "#b91c1c", "#991b1b", "#7f1d1d"];
+        for (i, (type_name, label)) in sec_types.iter().enumerate() {
+            let count = store.count_by_type(type_name);
+            if count == 0 {
+                continue;
+            }
+            let color = sec_colors[i];
+            html.push_str(&format!(
+                "<div class=\"stat-box\" style=\"border-top-color:{color}\">\
+                 <div class=\"number\" style=\"color:{color}\">{count}</div>\
+                 <div class=\"label\">{label}</div></div>"
+            ));
+        }
+        html.push_str("</div>");
+
+        // Sec hierarchy: sec-loss → sec-hazard → sec-constraint + sec-uca → sec-scenario
+        html.push_str("<div class=\"card\"><h3>Security Hierarchy</h3><div class=\"stpa-tree\">");
+
+        let sec_losses = store.by_type("sec-loss");
+        let mut sorted_sec_losses: Vec<&str> = sec_losses.iter().map(|s| s.as_str()).collect();
+        sorted_sec_losses.sort();
+
+        if sorted_sec_losses.is_empty() {
+            html.push_str("<p class=\"meta\">No security losses defined.</p>");
+        }
+
+        for sl_id in &sorted_sec_losses {
+            let Some(sl) = store.get(sl_id) else {
+                continue;
+            };
+            let cia = sl
+                .fields
+                .get("cia-impact")
+                .and_then(|v| v.as_sequence())
+                .map(|seq| {
+                    seq.iter()
+                        .filter_map(|v| v.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .unwrap_or_default();
+            let cia_badge = if !cia.is_empty() {
+                format!(
+                    "<span style=\"font-size:.7rem;background:#fee2e2;color:#991b1b;\
+                     padding:.1rem .35rem;border-radius:4px;margin-left:.4rem\">{cia}</span>"
+                )
+            } else {
+                String::new()
+            };
+
+            html.push_str("<details class=\"stpa-details\" open><summary>");
+            html.push_str("<span class=\"stpa-chevron\">&#9654;</span> ");
+            html.push_str(&badge_for_type("sec-loss"));
+            html.push_str(&format!(
+                " <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{id}\">{id}</a>\
+                 <span style=\"color:var(--text-secondary);font-size:.85rem\"> {title}</span>{cia_badge}",
+                id = html_escape(sl_id),
+                title = html_escape(&sl.title),
+            ));
+            html.push_str("</summary>");
+
+            let sh_backlinks = graph.backlinks_of_type(sl_id, "leads-to-sec-loss");
+            if !sh_backlinks.is_empty() {
+                html.push_str("<div class=\"stpa-level\">");
+                let mut sh_ids: Vec<&str> =
+                    sh_backlinks.iter().map(|bl| bl.source.as_str()).collect();
+                sh_ids.sort();
+                sh_ids.dedup();
+
+                for sh_id in &sh_ids {
+                    let Some(sh) = store.get(sh_id) else {
+                        continue;
+                    };
+                    let sh_cia = sh
+                        .fields
+                        .get("cia-impact")
+                        .and_then(|v| v.as_sequence())
+                        .map(|seq| {
+                            seq.iter()
+                                .filter_map(|v| v.as_str())
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        })
+                        .unwrap_or_default();
+                    let sh_cia_badge = if !sh_cia.is_empty() {
+                        format!(
+                            "<span style=\"font-size:.7rem;background:#fee2e2;color:#991b1b;\
+                             padding:.1rem .35rem;border-radius:4px;margin-left:.4rem\">{sh_cia}</span>"
+                        )
+                    } else {
+                        String::new()
+                    };
+
+                    html.push_str("<details class=\"stpa-details\" open><summary>");
+                    html.push_str("<span class=\"stpa-chevron\">&#9654;</span> ");
+                    html.push_str("<span class=\"stpa-link-label\">leads-to-sec-loss</span>");
+                    html.push_str(&badge_for_type("sec-hazard"));
+                    html.push_str(&format!(
+                        " <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{id}\">{id}</a>\
+                         <span style=\"color:var(--text-secondary);font-size:.85rem\"> {title}</span>{sh_cia_badge}",
+                        id = html_escape(sh_id),
+                        title = html_escape(&sh.title),
+                    ));
+                    html.push_str("</summary>");
+
+                    let ssc_bls = graph.backlinks_of_type(sh_id, "prevents-sec-hazard");
+                    let suca_bls = graph.backlinks_of_type(sh_id, "leads-to-sec-hazard");
+
+                    if !ssc_bls.is_empty() || !suca_bls.is_empty() {
+                        html.push_str("<div class=\"stpa-level\">");
+
+                        // Security Constraints
+                        let mut ssc_ids: Vec<&str> =
+                            ssc_bls.iter().map(|bl| bl.source.as_str()).collect();
+                        ssc_ids.sort();
+                        ssc_ids.dedup();
+                        for ssc_id in &ssc_ids {
+                            let Some(ssc) = store.get(ssc_id) else {
+                                continue;
+                            };
+                            html.push_str(&format!(
+                                "<div class=\"stpa-node\">\
+                                 <span class=\"stpa-link-label\">prevents</span>{badge}\
+                                 <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{id}\">{id}</a>\
+                                 <span style=\"color:var(--text-secondary);font-size:.85rem\"> {title}</span>\
+                                 </div>",
+                                badge = badge_for_type("sec-constraint"),
+                                id = html_escape(ssc_id),
+                                title = html_escape(&ssc.title),
+                            ));
+                        }
+
+                        // Security UCAs
+                        let mut suca_ids: Vec<&str> = suca_bls
+                            .iter()
+                            .filter(|bl| {
+                                store
+                                    .get(&bl.source)
+                                    .map(|a| a.artifact_type == "sec-uca")
+                                    .unwrap_or(false)
+                            })
+                            .map(|bl| bl.source.as_str())
+                            .collect();
+                        suca_ids.sort();
+                        suca_ids.dedup();
+                        for suca_id in &suca_ids {
+                            let Some(suca) = store.get(suca_id) else {
+                                continue;
+                            };
+                            html.push_str("<details class=\"stpa-details\"><summary>");
+                            html.push_str("<span class=\"stpa-chevron\">&#9654;</span> ");
+                            html.push_str(
+                                "<span class=\"stpa-link-label\">leads-to-sec-hazard</span>",
+                            );
+                            html.push_str(&badge_for_type("sec-uca"));
+                            html.push_str(&format!(
+                                " <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{id}\">{id}</a>\
+                                 <span style=\"color:var(--text-secondary);font-size:.85rem\"> {title}</span>",
+                                id = html_escape(suca_id),
+                                title = html_escape(&suca.title),
+                            ));
+                            html.push_str("</summary>");
+
+                            let sls_bls = graph.backlinks_of_type(suca_id, "caused-by-sec-uca");
+                            if !sls_bls.is_empty() {
+                                html.push_str("<div class=\"stpa-level\">");
+                                let mut sls_ids: Vec<&str> =
+                                    sls_bls.iter().map(|bl| bl.source.as_str()).collect();
+                                sls_ids.sort();
+                                sls_ids.dedup();
+                                for sls_id in &sls_ids {
+                                    let Some(sls) = store.get(sls_id) else {
+                                        continue;
+                                    };
+                                    let av = sls
+                                        .fields
+                                        .get("attack-vector")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("-");
+                                    html.push_str(&format!(
+                                        "<div class=\"stpa-node\">\
+                                         <span class=\"stpa-link-label\">caused-by-sec-uca</span>{badge}\
+                                         <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{id}\">{id}</a>\
+                                         <span style=\"color:var(--text-secondary);font-size:.85rem\"> {title}</span>\
+                                         <span style=\"font-size:.7rem;background:#fef3c7;color:#92400e;\
+                                         padding:.1rem .35rem;border-radius:4px;margin-left:.4rem\">{av}</span>\
+                                         </div>",
+                                        badge = badge_for_type("sec-scenario"),
+                                        id = html_escape(sls_id),
+                                        title = html_escape(&sls.title),
+                                    ));
+                                }
+                                html.push_str("</div>");
+                            }
+                            html.push_str("</details>"); // sec-uca
+                        }
+
+                        html.push_str("</div>"); // stpa-level (SSC/SUCA)
+                    }
+                    html.push_str("</details>"); // sec-hazard
+                }
+                html.push_str("</div>"); // stpa-level (sec-hazards)
+            }
+            html.push_str("</details>"); // sec-loss
+        }
+
+        html.push_str("</div></div>"); // stpa-tree, card
+
+        // Security UCA table
+        let suca_ids = store.by_type("sec-uca");
+        if !suca_ids.is_empty() {
+            html.push_str(
+                "<div class=\"card\"><h3>Security Unsafe Control Actions</h3>\
+                 <table class=\"stpa-uca-table\"><thead><tr>\
+                 <th>ID</th><th>Controller</th><th>UCA Type</th>\
+                 <th>Attacker</th><th>Description</th><th>Hazards</th>\
+                 </tr></thead><tbody>",
+            );
+
+            let mut suca_list: Vec<(String, String, String, String, String, Vec<String>)> =
+                Vec::new();
+            for suca_id in suca_ids {
+                let Some(suca) = store.get(suca_id) else {
+                    continue;
+                };
+                let uca_type = suca
+                    .fields
+                    .get("uca-type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("-")
+                    .to_string();
+                let attacker = suca
+                    .fields
+                    .get("attacker-type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("-")
+                    .to_string();
+                let controller = suca
+                    .links
+                    .iter()
+                    .find(|l| l.link_type == "issued-by")
+                    .map(|l| l.target.clone())
+                    .unwrap_or_else(|| "-".to_string());
+                let hazards: Vec<String> = suca
+                    .links
+                    .iter()
+                    .filter(|l| l.link_type == "leads-to-sec-hazard")
+                    .map(|l| l.target.clone())
+                    .collect();
+                suca_list.push((
+                    suca_id.clone(),
+                    suca.title.clone(),
+                    uca_type,
+                    attacker,
+                    controller,
+                    hazards,
+                ));
+            }
+            suca_list.sort_by(|a, b| a.4.cmp(&b.4).then(a.0.as_str().cmp(b.0.as_str())));
+
+            for (id, title, uca_type, attacker, controller, hazards) in &suca_list {
+                let type_class = match uca_type.as_str() {
+                    "not-providing" => "uca-type-not-providing",
+                    "providing" => "uca-type-providing",
+                    "too-early-too-late" => "uca-type-too-early-too-late",
+                    "stopped-too-soon" => "uca-type-stopped-too-soon",
+                    _ => "",
+                };
+                let type_badge = if type_class.is_empty() {
+                    html_escape(uca_type)
+                } else {
+                    format!(
+                        "<span class=\"uca-type-badge {type_class}\">{}</span>",
+                        html_escape(uca_type),
+                    )
+                };
+                let attacker_color = match attacker.as_str() {
+                    "external-network" => "#dc2626",
+                    "insider" => "#b45309",
+                    "supply-chain" => "#7c3aed",
+                    "physical" => "#1d4ed8",
+                    _ => "var(--text-secondary)",
+                };
+                let attacker_badge = format!(
+                    "<span style=\"font-size:.75rem;color:{attacker_color}\">{}</span>",
+                    html_escape(attacker),
+                );
+                let hazard_links: String = hazards
+                    .iter()
+                    .map(|h| {
+                        format!(
+                            "<a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{id}\" \
+                             style=\"font-family:var(--mono);font-size:.8rem\">{id}</a>",
+                            id = html_escape(h),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let ctrl_display = if controller == "-" {
+                    "-".to_string()
+                } else {
+                    format!(
+                        "<a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{id}\" \
+                         style=\"font-family:var(--mono);font-size:.8rem\">{id}</a>",
+                        id = html_escape(controller),
+                    )
+                };
+                html.push_str(&format!(
+                    "<tr>\
+                     <td><a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{id}\">{id}</a></td>\
+                     <td>{ctrl_display}</td>\
+                     <td>{type_badge}</td>\
+                     <td>{attacker_badge}</td>\
+                     <td>{title}</td>\
+                     <td>{hazard_links}</td></tr>",
+                    id = html_escape(id),
+                    title = html_escape(title),
+                ));
+            }
+            html.push_str("</tbody></table></div>");
+        }
+
+        html.push_str(&format!(
+            "<p class=\"meta\">{sec_total} STPA-Sec artifacts total</p>"
+        ));
+    }
+
     Html(html)
 }
 
@@ -3424,6 +3770,7 @@ pub(crate) async fn source_file_view(
                 &doc,
                 |aid| store.contains(aid),
                 |aid| build_artifact_info(aid, store, graph),
+                |did| state.doc_store.get(did).is_some(),
             );
             let body_html = rewrite_image_paths(&body_html);
             html.push_str(&body_html);
@@ -4423,11 +4770,11 @@ pub(crate) async fn doc_linkage_view(State(state): State<SharedState>) -> Html<S
                         if target_doc != &doc.id {
                             cross_link_count += 1;
                             html.push_str(&format!(
-                                "<tr><td><a hx-get=\"/documents/{src_doc}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{src_doc}</a></td>\
-                                 <td><a hx-get=\"/artifacts/{aid}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{aid}</a></td>\
+                                "<tr><td><a hx-get=\"/documents/{src_doc}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/documents/{src_doc}\">{src_doc}</a></td>\
+                                 <td><a hx-get=\"/artifacts/{aid}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{aid}\">{aid}</a></td>\
                                  <td><span class=\"link-pill\">{lt}</span></td>\
-                                 <td><a hx-get=\"/artifacts/{tgt}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{tgt}</a></td>\
-                                 <td><a hx-get=\"/documents/{tgt_doc}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{tgt_doc}</a></td></tr>",
+                                 <td><a hx-get=\"/artifacts/{tgt}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{tgt}\">{tgt}</a></td>\
+                                 <td><a hx-get=\"/documents/{tgt_doc}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/documents/{tgt_doc}\">{tgt_doc}</a></td></tr>",
                                 src_doc = html_escape(&doc.id),
                                 lt = html_escape(&link.link_type),
                                 tgt = html_escape(&link.target),
@@ -4490,7 +4837,7 @@ pub(crate) async fn doc_linkage_view(State(state): State<SharedState>) -> Html<S
             ""
         };
         html.push_str(&format!(
-            "<tr><td><a hx-get=\"/documents/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a></td>\
+            "<tr><td><a hx-get=\"/documents/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/documents/{id}\">{id}</a></td>\
              <td>{}</td><td>{total_refs}</td><td>{valid}</td><td{broken_class}>{broken}</td></tr>",
             badge_for_type(&doc.doc_type),
             id = html_escape(&doc.id),

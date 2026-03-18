@@ -1393,7 +1393,7 @@ fn render_document_body_for_export(
     };
 
     // Get the rendered HTML from the document module.
-    let raw_html = document::render_to_html(doc, artifact_exists, artifact_info);
+    let raw_html = document::render_to_html(doc, artifact_exists, artifact_info, |_| false);
 
     // Post-process: rewrite the HTMX-style artifact links to static links.
     // The document renderer produces:
@@ -1408,28 +1408,26 @@ fn rewrite_artifact_links(html: &str, req_href: &str) -> String {
     let mut result = String::with_capacity(html.len());
     let mut rest = html;
 
+    // Match the opening of any artifact-ref <a> tag regardless of href value.
+    // The renderer emits: class="artifact-ref" hx-get="/artifacts/{id}" ... >
     let pattern = "class=\"artifact-ref\" hx-get=\"/artifacts/";
     while let Some(start) = rest.find(pattern) {
-        // Copy everything before the match
         result.push_str(&rest[..start]);
 
         let after_pattern = &rest[start + pattern.len()..];
         if let Some(quote_end) = after_pattern.find('"') {
             let artifact_id = &after_pattern[..quote_end];
-            // Skip past the hx-target and href="#" parts
+            // Skip the rest of the <a ...> opening tag (up to and including '>').
             let remaining = &after_pattern[quote_end..];
-            if let Some(href_start) = remaining.find("href=\"#\"") {
-                let after_href = &remaining[href_start + 8..];
-                // Write the replacement
+            if let Some(tag_close) = remaining.find('>') {
                 write!(
                     result,
-                    "class=\"artifact-ref\" href=\"{req_href}#art-{id}\"",
+                    "class=\"artifact-ref\" href=\"{req_href}#art-{id}\">",
                     id = html_escape(artifact_id),
                 )
                 .unwrap();
-                rest = after_href;
+                rest = &remaining[tag_close + 1..];
             } else {
-                // Fallback: just copy as-is
                 result.push_str(pattern);
                 rest = after_pattern;
             }

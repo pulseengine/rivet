@@ -781,3 +781,67 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-034
+
+  - id: DD-036
+    type: design-decision
+    title: ASPICE SWE.4/5/6 three-tier test structure
+    status: approved
+    description: >
+      The test suite is organized into three tiers mirroring ASPICE verification
+      levels: SWE.4 (unit — proptest, Miri, unit tests per module), SWE.5
+      (integration — cross-module tests, STPA/ASPICE roundtrips), and SWE.6
+      (qualification — full dogfood validation, benchmark KPI baselines, export
+      fidelity). TEST artifact IDs encode their tier via tags.
+    tags: [testing, aspice, architecture]
+    links:
+      - type: satisfies
+        target: REQ-014
+    fields:
+      rationale: >
+        Separating unit, integration, and qualification tests maps directly
+        onto ASPICE SWE.4/5/6 and provides a clear handoff to certification
+        authorities who expect evidence at each tier. Tagging artifacts with
+        tier makes the mapping explicit in the traceability matrix.
+      alternatives: Flat test structure with no tier distinction. Rejected because it makes ASPICE compliance reporting harder and obscures which tests constitute qualification evidence.
+
+  - id: DD-037
+    type: design-decision
+    title: Document pages in HTML export via axum/embed rendering pipeline
+    status: approved
+    description: >
+      HTML export renders documents using the same axum server-side rendering
+      pipeline as the dashboard, with wiki-links and artifact embeds resolved
+      statically. Documents are output as individual HTML pages in a docs/
+      subdirectory.
+    tags: [export, documents, architecture]
+    links:
+      - type: satisfies
+        target: REQ-035
+    fields:
+      rationale: >
+        Reusing the dashboard rendering pipeline avoids duplicating the
+        markdown-to-HTML, wiki-link resolution, and artifact embed logic.
+        Static output means the export is self-contained and requires no
+        running server.
+      alternatives: Separate static site generator. Rejected as it would duplicate the rendering logic.
+
+  - id: DD-038
+    type: design-decision
+    title: Runtime config.js for version switcher and navigation base in HTML export
+    status: approved
+    description: >
+      HTML export generates a config.js stub that callers can replace at
+      deployment time with version list and homepage URL. The export page
+      shell loads config.js dynamically so that version switching works
+      without regenerating the export.
+    tags: [export, navigation, architecture]
+    links:
+      - type: satisfies
+        target: REQ-036
+    fields:
+      rationale: >
+        Version lists are environment-specific (staging vs. production,
+        release branch vs. main). A runtime config.js decouples version
+        metadata from the export content so the same export can be deployed
+        in multiple contexts.
+      alternatives: Embed version list at export generation time. Rejected because it requires re-export when new versions are published.

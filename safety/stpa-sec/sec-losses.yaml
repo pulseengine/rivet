@@ -1,0 +1,90 @@
+# =============================================================================
+# STPA-Sec Step 1a — Security Losses
+# =============================================================================
+#
+# A security loss involves a breach of a CIA property (confidentiality,
+# integrity, or availability) of something valued by stakeholders.
+#
+# Reference: STPA Handbook, §2.3 + security extension (Chapter 2 sidebar)
+#
+# System:      Rivet traceability management system
+# Boundary:    Rivet CLI + core library + OSLC client + ReqIF adapter +
+#              dashboard, operating against engineering artifact repositories,
+#              CI pipelines, and external ALM tools.
+#
+# Adversary model:
+#   - External network attacker (no credentials, reachable via network)
+#   - Insider (authorized user who abuses access)
+#   - Supply-chain attacker (compromises a dependency or artifact source)
+#   - Physical attacker (direct access to a developer workstation or build server)
+# =============================================================================
+
+artifacts:
+  - id: SL-1
+    type: sec-loss
+    title: Confidentiality loss — proprietary engineering artifacts disclosed
+    status: approved
+    description: >
+      Engineering artifacts (requirements, safety analyses, design decisions,
+      architecture documents) are disclosed to unauthorized parties.  In
+      safety-critical or defense programs, artifact content may be export-
+      controlled, trade-secret, or security-classified.  Unauthorized
+      disclosure could expose competitive IP, enable targeted attacks, or
+      trigger regulatory violations.
+    fields:
+      cia-impact: [confidentiality]
+      stakeholders: [safety-engineers, tool-administrators, certification-authorities]
+
+  - id: SL-2
+    type: sec-loss
+    title: Integrity loss — traceability artifacts silently corrupted
+    status: approved
+    description: >
+      An adversary modifies stored artifacts, link targets, or schema
+      validation rules without detection.  Silent corruption is particularly
+      severe: engineers and auditors continue to trust the store, certification
+      evidence is fabricated, and safety gaps are hidden until field failure.
+    fields:
+      cia-impact: [integrity]
+      stakeholders: [safety-engineers, certification-authorities, developers]
+
+  - id: SL-3
+    type: sec-loss
+    title: Availability loss — traceability infrastructure denied to engineers
+    status: approved
+    description: >
+      Rivet's artifact store, dashboard, or OSLC sync channel becomes
+      unavailable, blocking safety engineers from accessing or updating
+      traceability evidence.  In a certification crunch or incident response
+      scenario, loss of traceability access directly delays safety work.
+    fields:
+      cia-impact: [availability]
+      stakeholders: [safety-engineers, developers, project-managers]
+
+  - id: SL-4
+    type: sec-loss
+    title: Trust loss — compliance evidence forged or tampered
+    status: approved
+    description: >
+      Certification evidence (coverage matrices, validation reports, audit
+      trails) is modified to show compliance that does not exist.  A
+      regulatory body or external auditor accepts forged evidence, resulting
+      in certification of an unsafe or non-compliant product.  The organization
+      faces legal liability, product recall, and loss of certification approval.
+    fields:
+      cia-impact: [integrity, confidentiality]
+      stakeholders: [certification-authorities, project-managers, safety-engineers]
+
+  - id: SL-5
+    type: sec-loss
+    title: Supply-chain integrity loss — malicious artifacts injected via dependencies
+    status: approved
+    description: >
+      An adversary with access to an upstream artifact source (git remote,
+      OSLC server, ReqIF export) injects crafted artifacts that pass
+      Rivet's validation but introduce false or dangerous traceability links.
+      Engineers unknowingly incorporate adversary-controlled requirements or
+      safety constraints into the system design.
+    fields:
+      cia-impact: [integrity]
+      stakeholders: [safety-engineers, developers, certification-authorities]
