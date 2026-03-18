@@ -56,11 +56,13 @@ impl Store {
     }
 
     /// Look up an artifact by ID.
+    #[inline]
     pub fn get(&self, id: &str) -> Option<&Artifact> {
         self.artifacts.get(id)
     }
 
     /// Get all artifact IDs of a given type.
+    #[inline]
     pub fn by_type(&self, artifact_type: &str) -> &[ArtifactId] {
         self.by_type
             .get(artifact_type)
@@ -69,15 +71,18 @@ impl Store {
     }
 
     /// Iterate over all artifacts.
+    #[inline]
     pub fn iter(&self) -> impl Iterator<Item = &Artifact> {
         self.artifacts.values()
     }
 
     /// Total number of artifacts.
+    #[inline]
     pub fn len(&self) -> usize {
         self.artifacts.len()
     }
 
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.artifacts.is_empty()
     }
@@ -96,6 +101,7 @@ impl Store {
     }
 
     /// Check whether an artifact ID exists in the store.
+    #[inline]
     pub fn contains(&self, id: &str) -> bool {
         self.artifacts.contains_key(id)
     }

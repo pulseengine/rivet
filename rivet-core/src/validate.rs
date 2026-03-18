@@ -47,7 +47,7 @@ pub fn validate(store: &Store, schema: &Schema, graph: &LinkGraph) -> Vec<Diagno
     for rule in &schema.conditional_rules {
         for artifact in store.iter() {
             if rule.when.matches_artifact(artifact) {
-                diagnostics.extend(rule.then.check(artifact, &rule.name, rule.severity.clone()));
+                diagnostics.extend(rule.then.check(artifact, &rule.name, rule.severity));
             }
         }
     }
@@ -66,7 +66,7 @@ pub fn validate_structural(store: &Store, schema: &Schema, graph: &LinkGraph) ->
 
     // 1. Check that every artifact has a known type
     for artifact in store.iter() {
-        if schema.artifact_type(&artifact.artifact_type).is_none() {
+        let Some(type_def) = schema.artifact_type(&artifact.artifact_type) else {
             diagnostics.push(Diagnostic {
                 severity: Severity::Error,
                 artifact_id: Some(artifact.id.clone()),
@@ -74,9 +74,7 @@ pub fn validate_structural(store: &Store, schema: &Schema, graph: &LinkGraph) ->
                 message: format!("unknown artifact type '{}'", artifact.artifact_type),
             });
             continue;
-        }
-
-        let type_def = schema.artifact_type(&artifact.artifact_type).unwrap();
+        };
 
         // 2. Check required fields
         for field in &type_def.fields {
@@ -219,16 +217,12 @@ pub fn validate_structural(store: &Store, schema: &Schema, graph: &LinkGraph) ->
                 });
                 if !has_link {
                     diagnostics.push(Diagnostic {
-                        severity: rule.severity.clone(),
+                        severity: rule.severity,
                         artifact_id: Some(id.clone()),
                         rule: rule.name.clone(),
                         message: format!(
-                            "{}: {}",
-                            rule.description,
-                            format_args!(
-                                "missing '{}' link to {:?}",
-                                required_link, rule.target_types
-                            )
+                            "{}: missing '{}' link to {:?}",
+                            rule.description, required_link, rule.target_types
                         ),
                     });
                 }
@@ -244,7 +238,7 @@ pub fn validate_structural(store: &Store, schema: &Schema, graph: &LinkGraph) ->
                 });
                 if !has_backlink {
                     diagnostics.push(Diagnostic {
-                        severity: rule.severity.clone(),
+                        severity: rule.severity,
                         artifact_id: Some(id.clone()),
                         rule: rule.name.clone(),
                         message: rule.description.clone(),
