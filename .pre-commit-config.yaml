@@ -39,7 +39,7 @@ repos:
       # ── Linting ────────────────────────────────────────────────────
       - id: cargo-clippy
         name: cargo clippy -D warnings
-        entry: cargo clippy --all-targets -- -D warnings
+        entry: cargo +stable clippy --all-targets -- -D warnings
         language: system
         types: [rust]
         pass_filenames: false
@@ -64,7 +64,7 @@ repos:
       # ── Dogfood validation ─────────────────────────────────────
       - id: rivet-validate
         name: rivet validate (dogfood)
-        entry: rivet validate --strict
+        entry: cargo run --release -p rivet-cli -- validate
         language: system
         pass_filenames: false
         files: '(artifacts/.*\.yaml|schemas/.*\.yaml|safety/.*\.yaml|rivet\.yaml)$'

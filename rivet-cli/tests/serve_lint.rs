@@ -6,9 +6,21 @@
 
 use std::path::PathBuf;
 
-/// Return the path to `serve.rs` relative to the workspace.
-fn serve_rs_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/serve.rs")
+/// Read all Rust source files from the serve module directory.
+fn read_serve_source() -> String {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/serve");
+    let mut combined = String::new();
+    for entry in std::fs::read_dir(&dir).expect("failed to read serve/ dir") {
+        let entry = entry.expect("bad entry");
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+            let content = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display()));
+            combined.push_str(&content);
+            combined.push('\n');
+        }
+    }
+    combined
 }
 
 /// Every `hx-get` link that targets `#content` MUST also include
@@ -21,7 +33,7 @@ fn serve_rs_path() -> PathBuf {
 /// - Lines that already contain `hx-push-url`
 #[test]
 fn all_content_links_push_url() {
-    let source = std::fs::read_to_string(serve_rs_path()).expect("failed to read serve.rs");
+    let source = read_serve_source();
 
     let mut violations = Vec::new();
 
@@ -70,7 +82,7 @@ fn all_content_links_push_url() {
 /// the full page layout with content already rendered (no redirect needed).
 #[test]
 fn wrap_middleware_exists() {
-    let source = std::fs::read_to_string(serve_rs_path()).expect("failed to read serve.rs");
+    let source = read_serve_source();
 
     assert!(
         source.contains("hx-request") || source.contains("HX-Request"),
@@ -96,7 +108,7 @@ fn wrap_middleware_exists() {
 /// is allowed to load.
 #[test]
 fn csp_header_middleware_exists() {
-    let source = std::fs::read_to_string(serve_rs_path()).expect("failed to read serve.rs");
+    let source = read_serve_source();
 
     assert!(
         source.contains("Content-Security-Policy"),
@@ -118,7 +130,7 @@ fn csp_header_middleware_exists() {
 /// so reloading stays on the current page instead of navigating to root.
 #[test]
 fn reload_uses_hx_location() {
-    let source = std::fs::read_to_string(serve_rs_path()).expect("failed to read serve.rs");
+    let source = read_serve_source();
 
     // The reload handler should reference HX-Location for in-place reload
     assert!(
