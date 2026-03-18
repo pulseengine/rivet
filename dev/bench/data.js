@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1773820605456,
+  "lastUpdate": 1773874733499,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
@@ -2495,6 +2495,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1445498,
             "range": "± 16688",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "75521b85ad18e307903d0152f14775636235bc10",
+          "message": "fix: replace git clone --config with compatible alternative in rivet sync (#44)\n\nUse shallow clones (--depth 1) with -b for branch/tag selection instead\nof cloning then checking out separately. For commit SHA refs, fall back\nto a full clone since -b does not accept SHAs. Adds --unshallow on fetch\nwhen the target ref is a SHA and the repo was previously shallow-cloned.\nThis avoids the --config flag which is not supported by all git versions.\n\nCo-authored-by: Claude Opus 4.6 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-03-18T23:44:16+01:00",
+          "tree_id": "499096d57393f16352c57ed0adddacdad0061946",
+          "url": "https://github.com/pulseengine/rivet/commit/75521b85ad18e307903d0152f14775636235bc10"
+        },
+        "date": 1773874733049,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 84114,
+            "range": "± 1096",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 1265749,
+            "range": "± 37994",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 54915037,
+            "range": "± 2015161",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2000,
+            "range": "± 11",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 23907,
+            "range": "± 53",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 373621,
+            "range": "± 2026",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 98,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 98,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 98,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 910320,
+            "range": "± 4649",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 159296,
+            "range": "± 637",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1865373,
+            "range": "± 15552",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 34641525,
+            "range": "± 2138649",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 40108,
+            "range": "± 86",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 444513,
+            "range": "± 1508",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 5327444,
+            "range": "± 475352",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4287,
+            "range": "± 12",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 46065,
+            "range": "± 168",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 772657,
+            "range": "± 18676",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 66254,
+            "range": "± 765",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 738407,
+            "range": "± 3193",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 10296274,
+            "range": "± 594940",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 725,
+            "range": "± 10",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 6317,
+            "range": "± 154",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 91014,
+            "range": "± 564",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 21787,
+            "range": "± 66",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 147707,
+            "range": "± 1026",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1374756,
+            "range": "± 9097",
             "unit": "ns/iter"
           }
         ]
