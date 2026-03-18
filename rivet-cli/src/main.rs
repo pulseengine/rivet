@@ -1307,7 +1307,10 @@ fn cmd_validate(
                 })
             })
             .collect();
+        let total_errors = errors + cross_errors;
+        let result_str = if total_errors > 0 { "FAIL" } else { "PASS" };
         let output = serde_json::json!({
+            "result": result_str,
             "command": "validate",
             "errors": errors,
             "warnings": warnings,
@@ -1550,7 +1553,9 @@ fn cmd_validate_incremental(cli: &Cli, format: &str, verify: bool) -> Result<boo
                 })
             })
             .collect();
+        let result_str = if errors > 0 { "FAIL" } else { "PASS" };
         let output = serde_json::json!({
+            "result": result_str,
             "command": "validate",
             "incremental": true,
             "errors": errors,
@@ -1697,10 +1702,35 @@ fn cmd_coverage(cli: &Cli, format: &str, fail_under: Option<&f64>) -> Result<boo
     let report = coverage::compute_coverage(&store, &schema, &graph);
 
     if format == "json" {
-        let json = report
-            .to_json()
-            .map_err(|e| anyhow::anyhow!("json serialization: {e}"))?;
-        println!("{json}");
+        let rules_json: Vec<serde_json::Value> = report
+            .entries
+            .iter()
+            .map(|e| {
+                serde_json::json!({
+                    "name": e.rule_name,
+                    "description": e.description,
+                    "source_type": e.source_type,
+                    "link_type": e.link_type,
+                    "direction": e.direction,
+                    "covered": e.covered,
+                    "total": e.total,
+                    "percentage": (e.percentage() * 10.0).round() / 10.0,
+                    "uncovered_ids": e.uncovered_ids,
+                })
+            })
+            .collect();
+        let total: usize = report.entries.iter().map(|e| e.total).sum();
+        let covered: usize = report.entries.iter().map(|e| e.covered).sum();
+        let overall_pct = (report.overall_coverage() * 10.0).round() / 10.0;
+        let output = serde_json::json!({
+            "rules": rules_json,
+            "overall": {
+                "covered": covered,
+                "total": total,
+                "percentage": overall_pct,
+            },
+        });
+        println!("{}", serde_json::to_string_pretty(&output).unwrap());
     } else {
         println!("Traceability Coverage Report\n");
         println!(
