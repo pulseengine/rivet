@@ -1,2874 +1,43 @@
-use std::collections::{BTreeMap, HashMap};
-use std::path::PathBuf;
-use std::sync::Arc;
+// ── View handlers ────────────────────────────────────────────────────────
+//
+// All route handler functions and their associated param structs.
 
-use anyhow::{Context as _, Result};
-use axum::Router;
+use std::collections::{BTreeMap, HashMap};
+
 use axum::extract::{Path, Query, State};
-use axum::response::{Html, IntoResponse};
-use axum::routing::{get, post};
+use axum::response::Html;
 use petgraph::graph::{Graph, NodeIndex};
 use petgraph::visit::EdgeRef;
-use tokio::sync::RwLock;
 
-/// Embedded WASM/JS assets for single-binary distribution.
-/// Only available when built with `--features embed-wasm` and assets exist.
-#[cfg(feature = "embed-wasm")]
-mod embedded_wasm {
-    pub const SPAR_JS: &str = include_str!("../assets/wasm/js/spar_wasm.js");
-    pub const CORE_WASM: &[u8] = include_bytes!("../assets/wasm/js/spar_wasm.core.wasm");
-    pub const CORE2_WASM: &[u8] = include_bytes!("../assets/wasm/js/spar_wasm.core2.wasm");
-    pub const CORE3_WASM: &[u8] = include_bytes!("../assets/wasm/js/spar_wasm.core3.wasm");
-}
-
-use crate::{docs, schema_cmd};
 use etch::filter::ego_subgraph;
 use etch::layout::{self as pgv_layout, EdgeInfo, LayoutOptions, NodeInfo};
 use etch::svg::{SvgOptions, render_svg};
 use rivet_core::adapter::{Adapter, AdapterConfig, AdapterSource};
 use rivet_core::coverage;
 use rivet_core::diff::ArtifactDiff;
-use rivet_core::document::{self, DocumentStore, html_escape};
+use rivet_core::document::{self, html_escape};
 use rivet_core::formats::generic::GenericYamlAdapter;
 use rivet_core::links::LinkGraph;
 use rivet_core::markdown::{render_markdown, strip_html_tags};
 use rivet_core::matrix::{self, Direction};
 use rivet_core::model::ProjectConfig;
-use rivet_core::results::ResultStore;
-use rivet_core::schema::{Schema, Severity};
+use rivet_core::schema::Severity;
 use rivet_core::store::Store;
 use rivet_core::validate;
 
-// ── Repository context ──────────────────────────────────────────────────
-
-/// Git repository status captured at load time.
-struct GitInfo {
-    branch: String,
-    commit_short: String,
-    is_dirty: bool,
-    dirty_count: usize,
-}
-
-/// A discovered sibling project (example or peer).
-struct SiblingProject {
-    name: String,
-    rel_path: String,
-}
-
-/// Project context shown in the dashboard header.
-struct RepoContext {
-    project_name: String,
-    project_path: String,
-    git: Option<GitInfo>,
-    loaded_at: String,
-    siblings: Vec<SiblingProject>,
-    port: u16,
-}
-
-fn capture_git_info(project_path: &std::path::Path) -> Option<GitInfo> {
-    let branch = std::process::Command::new("git")
-        .args(["rev-parse", "--abbrev-ref", "HEAD"])
-        .current_dir(project_path)
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())?;
-
-    let commit_short = std::process::Command::new("git")
-        .args(["rev-parse", "--short", "HEAD"])
-        .current_dir(project_path)
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_default();
-
-    let porcelain = std::process::Command::new("git")
-        .args(["status", "--porcelain"])
-        .current_dir(project_path)
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
-        .unwrap_or_default();
-
-    let dirty_count = porcelain.lines().filter(|l| !l.is_empty()).count();
-
-    Some(GitInfo {
-        branch,
-        commit_short,
-        is_dirty: dirty_count > 0,
-        dirty_count,
-    })
-}
-
-/// Discover other rivet projects (examples/ and peer directories).
-fn discover_siblings(project_path: &std::path::Path) -> Vec<SiblingProject> {
-    let mut siblings = Vec::new();
-
-    // Check examples/ subdirectory
-    let examples_dir = project_path.join("examples");
-    if examples_dir.is_dir() {
-        if let Ok(entries) = std::fs::read_dir(&examples_dir) {
-            for entry in entries.flatten() {
-                let p = entry.path();
-                if p.join("rivet.yaml").exists() {
-                    if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
-                        siblings.push(SiblingProject {
-                            name: name.to_string(),
-                            rel_path: format!("examples/{name}"),
-                        });
-                    }
-                }
-            }
-        }
-    }
-
-    // If inside examples/, offer root project and peers
-    if let Some(parent) = project_path.parent() {
-        if parent.file_name().and_then(|n| n.to_str()) == Some("examples") {
-            if let Some(root) = parent.parent() {
-                if root.join("rivet.yaml").exists() {
-                    if let Ok(cfg) = std::fs::read_to_string(root.join("rivet.yaml")) {
-                        let root_name = cfg
-                            .lines()
-                            .find(|l| l.trim().starts_with("name:"))
-                            .map(|l| l.trim().trim_start_matches("name:").trim().to_string())
-                            .unwrap_or_else(|| {
-                                root.file_name()
-                                    .and_then(|n| n.to_str())
-                                    .unwrap_or("root")
-                                    .to_string()
-                            });
-                        siblings.push(SiblingProject {
-                            name: root_name,
-                            rel_path: root.display().to_string(),
-                        });
-                    }
-                }
-                // Peer examples
-                if let Ok(entries) = std::fs::read_dir(parent) {
-                    for entry in entries.flatten() {
-                        let p = entry.path();
-                        if p != project_path && p.join("rivet.yaml").exists() {
-                            if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
-                                siblings.push(SiblingProject {
-                                    name: name.to_string(),
-                                    rel_path: p.display().to_string(),
-                                });
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    siblings.sort_by(|a, b| a.name.cmp(&b.name));
-    siblings
-}
-
-/// Metadata for a loaded external project, displayed on the dashboard.
-struct ExternalInfo {
-    prefix: String,
-    /// Display source — git URL or local path.
-    source: String,
-    /// Whether the external has been synced (repo dir exists).
-    synced: bool,
-    /// Loaded artifacts (empty if not synced).
-    store: Store,
-}
-
-/// Shared application state loaded once at startup.
-struct AppState {
-    store: Store,
-    schema: Schema,
-    graph: LinkGraph,
-    doc_store: DocumentStore,
-    result_store: ResultStore,
-    context: RepoContext,
-    /// Canonical path to the project directory (for reload).
-    project_path_buf: PathBuf,
-    /// Path to the schemas directory (for reload).
-    schemas_dir: PathBuf,
-    /// Resolved docs directories (for serving images/assets).
-    doc_dirs: Vec<PathBuf>,
-    /// External projects loaded at startup (empty if none configured).
-    externals: Vec<ExternalInfo>,
-}
-
-/// Convenience alias so handler signatures stay compact.
-type SharedState = Arc<RwLock<AppState>>;
-
-/// Build a fresh `AppState` by loading everything from disk.
-fn reload_state(
-    project_path: &std::path::Path,
-    schemas_dir: &std::path::Path,
-    port: u16,
-) -> Result<AppState> {
-    let config_path = project_path.join("rivet.yaml");
-    let config = rivet_core::load_project_config(&config_path)
-        .with_context(|| format!("loading {}", config_path.display()))?;
-
-    let schema = rivet_core::load_schemas(&config.project.schemas, schemas_dir)
-        .context("loading schemas")?;
-
-    let mut store = Store::new();
-    for source in &config.sources {
-        let artifacts = rivet_core::load_artifacts(source, project_path)
-            .with_context(|| format!("loading source '{}'", source.path))?;
-        for artifact in artifacts {
-            store.upsert(artifact);
-        }
-    }
-
-    let graph = LinkGraph::build(&store, &schema);
-
-    let mut doc_store = DocumentStore::new();
-    let mut doc_dirs = Vec::new();
-    for docs_path in &config.docs {
-        let dir = project_path.join(docs_path);
-        if dir.is_dir() {
-            doc_dirs.push(dir.clone());
-        }
-        let docs = rivet_core::document::load_documents(&dir)
-            .with_context(|| format!("loading docs from '{docs_path}'"))?;
-        for doc in docs {
-            doc_store.insert(doc);
-        }
-    }
-
-    let mut result_store = ResultStore::new();
-    if let Some(ref results_path) = config.results {
-        let dir = project_path.join(results_path);
-        let runs = rivet_core::results::load_results(&dir)
-            .with_context(|| format!("loading results from '{results_path}'"))?;
-        for run in runs {
-            result_store.insert(run);
-        }
-    }
-
-    // ── Load external projects ────────────────────────────────────────
-    let mut externals = Vec::new();
-    if let Some(ref ext_map) = config.externals {
-        let cache_dir = project_path.join(".rivet/repos");
-        for ext in ext_map.values() {
-            let source = ext
-                .git
-                .as_deref()
-                .or(ext.path.as_deref())
-                .unwrap_or("unknown")
-                .to_string();
-            let ext_dir =
-                rivet_core::externals::resolve_external_dir(ext, &cache_dir, project_path);
-            let synced = ext_dir.join("rivet.yaml").exists();
-            let mut ext_store = Store::new();
-            if synced {
-                if let Ok(artifacts) = rivet_core::externals::load_external_project(&ext_dir) {
-                    for a in artifacts {
-                        ext_store.upsert(a);
-                    }
-                }
-            }
-            externals.push(ExternalInfo {
-                prefix: ext.prefix.clone(),
-                source,
-                synced,
-                store: ext_store,
-            });
-        }
-    }
-
-    let git = capture_git_info(project_path);
-    let loaded_at = std::process::Command::new("date")
-        .arg("+%H:%M:%S")
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_else(|| "unknown".into());
-    let siblings = discover_siblings(project_path);
-    let project_name = config.project.name.clone();
-
-    let context = RepoContext {
-        project_name,
-        project_path: project_path.display().to_string(),
-        git,
-        loaded_at,
-        siblings,
-        port,
-    };
-
-    Ok(AppState {
-        store,
-        schema,
-        graph,
-        doc_store,
-        result_store,
-        context,
-        project_path_buf: project_path.to_path_buf(),
-        schemas_dir: schemas_dir.to_path_buf(),
-        doc_dirs,
-        externals,
-    })
-}
-
-/// Start the axum HTTP server on the given port.
-#[allow(clippy::too_many_arguments)]
-pub async fn run(
-    store: Store,
-    schema: Schema,
-    graph: LinkGraph,
-    doc_store: DocumentStore,
-    result_store: ResultStore,
-    project_name: String,
-    project_path: PathBuf,
-    schemas_dir: PathBuf,
-    doc_dirs: Vec<PathBuf>,
-    port: u16,
-) -> Result<()> {
-    let git = capture_git_info(&project_path);
-    let loaded_at = std::process::Command::new("date")
-        .arg("+%H:%M:%S")
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_else(|| "unknown".into());
-    let siblings = discover_siblings(&project_path);
-    let context = RepoContext {
-        project_name,
-        project_path: project_path.display().to_string(),
-        git,
-        loaded_at,
-        siblings,
-        port,
-    };
-
-    let state: SharedState = Arc::new(RwLock::new(AppState {
-        store,
-        schema,
-        graph,
-        doc_store,
-        result_store,
-        context,
-        project_path_buf: project_path,
-        schemas_dir,
-        doc_dirs,
-        externals: Vec::new(),
-    }));
-
-    let app = Router::new()
-        .route("/", get(index))
-        .route("/artifacts", get(artifacts_list))
-        .route("/artifacts/{id}", get(artifact_detail))
-        .route("/artifacts/{id}/preview", get(artifact_preview))
-        .route("/artifacts/{id}/graph", get(artifact_graph))
-        .route("/validate", get(validate_view))
-        .route("/matrix", get(matrix_view))
-        .route("/matrix/cell", get(matrix_cell_detail))
-        .route("/graph", get(graph_view))
-        .route("/stats", get(stats_view))
-        .route("/coverage", get(coverage_view))
-        .route("/documents", get(documents_list))
-        .route("/documents/{id}", get(document_detail))
-        .route("/search", get(search_view))
-        .route("/verification", get(verification_view))
-        .route("/stpa", get(stpa_view))
-        .route("/results", get(results_view))
-        .route("/results/{run_id}", get(result_detail))
-        .route("/source", get(source_tree_view))
-        .route("/source/{*path}", get(source_file_view))
-        .route("/source-raw/{*path}", get(source_raw))
-        .route("/diff", get(diff_view))
-        .route("/doc-linkage", get(doc_linkage_view))
-        .route("/traceability", get(traceability_view))
-        .route("/traceability/history", get(traceability_history))
-        .route("/api/links/{id}", get(api_artifact_links))
-        .route("/wasm/{*path}", get(wasm_asset))
-        .route("/help", get(help_view))
-        .route("/help/docs", get(help_docs_list))
-        .route("/help/docs/{*slug}", get(help_docs_topic))
-        .route("/help/schema", get(help_schema_list))
-        .route("/help/schema/{name}", get(help_schema_show))
-        .route("/help/links", get(help_links_view))
-        .route("/help/rules", get(help_rules_view))
-        .route("/externals", get(externals_list))
-        .route("/externals/{prefix}", get(external_detail))
-        .route("/docs-asset/{*path}", get(docs_asset))
-        .route("/reload", post(reload_handler))
-        .with_state(state.clone())
-        .layer(axum::middleware::from_fn_with_state(state, wrap_full_page))
-        .layer(axum::middleware::map_response(
-            |mut response: axum::response::Response| async move {
-                response.headers_mut().insert(
-                    "Content-Security-Policy",
-                    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'"
-                        .parse()
-                        .unwrap(),
-                );
-                response
-            },
-        ));
-
-    let addr = format!("0.0.0.0:{port}");
-    eprintln!("rivet dashboard listening on http://localhost:{port}");
-
-    let listener = tokio::net::TcpListener::bind(&addr).await?;
-    axum::serve(listener, app).await?;
-    Ok(())
-}
-
-/// Middleware: for direct browser requests (no HX-Request header) to view routes,
-/// wrap the handler's partial HTML in the full page layout. This replaces the old
-/// `/?goto=` redirect pattern and fixes query-param loss, hash-fragment loss, and
-/// the async replaceState race condition.
-async fn wrap_full_page(
-    State(state): State<SharedState>,
-    req: axum::extract::Request,
-    next: axum::middleware::Next,
-) -> axum::response::Response {
-    let path = req.uri().path().to_string();
-    let is_htmx = req.headers().contains_key("hx-request");
-    let method = req.method().clone();
-
-    let response = next.run(req).await;
-
-    // Only wrap GET requests to view routes (not /, assets, or APIs)
-    if method == axum::http::Method::GET
-        && !is_htmx
-        && path != "/"
-        && !path.starts_with("/api/")
-        && !path.starts_with("/wasm/")
-        && !path.starts_with("/source-raw/")
-        && !path.starts_with("/docs-asset/")
-    {
-        let bytes = axum::body::to_bytes(response.into_body(), 16 * 1024 * 1024)
-            .await
-            .unwrap_or_default();
-        let content = String::from_utf8_lossy(&bytes);
-        let app = state.read().await;
-        return page_layout(&content, &app).into_response();
-    }
-
-    response
-}
-
-/// GET /api/links/{id} — return JSON array of AADL-prefixed artifact IDs linked
-/// to the given artifact (forward links, backlinks, and self if applicable).
-async fn api_artifact_links(
-    State(state): State<SharedState>,
-    Path(id): Path<String>,
-) -> axum::Json<Vec<String>> {
-    let state = state.read().await;
-    let graph = &state.graph;
-
-    let mut linked_ids = Vec::new();
-
-    // Forward links from this artifact
-    for link in graph.links_from(&id) {
-        if link.target.starts_with("AADL-") {
-            linked_ids.push(link.target.clone());
-        }
-    }
-
-    // Backlinks to this artifact
-    for bl in graph.backlinks_to(&id) {
-        if bl.source.starts_with("AADL-") {
-            linked_ids.push(bl.source.clone());
-        }
-    }
-
-    // If this IS an AADL artifact, include self
-    if id.starts_with("AADL-") {
-        linked_ids.push(id);
-    }
-
-    axum::Json(linked_ids)
-}
-
-/// GET /source-raw/{*path} — serve a project file as raw text (for WASM client-side rendering).
-async fn source_raw(
-    State(state): State<SharedState>,
-    Path(raw_path): Path<String>,
-) -> impl IntoResponse {
-    let state = state.read().await;
-    let project_path = &state.project_path_buf;
-    let decoded = urlencoding::decode(&raw_path).unwrap_or(std::borrow::Cow::Borrowed(&raw_path));
-    let rel_path = decoded.as_ref();
-
-    let full_path = project_path.join(rel_path);
-    let canonical = match full_path.canonicalize() {
-        Ok(p) => p,
-        Err(_) => {
-            return (axum::http::StatusCode::NOT_FOUND, "not found").into_response();
-        }
-    };
-    let canonical_project = match project_path.canonicalize() {
-        Ok(p) => p,
-        Err(_) => {
-            return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "error").into_response();
-        }
-    };
-    if !canonical.starts_with(&canonical_project) {
-        return (axum::http::StatusCode::FORBIDDEN, "forbidden").into_response();
-    }
-
-    let metadata = match std::fs::symlink_metadata(&full_path) {
-        Ok(m) => m,
-        Err(_) => return (axum::http::StatusCode::NOT_FOUND, "not found").into_response(),
-    };
-
-    // Directory: return JSON listing of filenames.
-    if metadata.is_dir() {
-        let mut entries = Vec::new();
-        if let Ok(dir) = std::fs::read_dir(&full_path) {
-            for entry in dir.flatten() {
-                if let Some(name) = entry.file_name().to_str() {
-                    entries.push(name.to_string());
-                }
-            }
-        }
-        entries.sort();
-        let json = serde_json::to_string(&entries).unwrap_or_else(|_| "[]".into());
-        return (
-            axum::http::StatusCode::OK,
-            [(axum::http::header::CONTENT_TYPE, "application/json")],
-            json,
-        )
-            .into_response();
-    }
-
-    match std::fs::read_to_string(&full_path) {
-        Ok(content) => (
-            axum::http::StatusCode::OK,
-            [(
-                axum::http::header::CONTENT_TYPE,
-                "text/plain; charset=utf-8",
-            )],
-            content,
-        )
-            .into_response(),
-        Err(_) => (axum::http::StatusCode::NOT_FOUND, "not found").into_response(),
-    }
-}
-
-/// GET /wasm/{*path} — serve jco-transpiled WASM assets for browser-side rendering.
-async fn wasm_asset(Path(path): Path<String>) -> impl IntoResponse {
-    let content_type = if path.ends_with(".js") {
-        "application/javascript"
-    } else if path.ends_with(".wasm") {
-        "application/wasm"
-    } else if path.ends_with(".d.ts") {
-        "application/typescript"
-    } else {
-        "application/octet-stream"
-    };
-
-    // Try embedded assets first (when built with embed-wasm feature).
-    #[cfg(feature = "embed-wasm")]
-    {
-        let bytes: Option<&[u8]> = match path.as_str() {
-            "spar_wasm.js" => Some(embedded_wasm::SPAR_JS.as_bytes()),
-            "spar_wasm.core.wasm" => Some(embedded_wasm::CORE_WASM),
-            "spar_wasm.core2.wasm" => Some(embedded_wasm::CORE2_WASM),
-            "spar_wasm.core3.wasm" => Some(embedded_wasm::CORE3_WASM),
-            _ => None,
-        };
-        if let Some(data) = bytes {
-            return (
-                axum::http::StatusCode::OK,
-                [
-                    (axum::http::header::CONTENT_TYPE, content_type),
-                    (axum::http::header::CACHE_CONTROL, "public, max-age=86400"),
-                ],
-                data.to_vec(),
-            )
-                .into_response();
-        }
-    }
-
-    // Fallback to filesystem (development mode).
-    // Try the workspace assets dir first, then next to the binary.
-    let candidates = [
-        std::env::current_dir()
-            .unwrap_or_default()
-            .join("rivet-cli/assets/wasm/js")
-            .join(&path),
-        std::env::current_exe()
-            .unwrap_or_default()
-            .parent()
-            .unwrap_or(std::path::Path::new("."))
-            .join("assets/wasm/js")
-            .join(&path),
-    ];
-
-    for candidate in &candidates {
-        if let Ok(bytes) = std::fs::read(candidate) {
-            return (
-                axum::http::StatusCode::OK,
-                [
-                    (axum::http::header::CONTENT_TYPE, content_type),
-                    (axum::http::header::CACHE_CONTROL, "no-cache"),
-                ],
-                bytes,
-            )
-                .into_response();
-        }
-    }
-
-    (
-        axum::http::StatusCode::NOT_FOUND,
-        [(axum::http::header::CONTENT_TYPE, "text/plain")],
-        format!("WASM asset not found: {path}").into_bytes(),
-    )
-        .into_response()
-}
-
-/// POST /reload — re-read the project from disk and replace the shared state.
-///
-/// Uses the `HX-Current-URL` header (sent automatically by HTMX) to redirect
-/// back to the current page after reload, preserving the user's position.
-async fn reload_handler(
-    State(state): State<SharedState>,
-    headers: axum::http::HeaderMap,
-) -> impl IntoResponse {
-    let (project_path, schemas_dir, port) = {
-        let guard = state.read().await;
-        (
-            guard.project_path_buf.clone(),
-            guard.schemas_dir.clone(),
-            guard.context.port,
-        )
-    };
-
-    match reload_state(&project_path, &schemas_dir, port) {
-        Ok(new_state) => {
-            let mut guard = state.write().await;
-            *guard = new_state;
-
-            // Redirect back to wherever the user was (HTMX sends HX-Current-URL).
-            // Extract the path portion from the full URL (e.g. "http://localhost:3001/documents/DOC-001" → "/documents/DOC-001").
-            // Navigate back to wherever the user was (HTMX sends HX-Current-URL).
-            // HX-Location does a client-side HTMX navigation (fetch + swap + push-url).
-            let redirect_url = headers
-                .get("HX-Current-URL")
-                .and_then(|v| v.to_str().ok())
-                .and_then(|full_url| {
-                    full_url
-                        .find("://")
-                        .and_then(|i| full_url[i + 3..].find('/'))
-                        .map(|j| {
-                            let start = full_url.find("://").unwrap() + 3 + j;
-                            full_url[start..].to_owned()
-                        })
-                })
-                .unwrap_or_else(|| "/".to_owned());
-
-            let location_json = format!(
-                "{{\"path\":\"{}\",\"target\":\"#content\"}}",
-                redirect_url.replace('"', "\\\"")
-            );
-
-            (
-                axum::http::StatusCode::OK,
-                [("HX-Location", location_json)],
-                "reloaded".to_owned(),
-            )
-        }
-        Err(e) => {
-            eprintln!("reload error: {e:#}");
-            (
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                [(
-                    "HX-Location",
-                    "{\"path\":\"/\",\"target\":\"#content\"}".to_owned(),
-                )],
-                format!("reload failed: {e}"),
-            )
-        }
-    }
-}
-
-/// GET /docs-asset/{*path} — serve static files (images, SVG, etc.) from docs directories.
-async fn docs_asset(
-    State(state): State<SharedState>,
-    Path(path): Path<String>,
-) -> impl IntoResponse {
-    let state = state.read().await;
-
-    // Sanitize: reject path traversal
-    if path.contains("..") {
-        return (
-            axum::http::StatusCode::BAD_REQUEST,
-            [("Content-Type", "text/plain")],
-            Vec::new(),
-        );
-    }
-
-    // Search through all doc directories for the requested file
-    for dir in &state.doc_dirs {
-        let file_path = dir.join(&path);
-        if file_path.is_file() {
-            if let Ok(bytes) = std::fs::read(&file_path) {
-                let content_type =
-                    match file_path.extension().and_then(|e| e.to_str()).unwrap_or("") {
-                        "png" => "image/png",
-                        "jpg" | "jpeg" => "image/jpeg",
-                        "gif" => "image/gif",
-                        "svg" => "image/svg+xml",
-                        "webp" => "image/webp",
-                        "pdf" => "application/pdf",
-                        _ => "application/octet-stream",
-                    };
-                return (
-                    axum::http::StatusCode::OK,
-                    [("Content-Type", content_type)],
-                    bytes,
-                );
-            }
-        }
-    }
-
-    (
-        axum::http::StatusCode::NOT_FOUND,
-        [("Content-Type", "text/plain")],
-        b"not found".to_vec(),
-    )
-}
-
-// ── Color palette ────────────────────────────────────────────────────────
-
-fn type_color_map() -> HashMap<String, String> {
-    let pairs: &[(&str, &str)] = &[
-        // STPA
-        ("loss", "#dc3545"),
-        ("hazard", "#fd7e14"),
-        ("system-constraint", "#20c997"),
-        ("controller", "#6f42c1"),
-        ("uca", "#e83e8c"),
-        ("control-action", "#17a2b8"),
-        ("feedback", "#6610f2"),
-        ("causal-factor", "#d63384"),
-        ("safety-constraint", "#20c997"),
-        ("loss-scenario", "#e83e8c"),
-        ("controller-constraint", "#20c997"),
-        ("controlled-process", "#6610f2"),
-        ("sub-hazard", "#fd7e14"),
-        // ASPICE
-        ("stakeholder-req", "#0d6efd"),
-        ("system-req", "#0dcaf0"),
-        ("system-architecture", "#198754"),
-        ("sw-req", "#198754"),
-        ("sw-architecture", "#0d6efd"),
-        ("sw-detailed-design", "#6610f2"),
-        ("sw-unit", "#6f42c1"),
-        ("system-verification", "#6610f2"),
-        ("sw-verification", "#6610f2"),
-        ("system-integration-verification", "#6610f2"),
-        ("sw-integration-verification", "#6610f2"),
-        ("sw-unit-verification", "#6610f2"),
-        ("qualification-verification", "#6610f2"),
-        // Dev
-        ("requirement", "#0d6efd"),
-        ("design-decision", "#198754"),
-        ("feature", "#6f42c1"),
-        // Cybersecurity
-        ("asset", "#ffc107"),
-        ("threat", "#dc3545"),
-        ("cybersecurity-req", "#fd7e14"),
-        ("vulnerability", "#e83e8c"),
-        ("attack-path", "#dc3545"),
-        ("cybersecurity-goal", "#0d6efd"),
-        ("cybersecurity-control", "#198754"),
-        ("security-verification", "#6610f2"),
-        ("risk-assessment", "#fd7e14"),
-        ("security-event", "#e83e8c"),
-    ];
-    pairs
-        .iter()
-        .map(|(k, v)| (k.to_string(), v.to_string()))
-        .collect()
-}
-
-/// Return a colored badge `<span>` for an artifact type.
-///
-/// Uses the `type_color_map` hex color as text and computes a 12%-opacity
-/// tinted background from it.
-fn badge_for_type(type_name: &str) -> String {
-    let colors = type_color_map();
-    let hex = colors
-        .get(type_name)
-        .map(|s| s.as_str())
-        .unwrap_or("#5b2d9e");
-    // Parse hex → rgb
-    let hex_digits = hex.trim_start_matches('#');
-    let r = u8::from_str_radix(&hex_digits[0..2], 16).unwrap_or(91);
-    let g = u8::from_str_radix(&hex_digits[2..4], 16).unwrap_or(45);
-    let b = u8::from_str_radix(&hex_digits[4..6], 16).unwrap_or(158);
-    format!(
-        "<span class=\"badge\" style=\"background:rgba({r},{g},{b},.12);color:{hex};font-family:var(--mono);font-size:.72rem\">{}</span>",
-        html_escape(type_name)
-    )
-}
-
-// ── CSS ──────────────────────────────────────────────────────────────────
-
-const CSS: &str = r#"
-/* ── Reset & base ─────────────────────────────────────────────── */
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --bg:     #f5f5f7;
-  --surface:#fff;
-  --sidebar:#0f0f13;
-  --sidebar-hover:#1c1c24;
-  --sidebar-text:#9898a6;
-  --sidebar-active:#fff;
-  --text:   #1d1d1f;
-  --text-secondary:#6e6e73;
-  --border: #e5e5ea;
-  --accent: #3a86ff;
-  --accent-hover:#2568d6;
-  --radius: 10px;
-  --radius-sm:6px;
-  --shadow: 0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);
-  --shadow-md:0 4px 12px rgba(0,0,0,.06),0 1px 3px rgba(0,0,0,.04);
-  --mono: 'JetBrains Mono','Fira Code','SF Mono',Menlo,monospace;
-  --font: 'Atkinson Hyperlegible',system-ui,-apple-system,sans-serif;
-  --transition:180ms ease;
-}
-html{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility}
-body{font-family:var(--font);color:var(--text);background:var(--bg);line-height:1.6;font-size:15px}
-
-/* ── Links ────────────────────────────────────────────────────── */
-a{color:var(--accent);text-decoration:none;transition:color var(--transition)}
-a:hover{color:var(--accent-hover)}
-a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
-
-/* ── Shell layout ─────────────────────────────────────────────── */
-.shell{display:flex;min-height:100vh}
-.content-area{display:flex;flex-direction:column;flex:1;min-width:0}
-
-/* ── Sidebar navigation ──────────────────────────────────────── */
-nav{width:232px;background:var(--sidebar);color:var(--sidebar-text);
-    padding:1.75rem 1rem;flex-shrink:0;display:flex;flex-direction:column;
-    position:sticky;top:0;height:100vh;overflow-y:auto;
-    border-right:1px solid rgba(255,255,255,.06)}
-nav h1{font-size:1.05rem;font-weight:700;color:var(--sidebar-active);
-       margin-bottom:2rem;letter-spacing:.04em;padding:0 .75rem;
-       display:flex;align-items:center;gap:.5rem}
-nav h1::before{content:'';display:inline-block;width:8px;height:8px;
-               border-radius:50%;background:var(--accent);flex-shrink:0}
-nav ul{list-style:none;display:flex;flex-direction:column;gap:2px}
-nav li{margin:0}
-nav a{display:flex;align-items:center;gap:.5rem;padding:.5rem .75rem;border-radius:var(--radius-sm);
-      color:var(--sidebar-text);font-size:.875rem;font-weight:500;
-      transition:all var(--transition)}
-nav a:hover{background:var(--sidebar-hover);color:var(--sidebar-active);text-decoration:none}
-nav a.active{background:rgba(58,134,255,.08);color:var(--sidebar-active);border-left:2px solid var(--accent);padding-left:calc(.75rem - 2px)}
-nav a:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-
-/* ── Main content ─────────────────────────────────────────────── */
-main{flex:1;padding:2.5rem 3rem;max-width:1400px;min-width:0;overflow-y:auto}
-main.htmx-swapping{opacity:.4;transition:opacity 150ms ease-out}
-main.htmx-settling{opacity:1;transition:opacity 200ms ease-in}
-
-/* ── Loading bar ──────────────────────────────────────────────── */
-#loading-bar{position:fixed;top:0;left:0;width:0;height:2px;background:var(--accent);
-             z-index:9999;transition:none;pointer-events:none}
-#loading-bar.active{width:85%;transition:width 8s cubic-bezier(.1,.05,.1,1)}
-#loading-bar.done{width:100%;transition:width 100ms ease;opacity:0;transition:width 100ms ease,opacity 300ms ease 100ms}
-
-/* ── Typography ───────────────────────────────────────────────── */
-h2{font-size:1.4rem;font-weight:700;margin-bottom:1.25rem;color:var(--text);letter-spacing:-.01em;padding-bottom:.75rem;border-bottom:1px solid var(--border)}
-h3{font-size:1.05rem;font-weight:600;margin:1.5rem 0 .75rem;color:var(--text)}
-code,pre{font-family:var(--mono);font-size:.85em}
-pre{background:#f1f1f3;padding:1rem;border-radius:var(--radius-sm);overflow-x:auto}
-
-/* ── Tables ───────────────────────────────────────────────────── */
-table{width:100%;border-collapse:collapse;margin-bottom:1.5rem;font-size:.9rem}
-th,td{text-align:left;padding:.65rem .875rem}
-th{font-weight:600;font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;
-   color:var(--text-secondary);border-bottom:2px solid var(--border);background:transparent}
-td{border-bottom:1px solid var(--border)}
-tbody tr{transition:background var(--transition)}
-tbody tr:nth-child(even){background:rgba(0,0,0,.015)}
-tbody tr:hover{background:rgba(58,134,255,.04)}
-.tbl-filter-wrap{margin-bottom:.5rem}
-.tbl-filter{width:100%;max-width:20rem;padding:.4rem .65rem;font-size:.85rem;font-family:var(--mono);
-  border:1px solid var(--border);border-radius:5px;background:var(--surface);color:var(--text);
-  outline:none;transition:border-color var(--transition)}
-.tbl-filter:focus{border-color:var(--accent)}
-.tbl-sort-arrow{font-size:.7rem;opacity:.6;margin-left:.25rem}
-th:hover .tbl-sort-arrow{opacity:1}
-td a{font-family:var(--mono);font-size:.85rem;font-weight:500}
-
-/* ── Badges ───────────────────────────────────────────────────── */
-.badge{display:inline-flex;align-items:center;padding:.2rem .55rem;border-radius:5px;
-       font-size:.73rem;font-weight:600;letter-spacing:.02em;line-height:1.4;white-space:nowrap}
-.badge-error{background:#fee;color:#c62828}
-.badge-warn{background:#fff8e1;color:#8b6914}
-.badge-info{background:#e8f4fd;color:#0c5a82}
-.badge-ok{background:#e6f9ed;color:#15713a}
-.badge-type{background:#f0ecf9;color:#5b2d9e;font-family:var(--mono);font-size:.72rem}
-
-/* ── Validation bar ──────────────────────────────────────────── */
-.validation-bar{padding:1rem 1.25rem;border-radius:var(--radius);margin-bottom:1.25rem;font-weight:600;font-size:.95rem}
-.validation-bar.pass{background:linear-gradient(135deg,#e6f9ed,#d4f5e0);color:#15713a;border:1px solid #b8e8c8}
-.validation-bar.fail{background:linear-gradient(135deg,#fee,#fdd);color:#c62828;border:1px solid #f4c7c3}
-
-/* ── Status progress bars ────────────────────────────────────── */
-.status-bar-row{display:flex;align-items:center;gap:.75rem;margin-bottom:.5rem;font-size:.85rem}
-.status-bar-label{width:80px;text-align:right;font-weight:500;color:var(--text-secondary)}
-.status-bar-track{flex:1;height:20px;background:#e5e5ea;border-radius:4px;overflow:hidden;position:relative}
-.status-bar-fill{height:100%;border-radius:4px;transition:width .3s ease}
-.status-bar-count{width:40px;font-variant-numeric:tabular-nums;color:var(--text-secondary)}
-
-/* ── Cards ────────────────────────────────────────────────────── */
-.card{background:var(--surface);border-radius:var(--radius);padding:1.5rem;
-      margin-bottom:1.25rem;box-shadow:var(--shadow);border:1px solid var(--border);
-      transition:box-shadow var(--transition)}
-
-/* ── Stat grid ────────────────────────────────────────────────── */
-.stat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:1rem;margin-bottom:1.75rem}
-.stat-box{background:var(--surface);border-radius:var(--radius);padding:1.25rem 1rem;text-align:center;
-          box-shadow:var(--shadow);border:1px solid var(--border);transition:box-shadow var(--transition),transform var(--transition);
-          border-top:3px solid var(--border)}
-.stat-box:hover{box-shadow:var(--shadow-md);transform:translateY(-1px)}
-.stat-box .number{font-size:2rem;font-weight:800;letter-spacing:-.02em;
-                  font-variant-numeric:tabular-nums;line-height:1.2}
-.stat-box .label{font-size:.8rem;font-weight:500;color:var(--text-secondary);margin-top:.25rem;
-                 text-transform:uppercase;letter-spacing:.04em}
-.stat-blue{border-top-color:#3a86ff}.stat-blue .number{color:#3a86ff}
-.stat-green{border-top-color:#15713a}.stat-green .number{color:#15713a}
-.stat-orange{border-top-color:#e67e22}.stat-orange .number{color:#e67e22}
-.stat-red{border-top-color:#c62828}.stat-red .number{color:#c62828}
-.stat-amber{border-top-color:#b8860b}.stat-amber .number{color:#b8860b}
-.stat-purple{border-top-color:#6f42c1}.stat-purple .number{color:#6f42c1}
-
-/* ── Link pills ───────────────────────────────────────────────── */
-.link-pill{display:inline-block;padding:.15rem .45rem;border-radius:4px;
-           font-size:.76rem;font-family:var(--mono);background:#f0f0f3;
-           color:var(--text-secondary);margin:.1rem;font-weight:500}
-
-/* ── Forms ────────────────────────────────────────────────────── */
-.form-row{display:flex;gap:1rem;align-items:end;flex-wrap:wrap;margin-bottom:1rem}
-.form-row label{font-size:.8rem;font-weight:600;color:var(--text-secondary);
-                text-transform:uppercase;letter-spacing:.04em}
-.form-row select,.form-row input[type="text"],.form-row input[type="search"],
-.form-row input:not([type]),.form-row input[list]{
-  padding:.5rem .75rem;border:1px solid var(--border);border-radius:var(--radius-sm);
-  font-size:.875rem;font-family:var(--font);background:var(--surface);color:var(--text);
-  transition:border-color var(--transition),box-shadow var(--transition);appearance:none;
-  -webkit-appearance:none}
-.form-row select{padding-right:2rem;background-image:url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%236e6e73' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  background-repeat:no-repeat;background-position:right .75rem center}
-.form-row input:focus,.form-row select:focus{
-  outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(58,134,255,.15)}
-.form-row input[type="range"]{padding:0;border:none;accent-color:var(--accent);width:100%}
-.form-row input[type="range"]:focus{box-shadow:none}
-.form-row button{padding:.5rem 1.25rem;background:var(--accent);color:#fff;border:none;
-                 border-radius:var(--radius-sm);font-size:.875rem;font-weight:600;
-                 font-family:var(--font);cursor:pointer;transition:all var(--transition);
-                 box-shadow:0 1px 2px rgba(0,0,0,.08)}
-.form-row button:hover{background:var(--accent-hover);box-shadow:0 2px 6px rgba(58,134,255,.25);transform:translateY(-1px)}
-.form-row button:active{transform:translateY(0)}
-.form-row button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-
-/* ── Definition lists ─────────────────────────────────────────── */
-dl{margin:.75rem 0}
-dt{font-weight:600;font-size:.8rem;color:var(--text-secondary);margin-top:.75rem;
-   text-transform:uppercase;letter-spacing:.04em}
-dd{margin-left:0;margin-bottom:.25rem;margin-top:.2rem}
-
-/* ── Meta text ────────────────────────────────────────────────── */
-.meta{color:var(--text-secondary);font-size:.85rem}
-
-/* ── Nav icons & badges ───────────────────────────────────────── */
-.nav-icon{display:inline-flex;width:1.25rem;height:1.25rem;align-items:center;justify-content:center;flex-shrink:0;opacity:.5}
-nav a:hover .nav-icon,nav a.active .nav-icon{opacity:.9}
-.nav-label{display:flex;align-items:center;gap:.5rem;flex:1;min-width:0}
-.nav-badge{font-size:.65rem;font-weight:700;padding:.1rem .4rem;border-radius:4px;
-           background:rgba(255,255,255,.08);color:rgba(255,255,255,.4);margin-left:auto;flex-shrink:0}
-.nav-badge-error{background:rgba(220,53,69,.2);color:#ff6b7a}
-nav .nav-divider{height:1px;background:rgba(255,255,255,.06);margin:.75rem .75rem}
-
-/* ── Context bar ─────────────────────────────────────────────── */
-.context-bar{display:flex;align-items:center;gap:.75rem;padding:.5rem 1.5rem;
-  background:var(--surface);border-bottom:1px solid var(--border);font-size:.78rem;color:var(--text-secondary);
-  flex-wrap:wrap}
-.context-bar .ctx-project{font-weight:700;color:var(--text);font-size:.82rem}
-.context-bar .ctx-sep{opacity:.25}
-.context-bar .ctx-git{font-family:var(--mono);font-size:.72rem;padding:.15rem .4rem;border-radius:4px;
-  background:rgba(58,134,255,.08);color:var(--accent)}
-.context-bar .ctx-dirty{font-family:var(--mono);font-size:.68rem;padding:.15rem .4rem;border-radius:4px;
-  background:rgba(220,53,69,.1);color:#c62828}
-.context-bar .ctx-clean{font-family:var(--mono);font-size:.68rem;padding:.15rem .4rem;border-radius:4px;
-  background:rgba(21,113,58,.1);color:#15713a}
-.context-bar .ctx-time{margin-left:auto;opacity:.6}
-.ctx-switcher{position:relative;display:inline-flex;align-items:center}
-.ctx-switcher-details{position:relative}
-.ctx-switcher-details summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;
-  padding:.15rem .35rem;border-radius:4px;opacity:.5;transition:opacity .15s}
-.ctx-switcher-details summary:hover{opacity:1;background:rgba(255,255,255,.06)}
-.ctx-switcher-details summary::-webkit-details-marker{display:none}
-.ctx-switcher-dropdown{position:absolute;top:100%;left:0;z-index:100;margin-top:.35rem;
-  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);
-  padding:.5rem;min-width:280px;box-shadow:0 8px 24px rgba(0,0,0,.35)}
-.ctx-switcher-item{padding:.5rem .65rem;border-radius:4px}
-.ctx-switcher-item:hover{background:rgba(255,255,255,.04)}
-.ctx-switcher-item .ctx-switcher-name{display:block;font-weight:600;font-size:.8rem;color:var(--text);margin-bottom:.2rem}
-.ctx-switcher-item .ctx-switcher-cmd{display:block;font-size:.7rem;color:var(--text-secondary);
-  padding:.2rem .4rem;background:rgba(255,255,255,.04);border-radius:3px;
-  font-family:var(--mono);user-select:all;cursor:text}
-
-/* ── Footer ──────────────────────────────────────────────────── */
-.footer{padding:2rem 0 1rem;text-align:center;font-size:.75rem;color:var(--text-secondary);
-        border-top:1px solid var(--border);margin-top:3rem}
-
-/* ── Verification ────────────────────────────────────────────── */
-.ver-level{margin-bottom:1.5rem}
-.ver-level-header{display:flex;align-items:center;gap:.75rem;margin-bottom:.75rem}
-.ver-level-title{font-size:1rem;font-weight:600;color:var(--text)}
-.ver-level-arrow{color:var(--text-secondary);font-size:.85rem}
-details.ver-row>summary{cursor:pointer;list-style:none;padding:.6rem .875rem;border-bottom:1px solid var(--border);
-  display:flex;align-items:center;gap:.75rem;transition:background var(--transition)}
-details.ver-row>summary::-webkit-details-marker{display:none}
-details.ver-row>summary:hover{background:rgba(58,134,255,.04)}
-details.ver-row[open]>summary{background:rgba(58,134,255,.04);border-bottom-color:var(--accent)}
-details.ver-row>.ver-detail{padding:1rem 1.5rem;background:rgba(0,0,0,.01);border-bottom:1px solid var(--border)}
-.ver-chevron{transition:transform var(--transition);display:inline-flex;opacity:.4}
-details.ver-row[open] .ver-chevron{transform:rotate(90deg)}
-.ver-steps{width:100%;border-collapse:collapse;font-size:.85rem;margin-top:.5rem}
-.ver-steps th{text-align:left;font-weight:600;font-size:.72rem;text-transform:uppercase;
-  letter-spacing:.04em;color:var(--text-secondary);padding:.4rem .5rem;border-bottom:1px solid var(--border)}
-.ver-steps td{padding:.4rem .5rem;border-bottom:1px solid rgba(0,0,0,.04);vertical-align:top}
-.method-badge{display:inline-flex;padding:.15rem .5rem;border-radius:4px;font-size:.72rem;font-weight:600;
-  background:#e8f4fd;color:#0c5a82}
-
-/* ── Results ─────────────────────────────────────────────────── */
-.result-pass{color:#15713a}.result-fail{color:#c62828}.result-skip{color:#6e6e73}
-.result-error{color:#e67e22}.result-blocked{color:#8b6914}
-.result-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:.35rem}
-.result-dot-pass{background:#15713a}.result-dot-fail{background:#c62828}
-.result-dot-skip{background:#c5c5cd}.result-dot-error{background:#e67e22}.result-dot-blocked{background:#b8860b}
-
-/* ── Diff ────────────────────────────────────────────────────── */
-.diff-added{background:rgba(21,113,58,.08)}
-.diff-removed{background:rgba(198,40,40,.08)}
-.diff-modified{background:rgba(184,134,11,.08)}
-.diff-icon{display:inline-flex;align-items:center;justify-content:center;width:1.5rem;height:1.5rem;
-  border-radius:4px;font-size:.85rem;font-weight:700;flex-shrink:0;margin-right:.35rem}
-.diff-icon-add{background:rgba(21,113,58,.12);color:#15713a}
-.diff-icon-remove{background:rgba(198,40,40,.12);color:#c62828}
-.diff-icon-modify{background:rgba(184,134,11,.12);color:#b8860b}
-.diff-summary{display:flex;gap:1.25rem;padding:.75rem 1rem;border-radius:var(--radius-sm);
-  background:var(--surface);border:1px solid var(--border);margin-bottom:1.25rem;font-size:.9rem;font-weight:600}
-.diff-summary-item{display:flex;align-items:center;gap:.35rem}
-.diff-old{color:#c62828;text-decoration:line-through;font-size:.85rem}
-.diff-new{color:#15713a;font-size:.85rem}
-.diff-arrow{color:var(--text-secondary);margin:0 .25rem;font-size:.8rem}
-details.diff-row>summary{cursor:pointer;list-style:none;padding:.6rem .875rem;border-bottom:1px solid var(--border);
-  display:flex;align-items:center;gap:.5rem;transition:background var(--transition)}
-details.diff-row>summary::-webkit-details-marker{display:none}
-details.diff-row>summary:hover{background:rgba(58,134,255,.04)}
-details.diff-row[open]>summary{background:rgba(184,134,11,.06);border-bottom-color:var(--border)}
-details.diff-row>.diff-detail{padding:.75rem 1.25rem;background:rgba(0,0,0,.01);border-bottom:1px solid var(--border);font-size:.88rem}
-.diff-field{padding:.3rem 0;display:flex;align-items:baseline;gap:.5rem}
-.diff-field-name{font-weight:600;font-size:.8rem;color:var(--text-secondary);min-width:100px;
-  text-transform:uppercase;letter-spacing:.03em}
-
-/* ── Detail actions ──────────────────────────────────────────── */
-.detail-actions{display:flex;gap:.75rem;align-items:center;margin-top:1rem}
-.btn{display:inline-flex;align-items:center;gap:.4rem;padding:.45rem 1rem;border-radius:var(--radius-sm);
-     font-size:.85rem;font-weight:600;font-family:var(--font);text-decoration:none;
-     transition:all var(--transition);cursor:pointer;border:none}
-.btn-primary{background:var(--accent);color:#fff;box-shadow:0 1px 2px rgba(0,0,0,.08)}
-.btn-primary:hover{background:var(--accent-hover);transform:translateY(-1px);color:#fff;text-decoration:none}
-.btn-secondary{background:transparent;color:var(--text-secondary);border:1px solid var(--border)}
-.btn-secondary:hover{background:rgba(0,0,0,.03);color:var(--text);text-decoration:none}
-
-/* ── SVG Viewer (fullscreen / popout / resize) ───────────────── */
-.svg-viewer{position:relative;border:1px solid var(--border);border-radius:6px;overflow:hidden;
-     resize:both;min-height:300px}
-.svg-viewer-toolbar{position:absolute;top:8px;right:8px;z-index:20;display:flex;gap:4px}
-.svg-viewer-toolbar button{background:rgba(0,0,0,0.6);color:#fff;border:1px solid rgba(255,255,255,0.2);
-     border-radius:4px;padding:4px 8px;cursor:pointer;font-size:16px;line-height:1;
-     transition:background var(--transition)}
-.svg-viewer-toolbar button:hover{background:rgba(0,0,0,0.8)}
-.svg-viewer.fullscreen{position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9999;
-     border-radius:0;background:var(--bg);resize:none}
-.svg-viewer.fullscreen .svg-viewer-toolbar{top:16px;right:16px}
-.svg-viewer .graph-container{border:none;border-radius:0}
-.svg-viewer.fullscreen .graph-container{height:100vh;min-height:100vh}
-
-/* ── Graph ────────────────────────────────────────────────────── */
-.graph-container{border-radius:var(--radius);overflow:hidden;background:#fafbfc;cursor:grab;
-     height:calc(100vh - 280px);min-height:400px;position:relative;border:1px solid var(--border)}
-.graph-container:active{cursor:grabbing}
-.graph-container svg{display:block;width:100%;height:100%;position:absolute;top:0;left:0}
-.graph-controls{position:absolute;top:.75rem;right:.75rem;display:flex;flex-direction:column;gap:.35rem;z-index:10}
-.graph-controls button{width:34px;height:34px;border:1px solid var(--border);border-radius:var(--radius-sm);
-     background:var(--surface);font-size:1rem;cursor:pointer;display:flex;align-items:center;
-     justify-content:center;box-shadow:var(--shadow);color:var(--text);
-     transition:all var(--transition)}
-.graph-controls button:hover{background:#f0f0f3;box-shadow:var(--shadow-md)}
-.graph-controls button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.graph-legend{display:flex;flex-wrap:wrap;gap:.75rem;padding:.75rem 0 .25rem;font-size:.82rem}
-.graph-legend-item{display:flex;align-items:center;gap:.35rem;color:var(--text-secondary)}
-.graph-legend-swatch{width:12px;height:12px;border-radius:3px;flex-shrink:0}
-
-/* ── Filter grid ──────────────────────────────────────────────── */
-.filter-grid{display:flex;flex-wrap:wrap;gap:.6rem;margin-bottom:.75rem}
-.filter-grid label{font-size:.8rem;display:flex;align-items:center;gap:.3rem;
-                   color:var(--text-secondary);cursor:pointer;padding:.2rem .45rem;
-                   border-radius:4px;transition:background var(--transition);
-                   text-transform:none;letter-spacing:0;font-weight:500}
-.filter-grid label:hover{background:rgba(58,134,255,.06)}
-.filter-grid input[type="checkbox"]{margin:0;accent-color:var(--accent);width:14px;height:14px;
-                                    cursor:pointer;border-radius:3px}
-
-/* ── Document styles ──────────────────────────────────────────── */
-.doc-body{line-height:1.8;font-size:.95rem}
-.doc-body h1{font-size:1.4rem;font-weight:700;margin:2rem 0 .75rem;color:var(--text);
-             border-bottom:2px solid var(--border);padding-bottom:.5rem}
-.doc-body h2{font-size:1.2rem;font-weight:600;margin:1.5rem 0 .5rem;color:var(--text)}
-.doc-body h3{font-size:1.05rem;font-weight:600;margin:1.25rem 0 .4rem;color:var(--text-secondary)}
-.doc-body p{margin:.5rem 0}
-.doc-body ul{margin:.5rem 0 .5rem 1.5rem}
-.doc-body li{margin:.2rem 0}
-.doc-body img{border-radius:6px;margin:.75rem 0;box-shadow:0 2px 8px rgba(0,0,0,.1)}
-.doc-body pre.mermaid{background:transparent;border:1px solid var(--border);border-radius:6px;padding:1rem;text-align:center}
-.artifact-ref{display:inline-flex;align-items:center;padding:.15rem .5rem;border-radius:5px;
-     font-size:.8rem;font-weight:600;font-family:var(--mono);background:#edf2ff;
-     color:#3a63c7;cursor:pointer;text-decoration:none;
-     border:1px solid #d4def5;transition:all var(--transition)}
-.artifact-ref:hover{background:#d4def5;text-decoration:none;transform:translateY(-1px);box-shadow:0 2px 4px rgba(0,0,0,.06)}
-.artifact-ref.broken{background:#fde8e8;color:#c62828;border-color:#f4c7c3;cursor:default}
-.artifact-ref.broken:hover{transform:none;box-shadow:none}
-/* ── Artifact hover preview ────────────────────────────────── */
-.art-tooltip{position:absolute;z-index:1000;pointer-events:none;
-  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
-  box-shadow:var(--shadow-lg);padding:0;max-width:340px;min-width:220px;
-  opacity:0;transition:opacity 120ms ease-in}
-.art-tooltip.visible{opacity:1;pointer-events:auto}
-.art-preview{padding:.75rem .85rem;font-size:.82rem;line-height:1.45}
-.art-preview-header{display:flex;align-items:center;gap:.4rem;margin-bottom:.3rem}
-.art-preview-title{font-weight:600;font-size:.85rem;margin-bottom:.3rem;color:var(--text)}
-.art-preview-desc{color:var(--text-secondary);font-size:.78rem;line-height:1.4;margin-top:.3rem;
-  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
-.art-preview-links{font-size:.72rem;color:var(--text-secondary);margin-top:.35rem;font-family:var(--mono)}
-.art-preview-tags{margin-top:.35rem;display:flex;flex-wrap:wrap;gap:.25rem}
-.art-preview-tag{font-size:.65rem;padding:.1rem .35rem;border-radius:3px;
-  background:rgba(58,134,255,.08);color:var(--accent);font-family:var(--mono)}
-.doc-glossary{font-size:.9rem}
-.doc-glossary dt{font-weight:600;color:var(--text)}
-.doc-glossary dd{margin:0 0 .5rem 1rem;color:var(--text-secondary)}
-.doc-toc{font-size:.88rem;background:var(--surface);border:1px solid var(--border);
-         border-radius:var(--radius);padding:1rem 1.25rem;margin-bottom:1.25rem;
-         box-shadow:var(--shadow)}
-.doc-toc strong{font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-secondary)}
-.doc-toc ul{list-style:none;margin:.5rem 0 0;padding:0}
-.doc-toc li{margin:.2rem 0;color:var(--text-secondary)}
-.doc-toc .toc-h2{padding-left:0}
-.doc-toc .toc-h3{padding-left:1.25rem}
-.doc-toc .toc-h4{padding-left:2.5rem}
-.doc-meta{display:flex;gap:.75rem;flex-wrap:wrap;align-items:center;margin-bottom:1.25rem}
-
-/* ── Source viewer ────────────────────────────────────────────── */
-.source-tree{font-family:var(--mono);font-size:.85rem;line-height:1.8}
-.source-tree ul{list-style:none;margin:0;padding:0}
-.source-tree li{margin:0}
-.source-tree .tree-item{display:flex;align-items:center;gap:.4rem;padding:.2rem .5rem;border-radius:var(--radius-sm);
-  transition:background var(--transition);color:var(--text)}
-.source-tree .tree-item:hover{background:rgba(58,134,255,.06);text-decoration:none}
-.source-tree .tree-icon{display:inline-flex;width:1rem;height:1rem;align-items:center;justify-content:center;flex-shrink:0;opacity:.55}
-.source-tree .indent{display:inline-block;width:1.25rem;flex-shrink:0}
-.source-viewer{font-family:var(--mono);font-size:.82rem;line-height:1.7;overflow-x:auto;
-  background:#fafbfc;border:1px solid var(--border);border-radius:var(--radius);padding:0}
-.source-viewer table{width:100%;border-collapse:collapse;margin:0}
-.source-viewer table td{padding:0;border:none;vertical-align:top}
-.source-viewer table tr:hover{background:rgba(58,134,255,.04)}
-.source-line{display:table-row}
-.source-line .line-no{display:table-cell;width:3.5rem;min-width:3.5rem;padding:.05rem .75rem .05rem .5rem;
-  text-align:right;color:#b0b0b8;user-select:none;border-right:1px solid var(--border);background:#f5f5f7}
-.source-line .line-content{display:table-cell;padding:.05rem .75rem;white-space:pre;tab-size:4}
-.source-line-highlight{background:rgba(58,134,255,.08) !important}
-.source-line-highlight .line-no{background:rgba(58,134,255,.12);color:var(--accent);font-weight:600}
-.source-line:target{background:rgba(255,210,50,.18) !important}
-.source-line:target .line-no{background:rgba(255,210,50,.25);color:#9a6700;font-weight:700}
-.source-line .line-no a{color:inherit;text-decoration:none}
-.source-line .line-no a:hover{color:var(--accent);text-decoration:underline}
-/* ── Syntax highlighting tokens ─────────────────────────────── */
-.hl-key{color:#0550ae}.hl-str{color:#0a3069}.hl-num{color:#0550ae}
-.hl-bool{color:#cf222e;font-weight:600}.hl-null{color:#cf222e;font-style:italic}
-.hl-comment{color:#6e7781;font-style:italic}.hl-tag{color:#6639ba}
-.hl-anchor{color:#953800}.hl-type{color:#8250df}.hl-kw{color:#cf222e;font-weight:600}
-.hl-fn{color:#8250df}.hl-macro{color:#0550ae;font-weight:600}
-.hl-attr{color:#116329}.hl-punct{color:#6e7781}
-.hl-sh-cmd{color:#0550ae;font-weight:600}.hl-sh-flag{color:#953800}
-.hl-sh-pipe{color:#cf222e;font-weight:700}
-.source-ref-link{color:var(--accent);text-decoration:none;font-family:var(--mono);font-size:.85em}
-.source-ref-link:hover{text-decoration:underline}
-.source-breadcrumb{display:flex;align-items:center;gap:.4rem;font-size:.85rem;color:var(--text-secondary);
-  margin-bottom:1rem;flex-wrap:wrap}
-.source-breadcrumb a{color:var(--accent);font-weight:500}
-.source-breadcrumb .sep{opacity:.35;margin:0 .1rem}
-.source-meta{display:flex;gap:1.5rem;font-size:.8rem;color:var(--text-secondary);margin-bottom:1rem}
-.source-meta .meta-item{display:flex;align-items:center;gap:.35rem}
-.source-refs{margin-top:1.25rem}
-.source-refs h3{font-size:.95rem;margin-bottom:.5rem}
-
-/* ── STPA tree ───────────────────────────────────────────────── */
-.stpa-tree{margin-top:1.25rem}
-.stpa-level{padding-left:1.5rem;border-left:2px solid var(--border);margin-left:.5rem}
-.stpa-node{display:flex;align-items:center;gap:.5rem;padding:.35rem 0;font-size:.9rem}
-.stpa-node a{font-family:var(--mono);font-size:.82rem;font-weight:500}
-.stpa-link-label{display:inline-block;padding:.1rem .4rem;border-radius:4px;font-size:.68rem;
-  font-family:var(--mono);background:rgba(58,134,255,.08);color:var(--accent);font-weight:500;
-  margin-right:.35rem;white-space:nowrap}
-details.stpa-details>summary{cursor:pointer;list-style:none;padding:.4rem .5rem;border-radius:var(--radius-sm);
-  display:flex;align-items:center;gap:.5rem;transition:background var(--transition);font-size:.9rem}
-details.stpa-details>summary::-webkit-details-marker{display:none}
-details.stpa-details>summary:hover{background:rgba(58,134,255,.04)}
-details.stpa-details>summary .stpa-chevron{transition:transform var(--transition);display:inline-flex;opacity:.4;font-size:.7rem}
-details.stpa-details[open]>summary .stpa-chevron{transform:rotate(90deg)}
-.stpa-uca-table{width:100%;border-collapse:collapse;font-size:.88rem;margin-top:.75rem}
-.stpa-uca-table th{font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;
-  color:var(--text-secondary);padding:.5rem .75rem;border-bottom:2px solid var(--border)}
-.stpa-uca-table td{padding:.55rem .75rem;border-bottom:1px solid var(--border);vertical-align:top}
-.stpa-uca-table tbody tr:hover{background:rgba(58,134,255,.04)}
-.uca-type-badge{display:inline-flex;padding:.15rem .5rem;border-radius:4px;font-size:.72rem;font-weight:600;white-space:nowrap}
-.uca-type-not-providing{background:#fee;color:#c62828}
-.uca-type-providing{background:#fff3e0;color:#e65100}
-.uca-type-too-early-too-late{background:#e8f4fd;color:#0c5a82}
-.uca-type-stopped-too-soon{background:#f3e5f5;color:#6a1b9a}
-
-/* ── Traceability explorer ──────────────────────────────────────── */
-.trace-matrix{border-collapse:collapse;font-size:.8rem;margin-bottom:1.5rem;width:100%}
-.trace-matrix th{font-weight:600;font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;
-  color:var(--text-secondary);padding:.45rem .6rem;border-bottom:2px solid var(--border);white-space:nowrap}
-.trace-matrix td{padding:.35rem .6rem;border-bottom:1px solid var(--border);text-align:center}
-.trace-matrix td:first-child{text-align:left;font-family:var(--mono);font-size:.78rem;font-weight:500}
-.trace-matrix tbody tr:hover{background:rgba(58,134,255,.04)}
-.trace-cell{display:inline-flex;align-items:center;justify-content:center;width:28px;height:22px;
-  border-radius:4px;font-size:.75rem;font-weight:700;font-variant-numeric:tabular-nums}
-.trace-cell-ok{background:rgba(21,113,58,.1);color:#15713a}
-.trace-cell-gap{background:rgba(198,40,40,.1);color:#c62828}
-.trace-tree{margin-top:1rem}
-.trace-node{display:flex;align-items:center;gap:.5rem;padding:.4rem .6rem;border-radius:var(--radius-sm);
-  transition:background var(--transition);font-size:.88rem}
-.trace-node:hover{background:rgba(58,134,255,.04)}
-.trace-node a{font-family:var(--mono);font-size:.82rem;font-weight:500}
-.trace-edge{display:inline-block;padding:.1rem .4rem;border-radius:4px;font-size:.68rem;
-  font-family:var(--mono);background:rgba(58,134,255,.08);color:var(--accent);font-weight:500;
-  margin-right:.35rem;white-space:nowrap}
-.trace-level{padding-left:1.5rem;border-left:2px solid var(--border);margin-left:.5rem}
-details.trace-details>summary{cursor:pointer;list-style:none;padding:.4rem .5rem;border-radius:var(--radius-sm);
-  display:flex;align-items:center;gap:.5rem;transition:background var(--transition);font-size:.88rem}
-details.trace-details>summary::-webkit-details-marker{display:none}
-details.trace-details>summary:hover{background:rgba(58,134,255,.04)}
-details.trace-details>summary .trace-chevron{transition:transform var(--transition);display:inline-flex;opacity:.4;font-size:.7rem}
-details.trace-details[open]>summary .trace-chevron{transform:rotate(90deg)}
-.trace-history{margin:.35rem 0 .5rem 1.5rem;padding:.5rem .75rem;background:rgba(0,0,0,.015);
-  border-radius:var(--radius-sm);border:1px solid var(--border);font-size:.8rem}
-.trace-history-title{font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;
-  color:var(--text-secondary);margin-bottom:.35rem}
-.trace-history-item{display:flex;align-items:baseline;gap:.5rem;padding:.15rem 0;color:var(--text-secondary)}
-.trace-history-item code{font-size:.75rem;color:var(--accent);font-weight:500}
-.trace-history-item .hist-date{font-size:.72rem;color:var(--text-secondary);opacity:.7;min-width:70px}
-.trace-history-item .hist-msg{font-size:.78rem;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.trace-status{display:inline-flex;padding:.12rem .4rem;border-radius:4px;font-size:.68rem;font-weight:600;
-  margin-left:.25rem}
-.trace-status-approved{background:rgba(21,113,58,.1);color:#15713a}
-.trace-status-draft{background:rgba(184,134,11,.1);color:#b8860b}
-
-/* ── Artifact embedding in docs ────────────────────────────────── */
-.artifact-embed{margin:.75rem 0;padding:.75rem 1rem;background:var(--card-bg);border:1px solid var(--border);
-  border-radius:var(--radius);border-left:3px solid var(--accent)}
-.artifact-embed-header{display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem}
-.artifact-embed-header .artifact-ref{font-family:var(--mono);font-size:.85rem;font-weight:600}
-.artifact-embed-title{font-weight:600;font-size:.92rem;color:var(--text)}
-.artifact-embed-desc{font-size:.82rem;color:var(--text-secondary);margin-top:.25rem;line-height:1.5}
-
-/* ── Rendered markdown in descriptions ─────────────────────────── */
-.artifact-desc p{margin:.3em 0}
-.artifact-desc ul,.artifact-desc ol{margin:.3em 0;padding-left:1.5em}
-.artifact-desc code{background:rgba(255,255,255,.1);padding:.1em .3em;border-radius:3px;font-size:.9em}
-.artifact-desc pre{background:rgba(0,0,0,.3);padding:.5em;border-radius:4px;overflow-x:auto}
-.artifact-desc pre code{background:none;padding:0}
-.artifact-desc table{border-collapse:collapse;margin:.5em 0}
-.artifact-desc table td,.artifact-desc table th{border:1px solid var(--border);padding:.3em .6em}
-.artifact-desc del{opacity:.6}
-.artifact-desc blockquote{border-left:3px solid var(--border);margin:.5em 0;padding-left:.8em;opacity:.85}
-.artifact-embed-desc p{margin:.2em 0}
-.artifact-embed-desc code{background:rgba(255,255,255,.1);padding:.1em .2em;border-radius:2px;font-size:.9em}
-
-/* ── Diagram in artifact detail ────────────────────────────────── */
-.artifact-diagram{margin:1rem 0}
-.artifact-diagram .mermaid{background:var(--card-bg);padding:1rem;border-radius:var(--radius);
-  border:1px solid var(--border)}
-
-/* ── AADL SVG style overrides (match etch) ────────────────────── */
-.aadl-viewport svg text{font-family:system-ui,-apple-system,BlinkMacSystemFont,sans-serif !important;
-  font-size:12px !important}
-.aadl-viewport svg rect,.aadl-viewport svg polygon{rx:6;ry:6}
-.aadl-viewport svg .node rect{stroke-width:1.5px;filter:drop-shadow(0 1px 3px rgba(0,0,0,.1))}
-.aadl-viewport svg .edge path,.aadl-viewport svg .edge line{stroke:#888 !important;stroke-width:1.2px}
-.aadl-viewport svg .edge polygon{fill:#888 !important;stroke:#888 !important}
-
-/* ── Scrollbar (subtle) ───────────────────────────────────────── */
-::-webkit-scrollbar{width:6px;height:6px}
-::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:#c5c5cd;border-radius:3px}
-::-webkit-scrollbar-thumb:hover{background:#a0a0aa}
-
-/* ── Selection ────────────────────────────────────────────────── */
-::selection{background:rgba(58,134,255,.18)}
-
-/* ── Cmd+K search modal ──────────────────────────────────────── */
-.cmd-k-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(4px);
-  z-index:10000;display:none;align-items:flex-start;justify-content:center;padding-top:min(20vh,160px)}
-.cmd-k-overlay.open{display:flex}
-.cmd-k-modal{background:var(--sidebar);border-radius:12px;width:100%;max-width:600px;
-  box-shadow:0 16px 70px rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.08);
-  overflow:hidden;display:flex;flex-direction:column;max-height:min(70vh,520px)}
-.cmd-k-input{width:100%;padding:.875rem 1rem .875rem 2.75rem;font-size:1rem;font-family:var(--font);
-  background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,.08);
-  color:#fff;outline:none;caret-color:var(--accent)}
-.cmd-k-input::placeholder{color:rgba(255,255,255,.35)}
-.cmd-k-icon{position:absolute;left:1rem;top:.95rem;color:rgba(255,255,255,.35);pointer-events:none;
-  font-size:.95rem}
-.cmd-k-head{position:relative}
-.cmd-k-results{overflow-y:auto;padding:.5rem 0;flex:1}
-.cmd-k-empty{padding:1.5rem 1rem;text-align:center;color:rgba(255,255,255,.35);font-size:.9rem}
-.cmd-k-group{padding:0 .5rem}
-.cmd-k-group-label{font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;
-  color:rgba(255,255,255,.3);padding:.5rem .625rem .25rem}
-.cmd-k-item{display:flex;align-items:center;gap:.75rem;padding:.5rem .625rem;border-radius:var(--radius-sm);
-  cursor:pointer;color:var(--sidebar-text);font-size:.88rem;transition:background 80ms ease}
-.cmd-k-item:hover,.cmd-k-item.active{background:rgba(255,255,255,.08);color:#fff}
-.cmd-k-item-icon{width:1.5rem;height:1.5rem;border-radius:4px;display:flex;align-items:center;
-  justify-content:center;font-size:.7rem;flex-shrink:0;background:rgba(255,255,255,.06);color:rgba(255,255,255,.5)}
-.cmd-k-item-body{flex:1;min-width:0}
-.cmd-k-item-title{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cmd-k-item-title mark{background:transparent;color:var(--accent);font-weight:700}
-.cmd-k-item-meta{font-size:.75rem;color:rgba(255,255,255,.35);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cmd-k-item-meta mark{background:transparent;color:var(--accent);font-weight:600}
-.cmd-k-item-field{font-size:.65rem;padding:.1rem .35rem;border-radius:3px;
-  background:rgba(255,255,255,.06);color:rgba(255,255,255,.4);white-space:nowrap;flex-shrink:0}
-.cmd-k-kbd{display:inline-flex;align-items:center;gap:.2rem;font-size:.7rem;font-family:var(--mono);
-  padding:.15rem .4rem;border-radius:4px;background:rgba(255,255,255,.08);color:rgba(255,255,255,.4);
-  border:1px solid rgba(255,255,255,.06)}
-.nav-search-hint{display:flex;align-items:center;justify-content:space-between;padding:.5rem .75rem;
-  margin-top:auto;border-top:1px solid rgba(255,255,255,.06);padding-top:1rem;
-  color:var(--sidebar-text);font-size:.82rem;cursor:pointer;border-radius:var(--radius-sm);
-  transition:all var(--transition)}
-.nav-search-hint:hover{background:var(--sidebar-hover);color:var(--sidebar-active)}
-.aadl-diagram{background:var(--card-bg);border:1px solid var(--border);border-radius:8px;
-  margin:1.5rem 0;overflow:hidden;position:relative}
-.aadl-diagram .aadl-caption{display:flex;align-items:center;justify-content:space-between;
-  padding:.5rem 1rem;border-bottom:1px solid var(--border);background:var(--nav-bg);
-  font-size:.82rem;color:var(--text-secondary)}
-.aadl-caption .aadl-title{font-weight:600;color:var(--text);font-family:var(--mono);font-size:.85rem}
-.aadl-caption .aadl-badge{display:inline-block;padding:.1rem .5rem;border-radius:var(--radius-sm);
-  background:var(--primary);color:#fff;font-size:.72rem;font-weight:600;letter-spacing:.02em}
-.aadl-controls{display:flex;gap:.25rem}
-.aadl-controls button{background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius-sm);
-  width:1.7rem;height:1.7rem;cursor:pointer;font-size:.85rem;line-height:1;display:flex;
-  align-items:center;justify-content:center;color:var(--text-secondary);transition:all .15s}
-.aadl-controls button:hover{background:var(--primary);color:#fff;border-color:var(--primary)}
-.aadl-viewport{overflow:hidden;cursor:grab;min-height:300px;position:relative;background:var(--body-bg)}
-.aadl-viewport.grabbing{cursor:grabbing}
-.aadl-viewport svg{transform-origin:0 0;position:absolute;top:0;left:0}
-.aadl-viewport svg .node rect,.aadl-viewport svg .node polygon,.aadl-viewport svg .node path,.aadl-viewport svg .node ellipse{filter:drop-shadow(0 1px 2px rgba(0,0,0,.08))}
-.aadl-viewport svg .node text{font-family:system-ui,-apple-system,sans-serif}
-.aadl-viewport svg .edge path{stroke-dasharray:none}
-.aadl-loading{color:var(--text-secondary);font-style:italic;padding:2rem;text-align:center}
-.aadl-error{color:var(--danger);font-style:italic;padding:1rem}
-.aadl-analysis{border-top:1px solid var(--border);max-height:220px;overflow-y:auto;font-size:.78rem}
-.aadl-analysis-header{display:flex;align-items:center;gap:.5rem;padding:.4rem 1rem;
-  background:var(--nav-bg);font-weight:600;font-size:.75rem;color:var(--text-secondary);
-  position:sticky;top:0;z-index:1;border-bottom:1px solid var(--border)}
-.aadl-analysis-header .badge-count{display:inline-flex;align-items:center;justify-content:center;
-  min-width:1.3rem;height:1.3rem;border-radius:99px;font-size:.65rem;font-weight:700;padding:0 .3rem}
-.badge-error{background:var(--danger);color:#fff}
-.badge-warning{background:#e8a735;color:#fff}
-.badge-info{background:var(--primary);color:#fff}
-.aadl-diag{display:flex;align-items:baseline;gap:.5rem;padding:.3rem 1rem;border-bottom:1px solid var(--border)}
-.aadl-diag:last-child{border-bottom:none}
-.aadl-diag:hover{background:rgba(0,0,0,.03)}
-.aadl-diag .sev{flex-shrink:0;font-size:.65rem;font-weight:700;text-transform:uppercase;
-  padding:.1rem .35rem;border-radius:var(--radius-sm);letter-spacing:.03em}
-.sev-error{background:#fde8e8;color:var(--danger)}
-.sev-warning{background:#fef3cd;color:#856404}
-.sev-info{background:#d1ecf1;color:#0c5460}
-.aadl-diag .diag-path{color:var(--text-secondary);font-family:var(--mono);font-size:.72rem;flex-shrink:0}
-.aadl-diag .diag-msg{color:var(--text);flex:1}
-.aadl-diag .diag-analysis{color:var(--text-secondary);font-size:.68rem;opacity:.7;flex-shrink:0}
-
-/* ── Sortable table headers ──────────────────────────────── */
-table.sortable th{cursor:pointer;user-select:none}
-table.sortable th:hover{color:var(--text)}
-
-/* ── Facet sidebar (artifact tag filtering) ──────────────── */
-.artifacts-layout{display:flex;gap:1.5rem;align-items:flex-start}
-.artifacts-main{flex:1;min-width:0}
-.facet-sidebar{width:220px;flex-shrink:0;background:var(--surface);border:1px solid var(--border);
-  border-radius:var(--radius);padding:1rem;position:sticky;top:1rem;max-height:calc(100vh - 4rem);overflow-y:auto}
-.facet-sidebar h3{font-size:.8rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;
-  color:var(--text-secondary);margin:0 0 .75rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)}
-.facet-list{display:flex;flex-direction:column;gap:.35rem}
-.facet-item{display:flex;align-items:center;gap:.4rem;font-size:.82rem;color:var(--text);
-  cursor:pointer;padding:.2rem .35rem;border-radius:4px;transition:background var(--transition)}
-.facet-item:hover{background:rgba(58,134,255,.06)}
-.facet-item input[type="checkbox"]{margin:0;accent-color:var(--accent);width:14px;height:14px;cursor:pointer}
-.facet-item .facet-count{margin-left:auto;font-size:.72rem;color:var(--text-secondary);
-  font-variant-numeric:tabular-nums;font-family:var(--mono)}
-
-/* ── Group-by header rows ────────────────────────────────── */
-.group-header-row td{background:rgba(58,134,255,.06);font-weight:600;font-size:.85rem;
-  color:var(--text);padding:.5rem .875rem;border-bottom:2px solid var(--border);letter-spacing:.02em}
-
-/* ── Document tree hierarchy ─────────────────────────────── */
-.doc-tree{margin-bottom:1.5rem}
-.doc-tree details{margin-bottom:.25rem}
-.doc-tree summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:.5rem;
-  padding:.5rem .75rem;border-radius:var(--radius-sm);font-weight:600;font-size:.9rem;
-  color:var(--text);transition:background var(--transition)}
-.doc-tree summary::-webkit-details-marker{display:none}
-.doc-tree summary:hover{background:rgba(58,134,255,.04)}
-.doc-tree summary .tree-chevron{transition:transform var(--transition);display:inline-flex;opacity:.4;font-size:.7rem}
-.doc-tree details[open]>summary .tree-chevron{transform:rotate(90deg)}
-.doc-tree summary .tree-count{font-size:.75rem;color:var(--text-secondary);font-weight:500;
-  font-variant-numeric:tabular-nums;margin-left:.25rem}
-.doc-tree ul{list-style:none;padding:0 0 0 1.5rem;margin:.25rem 0}
-.doc-tree li{margin:.15rem 0}
-.doc-tree li a{display:flex;align-items:center;gap:.5rem;padding:.35rem .75rem;border-radius:var(--radius-sm);
-  font-size:.88rem;color:var(--text);transition:background var(--transition);text-decoration:none}
-.doc-tree li a:hover{background:rgba(58,134,255,.04)}
-.doc-tree .doc-tree-id{font-family:var(--mono);font-size:.8rem;font-weight:500;color:var(--accent)}
-.doc-tree .doc-tree-status{font-size:.72rem}
-
-/* ── Matrix cell drill-down ──────────────────────────────── */
-.matrix-cell-clickable{cursor:pointer;transition:background var(--transition)}
-.matrix-cell-clickable:hover{background:rgba(58,134,255,.08)}
-.cell-detail{font-size:.82rem}
-.cell-detail ul{list-style:none;padding:.5rem;margin:0}
-.cell-detail li{padding:.25rem .5rem;border-bottom:1px solid var(--border)}
-.cell-detail li:last-child{border-bottom:none}
-"#;
-
-// ── Pan/zoom JS ──────────────────────────────────────────────────────────
-
-const GRAPH_JS: &str = r#"
-<script>
-(function(){
-  // ── Loading bar ──────────────────────────────────────────
-  var bar=document.getElementById('loading-bar');
-  if(bar){
-    document.body.addEventListener('htmx:beforeRequest',function(){
-      bar.classList.remove('done');
-      bar.style.width='0';
-      void bar.offsetWidth;
-      bar.classList.add('active');
-    });
-    document.body.addEventListener('htmx:afterRequest',function(){
-      bar.classList.remove('active');
-      bar.classList.add('done');
-      bar.style.width='100%';
-      setTimeout(function(){bar.classList.remove('done');bar.style.width='0'},400);
-    });
-  }
-
-  // ── Nav active state ─────────────────────────────────────
-  function setActiveNav(url){
-    document.querySelectorAll('nav a[hx-get]').forEach(function(a){
-      var href=a.getAttribute('hx-get');
-      if(url===href || (href!=='/' && url.startsWith(href))){
-        a.classList.add('active');
-      } else {
-        a.classList.remove('active');
-      }
-    });
-  }
-  document.body.addEventListener('htmx:afterRequest',function(e){
-    var path=e.detail.pathInfo&&e.detail.pathInfo.requestPath;
-    if(path) setActiveNav(path);
-  });
-  // Set initial active state
-  document.addEventListener('DOMContentLoaded',function(){
-    var p=window.location.pathname;
-    if(p==='/'||p==='') p='/stats';
-    setActiveNav(p);
-  });
-
-  // ── Browser back/forward ─────────────────────────────────
-  window.addEventListener('popstate',function(){
-    var p=window.location.pathname;
-    if(p==='/'||p==='') p='/stats';
-    setActiveNav(p);
-    htmx.ajax('GET',p,'#content');
-  });
-
-  // ── Source line anchor scroll ────────────────────────────
-  function scrollToLineAnchor(){
-    var h=window.location.hash;
-    if(h&&h.match(/^#L\d+$/)){
-      var el=document.getElementById(h.substring(1));
-      if(el){el.scrollIntoView({behavior:'smooth',block:'center'});}
-    }
-  }
-  document.body.addEventListener('htmx:afterSwap',scrollToLineAnchor);
-  document.addEventListener('DOMContentLoaded',scrollToLineAnchor);
-
-  // ── Pan/zoom ─────────────────────────────────────────────
-  document.addEventListener('htmx:afterSwap', initPanZoom);
-  document.addEventListener('DOMContentLoaded', initPanZoom);
-
-  function initPanZoom(){
-    document.querySelectorAll('.graph-container').forEach(function(c){
-      if(c._pz) return;
-      c._pz=true;
-      var svg=c.querySelector('svg');
-      if(!svg) return;
-      var vb=svg.viewBox.baseVal;
-      var origVB={x:vb.x, y:vb.y, w:vb.width, h:vb.height};
-      var drag=false, sx=0, sy=0, ox=0, oy=0;
-
-      // Pan (mousedown only — move/up handled in node-drag block)
-      c.addEventListener('mousedown',function(e){
-        if(e.target.closest('.graph-controls')) return;
-        if(e.target.closest('.node')) return; // let node drag handle it
-        drag=true; sx=e.clientX; sy=e.clientY;
-        ox=vb.x; oy=vb.y; e.preventDefault();
-      });
-      c.addEventListener('mouseleave',function(){ drag=false; });
-
-      // Zoom with wheel
-      c.addEventListener('wheel',function(e){
-        e.preventDefault();
-        var f=e.deltaY>0?1.12:1/1.12;
-        var r=c.getBoundingClientRect();
-        var mx=(e.clientX-r.left)/r.width;
-        var my=(e.clientY-r.top)/r.height;
-        var nx=vb.width*f, ny=vb.height*f;
-        vb.x+=(vb.width-nx)*mx;
-        vb.y+=(vb.height-ny)*my;
-        vb.width=nx; vb.height=ny;
-      },{passive:false});
-
-      // Touch support
-      var lastDist=0, lastMid=null;
-      c.addEventListener('touchstart',function(e){
-        if(e.touches.length===1){
-          drag=true; sx=e.touches[0].clientX; sy=e.touches[0].clientY;
-          ox=vb.x; oy=vb.y;
-        } else if(e.touches.length===2){
-          drag=false;
-          var dx=e.touches[1].clientX-e.touches[0].clientX;
-          var dy=e.touches[1].clientY-e.touches[0].clientY;
-          lastDist=Math.sqrt(dx*dx+dy*dy);
-          lastMid={x:(e.touches[0].clientX+e.touches[1].clientX)/2,
-                   y:(e.touches[0].clientY+e.touches[1].clientY)/2};
-        }
-      },{passive:true});
-      c.addEventListener('touchmove',function(e){
-        if(e.touches.length===1 && drag){
-          e.preventDefault();
-          var scale=vb.width/c.clientWidth;
-          vb.x=ox-(e.touches[0].clientX-sx)*scale;
-          vb.y=oy-(e.touches[0].clientY-sy)*scale;
-        } else if(e.touches.length===2){
-          e.preventDefault();
-          var dx=e.touches[1].clientX-e.touches[0].clientX;
-          var dy=e.touches[1].clientY-e.touches[0].clientY;
-          var dist=Math.sqrt(dx*dx+dy*dy);
-          var f=lastDist/dist;
-          var r=c.getBoundingClientRect();
-          var mid={x:(e.touches[0].clientX+e.touches[1].clientX)/2,
-                   y:(e.touches[0].clientY+e.touches[1].clientY)/2};
-          var mx=(mid.x-r.left)/r.width;
-          var my=(mid.y-r.top)/r.height;
-          var nx=vb.width*f, ny=vb.height*f;
-          vb.x+=(vb.width-nx)*mx;
-          vb.y+=(vb.height-ny)*my;
-          vb.width=nx; vb.height=ny;
-          lastDist=dist; lastMid=mid;
-        }
-      },{passive:false});
-      c.addEventListener('touchend',function(){ drag=false; lastDist=0; });
-
-      // Zoom buttons
-      var controls=c.querySelector('.graph-controls');
-      if(controls){
-        controls.querySelector('.zoom-in').addEventListener('click',function(){
-          var cx=vb.x+vb.width/2, cy=vb.y+vb.height/2;
-          vb.width/=1.3; vb.height/=1.3;
-          vb.x=cx-vb.width/2; vb.y=cy-vb.height/2;
-        });
-        controls.querySelector('.zoom-out').addEventListener('click',function(){
-          var cx=vb.x+vb.width/2, cy=vb.y+vb.height/2;
-          vb.width*=1.3; vb.height*=1.3;
-          vb.x=cx-vb.width/2; vb.y=cy-vb.height/2;
-        });
-        controls.querySelector('.zoom-fit').addEventListener('click',function(){
-          vb.x=origVB.x; vb.y=origVB.y; vb.width=origVB.w; vb.height=origVB.h;
-        });
-      }
-
-      // ── Node dragging + click ──────────────────────────────
-      var dragNode=null, dnSX=0, dnSY=0, dnOX=0, dnOY=0, dnMoved=false;
-      var nodeOffsets={}; // id -> {dx,dy}
-
-      function getNodeCenter(node){
-        var r=node.querySelector('rect');
-        if(!r) return {x:0,y:0};
-        var x=parseFloat(r.getAttribute('x'))||0;
-        var y=parseFloat(r.getAttribute('y'))||0;
-        var w=parseFloat(r.getAttribute('width'))||0;
-        var h=parseFloat(r.getAttribute('height'))||0;
-        var id=node.getAttribute('data-id')||'';
-        var off=nodeOffsets[id]||{dx:0,dy:0};
-        return {x:x+w/2+off.dx, y:y+h/2+off.dy};
-      }
-
-      function updateEdges(){
-        svg.querySelectorAll('.edge').forEach(function(edge){
-          var src=edge.getAttribute('data-source');
-          var tgt=edge.getAttribute('data-target');
-          var srcOff=nodeOffsets[src]||{dx:0,dy:0};
-          var tgtOff=nodeOffsets[tgt]||{dx:0,dy:0};
-          var path=edge.querySelector('path');
-          if(!path) return;
-          var origD=path.getAttribute('data-orig-d');
-          if(!origD){ origD=path.getAttribute('d'); path.setAttribute('data-orig-d',origD); }
-          // Parse path points and offset them
-          var newD=offsetPath(origD,srcOff,tgtOff);
-          path.setAttribute('d',newD);
-          // Move label
-          var lbg=edge.querySelector('.label-bg');
-          var ltxt=edge.querySelector('text');
-          if(lbg){
-            var ox=lbg.getAttribute('data-orig-x');
-            if(!ox){ ox=lbg.getAttribute('x'); lbg.setAttribute('data-orig-x',ox);
-                     var oy=lbg.getAttribute('y'); lbg.setAttribute('data-orig-y',oy); }
-            var avgDx=(srcOff.dx+tgtOff.dx)/2;
-            var avgDy=(srcOff.dy+tgtOff.dy)/2;
-            lbg.setAttribute('x',parseFloat(lbg.getAttribute('data-orig-x'))+avgDx);
-            lbg.setAttribute('y',parseFloat(lbg.getAttribute('data-orig-y'))+avgDy);
-          }
-          if(ltxt){
-            var otx=ltxt.getAttribute('data-orig-x');
-            if(!otx){ otx=ltxt.getAttribute('x'); ltxt.setAttribute('data-orig-x',otx);
-                      var oty=ltxt.getAttribute('y'); ltxt.setAttribute('data-orig-y',oty); }
-            var avgDx2=(srcOff.dx+tgtOff.dx)/2;
-            var avgDy2=(srcOff.dy+tgtOff.dy)/2;
-            ltxt.setAttribute('x',parseFloat(ltxt.getAttribute('data-orig-x'))+avgDx2);
-            ltxt.setAttribute('y',parseFloat(ltxt.getAttribute('data-orig-y'))+avgDy2);
-          }
-        });
-      }
-
-      function offsetPath(d,srcOff,tgtOff){
-        // SVG path: M x y, L x y, C x y x y x y, etc.
-        // Split into commands and offset first point by srcOff, last by tgtOff, middle interpolated
-        var tokens=d.match(/[MLCQZ]|[-]?[\d.]+/gi);
-        if(!tokens) return d;
-        var pts=[];
-        var i=0;
-        while(i<tokens.length){
-          var t=tokens[i];
-          if(t==='M'||t==='L'||t==='m'||t==='l'){
-            i++; pts.push({cmd:t.toUpperCase(),x:parseFloat(tokens[i]),y:parseFloat(tokens[i+1])}); i+=2;
-          } else if(t==='C'||t==='c'){
-            i++;
-            pts.push({cmd:'C1',x:parseFloat(tokens[i]),y:parseFloat(tokens[i+1])});
-            pts.push({cmd:'C2',x:parseFloat(tokens[i+2]),y:parseFloat(tokens[i+3])});
-            pts.push({cmd:'C3',x:parseFloat(tokens[i+4]),y:parseFloat(tokens[i+5])});
-            i+=6;
-          } else { i++; }
-        }
-        if(pts.length===0) return d;
-        // First point gets srcOff, last gets tgtOff, middle gets interpolated
-        var n=pts.length;
-        for(var j=0;j<n;j++){
-          var frac=n>1?j/(n-1):0;
-          pts[j].x+= srcOff.dx*(1-frac)+tgtOff.dx*frac;
-          pts[j].y+= srcOff.dy*(1-frac)+tgtOff.dy*frac;
-        }
-        // Rebuild
-        var out='';
-        for(var j=0;j<pts.length;j++){
-          var p=pts[j];
-          if(p.cmd==='M') out+='M '+p.x+' '+p.y+' ';
-          else if(p.cmd==='L') out+='L '+p.x+' '+p.y+' ';
-          else if(p.cmd==='C1') out+='C '+p.x+' '+p.y+', ';
-          else if(p.cmd==='C2') out+=p.x+' '+p.y+', ';
-          else if(p.cmd==='C3') out+=p.x+' '+p.y+' ';
-        }
-        return out.trim();
-      }
-
-      svg.querySelectorAll('.node').forEach(function(node){
-        node.style.cursor='grab';
-        var nid=node.getAttribute('data-id')||'';
-        nodeOffsets[nid]={dx:0,dy:0};
-
-        node.addEventListener('mousedown',function(e){
-          if(e.button!==0) return;
-          e.stopPropagation();
-          dragNode=node; dnMoved=false;
-          var scale=vb.width/c.clientWidth;
-          dnSX=e.clientX; dnSY=e.clientY;
-          var off=nodeOffsets[nid];
-          dnOX=off.dx; dnOY=off.dy;
-          node.style.cursor='grabbing';
-          e.preventDefault();
-        });
-
-        node.addEventListener('click',function(e){
-          e.stopPropagation();
-          if(dnMoved) return; // was a drag, not a click
-          var href=node.getAttribute('data-href');
-          if(href) htmx.ajax('GET',href,'#content');
-        });
-
-        node.addEventListener('mouseenter',function(){
-          var rect=node.querySelector('rect');
-          if(rect) rect.setAttribute('stroke-width','3');
-        });
-        node.addEventListener('mouseleave',function(){
-          var rect=node.querySelector('rect');
-          if(rect){
-            var isHL=rect.getAttribute('stroke')==='#ff6600';
-            rect.setAttribute('stroke-width', isHL?'3':'1.5');
-          }
-        });
-      });
-
-      c.addEventListener('mousemove',function(e){
-        if(dragNode){
-          var scale=vb.width/c.clientWidth;
-          var dx=(e.clientX-dnSX)*scale;
-          var dy=(e.clientY-dnSY)*scale;
-          if(Math.abs(dx)>2||Math.abs(dy)>2) dnMoved=true;
-          var nid=dragNode.getAttribute('data-id')||'';
-          nodeOffsets[nid]={dx:dnOX+dx, dy:dnOY+dy};
-          dragNode.setAttribute('transform','translate('+nodeOffsets[nid].dx+','+nodeOffsets[nid].dy+')');
-          updateEdges();
-          return; // don't pan while dragging a node
-        }
-        if(!drag) return;
-        var scale2=vb.width/c.clientWidth;
-        vb.x=ox-(e.clientX-sx)*scale2;
-        vb.y=oy-(e.clientY-sy)*scale2;
-      });
-      c.addEventListener('mouseup',function(){
-        if(dragNode){ dragNode.style.cursor='grab'; dragNode=null; }
-        drag=false;
-      });
-
-      // Fit to container on first load with some padding
-      var padding=40;
-      vb.x=-padding; vb.y=-padding;
-      vb.width=origVB.w+padding*2;
-      vb.height=origVB.h+padding*2;
-      origVB={x:vb.x, y:vb.y, w:vb.width, h:vb.height};
-    });
-  }
-
-  // ── Artifact hover preview tooltip ───────────────────────
-  (function(){
-    var tip=document.createElement('div');
-    tip.className='art-tooltip';
-    document.body.appendChild(tip);
-    var timer=null, ctrl=null, currentEl=null;
-
-    function show(el){
-      var href=el.getAttribute('hx-get')||'';
-      var m=href.match(/^\/artifacts\/(.+)$/);
-      if(!m) return;
-      var id=m[1];
-      if(ctrl) ctrl.abort();
-      ctrl=new AbortController();
-      fetch('/artifacts/'+encodeURIComponent(id)+'/preview',{signal:ctrl.signal,headers:{'HX-Request':'true'}})
-        .then(function(r){return r.text()})
-        .then(function(html){
-          tip.innerHTML=html;
-          tip.classList.add('visible');
-          position(el);
-        }).catch(function(){});
-    }
-
-    function position(el){
-      var r=el.getBoundingClientRect();
-      var tw=tip.offsetWidth, th=tip.offsetHeight;
-      var left=r.left+r.width/2-tw/2;
-      var top=r.top-th-6;
-      if(top<4){ top=r.bottom+6; }
-      if(left<4) left=4;
-      if(left+tw>window.innerWidth-4) left=window.innerWidth-tw-4;
-      tip.style.left=left+'px';
-      tip.style.top=top+window.scrollY+'px';
-    }
-
-    function hide(){
-      clearTimeout(timer); timer=null;
-      if(ctrl){ ctrl.abort(); ctrl=null; }
-      tip.classList.remove('visible');
-      currentEl=null;
-    }
-
-    document.body.addEventListener('mouseenter',function(e){
-      var el=e.target.closest('[hx-get^="/artifacts/"]');
-      if(!el||el.getAttribute('hx-get').indexOf('/preview')!==-1) return;
-      currentEl=el;
-      timer=setTimeout(function(){ show(el); },300);
-    },true);
-
-    document.body.addEventListener('mouseleave',function(e){
-      var el=e.target.closest('[hx-get^="/artifacts/"]');
-      if(el&&el===currentEl) hide();
-    },true);
-
-    // also hide when clicking (navigating away)
-    document.body.addEventListener('click',function(){ hide(); },true);
-  })();
-
-  // ── SVG viewer: fullscreen / popout / zoom-fit ──────────────
-  window.svgFullscreen=function(btn){
-    var viewer=btn.closest('.svg-viewer');
-    if(!viewer) return;
-    viewer.classList.toggle('fullscreen');
-    var isFS=viewer.classList.contains('fullscreen');
-    btn.textContent=isFS?'\u2715':'\u26F6';
-    btn.title=isFS?'Exit fullscreen':'Fullscreen';
-  };
-
-  window.svgPopout=function(btn){
-    var viewer=btn.closest('.svg-viewer');
-    if(!viewer) return;
-    var svg=viewer.querySelector('svg');
-    if(!svg) return;
-    var popup=window.open('','_blank','width=1200,height=800');
-    var doc=popup.document;
-    doc.open();
-    var style=doc.createElement('style');
-    style.textContent='body{margin:0;background:#fafbfc;display:flex;align-items:center;justify-content:center;min-height:100vh} svg{max-width:95vw;max-height:95vh}';
-    doc.head.appendChild(style);
-    doc.title='Rivet Graph';
-    doc.body.appendChild(svg.cloneNode(true));
-    doc.close();
-  };
-
-  window.svgZoomFit=function(btn){
-    var viewer=btn.closest('.svg-viewer');
-    if(!viewer) return;
-    var container=viewer.querySelector('.graph-container');
-    var svg=viewer.querySelector('svg');
-    if(!svg) return;
-    // Trigger the existing zoom-fit button if present
-    if(container){
-      var fitBtn=container.querySelector('.zoom-fit');
-      if(fitBtn){ fitBtn.click(); return; }
-    }
-    // Fallback: reset viewBox from bounding box
-    var bbox=svg.getBBox();
-    var pad=40;
-    svg.setAttribute('viewBox',
-      (bbox.x-pad)+' '+(bbox.y-pad)+' '+(bbox.width+pad*2)+' '+(bbox.height+pad*2));
-  };
-
-  document.addEventListener('keydown',function(e){
-    if(e.key==='Escape'){
-      document.querySelectorAll('.svg-viewer.fullscreen').forEach(function(v){
-        v.classList.remove('fullscreen');
-        var btn=v.querySelector('.svg-viewer-toolbar button[title="Exit fullscreen"]');
-        if(btn){ btn.textContent='\u26F6'; btn.title='Fullscreen'; }
-      });
-    }
-  });
-})();
-</script>
-"#;
-
-// ── Cmd+K search JS ──────────────────────────────────────────────────────
-
-const SEARCH_JS: &str = r#"
-<script>
-(function(){
-  var overlay=document.getElementById('cmd-k-overlay');
-  var input=document.getElementById('cmd-k-input');
-  var results=document.getElementById('cmd-k-results');
-  var timer=null;
-  var activeIdx=-1;
-  var items=[];
-
-  function open(){
-    overlay.classList.add('open');
-    input.value='';
-    results.innerHTML='<div class="cmd-k-empty">Type to search artifacts and documents</div>';
-    activeIdx=-1;
-    items=[];
-    setTimeout(function(){input.focus()},20);
-  }
-  function close(){
-    overlay.classList.remove('open');
-    input.blur();
-  }
-
-  // Keyboard shortcut: Cmd+K / Ctrl+K
-  document.addEventListener('keydown',function(e){
-    if((e.metaKey||e.ctrlKey)&&e.key==='k'){
-      e.preventDefault();
-      if(overlay.classList.contains('open')){close()}else{open()}
-    }
-    if(e.key==='Escape'&&overlay.classList.contains('open')){
-      e.preventDefault();close();
-    }
-  });
-
-  // Click outside to close
-  overlay.addEventListener('mousedown',function(e){
-    if(e.target===overlay) close();
-  });
-
-  // Nav hint click
-  var hint=document.getElementById('nav-search-hint');
-  if(hint) hint.addEventListener('click',function(){open()});
-
-  // Debounced search
-  input.addEventListener('input',function(){
-    clearTimeout(timer);
-    var q=input.value.trim();
-    if(!q){
-      results.innerHTML='<div class="cmd-k-empty">Type to search artifacts and documents</div>';
-      activeIdx=-1;items=[];
-      return;
-    }
-    timer=setTimeout(function(){
-      fetch('/search?q='+encodeURIComponent(q))
-        .then(function(r){return r.text()})
-        .then(function(html){
-          results.innerHTML=html;
-          items=results.querySelectorAll('.cmd-k-item');
-          activeIdx=-1;
-          setActive(-1);
-        });
-    },200);
-  });
-
-  // Arrow navigation
-  input.addEventListener('keydown',function(e){
-    if(e.key==='ArrowDown'){
-      e.preventDefault();
-      if(items.length>0){activeIdx=Math.min(activeIdx+1,items.length-1);setActive(activeIdx);}
-    } else if(e.key==='ArrowUp'){
-      e.preventDefault();
-      if(items.length>0){activeIdx=Math.max(activeIdx-1,0);setActive(activeIdx);}
-    } else if(e.key==='Enter'){
-      e.preventDefault();
-      if(activeIdx>=0&&activeIdx<items.length){
-        navigate(items[activeIdx]);
-      }
-    }
-  });
-
-  function setActive(idx){
-    for(var i=0;i<items.length;i++){
-      items[i].classList.toggle('active',i===idx);
-    }
-    if(idx>=0&&idx<items.length){
-      items[idx].scrollIntoView({block:'nearest'});
-    }
-  }
-
-  function navigate(el){
-    var url=el.getAttribute('data-url');
-    if(url){
-      close();
-      htmx.ajax('GET',url,'#content');
-    }
-  }
-
-  // Click on result
-  results.addEventListener('click',function(e){
-    var item=e.target.closest('.cmd-k-item');
-    if(item) navigate(item);
-  });
-})();
-</script>
-"#;
-
-// ── AADL diagram JS ─────────────────────────────────────────────────────
-
-const AADL_JS: &str = r#"
-<script type="module">
-// ── AADL diagram rendering via spar WASM component (client-side) ──────
-//
-// The jco-transpiled module at /wasm/spar_wasm.js exposes:
-//   instantiate(getCoreModule, imports) → { renderer: { render(root, highlight) → svg } }
-//
-// We provide a minimal virtual WASI filesystem so the WASM component can
-// read .aadl files that we pre-fetch from the server via /source-raw/.
-
-const AADL_DIR = 'arch';  // directory under project root containing .aadl files
-
-// ── Minimal WASI stubs ────────────────────────────────────────────────
-
-class VPollable { block(){} }
-class VError {}
-class VInputStream {
-  constructor(bytes){ this._buf = bytes; this._pos = 0; }
-  blockingRead(len){ const n = Number(len); const end = Math.min(this._pos + n, this._buf.length); const chunk = this._buf.slice(this._pos, end); this._pos = end; if(chunk.length === 0) throw { tag: 'closed' }; return chunk; }
-  subscribe(){ return new VPollable(); }
-}
-class VOutputStream {
-  checkWrite(){ return 65536n; }
-  write(){}
-  blockingFlush(){}
-  subscribe(){ return new VPollable(); }
-}
-class VDirStream {
-  constructor(entries){ this._entries = entries; this._i = 0; }
-  readDirectoryEntry(){ return this._i < this._entries.length ? this._entries[this._i++] : undefined; }
-}
-class VDescriptor {
-  constructor(kind, content, children){
-    this._kind = kind;        // 'directory' | 'regular-file'
-    this._content = content;  // Uint8Array for files
-    this._children = children; // [{name,type,content}] for dirs
-  }
-  readViaStream(offset){ return new VInputStream(this._content.slice(Number(offset))); }
-  writeViaStream(){ return new VOutputStream(); }
-  appendViaStream(){ return new VOutputStream(); }
-  getFlags(){ return { read: true }; }
-  readDirectory(){ return new VDirStream(this._children.map(c => ({ type: c.type, name: c.name }))); }
-  stat(){ return { type: this._kind, linkCount: 1n, size: BigInt(this._content ? this._content.length : 0) }; }
-  openAt(_pf, path, _of, _fl){
-    if(path === '.' || path === '/' || path === '') return this;
-    // Handle paths like ./file.aadl
-    var name = path.replace(/^\.\//, '');
-    var child = this._children && this._children.find(c => c.name === name);
-    if(!child) throw 'no-entry';
-    return new VDescriptor(child.type, child.content, child.children);
-  }
-  metadataHash(){ return { lower: 0n, upper: 0n }; }
-  metadataHashAt(){ return { lower: 0n, upper: 0n }; }
-}
-
-function buildWasiImports(rootDesc){
-  var enc = new TextEncoder();
-  return {
-    'wasi:cli/environment':       { getEnvironment(){ return []; } },
-    'wasi:cli/exit':              { exit(){} },
-    'wasi:cli/stderr':            { getStderr(){ return new VOutputStream(); } },
-    'wasi:cli/stdin':             { getStdin(){ return new VInputStream(new Uint8Array(0)); } },
-    'wasi:cli/stdout':            { getStdout(){ return new VOutputStream(); } },
-    'wasi:cli/terminal-input':    { TerminalInput: class {} },
-    'wasi:cli/terminal-output':   { TerminalOutput: class {} },
-    'wasi:cli/terminal-stderr':   { getTerminalStderr(){ return undefined; } },
-    'wasi:cli/terminal-stdin':    { getTerminalStdin(){ return undefined; } },
-    'wasi:cli/terminal-stdout':   { getTerminalStdout(){ return undefined; } },
-    'wasi:clocks/monotonic-clock':{ now(){ return 0n; }, subscribe(){ return new VPollable(); } },
-    'wasi:clocks/wall-clock':     { now(){ return { seconds: 0n, nanoseconds: 0 }; } },
-    'wasi:filesystem/preopens':   { getDirectories(){ return [[rootDesc, '/']]; } },
-    'wasi:filesystem/types':      { Descriptor: VDescriptor, DirectoryEntryStream: VDirStream },
-    'wasi:io/error':             { Error: VError },
-    'wasi:io/poll':              { Pollable: VPollable },
-    'wasi:io/streams':           { InputStream: VInputStream, OutputStream: VOutputStream },
-    'wasi:random/insecure-seed':  { insecureSeed(){ return [0n, 0n]; } },
-  };
-}
-
-// ── Fetch .aadl files and build virtual FS ────────────────────────────
-
-async function fetchAadlSources(){
-  // List .aadl files via /source-raw/arch (returns JSON array of filenames).
-  var resp = await fetch('/source-raw/' + AADL_DIR);
-  if(!resp.ok) return [];
-  var files = await resp.json();
-  var aadlFiles = files.filter(function(f){ return f.endsWith('.aadl'); });
-
-  var enc = new TextEncoder();
-  var children = [];
-  for(var name of aadlFiles){
-    var r = await fetch('/source-raw/' + AADL_DIR + '/' + name);
-    if(!r.ok) continue;
-    var text = await r.text();
-    children.push({ name: name, type: 'regular-file', content: enc.encode(text) });
-  }
-  return children;
-}
-
-// ── WASM module cache ─────────────────────────────────────────────────
-
-var wasmModulePromise = null;
-
-async function getSparRenderer(aadlFiles){
-  if(!wasmModulePromise){
-    wasmModulePromise = import('/wasm/spar_wasm.js');
-  }
-  var mod = await wasmModulePromise;
-  var rootDesc = new VDescriptor('directory', null, aadlFiles);
-  var imports = buildWasiImports(rootDesc);
-  var getCoreModule = async function(path){
-    var url = '/wasm/' + path;
-    return WebAssembly.compileStreaming(fetch(url));
-  };
-  var instance = await mod.instantiate(getCoreModule, imports);
-  return instance.renderer;
-}
-
-// ── Diagram initialization ────────────────────────────────────────────
-
-var aadlFilesCache = null;
-
-async function initAadlDiagrams(){
-  var containers = document.querySelectorAll('.aadl-diagram:not([data-loaded])');
-  if(containers.length === 0) return;
-
-  try {
-    if(!aadlFilesCache) aadlFilesCache = await fetchAadlSources();
-    if(aadlFilesCache.length === 0){
-      containers.forEach(function(c){
-        var ld = c.querySelector('.aadl-loading');
-        if(ld) ld.textContent = 'No .aadl files found in ' + AADL_DIR + '/';
-      });
-      return;
-    }
-  } catch(e){
-    containers.forEach(function(c){
-      var ld = c.querySelector('.aadl-loading');
-      if(ld) ld.textContent = 'Failed to load AADL sources: ' + e.message;
-    });
-    return;
-  }
-
-  for(var container of containers){
-    container.setAttribute('data-loaded','true');
-    var root = container.getAttribute('data-root');
-    if(!root) continue;
-    try {
-      var renderer = await getSparRenderer(aadlFilesCache);
-      var svgText = renderer.render(root, []);
-      var dp = new DOMParser();
-      var xdoc = dp.parseFromString(svgText, 'image/svg+xml');
-      var svg = xdoc.documentElement;
-      if(svg.nodeName === 'parsererror' || svg.querySelector('parsererror')){
-        throw new Error('Invalid SVG from WASM renderer');
-      }
-      // Clear loading placeholder
-      while(container.firstChild) container.removeChild(container.firstChild);
-
-      // Caption bar
-      var parts = root.split('::');
-      var pkgName = parts[0] || '';
-      var implName = parts[1] || root;
-      var caption = document.createElement('div');
-      caption.className = 'aadl-caption';
-      // Left side: badge + title
-      var captionLeft = document.createElement('div');
-      var badge = document.createElement('span');
-      badge.className = 'aadl-badge';
-      badge.textContent = 'AADL';
-      captionLeft.appendChild(badge);
-      captionLeft.appendChild(document.createTextNode(' '));
-      var titleSpan = document.createElement('span');
-      titleSpan.className = 'aadl-title';
-      titleSpan.textContent = implName;
-      captionLeft.appendChild(titleSpan);
-      captionLeft.appendChild(document.createTextNode(' '));
-      var pkgSpan = document.createElement('span');
-      pkgSpan.style.opacity = '.6';
-      pkgSpan.textContent = '(' + pkgName + ')';
-      captionLeft.appendChild(pkgSpan);
-      caption.appendChild(captionLeft);
-      // Right side: zoom controls
-      var controls = document.createElement('div');
-      controls.className = 'aadl-controls';
-      var btnOut = document.createElement('button');
-      btnOut.setAttribute('data-zoom','-1'); btnOut.title = 'Zoom out'; btnOut.textContent = '\u2212';
-      var btnFit = document.createElement('button');
-      btnFit.setAttribute('data-zoom','0'); btnFit.title = 'Fit to view'; btnFit.textContent = 'Fit';
-      var btnIn = document.createElement('button');
-      btnIn.setAttribute('data-zoom','1'); btnIn.title = 'Zoom in'; btnIn.textContent = '+';
-      controls.appendChild(btnOut);
-      controls.appendChild(btnFit);
-      controls.appendChild(btnIn);
-      caption.appendChild(controls);
-      container.appendChild(caption);
-
-      // Viewport
-      var viewport = document.createElement('div');
-      viewport.className = 'aadl-viewport';
-      var imported = document.importNode(svg, true);
-      var nodeCount = imported.querySelectorAll('.node').length;
-      if(nodeCount > 0){
-        var info = document.createElement('span');
-        info.style.cssText = 'opacity:.5;font-size:.75rem;margin-left:.5rem';
-        info.textContent = nodeCount + ' component' + (nodeCount !== 1 ? 's' : '');
-        captionLeft.appendChild(info);
-      }
-      viewport.appendChild(imported);
-      container.appendChild(viewport);
-      initZoomPan(viewport, imported);
-      initDiagramInteraction(viewport);
-
-      // Run analysis and display diagnostics panel
-      try {
-        var diags = renderer.analyze(root);
-        if(diags && diags.length > 0){
-          var panel = document.createElement('div');
-          panel.className = 'aadl-analysis';
-
-          // Header with severity counts
-          var hdr = document.createElement('div');
-          hdr.className = 'aadl-analysis-header';
-          hdr.textContent = 'Analysis ';
-          var errors = diags.filter(function(d){ return d.severity === 'error'; }).length;
-          var warnings = diags.filter(function(d){ return d.severity === 'warning'; }).length;
-          var infos = diags.filter(function(d){ return d.severity === 'info'; }).length;
-          if(errors > 0){ var b = document.createElement('span'); b.className = 'badge-count badge-error'; b.textContent = errors; hdr.appendChild(b); }
-          if(warnings > 0){ var b = document.createElement('span'); b.className = 'badge-count badge-warning'; b.textContent = warnings; hdr.appendChild(b); }
-          if(infos > 0){ var b = document.createElement('span'); b.className = 'badge-count badge-info'; b.textContent = infos; hdr.appendChild(b); }
-          panel.appendChild(hdr);
-
-          // Sort: errors first, then warnings, then info
-          var order = {error:0, warning:1, info:2};
-          diags.sort(function(a,b){ return (order[a.severity]||9) - (order[b.severity]||9); });
-
-          for(var i = 0; i < diags.length; i++){
-            var d = diags[i];
-            var row = document.createElement('div');
-            row.className = 'aadl-diag';
-            var sev = document.createElement('span');
-            sev.className = 'sev sev-' + d.severity;
-            sev.textContent = d.severity;
-            row.appendChild(sev);
-            if(d.componentPath){
-              var path = document.createElement('span');
-              path.className = 'diag-path';
-              path.textContent = d.componentPath;
-              row.appendChild(path);
-            }
-            var msg = document.createElement('span');
-            msg.className = 'diag-msg';
-            msg.textContent = d.message;
-            row.appendChild(msg);
-            var an = document.createElement('span');
-            an.className = 'diag-analysis';
-            an.textContent = d.analysisName;
-            row.appendChild(an);
-            panel.appendChild(row);
-          }
-          container.appendChild(panel);
-        }
-      } catch(analyzeErr){
-        console.warn('AADL analysis error:', analyzeErr);
-      }
-    } catch(err){
-      while(container.firstChild) container.removeChild(container.firstChild);
-      var p = document.createElement('p');
-      p.className = 'aadl-error';
-      var detail = err.payload ? JSON.stringify(err.payload) : (err.message || String(err));
-      p.textContent = 'AADL diagram error: ' + detail;
-      console.error('AADL render error:', err, err.payload);
-      container.appendChild(p);
-    }
-  }
-}
-
-function initZoomPan(viewport, svg){
-  var scale = 1, panX = 0, panY = 0;
-  var dragging = false, dragMoved = false, startMX, startMY, startPX, startPY;
-  var minScale = 0.05, maxScale = 12;
-
-  function apply(){
-    svg.style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + scale + ')';
-  }
-
-  // Get SVG intrinsic size
-  var svgW = parseFloat(svg.getAttribute('width')) || 400;
-  var svgH = parseFloat(svg.getAttribute('height')) || 300;
-
-  // Fit diagram into viewport with padding
-  function fitToView(){
-    var vw = viewport.clientWidth || 600;
-    var vh = viewport.clientHeight || 400;
-    var pad = 24;
-    scale = Math.min((vw - pad) / svgW, (vh - pad) / svgH, 3);
-    panX = (vw - svgW * scale) / 2;
-    panY = (vh - svgH * scale) / 2;
-    apply();
-  }
-
-  // Zoom toward a point in viewport coordinates
-  function zoomAt(mx, my, factor){
-    var ns = Math.max(minScale, Math.min(maxScale, scale * factor));
-    panX = mx - (mx - panX) * (ns / scale);
-    panY = my - (my - panY) * (ns / scale);
-    scale = ns;
-    apply();
-  }
-
-  // Zoom buttons
-  var controls = viewport.parentElement.querySelector('.aadl-controls');
-  if(controls){
-    controls.addEventListener('click', function(e){
-      var btn = e.target.closest('button');
-      if(!btn) return;
-      var z = btn.getAttribute('data-zoom');
-      if(z === '0'){ fitToView(); return; }
-      var vw = viewport.clientWidth || 600;
-      var vh = viewport.clientHeight || 400;
-      zoomAt(vw/2, vh/2, parseInt(z) > 0 ? 1.5 : 1/1.5);
-    });
-  }
-
-  // Mouse wheel zoom toward cursor
-  viewport.addEventListener('wheel', function(e){
-    e.preventDefault();
-    var rect = viewport.getBoundingClientRect();
-    var mx = e.clientX - rect.left;
-    var my = e.clientY - rect.top;
-    // Trackpad pinch sends ctrlKey + small delta; mouse wheel sends larger delta
-    var factor = e.ctrlKey
-      ? (e.deltaY > 0 ? 0.97 : 1.03)
-      : (e.deltaY > 0 ? 0.85 : 1/0.85);
-    zoomAt(mx, my, factor);
-  }, {passive: false});
-
-  // Pan via drag (works anywhere, including on nodes)
-  viewport.addEventListener('mousedown', function(e){
-    if(e.button !== 0) return;
-    dragging = true; dragMoved = false;
-    startMX = e.clientX; startMY = e.clientY;
-    startPX = panX; startPY = panY;
-    viewport.classList.add('grabbing');
-  });
-  window.addEventListener('mousemove', function(e){
-    if(!dragging) return;
-    var dx = e.clientX - startMX, dy = e.clientY - startMY;
-    if(!dragMoved && Math.abs(dx) + Math.abs(dy) > 4) dragMoved = true;
-    if(dragMoved){
-      panX = startPX + dx;
-      panY = startPY + dy;
-      apply();
-    }
-  });
-  window.addEventListener('mouseup', function(){
-    if(!dragging) return;
-    dragging = false;
-    viewport.classList.remove('grabbing');
-    // Mark viewport so node click handler can distinguish click from drag
-    if(dragMoved) viewport.setAttribute('data-dragged','');
-    else viewport.removeAttribute('data-dragged');
-  });
-
-  // Double-click to zoom in toward cursor
-  viewport.addEventListener('dblclick', function(e){
-    e.preventDefault();
-    var rect = viewport.getBoundingClientRect();
-    zoomAt(e.clientX - rect.left, e.clientY - rect.top, 2);
-  });
-
-  // Initial fit
-  fitToView();
-}
-
-function initDiagramInteraction(viewport){
-  var nodes = viewport.querySelectorAll('svg [data-id]');
-  nodes.forEach(function(node){
-    node.style.cursor = 'pointer';
-    node.addEventListener('click', function(e){
-      // Skip if this was a drag gesture, not a click
-      if(viewport.hasAttribute('data-dragged')){
-        viewport.removeAttribute('data-dragged');
-        return;
-      }
-      e.stopPropagation();
-      var id = node.getAttribute('data-id');
-      if(!id) return;
-      fetch('/artifacts/' + encodeURIComponent(id) + '/preview', {headers:{'HX-Request':'true'}})
-        .then(function(r){
-          if(r.ok) return r.text();
-          return null;
-        })
-        .then(function(html){
-          if(html && html.indexOf('not found') === -1 && html.indexOf('Not Found') === -1){
-            htmx.ajax('GET', '/artifacts/' + encodeURIComponent(id), {target:'#content'});
-          }
-        });
-    });
-  });
-}
-
-window.highlightAadlNodes = function(artifactIds){
-  var nodes = document.querySelectorAll('.aadl-diagram svg .node');
-  nodes.forEach(function(node){
-    var id = node.getAttribute('data-id');
-    // Shape may be rect, polygon, path, or ellipse depending on AADL category
-    var shape = node.querySelector('rect, polygon, path, ellipse');
-    if(!shape) return;
-    if(artifactIds.indexOf(id) !== -1){
-      shape.setAttribute('stroke','#f0c040');
-      shape.setAttribute('stroke-width','3');
-    } else {
-      shape.setAttribute('stroke','');
-      shape.setAttribute('stroke-width','');
-    }
-  });
-};
-
-document.body.addEventListener('htmx:afterSwap', initAadlDiagrams);
-
-// ── Table sort & filter ──────────────────────────────────
-function initTables(){
-  var tables = document.querySelectorAll('#content table');
-  tables.forEach(function(table){
-    if(table.classList.contains('tbl-enhanced')) return;
-    var thead = table.querySelector('thead');
-    var tbody = table.querySelector('tbody');
-    if(!thead || !tbody) return;
-    var rows = tbody.querySelectorAll('tr');
-    if(rows.length < 3) return; // skip tiny tables
-    table.classList.add('tbl-enhanced');
-
-    // Add filter input above table
-    var wrap = document.createElement('div');
-    wrap.className = 'tbl-filter-wrap';
-    var inp = document.createElement('input');
-    inp.type = 'text';
-    inp.placeholder = 'Filter rows\u2026';
-    inp.className = 'tbl-filter';
-    inp.addEventListener('input', function(){
-      var q = inp.value.toLowerCase();
-      tbody.querySelectorAll('tr').forEach(function(row){
-        row.style.display = row.textContent.toLowerCase().indexOf(q) !== -1 ? '' : 'none';
-      });
-    });
-    wrap.appendChild(inp);
-    table.parentNode.insertBefore(wrap, table);
-
-    // Sortable headers
-    var ths = thead.querySelectorAll('th');
-    ths.forEach(function(th, colIdx){
-      th.style.cursor = 'pointer';
-      th.style.userSelect = 'none';
-      th.title = 'Click to sort';
-      var arrow = document.createElement('span');
-      arrow.className = 'tbl-sort-arrow';
-      arrow.textContent = '';
-      th.appendChild(arrow);
-      var asc = true;
-      th.addEventListener('click', function(){
-        // Reset all arrows
-        ths.forEach(function(h){
-          var a = h.querySelector('.tbl-sort-arrow');
-          if(a) a.textContent = '';
-        });
-        var rowsArr = Array.from(tbody.querySelectorAll('tr'));
-        rowsArr.sort(function(a, b){
-          var at = (a.children[colIdx] || {}).textContent || '';
-          var bt = (b.children[colIdx] || {}).textContent || '';
-          // Try numeric sort first
-          var an = parseFloat(at), bn = parseFloat(bt);
-          if(!isNaN(an) && !isNaN(bn)){
-            return asc ? an - bn : bn - an;
-          }
-          return asc ? at.localeCompare(bt) : bt.localeCompare(at);
-        });
-        rowsArr.forEach(function(r){ tbody.appendChild(r); });
-        arrow.textContent = asc ? ' \u25B2' : ' \u25BC';
-        asc = !asc;
-      });
-    });
-  });
-}
-document.body.addEventListener('htmx:afterSwap', initTables);
-document.addEventListener('DOMContentLoaded', initTables);
-
-// ── Tag faceting (artifacts page) ──────────────────────────
-function initTagFacets(){
-  var sidebar=document.getElementById('tag-facets');
-  if(!sidebar) return;
-  var table=document.getElementById('artifacts-table');
-  if(!table) return;
-  var tbody=table.querySelector('tbody');
-  if(!tbody) return;
-  // Find the tag column index (data-col="tags")
-  var tagColIdx=-1;
-  var ths=table.querySelectorAll('thead th');
-  ths.forEach(function(th,i){ if(th.getAttribute('data-col')==='tags') tagColIdx=i; });
-  if(tagColIdx<0) return;
-
-  // Collect all unique tags with counts
-  var tagCounts={};
-  tbody.querySelectorAll('tr').forEach(function(row){
-    var cell=row.children[tagColIdx];
-    if(!cell) return;
-    var tags=cell.getAttribute('data-tags');
-    if(!tags) return;
-    tags.split(',').forEach(function(t){
-      t=t.trim();
-      if(t){ tagCounts[t]=(tagCounts[t]||0)+1; }
-    });
-  });
-
-  var tagNames=Object.keys(tagCounts).sort();
-  if(tagNames.length===0){
-    sidebar.textContent='No tags';
-    sidebar.style.cssText='font-size:.8rem;color:var(--text-secondary)';
-    return;
-  }
-
-  // Build facet checkboxes via DOM API
-  sidebar.textContent='';
-  var list=document.createElement('div');
-  list.className='facet-list';
-  tagNames.forEach(function(tag){
-    var label=document.createElement('label');
-    label.className='facet-item';
-    var cb=document.createElement('input');
-    cb.type='checkbox';
-    cb.value=tag;
-    cb.checked=true;
-    label.appendChild(cb);
-    label.appendChild(document.createTextNode(' '+tag+' '));
-    var cnt=document.createElement('span');
-    cnt.className='facet-count';
-    cnt.textContent=tagCounts[tag];
-    label.appendChild(cnt);
-    list.appendChild(label);
-  });
-  sidebar.appendChild(list);
-
-  // Filter rows when checkboxes change
-  sidebar.addEventListener('change',function(){
-    var checked=[];
-    sidebar.querySelectorAll('input[type="checkbox"]:checked').forEach(function(cb){ checked.push(cb.value); });
-    var allChecked=checked.length===tagNames.length;
-    tbody.querySelectorAll('tr').forEach(function(row){
-      if(row.classList.contains('group-header-row')){ row.style.display=''; return; }
-      if(allChecked){ row.style.display=''; return; }
-      var cell=row.children[tagColIdx];
-      if(!cell){ row.style.display='none'; return; }
-      var tags=(cell.getAttribute('data-tags')||'').split(',').map(function(t){return t.trim()}).filter(Boolean);
-      if(tags.length===0){ row.style.display=checked.length===0?'':'none'; return; }
-      var match=tags.some(function(t){ return checked.indexOf(t)!==-1; });
-      row.style.display=match?'':'none';
-    });
-  });
-}
-document.body.addEventListener('htmx:afterSwap', initTagFacets);
-document.addEventListener('DOMContentLoaded', initTagFacets);
-
-// ── Group-by (artifacts page) ──────────────────────────────
-window.groupArtifacts=function(field){
-  var table=document.getElementById('artifacts-table');
-  if(!table) return;
-  var tbody=table.querySelector('tbody');
-  if(!tbody) return;
-
-  // Remove existing group header rows
-  tbody.querySelectorAll('.group-header-row').forEach(function(r){ r.remove(); });
-
-  if(field==='none'){
-    // Restore original order: sort by ID (first column)
-    var rows=Array.from(tbody.querySelectorAll('tr'));
-    rows.sort(function(a,b){
-      var at=(a.children[0]||{}).textContent||'';
-      var bt=(b.children[0]||{}).textContent||'';
-      return at.localeCompare(bt);
-    });
-    rows.forEach(function(r){ tbody.appendChild(r); });
-    return;
-  }
-
-  // Find column index for grouping
-  var colMap={type:1, status:3, tag:-1};
-  var ths=table.querySelectorAll('thead th');
-  ths.forEach(function(th,i){ if(th.getAttribute('data-col')==='tags') colMap.tag=i; });
-  var colIdx=colMap[field];
-  if(colIdx===undefined||colIdx<0) return;
-
-  var rows=Array.from(tbody.querySelectorAll('tr'));
-  var groups={};
-  rows.forEach(function(row){
-    var key='';
-    if(field==='tag'){
-      var cell=row.children[colIdx];
-      var tags=(cell&&cell.getAttribute('data-tags'))||'';
-      key=tags.split(',')[0]||'(no tag)';
-      key=key.trim()||'(no tag)';
-    } else {
-      key=(row.children[colIdx]||{}).textContent||'(empty)';
-      key=key.trim()||'(empty)';
-    }
-    if(!groups[key]) groups[key]=[];
-    groups[key].push(row);
-  });
-
-  var colCount=ths.length;
-  var sortedKeys=Object.keys(groups).sort();
-  sortedKeys.forEach(function(key){
-    var hdr=document.createElement('tr');
-    hdr.className='group-header-row';
-    var td=document.createElement('td');
-    td.setAttribute('colspan',String(colCount));
-    td.textContent=key+' ('+groups[key].length+')';
-    hdr.appendChild(td);
-    tbody.appendChild(hdr);
-    groups[key].forEach(function(r){ tbody.appendChild(r); });
-  });
-};
-
-// ── Matrix cell drill-down ─────────────────────────────────
-function initMatrixDrilldown(){
-  document.querySelectorAll('.matrix-cell-clickable').forEach(function(cell){
-    if(cell._drilldown) return;
-    cell._drilldown=true;
-    cell.addEventListener('click',function(){
-      var detail=cell.nextElementSibling;
-      if(!detail||!detail.classList.contains('cell-detail')) return;
-      if(detail.childNodes.length>0){
-        detail.textContent='';
-        return;
-      }
-      var src=cell.getAttribute('data-source-type');
-      var tgt=cell.getAttribute('data-target-type');
-      var link=cell.getAttribute('data-link-type');
-      var dir=cell.getAttribute('data-direction');
-      var url='/matrix/cell?source_type='+encodeURIComponent(src)+'&target_type='+encodeURIComponent(tgt)+'&link_type='+encodeURIComponent(link)+'&direction='+encodeURIComponent(dir);
-      htmx.ajax('GET',url,{target:detail,swap:'innerHTML'});
-    });
-  });
-}
-document.body.addEventListener('htmx:afterSwap', initMatrixDrilldown);
-document.addEventListener('DOMContentLoaded', initMatrixDrilldown);
-</script>
-"#;
-
-// ── Layout ───────────────────────────────────────────────────────────────
-
-fn page_layout(content: &str, state: &AppState) -> Html<String> {
-    let artifact_count = state.store.len();
-    let diagnostics = validate::validate(&state.store, &state.schema, &state.graph);
-    let error_count = diagnostics
-        .iter()
-        .filter(|d| d.severity == Severity::Error)
-        .count();
-    let error_badge = if error_count > 0 {
-        format!("<span class=\"nav-badge nav-badge-error\">{error_count}</span>")
-    } else {
-        "<span class=\"nav-badge\">OK</span>".to_string()
-    };
-    let doc_badge = if !state.doc_store.is_empty() {
-        format!("<span class=\"nav-badge\">{}</span>", state.doc_store.len())
-    } else {
-        String::new()
-    };
-    let result_badge = if !state.result_store.is_empty() {
-        format!(
-            "<span class=\"nav-badge\">{}</span>",
-            state.result_store.len()
-        )
-    } else {
-        String::new()
-    };
-    let stpa_types = [
-        "loss",
-        "hazard",
-        "sub-hazard",
-        "system-constraint",
-        "controller",
-        "controlled-process",
-        "control-action",
-        "uca",
-        "controller-constraint",
-        "loss-scenario",
-    ];
-    let stpa_count: usize = stpa_types
-        .iter()
-        .map(|t| state.store.count_by_type(t))
-        .sum();
-    let stpa_nav = if stpa_count > 0 {
-        format!(
-            "<li><a hx-get=\"/stpa\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\"><span class=\"nav-label\"><span class=\"nav-icon\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M8 1.5l5.5 2.5v4c0 3.5-2.5 5.5-5.5 7-3-1.5-5.5-3.5-5.5-7V4z\"/><path d=\"M8 5v3M8 10.5h.01\"/></svg></span> STPA</span><span class=\"nav-badge\">{stpa_count}</span></a></li>"
-        )
-    } else {
-        String::new()
-    };
-    let ext_total: usize = state.externals.iter().map(|e| e.store.len()).sum();
-    let externals_nav = if !state.externals.is_empty() {
-        let badge = if ext_total > 0 {
-            format!("<span class=\"nav-badge\">{ext_total}</span>")
-        } else {
-            "<span class=\"nav-badge\">0</span>".to_string()
-        };
-        format!(
-            "<li><a hx-get=\"/externals\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\"><span class=\"nav-label\"><span class=\"nav-icon\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M14 8H9l-2-2H2v8h12z\"/><path d=\"M2 4V2h5l2 2\"/><circle cx=\"11\" cy=\"9\" r=\"2\"/></svg></span> Externals</span>{badge}</a></li>"
-        )
-    } else {
-        String::new()
-    };
-    let version = env!("CARGO_PKG_VERSION");
-
-    // Context bar
-    let ctx = &state.context;
-    let git_html = if let Some(ref git) = ctx.git {
-        let status = if git.is_dirty {
-            format!(
-                "<span class=\"ctx-dirty\">{} uncommitted</span>",
-                git.dirty_count
-            )
-        } else {
-            "<span class=\"ctx-clean\">clean</span>".to_string()
-        };
-        format!(
-            "<span class=\"ctx-sep\">/</span>\
-             <span class=\"ctx-git\">{branch}@{commit}</span>\
-             {status}",
-            branch = html_escape(&git.branch),
-            commit = html_escape(&git.commit_short),
-        )
-    } else {
-        String::new()
-    };
-    // Project switcher: show siblings as a dropdown if available
-    let switcher_html = if ctx.siblings.is_empty() {
-        String::new()
-    } else {
-        let mut s = String::from(
-            "<span class=\"ctx-switcher\">\
-             <details class=\"ctx-switcher-details\">\
-             <summary title=\"Switch project\"><svg width=\"12\" height=\"12\" viewBox=\"0 0 12 12\" fill=\"none\" \
-             stroke=\"currentColor\" stroke-width=\"1.5\"><path d=\"M3 5l3 3 3-3\"/></svg></summary>\
-             <div class=\"ctx-switcher-dropdown\">",
-        );
-        for sib in &ctx.siblings {
-            s.push_str(&format!(
-                "<div class=\"ctx-switcher-item\">\
-                 <span class=\"ctx-switcher-name\">{}</span>\
-                 <code class=\"ctx-switcher-cmd\">rivet -p {} serve -P {}</code>\
-                 </div>",
-                html_escape(&sib.name),
-                html_escape(&sib.rel_path),
-                ctx.port,
-            ));
-        }
-        s.push_str("</div></details></span>");
-        s
-    };
-    let context_bar = format!(
-        "<div class=\"context-bar\">\
-         <span class=\"ctx-project\">{project}</span>{switcher_html}\
-         <span class=\"ctx-sep\">/</span>\
-         <span>{path}</span>\
-         {git_html}\
-         <span class=\"ctx-time\">Loaded {loaded_at}</span>\
-         <button hx-post=\"/reload\" style=\"margin-left:.5rem;padding:.15rem .5rem;font-size:.72rem;\
-         font-family:var(--mono);background:rgba(58,134,255,.08);color:var(--accent);border:1px solid var(--accent);\
-         border-radius:4px;cursor:pointer;font-weight:600;transition:all var(--transition)\"\
-         title=\"Reload project from disk\"\
-         onmouseover=\"this.style.background='rgba(58,134,255,.18)'\"\
-         onmouseout=\"this.style.background='rgba(58,134,255,.08)'\"\
-         >&#8635; Reload</button>\
-         </div>",
-        project = html_escape(&ctx.project_name),
-        path = html_escape(&ctx.project_path),
-        loaded_at = html_escape(&ctx.loaded_at),
-    );
-    Html(format!(
-        r##"<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Rivet Dashboard</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>{CSS}</style>
-<script src="https://unpkg.com/htmx.org@2.0.4"></script>
-<script type="module">
-import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
-mermaid.initialize({{startOnLoad:false,theme:'neutral',securityLevel:'loose'}});
-function renderMermaid(){{mermaid.run({{querySelector:'.mermaid'}}).catch(function(){{}})}}
-document.addEventListener('htmx:afterSwap',renderMermaid);
-document.addEventListener('DOMContentLoaded',renderMermaid);
-</script>
-</head>
-<body>
-<div id="loading-bar"></div>
-<div class="shell">
-<nav>
-  <h1>Rivet</h1>
-  <ul>
-    <li><a hx-get="/stats" hx-target="#content" hx-push-url="true" href="#" class="active"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="1.5" width="5" height="5" rx="1"/><rect x="9.5" y="1.5" width="5" height="5" rx="1"/><rect x="1.5" y="9.5" width="5" height="5" rx="1"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/></svg></span> Overview</span></a></li>
-    <li><a hx-get="/artifacts" hx-target="#content" hx-push-url="true" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="1.5" width="10" height="13" rx="1.5"/><path d="M6 5h4M6 8h4M6 11h2"/></svg></span> Artifacts</span><span class="nav-badge">{artifact_count}</span></a></li>
-    <li><a hx-get="/validate" hx-target="#content" hx-push-url="true" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><path d="M5.5 8l2 2 3.5-3.5"/></svg></span> Validation</span>{error_badge}</a></li>
-    <li class="nav-divider"></li>
-    <li><a hx-get="/matrix" hx-target="#content" hx-push-url="true" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 5.5h13M1.5 10.5h13M5.5 1.5v13M10.5 1.5v13"/><rect x="1.5" y="1.5" width="13" height="13" rx="1.5"/></svg></span> Matrix</span></a></li>
-    <li><a hx-get="/coverage" hx-target="#content" hx-push-url="true" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><path d="M8 1.5V8l4.6 4.6"/></svg></span> Coverage</span></a></li>
-    <li><a hx-get="/traceability" hx-target="#content" hx-push-url="true" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h2v2H3zM7 4h2v2H7zM11 4h2v2H11zM3 10h2v2H3zM11 10h2v2H11z"/><path d="M5 5h2M9 5h2M4 6v4M12 6v4M5 11h6"/></svg></span> Traceability</span></a></li>
-    <li><a hx-get="/graph" hx-target="#content" hx-push-url="true" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="4" r="2"/><circle cx="12" cy="4" r="2"/><circle cx="4" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><path d="M6 4h4M4 6v4M12 6v4M6 12h4"/></svg></span> Graph</span></a></li>
-    <li><a hx-get="/documents" hx-target="#content" hx-push-url="true" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 1.5H4.5A1.5 1.5 0 003 3v10a1.5 1.5 0 001.5 1.5h7A1.5 1.5 0 0013 13V5.5L9 1.5z"/><path d="M9 1.5V5.5h4"/><path d="M6 8.5h4M6 11h2"/></svg></span> Documents</span>{doc_badge}</a></li>
-    <li><a hx-get="/doc-linkage" hx-target="#content" hx-push-url="true" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="1" width="5" height="6" rx="1"/><rect x="10" y="1" width="5" height="6" rx="1"/><rect x="5.5" y="9" width="5" height="6" rx="1"/><path d="M3.5 7v2.5h4.5M12.5 7v2.5h-4.5"/></svg></span> Doc Linkage</span></a></li>
-    <li><a hx-get="/source" hx-target="#content" hx-push-url="true" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 4.5 1.5 8 5 11.5"/><polyline points="11 4.5 14.5 8 11 11.5"/><line x1="9" y1="2" x2="7" y2="14"/></svg></span> Source</span></a></li>
-    <li class="nav-divider"></li>
-    <li><a hx-get="/verification" hx-target="#content" hx-push-url="true" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5l5.5 2.5v4c0 3.5-2.5 5.5-5.5 7-3-1.5-5.5-3.5-5.5-7V4z"/><path d="M5.5 8l2 2 3.5-3.5"/></svg></span> Verification</span></a></li>
-    {stpa_nav}
-    <li><a hx-get="/results" hx-target="#content" hx-push-url="true" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12.5h12M3 9.5h2v3H3zM7 6.5h2v6H7zM11 3.5h2v9h-2z"/></svg></span> Results</span>{result_badge}</a></li>
-    <li class="nav-divider"></li>
-    <li><a hx-get="/diff" hx-target="#content" hx-push-url="true" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v10M10 3v10"/><path d="M2 8h3M11 8h3"/><circle cx="6" cy="5" r="1.5"/><circle cx="10" cy="11" r="1.5"/></svg></span> Diff</span></a></li>
-    {externals_nav}
-    <li class="nav-divider"></li>
-    <li><a hx-get="/help" hx-target="#content" hx-push-url="true" href="#"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><path d="M6 6.5a2 2 0 013.5 1.5c0 1-1.5 1.5-1.5 2.5M8 12.5v.01"/></svg></span> Help &amp; Docs</span></a></li>
-  </ul>
-  <div id="nav-search-hint" class="nav-search-hint">
-    <span><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg></span> Search</span>
-    <span class="cmd-k-kbd">&#8984;K</span>
-  </div>
-</nav>
-<div class="content-area">
-{context_bar}
-<main id="content" hx-swap="innerHTML transition:true">
-{content}
-<div class="footer">Powered by Rivet v{version}</div>
-</main>
-</div>
-</div>
-<div id="cmd-k-overlay" class="cmd-k-overlay">
-  <div class="cmd-k-modal">
-    <div class="cmd-k-head">
-      <span class="cmd-k-icon">&#128269;</span>
-      <input id="cmd-k-input" class="cmd-k-input" type="text" placeholder="Search artifacts, documents..." autocomplete="off" spellcheck="false">
-    </div>
-    <div id="cmd-k-results" class="cmd-k-results">
-      <div class="cmd-k-empty">Type to search artifacts and documents</div>
-    </div>
-  </div>
-</div>
-{GRAPH_JS}
-{SEARCH_JS}
-{AADL_JS}
-</body>
-</html>"##
-    ))
-}
+use super::layout;
+use super::{AppState, SharedState, badge_for_type, type_color_map};
+use crate::{docs, schema_cmd};
 
 // ── Routes ───────────────────────────────────────────────────────────────
 
-async fn index(State(state): State<SharedState>) -> Html<String> {
+pub(crate) async fn index(State(state): State<SharedState>) -> Html<String> {
     let state = state.read().await;
     let inner = stats_partial(&state);
-    page_layout(&inner, &state)
+    layout::page_layout(&inner, &state)
 }
 
-async fn stats_view(State(state): State<SharedState>) -> Html<String> {
+pub(crate) async fn stats_view(State(state): State<SharedState>) -> Html<String> {
     let state = state.read().await;
     Html(stats_partial(&state))
 }
@@ -3122,7 +291,7 @@ fn stats_partial(state: &AppState) -> String {
 // ── Externals ────────────────────────────────────────────────────────────
 
 /// GET /externals — list all configured external projects.
-async fn externals_list(State(state): State<SharedState>) -> Html<String> {
+pub(crate) async fn externals_list(State(state): State<SharedState>) -> Html<String> {
     let state = state.read().await;
     let externals = &state.externals;
 
@@ -3180,7 +349,7 @@ async fn externals_list(State(state): State<SharedState>) -> Html<String> {
 }
 
 /// GET /externals/{prefix} — show artifacts from a specific external project.
-async fn external_detail(
+pub(crate) async fn external_detail(
     State(state): State<SharedState>,
     Path(prefix): Path<String>,
 ) -> Html<String> {
@@ -3281,7 +450,7 @@ async fn external_detail(
 
 // ── Artifacts ────────────────────────────────────────────────────────────
 
-async fn artifacts_list(State(state): State<SharedState>) -> Html<String> {
+pub(crate) async fn artifacts_list(State(state): State<SharedState>) -> Html<String> {
     let state = state.read().await;
     let store = &state.store;
 
@@ -3394,7 +563,7 @@ async fn artifacts_list(State(state): State<SharedState>) -> Html<String> {
 }
 
 /// Compact preview tooltip for an artifact — loaded on hover.
-async fn artifact_preview(
+pub(crate) async fn artifact_preview(
     State(state): State<SharedState>,
     Path(id): Path<String>,
 ) -> Html<String> {
@@ -3467,7 +636,10 @@ async fn artifact_preview(
     Html(html)
 }
 
-async fn artifact_detail(State(state): State<SharedState>, Path(id): Path<String>) -> Html<String> {
+pub(crate) async fn artifact_detail(
+    State(state): State<SharedState>,
+    Path(id): Path<String>,
+) -> Html<String> {
     let state = state.read().await;
     let store = &state.store;
     let graph = &state.graph;
@@ -3660,7 +832,7 @@ async fn artifact_detail(State(state): State<SharedState>, Path(id): Path<String
 // ── Graph visualization ──────────────────────────────────────────────────
 
 #[derive(Debug, serde::Deserialize)]
-struct GraphParams {
+pub(crate) struct GraphParams {
     types: Option<String>,
     link_types: Option<String>,
     #[serde(default = "default_depth")]
@@ -3673,7 +845,7 @@ fn default_depth() -> usize {
 }
 
 /// Build a filtered subgraph based on query params and return SVG.
-async fn graph_view(
+pub(crate) async fn graph_view(
     State(state): State<SharedState>,
     Query(params): Query<GraphParams>,
 ) -> Html<String> {
@@ -3891,7 +1063,7 @@ async fn graph_view(
 // ── Ego graph for a single artifact ──────────────────────────────────────
 
 #[derive(Debug, serde::Deserialize)]
-struct EgoParams {
+pub(crate) struct EgoParams {
     #[serde(default = "default_ego_hops")]
     hops: usize,
 }
@@ -3900,7 +1072,7 @@ fn default_ego_hops() -> usize {
     2
 }
 
-async fn artifact_graph(
+pub(crate) async fn artifact_graph(
     State(state): State<SharedState>,
     Path(id): Path<String>,
     Query(params): Query<EgoParams>,
@@ -4143,7 +1315,7 @@ fn apply_filters_to_graph(
 
 // ── Validation ───────────────────────────────────────────────────────────
 
-async fn validate_view(State(state): State<SharedState>) -> Html<String> {
+pub(crate) async fn validate_view(State(state): State<SharedState>) -> Html<String> {
     let state = state.read().await;
     let diagnostics = validate::validate(&state.store, &state.schema, &state.graph);
 
@@ -4221,14 +1393,14 @@ async fn validate_view(State(state): State<SharedState>) -> Html<String> {
 // ── Traceability Matrix ──────────────────────────────────────────────────
 
 #[derive(Debug, serde::Deserialize)]
-struct MatrixParams {
+pub(crate) struct MatrixParams {
     from: Option<String>,
     to: Option<String>,
     link: Option<String>,
     direction: Option<String>,
 }
 
-async fn matrix_view(
+pub(crate) async fn matrix_view(
     State(state): State<SharedState>,
     Query(params): Query<MatrixParams>,
 ) -> Html<String> {
@@ -4372,7 +1544,7 @@ async fn matrix_view(
 // ── Matrix cell drill-down ────────────────────────────────────────────────
 
 #[derive(Debug, serde::Deserialize)]
-struct MatrixCellParams {
+pub(crate) struct MatrixCellParams {
     source_type: String,
     target_type: String,
     link_type: String,
@@ -4380,7 +1552,7 @@ struct MatrixCellParams {
 }
 
 /// GET /matrix/cell — return a list of links for a source_type -> target_type pair.
-async fn matrix_cell_detail(
+pub(crate) async fn matrix_cell_detail(
     State(state): State<SharedState>,
     Query(params): Query<MatrixCellParams>,
 ) -> Html<String> {
@@ -4429,7 +1601,7 @@ async fn matrix_cell_detail(
 
 // ── Coverage ─────────────────────────────────────────────────────────────
 
-async fn coverage_view(State(state): State<SharedState>) -> Html<String> {
+pub(crate) async fn coverage_view(State(state): State<SharedState>) -> Html<String> {
     let state = state.read().await;
     let report = coverage::compute_coverage(&state.store, &state.schema, &state.graph);
     let overall = report.overall_coverage();
@@ -4551,7 +1723,7 @@ async fn coverage_view(State(state): State<SharedState>) -> Html<String> {
 
 // ── Documents ────────────────────────────────────────────────────────────
 
-async fn documents_list(State(state): State<SharedState>) -> Html<String> {
+pub(crate) async fn documents_list(State(state): State<SharedState>) -> Html<String> {
     let state = state.read().await;
     let doc_store = &state.doc_store;
 
@@ -4657,7 +1829,10 @@ async fn documents_list(State(state): State<SharedState>) -> Html<String> {
     Html(html)
 }
 
-async fn document_detail(State(state): State<SharedState>, Path(id): Path<String>) -> Html<String> {
+pub(crate) async fn document_detail(
+    State(state): State<SharedState>,
+    Path(id): Path<String>,
+) -> Html<String> {
     let state = state.read().await;
     let doc_store = &state.doc_store;
     let store = &state.store;
@@ -4787,7 +1962,7 @@ async fn document_detail(State(state): State<SharedState>, Path(id): Path<String
 // ── Search ───────────────────────────────────────────────────────────────
 
 #[derive(Debug, serde::Deserialize)]
-struct SearchParams {
+pub(crate) struct SearchParams {
     q: Option<String>,
 }
 
@@ -4802,7 +1977,7 @@ struct SearchHit {
     url: String,
 }
 
-async fn search_view(
+pub(crate) async fn search_view(
     State(state): State<SharedState>,
     Query(params): Query<SearchParams>,
 ) -> Html<String> {
@@ -5039,7 +2214,7 @@ fn highlight_match(text: &str, query: &str) -> String {
 
 // ── Verification ─────────────────────────────────────────────────────────
 
-async fn verification_view(State(state): State<SharedState>) -> Html<String> {
+pub(crate) async fn verification_view(State(state): State<SharedState>) -> Html<String> {
     let state = state.read().await;
     let store = &state.store;
     let graph = &state.graph;
@@ -5342,7 +2517,7 @@ async fn verification_view(State(state): State<SharedState>) -> Html<String> {
 
 // ── STPA ─────────────────────────────────────────────────────────────────
 
-async fn stpa_view(State(state): State<SharedState>) -> Html<String> {
+pub(crate) async fn stpa_view(State(state): State<SharedState>) -> Html<String> {
     let state = state.read().await;
     stpa_partial(&state)
 }
@@ -5708,7 +2883,7 @@ fn stpa_partial(state: &AppState) -> Html<String> {
 
 // ── Results ──────────────────────────────────────────────────────────────
 
-async fn results_view(State(state): State<SharedState>) -> Html<String> {
+pub(crate) async fn results_view(State(state): State<SharedState>) -> Html<String> {
     let state = state.read().await;
     let result_store = &state.result_store;
 
@@ -5797,7 +2972,7 @@ async fn results_view(State(state): State<SharedState>) -> Html<String> {
     Html(html)
 }
 
-async fn result_detail(
+pub(crate) async fn result_detail(
     State(state): State<SharedState>,
     Path(run_id): Path<String>,
 ) -> Html<String> {
@@ -5995,7 +3170,7 @@ fn render_tree(entries: &[TreeEntry], html: &mut String, depth: usize) {
     html.push_str("</ul>");
 }
 
-async fn source_tree_view(State(state): State<SharedState>) -> Html<String> {
+pub(crate) async fn source_tree_view(State(state): State<SharedState>) -> Html<String> {
     let state = state.read().await;
     let project_path = &state.project_path_buf;
     let tree = build_tree(project_path, "", 0);
@@ -6111,7 +3286,7 @@ fn extract_file_ref(val: &str, target_file: &str) -> Option<(String, Option<u32>
     Some((target_file.to_string(), None, None))
 }
 
-async fn source_file_view(
+pub(crate) async fn source_file_view(
     State(state): State<SharedState>,
     Path(raw_path): Path<String>,
 ) -> Html<String> {
@@ -6769,7 +3944,7 @@ fn render_code_block(
 // ── Diff ─────────────────────────────────────────────────────────────────
 
 #[derive(Debug, serde::Deserialize)]
-struct DiffParams {
+pub(crate) struct DiffParams {
     base: Option<String>,
     head: Option<String>,
 }
@@ -6888,7 +4063,7 @@ fn diff_ref_options(sel: &str, tags: &[String], branches: &[String], inc_wt: boo
     h
 }
 
-async fn diff_view(
+pub(crate) async fn diff_view(
     State(state): State<SharedState>,
     Query(params): Query<DiffParams>,
 ) -> Html<String> {
@@ -7013,7 +4188,7 @@ async fn diff_view(
 
 // ── Document linkage view ────────────────────────────────────────────────
 
-async fn doc_linkage_view(State(state): State<SharedState>) -> Html<String> {
+pub(crate) async fn doc_linkage_view(State(state): State<SharedState>) -> Html<String> {
     let state = state.read().await;
     let store = &state.store;
     let doc_store = &state.doc_store;
@@ -7330,14 +4505,14 @@ async fn doc_linkage_view(State(state): State<SharedState>) -> Html<String> {
 // ── Traceability explorer ────────────────────────────────────────────────
 
 #[derive(Debug, serde::Deserialize)]
-struct TraceParams {
+pub(crate) struct TraceParams {
     root_type: Option<String>,
     status: Option<String>,
     search: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize)]
-struct TraceHistoryParams {
+pub(crate) struct TraceHistoryParams {
     file: Option<String>,
 }
 
@@ -7457,7 +4632,7 @@ fn render_trace_node(node: &TraceNode, depth: usize, project_path: &str) -> Stri
     }
 }
 
-async fn traceability_view(
+pub(crate) async fn traceability_view(
     State(state): State<SharedState>,
     Query(params): Query<TraceParams>,
 ) -> Html<String> {
@@ -7683,7 +4858,7 @@ fn source_path_for_artifact(store: &Store, id: &str) -> String {
 }
 
 /// HTMX endpoint: return git history for a specific file as HTML fragment.
-async fn traceability_history(
+pub(crate) async fn traceability_history(
     State(state): State<SharedState>,
     Query(params): Query<TraceHistoryParams>,
 ) -> Html<String> {
@@ -8027,7 +5202,7 @@ fn find_source_ref(s: &str) -> Option<SourceRefMatch> {
 
 // ── Help / Docs / Schema dashboard views ───────────────────────────────
 
-async fn help_view(State(state): State<SharedState>) -> Html<String> {
+pub(crate) async fn help_view(State(state): State<SharedState>) -> Html<String> {
     let state = state.read().await;
     let schema = &state.schema;
 
@@ -8106,7 +5281,7 @@ async fn help_view(State(state): State<SharedState>) -> Html<String> {
     Html(html)
 }
 
-async fn help_docs_list(State(_state): State<SharedState>) -> Html<String> {
+pub(crate) async fn help_docs_list(State(_state): State<SharedState>) -> Html<String> {
     let raw = docs::list_topics("text");
 
     let mut html = String::with_capacity(4096);
@@ -8157,7 +5332,7 @@ async fn help_docs_list(State(_state): State<SharedState>) -> Html<String> {
     Html(html)
 }
 
-async fn help_docs_topic(
+pub(crate) async fn help_docs_topic(
     State(_state): State<SharedState>,
     Path(slug): Path<String>,
 ) -> Html<String> {
@@ -8257,7 +5432,7 @@ async fn help_docs_topic(
     Html(html)
 }
 
-async fn help_schema_list(State(state): State<SharedState>) -> Html<String> {
+pub(crate) async fn help_schema_list(State(state): State<SharedState>) -> Html<String> {
     let state = state.read().await;
     let schema = &state.schema;
 
@@ -8296,7 +5471,7 @@ async fn help_schema_list(State(state): State<SharedState>) -> Html<String> {
     Html(html)
 }
 
-async fn help_schema_show(
+pub(crate) async fn help_schema_show(
     State(state): State<SharedState>,
     Path(name): Path<String>,
 ) -> Html<String> {
@@ -8314,7 +5489,7 @@ async fn help_schema_show(
     Html(html)
 }
 
-async fn help_links_view(State(state): State<SharedState>) -> Html<String> {
+pub(crate) async fn help_links_view(State(state): State<SharedState>) -> Html<String> {
     let state = state.read().await;
     let schema = &state.schema;
 
@@ -8345,7 +5520,7 @@ async fn help_links_view(State(state): State<SharedState>) -> Html<String> {
     Html(html)
 }
 
-async fn help_rules_view(State(state): State<SharedState>) -> Html<String> {
+pub(crate) async fn help_rules_view(State(state): State<SharedState>) -> Html<String> {
     let state = state.read().await;
     let raw = schema_cmd::cmd_rules(&state.schema, "text");
 
