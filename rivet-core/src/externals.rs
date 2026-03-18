@@ -35,6 +35,12 @@ pub fn parse_artifact_ref(s: &str) -> ArtifactRef {
     ArtifactRef::Local(s.to_string())
 }
 
+/// Check whether a git ref looks like a commit SHA (hex string, 7-40 chars).
+fn is_sha(git_ref: &str) -> bool {
+    let len = git_ref.len();
+    (7..=40).contains(&len) && git_ref.chars().all(|c| c.is_ascii_hexdigit())
+}
+
 /// Sync a single external project into the cache directory.
 ///
 /// For `path` externals: creates a symlink from `.rivet/repos/<prefix>` to the path.
@@ -82,6 +88,10 @@ pub fn sync_external(
 
     if let Some(ref git_url) = ext.git {
         let git_ref = ext.git_ref.as_deref().unwrap_or("main");
+        let dest_str = dest
+            .to_str()
+            .ok_or_else(|| crate::error::Error::Io("invalid cache path".into()))?
+            .to_string();
 
         // Disable git hooks for all git operations to prevent code execution
         // from malicious repositories (e.g., post-checkout, post-merge hooks).
@@ -89,10 +99,19 @@ pub fn sync_external(
         let no_hooks = ["-c", "core.hooksPath=/dev/null"];
 
         if dest.join(".git").exists() {
-            // Fetch updates
+            // Fetch updates — unshallow if this was a shallow clone and we
+            // need a specific commit SHA that may not be in the shallow history.
+            let mut fetch_args = vec!["fetch", "origin"];
+            if is_sha(git_ref) {
+                // Unshallow so arbitrary SHAs are reachable.
+                let is_shallow = dest.join(".git/shallow").exists();
+                if is_shallow {
+                    fetch_args.push("--unshallow");
+                }
+            }
             let output = Command::new("git")
                 .args(no_hooks)
-                .args(["fetch", "origin"])
+                .args(&fetch_args)
                 .current_dir(&dest)
                 .output()
                 .map_err(|e| crate::error::Error::Io(format!("git fetch: {e}")))?;
@@ -119,30 +138,74 @@ pub fn sync_external(
                     .ok();
             }
         } else {
-            // Clone fresh
-            let output = Command::new("git")
-                .args(no_hooks)
-                .args([
-                    "clone",
-                    git_url,
-                    dest.to_str()
-                        .ok_or_else(|| crate::error::Error::Io("invalid cache path".into()))?,
-                ])
-                .output()
-                .map_err(|e| crate::error::Error::Io(format!("git clone: {e}")))?;
-            if !output.status.success() {
-                return Err(crate::error::Error::Io(format!(
-                    "git clone failed: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                )));
-            }
-            if git_ref != "main" && git_ref != "master" {
-                Command::new("git")
+            // Clone fresh — use --depth 1 for performance and -b for
+            // branch/tag selection.  Avoid --config which is not supported
+            // by all git versions; any post-clone configuration is applied
+            // as a separate step.
+            if is_sha(git_ref) {
+                // Cannot use -b with a commit SHA; do a full clone then checkout.
+                let output = Command::new("git")
+                    .args(no_hooks)
+                    .args(["clone", git_url, &dest_str])
+                    .output()
+                    .map_err(|e| crate::error::Error::Io(format!("git clone: {e}")))?;
+                if !output.status.success() {
+                    return Err(crate::error::Error::Io(format!(
+                        "git clone failed: {}",
+                        String::from_utf8_lossy(&output.stderr)
+                    )));
+                }
+                let output = Command::new("git")
                     .args(no_hooks)
                     .args(["checkout", git_ref])
                     .current_dir(&dest)
                     .output()
-                    .ok();
+                    .map_err(|e| crate::error::Error::Io(format!("git checkout: {e}")))?;
+                if !output.status.success() {
+                    return Err(crate::error::Error::Io(format!(
+                        "git checkout failed: {}",
+                        String::from_utf8_lossy(&output.stderr)
+                    )));
+                }
+            } else {
+                // Branch or tag — use shallow clone with -b for efficiency.
+                let output = Command::new("git")
+                    .args(no_hooks)
+                    .args(["clone", "--depth", "1", "-b", git_ref, git_url, &dest_str])
+                    .output()
+                    .map_err(|e| crate::error::Error::Io(format!("git clone: {e}")))?;
+                if !output.status.success() {
+                    // Fallback: the ref might not be directly cloneable with -b
+                    // (e.g. it's a short tag that git doesn't resolve). Try a
+                    // plain clone + checkout instead.
+                    let output = Command::new("git")
+                        .args(no_hooks)
+                        .args(["clone", "--depth", "1", git_url, &dest_str])
+                        .output()
+                        .map_err(|e| crate::error::Error::Io(format!("git clone: {e}")))?;
+                    if !output.status.success() {
+                        return Err(crate::error::Error::Io(format!(
+                            "git clone failed: {}",
+                            String::from_utf8_lossy(&output.stderr)
+                        )));
+                    }
+                    if git_ref != "main" && git_ref != "master" {
+                        let co = Command::new("git")
+                            .args(no_hooks)
+                            .args(["checkout", git_ref])
+                            .current_dir(&dest)
+                            .output()
+                            .map_err(|e| crate::error::Error::Io(format!("git checkout: {e}")))?;
+                        if !co.status.success() {
+                            Command::new("git")
+                                .args(no_hooks)
+                                .args(["checkout", &format!("origin/{git_ref}")])
+                                .current_dir(&dest)
+                                .output()
+                                .ok();
+                        }
+                    }
+                }
             }
         }
         return Ok(dest);
@@ -752,6 +815,24 @@ mod tests {
     use serial_test::serial;
 
     // rivet: verifies REQ-020
+    #[test]
+    fn is_sha_detects_hex_strings() {
+        // Full 40-char SHA
+        assert!(is_sha("abc1234567890def1234567890abcdef12345678"));
+        // Short 7-char SHA
+        assert!(is_sha("abc1234"));
+        // Too short (6 chars)
+        assert!(!is_sha("abc123"));
+        // Branch name
+        assert!(!is_sha("main"));
+        // Tag
+        assert!(!is_sha("v1.0.0"));
+        // Contains non-hex chars
+        assert!(!is_sha("abc123g"));
+        // 41 chars (too long)
+        assert!(!is_sha("abc1234567890def1234567890abcdef123456789"));
+    }
+
     #[test]
     fn local_id_no_colon() {
         assert_eq!(
