@@ -526,6 +526,8 @@ pub fn check_baseline_tag(
     let output = Command::new("git")
         .args(["rev-parse", "--verify", &format!("refs/tags/{tag}")])
         .current_dir(repo_dir)
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
         .output()
         .map_err(|e| crate::error::Error::Io(format!("git rev-parse: {e}")))?;
 
@@ -542,6 +544,8 @@ pub fn list_baseline_tags(repo_dir: &Path) -> Result<Vec<String>, crate::error::
     let output = Command::new("git")
         .args(["tag", "--list", "baseline/*"])
         .current_dir(repo_dir)
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
         .output()
         .map_err(|e| crate::error::Error::Io(format!("git tag list: {e}")))?;
 
@@ -1278,48 +1282,32 @@ externals:
     #[serial]
     fn check_baseline_tag_in_git_repo() {
         let dir = tempfile::tempdir().unwrap();
+
+        // Helper: run git in the temp repo, clearing GIT_DIR / GIT_WORK_TREE
+        // so the command targets the freshly-init'd repo rather than an
+        // enclosing worktree that may share tags.
+        let git = |args: &[&str]| {
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(dir.path())
+                .env_remove("GIT_DIR")
+                .env_remove("GIT_WORK_TREE")
+                .env_remove("GIT_COMMON_DIR")
+                .output()
+                .unwrap()
+        };
+
         // Init a git repo with a baseline tag
-        std::process::Command::new("git")
-            .args(["init"])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["config", "user.email", "test@test.com"])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["config", "user.name", "Test"])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["config", "tag.forceSignAnnotated", "false"])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["config", "tag.gpgSign", "false"])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
+        git(&["init"]);
+        git(&["config", "user.email", "test@test.com"]);
+        git(&["config", "user.name", "Test"]);
+        git(&["config", "tag.forceSignAnnotated", "false"]);
+        git(&["config", "tag.gpgSign", "false"]);
+        git(&["config", "commit.gpgSign", "false"]);
         std::fs::write(dir.path().join("file.txt"), "hello").unwrap();
-        std::process::Command::new("git")
-            .args(["add", "."])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["commit", "-m", "init"])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["tag", "baseline/v1.0"])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-m", "init"]);
+        git(&["tag", "baseline/v1.0"]);
 
         let status = check_baseline_tag(dir.path(), "v1.0").unwrap();
         assert!(status.is_present());
@@ -1333,52 +1321,30 @@ externals:
     #[serial]
     fn list_baseline_tags_finds_tags() {
         let dir = tempfile::tempdir().unwrap();
-        std::process::Command::new("git")
-            .args(["init"])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["config", "user.email", "test@test.com"])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["config", "user.name", "Test"])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["config", "tag.forceSignAnnotated", "false"])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["config", "tag.gpgSign", "false"])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
+
+        // Helper: run git in the temp repo, clearing inherited env vars.
+        let git = |args: &[&str]| {
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(dir.path())
+                .env_remove("GIT_DIR")
+                .env_remove("GIT_WORK_TREE")
+                .env_remove("GIT_COMMON_DIR")
+                .output()
+                .unwrap()
+        };
+
+        git(&["init"]);
+        git(&["config", "user.email", "test@test.com"]);
+        git(&["config", "user.name", "Test"]);
+        git(&["config", "tag.forceSignAnnotated", "false"]);
+        git(&["config", "tag.gpgSign", "false"]);
+        git(&["config", "commit.gpgSign", "false"]);
         std::fs::write(dir.path().join("file.txt"), "hello").unwrap();
-        std::process::Command::new("git")
-            .args(["add", "."])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["commit", "-m", "init"])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["tag", "baseline/v1.0"])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["tag", "baseline/v2.0"])
-            .current_dir(dir.path())
-            .output()
-            .unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-m", "init"]);
+        git(&["tag", "baseline/v1.0"]);
+        git(&["tag", "baseline/v2.0"]);
 
         let tags = list_baseline_tags(dir.path()).unwrap();
         assert!(tags.contains(&"v1.0".to_string()));
