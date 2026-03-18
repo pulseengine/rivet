@@ -122,7 +122,7 @@ pub struct TraceabilityRule {
     pub severity: Severity,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
     Info,
@@ -220,6 +220,7 @@ impl TryFrom<ConditionRaw> for Condition {
 // Manual Serialize implementation for Condition → flat YAML output
 impl Condition {
     /// Check whether an artifact satisfies this condition.
+    #[inline]
     pub fn matches_artifact(&self, artifact: &Artifact) -> bool {
         match self {
             Condition::Equals { field, value } => {
@@ -237,6 +238,7 @@ impl Condition {
 }
 
 /// Get a string value for a field from an artifact, checking base fields first.
+#[inline]
 fn get_field_value(artifact: &Artifact, field: &str) -> Option<String> {
     match field {
         "status" => artifact.status.clone(),
@@ -326,7 +328,7 @@ impl Requirement {
                     let has_field = get_field_value(artifact, field_name).is_some();
                     if !has_field {
                         diags.push(crate::validate::Diagnostic {
-                            severity: severity.clone(),
+                            severity,
                             artifact_id: Some(artifact.id.clone()),
                             rule: rule_name.to_string(),
                             message: format!(
@@ -341,7 +343,7 @@ impl Requirement {
                 for lt in link_types {
                     if !artifact.has_link_type(lt) {
                         diags.push(crate::validate::Diagnostic {
-                            severity: severity.clone(),
+                            severity,
                             artifact_id: Some(artifact.id.clone()),
                             rule: rule_name.to_string(),
                             message: format!(
@@ -532,16 +534,19 @@ impl Schema {
     }
 
     /// Look up an artifact type definition by name.
+    #[inline]
     pub fn artifact_type(&self, name: &str) -> Option<&ArtifactTypeDef> {
         self.artifact_types.get(name)
     }
 
     /// Look up a link type definition by name.
+    #[inline]
     pub fn link_type(&self, name: &str) -> Option<&LinkTypeDef> {
         self.link_types.get(name)
     }
 
     /// Get the inverse link type name, if one is defined.
+    #[inline]
     pub fn inverse_of(&self, link_type: &str) -> Option<&str> {
         self.inverse_map.get(link_type).map(|s| s.as_str())
     }

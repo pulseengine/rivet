@@ -65,6 +65,7 @@ pub struct Artifact {
 
 impl Artifact {
     /// Return all link targets of a given link type.
+    #[inline]
     pub fn links_of_type(&self, link_type: &str) -> Vec<&ArtifactId> {
         self.links
             .iter()
@@ -74,6 +75,7 @@ impl Artifact {
     }
 
     /// Check whether this artifact has any link of the given type.
+    #[inline]
     pub fn has_link_type(&self, link_type: &str) -> bool {
         self.links.iter().any(|l| l.link_type == link_type)
     }

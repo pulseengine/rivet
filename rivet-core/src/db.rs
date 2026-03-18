@@ -144,7 +144,7 @@ pub fn evaluate_conditional_rules(
     for rule in &schema.conditional_rules {
         for artifact in store.iter() {
             if rule.when.matches_artifact(artifact) {
-                diagnostics.extend(rule.then.check(artifact, &rule.name, rule.severity.clone()));
+                diagnostics.extend(rule.then.check(artifact, &rule.name, rule.severity));
             }
         }
     }

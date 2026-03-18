@@ -46,11 +46,12 @@ pub struct LinkGraph {
 impl LinkGraph {
     /// Build the link graph from a store and schema.
     pub fn build(store: &Store, schema: &Schema) -> Self {
-        let mut forward: HashMap<ArtifactId, Vec<ResolvedLink>> = HashMap::new();
-        let mut backward: HashMap<ArtifactId, Vec<Backlink>> = HashMap::new();
+        let n = store.len();
+        let mut forward: HashMap<ArtifactId, Vec<ResolvedLink>> = HashMap::with_capacity(n);
+        let mut backward: HashMap<ArtifactId, Vec<Backlink>> = HashMap::with_capacity(n);
         let mut broken = Vec::new();
-        let mut graph = DiGraph::new();
-        let mut node_map: HashMap<ArtifactId, NodeIndex> = HashMap::new();
+        let mut graph = DiGraph::with_capacity(n, n * 2);
+        let mut node_map: HashMap<ArtifactId, NodeIndex> = HashMap::with_capacity(n);
 
         // Create nodes for all artifacts
         for artifact in store.iter() {
@@ -61,18 +62,16 @@ impl LinkGraph {
         // Create edges for all links
         for artifact in store.iter() {
             for link in &artifact.links {
-                let resolved = ResolvedLink {
-                    source: artifact.id.clone(),
-                    target: link.target.clone(),
-                    link_type: link.link_type.clone(),
-                };
-
                 if store.contains(&link.target) {
                     // Valid link — add forward, backward, and graph edge
                     forward
                         .entry(artifact.id.clone())
                         .or_default()
-                        .push(resolved);
+                        .push(ResolvedLink {
+                            source: artifact.id.clone(),
+                            target: link.target.clone(),
+                            link_type: link.link_type.clone(),
+                        });
 
                     let inverse_type = schema.inverse_of(&link.link_type).map(|s| s.to_string());
                     backward
@@ -90,7 +89,11 @@ impl LinkGraph {
                         graph.add_edge(src, dst, link.link_type.clone());
                     }
                 } else {
-                    broken.push(resolved);
+                    broken.push(ResolvedLink {
+                        source: artifact.id.clone(),
+                        target: link.target.clone(),
+                        link_type: link.link_type.clone(),
+                    });
                 }
             }
         }
@@ -105,21 +108,25 @@ impl LinkGraph {
     }
 
     /// Access the underlying petgraph directed graph.
+    #[inline]
     pub fn graph(&self) -> &DiGraph<ArtifactId, String> {
         &self.graph
     }
 
     /// Access the mapping from artifact ID to petgraph node index.
+    #[inline]
     pub fn node_map(&self) -> &HashMap<ArtifactId, NodeIndex> {
         &self.node_map
     }
 
     /// Get forward links from an artifact.
+    #[inline]
     pub fn links_from(&self, id: &str) -> &[ResolvedLink] {
         self.forward.get(id).map(|v| v.as_slice()).unwrap_or(&[])
     }
 
     /// Get backlinks (incoming links) to an artifact.
+    #[inline]
     pub fn backlinks_to(&self, id: &str) -> &[Backlink] {
         self.backward.get(id).map(|v| v.as_slice()).unwrap_or(&[])
     }
