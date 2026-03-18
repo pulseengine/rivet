@@ -3594,6 +3594,26 @@ impl ProjectContext {
             }
         }
 
+        // Load external project artifacts so cross-repo references resolve
+        if let Some(ref externals) = config.externals {
+            if !externals.is_empty() {
+                match rivet_core::externals::load_all_externals(externals, &cli.project) {
+                    Ok(resolved) => {
+                        for ext in resolved {
+                            for mut artifact in ext.artifacts {
+                                // Prefix external artifact IDs so they don't collide
+                                artifact.id = format!("{}:{}", ext.prefix, artifact.id);
+                                store.upsert(artifact);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("could not load externals: {e}");
+                    }
+                }
+            }
+        }
+
         let graph = LinkGraph::build(&store, &schema);
         Ok(Self {
             config,
