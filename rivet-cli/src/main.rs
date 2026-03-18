@@ -367,6 +367,10 @@ enum Command {
         #[arg(long)]
         title: String,
 
+        /// Artifact description
+        #[arg(long)]
+        description: Option<String>,
+
         /// Lifecycle status (default: draft)
         #[arg(long, default_value = "draft")]
         status: String,
@@ -378,6 +382,10 @@ enum Command {
         /// Field values as key=value pairs
         #[arg(long = "field", value_parser = parse_key_val_mutation)]
         fields: Vec<(String, String)>,
+
+        /// Links as type:target pairs (e.g., --link "satisfies:REQ-001")
+        #[arg(long = "link", value_parser = parse_link_spec)]
+        links: Vec<(String, String)>,
 
         /// Target YAML file to append the artifact to
         #[arg(long)]
@@ -668,11 +676,23 @@ fn run(cli: Cli) -> Result<bool> {
         Command::Add {
             r#type,
             title,
+            description,
             status,
             tags,
             fields,
+            links,
             file,
-        } => cmd_add(&cli, r#type, title, status, tags, fields, file.as_deref()),
+        } => cmd_add(
+            &cli,
+            r#type,
+            title,
+            description.as_deref(),
+            status,
+            tags,
+            fields,
+            links,
+            file.as_deref(),
+        ),
         Command::Link {
             source,
             link_type,
@@ -3660,6 +3680,21 @@ fn parse_key_val_mutation(s: &str) -> Result<(String, String), String> {
     Ok((s[..pos].to_string(), s[pos + 1..].to_string()))
 }
 
+/// Parse a link specification as "type:target" (e.g., "satisfies:REQ-001").
+fn parse_link_spec(s: &str) -> Result<(String, String), String> {
+    let pos = s
+        .find(':')
+        .ok_or_else(|| format!("invalid link spec: expected 'type:target', got '{s}'"))?;
+    let link_type = s[..pos].trim().to_string();
+    let target = s[pos + 1..].trim().to_string();
+    if link_type.is_empty() || target.is_empty() {
+        return Err(format!(
+            "invalid link spec: both type and target must be non-empty in '{s}'"
+        ));
+    }
+    Ok((link_type, target))
+}
+
 /// Print the next available ID for a given artifact type or prefix.
 fn cmd_next_id(
     cli: &Cli,
@@ -3694,16 +3729,19 @@ fn cmd_next_id(
 }
 
 /// Add a new artifact to the project.
+#[allow(clippy::too_many_arguments)]
 fn cmd_add(
     cli: &Cli,
     artifact_type: &str,
     title: &str,
+    description: Option<&str>,
     status: &str,
     tags: &[String],
     fields: &[(String, String)],
+    links: &[(String, String)],
     file: Option<&std::path::Path>,
 ) -> Result<bool> {
-    use rivet_core::model::Artifact;
+    use rivet_core::model::{Artifact, Link};
     use rivet_core::mutate;
     use std::collections::BTreeMap;
 
@@ -3722,14 +3760,23 @@ fn cmd_add(
         fields_map.insert(key.clone(), serde_yaml::Value::String(value.clone()));
     }
 
+    // Build links
+    let link_vec: Vec<Link> = links
+        .iter()
+        .map(|(link_type, target)| Link {
+            link_type: link_type.clone(),
+            target: target.clone(),
+        })
+        .collect();
+
     let artifact = Artifact {
         id: id.clone(),
         artifact_type: artifact_type.to_string(),
         title: title.to_string(),
-        description: None,
+        description: description.map(|s| s.to_string()),
         status: Some(status.to_string()),
         tags: tags.to_vec(),
-        links: vec![],
+        links: link_vec,
         fields: fields_map,
         source_file: None,
     };
