@@ -85,7 +85,8 @@ pub fn sync_external(
 
         // Disable git hooks for all git operations to prevent code execution
         // from malicious repositories (e.g., post-checkout, post-merge hooks).
-        let no_hooks = ["--config", "core.hooksPath=/dev/null"];
+        // Use `-c` (not `--config`) for compatibility with git < 2.32.
+        let no_hooks = ["-c", "core.hooksPath=/dev/null"];
 
         if dest.join(".git").exists() {
             // Fetch updates
@@ -221,13 +222,53 @@ pub fn load_external_project(
     project_dir: &Path,
 ) -> Result<Vec<crate::model::Artifact>, crate::error::Error> {
     let config_path = project_dir.join("rivet.yaml");
+    if !config_path.exists() {
+        return Err(crate::error::Error::Io(format!(
+            "external project at {} has no rivet.yaml — \
+             expected config at {}",
+            project_dir.display(),
+            config_path.display()
+        )));
+    }
     let config = crate::load_project_config(&config_path)?;
+
+    if config.sources.is_empty() {
+        log::warn!(
+            "external project at {} has rivet.yaml but no sources declared",
+            project_dir.display()
+        );
+    }
 
     let mut artifacts = Vec::new();
     for source in &config.sources {
+        let source_path = project_dir.join(&source.path);
+        if !source_path.exists() {
+            log::warn!(
+                "external project source '{}' does not exist at {} — \
+                 check that the path in rivet.yaml matches the repository layout",
+                source.path,
+                source_path.display()
+            );
+            continue;
+        }
         let loaded = crate::load_artifacts(source, project_dir)?;
         artifacts.extend(loaded);
     }
+
+    if artifacts.is_empty() {
+        log::warn!(
+            "external project at {} loaded 0 artifacts — \
+             check sources in rivet.yaml or run 'rivet validate' in that directory",
+            project_dir.display()
+        );
+    } else {
+        log::info!(
+            "external project at {} loaded {} artifacts",
+            project_dir.display(),
+            artifacts.len()
+        );
+    }
+
     Ok(artifacts)
 }
 
