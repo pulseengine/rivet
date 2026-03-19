@@ -150,7 +150,7 @@ fn stats_partial(state: &AppState) -> String {
         html.push_str("<div class=\"card\"><h3>Orphan Artifacts (no links)</h3><table><thead><tr><th>ID</th></tr></thead><tbody>");
         for id in &orphans {
             html.push_str(&format!(
-                "<tr><td><a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a></td></tr>"
+                "<tr><td><a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{id}\">{id}</a></td></tr>"
             ));
         }
         html.push_str("</tbody></table></div>");
@@ -183,7 +183,7 @@ fn stats_partial(state: &AppState) -> String {
                  </div>\
                </div>\
              </div>\
-             <a href=\"#\" hx-get=\"/coverage\" hx-target=\"#content\" hx-push-url=\"true\" \
+             <a href=\"/coverage\" hx-get=\"/coverage\" hx-target=\"#content\" hx-push-url=\"true\" \
                 style=\"font-size:.85rem;color:var(--accent);text-decoration:none\">\
                 View full coverage report &rarr;</a>\
              </div>",
@@ -234,7 +234,7 @@ fn stats_partial(state: &AppState) -> String {
         }
         html.push_str("</div>");
         html.push_str(
-            "<a href=\"#\" hx-get=\"/results\" hx-target=\"#content\" hx-push-url=\"true\" \
+            "<a href=\"/results\" hx-get=\"/results\" hx-target=\"#content\" hx-push-url=\"true\" \
              style=\"font-size:.85rem;color:var(--accent);text-decoration:none\">\
              View all test runs &rarr;</a>",
         );
@@ -259,7 +259,7 @@ fn stats_partial(state: &AppState) -> String {
          <div style=\"display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:0.75rem\">",
     );
     html.push_str(&format!(
-        "<a href=\"#\" hx-get=\"/verification\" hx-target=\"#content\" hx-push-url=\"true\" \
+        "<a href=\"/verification\" hx-get=\"/verification\" hx-target=\"#content\" hx-push-url=\"true\" \
          style=\"display:block;padding:1rem;background:var(--surface);border:1px solid var(--border);\
          border-radius:var(--radius-sm);text-decoration:none;color:var(--text)\">\
          <div style=\"font-weight:600;margin-bottom:.25rem\">Verification</div>\
@@ -267,7 +267,7 @@ fn stats_partial(state: &AppState) -> String {
          </a>",
     ));
     html.push_str(&format!(
-        "<a href=\"#\" hx-get=\"/documents\" hx-target=\"#content\" hx-push-url=\"true\" \
+        "<a href=\"/documents\" hx-get=\"/documents\" hx-target=\"#content\" hx-push-url=\"true\" \
          style=\"display:block;padding:1rem;background:var(--surface);border:1px solid var(--border);\
          border-radius:var(--radius-sm);text-decoration:none;color:var(--text)\">\
          <div style=\"font-weight:600;margin-bottom:.25rem\">Documents</div>\
@@ -276,7 +276,7 @@ fn stats_partial(state: &AppState) -> String {
         doc_store.len(),
     ));
     html.push_str(
-        "<a href=\"#\" hx-get=\"/graph\" hx-target=\"#content\" hx-push-url=\"true\" \
+        "<a href=\"/graph\" hx-get=\"/graph\" hx-target=\"#content\" hx-push-url=\"true\" \
          style=\"display:block;padding:1rem;background:var(--surface);border:1px solid var(--border);\
          border-radius:var(--radius-sm);text-decoration:none;color:var(--text)\">\
          <div style=\"font-weight:600;margin-bottom:.25rem\">Traceability Graph</div>\
@@ -317,9 +317,8 @@ pub(crate) async fn externals_list(State(state): State<SharedState>) -> Html<Str
         };
         let prefix_link = if ext.synced && !ext.store.is_empty() {
             format!(
-                "<a hx-get=\"/externals/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a>",
-                html_escape(&ext.prefix),
-                html_escape(&ext.prefix)
+                "<a hx-get=\"/externals/{prefix}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/externals/{prefix}\">{prefix}</a>",
+                prefix = html_escape(&ext.prefix),
             )
         } else {
             html_escape(&ext.prefix)
@@ -405,13 +404,13 @@ pub(crate) async fn external_detail(
         };
         // Link using cross-repo ID format: prefix:ID
         let qualified_id = format!("{}:{}", ext.prefix, a.id);
+        let qid_esc = html_escape(&qualified_id);
         html.push_str(&format!(
-            "<tr><td><a hx-get=\"/artifacts/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a></td>\
+            "<tr><td><a hx-get=\"/artifacts/{qid_esc}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{qid_esc}\">{}</a></td>\
              <td>{}</td>\
              <td>{}</td>\
              <td>{}</td>\
              <td>{}</td></tr>",
-            html_escape(&qualified_id),
             html_escape(&a.id),
             badge_for_type(&a.artifact_type),
             html_escape(&a.title),
@@ -441,7 +440,7 @@ pub(crate) async fn external_detail(
     // Back button
     html.push_str(
         "<div class=\"detail-actions\">\
-         <a class=\"btn btn-secondary\" hx-get=\"/externals\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">&larr; Back to externals</a>\
+         <a class=\"btn btn-secondary\" hx-get=\"/externals\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/externals\">&larr; Back to externals</a>\
          </div>",
     );
 
@@ -511,15 +510,14 @@ pub(crate) async fn artifacts_list(State(state): State<SharedState>) -> Html<Str
                 .collect::<Vec<_>>()
                 .join(" ")
         };
+        let id_esc = html_escape(&a.id);
         html.push_str(&format!(
-            "<tr><td><a hx-get=\"/artifacts/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a></td>\
+            "<tr><td><a hx-get=\"/artifacts/{id_esc}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{id_esc}\">{id_esc}</a></td>\
              <td>{}</td>\
              <td>{}</td>\
              <td>{}</td>\
              <td>{}</td>\
              <td data-tags=\"{}\">{}</td></tr>",
-            html_escape(&a.id),
-            html_escape(&a.id),
             badge_for_type(&a.artifact_type),
             html_escape(&a.title),
             status_badge,
@@ -731,9 +729,8 @@ pub(crate) async fn artifact_detail(
         for link in &artifact.links {
             let target_display = if store.contains(&link.target) {
                 format!(
-                    "<a hx-get=\"/artifacts/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a>",
-                    html_escape(&link.target),
-                    html_escape(&link.target)
+                    "<a hx-get=\"/artifacts/{target}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{target}\">{target}</a>",
+                    target = html_escape(&link.target),
                 )
             } else {
                 // Check if this is a cross-repo reference (prefix:id)
@@ -745,11 +742,10 @@ pub(crate) async fn artifact_detail(
                             .any(|e| e.prefix == *prefix && e.synced && e.store.contains(id));
                         if ext_exists {
                             format!(
-                                "<a hx-get=\"/externals/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">\
-                                 <span class=\"badge badge-info\" style=\"margin-right:.35rem\">{}</span>{}</a>",
-                                html_escape(prefix),
-                                html_escape(prefix),
-                                html_escape(id),
+                                "<a hx-get=\"/externals/{ext_prefix}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/externals/{ext_prefix}\">\
+                                 <span class=\"badge badge-info\" style=\"margin-right:.35rem\">{ext_prefix}</span>{ext_id}</a>",
+                                ext_prefix = html_escape(prefix),
+                                ext_id = html_escape(id),
                             )
                         } else {
                             format!(
@@ -783,12 +779,11 @@ pub(crate) async fn artifact_detail(
         html.push_str("<div class=\"card\"><h3>Incoming Links</h3><table><thead><tr><th>Type</th><th>Source</th></tr></thead><tbody>");
         for bl in backlinks {
             let label = bl.inverse_type.as_deref().unwrap_or(&bl.link_type);
+            let source_esc = html_escape(&bl.source);
             html.push_str(&format!(
                 "<tr><td><span class=\"link-pill\">{}</span></td>\
-                 <td><a hx-get=\"/artifacts/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a></td></tr>",
+                 <td><a hx-get=\"/artifacts/{source_esc}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{source_esc}\">{source_esc}</a></td></tr>",
                 html_escape(label),
-                html_escape(&bl.source),
-                html_escape(&bl.source)
             ));
         }
         html.push_str("</tbody></table></div>");
@@ -820,8 +815,8 @@ pub(crate) async fn artifact_detail(
     // Action buttons
     html.push_str(&format!(
         r##"<div class="detail-actions">
-        <a class="btn btn-primary" hx-get="/artifacts/{id_esc}/graph" hx-target="#content" hx-push-url="true" href="#">Show in graph</a>
-        <a class="btn btn-secondary" hx-get="/artifacts" hx-target="#content" hx-push-url="true" href="#">&larr; Back to artifacts</a>
+        <a class="btn btn-primary" hx-get="/artifacts/{id_esc}/graph" hx-target="#content" hx-push-url="true" href="/artifacts/{id_esc}/graph">Show in graph</a>
+        <a class="btn btn-secondary" hx-get="/artifacts" hx-target="#content" hx-push-url="true" href="/artifacts">&larr; Back to artifacts</a>
         </div>"##,
         id_esc = html_escape(&id),
     ));
@@ -1257,9 +1252,9 @@ pub(crate) async fn artifact_graph(
     ));
 
     html.push_str(&format!(
-        r##"<p><a hx-get="/artifacts/{id_esc}" hx-target="#content" hx-push-url="true" href="#">&larr; Back to {id_esc}</a>
+        r##"<p><a hx-get="/artifacts/{id_esc}" hx-target="#content" hx-push-url="true" href="/artifacts/{id_esc}">&larr; Back to {id_esc}</a>
         &nbsp;|&nbsp;
-        <a hx-get="/graph?focus={id_esc}" hx-target="#content" hx-push-url="true" href="#">Open in full graph</a></p>"##,
+        <a hx-get="/graph?focus={id_esc}" hx-target="#content" hx-push-url="true" href="/graph?focus={id_esc}">Open in full graph</a></p>"##,
         id_esc = html_escape(&id),
     ));
 
@@ -1415,7 +1410,7 @@ pub(crate) async fn validate_view(State(state): State<SharedState>) -> Html<Stri
         let art_id = d.artifact_id.as_deref().unwrap_or("-");
         let art_link = if d.artifact_id.is_some() && state.store.contains(art_id) {
             format!(
-                "<a hx-get=\"/artifacts/{art}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{art}</a>",
+                "<a hx-get=\"/artifacts/{art}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{art}\">{art}</a>",
                 art = html_escape(art_id)
             )
         } else {
@@ -1540,18 +1535,16 @@ pub(crate) async fn matrix_view(
                     .iter()
                     .map(|t| {
                         format!(
-                            "<a hx-get=\"/artifacts/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a>",
-                            html_escape(&t.id),
-                            html_escape(&t.id)
+                            "<a hx-get=\"/artifacts/{tid}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{tid}\">{tid}</a>",
+                            tid = html_escape(&t.id),
                         )
                     })
                     .collect::<Vec<_>>()
                     .join(", ")
             };
+            let src_esc = html_escape(&row.source_id);
             html.push_str(&format!(
-                "<tr><td><a hx-get=\"/artifacts/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a></td><td>{}</td><td>{}</td></tr>",
-                html_escape(&row.source_id),
-                html_escape(&row.source_id),
+                "<tr><td><a hx-get=\"/artifacts/{src_esc}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{src_esc}\">{src_esc}</a></td><td>{}</td><td>{}</td></tr>",
                 targets,
                 row.targets.len(),
             ));
@@ -1620,15 +1613,13 @@ pub(crate) async fn matrix_cell_detail(
             continue;
         }
         for t in &row.targets {
+            let src_esc = html_escape(&row.source_id);
+            let tgt_esc = html_escape(&t.id);
             html.push_str(&format!(
-                "<li><a hx-get=\"/artifacts/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a> \
+                "<li><a hx-get=\"/artifacts/{src_esc}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{src_esc}\">{src_esc}</a> \
                  &rarr; \
-                 <a hx-get=\"/artifacts/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a>\
+                 <a hx-get=\"/artifacts/{tgt_esc}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{tgt_esc}\">{tgt_esc}</a>\
                  <span class=\"meta\" style=\"margin-left:.5rem\">{} &rarr; {}</span></li>",
-                html_escape(&row.source_id),
-                html_escape(&row.source_id),
-                html_escape(&t.id),
-                html_escape(&t.id),
                 html_escape(&row.source_title),
                 html_escape(&t.title),
             ));
@@ -1748,7 +1739,7 @@ pub(crate) async fn coverage_view(State(state): State<SharedState>) -> Html<Stri
             for id in &entry.uncovered_ids {
                 let title = state.store.get(id).map(|a| a.title.as_str()).unwrap_or("-");
                 html.push_str(&format!(
-                    "<tr><td><a hx-get=\"/artifacts/{id_esc}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id_esc}</a></td>\
+                    "<tr><td><a hx-get=\"/artifacts/{id_esc}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{id_esc}\">{id_esc}</a></td>\
                      <td>{title_esc}</td></tr>",
                     id_esc = html_escape(id),
                     title_esc = html_escape(title),
@@ -1967,13 +1958,12 @@ pub(crate) async fn document_detail(
             }
             if let Some(artifact) = store.get(&reference.artifact_id) {
                 let status = artifact.status.as_deref().unwrap_or("-");
+                let ref_id_esc = html_escape(&artifact.id);
                 html.push_str(&format!(
-                    "<tr><td><a hx-get=\"/artifacts/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a></td>\
+                    "<tr><td><a hx-get=\"/artifacts/{ref_id_esc}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{ref_id_esc}\">{ref_id_esc}</a></td>\
                      <td>{}</td>\
                      <td>{}</td>\
                      <td>{}</td></tr>",
-                    html_escape(&artifact.id),
-                    html_escape(&artifact.id),
                     badge_for_type(&artifact.artifact_type),
                     html_escape(&artifact.title),
                     html_escape(status),
@@ -1991,7 +1981,7 @@ pub(crate) async fn document_detail(
     }
 
     html.push_str(
-        "<p><a hx-get=\"/documents\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">&larr; Back to documents</a></p>",
+        "<p><a hx-get=\"/documents\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/documents\">&larr; Back to documents</a></p>",
     );
 
     Html(html)
@@ -2446,7 +2436,7 @@ pub(crate) async fn verification_view(State(state): State<SharedState>) -> Html<
             html.push_str("<details class=\"ver-row\"><summary>");
             html.push_str(&format!(
                 "<span class=\"ver-chevron\"><svg width=\"12\" height=\"12\" viewBox=\"0 0 12 12\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"><path d=\"M4.5 2.5l4 3.5-4 3.5\"/></svg></span>\
-                 <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" style=\"flex-shrink:0\">{id}</a>\
+                 <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{id}\" style=\"flex-shrink:0\">{id}</a>\
                  <span style=\"flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-secondary)\">{title}</span>\
                  <span class=\"badge\" style=\"font-size:0.7rem;opacity:0.6\">{status}</span>\
                  {coverage_badge}",
@@ -2480,7 +2470,7 @@ pub(crate) async fn verification_view(State(state): State<SharedState>) -> Html<
                 for v in &row.verifiers {
                     html.push_str(&format!(
                         "<p style=\"margin-bottom:.5rem\">\
-                         <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a> \
+                         <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{id}\">{id}</a> \
                          {type_badge} \
                          <span class=\"method-badge\">{method}</span> \
                          &mdash; {title}",
@@ -2634,7 +2624,7 @@ fn stpa_partial(state: &AppState) -> Html<String> {
         html.push_str("<span class=\"stpa-chevron\">&#9654;</span> ");
         html.push_str(&badge_for_type("loss"));
         html.push_str(&format!(
-            " <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a>\
+            " <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{id}\">{id}</a>\
              <span style=\"color:var(--text-secondary);font-size:.85rem\"> {title}</span>",
             id = html_escape(loss_id),
             title = html_escape(&loss.title),
@@ -2659,7 +2649,7 @@ fn stpa_partial(state: &AppState) -> Html<String> {
                 html.push_str("<span class=\"stpa-link-label\">leads-to-loss</span>");
                 html.push_str(&badge_for_type(&hazard.artifact_type));
                 html.push_str(&format!(
-                    " <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a>\
+                    " <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{id}\">{id}</a>\
                      <span style=\"color:var(--text-secondary);font-size:.85rem\"> {title}</span>",
                     id = html_escape(hazard_id),
                     title = html_escape(&hazard.title),
@@ -2690,7 +2680,7 @@ fn stpa_partial(state: &AppState) -> Html<String> {
                         html.push_str(&format!(
                             "<div class=\"stpa-node\">\
                              <span class=\"stpa-link-label\">prevents</span>{badge}\
-                             <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a>\
+                             <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{id}\">{id}</a>\
                              <span style=\"color:var(--text-secondary);font-size:.85rem\"> {title}</span>\
                              </div>",
                             badge = badge_for_type("system-constraint"),
@@ -2722,7 +2712,7 @@ fn stpa_partial(state: &AppState) -> Html<String> {
                         html.push_str("<span class=\"stpa-link-label\">leads-to-hazard</span>");
                         html.push_str(&badge_for_type("uca"));
                         html.push_str(&format!(
-                            " <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a>\
+                            " <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{id}\">{id}</a>\
                              <span style=\"color:var(--text-secondary);font-size:.85rem\"> {title}</span>",
                             id = html_escape(uca_id),
                             title = html_escape(&uca.title),
@@ -2744,7 +2734,7 @@ fn stpa_partial(state: &AppState) -> Html<String> {
                                 html.push_str(&format!(
                                     "<div class=\"stpa-node\">\
                                      <span class=\"stpa-link-label\">inverts-uca</span>{badge}\
-                                     <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a>\
+                                     <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{id}\">{id}</a>\
                                      <span style=\"color:var(--text-secondary);font-size:.85rem\"> {title}</span>\
                                      </div>",
                                     badge = badge_for_type("controller-constraint"),
@@ -2762,7 +2752,7 @@ fn stpa_partial(state: &AppState) -> Html<String> {
                                 html.push_str(&format!(
                                     "<div class=\"stpa-node\">\
                                      <span class=\"stpa-link-label\">caused-by-uca</span>{badge}\
-                                     <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a>\
+                                     <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{id}\">{id}</a>\
                                      <span style=\"color:var(--text-secondary);font-size:.85rem\"> {title}</span>\
                                      </div>",
                                     badge = badge_for_type("loss-scenario"),
@@ -2880,7 +2870,7 @@ fn stpa_partial(state: &AppState) -> Html<String> {
                 .iter()
                 .map(|h| {
                     format!(
-                        "<a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" \
+                        "<a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{id}\" \
                      style=\"font-family:var(--mono);font-size:.8rem\">{id}</a>",
                         id = html_escape(h),
                     )
@@ -2890,14 +2880,14 @@ fn stpa_partial(state: &AppState) -> Html<String> {
                 "-".to_string()
             } else {
                 format!(
-                    "<a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" \
+                    "<a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{id}\" \
                      style=\"font-family:var(--mono);font-size:.8rem\">{id}</a>",
                     id = html_escape(&row.control_action),
                 )
             };
             html.push_str(&format!(
                 "<tr>\
-                 <td><a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a></td>\
+                 <td><a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{id}\">{id}</a></td>\
                  <td>{ca}</td>\
                  <td>{type_badge}</td>\
                  <td>{title}</td>\
@@ -3339,7 +3329,7 @@ pub(crate) async fn results_view(State(state): State<SharedState>) -> Html<Strin
 
         html.push_str(&format!(
             "<tr>\
-             <td><a hx-get=\"/results/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a> {status_badge}</td>\
+             <td><a hx-get=\"/results/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/results/{id}\">{id}</a> {status_badge}</td>\
              <td>{ts}</td>\
              <td>{src}</td>\
              <td>{env}</td>\
@@ -3436,7 +3426,7 @@ pub(crate) async fn result_detail(
 
         html.push_str(&format!(
             "<tr class=\"{status_class}\">\
-             <td><a hx-get=\"/artifacts/{aid}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{aid}</a></td>\
+             <td><a hx-get=\"/artifacts/{aid}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{aid}\">{aid}</a></td>\
              <td>{title}</td>\
              <td>{status_badge}</td>\
              <td>{duration}</td>\
@@ -3451,7 +3441,7 @@ pub(crate) async fn result_detail(
     html.push_str("</tbody></table></div>");
 
     html.push_str(
-        "<p><a hx-get=\"/results\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" class=\"btn btn-secondary\">&larr; Back to results</a></p>",
+        "<p><a hx-get=\"/results\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/results\" class=\"btn btn-secondary\">&larr; Back to results</a></p>",
     );
 
     Html(html)
@@ -3549,7 +3539,7 @@ fn render_tree(entries: &[TreeEntry], html: &mut String, depth: usize) {
                 "<svg width=\"14\" height=\"14\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"1.5\" width=\"10\" height=\"13\" rx=\"1.5\"/></svg>"
             };
             html.push_str(&format!(
-                "<a class=\"tree-item\" hx-get=\"/source/{encoded}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{indent}<span class=\"tree-icon\">{icon}</span> {name}</a>",
+                "<a class=\"tree-item\" hx-get=\"/source/{encoded}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/source/{encoded}\">{indent}<span class=\"tree-icon\">{icon}</span> {name}</a>",
                 name = html_escape(&entry.name),
             ));
         }
@@ -3718,7 +3708,7 @@ pub(crate) async fn source_file_view(
     }
     if metadata.is_dir() {
         return Html(format!(
-            "<h2>Directory</h2><p><code>{}</code> is a directory. <a hx-get=\"/source\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">Back to tree</a></p>",
+            "<h2>Directory</h2><p><code>{}</code> is a directory. <a hx-get=\"/source\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/source\">Back to tree</a></p>",
             html_escape(rel_path)
         ));
     }
@@ -3726,7 +3716,7 @@ pub(crate) async fn source_file_view(
     let file_size = metadata.len();
     if file_size > SOURCE_MAX_SIZE {
         return Html(format!(
-            "<h2>File Too Large</h2><p><code>{}</code> is {} which exceeds the 100 KB limit.</p><p><a hx-get=\"/source\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" class=\"btn btn-secondary\">&larr; Back to files</a></p>",
+            "<h2>File Too Large</h2><p><code>{}</code> is {} which exceeds the 100 KB limit.</p><p><a hx-get=\"/source\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/source\" class=\"btn btn-secondary\">&larr; Back to files</a></p>",
             html_escape(rel_path),
             format_size(file_size)
         ));
@@ -3748,7 +3738,7 @@ pub(crate) async fn source_file_view(
     // Breadcrumb
     html.push_str("<div class=\"source-breadcrumb\">");
     html.push_str(
-        "<a hx-get=\"/source\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">Source</a>",
+        "<a hx-get=\"/source\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/source\">Source</a>",
     );
     let parts: Vec<&str> = rel_path.split('/').collect();
     for (i, part) in parts.iter().enumerate() {
@@ -3843,7 +3833,7 @@ pub(crate) async fn source_file_view(
                 _ => "—".into(),
             };
             html.push_str(&format!(
-                "<tr><td><a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a></td><td>{}</td><td>{}</td><td>{line_info}</td></tr>",
+                "<tr><td><a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{id}\">{id}</a></td><td>{}</td><td>{}</td><td>{line_info}</td></tr>",
                 badge_for_type(&fref.artifact_type),
                 html_escape(&fref.title),
                 id = fref.id,
@@ -3852,7 +3842,7 @@ pub(crate) async fn source_file_view(
         html.push_str("</tbody></table></div>");
     }
 
-    html.push_str("<p style=\"margin-top:1rem\"><a hx-get=\"/source\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" class=\"btn btn-secondary\">&larr; Back to files</a></p>");
+    html.push_str("<p style=\"margin-top:1rem\"><a hx-get=\"/source\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/source\" class=\"btn btn-secondary\">&larr; Back to files</a></p>");
     Html(html)
 }
 
@@ -4312,7 +4302,7 @@ fn render_code_block(
                 // The ID may be wrapped in a highlight span — search for it
                 if let Some(pos) = result.find(&escaped_id) {
                     let link = format!(
-                        "<a class=\"artifact-ref\" hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{escaped_id}</a>"
+                        "<a class=\"artifact-ref\" hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{id}\">{escaped_id}</a>"
                     );
                     let before = &result[..pos];
                     let after = &result[pos + escaped_id.len()..];
@@ -4852,7 +4842,7 @@ pub(crate) async fn doc_linkage_view(State(state): State<SharedState>) -> Html<S
         for a in &unlinked {
             let link_count = a.links.len() + graph.backlinks_to(&a.id).len();
             html.push_str(&format!(
-                "<tr><td><a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{id}</a></td><td>{}</td><td>{}</td><td>{link_count}</td></tr>",
+                "<tr><td><a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{id}\">{id}</a></td><td>{}</td><td>{}</td><td>{link_count}</td></tr>",
                 badge_for_type(&a.artifact_type),
                 html_escape(&a.title),
                 id = html_escape(&a.id),
@@ -4982,7 +4972,7 @@ fn render_trace_node(node: &TraceNode, depth: usize, project_path: &str) -> Stri
         // Leaf node — no expanding
         format!(
             "<div class=\"trace-node\">{edge_label}{badge} \
-             <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{escaped_id}</a> \
+             <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{id}\">{escaped_id}</a> \
              <span style=\"color:var(--text-secondary)\">{escaped_title}</span>{status_badge}\
              <button class=\"btn btn-secondary\" style=\"margin-left:auto;padding:.2rem .5rem;font-size:.68rem\" \
              hx-get=\"/traceability/history?file={file}\" hx-target=\"#hist-{safe_id}\" hx-swap=\"innerHTML\"\
@@ -4998,7 +4988,7 @@ fn render_trace_node(node: &TraceNode, depth: usize, project_path: &str) -> Stri
         let mut html = format!(
             "<details class=\"trace-details\"{open_attr}>\
              <summary>{edge_label}{badge} \
-             <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" \
+             <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{id}\" \
              onclick=\"event.stopPropagation()\">{escaped_id}</a> \
              <span style=\"color:var(--text-secondary)\">{escaped_title}</span>{status_badge}\
              <span style=\"color:var(--text-secondary);font-size:.75rem;margin-left:.25rem\">({child_count})</span>\
@@ -5129,10 +5119,9 @@ pub(crate) async fn traceability_view(
         for id in &root_artifacts {
             let a = store.get(id).unwrap();
             let backlinks = graph.backlinks_to(id);
+            let cov_id_esc = html_escape(id);
             html.push_str(&format!(
-                "<tr><td><a hx-get=\"/artifacts/{}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{}</a></td><td style=\"color:var(--text-secondary);font-size:.82rem\">{}</td>",
-                html_escape(id),
-                html_escape(id),
+                "<tr><td><a hx-get=\"/artifacts/{cov_id_esc}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{cov_id_esc}\">{cov_id_esc}</a></td><td style=\"color:var(--text-secondary);font-size:.82rem\">{}</td>",
                 html_escape(&a.title)
             ));
             for lt in &link_types_set {
@@ -5187,7 +5176,7 @@ pub(crate) async fn traceability_view(
             if children.is_empty() {
                 html.push_str(&format!(
                     "<div class=\"trace-node\" style=\"font-weight:600\">{badge} \
-                     <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{escaped_id}</a> \
+                     <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{id}\">{escaped_id}</a> \
                      <span style=\"color:var(--text-secondary)\">{title}</span>{status_badge} \
                      <span style=\"color:var(--text-secondary);font-size:.75rem;font-style:italic;margin-left:.5rem\">(no inbound links)</span>\
                      <button class=\"btn btn-secondary\" style=\"margin-left:auto;padding:.2rem .5rem;font-size:.68rem\" \
@@ -5204,7 +5193,7 @@ pub(crate) async fn traceability_view(
                 html.push_str(&format!(
                     "<details class=\"trace-details\" open>\
                      <summary style=\"font-weight:600\">{badge} \
-                     <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" \
+                     <a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{id}\" \
                      onclick=\"event.stopPropagation()\">{escaped_id}</a> \
                      <span style=\"color:var(--text-secondary)\">{title}</span>{status_badge}\
                      <span style=\"color:var(--text-secondary);font-size:.75rem;margin-left:.25rem\">({child_count} inbound)</span>\
@@ -5457,16 +5446,16 @@ fn linkify_source_refs(s: &str) -> String {
             if let Some(line) = m.line {
                 if let Some(end_line) = m.end_line {
                     result.push_str(&format!(
-                        "<a class=\"source-ref-link\" hx-get=\"/source/{encoded_path}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" onclick=\"setTimeout(function(){{var e=document.getElementById('L{line}');if(e)e.scrollIntoView({{behavior:'smooth',block:'center'}})}},200)\">{file_path}:{line}-{end_line}</a>"
+                        "<a class=\"source-ref-link\" hx-get=\"/source/{encoded_path}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/source/{encoded_path}\" onclick=\"setTimeout(function(){{var e=document.getElementById('L{line}');if(e)e.scrollIntoView({{behavior:'smooth',block:'center'}})}},200)\">{file_path}:{line}-{end_line}</a>"
                     ));
                 } else {
                     result.push_str(&format!(
-                        "<a class=\"source-ref-link\" hx-get=\"/source/{encoded_path}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" onclick=\"setTimeout(function(){{var e=document.getElementById('L{line}');if(e)e.scrollIntoView({{behavior:'smooth',block:'center'}})}},200)\">{file_path}:{line}</a>"
+                        "<a class=\"source-ref-link\" hx-get=\"/source/{encoded_path}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/source/{encoded_path}\" onclick=\"setTimeout(function(){{var e=document.getElementById('L{line}');if(e)e.scrollIntoView({{behavior:'smooth',block:'center'}})}},200)\">{file_path}:{line}</a>"
                     ));
                 }
             } else {
                 result.push_str(&format!(
-                    "<a class=\"source-ref-link\" hx-get=\"/source/{encoded_path}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{file_path}</a>"
+                    "<a class=\"source-ref-link\" hx-get=\"/source/{encoded_path}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/source/{encoded_path}\">{file_path}</a>"
                 ));
             }
             pos += m.start + m.len;
@@ -5612,7 +5601,7 @@ pub(crate) async fn help_view(State(state): State<SharedState>) -> Html<String> 
         <h3 style=\"margin:0 0 .5rem\">Schema Types</h3>\
         <p style=\"font-size:2rem;font-weight:700;margin:.25rem 0\">{type_count}</p>\
         <p style=\"font-size:.85rem;opacity:.7\">artifact types loaded</p>\
-        <a hx-get=\"/help/schema\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" \
+        <a hx-get=\"/help/schema\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/help/schema\" \
            style=\"{link_style}\">Browse types &rarr;</a>\
         </div>"
     ));
@@ -5622,7 +5611,7 @@ pub(crate) async fn help_view(State(state): State<SharedState>) -> Html<String> 
         <h3 style=\"margin:0 0 .5rem\">Link Types</h3>\
         <p style=\"font-size:2rem;font-weight:700;margin:.25rem 0\">{link_count}</p>\
         <p style=\"font-size:.85rem;opacity:.7\">with inverse mappings</p>\
-        <a hx-get=\"/help/links\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" \
+        <a hx-get=\"/help/links\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/help/links\" \
            style=\"{link_style}\">View links &rarr;</a>\
         </div>"
     ));
@@ -5632,7 +5621,7 @@ pub(crate) async fn help_view(State(state): State<SharedState>) -> Html<String> 
         <h3 style=\"margin:0 0 .5rem\">Traceability Rules</h3>\
         <p style=\"font-size:2rem;font-weight:700;margin:.25rem 0\">{rule_count}</p>\
         <p style=\"font-size:.85rem;opacity:.7\">enforced by validation</p>\
-        <a hx-get=\"/help/rules\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" \
+        <a hx-get=\"/help/rules\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/help/rules\" \
            style=\"{link_style}\">View rules &rarr;</a>\
         </div>"
     ));
@@ -5641,7 +5630,7 @@ pub(crate) async fn help_view(State(state): State<SharedState>) -> Html<String> 
         "<div class=\"card\" style=\"padding:1.25rem\">\
         <h3 style=\"margin:0 0 .5rem\">Documentation</h3>\
         <p style=\"font-size:.85rem;opacity:.7;margin:.5rem 0\">Built-in guides, references, and schema docs — searchable.</p>\
-        <a hx-get=\"/help/docs\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" \
+        <a hx-get=\"/help/docs\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/help/docs\" \
            style=\"{link_style}\">Browse topics &rarr;</a>\
         </div>"
     ));
@@ -5701,7 +5690,7 @@ pub(crate) async fn help_docs_list(State(_state): State<SharedState>) -> Html<St
                 }
 
                 html.push_str(&format!(
-                    "<a hx-get=\"/help/docs/{slug}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" \
+                    "<a hx-get=\"/help/docs/{slug}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/help/docs/{slug}\" \
                        class=\"card\" style=\"padding:.75rem 1rem;display:flex;align-items:center;gap:1rem;text-decoration:none\">\
                        <code style=\"font-size:.82rem;min-width:10rem\">{slug}</code>\
                        <span style=\"font-size:.85rem\">{title}</span>\
@@ -5728,7 +5717,7 @@ pub(crate) async fn help_docs_topic(
     let raw = docs::show_topic(&slug, "text");
 
     let mut html = String::with_capacity(8192);
-    html.push_str("<div style=\"margin-bottom:1rem\"><a hx-get=\"/help/docs\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" style=\"font-size:.85rem\">&larr; All topics</a></div>");
+    html.push_str("<div style=\"margin-bottom:1rem\"><a hx-get=\"/help/docs\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/help/docs\" style=\"font-size:.85rem\">&larr; All topics</a></div>");
     html.push_str("<div class=\"card\" style=\"padding:1.5rem\">");
 
     // Render the markdown-ish content as HTML
@@ -5868,7 +5857,7 @@ pub(crate) async fn help_schema_show(
     let raw = schema_cmd::cmd_show(&state.schema, &name, "text");
 
     let mut html = String::with_capacity(8192);
-    html.push_str("<div style=\"margin-bottom:1rem\"><a hx-get=\"/help/schema\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" style=\"font-size:.85rem\">&larr; All types</a></div>");
+    html.push_str("<div style=\"margin-bottom:1rem\"><a hx-get=\"/help/schema\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/help/schema\" style=\"font-size:.85rem\">&larr; All types</a></div>");
 
     // Render the output as structured HTML
     html.push_str("<div class=\"card\" style=\"padding:1.5rem\"><pre style=\"font-size:.82rem;line-height:1.6;white-space:pre-wrap\">");
@@ -5886,7 +5875,7 @@ pub(crate) async fn help_links_view(State(state): State<SharedState>) -> Html<St
     links.sort_by_key(|l| &l.name);
 
     let mut html = String::with_capacity(4096);
-    html.push_str("<div style=\"margin-bottom:1rem\"><a hx-get=\"/help\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" style=\"font-size:.85rem\">&larr; Help</a></div>");
+    html.push_str("<div style=\"margin-bottom:1rem\"><a hx-get=\"/help\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/help\" style=\"font-size:.85rem\">&larr; Help</a></div>");
     html.push_str("<h2>Link Types</h2>");
 
     html.push_str(
@@ -5914,7 +5903,7 @@ pub(crate) async fn help_rules_view(State(state): State<SharedState>) -> Html<St
     let raw = schema_cmd::cmd_rules(&state.schema, "text");
 
     let mut html = String::with_capacity(4096);
-    html.push_str("<div style=\"margin-bottom:1rem\"><a hx-get=\"/help\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\" style=\"font-size:.85rem\">&larr; Help</a></div>");
+    html.push_str("<div style=\"margin-bottom:1rem\"><a hx-get=\"/help\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/help\" style=\"font-size:.85rem\">&larr; Help</a></div>");
     html.push_str("<h2>Traceability Rules</h2>");
     html.push_str("<div class=\"card\" style=\"padding:1.5rem\"><pre style=\"font-size:.82rem;line-height:1.6;white-space:pre-wrap\">");
     html.push_str(&html_escape(&raw));
