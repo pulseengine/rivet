@@ -648,13 +648,17 @@ async function fetchAadlSources(){
 var wasmModulePromise = null;
 var wasmAvailable = null;
 
-async function getSparRenderer(aadlFiles){
+async function checkWasmAvailable(){
   if(wasmAvailable === null){
     try {
       var probe = await fetch('/wasm/spar_wasm.js', {method:'HEAD'});
       wasmAvailable = probe.ok;
     } catch(e){ wasmAvailable = false; }
   }
+  return wasmAvailable;
+}
+
+async function getSparRenderer(aadlFiles){
   if(!wasmAvailable){
     throw new Error('AADL WASM renderer not available (build with --features embed-wasm)');
   }
@@ -679,6 +683,17 @@ var aadlFilesCache = null;
 async function initAadlDiagrams(){
   var containers = document.querySelectorAll('.aadl-diagram:not([data-loaded])');
   if(containers.length === 0) return;
+
+  // Check WASM availability once — if unavailable, show quiet fallback on all containers
+  var available = await checkWasmAvailable();
+  if(!available){
+    containers.forEach(function(c){
+      c.setAttribute('data-loaded','true');
+      var ld = c.querySelector('.aadl-loading');
+      if(ld) ld.textContent = 'AADL diagram requires spar WASM (build with --features embed-wasm)';
+    });
+    return;
+  }
 
   try {
     if(!aadlFilesCache) aadlFilesCache = await fetchAadlSources();
