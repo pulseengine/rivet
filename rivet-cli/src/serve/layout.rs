@@ -132,7 +132,7 @@ pub(crate) fn page_layout(content: &str, state: &AppState) -> Html<String> {
          onmouseover=\"this.style.background='rgba(58,134,255,.18)'\"\
          onmouseout=\"this.style.background='rgba(58,134,255,.08)'\"\
          >&#8635; Reload</button>\
-         <button onclick=\"var u=new URL(window.location.href);u.searchParams.set('print','1');window.open(u.toString(),'_blank')\" \
+         <button onclick=\"var h=window.location.href;var s=h.indexOf('?')>=0?'&amp;':'?';window.open(h+s+'print=1','_blank')\" \
          style=\"padding:.15rem .5rem;font-size:.72rem;\
          font-family:var(--mono);background:rgba(58,134,255,.08);color:var(--accent);border:1px solid var(--accent);\
          border-radius:4px;cursor:pointer;font-weight:600;transition:all var(--transition)\"\
