@@ -903,20 +903,19 @@ pub(crate) async fn graph_view(
         node_height: 56.0,
         rank_separation: 90.0,
         node_separation: 30.0,
+        container_padding: 20.0,
+        container_header: 30.0,
         ..Default::default()
     };
 
     let gl = pgv_layout::layout(
         &sub,
         &|_idx, n| {
-            let atype = store
-                .get(n.as_str())
+            let artifact = store.get(n.as_str());
+            let atype = artifact
                 .map(|a| a.artifact_type.clone())
                 .unwrap_or_default();
-            let title = store
-                .get(n.as_str())
-                .map(|a| a.title.clone())
-                .unwrap_or_default();
+            let title = artifact.map(|a| a.title.clone()).unwrap_or_default();
             let sublabel = if title.len() > 28 {
                 Some(format!("{}...", &title[..26]))
             } else if title.is_empty() {
@@ -924,12 +923,34 @@ pub(crate) async fn graph_view(
             } else {
                 Some(title)
             };
+
+            // For aadl-component artifacts, derive parent from allocated-from
+            // links that target another aadl-component (containment hierarchy).
+            let parent = if atype == "aadl-component" {
+                artifact.and_then(|a| {
+                    a.links
+                        .iter()
+                        .filter(|l| l.link_type == "allocated-from")
+                        .find_map(|l| {
+                            store.get(l.target.as_str()).and_then(|target_art| {
+                                if target_art.artifact_type == "aadl-component" {
+                                    Some(l.target.clone())
+                                } else {
+                                    None
+                                }
+                            })
+                        })
+                })
+            } else {
+                None
+            };
+
             NodeInfo {
                 id: n.clone(),
                 label: n.clone(),
                 node_type: atype,
                 sublabel,
-                parent: None,
+                parent,
                 ports: vec![],
             }
         },
@@ -1110,20 +1131,19 @@ pub(crate) async fn artifact_graph(
         node_height: 56.0,
         rank_separation: 90.0,
         node_separation: 30.0,
+        container_padding: 20.0,
+        container_header: 30.0,
         ..Default::default()
     };
 
     let gl = pgv_layout::layout(
         &sub,
         &|_idx, n| {
-            let atype = store
-                .get(n.as_str())
+            let artifact = store.get(n.as_str());
+            let atype = artifact
                 .map(|a| a.artifact_type.clone())
                 .unwrap_or_default();
-            let title = store
-                .get(n.as_str())
-                .map(|a| a.title.clone())
-                .unwrap_or_default();
+            let title = artifact.map(|a| a.title.clone()).unwrap_or_default();
             let sublabel = if title.len() > 28 {
                 Some(format!("{}...", &title[..26]))
             } else if title.is_empty() {
@@ -1131,12 +1151,34 @@ pub(crate) async fn artifact_graph(
             } else {
                 Some(title)
             };
+
+            // For aadl-component artifacts, derive parent from allocated-from
+            // links that target another aadl-component (containment hierarchy).
+            let parent = if atype == "aadl-component" {
+                artifact.and_then(|a| {
+                    a.links
+                        .iter()
+                        .filter(|l| l.link_type == "allocated-from")
+                        .find_map(|l| {
+                            store.get(l.target.as_str()).and_then(|target_art| {
+                                if target_art.artifact_type == "aadl-component" {
+                                    Some(l.target.clone())
+                                } else {
+                                    None
+                                }
+                            })
+                        })
+                })
+            } else {
+                None
+            };
+
             NodeInfo {
                 id: n.clone(),
                 label: n.clone(),
                 node_type: atype,
                 sublabel,
-                parent: None,
+                parent,
                 ports: vec![],
             }
         },

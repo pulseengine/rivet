@@ -27,6 +27,7 @@ log = { workspace = true }
 quick-xml = { workspace = true }
 rowan = { workspace = true }
 pulldown-cmark = { workspace = true }
+etch = { path = "../etch" }
 
 # OSLC client (optional, behind "oslc" feature)
 reqwest = { workspace = true, optional = true }
