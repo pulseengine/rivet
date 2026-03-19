@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1773950736169,
+  "lastUpdate": 1773951110759,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
@@ -3071,6 +3071,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1369262,
             "range": "± 29199",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8a99f8e638ba3b80d726c704cf68537381f503ed",
+          "message": "fix(serve): exclude /assets/ from layout middleware, allow data: fonts in CSP (#47)\n\nTwo bugs:\n1. The redirect middleware was wrapping /assets/htmx.js and\n   /assets/mermaid.js responses in the HTML page shell, causing\n   \"Unexpected token '<'\" errors in the browser. Fixed by excluding\n   /assets/* paths from the middleware (same as /api/*, /wasm/*, etc.)\n\n2. CSP header blocked base64-embedded fonts (data: URIs) because\n   font-src defaulted to 'self'. Added explicit font-src 'self' data:\n   directive.\n\nFixes: FEAT-001\n\nCo-authored-by: Test <test@test.com>\nCo-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>",
+          "timestamp": "2026-03-19T21:05:01+01:00",
+          "tree_id": "dfdbf78f7c5ef32ef65d57610243b8eeabc3b14b",
+          "url": "https://github.com/pulseengine/rivet/commit/8a99f8e638ba3b80d726c704cf68537381f503ed"
+        },
+        "date": 1773951110193,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 83089,
+            "range": "± 580",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 1214204,
+            "range": "± 18575",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 53208488,
+            "range": "± 2130545",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2213,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 26341,
+            "range": "± 184",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 364382,
+            "range": "± 6816",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 919344,
+            "range": "± 8138",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 170848,
+            "range": "± 1978",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1948432,
+            "range": "± 20369",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 27825143,
+            "range": "± 3167403",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 40396,
+            "range": "± 419",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 464375,
+            "range": "± 3338",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 4839644,
+            "range": "± 276832",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4369,
+            "range": "± 173",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 59344,
+            "range": "± 522",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 758296,
+            "range": "± 4837",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 57779,
+            "range": "± 313",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 689329,
+            "range": "± 12218",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7613293,
+            "range": "± 464118",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 778,
+            "range": "± 5",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7499,
+            "range": "± 79",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 118433,
+            "range": "± 2081",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 23289,
+            "range": "± 185",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 163525,
+            "range": "± 11455",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1490758,
+            "range": "± 12100",
             "unit": "ns/iter"
           }
         ]
