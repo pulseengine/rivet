@@ -397,7 +397,7 @@ pub async fn run(
             |mut response: axum::response::Response| async move {
                 response.headers_mut().insert(
                     "Content-Security-Policy",
-                    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'"
+                    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'"
                         .parse()
                         .unwrap(),
                 );
@@ -435,6 +435,7 @@ async fn wrap_full_page(
         && !is_htmx
         && path != "/"
         && !path.starts_with("/api/")
+        && !path.starts_with("/assets/")
         && !path.starts_with("/wasm/")
         && !path.starts_with("/source-raw/")
         && !path.starts_with("/docs-asset/")
