@@ -660,7 +660,7 @@ async function checkWasmAvailable(){
 
 async function getSparRenderer(aadlFiles){
   if(!wasmAvailable){
-    throw new Error('AADL WASM renderer not available (build with --features embed-wasm)');
+    throw new Error('AADL WASM renderer not available (run ./scripts/build-wasm.sh and rebuild)');
   }
   if(!wasmModulePromise){
     wasmModulePromise = import('/wasm/spar_wasm.js');
@@ -690,7 +690,7 @@ async function initAadlDiagrams(){
     containers.forEach(function(c){
       c.setAttribute('data-loaded','true');
       var ld = c.querySelector('.aadl-loading');
-      if(ld) ld.textContent = 'AADL diagram requires spar WASM (build with --features embed-wasm)';
+      if(ld) ld.textContent = 'AADL diagram requires spar WASM (run ./scripts/build-wasm.sh and rebuild)';
     });
     return;
   }
