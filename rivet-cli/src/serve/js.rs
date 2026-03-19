@@ -646,8 +646,18 @@ async function fetchAadlSources(){
 // ── WASM module cache ─────────────────────────────────────────────────
 
 var wasmModulePromise = null;
+var wasmAvailable = null;
 
 async function getSparRenderer(aadlFiles){
+  if(wasmAvailable === null){
+    try {
+      var probe = await fetch('/wasm/spar_wasm.js', {method:'HEAD'});
+      wasmAvailable = probe.ok;
+    } catch(e){ wasmAvailable = false; }
+  }
+  if(!wasmAvailable){
+    throw new Error('AADL WASM renderer not available (build with --features embed-wasm)');
+  }
   if(!wasmModulePromise){
     wasmModulePromise = import('/wasm/spar_wasm.js');
   }
