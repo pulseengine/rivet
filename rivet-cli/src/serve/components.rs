@@ -268,7 +268,7 @@ pub fn pagination(
         let qs = p.to_query_string();
         html.push_str(&format!(
             "<a class=\"btn btn-secondary\" style=\"padding:.3rem .6rem;font-size:.8rem\" \
-             hx-get=\"{base_url}?{qs}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">&laquo; Prev</a>"
+             hx-get=\"{base_url}?{qs}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"{base_url}?{qs}\">&laquo; Prev</a>"
         ));
     }
 
@@ -286,7 +286,7 @@ pub fn pagination(
         };
         html.push_str(&format!(
             "<a style=\"padding:.2rem .5rem;{style}\" \
-             hx-get=\"{base_url}?{qs}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">{p_num}</a>"
+             hx-get=\"{base_url}?{qs}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"{base_url}?{qs}\">{p_num}</a>"
         ));
     }
 
@@ -297,7 +297,7 @@ pub fn pagination(
         let qs = p.to_query_string();
         html.push_str(&format!(
             "<a class=\"btn btn-secondary\" style=\"padding:.3rem .6rem;font-size:.8rem\" \
-             hx-get=\"{base_url}?{qs}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"#\">Next &raquo;</a>"
+             hx-get=\"{base_url}?{qs}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"{base_url}?{qs}\">Next &raquo;</a>"
         ));
     }
 
