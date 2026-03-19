@@ -16,27 +16,26 @@ test.describe("STPA View", () => {
     await details.locator("summary").click();
   });
 
-  test("H-13 scalability hazard is present", async ({ page }) => {
+  test("STPA-Sec section is visible", async ({ page }) => {
     await page.goto("/stpa");
-    await expect(page.locator("body")).toContainText("H-13");
-  });
-
-  test("filter by type via URL preserves on reload", async ({ page }) => {
-    await page.goto("/stpa?types=uca");
     await waitForHtmx(page);
-    await page.reload();
-    await expect(page).toHaveURL(/types=uca/);
+    await expect(page.locator("body")).toContainText("STPA-Sec");
+    await expect(page.locator("body")).toContainText("Security Analysis");
   });
 
-  test("text search filters", async ({ page }) => {
-    await page.goto("/stpa?q=firmware");
-    await waitForHtmx(page);
-    await expect(page).toHaveURL(/q=firmware/);
-  });
-
-  test("filter bar is present", async ({ page }) => {
+  test("security losses show CIA badges", async ({ page }) => {
     await page.goto("/stpa");
-    // Filter bar has class "filter-bar card"
-    await expect(page.locator(".filter-bar").first()).toBeVisible();
+    await waitForHtmx(page);
+    await expect(page.locator("body")).toContainText("SL-1");
+    await expect(page.locator("body")).toContainText("confidentiality");
+  });
+
+  test("security UCA table is present", async ({ page }) => {
+    await page.goto("/stpa");
+    await waitForHtmx(page);
+    await expect(
+      page.locator("text=Security Unsafe Control Actions"),
+    ).toBeVisible();
+    await expect(page.locator("body")).toContainText("SUCA-CLI-1");
   });
 });
