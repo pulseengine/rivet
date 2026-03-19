@@ -16,8 +16,8 @@ const HTMX_JS: &str = include_str!("../../assets/htmx.min.js");
 const MERMAID_JS: &str = include_str!("../../assets/mermaid.min.js");
 
 /// Embedded WASM/JS assets for single-binary distribution.
-/// Only available when built with `--features embed-wasm` and assets exist.
-#[cfg(feature = "embed-wasm")]
+/// build.rs generates stub files when spar WASM is not built, so these
+/// always compile. The JS runtime detects stubs via a HEAD probe.
 mod embedded_wasm {
     pub const SPAR_JS: &str = include_str!("../../assets/wasm/js/spar_wasm.js");
     pub const CORE_WASM: &[u8] = include_bytes!("../../assets/wasm/js/spar_wasm.core.wasm");
@@ -589,8 +589,7 @@ async fn wasm_asset(Path(path): Path<String>) -> impl IntoResponse {
         "application/octet-stream"
     };
 
-    // Try embedded assets first (when built with embed-wasm feature).
-    #[cfg(feature = "embed-wasm")]
+    // Try embedded assets (build.rs generates stubs when spar WASM is not built).
     {
         let bytes: Option<&[u8]> = match path.as_str() {
             "spar_wasm.js" => Some(embedded_wasm::SPAR_JS.as_bytes()),
@@ -600,6 +599,11 @@ async fn wasm_asset(Path(path): Path<String>) -> impl IntoResponse {
             _ => None,
         };
         if let Some(data) = bytes {
+            // Stub detection: if the JS is just a comment, return 404 so the
+            // HEAD probe in the client knows WASM is unavailable.
+            if data.len() < 100 && data.starts_with(b"// stub") {
+                return axum::http::StatusCode::NOT_FOUND.into_response();
+            }
             return (
                 axum::http::StatusCode::OK,
                 [

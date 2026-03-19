@@ -63,13 +63,18 @@ fn main() {
     println!("cargo:rustc-env=RIVET_BUILD_DATE={build_date}");
 }
 
-/// Build spar WASM assets if they are missing and spar repo is available.
+/// Build or stub spar WASM assets.
 ///
-/// Checks `SPAR_DIR` env var, then `../spar` as default location.
-/// Skips silently if spar is not found (WASM features are optional).
+/// If WASM assets exist on disk, they are used as-is.
+/// If a local spar repo is found, the build script is run to compile them.
+/// Otherwise, stub files are generated so `include_str!`/`include_bytes!`
+/// always succeeds — the JS runtime detects empty stubs and shows a fallback.
 fn build_wasm_assets() {
-    let wasm_js = Path::new("assets/wasm/js/spar_wasm.js");
-    let wasm_core = Path::new("assets/wasm/js/spar_wasm.core.wasm");
+    let wasm_dir = Path::new("assets/wasm/js");
+    let wasm_js = wasm_dir.join("spar_wasm.js");
+    let wasm_core = wasm_dir.join("spar_wasm.core.wasm");
+    let wasm_core2 = wasm_dir.join("spar_wasm.core2.wasm");
+    let wasm_core3 = wasm_dir.join("spar_wasm.core3.wasm");
 
     // Rebuild whenever the build script or existing assets change.
     println!("cargo:rerun-if-changed=../scripts/build-wasm.sh");
@@ -86,39 +91,78 @@ fn build_wasm_assets() {
     }
 
     if wasm_js.exists() && wasm_core.exists() {
-        return; // Assets already present, nothing to do.
+        return; // Real assets already present.
     }
 
-    if !spar_wasm_crate.exists() {
-        println!(
-            "cargo:warning=WASM assets missing and spar repo not found at {spar_dir}. \
-             Set SPAR_DIR env var or run: ./scripts/build-wasm.sh /path/to/spar"
-        );
-        return;
+    // Try to build from local spar repo.
+    if spar_wasm_crate.exists() {
+        // Check out the pinned rev before building so WASM matches the dependency.
+        if let Some(pinned_rev) = get_pinned_spar_rev() {
+            let checkout = Command::new("git")
+                .args(["checkout", &pinned_rev])
+                .current_dir(&spar_dir)
+                .status();
+            if let Ok(s) = checkout {
+                if s.success() {
+                    println!("cargo:warning=Checked out spar at pinned rev {pinned_rev}");
+                }
+            }
+        }
+
+        println!("cargo:warning=Building spar WASM assets from {spar_dir}...");
+        let status = Command::new("bash")
+            .arg("../scripts/build-wasm.sh")
+            .arg(&spar_dir)
+            .status();
+
+        match status {
+            Ok(s) if s.success() => {
+                println!("cargo:warning=spar WASM assets built successfully.");
+                return;
+            }
+            Ok(s) => {
+                println!(
+                    "cargo:warning=WASM build script exited with {}. Generating stubs.",
+                    s
+                );
+            }
+            Err(e) => {
+                println!("cargo:warning=Failed to run WASM build script: {e}. Generating stubs.");
+            }
+        }
     }
 
-    // Run the build script from the workspace root.
-    println!("cargo:warning=Building spar WASM assets from {spar_dir}...");
-    let status = Command::new("bash")
-        .arg("../scripts/build-wasm.sh")
-        .arg(&spar_dir)
-        .status();
-
-    match status {
-        Ok(s) if s.success() => {
-            println!("cargo:warning=spar WASM assets built successfully.");
-        }
-        Ok(s) => {
-            println!(
-                "cargo:warning=WASM build script exited with {}. \
-                 Dashboard AADL rendering may not work.",
-                s
-            );
-        }
-        Err(e) => {
-            println!("cargo:warning=Failed to run WASM build script: {e}");
-        }
+    // Generate stub files so include_str!/include_bytes! always succeeds.
+    // The JS runtime detects empty stubs via the HEAD probe and shows a fallback.
+    std::fs::create_dir_all(wasm_dir).ok();
+    if !wasm_js.exists() {
+        std::fs::write(&wasm_js, "// stub: spar WASM not available\n").ok();
     }
+    if !wasm_core.exists() {
+        std::fs::write(&wasm_core, b"").ok();
+    }
+    if !wasm_core2.exists() {
+        std::fs::write(&wasm_core2, b"").ok();
+    }
+    if !wasm_core3.exists() {
+        std::fs::write(&wasm_core3, b"").ok();
+    }
+    println!(
+        "cargo:warning=WASM assets not found — generated stubs. AADL diagrams will show a fallback."
+    );
+}
+
+/// Extract the pinned spar rev from workspace Cargo.toml.
+fn get_pinned_spar_rev() -> Option<String> {
+    let cargo_toml = Path::new("../Cargo.toml");
+    let content = std::fs::read_to_string(cargo_toml).ok()?;
+    content
+        .lines()
+        .find(|l| l.contains("spar-hir") && l.contains("rev"))
+        .and_then(|line| {
+            let after_rev = line.split("rev = \"").nth(1)?;
+            Some(after_rev.split('"').next()?.to_string())
+        })
 }
 
 /// Compare the local spar repo HEAD against the rev pinned in workspace Cargo.toml.
