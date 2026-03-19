@@ -73,8 +73,8 @@ commits:
      UCA-Q-7,
      # Phase 3 STPA and draft artifacts (no code implementation yet)
      CC-C-10, CC-C-11, CC-C-12, CC-C-13, CC-C-14, CC-C-15, CC-C-16, CC-C-17,
-     H-9, H-9.1, H-9.2, H-10, H-11, H-11.1, H-11.2, H-12,
-     SC-11, SC-12, SC-13, SC-14,
+     H-9, H-9.1, H-9.2, H-10, H-11, H-11.1, H-11.2, H-12, H-18,
+     SC-11, SC-12, SC-13, SC-14, SC-20,
      UCA-C-10, UCA-C-11, UCA-C-12, UCA-C-13, UCA-C-14, UCA-C-15, UCA-C-16, UCA-C-17,
      # Phase 3 planned features (draft, not yet implemented in code)
      FEAT-043, FEAT-044, FEAT-045, FEAT-047, FEAT-048, FEAT-049, FEAT-050, FEAT-051,

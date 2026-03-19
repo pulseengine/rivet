@@ -192,6 +192,15 @@ hazards:
       arbitrary code execution via git hooks.
     losses: [L-3, L-5]
 
+  - id: H-18
+    title: Rivet fails to resolve external repository paths across platforms
+    description: >
+      External repo paths in rivet.yaml may be relative (git submodule),
+      absolute (differ across Linux/macOS/Windows), or local paths that
+      don't exist on CI runners.  If path resolution fails silently,
+      cross-repo links break without warning and traceability is lost.
+    losses: [L-1, L-3]
+
 sub-hazards:
   # --- H-1 refinements: types of stale references ---
   - id: H-1.1

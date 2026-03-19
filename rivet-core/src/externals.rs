@@ -37,27 +37,66 @@ pub fn parse_artifact_ref(s: &str) -> ArtifactRef {
 
 /// Sync a single external project into the cache directory.
 ///
-/// For `path` externals: creates a symlink from `.rivet/repos/<prefix>` to the path.
+/// For `path` externals: creates a symlink from `.rivet/repos/<prefix>` to the
+/// working-tree directory (resolved and canonicalized), so that uncommitted
+/// changes are visible immediately.
+///
 /// For `git` externals: clones or fetches the repo, checks out the specified ref.
+///
+/// When `local_only` is true and the external has a `path`, the git source is
+/// skipped entirely — the symlink points straight at the working tree.
 pub fn sync_external(
     ext: &ExternalProject,
     cache_dir: &Path,
     project_dir: &Path,
+    local_only: bool,
 ) -> Result<PathBuf, crate::error::Error> {
     let dest = cache_dir.join(&ext.prefix);
     std::fs::create_dir_all(cache_dir)
         .map_err(|e| crate::error::Error::Io(format!("create cache dir: {e}")))?;
 
-    if let Some(ref local_path) = ext.path {
+    // When --local is set and we have a path, always use the local path
+    // (skip git entirely).
+    let use_path = ext.path.is_some() && (local_only || ext.git.is_none());
+
+    if use_path {
+        let local_path = ext.path.as_ref().unwrap();
         // Resolve relative to project dir
         let resolved = if Path::new(local_path).is_relative() {
             project_dir.join(local_path)
         } else {
             PathBuf::from(local_path)
         };
-        let resolved = resolved
-            .canonicalize()
-            .map_err(|e| crate::error::Error::Io(format!("resolve path '{local_path}': {e}")))?;
+
+        // Validate the directory exists before canonicalizing
+        if !resolved.exists() {
+            log::warn!(
+                "external '{}': path '{}' does not exist (resolved to '{}'). \
+                 Check that the path in rivet.yaml is correct and the directory is accessible.",
+                ext.prefix,
+                local_path,
+                resolved.display()
+            );
+            return Err(crate::error::Error::Io(format!(
+                "external '{}': path '{}' does not exist (resolved to '{}'). \
+                 Ensure the directory exists and is accessible on this platform.",
+                ext.prefix,
+                local_path,
+                resolved.display()
+            )));
+        }
+
+        // Canonicalize to normalize platform-specific separators and resolve
+        // symlinks, "..", etc.
+        let resolved = resolved.canonicalize().map_err(|e| {
+            crate::error::Error::Io(format!(
+                "external '{}': failed to canonicalize path '{}' (resolved to '{}'): {e}. \
+                 This may indicate a permissions issue or a broken symlink in the path.",
+                ext.prefix,
+                local_path,
+                resolved.display()
+            ))
+        })?;
 
         // Remove existing symlink/dir if present
         if dest.exists() || dest.is_symlink() {
@@ -68,6 +107,8 @@ pub fn sync_external(
             }
         }
 
+        // Symlink directly to the working tree so uncommitted changes are
+        // picked up immediately.
         #[cfg(unix)]
         std::os::unix::fs::symlink(&resolved, &dest)
             .map_err(|e| crate::error::Error::Io(format!("symlink: {e}")))?;
@@ -175,14 +216,18 @@ pub fn resolve_external_dir(
 }
 
 /// Sync all externals declared in the project config.
+///
+/// When `local_only` is true, externals that have a `path` will use it
+/// directly (symlink to working tree) and skip any git fetch/clone.
 pub fn sync_all(
     externals: &BTreeMap<String, ExternalProject>,
     project_dir: &Path,
+    local_only: bool,
 ) -> Result<Vec<(String, PathBuf)>, crate::error::Error> {
     let cache_dir = project_dir.join(".rivet/repos");
     let mut results = Vec::new();
     for (name, ext) in externals {
-        let path = sync_external(ext, &cache_dir, project_dir)?;
+        let path = sync_external(ext, &cache_dir, project_dir, local_only)?;
         results.push((name.clone(), path));
     }
     Ok(results)
@@ -821,7 +866,7 @@ mod tests {
         };
 
         let cache_dir = dir.path().join(".rivet/repos");
-        let result = sync_external(&ext, &cache_dir, dir.path());
+        let result = sync_external(&ext, &cache_dir, dir.path(), false);
         assert!(result.is_ok());
 
         // For path externals, the cache should contain a symlink or copy
@@ -839,7 +884,7 @@ mod tests {
             prefix: "bad".into(),
         };
         let cache_dir = dir.path().join(".rivet/repos");
-        let result = sync_external(&ext, &cache_dir, dir.path());
+        let result = sync_external(&ext, &cache_dir, dir.path(), false);
         assert!(result.is_err());
     }
 
@@ -897,7 +942,7 @@ mod tests {
             },
         );
 
-        let results = sync_all(&externals, dir.path()).unwrap();
+        let results = sync_all(&externals, dir.path(), false).unwrap();
         assert_eq!(results.len(), 2);
         assert!(dir.path().join(".rivet/repos/alpha").exists());
         assert!(dir.path().join(".rivet/repos/beta").exists());
