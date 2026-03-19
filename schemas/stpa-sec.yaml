@@ -1,0 +1,224 @@
+# STPA-Sec (Systems-Theoretic Process Analysis for Security) schema
+#
+# Extends the STPA schema with adversarial threat modelling fields.
+# Based on the STPA Handbook (Leveson & Thomas, 2018) and the security
+# extension described in Chapter 2: adversarial causation is added to
+# each STPA analysis step.
+#
+# Security extension principles:
+#   Step 1  Losses and hazards include CIA triad impact
+#   Step 3  UCAs include adversarial-causation — how an attacker could
+#           introduce the same flawed control action
+#   Step 4  Loss scenarios include attack-vector and attacker-type when
+#           the causal pathway involves an adversary
+#
+# This schema is reusable across any project performing STPA-Sec —
+# it is not specific to any single product.
+
+schema:
+  name: stpa-sec
+  version: "0.1.0"
+  namespace: "http://pulseengine.dev/ns/stpa-sec#"
+  extends: [stpa]
+  description: >
+    STPA-Sec schema — STPA extended with adversarial threat modelling.
+    Adds CIA-triad impact, attacker type, and attack vector fields to
+    standard STPA artifact types.
+
+# ──────────────────────────────────────────────────────────────────────────
+# Security-specific artifact type extensions
+#
+# These mirror the base STPA types with additional security fields.
+# They share the same structural roles but are tagged for security context.
+# ──────────────────────────────────────────────────────────────────────────
+artifact-types:
+
+  # ── Step 1a (security variant) ──────────────────────────────────────────
+  - name: sec-loss
+    description: >
+      A security loss — an undesired event involving breach of a CIA property
+      (confidentiality, integrity, or availability).  Parallels the STPA
+      'loss' type but is scoped to adversarial threats.
+    fields:
+      - name: cia-impact
+        type: list<string>
+        required: true
+        description: "CIA properties violated: confidentiality, integrity, availability"
+      - name: stakeholders
+        type: list<string>
+        required: false
+    link-fields: []
+
+  # ── Step 1b (security variant) ──────────────────────────────────────────
+  - name: sec-hazard
+    description: >
+      A security hazard — a system state or condition that, if exploited by an
+      adversary in a worst-case environment, leads to a security loss.
+    fields:
+      - name: cia-impact
+        type: list<string>
+        required: true
+        description: "CIA properties affected by this hazard"
+      - name: severity
+        type: string
+        required: false
+        allowed-values: [critical, high, medium, low]
+    link-fields:
+      - name: losses
+        link-type: leads-to-sec-loss
+        target-types: [sec-loss]
+        required: true
+        cardinality: one-or-many
+
+  # ── Step 1c (security variant) ──────────────────────────────────────────
+  - name: sec-constraint
+    description: >
+      A security constraint — a condition or behavior required to prevent a
+      security hazard.  Each constraint is the security inversion of a hazard.
+    fields: []
+    link-fields:
+      - name: hazards
+        link-type: prevents-sec-hazard
+        target-types: [sec-hazard]
+        required: true
+        cardinality: one-or-many
+
+  # ── Step 3 (security variant) ────────────────────────────────────────────
+  - name: sec-uca
+    description: >
+      A security Unsafe Control Action — a control action that, in a particular
+      adversarial context, leads to a security hazard.  Includes an
+      adversarial-causation field explaining how an attacker could introduce
+      or exploit this UCA.
+    fields:
+      - name: uca-type
+        type: string
+        required: true
+        allowed-values: [not-providing, providing, too-early-too-late, stopped-too-soon]
+      - name: context
+        type: text
+        required: false
+      - name: adversarial-causation
+        type: text
+        required: true
+        description: >
+          How an adversary could introduce the control algorithm flaw that
+          leads to this UCA.  Must answer: inject, spoof, tamper, intercept,
+          or disclose.
+      - name: attacker-type
+        type: string
+        required: false
+        allowed-values: [external-network, insider, supply-chain, physical]
+    link-fields:
+      - name: controller
+        link-type: issued-by
+        target-types: [controller]
+        required: true
+        cardinality: exactly-one
+      - name: hazards
+        link-type: leads-to-sec-hazard
+        target-types: [sec-hazard]
+        required: true
+        cardinality: one-or-many
+
+  # ── Step 4 (security variant) ────────────────────────────────────────────
+  - name: sec-scenario
+    description: >
+      A security loss scenario — a causal pathway (with adversarial causation)
+      describing how a sec-uca could occur or how the control action could be
+      exploited by an adversary to reach a security hazard.
+    fields:
+      - name: scenario-type
+        type: string
+        required: false
+        allowed-values:
+          - adversarial-control-algorithm
+          - adversarial-feedback-injection
+          - adversarial-control-path
+          - adversarial-process-interaction
+          - insider-threat
+      - name: attack-vector
+        type: string
+        required: false
+        allowed-values: [network, adjacent, local, physical]
+      - name: attacker-type
+        type: string
+        required: false
+        allowed-values: [external-network, insider, supply-chain, physical]
+      - name: cia-impact
+        type: list<string>
+        required: false
+      - name: causal-factors
+        type: list<string>
+        required: false
+    link-fields:
+      - name: uca
+        link-type: caused-by-sec-uca
+        target-types: [sec-uca]
+        required: false
+        cardinality: zero-or-many
+      - name: hazards
+        link-type: leads-to-sec-hazard
+        target-types: [sec-hazard]
+        required: true
+        cardinality: one-or-many
+
+# ──────────────────────────────────────────────────────────────────────────
+# STPA-Sec link types
+# ──────────────────────────────────────────────────────────────────────────
+link-types:
+  - name: leads-to-sec-loss
+    inverse: sec-loss-caused-by
+    description: Security hazard leads to a security loss
+    source-types: [sec-hazard]
+    target-types: [sec-loss]
+
+  - name: prevents-sec-hazard
+    inverse: sec-hazard-prevented-by
+    description: Security constraint prevents a security hazard
+    source-types: [sec-constraint]
+    target-types: [sec-hazard]
+
+  - name: leads-to-sec-hazard
+    inverse: sec-hazard-caused-by
+    description: Sec-UCA or sec-scenario leads to a security hazard
+    source-types: [sec-uca, sec-scenario]
+    target-types: [sec-hazard]
+
+  - name: caused-by-sec-uca
+    inverse: causes-sec-scenario
+    description: Security scenario is caused by a security UCA
+    source-types: [sec-scenario]
+    target-types: [sec-uca]
+
+# ──────────────────────────────────────────────────────────────────────────
+# STPA-Sec completeness rules
+# ──────────────────────────────────────────────────────────────────────────
+traceability-rules:
+  - name: sec-hazard-has-loss
+    description: Every security hazard must link to at least one security loss
+    source-type: sec-hazard
+    required-link: leads-to-sec-loss
+    target-types: [sec-loss]
+    severity: error
+
+  - name: sec-constraint-has-hazard
+    description: Every security constraint must link to at least one security hazard
+    source-type: sec-constraint
+    required-link: prevents-sec-hazard
+    target-types: [sec-hazard]
+    severity: error
+
+  - name: sec-uca-has-hazard
+    description: Every security UCA must link to at least one security hazard
+    source-type: sec-uca
+    required-link: leads-to-sec-hazard
+    target-types: [sec-hazard]
+    severity: error
+
+  - name: sec-hazard-has-constraint
+    description: Every security hazard should be addressed by at least one security constraint
+    source-type: sec-hazard
+    required-backlink: prevents-sec-hazard
+    from-types: [sec-constraint]
+    severity: warning

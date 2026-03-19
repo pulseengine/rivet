@@ -158,6 +158,11 @@ pub fn validate_add(artifact: &Artifact, store: &Store, schema: &Schema) -> Resu
 }
 
 /// Validate that a link can be added.
+///
+/// External targets (IDs containing `:`, e.g. `meld:SH-1`) are accepted even
+/// when they are not present in the store, because the external repository may
+/// not be cached locally.  When the external artifact *is* loaded in the store
+/// (prefixed), the normal duplicate-link check still applies.
 pub fn validate_link(
     source_id: &str,
     link_type: &str,
@@ -165,7 +170,7 @@ pub fn validate_link(
     store: &Store,
     schema: &Schema,
 ) -> Result<(), Error> {
-    // Source must exist
+    // Source must exist (always local)
     if !store.contains(source_id) {
         return Err(Error::Validation(format!(
             "source artifact '{}' does not exist",
@@ -173,8 +178,11 @@ pub fn validate_link(
         )));
     }
 
-    // Target must exist
-    if !store.contains(target_id) {
+    // Target must exist — but external refs (containing ':') are allowed even
+    // when the external repo is not loaded, since the remote artifacts may not
+    // be cached.
+    let target_is_external = target_id.contains(':');
+    if !store.contains(target_id) && !target_is_external {
         return Err(Error::Validation(format!(
             "target artifact '{}' does not exist",
             target_id

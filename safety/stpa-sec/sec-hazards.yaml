@@ -1,0 +1,123 @@
+# =============================================================================
+# STPA-Sec Step 1b — Security Hazards
+# =============================================================================
+#
+# A security hazard is a system state or set of conditions that, together
+# with an adversary's worst-case actions, will lead to a security loss.
+#
+# Format: <System> & <Unsafe/Exploitable Condition> & <CIA impact> → <SL-*>
+#
+# Reference: STPA Handbook, §2.3.2 + security extension
+# =============================================================================
+
+artifacts:
+  - id: SH-1
+    type: sec-hazard
+    title: Rivet imports artifacts from an unauthorized or tampered source without detection
+    status: approved
+    description: >
+      Rivet ingests YAML, ReqIF, or OSLC data originating from an adversary-
+      controlled or compromised source.  The import pipeline does not
+      authenticate the source identity, verify a cryptographic signature, or
+      detect that the content deviates from the last-known-good baseline.
+      In a worst-case environment where an attacker has compromised a git
+      remote or OSLC server, this state allows wholesale replacement of safety
+      artifacts.
+    links:
+      - type: leads-to-sec-loss
+        target: SL-2
+      - type: leads-to-sec-loss
+        target: SL-5
+    fields:
+      cia-impact: [integrity]
+      severity: critical
+
+  - id: SH-2
+    type: sec-hazard
+    title: Rivet's artifact store can be modified without authorization or audit trail
+    status: approved
+    description: >
+      The on-disk YAML artifact store lacks mandatory access controls, and
+      Rivet does not verify store integrity before serving data.  An insider
+      or process with filesystem write access can modify artifacts silently.
+      Rivet reads from the store trusting it is authoritative, propagating the
+      modification into validation results and compliance reports.
+    links:
+      - type: leads-to-sec-loss
+        target: SL-2
+      - type: leads-to-sec-loss
+        target: SL-4
+    fields:
+      cia-impact: [integrity]
+      severity: critical
+
+  - id: SH-3
+    type: sec-hazard
+    title: Rivet's dashboard exposes artifact content to unauthenticated network requests
+    status: approved
+    description: >
+      The serve command binds to a configurable address but does not enforce
+      authentication by default.  Any host on the network that can reach
+      the port receives full artifact content, including potentially sensitive
+      requirements, security analyses, and test evidence.
+    links:
+      - type: leads-to-sec-loss
+        target: SL-1
+    fields:
+      cia-impact: [confidentiality]
+      severity: high
+
+  - id: SH-4
+    type: sec-hazard
+    title: Rivet renders artifact content as raw HTML, enabling script injection
+    status: approved
+    description: >
+      Artifact descriptions and document bodies are rendered as HTML and
+      served to browsers.  If user-controlled artifact content is not
+      properly escaped, an adversary who can write to a YAML file can inject
+      arbitrary HTML/JavaScript that executes in the context of any user
+      viewing the dashboard.
+    links:
+      - type: leads-to-sec-loss
+        target: SL-1
+      - type: leads-to-sec-loss
+        target: SL-2
+    fields:
+      cia-impact: [confidentiality, integrity]
+      severity: high
+
+  - id: SH-5
+    type: sec-hazard
+    title: Rivet's OSLC sync channel can be redirected to an attacker-controlled server
+    status: approved
+    description: >
+      OSLC server URLs are read from rivet.yaml.  If a supply-chain or
+      insider attacker modifies rivet.yaml, Rivet's sync controller will
+      send artifact data to and accept data from an attacker-controlled host.
+      This enables both exfiltration (artifacts sent to attacker) and
+      injection (attacker-controlled artifacts accepted as authoritative).
+    links:
+      - type: leads-to-sec-loss
+        target: SL-1
+      - type: leads-to-sec-loss
+        target: SL-5
+    fields:
+      cia-impact: [confidentiality, integrity]
+      severity: high
+
+  - id: SH-6
+    type: sec-hazard
+    title: Rivet accepts YAML/ReqIF input that triggers resource exhaustion
+    status: approved
+    description: >
+      A maliciously crafted artifact file (YAML bomb, extremely deep anchor
+      chain, or enormous field values) can cause Rivet to exhaust memory or
+      CPU, denying the tool to legitimate users.  CI pipelines that run
+      'rivet validate' on every commit are especially vulnerable to
+      supply-chain-injected input.
+    links:
+      - type: leads-to-sec-loss
+        target: SL-3
+    fields:
+      cia-impact: [availability]
+      severity: medium

@@ -1,0 +1,96 @@
+# =============================================================================
+# STPA-Sec Step 1c — Security System Constraints
+# =============================================================================
+#
+# A security constraint is a condition or behavior required to prevent a
+# security hazard.  Each constraint is the security inversion of a hazard.
+#
+# Reference: STPA Handbook, §2.3.3 + security extension
+# =============================================================================
+
+artifacts:
+  - id: SSC-1
+    type: sec-constraint
+    title: Rivet must validate the provenance and integrity of all imported artifact data
+    status: approved
+    description: >
+      Before incorporating any artifact data from an external source (YAML
+      file, ReqIF import, OSLC sync), Rivet must verify the source is
+      expected and the content matches a known-good baseline or carries a
+      valid signature.  At minimum, Rivet must log the source URL, content
+      hash, and import timestamp for every import operation.
+    links:
+      - type: prevents-sec-hazard
+        target: SH-1
+
+  - id: SSC-2
+    type: sec-constraint
+    title: Rivet must detect and report unauthorized modifications to the artifact store
+    status: approved
+    description: >
+      Rivet must be capable of detecting that stored artifacts have been
+      modified outside of a sanctioned Rivet operation.  The reference
+      implementation is git-based integrity: the store is a git repository
+      and Rivet can compare the working tree to the last verified commit.
+      Any detected drift must be surfaced as a validation error before
+      reports or exports are generated.
+    links:
+      - type: prevents-sec-hazard
+        target: SH-2
+
+  - id: SSC-3
+    type: sec-constraint
+    title: Rivet's dashboard must not serve artifact data to unauthenticated clients
+    status: approved
+    description: >
+      The serve command must not expose artifact content on a network
+      interface without an explicit authentication mechanism.  Acceptable
+      mitigations include: binding to localhost-only by default, requiring
+      a passphrase token, or delegating auth to a reverse proxy.  The
+      default configuration must be secure: binding to 0.0.0.0 without
+      authentication is not acceptable.
+    links:
+      - type: prevents-sec-hazard
+        target: SH-3
+
+  - id: SSC-4
+    type: sec-constraint
+    title: Rivet must HTML-escape all user-controlled artifact content before rendering
+    status: approved
+    description: >
+      Every field value, description, and document body fragment from artifact
+      YAML that is included in HTML output must be escaped using a vetted
+      escaping function before insertion.  The escaping must cover at minimum:
+      < > & " ' characters.  Markdown-to-HTML conversion must also strip or
+      sandbox dangerous tags (script, iframe, object, embed).
+    links:
+      - type: prevents-sec-hazard
+        target: SH-4
+
+  - id: SSC-5
+    type: sec-constraint
+    title: Rivet must validate OSLC server URLs against a configured allowlist
+    status: approved
+    description: >
+      OSLC server URLs referenced in rivet.yaml must be validated against
+      an operator-defined allowlist before Rivet initiates any network
+      connection.  URLs not on the allowlist must cause an immediate error,
+      not a warning, so they cannot be silently used.  The allowlist itself
+      must require an explicit operator action (edit + commit) to modify.
+    links:
+      - type: prevents-sec-hazard
+        target: SH-5
+
+  - id: SSC-6
+    type: sec-constraint
+    title: Rivet must enforce resource limits on YAML and ReqIF parsing
+    status: approved
+    description: >
+      YAML parsing must be configured with an expansion limit (to prevent
+      YAML aliases/anchors from producing exponential structures) and a
+      maximum document size.  ReqIF parsing must limit document depth and
+      total node count.  Input that exceeds limits must be rejected with a
+      clear diagnostic, not silently truncated or allowed to exhaust memory.
+    links:
+      - type: prevents-sec-hazard
+        target: SH-6

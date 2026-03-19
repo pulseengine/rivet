@@ -1,5 +1,8 @@
 // Auto-extracted from serve.rs
 
+/// Bundled font faces (Latin subset) — no Google Fonts CDN needed.
+pub(crate) const FONTS_CSS: &str = include_str!("../../assets/fonts.css");
+
 pub(crate) const CSS: &str = r#"
 /* ── Reset & base ─────────────────────────────────────────────── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -332,6 +335,11 @@ details.diff-row>.diff-detail{padding:.75rem 1.25rem;background:rgba(0,0,0,.01);
 .artifact-ref:hover{background:#d4def5;text-decoration:none;transform:translateY(-1px);box-shadow:0 2px 4px rgba(0,0,0,.06)}
 .artifact-ref.broken{background:#fde8e8;color:#c62828;border-color:#f4c7c3;cursor:default}
 .artifact-ref.broken:hover{transform:none;box-shadow:none}
+.doc-ref{display:inline-flex;align-items:center;padding:.15rem .5rem;border-radius:5px;
+     font-size:.8rem;font-weight:600;font-family:var(--mono);background:#f0fdf4;
+     color:#166534;cursor:pointer;text-decoration:none;
+     border:1px solid #bbf7d0;transition:all var(--transition)}
+.doc-ref:hover{background:#dcfce7;text-decoration:none;transform:translateY(-1px);box-shadow:0 2px 4px rgba(0,0,0,.06)}
 /* ── Artifact hover preview ────────────────────────────────── */
 .art-tooltip{position:absolute;z-index:1000;pointer-events:none;
   background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);

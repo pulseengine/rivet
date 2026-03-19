@@ -189,3 +189,12 @@ system-constraints:
       cloned repository (--config core.hooksPath=/dev/null) to prevent
       arbitrary code execution.
     hazards: [H-17]
+
+  - id: SC-20
+    title: Rivet must normalize and validate external paths before use
+    description: >
+      External repo path resolution must canonicalize paths, handle
+      relative vs absolute differences, and fail with a clear diagnostic
+      if a path is unreachable rather than silently skipping the external.
+      Platform-specific path separators must be normalized.
+    hazards: [H-18]

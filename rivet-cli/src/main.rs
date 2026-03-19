@@ -109,6 +109,10 @@ enum Command {
         /// Run both pipelines and verify they produce identical diagnostics (SC-11)
         #[arg(long)]
         verify_incremental: bool,
+
+        /// Skip cross-repo validation (broken external refs, backlinks, circular deps, version conflicts)
+        #[arg(long)]
+        skip_external_validation: bool,
     },
 
     /// List artifacts, optionally filtered by type
@@ -292,7 +296,11 @@ enum Command {
     },
 
     /// Sync external project dependencies into .rivet/repos/
-    Sync,
+    Sync {
+        /// Use local path for all externals that have one, skipping git fetch/clone
+        #[arg(long)]
+        local: bool,
+    },
 
     /// Pin external dependencies to exact commits in rivet.lock
     Lock {
@@ -571,7 +579,14 @@ fn run(cli: Cli) -> Result<bool> {
             format,
             incremental,
             verify_incremental,
-        } => cmd_validate(&cli, format, *incremental, *verify_incremental),
+            skip_external_validation,
+        } => cmd_validate(
+            &cli,
+            format,
+            *incremental,
+            *verify_incremental,
+            *skip_external_validation,
+        ),
         Command::List {
             r#type,
             status,
@@ -662,7 +677,7 @@ fn run(cli: Cli) -> Result<bool> {
             ))?;
             Ok(true)
         }
-        Command::Sync => cmd_sync(&cli),
+        Command::Sync { local } => cmd_sync(&cli, *local),
         Command::Lock { update } => cmd_lock(&cli, *update),
         Command::Baseline { action } => match action {
             BaselineAction::Verify { name, strict } => cmd_baseline_verify(&cli, name, *strict),
@@ -1151,6 +1166,7 @@ fn cmd_validate(
     format: &str,
     incremental: bool,
     verify_incremental: bool,
+    skip_external_validation: bool,
 ) -> Result<bool> {
     // When --incremental is set (or --verify-incremental), run the salsa path.
     if incremental || verify_incremental {
@@ -1170,58 +1186,65 @@ fn cmd_validate(
     let mut diagnostics = validate::validate(&store, &schema, &graph);
     diagnostics.extend(validate::validate_documents(&doc_store, &store));
 
-    // Cross-repo link validation
+    // Cross-repo link validation (skipped with --skip-external-validation)
     let mut cross_repo_broken: Vec<rivet_core::externals::BrokenRef> = Vec::new();
     let mut backlinks: Vec<rivet_core::externals::CrossRepoBacklink> = Vec::new();
     let mut circular_deps: Vec<rivet_core::externals::CircularDependency> = Vec::new();
     let mut version_conflicts: Vec<rivet_core::externals::VersionConflict> = Vec::new();
-    if let Some(ref externals) = config.externals {
-        if !externals.is_empty() {
-            match rivet_core::externals::load_all_externals(externals, &cli.project) {
-                Ok(resolved) => {
-                    // Build external ID sets
-                    let mut external_ids: std::collections::BTreeMap<
-                        String,
-                        std::collections::HashSet<String>,
-                    > = std::collections::BTreeMap::new();
-                    for ext in &resolved {
-                        let ids: std::collections::HashSet<String> =
-                            ext.artifacts.iter().map(|a| a.id.clone()).collect();
-                        external_ids.insert(ext.prefix.clone(), ids);
+    if !skip_external_validation {
+        if let Some(ref externals) = config.externals {
+            if !externals.is_empty() {
+                match rivet_core::externals::load_all_externals(externals, &cli.project) {
+                    Ok(resolved) => {
+                        // Build external ID sets
+                        let mut external_ids: std::collections::BTreeMap<
+                            String,
+                            std::collections::HashSet<String>,
+                        > = std::collections::BTreeMap::new();
+                        for ext in &resolved {
+                            let ids: std::collections::HashSet<String> =
+                                ext.artifacts.iter().map(|a| a.id.clone()).collect();
+                            external_ids.insert(ext.prefix.clone(), ids);
+                        }
+
+                        // Collect local IDs and all link targets
+                        let local_ids: std::collections::HashSet<String> =
+                            store.iter().map(|a| a.id.clone()).collect();
+                        let all_refs: Vec<&str> = store
+                            .iter()
+                            .flat_map(|a| a.links.iter().map(|l| l.target.as_str()))
+                            .collect();
+
+                        cross_repo_broken = rivet_core::externals::validate_refs(
+                            &all_refs,
+                            &local_ids,
+                            &external_ids,
+                        );
+
+                        // Compute backlinks from external artifacts pointing to local artifacts
+                        backlinks = rivet_core::externals::compute_backlinks(&resolved, &local_ids);
                     }
-
-                    // Collect local IDs and all link targets
-                    let local_ids: std::collections::HashSet<String> =
-                        store.iter().map(|a| a.id.clone()).collect();
-                    let all_refs: Vec<&str> = store
-                        .iter()
-                        .flat_map(|a| a.links.iter().map(|l| l.target.as_str()))
-                        .collect();
-
-                    cross_repo_broken =
-                        rivet_core::externals::validate_refs(&all_refs, &local_ids, &external_ids);
-
-                    // Compute backlinks from external artifacts pointing to local artifacts
-                    backlinks = rivet_core::externals::compute_backlinks(&resolved, &local_ids);
+                    Err(e) => {
+                        eprintln!(
+                            "  warning: could not load externals for cross-repo validation: {e}"
+                        );
+                    }
                 }
-                Err(e) => {
-                    eprintln!("  warning: could not load externals for cross-repo validation: {e}");
-                }
+
+                // Detect circular dependencies in the externals graph
+                circular_deps = rivet_core::externals::detect_circular_deps(
+                    externals,
+                    &config.project.name,
+                    &cli.project,
+                );
+
+                // Detect version conflicts (same repo at different refs)
+                version_conflicts = rivet_core::externals::detect_version_conflicts(
+                    externals,
+                    &config.project.name,
+                    &cli.project,
+                );
             }
-
-            // Detect circular dependencies in the externals graph
-            circular_deps = rivet_core::externals::detect_circular_deps(
-                externals,
-                &config.project.name,
-                &cli.project,
-            );
-
-            // Detect version conflicts (same repo at different refs)
-            version_conflicts = rivet_core::externals::detect_version_conflicts(
-                externals,
-                &config.project.name,
-                &cli.project,
-            );
         }
     }
 
@@ -2216,6 +2239,7 @@ fn cmd_diff(
                         format: "text".to_string(),
                         incremental: false,
                         verify_incremental: false,
+                        skip_external_validation: false,
                     },
                 };
                 let head_cli = Cli {
@@ -2226,6 +2250,7 @@ fn cmd_diff(
                         format: "text".to_string(),
                         incremental: false,
                         verify_incremental: false,
+                        skip_external_validation: false,
                     },
                 };
                 let bc = ProjectContext::load(&base_cli)?;
@@ -3393,7 +3418,7 @@ fn resolve_schemas_dir(cli: &Cli) -> PathBuf {
     }
 }
 
-fn cmd_sync(cli: &Cli) -> Result<bool> {
+fn cmd_sync(cli: &Cli, local_only: bool) -> Result<bool> {
     let config = rivet_core::load_project_config(&cli.project.join("rivet.yaml"))
         .with_context(|| format!("loading {}", cli.project.join("rivet.yaml").display()))?;
     let externals = config.externals.as_ref();
@@ -3403,13 +3428,17 @@ fn cmd_sync(cli: &Cli) -> Result<bool> {
     }
     let externals = externals.unwrap();
 
+    if local_only {
+        eprintln!("Using --local: preferring path externals, skipping git fetch/clone");
+    }
+
     // Ensure .rivet/ is gitignored
     let added = rivet_core::externals::ensure_gitignore(&cli.project)?;
     if added {
         eprintln!("Added .rivet/ to .gitignore");
     }
 
-    let results = rivet_core::externals::sync_all(externals, &cli.project)?;
+    let results = rivet_core::externals::sync_all(externals, &cli.project, local_only)?;
     for (name, path) in &results {
         eprintln!("  Synced {} → {}", name, path.display());
     }

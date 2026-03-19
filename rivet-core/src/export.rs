@@ -14,7 +14,7 @@
 //! Supports PulseEngine dark theme (default) and a light theme for printing.
 //! All inter-page links are relative, suitable for static hosting.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write as _;
 
 use crate::coverage;
@@ -477,9 +477,11 @@ fn nav_bar(active: &str, _config: &ExportConfig, is_single_page: bool) -> String
         ("index", "Overview", "index.html"),
         ("requirements", "Requirements", "requirements.html"),
         ("documents", "Documents", "documents.html"),
+        ("stpa", "STPA", "stpa.html"),
         ("matrix", "Matrix", "matrix.html"),
         ("coverage", "Coverage", "coverage.html"),
         ("validation", "Validation", "validation.html"),
+        ("graph", "Graph", "graph.html"),
     ];
 
     let mut out = String::from("<header class=\"export-header\">\n<nav>\n");
@@ -691,9 +693,11 @@ pub fn render_index(
     // Navigation links
     let req_href = "./requirements.html";
     let docs_href = "./documents.html";
+    let stpa_href = "./stpa.html";
     let matrix_href = "./matrix.html";
     let cov_href = "./coverage.html";
     let val_href = "./validation.html";
+    let graph_href = "./graph.html";
 
     out.push_str("<h2>Report Pages</h2>\n<ul>\n");
     writeln!(
@@ -706,6 +710,12 @@ pub fn render_index(
         out,
         "<li><a href=\"{docs_href}\">Documents</a> \
          &mdash; specifications, design docs, and plans</li>"
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "<li><a href=\"{stpa_href}\">STPA Analysis</a> \
+         &mdash; safety and security analysis hierarchy</li>"
     )
     .unwrap();
     writeln!(
@@ -724,6 +734,12 @@ pub fn render_index(
         out,
         "<li><a href=\"{val_href}\">Validation Report</a> \
          &mdash; diagnostics and rule checks</li>"
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "<li><a href=\"{graph_href}\">Traceability Graph</a> \
+         &mdash; artifact dependency visualization</li>"
     )
     .unwrap();
     out.push_str("</ul>\n");
@@ -1213,6 +1229,521 @@ pub fn render_validation(diagnostics: &[Diagnostic], config: &ExportConfig) -> S
     out
 }
 
+// ── STPA / STPA-Sec page ─────────────────────────────────────────────────
+
+/// STPA artifact types in analysis order.
+const STPA_TYPES: &[&str] = &[
+    "loss",
+    "hazard",
+    "sub-hazard",
+    "system-constraint",
+    "controller",
+    "controlled-process",
+    "control-action",
+    "uca",
+    "controller-constraint",
+    "loss-scenario",
+];
+
+/// STPA-Sec artifact types.
+const STPA_SEC_TYPES: &[&str] = &[
+    "sec-loss",
+    "sec-hazard",
+    "sec-constraint",
+    "sec-uca",
+    "sec-scenario",
+];
+
+/// Render the STPA analysis page with both STPA and STPA-Sec sections.
+pub fn render_stpa(store: &Store, graph: &LinkGraph, config: &ExportConfig) -> String {
+    let timestamp = timestamp_now();
+    let version = env!("CARGO_PKG_VERSION");
+    let is_single_page = false;
+
+    let mut out = page_header("STPA Analysis", config, is_single_page);
+    out.push_str(&nav_bar("stpa", config, is_single_page));
+
+    out.push_str("<main>\n");
+    out.push_str(&render_section_stpa(store, graph));
+    out.push_str("</main>\n");
+    out.push_str(&page_footer(version, &timestamp, is_single_page));
+    out
+}
+
+/// Render the STPA section content (no HTML wrapper).
+fn render_section_stpa(store: &Store, graph: &LinkGraph) -> String {
+    let mut out = String::from("<h1>STPA Analysis</h1>\n");
+
+    // ── STPA type counts ────────────────────────────────────────────────
+    let stpa_counts: Vec<(&str, usize)> = STPA_TYPES
+        .iter()
+        .map(|t| (*t, store.count_by_type(t)))
+        .filter(|(_, c)| *c > 0)
+        .collect();
+    let stpa_total: usize = stpa_counts.iter().map(|(_, c)| c).sum();
+
+    if stpa_total == 0 {
+        out.push_str("<p>No STPA artifacts found.</p>\n");
+    } else {
+        writeln!(
+            out,
+            "<p>{stpa_total} STPA artifact(s) across {} type(s).</p>",
+            stpa_counts.len(),
+        )
+        .unwrap();
+
+        out.push_str("<table><thead><tr><th>Type</th><th>Count</th></tr></thead><tbody>\n");
+        for (t, c) in &stpa_counts {
+            writeln!(out, "<tr><td>{}</td><td>{c}</td></tr>", html_escape(t),).unwrap();
+        }
+        writeln!(out, "<tr><th>Total</th><th>{stpa_total}</th></tr>").unwrap();
+        out.push_str("</tbody></table>\n");
+
+        // ── Hierarchy view ──────────────────────────────────────────────
+        out.push_str("<h2>STPA Hierarchy</h2>\n");
+        render_stpa_hierarchy(&mut out, store, graph);
+    }
+
+    // ── STPA-Sec section ────────────────────────────────────────────────
+    let sec_counts: Vec<(&str, usize)> = STPA_SEC_TYPES
+        .iter()
+        .map(|t| (*t, store.count_by_type(t)))
+        .filter(|(_, c)| *c > 0)
+        .collect();
+    let sec_total: usize = sec_counts.iter().map(|(_, c)| c).sum();
+
+    if sec_total > 0 {
+        out.push_str("<h2>STPA-Sec (Security)</h2>\n");
+        writeln!(
+            out,
+            "<p>{sec_total} STPA-Sec artifact(s) across {} type(s).</p>",
+            sec_counts.len(),
+        )
+        .unwrap();
+
+        out.push_str("<table><thead><tr><th>Type</th><th>Count</th></tr></thead><tbody>\n");
+        for (t, c) in &sec_counts {
+            writeln!(out, "<tr><td>{}</td><td>{c}</td></tr>", html_escape(t),).unwrap();
+        }
+        writeln!(out, "<tr><th>Total</th><th>{sec_total}</th></tr>").unwrap();
+        out.push_str("</tbody></table>\n");
+
+        // STPA-Sec hierarchy
+        out.push_str("<h3>Security Hierarchy</h3>\n");
+        render_stpa_sec_hierarchy(&mut out, store, graph);
+    }
+
+    out
+}
+
+/// Render the STPA hierarchy as nested HTML lists.
+///
+/// Structure: losses -> hazards -> system-constraints -> UCAs
+fn render_stpa_hierarchy(out: &mut String, store: &Store, graph: &LinkGraph) {
+    let losses = store.by_type("loss");
+    if losses.is_empty() {
+        out.push_str("<p>No losses defined.</p>\n");
+        return;
+    }
+
+    let req_href = "./requirements.html";
+    out.push_str("<ul>\n");
+    for loss_id in losses {
+        let Some(loss) = store.get(loss_id) else {
+            continue;
+        };
+        writeln!(
+            out,
+            "  <li><a href=\"{req_href}#art-{id}\">{id}</a> &mdash; {title}",
+            id = html_escape(loss_id),
+            title = html_escape(&loss.title),
+        )
+        .unwrap();
+
+        // Find hazards that link to this loss (via leads-to-loss)
+        let hazard_backlinks = graph.backlinks_to(loss_id);
+        let hazard_ids: Vec<&str> = hazard_backlinks
+            .iter()
+            .filter(|bl| bl.link_type == "leads-to-loss")
+            .filter_map(|bl| {
+                store
+                    .get(&bl.source)
+                    .filter(|a| a.artifact_type == "hazard" || a.artifact_type == "sub-hazard")
+                    .map(|_| bl.source.as_str())
+            })
+            .collect();
+
+        if !hazard_ids.is_empty() {
+            out.push_str("\n    <ul>\n");
+            for haz_id in &hazard_ids {
+                let Some(haz) = store.get(haz_id) else {
+                    continue;
+                };
+                writeln!(
+                    out,
+                    "      <li><a href=\"{req_href}#art-{id}\">{id}</a> &mdash; {title}",
+                    id = html_escape(haz_id),
+                    title = html_escape(&haz.title),
+                )
+                .unwrap();
+
+                // Find system-constraints that prevent this hazard
+                let constraint_backlinks = graph.backlinks_to(haz_id);
+                let constraint_ids: Vec<&str> = constraint_backlinks
+                    .iter()
+                    .filter(|bl| bl.link_type == "prevents")
+                    .filter_map(|bl| {
+                        store
+                            .get(&bl.source)
+                            .filter(|a| {
+                                a.artifact_type == "system-constraint"
+                                    || a.artifact_type == "controller-constraint"
+                            })
+                            .map(|_| bl.source.as_str())
+                    })
+                    .collect();
+
+                if !constraint_ids.is_empty() {
+                    out.push_str("\n        <ul>\n");
+                    for cst_id in &constraint_ids {
+                        let Some(cst) = store.get(cst_id) else {
+                            continue;
+                        };
+                        writeln!(
+                            out,
+                            "          <li><a href=\"{req_href}#art-{id}\">{id}</a> &mdash; {title}</li>",
+                            id = html_escape(cst_id),
+                            title = html_escape(&cst.title),
+                        )
+                        .unwrap();
+                    }
+                    out.push_str("        </ul>\n");
+                }
+
+                // Find UCAs that lead to this hazard
+                let uca_backlinks = graph.backlinks_to(haz_id);
+                let uca_ids: Vec<&str> = uca_backlinks
+                    .iter()
+                    .filter(|bl| bl.link_type == "leads-to-hazard")
+                    .filter_map(|bl| {
+                        store
+                            .get(&bl.source)
+                            .filter(|a| a.artifact_type == "uca")
+                            .map(|_| bl.source.as_str())
+                    })
+                    .collect();
+
+                if !uca_ids.is_empty() {
+                    out.push_str("\n        <ul>\n");
+                    for uca_id in &uca_ids {
+                        let Some(uca) = store.get(uca_id) else {
+                            continue;
+                        };
+                        writeln!(
+                            out,
+                            "          <li><a href=\"{req_href}#art-{id}\">{id}</a> &mdash; {title}</li>",
+                            id = html_escape(uca_id),
+                            title = html_escape(&uca.title),
+                        )
+                        .unwrap();
+                    }
+                    out.push_str("        </ul>\n");
+                }
+
+                out.push_str("      </li>\n");
+            }
+            out.push_str("    </ul>\n");
+        }
+
+        out.push_str("  </li>\n");
+    }
+    out.push_str("</ul>\n");
+}
+
+/// Render the STPA-Sec hierarchy as nested HTML lists with CIA badges.
+///
+/// Structure: sec-losses -> sec-hazards -> sec-constraints -> sec-UCAs -> sec-scenarios
+fn render_stpa_sec_hierarchy(out: &mut String, store: &Store, _graph: &LinkGraph) {
+    let sec_losses = store.by_type("sec-loss");
+    if sec_losses.is_empty() {
+        // Fall back to a flat listing of all sec types
+        let req_href = "./requirements.html";
+        for sec_type in STPA_SEC_TYPES {
+            let ids = store.by_type(sec_type);
+            if ids.is_empty() {
+                continue;
+            }
+            writeln!(
+                out,
+                "<h4>{} <small>({} artifacts)</small></h4>",
+                html_escape(sec_type),
+                ids.len(),
+            )
+            .unwrap();
+            out.push_str("<ul>\n");
+            for id in ids {
+                let Some(art) = store.get(id) else { continue };
+                write!(
+                    out,
+                    "  <li><a href=\"{req_href}#art-{id}\">{id}</a> &mdash; {title}",
+                    id = html_escape(id),
+                    title = html_escape(&art.title),
+                )
+                .unwrap();
+                // CIA badge from fields
+                render_cia_badges(out, &art.fields);
+                out.push_str("</li>\n");
+            }
+            out.push_str("</ul>\n");
+        }
+        return;
+    }
+
+    let req_href = "./requirements.html";
+    out.push_str("<ul>\n");
+    for loss_id in sec_losses {
+        let Some(loss) = store.get(loss_id) else {
+            continue;
+        };
+        write!(
+            out,
+            "  <li><a href=\"{req_href}#art-{id}\">{id}</a> &mdash; {title}",
+            id = html_escape(loss_id),
+            title = html_escape(&loss.title),
+        )
+        .unwrap();
+        render_cia_badges(out, &loss.fields);
+        out.push_str("</li>\n");
+    }
+    out.push_str("</ul>\n");
+}
+
+/// Append CIA impact badges if the artifact has a `cia-impact` or
+/// `cybersecurity-properties` field.
+fn render_cia_badges(out: &mut String, fields: &BTreeMap<String, serde_yaml::Value>) {
+    // Check for cia-impact or cybersecurity-properties field
+    let cia_field = fields
+        .get("cia-impact")
+        .or_else(|| fields.get("cybersecurity-properties"));
+
+    if let Some(val) = cia_field {
+        match val {
+            serde_yaml::Value::Sequence(items) => {
+                for item in items {
+                    if let serde_yaml::Value::String(s) = item {
+                        write!(
+                            out,
+                            " <span class=\"badge badge-info\">{}</span>",
+                            html_escape(s),
+                        )
+                        .unwrap();
+                    }
+                }
+            }
+            serde_yaml::Value::String(s) => {
+                write!(
+                    out,
+                    " <span class=\"badge badge-info\">{}</span>",
+                    html_escape(s),
+                )
+                .unwrap();
+            }
+            _ => {}
+        }
+    }
+}
+
+// ── Graph page ──────────────────────────────────────────────────────────
+
+/// Default type-color mapping for graph node rendering.
+///
+/// This mirrors the mapping used in the serve dashboard so that the
+/// static export graph matches the interactive one.
+fn export_type_color_map() -> HashMap<String, String> {
+    let pairs: &[(&str, &str)] = &[
+        // STPA
+        ("loss", "#dc3545"),
+        ("hazard", "#fd7e14"),
+        ("system-constraint", "#20c997"),
+        ("controller", "#6f42c1"),
+        ("uca", "#e83e8c"),
+        ("control-action", "#17a2b8"),
+        ("feedback", "#6610f2"),
+        ("causal-factor", "#d63384"),
+        ("safety-constraint", "#20c997"),
+        ("loss-scenario", "#e83e8c"),
+        ("controller-constraint", "#20c997"),
+        ("controlled-process", "#6610f2"),
+        ("sub-hazard", "#fd7e14"),
+        // ASPICE
+        ("stakeholder-req", "#0d6efd"),
+        ("system-req", "#0dcaf0"),
+        ("system-architecture", "#198754"),
+        ("sw-req", "#198754"),
+        ("sw-architecture", "#0d6efd"),
+        ("sw-detailed-design", "#6610f2"),
+        ("sw-unit", "#6f42c1"),
+        ("system-verification", "#6610f2"),
+        ("sw-verification", "#6610f2"),
+        ("system-integration-verification", "#6610f2"),
+        ("sw-integration-verification", "#6610f2"),
+        ("sw-unit-verification", "#6610f2"),
+        ("qualification-verification", "#6610f2"),
+        // Dev
+        ("requirement", "#0d6efd"),
+        ("design-decision", "#198754"),
+        ("feature", "#6f42c1"),
+        // Cybersecurity
+        ("asset", "#ffc107"),
+        ("threat", "#dc3545"),
+        ("cybersecurity-req", "#fd7e14"),
+        ("vulnerability", "#e83e8c"),
+        ("attack-path", "#dc3545"),
+        ("cybersecurity-goal", "#0d6efd"),
+        ("cybersecurity-control", "#198754"),
+        ("security-verification", "#6610f2"),
+        ("risk-assessment", "#fd7e14"),
+        ("security-event", "#e83e8c"),
+    ];
+    pairs
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect()
+}
+
+/// Render the graph visualization page with an inline SVG.
+pub fn render_graph(store: &Store, graph: &LinkGraph, config: &ExportConfig) -> String {
+    let timestamp = timestamp_now();
+    let version = env!("CARGO_PKG_VERSION");
+    let is_single_page = false;
+
+    let mut out = page_header("Traceability Graph", config, is_single_page);
+    out.push_str(&nav_bar("graph", config, is_single_page));
+
+    out.push_str("<main>\n");
+    out.push_str(&render_section_graph(store, graph));
+    out.push_str("</main>\n");
+    out.push_str(&page_footer(version, &timestamp, is_single_page));
+    out
+}
+
+/// Render the graph section content (no HTML wrapper).
+fn render_section_graph(store: &Store, link_graph: &LinkGraph) -> String {
+    use etch::layout::{EdgeInfo, LayoutOptions, NodeInfo};
+    use etch::svg::{SvgOptions, render_svg};
+    use petgraph::graph::{EdgeIndex, NodeIndex};
+
+    let mut out = String::from("<h1>Traceability Graph</h1>\n");
+
+    let pg = link_graph.graph();
+
+    if pg.node_count() == 0 {
+        out.push_str("<p>No artifacts to display.</p>\n");
+        return out;
+    }
+
+    writeln!(
+        out,
+        "<p>{} nodes, {} edges</p>",
+        pg.node_count(),
+        pg.edge_count(),
+    )
+    .unwrap();
+
+    let colors = export_type_color_map();
+    let svg_opts = SvgOptions {
+        type_colors: colors.clone(),
+        interactive: false,
+        background: Some("#fafbfc".into()),
+        font_size: 12.0,
+        edge_color: "#888".into(),
+        ..SvgOptions::default()
+    };
+
+    let layout_opts = LayoutOptions {
+        node_width: 200.0,
+        node_height: 56.0,
+        rank_separation: 90.0,
+        node_separation: 30.0,
+        ..Default::default()
+    };
+
+    let gl = etch::layout::layout(
+        pg,
+        &|_idx: NodeIndex, n: &String| {
+            let atype = store
+                .get(n.as_str())
+                .map(|a| a.artifact_type.clone())
+                .unwrap_or_default();
+            let title = store
+                .get(n.as_str())
+                .map(|a| a.title.clone())
+                .unwrap_or_default();
+            let sublabel = if title.len() > 28 {
+                Some(format!("{}...", &title[..26]))
+            } else if title.is_empty() {
+                None
+            } else {
+                Some(title)
+            };
+            NodeInfo {
+                id: n.clone(),
+                label: n.clone(),
+                node_type: atype,
+                sublabel,
+                parent: None,
+                ports: vec![],
+            }
+        },
+        &|_idx: EdgeIndex, e: &String| EdgeInfo {
+            label: e.clone(),
+            source_port: None,
+            target_port: None,
+        },
+        &layout_opts,
+    );
+
+    let svg = render_svg(&gl, &svg_opts);
+
+    // Wrap in a scrollable container
+    out.push_str(
+        "<div style=\"overflow:auto;border:1px solid var(--border);\
+         border-radius:var(--radius);padding:1rem;margin:1rem 0\">\n",
+    );
+    out.push_str(&svg);
+    out.push_str("</div>\n");
+
+    // Legend
+    let mut present_types: Vec<String> = store
+        .iter()
+        .map(|a| a.artifact_type.clone())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    present_types.sort();
+
+    if !present_types.is_empty() {
+        out.push_str("<h2>Legend</h2>\n<div style=\"display:flex;flex-wrap:wrap;gap:0.75rem\">\n");
+        for t in &present_types {
+            let color = colors
+                .get(t.as_str())
+                .map(|s| s.as_str())
+                .unwrap_or("#e8e8e8");
+            writeln!(
+                out,
+                "<span style=\"display:inline-flex;align-items:center;gap:0.3rem\">\
+                 <span style=\"display:inline-block;width:14px;height:14px;\
+                 background:{color};border-radius:3px\"></span> {}</span>",
+                html_escape(t),
+            )
+            .unwrap();
+        }
+        out.push_str("</div>\n");
+    }
+
+    out
+}
+
 // ── Document renderers ──────────────────────────────────────────────────
 
 /// Render the documents index page listing all documents with links.
@@ -1393,7 +1924,7 @@ fn render_document_body_for_export(
     };
 
     // Get the rendered HTML from the document module.
-    let raw_html = document::render_to_html(doc, artifact_exists, artifact_info);
+    let raw_html = document::render_to_html(doc, artifact_exists, artifact_info, |_| false);
 
     // Post-process: rewrite the HTMX-style artifact links to static links.
     // The document renderer produces:
@@ -1408,28 +1939,26 @@ fn rewrite_artifact_links(html: &str, req_href: &str) -> String {
     let mut result = String::with_capacity(html.len());
     let mut rest = html;
 
+    // Match the opening of any artifact-ref <a> tag regardless of href value.
+    // The renderer emits: class="artifact-ref" hx-get="/artifacts/{id}" ... >
     let pattern = "class=\"artifact-ref\" hx-get=\"/artifacts/";
     while let Some(start) = rest.find(pattern) {
-        // Copy everything before the match
         result.push_str(&rest[..start]);
 
         let after_pattern = &rest[start + pattern.len()..];
         if let Some(quote_end) = after_pattern.find('"') {
             let artifact_id = &after_pattern[..quote_end];
-            // Skip past the hx-target and href="#" parts
+            // Skip the rest of the <a ...> opening tag (up to and including '>').
             let remaining = &after_pattern[quote_end..];
-            if let Some(href_start) = remaining.find("href=\"#\"") {
-                let after_href = &remaining[href_start + 8..];
-                // Write the replacement
+            if let Some(tag_close) = remaining.find('>') {
                 write!(
                     result,
-                    "class=\"artifact-ref\" href=\"{req_href}#art-{id}\"",
+                    "class=\"artifact-ref\" href=\"{req_href}#art-{id}\">",
                     id = html_escape(artifact_id),
                 )
                 .unwrap();
-                rest = after_href;
+                rest = &remaining[tag_close + 1..];
             } else {
-                // Fallback: just copy as-is
                 result.push_str(pattern);
                 rest = after_pattern;
             }
@@ -1518,6 +2047,11 @@ pub fn render_single_page(
     }
     out.push_str("</section>\n<hr>\n");
 
+    // STPA section
+    out.push_str("<section id=\"stpa\">\n");
+    out.push_str(&render_section_stpa(store, graph));
+    out.push_str("</section>\n<hr>\n");
+
     // Matrix section
     out.push_str("<section id=\"matrix\">\n");
     out.push_str(&render_section_matrix(store, graph));
@@ -1531,6 +2065,11 @@ pub fn render_single_page(
     // Validation section
     out.push_str("<section id=\"validation\">\n");
     out.push_str(&render_section_validation(diagnostics, &timestamp));
+    out.push_str("</section>\n<hr>\n");
+
+    // Graph section
+    out.push_str("<section id=\"graph\">\n");
+    out.push_str(&render_section_graph(store, graph));
     out.push_str("</section>\n");
 
     out.push_str(&page_footer(version, &timestamp, false));
@@ -1926,6 +2465,9 @@ pub fn render_readme(config: &ExportConfig) -> String {
     out.push_str("<li><strong>documents.html</strong> &mdash; Document index with links to individual document pages</li>\n");
     out.push_str("<li><strong>doc-{ID}.html</strong> &mdash; Individual documents with resolved artifact links</li>\n");
     out.push_str(
+        "<li><strong>stpa.html</strong> &mdash; STPA and STPA-Sec analysis hierarchy</li>\n",
+    );
+    out.push_str(
         "<li><strong>matrix.html</strong> &mdash; Traceability matrix (type x type)</li>\n",
     );
     out.push_str(
@@ -1933,6 +2475,9 @@ pub fn render_readme(config: &ExportConfig) -> String {
     );
     out.push_str(
         "<li><strong>validation.html</strong> &mdash; Diagnostics and rule check results</li>\n",
+    );
+    out.push_str(
+        "<li><strong>graph.html</strong> &mdash; Traceability graph visualization (SVG)</li>\n",
     );
     out.push_str(
         "<li><strong>config.js</strong> &mdash; Runtime configuration file (see below)</li>\n",
@@ -2129,6 +2674,8 @@ mod tests {
             render_traceability_matrix(&store, &schema, &graph, &cfg),
             render_coverage(&store, &schema, &graph, &cfg),
             render_validation(&diagnostics, &cfg),
+            render_stpa(&store, &graph, &cfg),
+            render_graph(&store, &graph, &cfg),
         ];
 
         for (i, page) in pages.iter().enumerate() {
@@ -2236,6 +2783,8 @@ mod tests {
         assert!(html.contains("./coverage.html"));
         assert!(html.contains("./documents.html"));
         assert!(html.contains("./validation.html"));
+        assert!(html.contains("./stpa.html"));
+        assert!(html.contains("./graph.html"));
         // No absolute path prefixes
         assert!(!html.contains("/projects/"));
     }
@@ -2409,5 +2958,177 @@ mod tests {
         assert!(js.contains("\\\"test\\\""));
         assert!(js.contains("v1.0\\ninjection"));
         assert!(js.contains("proj\\\\name"));
+    }
+
+    // ── STPA page tests ─────────────────────────────────────────────────
+
+    fn stpa_fixtures() -> (Store, Schema, LinkGraph) {
+        let schema = test_schema();
+        let mut store = Store::new();
+        // Build a small STPA hierarchy: loss -> hazard -> constraint & uca
+        let mut loss = artifact_with_links("L-001", "loss", &[]);
+        loss.title = "System collision".into();
+        store.insert(loss).unwrap();
+
+        let mut haz = artifact_with_links("H-001", "hazard", &[("leads-to-loss", "L-001")]);
+        haz.title = "Vehicle enters opposing lane".into();
+        store.insert(haz).unwrap();
+
+        let mut sc = artifact_with_links("SC-001", "system-constraint", &[("prevents", "H-001")]);
+        sc.title = "System must keep vehicle in lane".into();
+        store.insert(sc).unwrap();
+
+        let mut uca = artifact_with_links(
+            "UCA-001",
+            "uca",
+            &[("leads-to-hazard", "H-001"), ("issued-by", "CTRL-001")],
+        );
+        uca.title = "Not providing steering correction".into();
+        store.insert(uca).unwrap();
+
+        let mut ctrl = artifact_with_links("CTRL-001", "controller", &[]);
+        ctrl.title = "Lane Keep Assist".into();
+        store.insert(ctrl).unwrap();
+
+        let graph = LinkGraph::build(&store, &schema);
+        (store, schema, graph)
+    }
+
+    #[test]
+    fn stpa_page_contains_hierarchy() {
+        let (store, _schema, graph) = stpa_fixtures();
+        let html = render_stpa(&store, &graph, &default_config());
+
+        assert!(html.contains("<!DOCTYPE html>"));
+        assert!(html.contains("STPA Analysis"));
+        // Type counts
+        assert!(html.contains("loss"));
+        assert!(html.contains("hazard"));
+        assert!(html.contains("system-constraint"));
+        assert!(html.contains("uca"));
+        // Hierarchy links
+        assert!(html.contains("L-001"));
+        assert!(html.contains("H-001"));
+        assert!(html.contains("SC-001"));
+        assert!(html.contains("UCA-001"));
+        // Links to requirements page
+        assert!(html.contains("requirements.html#art-L-001"));
+        assert!(html.contains("requirements.html#art-H-001"));
+    }
+
+    #[test]
+    fn stpa_page_no_artifacts() {
+        let schema = test_schema();
+        let store = Store::new();
+        let graph = LinkGraph::build(&store, &schema);
+        let html = render_stpa(&store, &graph, &default_config());
+        assert!(html.contains("No STPA artifacts found"));
+    }
+
+    #[test]
+    fn stpa_page_has_nav_and_footer() {
+        let (store, _schema, graph) = stpa_fixtures();
+        let html = render_stpa(&store, &graph, &default_config());
+        assert!(html.contains("<nav>"), "stpa page missing nav");
+        assert!(
+            html.contains("Generated by Rivet"),
+            "stpa page missing footer"
+        );
+        // Nav should show STPA as active (bold, not a link)
+        assert!(html.contains("<strong>STPA</strong>"));
+    }
+
+    // ── Graph page tests ────────────────────────────────────────────────
+
+    #[test]
+    fn graph_page_renders_svg() {
+        let (store, schema, graph, _diagnostics) = test_fixtures();
+        let html = render_graph(&store, &graph, &default_config());
+
+        assert!(html.contains("<!DOCTYPE html>"));
+        assert!(html.contains("Traceability Graph"));
+        assert!(html.contains("<svg"));
+        assert!(html.contains("</svg>"));
+        // Legend present
+        assert!(html.contains("Legend"));
+        // Node count info
+        let node_count = graph.graph().node_count();
+        assert!(html.contains(&format!("{node_count} nodes")));
+
+        // Verify schema is not needed for graph render
+        drop(schema);
+    }
+
+    #[test]
+    fn graph_page_empty_store() {
+        let schema = test_schema();
+        let store = Store::new();
+        let graph = LinkGraph::build(&store, &schema);
+        let html = render_graph(&store, &graph, &default_config());
+        assert!(html.contains("No artifacts to display"));
+    }
+
+    #[test]
+    fn graph_page_has_nav_and_footer() {
+        let (store, _schema, graph, _diagnostics) = test_fixtures();
+        let html = render_graph(&store, &graph, &default_config());
+        assert!(html.contains("<nav>"), "graph page missing nav");
+        assert!(
+            html.contains("Generated by Rivet"),
+            "graph page missing footer"
+        );
+        assert!(html.contains("<strong>Graph</strong>"));
+    }
+
+    #[test]
+    fn nav_bar_includes_stpa_and_graph() {
+        let cfg = default_config();
+        let nav = nav_bar("index", &cfg, false);
+        assert!(nav.contains("stpa.html"), "nav missing stpa link");
+        assert!(nav.contains("graph.html"), "nav missing graph link");
+        assert!(nav.contains(">STPA<"), "nav missing STPA label");
+        assert!(nav.contains(">Graph<"), "nav missing Graph label");
+    }
+
+    #[test]
+    fn single_page_contains_stpa_and_graph_sections() {
+        let (store, schema, graph, diagnostics) = test_fixtures();
+        let doc_store = DocumentStore::new();
+        let html = render_single_page(
+            &store,
+            &schema,
+            &graph,
+            &diagnostics,
+            "SingleTest",
+            "0.1.0",
+            &default_config(),
+            &doc_store,
+        );
+        assert!(
+            html.contains("id=\"stpa\""),
+            "single page missing stpa section"
+        );
+        assert!(
+            html.contains("id=\"graph\""),
+            "single page missing graph section"
+        );
+        // Graph section should contain SVG
+        assert!(html.contains("<svg"), "single page missing graph SVG");
+    }
+
+    #[test]
+    fn index_page_links_to_stpa_and_graph() {
+        let (store, schema, graph, diagnostics) = test_fixtures();
+        let html = render_index(
+            &store,
+            &schema,
+            &graph,
+            &diagnostics,
+            "TestProject",
+            "0.1.0",
+            &default_config(),
+        );
+        assert!(html.contains("./stpa.html"), "index missing stpa link");
+        assert!(html.contains("./graph.html"), "index missing graph link");
     }
 }

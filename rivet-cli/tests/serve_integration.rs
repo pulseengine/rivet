@@ -44,9 +44,9 @@ fn start_server() -> (Child, u16) {
         .spawn()
         .expect("failed to start rivet serve");
 
-    // Wait for server to be ready
+    // Wait for server to be ready (up to 15s for slow CI runners)
     let addr = format!("127.0.0.1:{port}");
-    for _ in 0..50 {
+    for _ in 0..150 {
         if std::net::TcpStream::connect(&addr).is_ok() {
             return (child, port);
         }
@@ -55,7 +55,7 @@ fn start_server() -> (Child, u16) {
     // Kill the child before panicking to avoid zombie processes.
     let _ = child.kill();
     let _ = child.wait();
-    panic!("server did not start within 5 seconds on port {port}");
+    panic!("server did not start within 15 seconds on port {port}");
 }
 
 /// Fetch a page via HTTP. If `htmx` is true, sends the HX-Request header
