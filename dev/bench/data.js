@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1773983291656,
+  "lastUpdate": 1773984290971,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
@@ -4223,6 +4223,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1496092,
             "range": "± 28748",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "28a9896a041c10555ff7c54a67186ed54083b6a8",
+          "message": "fix(etch): edges hidden behind containers — fix SVG render order (#53)\n\nRender containers → edges → leaf nodes (was: edges → all nodes).\nAdd port label margin to prevent clipping.\n\nTrace: skip\n\nCo-authored-by: Test <test@test.com>\nCo-authored-by: Claude Opus 4.6 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-03-20T06:18:32+01:00",
+          "tree_id": "34a1a8df281ca9e6d92ff8c398e53e55dea5a25c",
+          "url": "https://github.com/pulseengine/rivet/commit/28a9896a041c10555ff7c54a67186ed54083b6a8"
+        },
+        "date": 1773984290377,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 83920,
+            "range": "± 341",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 1255760,
+            "range": "± 12363",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 55109352,
+            "range": "± 1853080",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2169,
+            "range": "± 8",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 26421,
+            "range": "± 263",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 392675,
+            "range": "± 2702",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 930901,
+            "range": "± 6850",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 172290,
+            "range": "± 755",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1983192,
+            "range": "± 9867",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 28526106,
+            "range": "± 3039492",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 41170,
+            "range": "± 309",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 466395,
+            "range": "± 2230",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 5026671,
+            "range": "± 239140",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4431,
+            "range": "± 13",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 58538,
+            "range": "± 308",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 817318,
+            "range": "± 4318",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 56894,
+            "range": "± 311",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 681667,
+            "range": "± 8962",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7606574,
+            "range": "± 350276",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 843,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7555,
+            "range": "± 49",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 113715,
+            "range": "± 3121",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 22630,
+            "range": "± 319",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 155194,
+            "range": "± 1080",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1454094,
+            "range": "± 146976",
             "unit": "ns/iter"
           }
         ]
