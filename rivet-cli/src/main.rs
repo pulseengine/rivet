@@ -293,6 +293,9 @@ enum Command {
         /// Port to listen on
         #[arg(short = 'P', long, default_value = "3000")]
         port: u16,
+        /// Address to bind to (default: 127.0.0.1, localhost only)
+        #[arg(short = 'B', long, default_value = "127.0.0.1")]
+        bind: String,
     },
 
     /// Sync external project dependencies into .rivet/repos/
@@ -648,8 +651,15 @@ fn run(cli: Cli) -> Result<bool> {
             format,
             strict,
         } => cmd_commits(&cli, since.as_deref(), range.as_deref(), format, *strict),
-        Command::Serve { port } => {
+        Command::Serve { port, bind } => {
             let port = *port;
+            let bind = bind.clone();
+            if bind == "0.0.0.0" || bind == "::" {
+                eprintln!(
+                    "warning: binding to {} exposes the dashboard to all network interfaces",
+                    bind
+                );
+            }
             let ctx = ProjectContext::load_full(&cli)?;
             let schemas_dir = resolve_schemas_dir(&cli);
             let mut doc_dirs = Vec::new();
@@ -674,6 +684,7 @@ fn run(cli: Cli) -> Result<bool> {
                 schemas_dir,
                 doc_dirs,
                 port,
+                bind,
             ))?;
             Ok(true)
         }

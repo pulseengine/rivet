@@ -449,45 +449,282 @@ pub(crate) async fn external_detail(
 
 // ── Artifacts ────────────────────────────────────────────────────────────
 
-pub(crate) async fn artifacts_list(State(state): State<SharedState>) -> Html<String> {
+#[derive(Debug, serde::Deserialize)]
+pub(crate) struct ArtifactsParams {
+    /// Comma-separated type filter (e.g. "requirement,feature").
+    types: Option<String>,
+    /// Text search — matches ID, title, description.
+    q: Option<String>,
+    /// Sort column: id, type, title, status (default: id).
+    sort: Option<String>,
+    /// Sort direction: asc or desc (default: asc).
+    dir: Option<String>,
+    /// Items per page (default 50).
+    per_page: Option<usize>,
+    /// 1-based page number (default 1).
+    page: Option<usize>,
+}
+
+/// Build a query-string fragment preserving current filter/sort params.
+/// Excludes `page` so callers can append their own `&page=N`.
+fn artifacts_query_base(params: &ArtifactsParams) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(ref t) = params.types {
+        if !t.is_empty() {
+            parts.push(format!("types={}", html_escape(t)));
+        }
+    }
+    if let Some(ref q) = params.q {
+        if !q.is_empty() {
+            parts.push(format!("q={}", html_escape(q)));
+        }
+    }
+    if let Some(ref s) = params.sort {
+        if !s.is_empty() {
+            parts.push(format!("sort={}", html_escape(s)));
+        }
+    }
+    if let Some(ref d) = params.dir {
+        if !d.is_empty() {
+            parts.push(format!("dir={}", html_escape(d)));
+        }
+    }
+    if let Some(pp) = params.per_page {
+        if pp != 50 {
+            parts.push(format!("per_page={pp}"));
+        }
+    }
+    if parts.is_empty() {
+        String::new()
+    } else {
+        parts.join("&")
+    }
+}
+
+pub(crate) async fn artifacts_list(
+    State(state): State<SharedState>,
+    Query(params): Query<ArtifactsParams>,
+) -> Html<String> {
     let state = state.read().await;
     let store = &state.store;
 
-    let mut artifacts: Vec<_> = store.iter().collect();
-    artifacts.sort_by(|a, b| a.id.cmp(&b.id));
+    // ── Collect all artifact types for the dropdown ──────────────
+    let mut all_types: Vec<String> = store.types().map(|t| t.to_string()).collect();
+    all_types.sort();
 
+    // ── Parse filter params ─────────────────────────────────────
+    let type_filter: Option<Vec<String>> = params
+        .types
+        .as_ref()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.split(',').map(|t| t.trim().to_lowercase()).collect());
+
+    let q_filter: Option<String> = params
+        .q
+        .as_ref()
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| s.trim().to_lowercase());
+
+    let sort_col = params.sort.as_deref().unwrap_or("id");
+    let sort_desc = params.dir.as_deref() == Some("desc");
+    let per_page = params.per_page.unwrap_or(50).clamp(1, 500);
+    let page = params.page.unwrap_or(1).max(1);
+
+    // ── Filter ──────────────────────────────────────────────────
+    let mut artifacts: Vec<_> = store
+        .iter()
+        .filter(|a| {
+            if let Some(ref tf) = type_filter {
+                if !tf.contains(&a.artifact_type.to_lowercase()) {
+                    return false;
+                }
+            }
+            if let Some(ref q) = q_filter {
+                let id_match = a.id.to_lowercase().contains(q);
+                let title_match = a.title.to_lowercase().contains(q);
+                let desc_match = a
+                    .description
+                    .as_ref()
+                    .map(|d| d.to_lowercase().contains(q))
+                    .unwrap_or(false);
+                if !id_match && !title_match && !desc_match {
+                    return false;
+                }
+            }
+            true
+        })
+        .collect();
+
+    // ── Sort ────────────────────────────────────────────────────
+    match sort_col {
+        "type" => {
+            artifacts.sort_by(|a, b| a.artifact_type.cmp(&b.artifact_type).then(a.id.cmp(&b.id)))
+        }
+        "title" => artifacts.sort_by(|a, b| a.title.cmp(&b.title).then(a.id.cmp(&b.id))),
+        "status" => artifacts.sort_by(|a, b| {
+            let sa = a.status.as_deref().unwrap_or("");
+            let sb = b.status.as_deref().unwrap_or("");
+            sa.cmp(sb).then(a.id.cmp(&b.id))
+        }),
+        _ => artifacts.sort_by(|a, b| a.id.cmp(&b.id)),
+    }
+    if sort_desc {
+        artifacts.reverse();
+    }
+
+    // ── Paginate ────────────────────────────────────────────────
+    let total = artifacts.len();
+    let total_pages = if total == 0 {
+        1
+    } else {
+        total.div_ceil(per_page)
+    };
+    let page = page.min(total_pages);
+    let start = (page - 1) * per_page;
+    let page_artifacts = &artifacts[start..total.min(start + per_page)];
+
+    // ── Query string base (without page) for links ──────────────
+    let qbase = artifacts_query_base(&params);
+
+    // ── Render ──────────────────────────────────────────────────
     let mut html = String::from("<h2>Artifacts</h2>");
 
-    // Controls bar: search + group-by
-    html.push_str("<div style=\"display:flex;gap:1rem;align-items:center;margin-bottom:1rem;flex-wrap:wrap\">");
-    html.push_str("<div style=\"position:relative;flex:1;min-width:200px\">\
-        <svg width=\"15\" height=\"15\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" style=\"position:absolute;left:.75rem;top:50%;transform:translateY(-50%);opacity:.4\"><circle cx=\"7\" cy=\"7\" r=\"4.5\"/><path d=\"M10.5 10.5L14 14\"/></svg>\
-        <input type=\"search\" id=\"artifact-filter\" placeholder=\"Filter artifacts...\" \
-        style=\"width:100%;padding:.6rem .75rem .6rem 2.25rem;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:.875rem;font-family:var(--font);background:var(--surface);color:var(--text);outline:none\" \
-        oninput=\"filterTable(this.value)\">\
-        </div>");
-    html.push_str("<div class=\"form-row\" style=\"margin-bottom:0\">\
-        <label for=\"group-by\" style=\"margin-right:.25rem\">Group by</label>\
-        <select id=\"group-by\" onchange=\"groupArtifacts(this.value)\" style=\"padding:.4rem .6rem;font-size:.82rem\">\
-        <option value=\"none\">No grouping</option>\
-        <option value=\"type\">Type</option>\
-        <option value=\"status\">Status</option>\
-        <option value=\"tag\">First tag</option>\
-        </select></div>");
-    html.push_str("</div>");
+    // Filter bar
+    let q_val = params.q.as_deref().unwrap_or("");
+    let types_val = params.types.as_deref().unwrap_or("");
+    html.push_str("<div class=\"filter-bar card\">");
+    html.push_str("<div class=\"form-row\" style=\"margin-bottom:0;width:100%\">");
+
+    // Search input
+    html.push_str(&format!(
+        "<div style=\"position:relative;flex:1;min-width:200px\">\
+         <svg width=\"15\" height=\"15\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" \
+         stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" \
+         style=\"position:absolute;left:.75rem;top:50%;transform:translateY(-50%);opacity:.4\">\
+         <circle cx=\"7\" cy=\"7\" r=\"4.5\"/><path d=\"M10.5 10.5L14 14\"/></svg>\
+         <input type=\"search\" name=\"q\" placeholder=\"Search artifacts...\" value=\"{q_val}\" \
+         hx-get=\"/artifacts\" hx-target=\"#content\" hx-push-url=\"true\" \
+         hx-trigger=\"keyup changed delay:300ms\" hx-include=\"[name='types'],[name='sort'],[name='dir'],[name='per_page']\" \
+         style=\"width:100%;padding:.6rem .75rem .6rem 2.25rem;border:1px solid var(--border);\
+         border-radius:var(--radius-sm);font-size:.875rem;font-family:var(--font);\
+         background:var(--surface);color:var(--text);outline:none\">\
+         </div>",
+        q_val = html_escape(q_val),
+    ));
+
+    // Type filter dropdown
+    html.push_str(
+        "<select name=\"types\" hx-get=\"/artifacts\" hx-target=\"#content\" hx-push-url=\"true\" \
+         hx-include=\"[name='q'],[name='sort'],[name='dir'],[name='per_page']\" \
+         style=\"padding:.4rem .6rem;font-size:.82rem;min-width:140px\">",
+    );
+    html.push_str(&format!(
+        "<option value=\"\"{sel}>All types</option>",
+        sel = if types_val.is_empty() {
+            " selected"
+        } else {
+            ""
+        },
+    ));
+    for t in &all_types {
+        let selected = if type_filter
+            .as_ref()
+            .map(|tf| tf.len() == 1 && tf[0] == t.to_lowercase())
+            .unwrap_or(false)
+        {
+            " selected"
+        } else {
+            ""
+        };
+        html.push_str(&format!(
+            "<option value=\"{val}\"{selected}>{label}</option>",
+            val = html_escape(t),
+            label = html_escape(t),
+        ));
+    }
+    html.push_str("</select>");
+
+    // Per-page selector
+    html.push_str(&format!(
+        "<select name=\"per_page\" hx-get=\"/artifacts\" hx-target=\"#content\" hx-push-url=\"true\" \
+         hx-include=\"[name='q'],[name='types'],[name='sort'],[name='dir']\" \
+         style=\"padding:.4rem .6rem;font-size:.82rem;min-width:80px\">\
+         <option value=\"25\"{s25}>25</option>\
+         <option value=\"50\"{s50}>50</option>\
+         <option value=\"100\"{s100}>100</option>\
+         <option value=\"200\"{s200}>200</option>\
+         </select>",
+        s25 = if per_page == 25 { " selected" } else { "" },
+        s50 = if per_page == 50 { " selected" } else { "" },
+        s100 = if per_page == 100 { " selected" } else { "" },
+        s200 = if per_page == 200 { " selected" } else { "" },
+    ));
+
+    // Hidden inputs for sort/dir
+    html.push_str(&format!(
+        "<input type=\"hidden\" name=\"sort\" value=\"{}\">",
+        html_escape(sort_col),
+    ));
+    html.push_str(&format!(
+        "<input type=\"hidden\" name=\"dir\" value=\"{}\">",
+        html_escape(params.dir.as_deref().unwrap_or("asc")),
+    ));
+
+    html.push_str("</div>"); // form-row
+    html.push_str("</div>"); // filter-bar
 
     // Layout: sidebar + main table
     html.push_str("<div class=\"artifacts-layout\">");
 
     // Main table area
     html.push_str("<div class=\"artifacts-main\">");
-    html.push_str(
-        "<table class=\"sortable\" id=\"artifacts-table\"><thead><tr>\
-         <th>ID</th><th>Type</th><th>Title</th><th>Status</th><th>Links</th><th data-col=\"tags\">Tags</th>\
-         </tr></thead><tbody>",
-    );
 
-    for a in &artifacts {
+    // Sortable column headers
+    let make_sort_header = |col: &str, label: &str| -> String {
+        let next_dir = if sort_col == col && !sort_desc {
+            "desc"
+        } else {
+            "asc"
+        };
+        let arrow = if sort_col == col {
+            if sort_desc { " &#9660;" } else { " &#9650;" }
+        } else {
+            ""
+        };
+        let mut sort_qs = String::new();
+        if let Some(ref t) = params.types {
+            if !t.is_empty() {
+                sort_qs.push_str(&format!("types={}&", html_escape(t)));
+            }
+        }
+        if let Some(ref q) = params.q {
+            if !q.is_empty() {
+                sort_qs.push_str(&format!("q={}&", html_escape(q)));
+            }
+        }
+        if let Some(pp) = params.per_page {
+            if pp != 50 {
+                sort_qs.push_str(&format!("per_page={pp}&"));
+            }
+        }
+        sort_qs.push_str(&format!("sort={col}&dir={next_dir}"));
+        let href = format!("/artifacts?{sort_qs}");
+        format!(
+            "<th><a hx-get=\"{href}\" hx-target=\"#content\" hx-push-url=\"true\" \
+             href=\"{href}\" style=\"color:inherit;text-decoration:none;cursor:pointer\">\
+             {label}{arrow}</a></th>",
+        )
+    };
+
+    html.push_str("<table class=\"sortable\" id=\"artifacts-table\"><thead><tr>");
+    html.push_str(&make_sort_header("id", "ID"));
+    html.push_str(&make_sort_header("type", "Type"));
+    html.push_str(&make_sort_header("title", "Title"));
+    html.push_str(&make_sort_header("status", "Status"));
+    html.push_str("<th>Links</th><th data-col=\"tags\">Tags</th>");
+    html.push_str("</tr></thead><tbody>");
+
+    for a in page_artifacts {
         let status = a.status.as_deref().unwrap_or("-");
         let status_badge = match status {
             "approved" => format!("<span class=\"badge badge-ok\">{status}</span>"),
@@ -528,10 +765,95 @@ pub(crate) async fn artifacts_list(State(state): State<SharedState>) -> Html<Str
     }
 
     html.push_str("</tbody></table>");
-    html.push_str(&format!(
-        "<p class=\"meta\">{} artifacts total</p>",
-        artifacts.len()
-    ));
+
+    // Summary line
+    if total == store.len() {
+        html.push_str(&format!(
+            "<p class=\"meta\">{total} artifacts total (page {page} of {total_pages})</p>",
+        ));
+    } else {
+        html.push_str(&format!(
+            "<p class=\"meta\">{total} matching artifacts of {} total (page {page} of {total_pages})</p>",
+            store.len(),
+        ));
+    }
+
+    // Pagination controls
+    if total_pages > 1 {
+        html.push_str("<div class=\"pagination\">");
+        if page > 1 {
+            let prev_url = if qbase.is_empty() {
+                format!("/artifacts?page={}", page - 1)
+            } else {
+                format!("/artifacts?{qbase}&page={}", page - 1)
+            };
+            html.push_str(&format!(
+                "<a hx-get=\"{prev_url}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"{prev_url}\">&laquo; Prev</a>",
+            ));
+        } else {
+            html.push_str("<span class=\"pagination-disabled\">&laquo; Prev</span>");
+        }
+
+        // Page numbers (show a window around current page)
+        let window = 2usize;
+        let pstart = if page > window + 1 { page - window } else { 1 };
+        let pend = total_pages.min(page + window);
+        if pstart > 1 {
+            let url = if qbase.is_empty() {
+                "/artifacts?page=1".to_string()
+            } else {
+                format!("/artifacts?{qbase}&page=1")
+            };
+            html.push_str(&format!(
+                "<a hx-get=\"{url}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"{url}\">1</a>",
+            ));
+            if pstart > 2 {
+                html.push_str("<span class=\"pagination-ellipsis\">&hellip;</span>");
+            }
+        }
+        for p in pstart..=pend {
+            if p == page {
+                html.push_str(&format!("<span class=\"pagination-current\">{p}</span>"));
+            } else {
+                let url = if qbase.is_empty() {
+                    format!("/artifacts?page={p}")
+                } else {
+                    format!("/artifacts?{qbase}&page={p}")
+                };
+                html.push_str(&format!(
+                    "<a hx-get=\"{url}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"{url}\">{p}</a>",
+                ));
+            }
+        }
+        if pend < total_pages {
+            if pend < total_pages - 1 {
+                html.push_str("<span class=\"pagination-ellipsis\">&hellip;</span>");
+            }
+            let url = if qbase.is_empty() {
+                format!("/artifacts?page={total_pages}")
+            } else {
+                format!("/artifacts?{qbase}&page={total_pages}")
+            };
+            html.push_str(&format!(
+                "<a hx-get=\"{url}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"{url}\">{total_pages}</a>",
+            ));
+        }
+
+        if page < total_pages {
+            let next_url = if qbase.is_empty() {
+                format!("/artifacts?page={}", page + 1)
+            } else {
+                format!("/artifacts?{qbase}&page={}", page + 1)
+            };
+            html.push_str(&format!(
+                "<a hx-get=\"{next_url}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"{next_url}\">Next &raquo;</a>",
+            ));
+        } else {
+            html.push_str("<span class=\"pagination-disabled\">Next &raquo;</span>");
+        }
+        html.push_str("</div>");
+    }
+
     html.push_str("</div>"); // end artifacts-main
 
     // Facet sidebar
@@ -543,19 +865,6 @@ pub(crate) async fn artifacts_list(State(state): State<SharedState>) -> Html<Str
     );
 
     html.push_str("</div>"); // end artifacts-layout
-
-    // Inline filter script
-    html.push_str(
-        "<script>\
-        function filterTable(q){\
-          q=q.toLowerCase();\
-          document.querySelectorAll('#artifacts-table tbody tr').forEach(function(r){\
-            if(r.classList.contains('group-header-row')) return;\
-            r.style.display=r.textContent.toLowerCase().includes(q)?'':'none';\
-          });\
-        }\
-        </script>",
-    );
 
     Html(html)
 }
@@ -2545,12 +2854,23 @@ pub(crate) async fn verification_view(State(state): State<SharedState>) -> Html<
 
 // ── STPA ─────────────────────────────────────────────────────────────────
 
-pub(crate) async fn stpa_view(State(state): State<SharedState>) -> Html<String> {
-    let state = state.read().await;
-    stpa_partial(&state)
+#[derive(Debug, serde::Deserialize)]
+pub(crate) struct StpaParams {
+    /// Comma-separated STPA type filter (e.g. "uca,hazard").
+    types: Option<String>,
+    /// Text search — matches ID, title, description.
+    q: Option<String>,
 }
 
-fn stpa_partial(state: &AppState) -> Html<String> {
+pub(crate) async fn stpa_view(
+    State(state): State<SharedState>,
+    Query(params): Query<StpaParams>,
+) -> Html<String> {
+    let state = state.read().await;
+    stpa_partial(&state, &params)
+}
+
+fn stpa_partial(state: &AppState, params: &StpaParams) -> Html<String> {
     let store = &state.store;
     let graph = &state.graph;
 
@@ -2567,9 +2887,130 @@ fn stpa_partial(state: &AppState) -> Html<String> {
         ("loss-scenario", "Loss Scenarios"),
     ];
 
+    // ── Parse filter params ─────────────────────────────────────
+    let type_filter: Option<Vec<String>> = params
+        .types
+        .as_ref()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.split(',').map(|t| t.trim().to_lowercase()).collect());
+
+    let q_filter: Option<String> = params
+        .q
+        .as_ref()
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| s.trim().to_lowercase());
+
+    /// Check if an artifact matches the text query.
+    fn matches_text(store: &Store, id: &str, q: &Option<String>) -> bool {
+        let Some(q) = q else { return true };
+        if id.to_lowercase().contains(q) {
+            return true;
+        }
+        if let Some(a) = store.get(id) {
+            if a.title.to_lowercase().contains(q) {
+                return true;
+            }
+            if let Some(ref desc) = a.description {
+                if desc.to_lowercase().contains(q) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Check if an artifact type is in the filter set.
+    fn type_visible(tf: &Option<Vec<String>>, art_type: &str) -> bool {
+        match tf {
+            Some(types) => types.contains(&art_type.to_lowercase()),
+            None => true,
+        }
+    }
+
     let total: usize = stpa_types.iter().map(|(t, _)| store.count_by_type(t)).sum();
+    let has_active_filter = type_filter.is_some() || q_filter.is_some();
 
     let mut html = String::from("<h2>STPA Analysis</h2>");
+
+    // ── Filter bar ──────────────────────────────────────────────
+    let q_val = params.q.as_deref().unwrap_or("");
+    let types_val = params.types.as_deref().unwrap_or("");
+    html.push_str("<div class=\"filter-bar card\">");
+    html.push_str(
+        "<div class=\"form-row\" style=\"margin-bottom:0;width:100%;align-items:center\">",
+    );
+
+    // Search input
+    html.push_str(&format!(
+        "<div style=\"position:relative;flex:1;min-width:200px\">\
+         <svg width=\"15\" height=\"15\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" \
+         stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" \
+         style=\"position:absolute;left:.75rem;top:50%;transform:translateY(-50%);opacity:.4\">\
+         <circle cx=\"7\" cy=\"7\" r=\"4.5\"/><path d=\"M10.5 10.5L14 14\"/></svg>\
+         <input type=\"search\" name=\"q\" placeholder=\"Search STPA artifacts...\" value=\"{q_val}\" \
+         hx-get=\"/stpa\" hx-target=\"#content\" hx-push-url=\"true\" \
+         hx-trigger=\"keyup changed delay:300ms\" hx-include=\"[name='types']\" \
+         style=\"width:100%;padding:.6rem .75rem .6rem 2.25rem;border:1px solid var(--border);\
+         border-radius:var(--radius-sm);font-size:.875rem;font-family:var(--font);\
+         background:var(--surface);color:var(--text);outline:none\">\
+         </div>",
+        q_val = html_escape(q_val),
+    ));
+
+    // Hidden input to hold comma-separated types — triggers reload on change
+    html.push_str(&format!(
+        "<input type=\"hidden\" name=\"types\" id=\"stpa-types-hidden\" value=\"{}\" \
+         hx-get=\"/stpa\" hx-target=\"#content\" hx-push-url=\"true\" \
+         hx-trigger=\"change\" hx-include=\"[name='q']\">",
+        html_escape(types_val),
+    ));
+
+    html.push_str("</div>"); // form-row
+
+    // Type checkbox row
+    html.push_str(
+        "<div style=\"display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.5rem;align-items:center\">",
+    );
+    html.push_str("<span style=\"font-size:.78rem;color:var(--text-secondary);font-weight:600;text-transform:uppercase;letter-spacing:.04em;margin-right:.25rem\">Types:</span>");
+
+    for (type_name, label) in &stpa_types {
+        let count = store.count_by_type(type_name);
+        if count == 0 {
+            continue;
+        }
+        let checked = match &type_filter {
+            Some(tf) => {
+                if tf.contains(&type_name.to_lowercase()) {
+                    " checked"
+                } else {
+                    ""
+                }
+            }
+            None => "",
+        };
+        html.push_str(&format!(
+            "<label style=\"display:inline-flex;align-items:center;gap:.25rem;font-size:.8rem;cursor:pointer\">\
+             <input type=\"checkbox\" class=\"stpa-type-cb\" value=\"{type_name}\" \
+             onchange=\"stpaUpdateTypes()\" \
+             {checked}>{label} ({count})</label>",
+        ));
+    }
+    html.push_str("</div>");
+
+    // JS to collect checked checkboxes into hidden input and trigger HTMX request
+    html.push_str(
+        "<script>\
+        function stpaUpdateTypes(){\
+          var cbs=document.querySelectorAll('.stpa-type-cb:checked');\
+          var vals=Array.from(cbs).map(function(c){return c.value});\
+          var h=document.getElementById('stpa-types-hidden');\
+          h.value=vals.join(',');\
+          htmx.trigger(h,'change');\
+        }\
+        </script>",
+    );
+
+    html.push_str("</div>"); // filter-bar
 
     if total == 0 {
         html.push_str(
@@ -2620,6 +3061,11 @@ fn stpa_partial(state: &AppState) -> Html<String> {
         let Some(loss) = store.get(loss_id) else {
             continue;
         };
+        if has_active_filter
+            && (!type_visible(&type_filter, "loss") || !matches_text(store, loss_id, &q_filter))
+        {
+            continue;
+        }
         html.push_str("<details class=\"stpa-details\" open><summary>");
         html.push_str("<span class=\"stpa-chevron\">&#9654;</span> ");
         html.push_str(&badge_for_type("loss"));
@@ -2644,6 +3090,12 @@ fn stpa_partial(state: &AppState) -> Html<String> {
                 let Some(hazard) = store.get(hazard_id) else {
                     continue;
                 };
+                if has_active_filter
+                    && (!type_visible(&type_filter, &hazard.artifact_type)
+                        || !matches_text(store, hazard_id, &q_filter))
+                {
+                    continue;
+                }
                 html.push_str("<details class=\"stpa-details\" open><summary>");
                 html.push_str("<span class=\"stpa-chevron\">&#9654;</span> ");
                 html.push_str("<span class=\"stpa-link-label\">leads-to-loss</span>");
@@ -2677,6 +3129,12 @@ fn stpa_partial(state: &AppState) -> Html<String> {
                     sc_ids.dedup();
                     for sc_id in &sc_ids {
                         let Some(sc) = store.get(sc_id) else { continue };
+                        if has_active_filter
+                            && (!type_visible(&type_filter, "system-constraint")
+                                || !matches_text(store, sc_id, &q_filter))
+                        {
+                            continue;
+                        }
                         html.push_str(&format!(
                             "<div class=\"stpa-node\">\
                              <span class=\"stpa-link-label\">prevents</span>{badge}\
@@ -2706,6 +3164,12 @@ fn stpa_partial(state: &AppState) -> Html<String> {
                         let Some(uca) = store.get(uca_id) else {
                             continue;
                         };
+                        if has_active_filter
+                            && (!type_visible(&type_filter, "uca")
+                                || !matches_text(store, uca_id, &q_filter))
+                        {
+                            continue;
+                        }
                         // Collapse below level 2
                         html.push_str("<details class=\"stpa-details\"><summary>");
                         html.push_str("<span class=\"stpa-chevron\">&#9654;</span> ");
@@ -2731,6 +3195,12 @@ fn stpa_partial(state: &AppState) -> Html<String> {
                             cc_ids.dedup();
                             for cc_id in &cc_ids {
                                 let Some(cc) = store.get(cc_id) else { continue };
+                                if has_active_filter
+                                    && (!type_visible(&type_filter, "controller-constraint")
+                                        || !matches_text(store, cc_id, &q_filter))
+                                {
+                                    continue;
+                                }
                                 html.push_str(&format!(
                                     "<div class=\"stpa-node\">\
                                      <span class=\"stpa-link-label\">inverts-uca</span>{badge}\
@@ -2749,6 +3219,12 @@ fn stpa_partial(state: &AppState) -> Html<String> {
                             ls_ids.dedup();
                             for ls_id in &ls_ids {
                                 let Some(ls) = store.get(ls_id) else { continue };
+                                if has_active_filter
+                                    && (!type_visible(&type_filter, "loss-scenario")
+                                        || !matches_text(store, ls_id, &q_filter))
+                                {
+                                    continue;
+                                }
                                 html.push_str(&format!(
                                     "<div class=\"stpa-node\">\
                                      <span class=\"stpa-link-label\">caused-by-uca</span>{badge}\
@@ -2777,7 +3253,8 @@ fn stpa_partial(state: &AppState) -> Html<String> {
 
     // UCA Table
     let uca_ids = store.by_type("uca");
-    if !uca_ids.is_empty() {
+    let show_uca_table = !uca_ids.is_empty() && type_visible(&type_filter, "uca");
+    if show_uca_table {
         html.push_str("<div class=\"card\"><h3>Unsafe Control Actions</h3>");
 
         struct UcaRow {
@@ -2793,6 +3270,9 @@ fn stpa_partial(state: &AppState) -> Html<String> {
             let Some(uca) = store.get(uca_id) else {
                 continue;
             };
+            if has_active_filter && !matches_text(store, uca_id, &q_filter) {
+                continue;
+            }
             let uca_type = uca
                 .fields
                 .get("uca-type")
@@ -2959,6 +3439,12 @@ fn stpa_partial(state: &AppState) -> Html<String> {
             let Some(sl) = store.get(sl_id) else {
                 continue;
             };
+            if has_active_filter
+                && (!type_visible(&type_filter, "sec-loss")
+                    || !matches_text(store, sl_id, &q_filter))
+            {
+                continue;
+            }
             let cia = sl
                 .fields
                 .get("cia-impact")
@@ -3002,6 +3488,12 @@ fn stpa_partial(state: &AppState) -> Html<String> {
                     let Some(sh) = store.get(sh_id) else {
                         continue;
                     };
+                    if has_active_filter
+                        && (!type_visible(&type_filter, "sec-hazard")
+                            || !matches_text(store, sh_id, &q_filter))
+                    {
+                        continue;
+                    }
                     let sh_cia = sh
                         .fields
                         .get("cia-impact")
@@ -3049,6 +3541,12 @@ fn stpa_partial(state: &AppState) -> Html<String> {
                             let Some(ssc) = store.get(ssc_id) else {
                                 continue;
                             };
+                            if has_active_filter
+                                && (!type_visible(&type_filter, "sec-constraint")
+                                    || !matches_text(store, ssc_id, &q_filter))
+                            {
+                                continue;
+                            }
                             html.push_str(&format!(
                                 "<div class=\"stpa-node\">\
                                  <span class=\"stpa-link-label\">prevents</span>{badge}\
@@ -3078,6 +3576,12 @@ fn stpa_partial(state: &AppState) -> Html<String> {
                             let Some(suca) = store.get(suca_id) else {
                                 continue;
                             };
+                            if has_active_filter
+                                && (!type_visible(&type_filter, "sec-uca")
+                                    || !matches_text(store, suca_id, &q_filter))
+                            {
+                                continue;
+                            }
                             html.push_str("<details class=\"stpa-details\"><summary>");
                             html.push_str("<span class=\"stpa-chevron\">&#9654;</span> ");
                             html.push_str(
@@ -3103,6 +3607,12 @@ fn stpa_partial(state: &AppState) -> Html<String> {
                                     let Some(sls) = store.get(sls_id) else {
                                         continue;
                                     };
+                                    if has_active_filter
+                                        && (!type_visible(&type_filter, "sec-scenario")
+                                            || !matches_text(store, sls_id, &q_filter))
+                                    {
+                                        continue;
+                                    }
                                     let av = sls
                                         .fields
                                         .get("attack-vector")
@@ -3139,7 +3649,8 @@ fn stpa_partial(state: &AppState) -> Html<String> {
 
         // Security UCA table
         let suca_ids = store.by_type("sec-uca");
-        if !suca_ids.is_empty() {
+        let show_sec_uca_table = !suca_ids.is_empty() && type_visible(&type_filter, "sec-uca");
+        if show_sec_uca_table {
             html.push_str(
                 "<div class=\"card\"><h3>Security Unsafe Control Actions</h3>\
                  <table class=\"stpa-uca-table\"><thead><tr>\
@@ -3154,6 +3665,9 @@ fn stpa_partial(state: &AppState) -> Html<String> {
                 let Some(suca) = store.get(suca_id) else {
                     continue;
                 };
+                if has_active_filter && !matches_text(store, suca_id, &q_filter) {
+                    continue;
+                }
                 let uca_type = suca
                     .fields
                     .get("uca-type")

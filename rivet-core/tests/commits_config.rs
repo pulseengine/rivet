@@ -31,6 +31,7 @@ commits:
     assert_eq!(commits.trace_exempt_artifacts, vec!["FEAT-099"]);
 }
 
+// rivet: verifies REQ-017
 #[test]
 fn commits_config_optional() {
     let yaml = "project:\n  name: test\n  schemas: [common]\nsources: []\n";

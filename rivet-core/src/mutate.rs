@@ -514,6 +514,7 @@ mod tests {
         store
     }
 
+    // rivet: verifies REQ-031
     #[test]
     fn test_next_id() {
         let store = make_test_store();
@@ -522,6 +523,7 @@ mod tests {
         assert_eq!(next_id(&store, "DD"), "DD-001");
     }
 
+    // rivet: verifies REQ-031
     #[test]
     fn test_prefix_for_type_from_store() {
         let store = make_test_store();
@@ -530,6 +532,7 @@ mod tests {
         assert_eq!(prefix_for_type("feature", &store), "FEAT");
     }
 
+    // rivet: verifies REQ-031
     #[test]
     fn test_prefix_for_type_fallback() {
         let store = Store::new();
@@ -539,6 +542,7 @@ mod tests {
         assert_eq!(prefix_for_type("sw-req", &store), "SWREQ");
     }
 
+    // rivet: verifies REQ-031
     #[test]
     fn test_validate_add_valid() {
         let schema = make_test_schema();
@@ -549,6 +553,7 @@ mod tests {
         assert!(validate_add(&artifact, &store, &schema).is_ok());
     }
 
+    // rivet: verifies REQ-031
     #[test]
     fn test_validate_add_unknown_type() {
         let schema = make_test_schema();
@@ -563,6 +568,7 @@ mod tests {
         );
     }
 
+    // rivet: verifies REQ-031
     #[test]
     fn test_validate_add_duplicate_id() {
         let schema = make_test_schema();
@@ -574,6 +580,7 @@ mod tests {
         assert!(err.to_string().contains("already exists"));
     }
 
+    // rivet: verifies REQ-031
     #[test]
     fn test_validate_add_bad_field_value() {
         let schema = make_test_schema();
@@ -593,6 +600,7 @@ mod tests {
         assert!(err.to_string().contains("allowed"));
     }
 
+    // rivet: verifies REQ-031
     #[test]
     fn test_validate_link_valid() {
         let schema = make_test_schema();
@@ -601,6 +609,7 @@ mod tests {
         assert!(validate_link("REQ-002", "satisfies", "REQ-001", &store, &schema).is_ok());
     }
 
+    // rivet: verifies REQ-031
     #[test]
     fn test_validate_link_unknown_type() {
         let schema = make_test_schema();
@@ -611,6 +620,7 @@ mod tests {
         assert!(err.to_string().contains("unknown link type"));
     }
 
+    // rivet: verifies REQ-031
     #[test]
     fn test_validate_link_missing_source() {
         let schema = make_test_schema();
@@ -620,6 +630,7 @@ mod tests {
         assert!(err.to_string().contains("does not exist"));
     }
 
+    // rivet: verifies REQ-031
     #[test]
     fn test_validate_link_missing_target() {
         let schema = make_test_schema();
@@ -629,6 +640,7 @@ mod tests {
         assert!(err.to_string().contains("does not exist"));
     }
 
+    // rivet: verifies REQ-031
     #[test]
     fn test_validate_remove_with_backlinks() {
         let store = make_test_store();
@@ -644,6 +656,7 @@ mod tests {
         assert!(validate_remove("REQ-001", true, &store, &graph).is_ok());
     }
 
+    // rivet: verifies REQ-031
     #[test]
     fn test_validate_remove_no_backlinks() {
         let store = make_test_store();
@@ -654,6 +667,7 @@ mod tests {
         assert!(validate_remove("FEAT-001", false, &store, &graph).is_ok());
     }
 
+    // rivet: verifies REQ-031
     #[test]
     fn test_validate_remove_nonexistent() {
         let store = make_test_store();
@@ -664,6 +678,7 @@ mod tests {
         assert!(err.to_string().contains("does not exist"));
     }
 
+    // rivet: verifies REQ-031
     #[test]
     fn test_render_artifact_yaml() {
         let mut artifact =

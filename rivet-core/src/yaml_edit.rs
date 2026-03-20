@@ -683,12 +683,14 @@ artifacts:
       - type: satisfies
         target: REQ-001";
 
+    // rivet: verifies REQ-034
     #[test]
     fn test_roundtrip_preserves_content() {
         let editor = YamlEditor::parse(SAMPLE_YAML);
         assert_eq!(editor.to_string(), format!("{SAMPLE_YAML}\n"));
     }
 
+    // rivet: verifies REQ-034
     #[test]
     fn test_find_artifact_block_first() {
         let editor = YamlEditor::parse(SAMPLE_YAML);
@@ -701,6 +703,7 @@ artifacts:
         // or `end` points to the start of REQ-002
     }
 
+    // rivet: verifies REQ-034
     #[test]
     fn test_find_artifact_block_middle() {
         let editor = YamlEditor::parse(SAMPLE_YAML);
@@ -717,6 +720,7 @@ artifacts:
         }
     }
 
+    // rivet: verifies REQ-034
     #[test]
     fn test_find_artifact_block_last() {
         let editor = YamlEditor::parse(SAMPLE_YAML);
@@ -726,12 +730,14 @@ artifacts:
         assert_eq!(end, editor.lines.len());
     }
 
+    // rivet: verifies REQ-034
     #[test]
     fn test_find_artifact_block_not_found() {
         let editor = YamlEditor::parse(SAMPLE_YAML);
         assert!(editor.find_artifact_block("REQ-999").is_none());
     }
 
+    // rivet: verifies REQ-034
     #[test]
     fn test_set_field_updates_existing() {
         let mut editor = YamlEditor::parse(SAMPLE_YAML);
@@ -752,6 +758,7 @@ artifacts:
         assert!(output.contains("    title: First requirement"));
     }
 
+    // rivet: verifies REQ-034
     #[test]
     fn test_set_field_adds_new_field() {
         let mut editor = YamlEditor::parse(SAMPLE_YAML);
@@ -778,6 +785,7 @@ artifacts:
         assert!(found_status, "status field should have been added");
     }
 
+    // rivet: verifies REQ-034
     #[test]
     fn test_set_field_replaces_block_scalar() {
         let mut editor = YamlEditor::parse(SAMPLE_YAML);
@@ -792,6 +800,7 @@ artifacts:
         assert!(!output.contains("that spans two lines"));
     }
 
+    // rivet: verifies REQ-034
     #[test]
     fn test_add_link_to_existing_links() {
         let mut editor = YamlEditor::parse(SAMPLE_YAML);
@@ -806,6 +815,7 @@ artifacts:
         assert!(output.contains("target: SC-1"));
     }
 
+    // rivet: verifies REQ-034
     #[test]
     fn test_add_link_creates_links_section() {
         let mut editor = YamlEditor::parse(SAMPLE_YAML);
@@ -832,6 +842,7 @@ artifacts:
         assert!(output.contains("target: REQ-001"));
     }
 
+    // rivet: verifies REQ-034
     #[test]
     fn test_remove_link() {
         let mut editor = YamlEditor::parse(SAMPLE_YAML);
@@ -843,6 +854,7 @@ artifacts:
         assert!(output.contains("target: SC-3"));
     }
 
+    // rivet: verifies REQ-034
     #[test]
     fn test_remove_artifact() {
         let mut editor = YamlEditor::parse(SAMPLE_YAML);
@@ -853,6 +865,7 @@ artifacts:
         assert!(output.contains("REQ-003"));
     }
 
+    // rivet: verifies REQ-034
     #[test]
     fn test_set_status_after_tags_description_bug() {
         // This is the bug case: setting status on an artifact that has
@@ -913,6 +926,7 @@ artifacts:
         assert_eq!(indent, 4);
     }
 
+    // rivet: verifies REQ-034
     #[test]
     fn test_remove_only_link_removes_section() {
         let content = "\
@@ -935,6 +949,7 @@ artifacts:
         assert!(output.contains("title: Single link artifact"));
     }
 
+    // rivet: verifies REQ-034
     #[test]
     fn test_remove_last_artifact() {
         let content = "\
@@ -954,6 +969,7 @@ artifacts:
         assert!(output.contains("REQ-001"));
     }
 
+    // rivet: verifies REQ-034
     #[test]
     fn test_remove_first_artifact() {
         let content = "\
@@ -973,6 +989,7 @@ artifacts:
         assert!(output.contains("REQ-002"));
     }
 
+    // rivet: verifies REQ-034
     #[test]
     fn test_roundtrip_real_world_artifact() {
         // A realistic artifact with all field types
@@ -998,6 +1015,7 @@ artifacts:
         assert_eq!(editor.to_string(), content);
     }
 
+    // rivet: verifies REQ-034
     #[test]
     fn test_multiple_modifications() {
         let content = "\
@@ -1020,6 +1038,7 @@ artifacts:
         assert!(!output.contains("status: draft"));
     }
 
+    // rivet: verifies REQ-034
     #[test]
     fn test_add_link_not_found() {
         let mut editor = YamlEditor::parse(SAMPLE_YAML);
@@ -1028,6 +1047,7 @@ artifacts:
         assert!(result.unwrap_err().contains("not found"));
     }
 
+    // rivet: verifies REQ-034
     #[test]
     fn test_remove_link_not_found() {
         let mut editor = YamlEditor::parse(SAMPLE_YAML);
@@ -1036,6 +1056,7 @@ artifacts:
         assert!(result.unwrap_err().contains("not found"));
     }
 
+    // rivet: verifies REQ-034
     #[test]
     fn test_remove_artifact_not_found() {
         let mut editor = YamlEditor::parse(SAMPLE_YAML);

@@ -523,6 +523,7 @@ mod tests {
         assert_eq!(parse_commit_type("feat: add thing"), Some("feat".into()));
     }
 
+    // rivet: verifies REQ-017
     #[test]
     fn parse_type_with_scope() {
         assert_eq!(
@@ -531,11 +532,13 @@ mod tests {
         );
     }
 
+    // rivet: verifies REQ-017
     #[test]
     fn parse_type_no_match() {
         assert_eq!(parse_commit_type("Update README"), None);
     }
 
+    // rivet: verifies REQ-017
     #[test]
     fn parse_type_uppercase_rejected() {
         assert_eq!(parse_commit_type("Feat: something"), None);
@@ -552,6 +555,7 @@ mod tests {
         assert_eq!(trailers.get("Fixes").unwrap(), &vec!["REQ-002, REQ-003"]);
     }
 
+    // rivet: verifies REQ-017
     #[test]
     fn parse_trailers_multiple_same_key() {
         let msg = "subject\n\nImplements: REQ-001\nImplements: REQ-002";
@@ -562,6 +566,7 @@ mod tests {
         );
     }
 
+    // rivet: verifies REQ-017
     #[test]
     fn parse_trailers_ignores_lowercase_keys() {
         let msg = "subject\n\nnot-a-trailer: value";
@@ -577,6 +582,7 @@ mod tests {
         assert_eq!(extract_artifact_ids("REQ-001"), vec!["REQ-001"]);
     }
 
+    // rivet: verifies REQ-017
     #[test]
     fn extract_multiple_comma() {
         assert_eq!(
@@ -585,6 +591,7 @@ mod tests {
         );
     }
 
+    // rivet: verifies REQ-017
     #[test]
     fn extract_multiple_space() {
         assert_eq!(
@@ -593,6 +600,7 @@ mod tests {
         );
     }
 
+    // rivet: verifies REQ-017
     #[test]
     fn extract_no_ids() {
         assert!(extract_artifact_ids("no ids here").is_empty());
@@ -614,6 +622,7 @@ mod tests {
         assert_eq!(refs.get("fixes").unwrap(), &vec!["DD-003"]);
     }
 
+    // rivet: verifies REQ-017
     #[test]
     fn parse_message_with_skip() {
         let msg = "chore: update deps\n\nTrace: skip";
@@ -623,6 +632,7 @@ mod tests {
         assert!(refs.is_empty());
     }
 
+    // rivet: verifies REQ-017
     #[test]
     fn parse_message_no_trailers() {
         let msg = "fix: quick patch";
@@ -659,6 +669,7 @@ mod tests {
         assert!(!commit.has_skip_trailer);
     }
 
+    // rivet: verifies REQ-017
     #[test]
     fn parse_git_log_entry_too_few_fields() {
         assert!(parse_git_log_entry("only two fields", &BTreeMap::new(), "Trace: skip").is_none());
@@ -675,6 +686,7 @@ mod tests {
         assert_eq!(classify_commit_refs(&refs, &known), CommitClass::Linked);
     }
 
+    // rivet: verifies REQ-017
     #[test]
     fn classify_broken() {
         let mut refs = BTreeMap::new();
@@ -683,6 +695,7 @@ mod tests {
         assert_eq!(classify_commit_refs(&refs, &known), CommitClass::BrokenRef);
     }
 
+    // rivet: verifies REQ-017
     #[test]
     fn classify_orphan() {
         let refs = BTreeMap::new();
@@ -692,6 +705,7 @@ mod tests {
 
     // -- is_exempt --
 
+    // rivet: verifies REQ-017
     #[test]
     fn exempt_by_type() {
         let commit = ParsedCommit {
@@ -709,6 +723,7 @@ mod tests {
         assert!(is_exempt(&commit, &exempt_types));
     }
 
+    // rivet: verifies REQ-017
     #[test]
     fn exempt_by_skip_trailer() {
         let commit = ParsedCommit {
@@ -725,6 +740,7 @@ mod tests {
         assert!(is_exempt(&commit, &[]));
     }
 
+    // rivet: verifies REQ-017
     #[test]
     fn not_exempt() {
         let commit = ParsedCommit {
@@ -744,6 +760,7 @@ mod tests {
 
     // -- touches_traced_path --
 
+    // rivet: verifies REQ-017
     #[test]
     fn touches_traced_path_match() {
         let files = vec!["src/main.rs".into(), "docs/readme.md".into()];
@@ -751,6 +768,7 @@ mod tests {
         assert!(touches_traced_path(&files, &traced));
     }
 
+    // rivet: verifies REQ-017
     #[test]
     fn touches_traced_path_no_match() {
         let files = vec!["docs/readme.md".into()];
@@ -758,6 +776,7 @@ mod tests {
         assert!(!touches_traced_path(&files, &traced));
     }
 
+    // rivet: verifies REQ-017
     #[test]
     fn touches_traced_path_empty_paths_means_all() {
         let files = vec!["anything.txt".into()];
@@ -875,6 +894,7 @@ mod tests {
 
     // -- expand_artifact_range --
 
+    // rivet: verifies REQ-017
     #[test]
     fn range_feat_052_to_056() {
         assert_eq!(
@@ -883,6 +903,7 @@ mod tests {
         );
     }
 
+    // rivet: verifies REQ-017
     #[test]
     fn range_req_001_to_003() {
         assert_eq!(
@@ -891,6 +912,7 @@ mod tests {
         );
     }
 
+    // rivet: verifies REQ-017
     #[test]
     fn range_dd_018_to_021() {
         assert_eq!(
@@ -899,6 +921,7 @@ mod tests {
         );
     }
 
+    // rivet: verifies REQ-017
     #[test]
     fn range_no_zero_padding() {
         assert_eq!(
@@ -907,6 +930,7 @@ mod tests {
         );
     }
 
+    // rivet: verifies REQ-017
     #[test]
     fn range_compound_prefix() {
         assert_eq!(
@@ -918,11 +942,13 @@ mod tests {
         );
     }
 
+    // rivet: verifies REQ-017
     #[test]
     fn range_same_start_and_end() {
         assert_eq!(expand_artifact_range("FEAT-001..001"), vec!["FEAT-001"]);
     }
 
+    // rivet: verifies REQ-017
     #[test]
     fn range_start_greater_than_end() {
         assert_eq!(
@@ -931,11 +957,13 @@ mod tests {
         );
     }
 
+    // rivet: verifies REQ-017
     #[test]
     fn range_no_range_plain_id() {
         assert_eq!(expand_artifact_range("FEAT-052"), vec!["FEAT-052"]);
     }
 
+    // rivet: verifies REQ-017
     #[test]
     fn range_not_a_range_garbage() {
         assert_eq!(expand_artifact_range("not-a-range"), vec!["not-a-range"]);
@@ -943,6 +971,7 @@ mod tests {
 
     // -- is_artifact_id with compound prefixes --
 
+    // rivet: verifies REQ-017
     #[test]
     fn artifact_id_compound_prefix() {
         assert!(is_artifact_id("UCA-C-10"));
@@ -951,6 +980,7 @@ mod tests {
 
     // -- integration: extract_artifact_ids with ranges --
 
+    // rivet: verifies REQ-017
     #[test]
     fn extract_ids_with_range() {
         let ids = extract_artifact_ids("FEAT-052..056, REQ-001");
@@ -962,6 +992,7 @@ mod tests {
         );
     }
 
+    // rivet: verifies REQ-017
     #[test]
     fn extract_ids_range_in_commit_message() {
         let msg = "feat: implement batch\n\nImplements: FEAT-052..056";

@@ -201,6 +201,7 @@ pub fn merge_externals(
 mod tests {
     use super::*;
 
+    // rivet: verifies REQ-027
     #[test]
     fn discover_bazel_basic() {
         let src = r#"
@@ -220,6 +221,7 @@ bazel_dep(name = "rules_rust", version = "0.30.0")
         assert_eq!(result[1].name, "rules_rust");
     }
 
+    // rivet: verifies REQ-027
     #[test]
     fn discover_bazel_with_git_override() {
         let src = r#"
@@ -242,6 +244,7 @@ git_override(
         assert!(ext.local_path.is_none());
     }
 
+    // rivet: verifies REQ-027
     #[test]
     fn discover_bazel_with_local_path_override() {
         let src = r#"
@@ -259,6 +262,7 @@ local_path_override(
         assert_eq!(ext.local_path, Some(PathBuf::from("../my_lib")));
     }
 
+    // rivet: verifies REQ-027
     #[test]
     fn discover_bazel_skips_dev_deps() {
         let src = r#"
@@ -270,6 +274,7 @@ bazel_dep(name = "test_dep", version = "2.0.0", dev_dependency = True)
         assert_eq!(result[0].name, "prod_dep");
     }
 
+    // rivet: verifies REQ-027
     #[test]
     fn discover_nix_basic() {
         let json = r#"{
@@ -322,6 +327,7 @@ bazel_dep(name = "test_dep", version = "2.0.0", dev_dependency = True)
         );
     }
 
+    // rivet: verifies REQ-027
     #[test]
     fn discover_empty_directory_returns_empty() {
         let tmp = tempfile::tempdir().unwrap();
@@ -331,6 +337,7 @@ bazel_dep(name = "test_dep", version = "2.0.0", dev_dependency = True)
         assert!(nix_result.is_empty());
     }
 
+    // rivet: verifies REQ-027
     #[test]
     fn discover_bazel_collects_diagnostics() {
         let src = r#"
@@ -355,6 +362,7 @@ bazel_dep(name = "foo", version = "1.0")
         );
     }
 
+    // rivet: verifies REQ-027
     #[test]
     fn to_external_projects_conversion() {
         let discovered = vec![
@@ -400,6 +408,7 @@ bazel_dep(name = "foo", version = "1.0")
         assert_eq!(ext1.path.as_deref(), Some("../my-lib"));
     }
 
+    // rivet: verifies REQ-027
     #[test]
     fn merge_manual_takes_precedence() {
         use std::collections::BTreeMap;
@@ -432,6 +441,7 @@ bazel_dep(name = "foo", version = "1.0")
         assert_eq!(merged["meld"].git_ref.as_deref(), Some("manual-ref"));
     }
 
+    // rivet: verifies REQ-027
     #[test]
     fn merge_adds_discovered_when_not_manual() {
         use std::collections::BTreeMap;
@@ -453,6 +463,7 @@ bazel_dep(name = "foo", version = "1.0")
         assert_eq!(merged["spar"].git_ref.as_deref(), Some("abc"));
     }
 
+    // rivet: verifies REQ-027
     #[test]
     fn discover_nix_with_explicit_url() {
         let json = r#"{
@@ -478,6 +489,7 @@ bazel_dep(name = "foo", version = "1.0")
         assert_eq!(result[0].git_ref.as_deref(), Some("deadbeef"));
     }
 
+    // rivet: verifies REQ-027
     #[test]
     fn discover_bazel_prefix_normalization() {
         let src = r#"

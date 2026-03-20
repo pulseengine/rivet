@@ -81,7 +81,7 @@ commits:
      FEAT-052, FEAT-053, FEAT-054, FEAT-055, FEAT-056, FEAT-057,
      # Phase 3 planned requirements and decisions (draft)
      DD-021, DD-022, DD-024, DD-025, DD-026, DD-027, DD-031, DD-032, DD-033, DD-034,
-     DD-036, DD-037, DD-038,
+     DD-036, DD-037, DD-038, DD-039,
      FEAT-064, FEAT-065,
      REQ-026, REQ-027, REQ-029,
      # STPA-Sec artifacts (security analysis, no code traceability required)

@@ -458,6 +458,7 @@ def test_foo():
 
     // ── Test: Python decorator marker ────────────────────────────────────
 
+    // rivet: verifies REQ-026
     #[test]
     fn python_decorator_marker_detected() {
         let tmp = TempDir::new().unwrap();
@@ -517,6 +518,7 @@ fn test_c() {
 
     // ── Test: Non-matching lines are ignored ─────────────────────────────
 
+    // rivet: verifies REQ-026
     #[test]
     fn non_matching_lines_ignored() {
         let tmp = TempDir::new().unwrap();
@@ -625,6 +627,7 @@ fn test_third() {
 
     // ── Test: Empty directory returns empty vec ──────────────────────────
 
+    // rivet: verifies REQ-026
     #[test]
     fn empty_directory_returns_empty() {
         let tmp = TempDir::new().unwrap();
@@ -634,6 +637,7 @@ fn test_third() {
 
     // ── Test: Partially-verifies normalised from underscore ──────────────
 
+    // rivet: verifies REQ-026
     #[test]
     fn partially_verifies_underscore_normalised() {
         let tmp = TempDir::new().unwrap();
@@ -656,6 +660,7 @@ fn test_partial() {
 
     // ── Test: Generic comment (C/Java) ───────────────────────────────────
 
+    // rivet: verifies REQ-026
     #[test]
     fn generic_comment_c_file() {
         let tmp = TempDir::new().unwrap();

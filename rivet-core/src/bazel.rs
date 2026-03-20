@@ -850,6 +850,7 @@ mod tests {
 
     // -- lexer tests --
 
+    // rivet: verifies REQ-028
     #[test]
     fn lex_all_token_kinds() {
         let src = r#"module( name = "foo" , version = "1.0" ) # comment
@@ -876,6 +877,7 @@ bazel_dep(name = "bar", version = "2.0", dev_dependency = True)
         assert!(kinds.contains(&SyntaxKind::Newline));
     }
 
+    // rivet: verifies REQ-028
     #[test]
     fn lex_string_with_escapes() {
         let src = r#""hello \"world\"""#;
@@ -887,6 +889,7 @@ bazel_dep(name = "bar", version = "2.0", dev_dependency = True)
 
     // -- parser (CST) tests --
 
+    // rivet: verifies REQ-028
     #[test]
     fn parse_bazel_dep() {
         let src = r#"bazel_dep(name = "foo", version = "1.0")"#;
@@ -915,6 +918,7 @@ bazel_dep(name = "bar", version = "2.0", dev_dependency = True)
         assert_eq!(kwargs.len(), 2);
     }
 
+    // rivet: verifies REQ-028
     #[test]
     fn parse_git_override() {
         let src = r#"git_override(
@@ -943,6 +947,7 @@ bazel_dep(name = "bar", version = "2.0", dev_dependency = True)
         assert_eq!(kwargs.len(), 3);
     }
 
+    // rivet: verifies REQ-028
     #[test]
     fn parse_module_call() {
         let src = r#"module(name = "my_project", version = "1.0.0")"#;
@@ -957,6 +962,7 @@ bazel_dep(name = "bar", version = "2.0", dev_dependency = True)
         assert_eq!(calls.len(), 1);
     }
 
+    // rivet: verifies REQ-028
     #[test]
     fn parse_list_expression() {
         let src = r#"archive_override(
@@ -995,6 +1001,7 @@ bazel_dep(name = "bar", version = "2.0", dev_dependency = True)
 
     // -- HIR tests --
 
+    // rivet: verifies REQ-027
     #[test]
     fn hir_extract_bazel_dep() {
         let src = r#"bazel_dep(name = "rules_go", version = "0.41.0", dev_dependency = True)"#;
@@ -1006,6 +1013,7 @@ bazel_dep(name = "bar", version = "2.0", dev_dependency = True)
         assert!(module.deps[0].dev_dependency);
     }
 
+    // rivet: verifies REQ-027
     #[test]
     fn hir_extract_git_override() {
         let src = r#"git_override(
@@ -1032,6 +1040,7 @@ bazel_dep(name = "bar", version = "2.0", dev_dependency = True)
 
     // -- error recovery --
 
+    // rivet: verifies REQ-028
     #[test]
     fn error_recovery_load_statement() {
         let src = r#"load("@rules_go//go:defs.bzl", "go_library")
@@ -1058,6 +1067,7 @@ bazel_dep(name = "foo", version = "1.0")
 
     // -- realistic MODULE.bazel --
 
+    // rivet: verifies REQ-027
     #[test]
     fn parse_realistic_module_bazel() {
         let src = r#"# MODULE.bazel for a realistic Bazel project
@@ -1122,6 +1132,7 @@ local_path_override(
 
     // -- error recovery: variable assignment --
 
+    // rivet: verifies REQ-028
     #[test]
     fn error_recovery_variable_assignment() {
         let src = r#"_SOME_VAR = "hello"

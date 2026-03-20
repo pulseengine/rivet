@@ -872,6 +872,7 @@ fn read_source_bytes(source: &AdapterSource) -> Result<Vec<u8>, Error> {
 mod tests {
     use super::*;
 
+    // rivet: verifies REQ-008
     #[test]
     fn default_config_has_sane_limits() {
         let config = WasmRuntimeConfig::default();
@@ -880,12 +881,14 @@ mod tests {
         assert!(config.wasi);
     }
 
+    // rivet: verifies REQ-008
     #[test]
     fn runtime_creation_succeeds() {
         let runtime = WasmAdapterRuntime::with_defaults();
         assert!(runtime.is_ok(), "runtime creation should succeed");
     }
 
+    // rivet: verifies REQ-008
     #[test]
     fn load_nonexistent_file_returns_error() {
         let runtime = WasmAdapterRuntime::with_defaults().unwrap();
@@ -899,6 +902,7 @@ mod tests {
         }
     }
 
+    // rivet: verifies REQ-008
     #[test]
     fn load_invalid_wasm_returns_compilation_error() {
         let runtime = WasmAdapterRuntime::with_defaults().unwrap();
@@ -921,6 +925,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    // rivet: verifies REQ-008
     #[test]
     fn wasm_error_converts_to_core_error() {
         let wasm_err = WasmError::Guest("test error".into());
@@ -931,6 +936,7 @@ mod tests {
         }
     }
 
+    // rivet: verifies REQ-008
     #[test]
     fn convert_wit_artifact_roundtrip() {
         use adapter_bindings::pulseengine::rivet::types as wit;
@@ -975,6 +981,7 @@ mod tests {
         assert_eq!(wit_back.fields.len(), 1);
     }
 
+    // rivet: verifies REQ-008
     #[test]
     fn yaml_value_to_wit_field_conversions() {
         use adapter_bindings::pulseengine::rivet::types::FieldValue;
@@ -1011,6 +1018,7 @@ mod tests {
         }
     }
 
+    // rivet: verifies REQ-008
     #[test]
     fn validate_wasm_artifacts_rejects_empty_id() {
         let artifacts = vec![Artifact {
@@ -1032,6 +1040,7 @@ mod tests {
         );
     }
 
+    // rivet: verifies REQ-008
     #[test]
     fn validate_wasm_artifacts_rejects_empty_type() {
         let artifacts = vec![Artifact {
@@ -1053,6 +1062,7 @@ mod tests {
         );
     }
 
+    // rivet: verifies REQ-008
     #[test]
     fn validate_wasm_artifacts_strips_html_from_title() {
         let artifacts = vec![Artifact {
@@ -1075,6 +1085,7 @@ mod tests {
         assert!(desc.contains("Description"));
     }
 
+    // rivet: verifies REQ-008
     #[test]
     fn strip_html_from_text_removes_tags() {
         assert_eq!(strip_html_from_text("<b>bold</b>"), "bold");
@@ -1091,6 +1102,7 @@ mod tests {
     ///
     /// Set `SPAR_WASM_PATH` to override the default component location.
     /// The test is skipped if the component or AADL files are not found.
+    // rivet: verifies REQ-008
     #[test]
     fn render_aadl_via_wasm() {
         // Only run if the WASM component exists
@@ -1141,6 +1153,7 @@ mod tests {
     ///
     /// Set `SPAR_WASM_PATH` to override the default component location.
     /// The test is skipped if the component file does not exist.
+    // rivet: verifies REQ-008
     #[test]
     fn load_spar_wasm_component() {
         let wasm_path = std::env::var("SPAR_WASM_PATH").unwrap_or_else(|_| {

@@ -651,4 +651,28 @@ table.sortable th:hover{color:var(--text)}
 .cell-detail ul{list-style:none;padding:.5rem;margin:0}
 .cell-detail li{padding:.25rem .5rem;border-bottom:1px solid var(--border)}
 .cell-detail li:last-child{border-bottom:none}
+
+/* ── Filter bar ────────────────────────────────────────── */
+.filter-bar{margin-bottom:1rem;padding:1rem}
+.filter-bar .form-row{display:flex;gap:.75rem;align-items:center;flex-wrap:wrap}
+
+/* ── Pagination ────────────────────────────────────────── */
+.pagination{display:flex;gap:.25rem;align-items:center;justify-content:center;
+  margin-top:1rem;padding:.75rem 0;flex-wrap:wrap}
+.pagination a{display:inline-flex;align-items:center;justify-content:center;
+  min-width:2rem;height:2rem;padding:0 .5rem;border:1px solid var(--border);
+  border-radius:var(--radius-sm);font-size:.82rem;font-family:var(--font);
+  color:var(--text);background:var(--surface);text-decoration:none;
+  transition:all var(--transition);cursor:pointer}
+.pagination a:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+.pagination-current{display:inline-flex;align-items:center;justify-content:center;
+  min-width:2rem;height:2rem;padding:0 .5rem;border:1px solid var(--accent);
+  border-radius:var(--radius-sm);font-size:.82rem;font-weight:600;
+  color:#fff;background:var(--accent)}
+.pagination-disabled{display:inline-flex;align-items:center;justify-content:center;
+  min-width:2rem;height:2rem;padding:0 .5rem;border:1px solid var(--border);
+  border-radius:var(--radius-sm);font-size:.82rem;
+  color:var(--text-secondary);background:var(--surface);opacity:.5}
+.pagination-ellipsis{display:inline-flex;align-items:center;justify-content:center;
+  min-width:1.5rem;height:2rem;font-size:.82rem;color:var(--text-secondary)}
 "#;

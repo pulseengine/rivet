@@ -363,6 +363,7 @@ artifacts:
 
     // ── Test 1: empty database ──────────────────────────────────────────
 
+    // rivet: verifies REQ-029
     #[test]
     fn empty_database_no_diagnostics() {
         let db = RivetDatabase::new();
@@ -375,6 +376,7 @@ artifacts:
 
     // ── Test 2: create database with source + schema, get diagnostics ───
 
+    // rivet: verifies REQ-029
     #[test]
     fn diagnostics_for_unlinked_dd() {
         let db = RivetDatabase::new();
@@ -401,6 +403,7 @@ artifacts:
 
     // ── Test 3: linked DD produces no traceability warning ──────────────
 
+    // rivet: verifies REQ-029
     #[test]
     fn no_warning_when_dd_is_linked() {
         let db = RivetDatabase::new();
@@ -422,6 +425,7 @@ artifacts:
 
     // ── Test 4: update source file triggers recomputation ───────────────
 
+    // rivet: verifies REQ-029
     #[test]
     fn update_source_triggers_recomputation() {
         let mut db = RivetDatabase::new();
@@ -455,6 +459,7 @@ artifacts:
 
     // ── Test 5: same inputs produce deterministic output ────────────────
 
+    // rivet: verifies REQ-029
     #[test]
     fn deterministic_output() {
         let db = RivetDatabase::new();
@@ -475,6 +480,7 @@ artifacts:
 
     // ── Test 6: adding artifact shows up in the store ───────────────────
 
+    // rivet: verifies REQ-029
     #[test]
     fn adding_artifact_appears_in_store() {
         let mut db = RivetDatabase::new();
@@ -505,6 +511,7 @@ artifacts:
 
     // ── Test 7: removing artifact shows updated diagnostics ─────────────
 
+    // rivet: verifies REQ-029
     #[test]
     fn removing_artifact_updates_diagnostics() {
         let mut db = RivetDatabase::new();
@@ -538,6 +545,7 @@ artifacts:
 
     // ── Test 8: update_source returns false for unknown path ────────────
 
+    // rivet: verifies REQ-029
     #[test]
     fn update_unknown_path_returns_false() {
         let mut db = RivetDatabase::new();
@@ -549,6 +557,7 @@ artifacts:
 
     // ── Test 9: parse_artifacts tracked function ────────────────────────
 
+    // rivet: verifies REQ-029
     #[test]
     fn parse_artifacts_from_source() {
         let db = RivetDatabase::new();
@@ -562,6 +571,7 @@ artifacts:
 
     // ── Test 10: merged schema via build_schema ─────────────────────────
 
+    // rivet: verifies REQ-029
     #[test]
     fn merged_schema_parses_correctly() {
         let db = RivetDatabase::new();
@@ -675,6 +685,7 @@ artifacts:
 
     // ── Test 11: evaluate_conditional_rules returns diagnostics ──────────
 
+    // rivet: verifies REQ-029
     #[test]
     fn conditional_rules_fire_for_matching_artifacts() {
         let db = RivetDatabase::new();
@@ -699,6 +710,7 @@ artifacts:
 
     // ── Test 12: conditional rules do not fire when condition is unmet ───
 
+    // rivet: verifies REQ-029
     #[test]
     fn conditional_rules_skip_non_matching_artifacts() {
         let db = RivetDatabase::new();
@@ -720,6 +732,7 @@ artifacts:
 
     // ── Test 13: adding a conditional rule re-evaluates ──────────────────
 
+    // rivet: verifies REQ-029
     #[test]
     fn adding_conditional_rule_triggers_reevaluation() {
         let db = RivetDatabase::new();
@@ -753,6 +766,7 @@ artifacts:
 
     // ── Test 14: conditional rules compose with structural validation ────
 
+    // rivet: verifies REQ-029
     #[test]
     fn conditional_and_structural_compose_in_validate_all() {
         let db = RivetDatabase::new();
@@ -790,6 +804,7 @@ artifacts:
 
     // ── Test 15: rule consistency errors included in diagnostics ─────────
 
+    // rivet: verifies REQ-029
     #[test]
     fn rule_consistency_errors_in_conditional_diagnostics() {
         let db = RivetDatabase::new();
@@ -815,6 +830,7 @@ artifacts:
 
     // ── Test 16: conditional diagnostics absent when requirement met ─────
 
+    // rivet: verifies REQ-029
     #[test]
     fn no_conditional_diagnostic_when_requirement_satisfied() {
         let db = RivetDatabase::new();

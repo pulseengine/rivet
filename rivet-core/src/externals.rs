@@ -878,6 +878,7 @@ mod tests {
         assert!(!is_sha("abc1234567890def1234567890abcdef123456789"));
     }
 
+    // rivet: verifies REQ-020
     #[test]
     fn local_id_no_colon() {
         assert_eq!(
@@ -898,6 +899,7 @@ mod tests {
         );
     }
 
+    // rivet: verifies REQ-020
     #[test]
     fn local_id_with_hyphen_numbers() {
         // IDs like "H-1.2" should not be confused with prefix:id
@@ -907,6 +909,7 @@ mod tests {
         );
     }
 
+    // rivet: verifies REQ-020
     #[test]
     fn external_with_complex_id() {
         assert_eq!(
@@ -955,6 +958,7 @@ mod tests {
         assert!(cached.exists());
     }
 
+    // rivet: verifies REQ-020
     #[test]
     fn sync_external_requires_git_or_path() {
         let dir = tempfile::tempdir().unwrap();
@@ -969,6 +973,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    // rivet: verifies REQ-020
     #[test]
     fn ensure_gitignore_adds_entry() {
         let dir = tempfile::tempdir().unwrap();
@@ -985,6 +990,7 @@ mod tests {
         assert!(content.contains(".rivet/"));
     }
 
+    // rivet: verifies REQ-020
     #[test]
     #[serial]
     fn sync_all_multiple_externals() {
@@ -1105,6 +1111,7 @@ mod tests {
         assert!(parsed.pins["meld"].git.is_none());
     }
 
+    // rivet: verifies REQ-020
     #[test]
     fn lockfile_write_and_read() {
         let dir = tempfile::tempdir().unwrap();
@@ -1127,6 +1134,7 @@ mod tests {
         assert_eq!(read_back.pins["ext"].commit, "deadbeef");
     }
 
+    // rivet: verifies REQ-020
     #[test]
     fn read_lockfile_missing() {
         let dir = tempfile::tempdir().unwrap();
@@ -1199,6 +1207,7 @@ mod tests {
         assert_eq!(backlinks[0].target, "REQ-001");
     }
 
+    // rivet: verifies REQ-020
     #[test]
     fn compute_backlinks_finds_cross_external_refs() {
         use crate::model::{Artifact, Link};
@@ -1232,6 +1241,7 @@ mod tests {
         assert_eq!(backlinks[0].target, "other:REQ-001");
     }
 
+    // rivet: verifies REQ-020
     #[test]
     fn compute_backlinks_empty_when_no_matches() {
         use crate::model::Artifact;
@@ -1301,6 +1311,7 @@ mod tests {
         );
     }
 
+    // rivet: verifies REQ-020
     #[test]
     fn detect_circular_deps_no_cycle() {
         // Project A depends on B, B has no externals => no cycle
@@ -1329,6 +1340,7 @@ mod tests {
         assert!(cycles.is_empty(), "no cycle expected");
     }
 
+    // rivet: verifies REQ-020
     #[test]
     fn circular_dependency_struct() {
         let cycle = CircularDependency {
@@ -1477,6 +1489,7 @@ externals:
         assert!(tags.contains(&"v2.0".to_string()));
     }
 
+    // rivet: verifies REQ-020
     #[test]
     fn no_conflict_when_same_version() {
         let dir = tempfile::tempdir().unwrap();
@@ -1527,6 +1540,7 @@ externals:
     /// execution from malicious repositories.  We check the source code
     /// to ensure the `core.hooksPath=/dev/null` config flag is present
     /// for all git commands inside the function.
+    // rivet: verifies REQ-020
     #[test]
     fn git_clone_disables_hooks() {
         let source = include_str!("externals.rs");
