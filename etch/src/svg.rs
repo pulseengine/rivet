@@ -66,7 +66,9 @@ impl Default for SvgOptions {
 /// The returned string is a complete, self-contained `<svg>` document
 /// suitable for embedding in HTML or writing to a `.svg` file.
 pub fn render_svg(layout: &GraphLayout, options: &SvgOptions) -> String {
-    let pad = options.padding;
+    // Extra padding for port labels that extend beyond node boundaries.
+    let port_label_margin = 60.0;
+    let pad = options.padding + port_label_margin;
     let vb_w = layout.width + pad * 2.0;
     let vb_h = layout.height + pad * 2.0;
 
@@ -99,11 +101,12 @@ pub fn render_svg(layout: &GraphLayout, options: &SvgOptions) -> String {
     // Translate everything by padding.
     writeln!(svg, "  <g transform=\"translate({pad},{pad})\">").unwrap();
 
-    // Edges layer.
+    // Render order: containers → edges → leaf nodes.
+    // Containers are backgrounds; edges paint on top of them;
+    // leaf nodes paint on top of edges.
+    write_nodes(&mut svg, layout, options, true); // containers only
     write_edges(&mut svg, layout);
-
-    // Nodes layer.
-    write_nodes(&mut svg, layout, options);
+    write_nodes(&mut svg, layout, options, false); // leaves only
 
     svg.push_str("  </g>\n");
     svg.push_str("</svg>\n");
@@ -216,18 +219,13 @@ fn write_edges(svg: &mut String, layout: &GraphLayout) {
     svg.push_str("    </g>\n");
 }
 
-fn write_nodes(svg: &mut String, layout: &GraphLayout, options: &SvgOptions) {
-    svg.push_str("    <g class=\"nodes\">\n");
+fn write_nodes(svg: &mut String, layout: &GraphLayout, options: &SvgOptions, containers: bool) {
+    let class = if containers { "containers" } else { "nodes" };
+    writeln!(svg, "    <g class=\"{class}\">").unwrap();
 
     let default_fill = "#e8e8e8".to_string();
 
-    // Draw containers first (background), then leaf nodes on top.
-    let containers: Vec<&crate::layout::LayoutNode> =
-        layout.nodes.iter().filter(|n| n.is_container).collect();
-    let leaves: Vec<&crate::layout::LayoutNode> =
-        layout.nodes.iter().filter(|n| !n.is_container).collect();
-
-    for node in containers.iter().chain(leaves.iter()) {
+    for node in layout.nodes.iter().filter(|n| n.is_container == containers) {
         let fill = options
             .type_colors
             .get(&node.node_type)
