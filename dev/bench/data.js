@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1773987013252,
+  "lastUpdate": 1774036855675,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
@@ -4799,6 +4799,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1453210,
             "range": "± 29038",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2e062f43c2594f974748a21b31addae1a4498a02",
+          "message": "feat: reusable UI components, ARCH model extension, startup update check (#56)\n\n* fix(etch): improve edge rendering quality\n\n- Deduplicate consecutive identical waypoints in path builder\n- Offset edge labels to the right of edges (avoid overlap)\n- Thicker edge strokes (1.8px) for visibility\n- Larger port label text (10px, bold 500)\n- Port label margin in SVG viewBox\n\nTrace: skip\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* feat: reusable UI components, ARCH model extension, startup update check\n\n1. Reusable UI components (components.rs):\n   - search_input(), type_select(), per_page_select(), type_checkboxes()\n   - validation_filter_bar() with severity dropdown + text search\n   - Refactored artifacts, STPA, and validation views to use shared components\n   - Removed duplicated ArtifactsParams/StpaParams structs → ViewParams\n   - 8 new component tests\n\n2. ARCH model extension (8 new components):\n   - ARCH-CORE-COMMITS, ARCH-CORE-EXTERNALS, ARCH-CORE-IMPACT\n   - ARCH-CORE-MUTATE, ARCH-CORE-MARKDOWN, ARCH-CORE-EXPORT\n   - ARCH-ADAPT-NEEDSJSON, ARCH-CORE-SCANNER\n   - Covers REQ-017 through REQ-036 (phase-3 requirements)\n\n3. Startup update check:\n   - Non-blocking background thread on serve/validate\n   - Rate-limited to once per 24h via cache file\n   - Checks GitHub releases API, prints hint if newer version available\n\nImplements: FEAT-065\nRefs: ARCH-DASH-001\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Test <test@test.com>\nCo-authored-by: Claude Opus 4.6 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-03-20T20:53:30+01:00",
+          "tree_id": "549616e70b4469569da26b81520eea00356a6341",
+          "url": "https://github.com/pulseengine/rivet/commit/2e062f43c2594f974748a21b31addae1a4498a02"
+        },
+        "date": 1774036855201,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 86055,
+            "range": "± 1822",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 1312907,
+            "range": "± 26494",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 58635405,
+            "range": "± 2001164",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1989,
+            "range": "± 29",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 24262,
+            "range": "± 96",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 367473,
+            "range": "± 2384",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 98,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 98,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 98,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 897684,
+            "range": "± 4301",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 175266,
+            "range": "± 784",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 2025703,
+            "range": "± 14974",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 33656130,
+            "range": "± 4045582",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 39442,
+            "range": "± 171",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 444235,
+            "range": "± 1919",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 5176025,
+            "range": "± 316520",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4266,
+            "range": "± 75",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 45417,
+            "range": "± 529",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 763535,
+            "range": "± 7990",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 64187,
+            "range": "± 153",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 727038,
+            "range": "± 15966",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8068453,
+            "range": "± 109921",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 781,
+            "range": "± 9",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 6705,
+            "range": "± 55",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 92142,
+            "range": "± 512",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 21233,
+            "range": "± 291",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 146616,
+            "range": "± 2705",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1358662,
+            "range": "± 23235",
             "unit": "ns/iter"
           }
         ]
