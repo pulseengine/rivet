@@ -25,6 +25,7 @@ use rivet_core::schema::Severity;
 use rivet_core::store::Store;
 use rivet_core::validate;
 
+use super::components::{self, ViewParams};
 use super::layout;
 use super::{AppState, SharedState, badge_for_type, type_color_map};
 use crate::{docs, schema_cmd};
@@ -449,61 +450,9 @@ pub(crate) async fn external_detail(
 
 // ── Artifacts ────────────────────────────────────────────────────────────
 
-#[derive(Debug, serde::Deserialize)]
-pub(crate) struct ArtifactsParams {
-    /// Comma-separated type filter (e.g. "requirement,feature").
-    types: Option<String>,
-    /// Text search — matches ID, title, description.
-    q: Option<String>,
-    /// Sort column: id, type, title, status (default: id).
-    sort: Option<String>,
-    /// Sort direction: asc or desc (default: asc).
-    dir: Option<String>,
-    /// Items per page (default 50).
-    per_page: Option<usize>,
-    /// 1-based page number (default 1).
-    page: Option<usize>,
-}
-
-/// Build a query-string fragment preserving current filter/sort params.
-/// Excludes `page` so callers can append their own `&page=N`.
-fn artifacts_query_base(params: &ArtifactsParams) -> String {
-    let mut parts: Vec<String> = Vec::new();
-    if let Some(ref t) = params.types {
-        if !t.is_empty() {
-            parts.push(format!("types={}", html_escape(t)));
-        }
-    }
-    if let Some(ref q) = params.q {
-        if !q.is_empty() {
-            parts.push(format!("q={}", html_escape(q)));
-        }
-    }
-    if let Some(ref s) = params.sort {
-        if !s.is_empty() {
-            parts.push(format!("sort={}", html_escape(s)));
-        }
-    }
-    if let Some(ref d) = params.dir {
-        if !d.is_empty() {
-            parts.push(format!("dir={}", html_escape(d)));
-        }
-    }
-    if let Some(pp) = params.per_page {
-        if pp != 50 {
-            parts.push(format!("per_page={pp}"));
-        }
-    }
-    if parts.is_empty() {
-        String::new()
-    } else {
-        parts.join("&")
-    }
-}
-
 pub(crate) async fn artifacts_list(
     State(state): State<SharedState>,
-    Query(params): Query<ArtifactsParams>,
+    Query(params): Query<ViewParams>,
 ) -> Html<String> {
     let state = state.read().await;
     let store = &state.store;
@@ -526,9 +475,9 @@ pub(crate) async fn artifacts_list(
         .map(|s| s.trim().to_lowercase());
 
     let sort_col = params.sort.as_deref().unwrap_or("id");
-    let sort_desc = params.dir.as_deref() == Some("desc");
-    let per_page = params.per_page.unwrap_or(50).clamp(1, 500);
-    let page = params.page.unwrap_or(1).max(1);
+    let sort_desc = !params.sort_ascending();
+    let per_page = params.items_per_page();
+    let page = params.current_page();
 
     // ── Filter ──────────────────────────────────────────────────
     let mut artifacts: Vec<_> = store
@@ -583,84 +532,31 @@ pub(crate) async fn artifacts_list(
     let start = (page - 1) * per_page;
     let page_artifacts = &artifacts[start..total.min(start + per_page)];
 
-    // ── Query string base (without page) for links ──────────────
-    let qbase = artifacts_query_base(&params);
-
     // ── Render ──────────────────────────────────────────────────
     let mut html = String::from("<h2>Artifacts</h2>");
 
-    // Filter bar
+    // Filter bar (search + type dropdown + per-page + hidden sort/dir)
     let q_val = params.q.as_deref().unwrap_or("");
     let types_val = params.types.as_deref().unwrap_or("");
     html.push_str("<div class=\"filter-bar card\">");
     html.push_str("<div class=\"form-row\" style=\"margin-bottom:0;width:100%\">");
-
-    // Search input
-    html.push_str(&format!(
-        "<div style=\"position:relative;flex:1;min-width:200px\">\
-         <svg width=\"15\" height=\"15\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" \
-         stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" \
-         style=\"position:absolute;left:.75rem;top:50%;transform:translateY(-50%);opacity:.4\">\
-         <circle cx=\"7\" cy=\"7\" r=\"4.5\"/><path d=\"M10.5 10.5L14 14\"/></svg>\
-         <input type=\"search\" name=\"q\" placeholder=\"Search artifacts...\" value=\"{q_val}\" \
-         hx-get=\"/artifacts\" hx-target=\"#content\" hx-push-url=\"true\" \
-         hx-trigger=\"keyup changed delay:300ms\" hx-include=\"[name='types'],[name='sort'],[name='dir'],[name='per_page']\" \
-         style=\"width:100%;padding:.6rem .75rem .6rem 2.25rem;border:1px solid var(--border);\
-         border-radius:var(--radius-sm);font-size:.875rem;font-family:var(--font);\
-         background:var(--surface);color:var(--text);outline:none\">\
-         </div>",
-        q_val = html_escape(q_val),
+    html.push_str(&components::search_input(
+        "Search artifacts...",
+        q_val,
+        "/artifacts",
+        &["types", "sort", "dir", "per_page"],
     ));
-
-    // Type filter dropdown
-    html.push_str(
-        "<select name=\"types\" hx-get=\"/artifacts\" hx-target=\"#content\" hx-push-url=\"true\" \
-         hx-include=\"[name='q'],[name='sort'],[name='dir'],[name='per_page']\" \
-         style=\"padding:.4rem .6rem;font-size:.82rem;min-width:140px\">",
-    );
-    html.push_str(&format!(
-        "<option value=\"\"{sel}>All types</option>",
-        sel = if types_val.is_empty() {
-            " selected"
-        } else {
-            ""
-        },
+    html.push_str(&components::type_select(
+        &all_types,
+        types_val,
+        "/artifacts",
+        &["q", "sort", "dir", "per_page"],
     ));
-    for t in &all_types {
-        let selected = if type_filter
-            .as_ref()
-            .map(|tf| tf.len() == 1 && tf[0] == t.to_lowercase())
-            .unwrap_or(false)
-        {
-            " selected"
-        } else {
-            ""
-        };
-        html.push_str(&format!(
-            "<option value=\"{val}\"{selected}>{label}</option>",
-            val = html_escape(t),
-            label = html_escape(t),
-        ));
-    }
-    html.push_str("</select>");
-
-    // Per-page selector
-    html.push_str(&format!(
-        "<select name=\"per_page\" hx-get=\"/artifacts\" hx-target=\"#content\" hx-push-url=\"true\" \
-         hx-include=\"[name='q'],[name='types'],[name='sort'],[name='dir']\" \
-         style=\"padding:.4rem .6rem;font-size:.82rem;min-width:80px\">\
-         <option value=\"25\"{s25}>25</option>\
-         <option value=\"50\"{s50}>50</option>\
-         <option value=\"100\"{s100}>100</option>\
-         <option value=\"200\"{s200}>200</option>\
-         </select>",
-        s25 = if per_page == 25 { " selected" } else { "" },
-        s50 = if per_page == 50 { " selected" } else { "" },
-        s100 = if per_page == 100 { " selected" } else { "" },
-        s200 = if per_page == 200 { " selected" } else { "" },
+    html.push_str(&components::per_page_select(
+        per_page,
+        "/artifacts",
+        &["q", "types", "sort", "dir"],
     ));
-
-    // Hidden inputs for sort/dir
     html.push_str(&format!(
         "<input type=\"hidden\" name=\"sort\" value=\"{}\">",
         html_escape(sort_col),
@@ -669,7 +565,6 @@ pub(crate) async fn artifacts_list(
         "<input type=\"hidden\" name=\"dir\" value=\"{}\">",
         html_escape(params.dir.as_deref().unwrap_or("asc")),
     ));
-
     html.push_str("</div>"); // form-row
     html.push_str("</div>"); // filter-bar
 
@@ -680,47 +575,39 @@ pub(crate) async fn artifacts_list(
     html.push_str("<div class=\"artifacts-main\">");
 
     // Sortable column headers
-    let make_sort_header = |col: &str, label: &str| -> String {
-        let next_dir = if sort_col == col && !sort_desc {
-            "desc"
-        } else {
-            "asc"
-        };
-        let arrow = if sort_col == col {
-            if sort_desc { " &#9660;" } else { " &#9650;" }
-        } else {
-            ""
-        };
-        let mut sort_qs = String::new();
-        if let Some(ref t) = params.types {
-            if !t.is_empty() {
-                sort_qs.push_str(&format!("types={}&", html_escape(t)));
-            }
-        }
-        if let Some(ref q) = params.q {
-            if !q.is_empty() {
-                sort_qs.push_str(&format!("q={}&", html_escape(q)));
-            }
-        }
-        if let Some(pp) = params.per_page {
-            if pp != 50 {
-                sort_qs.push_str(&format!("per_page={pp}&"));
-            }
-        }
-        sort_qs.push_str(&format!("sort={col}&dir={next_dir}"));
-        let href = format!("/artifacts?{sort_qs}");
-        format!(
-            "<th><a hx-get=\"{href}\" hx-target=\"#content\" hx-push-url=\"true\" \
-             href=\"{href}\" style=\"color:inherit;text-decoration:none;cursor:pointer\">\
-             {label}{arrow}</a></th>",
-        )
-    };
-
     html.push_str("<table class=\"sortable\" id=\"artifacts-table\"><thead><tr>");
-    html.push_str(&make_sort_header("id", "ID"));
-    html.push_str(&make_sort_header("type", "Type"));
-    html.push_str(&make_sort_header("title", "Title"));
-    html.push_str(&make_sort_header("status", "Status"));
+    html.push_str(&components::sortable_header(
+        "ID",
+        "id",
+        Some(sort_col),
+        !sort_desc,
+        "/artifacts",
+        &params,
+    ));
+    html.push_str(&components::sortable_header(
+        "Type",
+        "type",
+        Some(sort_col),
+        !sort_desc,
+        "/artifacts",
+        &params,
+    ));
+    html.push_str(&components::sortable_header(
+        "Title",
+        "title",
+        Some(sort_col),
+        !sort_desc,
+        "/artifacts",
+        &params,
+    ));
+    html.push_str(&components::sortable_header(
+        "Status",
+        "status",
+        Some(sort_col),
+        !sort_desc,
+        "/artifacts",
+        &params,
+    ));
     html.push_str("<th>Links</th><th data-col=\"tags\">Tags</th>");
     html.push_str("</tr></thead><tbody>");
 
@@ -779,80 +666,13 @@ pub(crate) async fn artifacts_list(
     }
 
     // Pagination controls
-    if total_pages > 1 {
-        html.push_str("<div class=\"pagination\">");
-        if page > 1 {
-            let prev_url = if qbase.is_empty() {
-                format!("/artifacts?page={}", page - 1)
-            } else {
-                format!("/artifacts?{qbase}&page={}", page - 1)
-            };
-            html.push_str(&format!(
-                "<a hx-get=\"{prev_url}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"{prev_url}\">&laquo; Prev</a>",
-            ));
-        } else {
-            html.push_str("<span class=\"pagination-disabled\">&laquo; Prev</span>");
-        }
-
-        // Page numbers (show a window around current page)
-        let window = 2usize;
-        let pstart = if page > window + 1 { page - window } else { 1 };
-        let pend = total_pages.min(page + window);
-        if pstart > 1 {
-            let url = if qbase.is_empty() {
-                "/artifacts?page=1".to_string()
-            } else {
-                format!("/artifacts?{qbase}&page=1")
-            };
-            html.push_str(&format!(
-                "<a hx-get=\"{url}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"{url}\">1</a>",
-            ));
-            if pstart > 2 {
-                html.push_str("<span class=\"pagination-ellipsis\">&hellip;</span>");
-            }
-        }
-        for p in pstart..=pend {
-            if p == page {
-                html.push_str(&format!("<span class=\"pagination-current\">{p}</span>"));
-            } else {
-                let url = if qbase.is_empty() {
-                    format!("/artifacts?page={p}")
-                } else {
-                    format!("/artifacts?{qbase}&page={p}")
-                };
-                html.push_str(&format!(
-                    "<a hx-get=\"{url}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"{url}\">{p}</a>",
-                ));
-            }
-        }
-        if pend < total_pages {
-            if pend < total_pages - 1 {
-                html.push_str("<span class=\"pagination-ellipsis\">&hellip;</span>");
-            }
-            let url = if qbase.is_empty() {
-                format!("/artifacts?page={total_pages}")
-            } else {
-                format!("/artifacts?{qbase}&page={total_pages}")
-            };
-            html.push_str(&format!(
-                "<a hx-get=\"{url}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"{url}\">{total_pages}</a>",
-            ));
-        }
-
-        if page < total_pages {
-            let next_url = if qbase.is_empty() {
-                format!("/artifacts?page={}", page + 1)
-            } else {
-                format!("/artifacts?{qbase}&page={}", page + 1)
-            };
-            html.push_str(&format!(
-                "<a hx-get=\"{next_url}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"{next_url}\">Next &raquo;</a>",
-            ));
-        } else {
-            html.push_str("<span class=\"pagination-disabled\">Next &raquo;</span>");
-        }
-        html.push_str("</div>");
-    }
+    html.push_str(&components::pagination(
+        total,
+        page,
+        per_page,
+        "/artifacts",
+        &params,
+    ));
 
     html.push_str("</div>"); // end artifacts-main
 
@@ -1661,7 +1481,10 @@ fn apply_filters_to_graph(
 
 // ── Validation ───────────────────────────────────────────────────────────
 
-pub(crate) async fn validate_view(State(state): State<SharedState>) -> Html<String> {
+pub(crate) async fn validate_view(
+    State(state): State<SharedState>,
+    Query(params): Query<ViewParams>,
+) -> Html<String> {
     let state = state.read().await;
     let diagnostics = validate::validate(&state.store, &state.schema, &state.graph);
 
@@ -1698,9 +1521,16 @@ pub(crate) async fn validate_view(State(state): State<SharedState>) -> Html<Stri
         return Html(html);
     }
 
-    html.push_str(
-        "<table><thead><tr><th>Severity</th><th>Artifact</th><th>Rule</th><th>Message</th></tr></thead><tbody>",
-    );
+    // Filter bar (severity + text search)
+    let current_status = params.status.as_deref().unwrap_or("all");
+    let current_query = params.q.as_deref().unwrap_or("");
+    html.push_str(&components::validation_filter_bar(
+        errors,
+        warnings,
+        infos,
+        current_status,
+        current_query,
+    ));
 
     // Show errors first, then warnings, then info
     let mut sorted = diagnostics;
@@ -1710,7 +1540,61 @@ pub(crate) async fn validate_view(State(state): State<SharedState>) -> Html<Stri
         Severity::Info => 2,
     });
 
-    for d in &sorted {
+    // Apply severity filter
+    let severity_filter = match current_status {
+        "error" => Some(Severity::Error),
+        "warning" => Some(Severity::Warning),
+        "info" => Some(Severity::Info),
+        _ => None,
+    };
+    let q_filter: Option<String> = if current_query.is_empty() {
+        None
+    } else {
+        Some(current_query.to_lowercase())
+    };
+
+    let filtered: Vec<_> = sorted
+        .iter()
+        .filter(|d| {
+            if let Some(ref sev) = severity_filter {
+                if d.severity != *sev {
+                    return false;
+                }
+            }
+            if let Some(ref q) = q_filter {
+                let art_match = d
+                    .artifact_id
+                    .as_deref()
+                    .map(|id| id.to_lowercase().contains(q))
+                    .unwrap_or(false);
+                let rule_match = d.rule.to_lowercase().contains(q);
+                let msg_match = d.message.to_lowercase().contains(q);
+                if !art_match && !rule_match && !msg_match {
+                    return false;
+                }
+            }
+            true
+        })
+        .collect();
+
+    let filtered_count = filtered.len();
+    if filtered_count == 0 {
+        html.push_str("<div class=\"card\"><p>No matching issues found.</p></div>");
+        return Html(html);
+    }
+
+    // Paginate
+    let per_page = params.items_per_page();
+    let total_pages = filtered_count.div_ceil(per_page);
+    let page = params.current_page().min(total_pages);
+    let start = (page - 1) * per_page;
+    let page_items = &filtered[start..filtered_count.min(start + per_page)];
+
+    html.push_str(
+        "<table><thead><tr><th>Severity</th><th>Artifact</th><th>Rule</th><th>Message</th></tr></thead><tbody>",
+    );
+
+    for d in page_items {
         let sev = match d.severity {
             Severity::Error => "<span class=\"badge badge-error\">ERROR</span>",
             Severity::Warning => "<span class=\"badge badge-warn\">WARN</span>",
@@ -1733,6 +1617,21 @@ pub(crate) async fn validate_view(State(state): State<SharedState>) -> Html<Stri
     }
 
     html.push_str("</tbody></table>");
+
+    // Summary + pagination
+    if filtered_count < total_issues {
+        html.push_str(&format!(
+            "<p class=\"meta\">{filtered_count} matching issues of {total_issues} total</p>",
+        ));
+    }
+    html.push_str(&components::pagination(
+        filtered_count,
+        page,
+        per_page,
+        "/validate",
+        &params,
+    ));
+
     Html(html)
 }
 
@@ -2854,23 +2753,15 @@ pub(crate) async fn verification_view(State(state): State<SharedState>) -> Html<
 
 // ── STPA ─────────────────────────────────────────────────────────────────
 
-#[derive(Debug, serde::Deserialize)]
-pub(crate) struct StpaParams {
-    /// Comma-separated STPA type filter (e.g. "uca,hazard").
-    types: Option<String>,
-    /// Text search — matches ID, title, description.
-    q: Option<String>,
-}
-
 pub(crate) async fn stpa_view(
     State(state): State<SharedState>,
-    Query(params): Query<StpaParams>,
+    Query(params): Query<ViewParams>,
 ) -> Html<String> {
     let state = state.read().await;
     stpa_partial(&state, &params)
 }
 
-fn stpa_partial(state: &AppState, params: &StpaParams) -> Html<String> {
+fn stpa_partial(state: &AppState, params: &ViewParams) -> Html<String> {
     let store = &state.store;
     let graph = &state.graph;
 
@@ -2941,20 +2832,11 @@ fn stpa_partial(state: &AppState, params: &StpaParams) -> Html<String> {
     );
 
     // Search input
-    html.push_str(&format!(
-        "<div style=\"position:relative;flex:1;min-width:200px\">\
-         <svg width=\"15\" height=\"15\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" \
-         stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" \
-         style=\"position:absolute;left:.75rem;top:50%;transform:translateY(-50%);opacity:.4\">\
-         <circle cx=\"7\" cy=\"7\" r=\"4.5\"/><path d=\"M10.5 10.5L14 14\"/></svg>\
-         <input type=\"search\" name=\"q\" placeholder=\"Search STPA artifacts...\" value=\"{q_val}\" \
-         hx-get=\"/stpa\" hx-target=\"#content\" hx-push-url=\"true\" \
-         hx-trigger=\"keyup changed delay:300ms\" hx-include=\"[name='types']\" \
-         style=\"width:100%;padding:.6rem .75rem .6rem 2.25rem;border:1px solid var(--border);\
-         border-radius:var(--radius-sm);font-size:.875rem;font-family:var(--font);\
-         background:var(--surface);color:var(--text);outline:none\">\
-         </div>",
-        q_val = html_escape(q_val),
+    html.push_str(&components::search_input(
+        "Search STPA artifacts...",
+        q_val,
+        "/stpa",
+        &["types"],
     ));
 
     // Hidden input to hold comma-separated types — triggers reload on change
@@ -2968,47 +2850,18 @@ fn stpa_partial(state: &AppState, params: &StpaParams) -> Html<String> {
     html.push_str("</div>"); // form-row
 
     // Type checkbox row
-    html.push_str(
-        "<div style=\"display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.5rem;align-items:center\">",
-    );
-    html.push_str("<span style=\"font-size:.78rem;color:var(--text-secondary);font-weight:600;text-transform:uppercase;letter-spacing:.04em;margin-right:.25rem\">Types:</span>");
-
-    for (type_name, label) in &stpa_types {
-        let count = store.count_by_type(type_name);
-        if count == 0 {
-            continue;
-        }
-        let checked = match &type_filter {
-            Some(tf) => {
-                if tf.contains(&type_name.to_lowercase()) {
-                    " checked"
-                } else {
-                    ""
-                }
-            }
-            None => "",
-        };
-        html.push_str(&format!(
-            "<label style=\"display:inline-flex;align-items:center;gap:.25rem;font-size:.8rem;cursor:pointer\">\
-             <input type=\"checkbox\" class=\"stpa-type-cb\" value=\"{type_name}\" \
-             onchange=\"stpaUpdateTypes()\" \
-             {checked}>{label} ({count})</label>",
-        ));
-    }
-    html.push_str("</div>");
-
-    // JS to collect checked checkboxes into hidden input and trigger HTMX request
-    html.push_str(
-        "<script>\
-        function stpaUpdateTypes(){\
-          var cbs=document.querySelectorAll('.stpa-type-cb:checked');\
-          var vals=Array.from(cbs).map(function(c){return c.value});\
-          var h=document.getElementById('stpa-types-hidden');\
-          h.value=vals.join(',');\
-          htmx.trigger(h,'change');\
-        }\
-        </script>",
-    );
+    let selected_types = type_filter.clone().unwrap_or_default();
+    let types_with_counts: Vec<(&str, &str, usize)> = stpa_types
+        .iter()
+        .map(|(t, l)| (*t, *l, store.count_by_type(t)))
+        .collect();
+    html.push_str(&components::type_checkboxes(
+        &types_with_counts,
+        &selected_types,
+        "stpa-types-hidden",
+        "stpaUpdateTypes",
+        "stpa-type-cb",
+    ));
 
     html.push_str("</div>"); // filter-bar
 

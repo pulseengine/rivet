@@ -146,7 +146,7 @@ fn write_style(svg: &mut String, options: &SvgOptions) {
          \x20   .node text {{ font-family: {font}; font-size: {fs}px; \
          fill: #222; text-anchor: middle; dominant-baseline: central; }}\n\
          \x20   .node .sublabel {{ font-size: {}px; fill: #666; }}\n\
-         \x20   .edge path {{ fill: none; stroke: {ec}; stroke-width: 1.4; \
+         \x20   .edge path {{ fill: none; stroke: {ec}; stroke-width: 1.8; \
          marker-end: url(#arrowhead); }}\n\
          \x20   .edge .label-bg {{ fill: #fff; opacity: 0.85; rx: 3; }}\n\
          \x20   .edge text {{ font-family: {font}; font-size: {}px; \
@@ -161,7 +161,7 @@ fn write_style(svg: &mut String, options: &SvgOptions) {
          \x20   .port.access circle {{ fill: #999; }}\n\
          \x20   .port.group circle {{ fill: #9b59b6; }}\n\
          \x20   .port.abstract circle {{ fill: #666; }}\n\
-         \x20   .port text {{ font-size: 9px; fill: #444; dominant-baseline: central; }}\n\
+         \x20   .port text {{ font-size: 10px; fill: #333; dominant-baseline: central; font-weight: 500; }}\n\
          \x20 </style>\n",
         fs - 2.0,
         fs - 2.0,
@@ -190,25 +190,26 @@ fn write_edges(svg: &mut String, layout: &GraphLayout) {
 
         writeln!(svg, "        <path d=\"{path_d}\" />").unwrap();
 
-        // Edge label at midpoint with background pill.
+        // Edge label offset to the right of the midpoint to avoid overlapping the path.
         if !edge.label.is_empty() {
             let mid = edge.points.len() / 2;
             let (mx, my) = edge.points[mid];
             let label = xml_escape(&edge.label);
-            let text_y = my - 4.0;
-            // Approximate label width: ~6.5px per char at default font size.
+            // Offset label to the right of vertical edges
+            let label_x = mx + 8.0;
+            let text_y = my;
             let approx_w = edge.label.len() as f64 * 6.5 + 8.0;
             let approx_h = 14.0;
             writeln!(
                 svg,
                 "        <rect class=\"label-bg\" x=\"{}\" y=\"{}\" width=\"{approx_w}\" height=\"{approx_h}\" />",
-                mx - approx_w / 2.0,
+                label_x - 4.0,
                 text_y - approx_h / 2.0,
             )
             .unwrap();
             writeln!(
                 svg,
-                "        <text x=\"{mx}\" y=\"{text_y}\">{label}</text>",
+                "        <text x=\"{label_x}\" y=\"{text_y}\" text-anchor=\"start\">{label}</text>",
             )
             .unwrap();
         }
@@ -423,9 +424,28 @@ fn lighten_color(hex: &str) -> String {
 /// For three or more points it produces a `C` (cubic bezier) curve that
 /// passes through all waypoints using Catmull-Rom-to-Bezier conversion.
 fn build_bezier_path(points: &[(f64, f64)]) -> String {
+    // Remove consecutive duplicate points
+    let mut deduped: Vec<(f64, f64)> = Vec::with_capacity(points.len());
+    for &p in points {
+        if deduped
+            .last()
+            .is_none_or(|last| (last.0 - p.0).abs() > 0.1 || (last.1 - p.1).abs() > 0.1)
+        {
+            deduped.push(p);
+        }
+    }
+    let points = &deduped;
+    if points.is_empty() {
+        return String::new();
+    }
+
     let mut d = String::new();
     let (x0, y0) = points[0];
     write!(d, "M {x0} {y0}").unwrap();
+
+    if points.len() == 1 {
+        return d;
+    }
 
     // Check if all segments are axis-aligned (orthogonal routing)
     let is_orthogonal = points.len() >= 2
