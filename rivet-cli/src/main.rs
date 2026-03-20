@@ -56,6 +56,74 @@ fn build_version() -> &'static str {
     &VERSION
 }
 
+/// Spawn a background thread to check for newer releases on GitHub.
+///
+/// The check is rate-limited to once per day via a timestamp file under
+/// the platform cache directory (`$XDG_CACHE_HOME`, `$HOME/.cache`,
+/// or `%LOCALAPPDATA%` on Windows).  The HTTP request has a 3-second
+/// timeout so it never blocks startup.
+fn check_for_updates() {
+    std::thread::spawn(|| {
+        // Resolve platform cache directory without the `dirs` crate.
+        let cache_dir = if cfg!(target_os = "windows") {
+            std::env::var_os("LOCALAPPDATA").map(PathBuf::from)
+        } else {
+            std::env::var_os("XDG_CACHE_HOME")
+                .map(PathBuf::from)
+                .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))
+        };
+
+        let Some(base) = cache_dir else { return };
+        let cache = base.join("rivet").join("update-check");
+
+        // Bail early if we already checked within the last 24 hours.
+        if let Ok(meta) = std::fs::metadata(&cache) {
+            if let Ok(modified) = meta.modified() {
+                if modified.elapsed().unwrap_or_default() < std::time::Duration::from_secs(86400) {
+                    return;
+                }
+            }
+        }
+
+        // Query the GitHub releases API (curl, 3-second timeout).
+        let Ok(output) = std::process::Command::new("curl")
+            .args([
+                "-s",
+                "-m",
+                "3",
+                "https://api.github.com/repos/pulseengine/rivet/releases/latest",
+            ])
+            .output()
+        else {
+            return;
+        };
+
+        if !output.status.success() {
+            return;
+        }
+
+        let body = String::from_utf8_lossy(&output.stdout);
+        if let Some(tag) = body.split("\"tag_name\":\"").nth(1) {
+            if let Some(version) = tag.split('"').next() {
+                let current = env!("CARGO_PKG_VERSION");
+                let latest = version.trim_start_matches('v');
+                if latest != current && !current.contains("dev") {
+                    eprintln!(
+                        "hint: rivet {latest} available (current: {current}). \
+                         Run: cargo install rivet-cli"
+                    );
+                }
+            }
+        }
+
+        // Touch the cache file so we don't check again for 24 hours.
+        if let Some(parent) = cache.parent() {
+            std::fs::create_dir_all(parent).ok();
+        }
+        std::fs::write(&cache, "").ok();
+    });
+}
+
 #[derive(Parser)]
 #[command(name = "rivet", about = "SDLC artifact traceability and validation", version = build_version())]
 struct Cli {
@@ -652,6 +720,7 @@ fn run(cli: Cli) -> Result<bool> {
             strict,
         } => cmd_commits(&cli, since.as_deref(), range.as_deref(), format, *strict),
         Command::Serve { port, bind } => {
+            check_for_updates();
             let port = *port;
             let bind = bind.clone();
             if bind == "0.0.0.0" || bind == "::" {
@@ -1179,6 +1248,8 @@ fn cmd_validate(
     verify_incremental: bool,
     skip_external_validation: bool,
 ) -> Result<bool> {
+    check_for_updates();
+
     // When --incremental is set (or --verify-incremental), run the salsa path.
     if incremental || verify_incremental {
         return cmd_validate_incremental(cli, format, verify_incremental);

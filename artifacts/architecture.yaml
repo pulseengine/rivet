@@ -380,3 +380,137 @@ artifacts:
       category: process
       aadl-package: RivetDashboard
       classifier-kind: type
+
+  # ── Phase 3 core components ────────────────────────────────────
+
+  - id: ARCH-CORE-COMMITS
+    type: aadl-component
+    title: Commit Traceability Engine
+    status: approved
+    description: >
+      Parses git commit trailers, validates commit-to-artifact links,
+      detects orphan commits, and computes commit coverage metrics.
+    tags: [architecture, git, traceability]
+    links:
+      - type: allocated-from
+        target: REQ-017
+      - type: allocated-from
+        target: REQ-018
+      - type: allocated-from
+        target: REQ-019
+    fields:
+      category: process
+      aadl-package: RivetCore
+
+  - id: ARCH-CORE-EXTERNALS
+    type: aadl-component
+    title: Cross-Repository Linking Engine
+    status: approved
+    description: >
+      Manages external project dependencies, cross-repo artifact linking
+      via prefixed IDs, distributed baselining, and sync operations.
+    tags: [architecture, cross-repo]
+    links:
+      - type: allocated-from
+        target: REQ-020
+      - type: allocated-from
+        target: REQ-021
+    fields:
+      category: process
+      aadl-package: RivetCore
+
+  - id: ARCH-CORE-IMPACT
+    type: aadl-component
+    title: Change Impact Analysis Engine
+    status: approved
+    description: >
+      Computes which artifacts are affected by changes since a given
+      commit, using the link graph to propagate impact transitively.
+    tags: [architecture, analysis]
+    links:
+      - type: allocated-from
+        target: REQ-024
+    fields:
+      category: process
+      aadl-package: RivetCore
+
+  - id: ARCH-CORE-MUTATE
+    type: aadl-component
+    title: Artifact Mutation Engine
+    status: approved
+    description: >
+      Schema-validated CLI mutation commands (add, modify, remove, link,
+      unlink) with YAML 1.2.2-compliant lossless file editing.
+    tags: [architecture, mutation, yaml]
+    links:
+      - type: allocated-from
+        target: REQ-031
+      - type: allocated-from
+        target: REQ-034
+    fields:
+      category: process
+      aadl-package: RivetCore
+
+  - id: ARCH-CORE-MARKDOWN
+    type: aadl-component
+    title: Document Rendering Engine
+    status: approved
+    description: >
+      Markdown-to-HTML rendering with wiki-link resolution, artifact
+      embedding, and document-to-document cross-references.
+    tags: [architecture, documents, rendering]
+    links:
+      - type: allocated-from
+        target: REQ-032
+      - type: allocated-from
+        target: REQ-033
+    fields:
+      category: process
+      aadl-package: RivetCore
+
+  - id: ARCH-CORE-EXPORT
+    type: aadl-component
+    title: HTML Export Engine
+    status: approved
+    description: >
+      Static HTML report generation with artifacts, documents, STPA,
+      graph visualization, traceability matrix, and coverage reports.
+    tags: [architecture, export]
+    links:
+      - type: allocated-from
+        target: REQ-035
+      - type: allocated-from
+        target: REQ-036
+    fields:
+      category: process
+      aadl-package: RivetCore
+
+  - id: ARCH-ADAPT-NEEDSJSON
+    type: aadl-component
+    title: sphinx-needs JSON Import Adapter
+    status: approved
+    description: >
+      Imports artifacts from sphinx-needs JSON export format, mapping
+      need types to Rivet artifact types.
+    tags: [architecture, adapter, import]
+    links:
+      - type: allocated-from
+        target: REQ-025
+    fields:
+      category: process
+      aadl-package: RivetAdapters
+
+  - id: ARCH-CORE-SCANNER
+    type: aadl-component
+    title: Test-to-Requirement Source Scanner
+    status: approved
+    description: >
+      Scans source code for rivet:verifies markers and injects ephemeral
+      test coverage nodes into the link graph.
+    tags: [architecture, testing, traceability]
+    links:
+      - type: allocated-from
+        target: REQ-026
+    fields:
+      category: process
+      aadl-package: RivetCore
