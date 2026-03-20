@@ -1387,6 +1387,7 @@ fn parse_member_resource(value: &serde_json::Value) -> Result<OslcResource, Erro
 mod tests {
     use super::*;
 
+    // rivet: verifies REQ-006
     #[test]
     fn test_resource_type_rdf_roundtrip() {
         let types = [
@@ -1404,6 +1405,7 @@ mod tests {
         }
     }
 
+    // rivet: verifies REQ-006
     #[test]
     fn test_resource_type_artifact_type_roundtrip() {
         let types = [
@@ -1421,6 +1423,7 @@ mod tests {
         }
     }
 
+    // rivet: verifies REQ-006
     #[test]
     fn test_extract_link_target_url() {
         assert_eq!(
@@ -1429,11 +1432,13 @@ mod tests {
         );
     }
 
+    // rivet: verifies REQ-006
     #[test]
     fn test_extract_link_target_bare_id() {
         assert_eq!(extract_link_target("REQ-001"), "REQ-001");
     }
 
+    // rivet: verifies REQ-006
     #[test]
     fn test_oslc_to_artifact_requirement() {
         let req = OslcRequirement {
@@ -1463,6 +1468,7 @@ mod tests {
         assert_eq!(artifact.links[0].target, "2");
     }
 
+    // rivet: verifies REQ-006
     #[test]
     fn test_oslc_to_artifact_missing_identifier() {
         let req = OslcRequirement {
@@ -1482,6 +1488,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    // rivet: verifies REQ-006
     #[test]
     fn test_artifact_to_oslc_requirement() {
         let artifact = Artifact {
@@ -1512,6 +1519,7 @@ mod tests {
         }
     }
 
+    // rivet: verifies REQ-006
     #[test]
     fn test_artifact_to_oslc_test_case() {
         let artifact = Artifact {
@@ -1540,6 +1548,7 @@ mod tests {
         }
     }
 
+    // rivet: verifies REQ-006
     #[test]
     fn test_artifact_to_oslc_test_result() {
         let artifact = Artifact {
@@ -1571,6 +1580,7 @@ mod tests {
         }
     }
 
+    // rivet: verifies REQ-006
     #[test]
     fn test_artifact_to_oslc_change_request() {
         let artifact = Artifact {
@@ -1606,6 +1616,7 @@ mod tests {
         }
     }
 
+    // rivet: verifies REQ-006
     #[test]
     fn test_artifact_to_oslc_unknown_type() {
         let artifact = Artifact {
@@ -1624,6 +1635,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    // rivet: verifies REQ-006
     #[test]
     fn test_compute_diff_empty() {
         let diff = compute_diff(&[], &[]);
@@ -1631,6 +1643,7 @@ mod tests {
         assert_eq!(diff.diff_count(), 0);
     }
 
+    // rivet: verifies REQ-006
     #[test]
     fn test_compute_diff_local_only() {
         let local = vec![Artifact {
@@ -1651,6 +1664,7 @@ mod tests {
         assert!(diff.modified.is_empty());
     }
 
+    // rivet: verifies REQ-006
     #[test]
     fn test_compute_diff_remote_only() {
         let remote = vec![Artifact {
@@ -1670,6 +1684,7 @@ mod tests {
         assert!(diff.local_only.is_empty());
     }
 
+    // rivet: verifies REQ-006
     #[test]
     fn test_compute_diff_modified() {
         let local = vec![Artifact {
@@ -1702,6 +1717,7 @@ mod tests {
         assert!(diff.remote_only.is_empty());
     }
 
+    // rivet: verifies REQ-006
     #[test]
     fn test_compute_diff_unchanged() {
         let local = vec![Artifact {
@@ -1733,6 +1749,7 @@ mod tests {
         assert_eq!(diff.unchanged, vec!["REQ-001"]);
     }
 
+    // rivet: verifies REQ-006
     #[test]
     fn test_parse_member_resource_requirement() {
         let json = serde_json::json!({
@@ -1746,6 +1763,7 @@ mod tests {
         assert_eq!(resource.identifier(), Some("REQ-100"));
     }
 
+    // rivet: verifies REQ-006
     #[test]
     fn test_parse_member_resource_test_case() {
         let json = serde_json::json!({
@@ -1758,6 +1776,7 @@ mod tests {
         assert_eq!(resource.resource_type(), OslcResourceType::TestCase);
     }
 
+    // rivet: verifies REQ-006
     #[test]
     fn test_parse_member_resource_change_request() {
         let json = serde_json::json!({
@@ -1771,12 +1790,14 @@ mod tests {
         assert_eq!(resource.resource_type(), OslcResourceType::ChangeRequest);
     }
 
+    // rivet: verifies REQ-006
     #[test]
     fn test_oslc_link_new() {
         let link = OslcLink::new("https://example.com/resource/1");
         assert_eq!(link.href, "https://example.com/resource/1");
     }
 
+    // rivet: verifies REQ-006
     #[test]
     fn test_oslc_client_config_new() {
         let config = OslcClientConfig::new("https://example.com/oslc");
@@ -1787,6 +1808,7 @@ mod tests {
         assert!(config.bearer_token.is_none());
     }
 
+    // rivet: verifies REQ-006
     #[test]
     fn test_oslc_client_config_with_basic_auth() {
         let config = OslcClientConfig::new("https://example.com/oslc")
@@ -1795,6 +1817,7 @@ mod tests {
         assert_eq!(config.password.as_deref(), Some("pass"));
     }
 
+    // rivet: verifies REQ-006
     #[test]
     fn test_oslc_client_config_with_bearer() {
         let config = OslcClientConfig::new("https://example.com/oslc")
@@ -1802,6 +1825,7 @@ mod tests {
         assert_eq!(config.bearer_token.as_deref(), Some("my-token"));
     }
 
+    // rivet: verifies REQ-006
     #[test]
     fn test_sync_diff_is_empty() {
         let empty = SyncDiff::default();
@@ -1814,6 +1838,7 @@ mod tests {
         assert!(!nonempty.is_empty());
     }
 
+    // rivet: verifies REQ-006
     #[test]
     fn test_resource_type_display() {
         assert_eq!(
@@ -1822,6 +1847,7 @@ mod tests {
         );
     }
 
+    // rivet: verifies REQ-006
     #[test]
     fn test_artifact_type_aliases() {
         // Test that common aliases map correctly
@@ -1847,6 +1873,7 @@ mod tests {
         );
     }
 
+    // rivet: verifies REQ-006
     #[test]
     fn test_requirement_serialization_roundtrip() {
         let req = OslcRequirement {

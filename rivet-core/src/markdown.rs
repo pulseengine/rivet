@@ -55,6 +55,7 @@ pub fn strip_html_tags(html: &str) -> String {
 mod tests {
     use super::*;
 
+    // rivet: verifies REQ-032
     #[test]
     fn basic_markdown() {
         let html = render_markdown("Hello **world**");
@@ -62,6 +63,7 @@ mod tests {
         assert!(html.contains("<p>"), "should wrap in paragraph");
     }
 
+    // rivet: verifies REQ-032
     #[test]
     fn tables() {
         let input = "| A | B |\n|---|---|\n| 1 | 2 |";
@@ -71,6 +73,7 @@ mod tests {
         assert!(html.contains("<td>1</td>"), "got: {html}");
     }
 
+    // rivet: verifies REQ-032
     #[test]
     fn code_blocks() {
         let input = "```rust\nfn main() {}\n```";
@@ -79,12 +82,14 @@ mod tests {
         assert!(html.contains("fn main()"), "got: {html}");
     }
 
+    // rivet: verifies REQ-032
     #[test]
     fn inline_code() {
         let html = render_markdown("Use `foo()` here");
         assert!(html.contains("<code>foo()</code>"), "got: {html}");
     }
 
+    // rivet: verifies REQ-032
     #[test]
     fn empty_string() {
         let html = render_markdown("");
@@ -94,18 +99,21 @@ mod tests {
         );
     }
 
+    // rivet: verifies REQ-032
     #[test]
     fn plain_text_passthrough() {
         let html = render_markdown("Just plain text");
         assert!(html.contains("Just plain text"), "got: {html}");
     }
 
+    // rivet: verifies REQ-032
     #[test]
     fn strikethrough() {
         let html = render_markdown("~~deleted~~");
         assert!(html.contains("<del>deleted</del>"), "got: {html}");
     }
 
+    // rivet: verifies REQ-032
     #[test]
     fn task_list() {
         let input = "- [x] Done\n- [ ] Todo";
@@ -113,6 +121,7 @@ mod tests {
         assert!(html.contains("type=\"checkbox\""), "got: {html}");
     }
 
+    // rivet: verifies REQ-032
     #[test]
     fn raw_html_script_is_stripped() {
         let html = render_markdown("<script>alert(1)</script>");
@@ -126,6 +135,7 @@ mod tests {
         );
     }
 
+    // rivet: verifies REQ-032
     #[test]
     fn inline_html_is_stripped() {
         let html = render_markdown("Hello <b>bold</b> world");
@@ -135,6 +145,7 @@ mod tests {
         );
     }
 
+    // rivet: verifies REQ-032
     #[test]
     fn raw_iframe_is_stripped() {
         let html = render_markdown("<iframe src=\"https://evil.example.com\"></iframe>");
@@ -144,12 +155,14 @@ mod tests {
         );
     }
 
+    // rivet: verifies REQ-032
     #[test]
     fn strip_tags_basic() {
         let plain = strip_html_tags("<p>Hello <strong>world</strong></p>");
         assert_eq!(plain, "Hello world");
     }
 
+    // rivet: verifies REQ-032
     #[test]
     fn strip_tags_multiline() {
         let plain = strip_html_tags("<p>Line one</p>\n<p>Line two</p>");

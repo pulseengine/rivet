@@ -36,6 +36,7 @@ externals:
     assert_eq!(meld.prefix, "meld");
 }
 
+// rivet: verifies REQ-020
 #[test]
 fn no_externals_is_none() {
     let yaml = r#"

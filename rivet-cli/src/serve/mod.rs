@@ -318,6 +318,7 @@ pub async fn run(
     schemas_dir: PathBuf,
     doc_dirs: Vec<PathBuf>,
     port: u16,
+    bind: String,
 ) -> Result<()> {
     let git = capture_git_info(&project_path);
     let loaded_at = std::process::Command::new("date")
@@ -405,8 +406,8 @@ pub async fn run(
             },
         ));
 
-    let addr = format!("0.0.0.0:{port}");
-    eprintln!("rivet dashboard listening on http://localhost:{port}");
+    let addr = format!("{bind}:{port}");
+    eprintln!("rivet dashboard listening on http://{bind}:{port}");
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(listener, app).await?;

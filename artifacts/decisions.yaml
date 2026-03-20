@@ -845,3 +845,24 @@ artifacts:
         metadata from the export content so the same export can be deployed
         in multiple contexts.
       alternatives: Embed version list at export generation time. Rejected because it requires re-export when new versions are published.
+
+  - id: DD-039
+    type: design-decision
+    title: Embed assets via include_str!/include_bytes! with build.rs stub generation
+    status: approved
+    description: >
+      JavaScript (HTMX, Mermaid) and WASM (spar) assets are embedded in the
+      binary via include_str!/include_bytes!. build.rs generates stub files
+      when spar WASM is not built, ensuring compilation always succeeds.
+      The runtime detects stubs and shows a fallback message.
+    tags: [architecture, assets, wasm]
+    links:
+      - type: satisfies
+        target: REQ-022
+    fields:
+      rationale: >
+        Embedding assets eliminates CDN dependencies and enables offline
+        operation. Stub generation ensures the build never fails due to
+        missing optional WASM assets.
+      alternatives: Serve from filesystem at runtime. Rejected because it
+        requires deploying assets separately from the binary.

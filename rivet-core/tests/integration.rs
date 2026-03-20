@@ -1131,6 +1131,7 @@ fn document_with_aadl_block_renders_placeholder() {
 
 // ── AADL adapter ─────────────────────────────────────────────────────────
 
+// rivet: verifies REQ-001
 #[test]
 fn aadl_adapter_parses_spar_json() {
     use rivet_core::adapter::{Adapter, AdapterConfig, AdapterSource};
@@ -1202,6 +1203,7 @@ fn aadl_schema_loads() {
     assert!(merged.link_type("modeled-by").is_some());
 }
 
+// rivet: verifies REQ-005
 #[test]
 fn strictdoc_reqif_import() {
     let reqif_path = "/tmp/zephyr-reqif/reqif/output.reqif";

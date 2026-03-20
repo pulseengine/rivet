@@ -211,6 +211,8 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-014
+      - type: satisfies
+        target: REQ-009
     fields:
       phase: phase-1
 
@@ -245,6 +247,8 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-015
+      - type: satisfies
+        target: REQ-003
       - type: implements
         target: DD-010
     fields:

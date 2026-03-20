@@ -18,6 +18,7 @@ fn embedded_schema_common_loads() {
 }
 
 /// `load_embedded_schema("dev")` parses successfully.
+// rivet: verifies REQ-010
 #[test]
 fn embedded_schema_dev_loads() {
     let schema_file =
@@ -44,6 +45,7 @@ fn all_embedded_schemas_load() {
 }
 
 /// Unknown schema names return an error from `load_embedded_schema`.
+// rivet: verifies REQ-010
 #[test]
 fn embedded_schema_unknown_returns_err() {
     let result = rivet_core::embedded::load_embedded_schema("nonexistent-schema");
@@ -56,12 +58,14 @@ fn embedded_schema_unknown_returns_err() {
 }
 
 /// `embedded_schema()` returns `None` for unknown names.
+// rivet: verifies REQ-010
 #[test]
 fn embedded_schema_lookup_none_for_unknown() {
     assert!(rivet_core::embedded::embedded_schema("does-not-exist").is_none());
 }
 
 /// `embedded_schema()` returns `Some` for all known names.
+// rivet: verifies REQ-010
 #[test]
 fn embedded_schema_lookup_some_for_known() {
     for name in rivet_core::embedded::SCHEMA_NAMES {
@@ -102,6 +106,7 @@ fn schema_fallback_uses_embedded_when_dir_missing() {
 }
 
 /// Fallback with STPA schemas produces a schema containing STPA types.
+// rivet: verifies REQ-010
 #[test]
 fn schema_fallback_stpa() {
     let fake_dir = PathBuf::from("/tmp/rivet-test-nonexistent-dir");
@@ -118,6 +123,7 @@ fn schema_fallback_stpa() {
 
 /// Fallback ignores completely unknown schema names (logs a warning but
 /// does not error). The resulting merged schema is still valid.
+// rivet: verifies REQ-010
 #[test]
 fn schema_fallback_unknown_name_ignored() {
     let fake_dir = PathBuf::from("/tmp/rivet-test-nonexistent-dir");
@@ -133,6 +139,7 @@ fn schema_fallback_unknown_name_ignored() {
 // ── Embedded schema content ──────────────────────────────────────────────
 
 /// The embedded SCHEMA_COMMON constant is non-empty and contains expected content.
+// rivet: verifies REQ-010
 #[test]
 fn schema_common_content_non_empty() {
     assert!(
@@ -146,6 +153,7 @@ fn schema_common_content_non_empty() {
 }
 
 /// The embedded SCHEMA_DEV constant is non-empty and mentions 'requirement'.
+// rivet: verifies REQ-010
 #[test]
 fn schema_dev_content_non_empty() {
     assert!(
@@ -159,6 +167,7 @@ fn schema_dev_content_non_empty() {
 }
 
 /// The embedded SCHEMA_STPA constant is non-empty and mentions 'loss'.
+// rivet: verifies REQ-010
 #[test]
 fn schema_stpa_content_non_empty() {
     assert!(!rivet_core::embedded::SCHEMA_STPA.is_empty());
@@ -166,6 +175,7 @@ fn schema_stpa_content_non_empty() {
 }
 
 /// The embedded SCHEMA_ASPICE constant is non-empty and mentions 'sw-req'.
+// rivet: verifies REQ-010
 #[test]
 fn schema_aspice_content_non_empty() {
     assert!(!rivet_core::embedded::SCHEMA_ASPICE.is_empty());
@@ -173,6 +183,7 @@ fn schema_aspice_content_non_empty() {
 }
 
 /// The embedded SCHEMA_CYBERSECURITY constant is non-empty.
+// rivet: verifies REQ-010
 #[test]
 fn schema_cybersecurity_content_non_empty() {
     assert!(!rivet_core::embedded::SCHEMA_CYBERSECURITY.is_empty());
@@ -180,6 +191,7 @@ fn schema_cybersecurity_content_non_empty() {
 }
 
 /// The embedded SCHEMA_AADL constant is non-empty.
+// rivet: verifies REQ-010
 #[test]
 fn schema_aadl_content_non_empty() {
     assert!(!rivet_core::embedded::SCHEMA_AADL.is_empty());

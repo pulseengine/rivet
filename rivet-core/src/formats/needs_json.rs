@@ -482,6 +482,7 @@ mod tests {
 
     // ----- Test: minimal parse ------------------------------------------
 
+    // rivet: verifies REQ-025
     #[test]
     fn parse_minimal_one_need() {
         let json = one_need();
@@ -498,6 +499,7 @@ mod tests {
 
     // ----- Test: type mapping -------------------------------------------
 
+    // rivet: verifies REQ-025
     #[test]
     fn type_mapping_transforms_types() {
         let json = one_need();
@@ -514,6 +516,7 @@ mod tests {
 
     // ----- Test: ID transform -------------------------------------------
 
+    // rivet: verifies REQ-025
     #[test]
     fn id_transform_underscores_to_dashes() {
         let json = one_need();
@@ -523,6 +526,7 @@ mod tests {
         assert_eq!(arts[0].links[0].target, "comp-req--safe-compute");
     }
 
+    // rivet: verifies REQ-025
     #[test]
     fn id_transform_preserve() {
         let json = one_need();
@@ -537,6 +541,7 @@ mod tests {
 
     // ----- Test: links converted ----------------------------------------
 
+    // rivet: verifies REQ-025
     #[test]
     fn links_converted_to_link_structs() {
         let json = one_need();
@@ -546,6 +551,7 @@ mod tests {
         assert_eq!(arts[0].links[0].target, "comp-req--safe-compute");
     }
 
+    // rivet: verifies REQ-025
     #[test]
     fn custom_link_type() {
         let json = one_need();
@@ -559,6 +565,7 @@ mod tests {
 
     // ----- Test: extra fields preserved ---------------------------------
 
+    // rivet: verifies REQ-025
     #[test]
     fn extra_fields_preserved() {
         let json = minimal_needs_json(
@@ -592,6 +599,7 @@ mod tests {
 
     // ----- Test: empty needs.json ---------------------------------------
 
+    // rivet: verifies REQ-025
     #[test]
     fn empty_needs_produces_empty_vec() {
         let json = minimal_needs_json("");
@@ -601,6 +609,7 @@ mod tests {
 
     // ----- Test: invalid JSON returns error ------------------------------
 
+    // rivet: verifies REQ-025
     #[test]
     fn invalid_json_returns_error() {
         let result = import_needs_json("NOT JSON {{{", &Default::default());
@@ -614,6 +623,7 @@ mod tests {
 
     // ----- Test: missing versions key -----------------------------------
 
+    // rivet: verifies REQ-025
     #[test]
     fn no_versions_returns_error() {
         let json = r#"{ "current_version": "1.0", "versions": {} }"#;
@@ -623,6 +633,7 @@ mod tests {
 
     // ----- Test: multi-need with links between them ---------------------
 
+    // rivet: verifies REQ-025
     #[test]
     fn multiple_needs_with_inter_links() {
         let json = minimal_needs_json(
@@ -655,6 +666,7 @@ mod tests {
 
     // ----- Test: adapter config conversion ------------------------------
 
+    // rivet: verifies REQ-025
     #[test]
     fn adapter_config_to_needs_config_round_trip() {
         let mut entries = BTreeMap::new();
@@ -680,6 +692,7 @@ mod tests {
 
     // ----- Test: version fallback (empty-string key) --------------------
 
+    // rivet: verifies REQ-025
     #[test]
     fn version_fallback_empty_string_key() {
         let json = r#"{

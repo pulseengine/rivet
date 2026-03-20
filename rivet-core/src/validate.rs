@@ -320,6 +320,7 @@ mod tests {
         Schema::merge(&[file])
     }
 
+    // rivet: verifies REQ-023
     #[test]
     fn condition_equals_matches_correct_status() {
         let cond = Condition::Equals {
@@ -330,6 +331,7 @@ mod tests {
         assert!(cond.matches_artifact(&art));
     }
 
+    // rivet: verifies REQ-023
     #[test]
     fn condition_equals_does_not_match_wrong_status() {
         let cond = Condition::Equals {
@@ -340,6 +342,7 @@ mod tests {
         assert!(!cond.matches_artifact(&art));
     }
 
+    // rivet: verifies REQ-023
     #[test]
     fn condition_equals_does_not_match_missing_status() {
         let cond = Condition::Equals {
@@ -350,6 +353,7 @@ mod tests {
         assert!(!cond.matches_artifact(&art));
     }
 
+    // rivet: verifies REQ-023
     #[test]
     fn condition_matches_regex() {
         let cond = Condition::Matches {
@@ -367,6 +371,7 @@ mod tests {
         assert!(cond.matches_artifact(&art));
     }
 
+    // rivet: verifies REQ-023
     #[test]
     fn condition_matches_regex_no_match() {
         let cond = Condition::Matches {
@@ -377,6 +382,7 @@ mod tests {
         assert!(!cond.matches_artifact(&art));
     }
 
+    // rivet: verifies REQ-023
     #[test]
     fn condition_exists_present_field() {
         let cond = Condition::Exists {
@@ -393,6 +399,7 @@ mod tests {
         assert!(cond.matches_artifact(&art));
     }
 
+    // rivet: verifies REQ-023
     #[test]
     fn condition_exists_missing_field() {
         let cond = Condition::Exists {
@@ -402,6 +409,7 @@ mod tests {
         assert!(!cond.matches_artifact(&art));
     }
 
+    // rivet: verifies REQ-004
     #[test]
     fn required_fields_catches_missing_field() {
         let req = Requirement::RequiredFields {
@@ -414,6 +422,7 @@ mod tests {
         assert_eq!(diags[0].severity, Severity::Error);
     }
 
+    // rivet: verifies REQ-004
     #[test]
     fn required_fields_passes_when_field_present() {
         let req = Requirement::RequiredFields {
@@ -431,6 +440,7 @@ mod tests {
         assert!(diags.is_empty());
     }
 
+    // rivet: verifies REQ-004
     #[test]
     fn required_links_catches_missing_link() {
         let req = Requirement::RequiredLinks {
@@ -443,6 +453,7 @@ mod tests {
         assert_eq!(diags[0].severity, Severity::Warning);
     }
 
+    // rivet: verifies REQ-004
     #[test]
     fn required_links_passes_when_link_present() {
         let req = Requirement::RequiredLinks {
@@ -457,6 +468,7 @@ mod tests {
         assert!(diags.is_empty());
     }
 
+    // rivet: verifies REQ-023
     #[test]
     fn conditional_rule_only_fires_when_condition_true() {
         let rule = ConditionalRule {
@@ -519,6 +531,7 @@ mod tests {
         );
     }
 
+    // rivet: verifies REQ-023
     #[test]
     fn rule_with_warning_severity_produces_warning() {
         let rule = ConditionalRule {
@@ -554,6 +567,7 @@ mod tests {
         assert_eq!(cond_diags[0].severity, Severity::Warning);
     }
 
+    // rivet: verifies REQ-023
     #[test]
     fn serde_roundtrip_conditional_rule_equals() {
         let yaml = r#"
@@ -572,6 +586,7 @@ severity: warning
         assert_eq!(rule.severity, Severity::Warning);
     }
 
+    // rivet: verifies REQ-023
     #[test]
     fn serde_roundtrip_conditional_rule_matches() {
         let yaml = r#"
@@ -588,6 +603,7 @@ severity: error
         assert!(matches!(rule.then, Requirement::RequiredLinks { .. }));
     }
 
+    // rivet: verifies REQ-023
     #[test]
     fn serde_roundtrip_conditional_rule_exists() {
         let yaml = r#"
@@ -604,6 +620,7 @@ then:
         assert_eq!(rule.severity, Severity::Error);
     }
 
+    // rivet: verifies REQ-023
     #[test]
     fn consistency_detects_duplicate_names() {
         let rules = vec![
@@ -637,6 +654,7 @@ then:
         assert!(diags[0].message.contains("dup"));
     }
 
+    // rivet: verifies REQ-023
     #[test]
     fn consistency_detects_overlapping_requirements() {
         let rules = vec![

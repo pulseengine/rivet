@@ -319,6 +319,7 @@ mod tests {
         }
     }
 
+    // rivet: verifies REQ-024
     #[test]
     fn content_hash_is_deterministic() {
         let a = make_artifact("X-1", "requirement", "A requirement");
@@ -327,6 +328,7 @@ mod tests {
         assert_eq!(h1, h2);
     }
 
+    // rivet: verifies REQ-024
     #[test]
     fn content_hash_changes_when_title_changes() {
         let a = make_artifact("X-1", "requirement", "Old title");
@@ -335,6 +337,7 @@ mod tests {
         assert_ne!(content_hash(&a), content_hash(&b));
     }
 
+    // rivet: verifies REQ-024
     #[test]
     fn content_hash_changes_when_status_changes() {
         let mut a = make_artifact("X-1", "requirement", "Title");
@@ -344,6 +347,7 @@ mod tests {
         assert_ne!(content_hash(&a), content_hash(&b));
     }
 
+    // rivet: verifies REQ-024
     #[test]
     fn content_hash_tag_order_independent() {
         let mut a = make_artifact("X-1", "requirement", "Title");
@@ -353,6 +357,7 @@ mod tests {
         assert_eq!(content_hash(&a), content_hash(&b));
     }
 
+    // rivet: verifies REQ-024
     #[test]
     fn impact_no_changes() {
         let mut store = Store::new();
@@ -378,6 +383,7 @@ mod tests {
         assert_eq!(result.total(), 0);
     }
 
+    // rivet: verifies REQ-024
     #[test]
     fn impact_one_changed_with_dependent() {
         // Build a chain: FEAT-1 --satisfies--> REQ-1
@@ -426,6 +432,7 @@ mod tests {
         assert!(result.added.is_empty());
     }
 
+    // rivet: verifies REQ-024
     #[test]
     fn impact_transitive_chain() {
         // Chain: TEST-1 --verifies--> FEAT-1 --satisfies--> REQ-1
@@ -487,6 +494,7 @@ mod tests {
         assert_eq!(result.transitively_affected[0].depth, 2);
     }
 
+    // rivet: verifies REQ-024
     #[test]
     fn impact_depth_limit() {
         // Chain: TEST-1 --verifies--> FEAT-1 --satisfies--> REQ-1
@@ -544,6 +552,7 @@ mod tests {
         assert!(result.transitively_affected.is_empty());
     }
 
+    // rivet: verifies REQ-024
     #[test]
     fn impact_added_and_removed() {
         let mut current = Store::new();
@@ -572,6 +581,7 @@ mod tests {
         assert_eq!(result.removed, vec!["R-2".to_string()]);
     }
 
+    // rivet: verifies REQ-024
     #[test]
     fn impact_removed_artifact_affects_dependents() {
         // FEAT-1 links to REQ-1. REQ-1 is removed.

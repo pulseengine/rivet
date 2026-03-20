@@ -85,6 +85,7 @@ fn test_add_valid_artifact_succeeds() {
 
 // ── Test: add valid artifact with fields succeeds ────────────────────────
 
+// rivet: verifies REQ-031
 #[test]
 fn test_add_valid_artifact_with_fields_succeeds() {
     let schema = load_schema_files(&["common", "dev"]);
@@ -234,6 +235,7 @@ fn test_link_with_valid_link_type_succeeds() {
 
 // ── Test: link with missing source is rejected ───────────────────────────
 
+// rivet: verifies REQ-031
 #[test]
 fn test_link_missing_source_is_rejected() {
     let schema = load_schema_files(&["common", "dev"]);
@@ -257,6 +259,7 @@ fn test_link_missing_source_is_rejected() {
 
 // ── Test: link with missing target is rejected ───────────────────────────
 
+// rivet: verifies REQ-031
 #[test]
 fn test_link_missing_target_is_rejected() {
     let schema = load_schema_files(&["common", "dev"]);
@@ -358,6 +361,7 @@ fn test_remove_without_backlinks_succeeds() {
 
 // ── Test: remove nonexistent artifact is rejected ────────────────────────
 
+// rivet: verifies REQ-031
 #[test]
 fn test_remove_nonexistent_is_rejected() {
     let schema = load_schema_files(&["common", "dev"]);
@@ -409,6 +413,7 @@ fn test_next_id_sequential() {
 
 // ── Test: next_id with no existing IDs starts at 001 ─────────────────────
 
+// rivet: verifies REQ-031
 #[test]
 fn test_next_id_empty_store() {
     let store = Store::new();
@@ -418,6 +423,7 @@ fn test_next_id_empty_store() {
 
 // ── Test: prefix_for_type derives from store ─────────────────────────────
 
+// rivet: verifies REQ-031
 #[test]
 fn test_prefix_for_type_derives_from_store() {
     let mut store = Store::new();
@@ -453,6 +459,7 @@ fn test_prefix_for_type_derives_from_store() {
     assert_eq!(mutate::prefix_for_type("design-decision", &store), "DD");
 }
 
+// rivet: verifies REQ-031
 #[test]
 fn test_prefix_for_type_fallback_no_artifacts() {
     let store = Store::new();
@@ -474,6 +481,7 @@ fn test_prefix_for_type_fallback_no_artifacts() {
 
 // ── Test: validate_modify rejects invalid field values ───────────────────
 
+// rivet: verifies REQ-031
 #[test]
 fn test_validate_modify_rejects_invalid_field() {
     let schema = load_schema_files(&["common", "dev"]);
@@ -508,6 +516,7 @@ fn test_validate_modify_rejects_invalid_field() {
 
 // ── Test: validate_unlink rejects missing link ───────────────────────────
 
+// rivet: verifies REQ-031
 #[test]
 fn test_validate_unlink_missing_link() {
     let mut store = Store::new();
