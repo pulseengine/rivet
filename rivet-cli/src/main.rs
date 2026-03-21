@@ -4756,8 +4756,8 @@ fn cmd_batch(cli: &Cli, file: &std::path::Path) -> Result<bool> {
     Ok(true)
 }
 
-fn cmd_lsp(_cli: &Cli) -> Result<bool> {
-    use lsp_server::{Connection, Message};
+fn cmd_lsp(cli: &Cli) -> Result<bool> {
+    use lsp_server::{Connection, Message, Response};
     use lsp_types::*;
 
     eprintln!("rivet lsp: starting language server...");
@@ -4766,10 +4766,6 @@ fn cmd_lsp(_cli: &Cli) -> Result<bool> {
 
     let server_capabilities = ServerCapabilities {
         text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
-        diagnostic_provider: Some(DiagnosticServerCapabilities::Options(DiagnosticOptions {
-            identifier: Some("rivet".to_string()),
-            ..Default::default()
-        })),
         hover_provider: Some(HoverProviderCapability::Simple(true)),
         definition_provider: Some(OneOf::Left(true)),
         completion_provider: Some(CompletionOptions {
@@ -4780,9 +4776,55 @@ fn cmd_lsp(_cli: &Cli) -> Result<bool> {
     };
 
     let init_params = connection.initialize(serde_json::to_value(server_capabilities).unwrap())?;
-    let _params: InitializeParams = serde_json::from_value(init_params)?;
+    let params: InitializeParams = serde_json::from_value(init_params)?;
 
-    eprintln!("rivet lsp: initialized");
+    // Determine project root from workspace folders or root_uri
+    #[allow(deprecated)]
+    let project_dir = params
+        .root_uri
+        .as_ref()
+        .and_then(|u| {
+            let s = u.as_str();
+            s.strip_prefix("file://").map(std::path::PathBuf::from)
+        })
+        .unwrap_or_else(|| cli.project.clone());
+
+    eprintln!("rivet lsp: project root: {}", project_dir.display());
+
+    // Load project
+    let config_path = project_dir.join("rivet.yaml");
+    let (store, schema, graph) = if config_path.exists() {
+        let config = rivet_core::load_project_config(&config_path).unwrap_or_else(|e| {
+            eprintln!("rivet lsp: failed to load config: {e}");
+            std::process::exit(1);
+        });
+        let schemas_dir = resolve_schemas_dir(cli);
+        let schema = rivet_core::load_schemas(&config.project.schemas, &schemas_dir)
+            .unwrap_or_else(|e| {
+                eprintln!("rivet lsp: schema error: {e}");
+                rivet_core::load_schemas(&[], &schemas_dir).unwrap()
+            });
+        let mut store = Store::new();
+        for source in &config.sources {
+            if let Ok(artifacts) = rivet_core::load_artifacts(source, &project_dir) {
+                for artifact in artifacts {
+                    store.upsert(artifact);
+                }
+            }
+        }
+        let graph = LinkGraph::build(&store, &schema);
+        (store, schema, graph)
+    } else {
+        eprintln!("rivet lsp: no rivet.yaml found, running with empty store");
+        let empty_store = Store::new();
+        let empty_schema = rivet_core::load_schemas(&[], &resolve_schemas_dir(cli)).unwrap();
+        let empty_graph = LinkGraph::build(&empty_store, &empty_schema);
+        (empty_store, empty_schema, empty_graph)
+    };
+
+    // Publish initial diagnostics
+    lsp_publish_diagnostics(&connection, &store, &schema, &graph);
+    eprintln!("rivet lsp: initialized with {} artifacts", store.len());
 
     // Main message loop
     for msg in &connection.receiver {
@@ -4791,12 +4833,52 @@ fn cmd_lsp(_cli: &Cli) -> Result<bool> {
                 if connection.handle_shutdown(&req)? {
                     break;
                 }
-                // TODO: handle requests (hover, goto-definition, completion)
-                eprintln!("rivet lsp: unhandled request: {}", req.method);
+                let method = req.method.as_str();
+                match method {
+                    "textDocument/hover" => {
+                        let params: HoverParams = serde_json::from_value(req.params.clone())?;
+                        let result = lsp_hover(&params, &store);
+                        connection.sender.send(Message::Response(Response {
+                            id: req.id,
+                            result: Some(serde_json::to_value(result)?),
+                            error: None,
+                        }))?;
+                    }
+                    "textDocument/definition" => {
+                        let params: GotoDefinitionParams =
+                            serde_json::from_value(req.params.clone())?;
+                        let result = lsp_goto_definition(&params, &store);
+                        connection.sender.send(Message::Response(Response {
+                            id: req.id,
+                            result: Some(serde_json::to_value(result)?),
+                            error: None,
+                        }))?;
+                    }
+                    "textDocument/completion" => {
+                        let params: CompletionParams = serde_json::from_value(req.params.clone())?;
+                        let result = lsp_completion(&params, &store, &schema);
+                        connection.sender.send(Message::Response(Response {
+                            id: req.id,
+                            result: Some(serde_json::to_value(result)?),
+                            error: None,
+                        }))?;
+                    }
+                    _ => {
+                        eprintln!("rivet lsp: unhandled request: {method}");
+                        connection.sender.send(Message::Response(Response {
+                            id: req.id,
+                            result: Some(serde_json::Value::Null),
+                            error: None,
+                        }))?;
+                    }
+                }
             }
             Message::Notification(notif) => {
-                eprintln!("rivet lsp: notification: {}", notif.method);
-                // TODO: handle didOpen, didChange, didSave
+                if notif.method == "textDocument/didSave" {
+                    eprintln!("rivet lsp: file saved, re-validating...");
+                    // TODO: reload project and re-publish diagnostics
+                    // For now, just log
+                }
             }
             Message::Response(_) => {}
         }
@@ -4805,6 +4887,237 @@ fn cmd_lsp(_cli: &Cli) -> Result<bool> {
     io_threads.join()?;
     eprintln!("rivet lsp: shut down");
     Ok(true)
+}
+
+// ── LSP helpers ──────────────────────────────────────────────────────────
+
+fn lsp_uri_to_path(uri: &lsp_types::Uri) -> Option<std::path::PathBuf> {
+    let s = uri.as_str();
+    s.strip_prefix("file://").map(std::path::PathBuf::from)
+}
+
+fn lsp_path_to_uri(path: &std::path::Path) -> Option<lsp_types::Uri> {
+    let s = format!("file://{}", path.display());
+    s.parse().ok()
+}
+
+fn lsp_find_artifact_line(path: &std::path::Path, artifact_id: &str) -> u32 {
+    std::fs::read_to_string(path)
+        .unwrap_or_default()
+        .lines()
+        .enumerate()
+        .find(|(_, line)| {
+            let t = line.trim();
+            t == format!("id: {artifact_id}") || t == format!("- id: {artifact_id}")
+        })
+        .map(|(i, _)| i as u32)
+        .unwrap_or(0)
+}
+
+fn lsp_word_at_position(content: &str, line: u32, character: u32) -> String {
+    content
+        .lines()
+        .nth(line as usize)
+        .map(|l| {
+            let chars: Vec<char> = l.chars().collect();
+            let pos = (character as usize).min(chars.len());
+            let start = (0..pos)
+                .rev()
+                .find(|&i| {
+                    !chars
+                        .get(i)
+                        .map(|c| c.is_alphanumeric() || *c == '-' || *c == '_')
+                        .unwrap_or(false)
+                })
+                .map(|i| i + 1)
+                .unwrap_or(0);
+            let end = (pos..chars.len())
+                .find(|&i| {
+                    !chars
+                        .get(i)
+                        .map(|c| c.is_alphanumeric() || *c == '-' || *c == '_')
+                        .unwrap_or(false)
+                })
+                .unwrap_or(chars.len());
+            chars[start..end].iter().collect()
+        })
+        .unwrap_or_default()
+}
+
+fn lsp_publish_diagnostics(
+    connection: &lsp_server::Connection,
+    store: &Store,
+    schema: &rivet_core::schema::Schema,
+    graph: &LinkGraph,
+) {
+    use lsp_types::*;
+
+    let diagnostics = validate::validate(store, schema, graph);
+    let mut file_diags: std::collections::HashMap<std::path::PathBuf, Vec<lsp_types::Diagnostic>> =
+        std::collections::HashMap::new();
+
+    for diag in &diagnostics {
+        let art_id = match diag.artifact_id {
+            Some(ref id) => id.as_str(),
+            None => continue,
+        };
+        let art = store.get(art_id);
+        let source_file = art.and_then(|a| a.source_file.as_ref());
+        if let Some(path) = source_file {
+            let line = lsp_find_artifact_line(path, art_id);
+            file_diags
+                .entry(path.clone())
+                .or_default()
+                .push(lsp_types::Diagnostic {
+                    range: Range {
+                        start: Position { line, character: 0 },
+                        end: Position {
+                            line,
+                            character: 100,
+                        },
+                    },
+                    severity: Some(match diag.severity {
+                        rivet_core::schema::Severity::Error => DiagnosticSeverity::ERROR,
+                        rivet_core::schema::Severity::Warning => DiagnosticSeverity::WARNING,
+                        rivet_core::schema::Severity::Info => DiagnosticSeverity::INFORMATION,
+                    }),
+                    source: Some("rivet".to_string()),
+                    message: diag.message.clone(),
+                    ..Default::default()
+                });
+        }
+    }
+
+    for (path, diags) in &file_diags {
+        if let Some(uri) = lsp_path_to_uri(path) {
+            let params = PublishDiagnosticsParams {
+                uri,
+                diagnostics: diags.clone(),
+                version: None,
+            };
+            let _ = connection.sender.send(lsp_server::Message::Notification(
+                lsp_server::Notification {
+                    method: "textDocument/publishDiagnostics".to_string(),
+                    params: serde_json::to_value(params).unwrap(),
+                },
+            ));
+        }
+    }
+
+    eprintln!(
+        "rivet lsp: published {} diagnostics across {} files",
+        diagnostics.len(),
+        file_diags.len()
+    );
+}
+
+fn lsp_hover(params: &lsp_types::HoverParams, store: &Store) -> Option<lsp_types::Hover> {
+    let uri = &params.text_document_position_params.text_document.uri;
+    let pos = params.text_document_position_params.position;
+    let path = lsp_uri_to_path(uri)?;
+    let content = std::fs::read_to_string(&path).ok()?;
+    let word = lsp_word_at_position(&content, pos.line, pos.character);
+
+    let art = store.get(&word)?;
+    let mut md = format!("**{}** `{}`\n\n", art.title, art.artifact_type);
+    if let Some(ref desc) = art.description {
+        let short = if desc.len() > 300 {
+            format!("{}...", &desc[..300])
+        } else {
+            desc.clone()
+        };
+        md.push_str(&short);
+        md.push('\n');
+    }
+    md.push_str(&format!(
+        "\nStatus: `{}`",
+        art.status.as_deref().unwrap_or("—")
+    ));
+    if !art.links.is_empty() {
+        md.push_str(&format!(" | Links: {}", art.links.len()));
+    }
+    if !art.tags.is_empty() {
+        md.push_str(&format!(" | Tags: {}", art.tags.join(", ")));
+    }
+
+    Some(lsp_types::Hover {
+        contents: lsp_types::HoverContents::Markup(lsp_types::MarkupContent {
+            kind: lsp_types::MarkupKind::Markdown,
+            value: md,
+        }),
+        range: None,
+    })
+}
+
+fn lsp_goto_definition(
+    params: &lsp_types::GotoDefinitionParams,
+    store: &Store,
+) -> Option<lsp_types::Location> {
+    let uri = &params.text_document_position_params.text_document.uri;
+    let pos = params.text_document_position_params.position;
+    let path = lsp_uri_to_path(uri)?;
+    let content = std::fs::read_to_string(&path).ok()?;
+    let word = lsp_word_at_position(&content, pos.line, pos.character);
+
+    let art = store.get(&word)?;
+    let source = art.source_file.as_ref()?;
+    let line = lsp_find_artifact_line(source, &word);
+    let target_uri = lsp_path_to_uri(source)?;
+
+    Some(lsp_types::Location {
+        uri: target_uri,
+        range: lsp_types::Range {
+            start: lsp_types::Position { line, character: 0 },
+            end: lsp_types::Position { line, character: 0 },
+        },
+    })
+}
+
+fn lsp_completion(
+    params: &lsp_types::CompletionParams,
+    store: &Store,
+    schema: &rivet_core::schema::Schema,
+) -> Option<lsp_types::CompletionList> {
+    let uri = &params.text_document_position.text_document.uri;
+    let pos = params.text_document_position.position;
+    let path = lsp_uri_to_path(uri)?;
+    let content = std::fs::read_to_string(&path).ok()?;
+    let line_text = content.lines().nth(pos.line as usize).unwrap_or("");
+    let trimmed = line_text.trim();
+
+    let mut items = Vec::new();
+
+    if trimmed.starts_with("target:") || trimmed.starts_with("- target:") || trimmed.contains("[[")
+    {
+        // Suggest artifact IDs
+        for art in store.iter() {
+            items.push(lsp_types::CompletionItem {
+                label: art.id.clone(),
+                kind: Some(lsp_types::CompletionItemKind::REFERENCE),
+                detail: Some(format!("{} ({})", art.title, art.artifact_type)),
+                ..Default::default()
+            });
+        }
+    } else if trimmed.starts_with("type:") || trimmed.starts_with("- type:") {
+        // Suggest artifact types seen in the store
+        let mut types: Vec<String> = store.types().map(|t| t.to_string()).collect();
+        types.sort();
+        types.dedup();
+        for t in types {
+            let desc = schema.artifact_type(&t).map(|td| td.description.clone());
+            items.push(lsp_types::CompletionItem {
+                label: t,
+                kind: Some(lsp_types::CompletionItemKind::CLASS),
+                detail: desc,
+                ..Default::default()
+            });
+        }
+    }
+
+    Some(lsp_types::CompletionList {
+        is_incomplete: false,
+        items,
+    })
 }
 
 /// Substitute `$prev` in a string with the most recently generated ID.

@@ -144,3 +144,132 @@ impl Store {
         scoped
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_helpers::minimal_artifact;
+
+    fn artifact_with_baseline(id: &str, art_type: &str, baseline: &str) -> Artifact {
+        let mut a = minimal_artifact(id, art_type);
+        a.fields.insert(
+            "baseline".into(),
+            serde_yaml::Value::String(baseline.into()),
+        );
+        a
+    }
+
+    fn baselines(names: &[&str]) -> Vec<BaselineConfig> {
+        names
+            .iter()
+            .map(|n| BaselineConfig {
+                name: n.to_string(),
+                description: None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn scoped_store_filters_by_baseline() {
+        let mut store = Store::new();
+        store
+            .insert(artifact_with_baseline("A-1", "req", "v0.1.0"))
+            .unwrap();
+        store
+            .insert(artifact_with_baseline("A-2", "req", "v0.2.0"))
+            .unwrap();
+        store
+            .insert(artifact_with_baseline("A-3", "req", "v0.3.0"))
+            .unwrap();
+
+        let bl = baselines(&["v0.1.0", "v0.2.0", "v0.3.0"]);
+
+        // Scope to v0.1.0 — only A-1
+        let s1 = store.scoped("v0.1.0", &bl);
+        assert_eq!(s1.len(), 1);
+        assert!(s1.contains("A-1"));
+
+        // Scope to v0.2.0 — cumulative: A-1 and A-2
+        let s2 = store.scoped("v0.2.0", &bl);
+        assert_eq!(s2.len(), 2);
+        assert!(s2.contains("A-1"));
+        assert!(s2.contains("A-2"));
+
+        // Scope to v0.3.0 — all three
+        let s3 = store.scoped("v0.3.0", &bl);
+        assert_eq!(s3.len(), 3);
+    }
+
+    #[test]
+    fn scoped_store_unknown_baseline_returns_full() {
+        let mut store = Store::new();
+        store
+            .insert(artifact_with_baseline("A-1", "req", "v0.1.0"))
+            .unwrap();
+        store.insert(minimal_artifact("A-2", "req")).unwrap();
+
+        let bl = baselines(&["v0.1.0"]);
+        let scoped = store.scoped("unknown", &bl);
+        // Unknown baseline returns a clone of the full store
+        assert_eq!(scoped.len(), store.len());
+    }
+
+    #[test]
+    fn scoped_store_excludes_untagged_artifacts() {
+        let mut store = Store::new();
+        store
+            .insert(artifact_with_baseline("A-1", "req", "v0.1.0"))
+            .unwrap();
+        // A-2 has no baseline field
+        store.insert(minimal_artifact("A-2", "req")).unwrap();
+
+        let bl = baselines(&["v0.1.0"]);
+        let scoped = store.scoped("v0.1.0", &bl);
+        // Only A-1 is included; A-2 has no baseline and is excluded
+        assert_eq!(scoped.len(), 1);
+        assert!(scoped.contains("A-1"));
+        assert!(!scoped.contains("A-2"));
+    }
+
+    #[test]
+    fn upsert_new_artifact() {
+        let mut store = Store::new();
+        let a = minimal_artifact("A-1", "req");
+        store.upsert(a);
+        assert_eq!(store.len(), 1);
+        assert!(store.contains("A-1"));
+        assert_eq!(store.by_type("req"), &["A-1"]);
+    }
+
+    #[test]
+    fn upsert_replaces_existing_same_type() {
+        let mut store = Store::new();
+        let mut a1 = minimal_artifact("A-1", "req");
+        a1.title = "Original".into();
+        store.upsert(a1);
+
+        let mut a2 = minimal_artifact("A-1", "req");
+        a2.title = "Updated".into();
+        store.upsert(a2);
+
+        assert_eq!(store.len(), 1);
+        assert_eq!(store.get("A-1").unwrap().title, "Updated");
+        // Type index should still have exactly one entry
+        assert_eq!(store.by_type("req").len(), 1);
+    }
+
+    #[test]
+    fn upsert_replaces_existing_different_type() {
+        let mut store = Store::new();
+        store.upsert(minimal_artifact("A-1", "req"));
+        assert_eq!(store.by_type("req").len(), 1);
+
+        // Upsert with a different type
+        store.upsert(minimal_artifact("A-1", "feat"));
+        assert_eq!(store.len(), 1);
+        assert_eq!(store.get("A-1").unwrap().artifact_type, "feat");
+        // Old type index should be cleared, new one populated
+        assert_eq!(store.by_type("req").len(), 0);
+        assert_eq!(store.by_type("feat").len(), 1);
+    }
+}

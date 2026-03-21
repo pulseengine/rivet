@@ -587,3 +587,224 @@ impl Schema {
         self.inverse_map.get(link_type).map(|s| s.as_str())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_helpers::minimal_artifact;
+    use std::borrow::Cow;
+
+    /// Build an artifact with custom fields in the `fields` map.
+    fn artifact_with_fields(id: &str, fields: Vec<(&str, serde_yaml::Value)>) -> Artifact {
+        let mut a = minimal_artifact(id, "test");
+        for (k, v) in fields {
+            a.fields.insert(k.to_string(), v);
+        }
+        a
+    }
+
+    // ── get_field_value tests ────────────────────────────────────────────
+
+    #[test]
+    fn get_field_value_returns_borrowed_for_id() {
+        let a = minimal_artifact("X-1", "test");
+        let val = get_field_value(&a, "id");
+        assert_eq!(val, Some(Cow::Borrowed("X-1")));
+    }
+
+    #[test]
+    fn get_field_value_returns_borrowed_for_title() {
+        let a = minimal_artifact("X-1", "test");
+        let val = get_field_value(&a, "title");
+        assert_eq!(val, Some(Cow::Borrowed("Test X-1")));
+    }
+
+    #[test]
+    fn get_field_value_returns_borrowed_for_status() {
+        let mut a = minimal_artifact("X-1", "test");
+        a.status = Some("approved".into());
+        let val = get_field_value(&a, "status");
+        assert_eq!(val, Some(Cow::Borrowed("approved")));
+    }
+
+    #[test]
+    fn get_field_value_returns_none_for_missing_status() {
+        let a = minimal_artifact("X-1", "test");
+        let val = get_field_value(&a, "status");
+        assert_eq!(val, None);
+    }
+
+    #[test]
+    fn get_field_value_returns_borrowed_for_description() {
+        let mut a = minimal_artifact("X-1", "test");
+        a.description = Some("A description".into());
+        let val = get_field_value(&a, "description");
+        assert_eq!(val, Some(Cow::Borrowed("A description")));
+    }
+
+    #[test]
+    fn get_field_value_returns_none_for_missing_description() {
+        let a = minimal_artifact("X-1", "test");
+        let val = get_field_value(&a, "description");
+        assert_eq!(val, None);
+    }
+
+    #[test]
+    fn get_field_value_tags_empty_returns_none() {
+        let a = minimal_artifact("X-1", "test");
+        let val = get_field_value(&a, "tags");
+        assert_eq!(val, None);
+    }
+
+    #[test]
+    fn get_field_value_tags_joined() {
+        let mut a = minimal_artifact("X-1", "test");
+        a.tags = vec!["safety".into(), "asil-b".into()];
+        let val = get_field_value(&a, "tags");
+        assert_eq!(val, Some(Cow::<str>::Owned("safety,asil-b".into())));
+    }
+
+    #[test]
+    fn get_field_value_custom_string_field() {
+        let a = artifact_with_fields(
+            "X-1",
+            vec![("safety", serde_yaml::Value::String("ASIL_B".into()))],
+        );
+        let val = get_field_value(&a, "safety");
+        assert_eq!(val, Some(Cow::Borrowed("ASIL_B")));
+    }
+
+    #[test]
+    fn get_field_value_custom_bool_field() {
+        let a = artifact_with_fields("X-1", vec![("critical", serde_yaml::Value::Bool(true))]);
+        let val = get_field_value(&a, "critical");
+        assert_eq!(val, Some(Cow::<str>::Owned("true".into())));
+    }
+
+    #[test]
+    fn get_field_value_custom_number_field() {
+        let a = artifact_with_fields(
+            "X-1",
+            vec![(
+                "priority",
+                serde_yaml::Value::Number(serde_yaml::Number::from(42)),
+            )],
+        );
+        let val = get_field_value(&a, "priority");
+        assert_eq!(val, Some(Cow::<str>::Owned("42".into())));
+    }
+
+    #[test]
+    fn get_field_value_missing_custom_field() {
+        let a = minimal_artifact("X-1", "test");
+        let val = get_field_value(&a, "nonexistent");
+        assert_eq!(val, None);
+    }
+
+    // ── compile_regex tests ──────────────────────────────────────────────
+
+    #[test]
+    fn compile_regex_returns_some_for_matches_condition() {
+        let cond = Condition::Matches {
+            field: "safety".into(),
+            pattern: "ASIL_.*".into(),
+        };
+        let re = cond.compile_regex();
+        assert!(re.is_some());
+        assert!(re.unwrap().is_match("ASIL_B"));
+    }
+
+    #[test]
+    fn compile_regex_returns_none_for_equals_condition() {
+        let cond = Condition::Equals {
+            field: "status".into(),
+            value: "approved".into(),
+        };
+        assert!(cond.compile_regex().is_none());
+    }
+
+    #[test]
+    fn compile_regex_returns_none_for_exists_condition() {
+        let cond = Condition::Exists {
+            field: "description".into(),
+        };
+        assert!(cond.compile_regex().is_none());
+    }
+
+    #[test]
+    fn compile_regex_returns_none_for_invalid_pattern() {
+        let cond = Condition::Matches {
+            field: "x".into(),
+            pattern: "[invalid(".into(),
+        };
+        assert!(cond.compile_regex().is_none());
+    }
+
+    // ── matches_artifact_with tests ──────────────────────────────────────
+
+    #[test]
+    fn matches_artifact_with_precompiled_regex() {
+        let cond = Condition::Matches {
+            field: "safety".into(),
+            pattern: "ASIL_.*".into(),
+        };
+        let re = cond.compile_regex();
+        let a = artifact_with_fields(
+            "X-1",
+            vec![("safety", serde_yaml::Value::String("ASIL_D".into()))],
+        );
+        assert!(cond.matches_artifact_with(&a, re.as_ref()));
+    }
+
+    #[test]
+    fn matches_artifact_with_precompiled_regex_no_match() {
+        let cond = Condition::Matches {
+            field: "safety".into(),
+            pattern: "ASIL_.*".into(),
+        };
+        let re = cond.compile_regex();
+        let a = artifact_with_fields(
+            "X-1",
+            vec![("safety", serde_yaml::Value::String("QM".into()))],
+        );
+        assert!(!cond.matches_artifact_with(&a, re.as_ref()));
+    }
+
+    #[test]
+    fn matches_artifact_with_none_regex_falls_back() {
+        // When compiled regex is None for a Matches condition, falls back to
+        // inline compilation via matches_artifact.
+        let cond = Condition::Matches {
+            field: "safety".into(),
+            pattern: "ASIL_.*".into(),
+        };
+        let a = artifact_with_fields(
+            "X-1",
+            vec![("safety", serde_yaml::Value::String("ASIL_C".into()))],
+        );
+        assert!(cond.matches_artifact_with(&a, None));
+    }
+
+    #[test]
+    fn matches_artifact_with_equals_ignores_compiled() {
+        let cond = Condition::Equals {
+            field: "status".into(),
+            value: "approved".into(),
+        };
+        let mut a = minimal_artifact("X-1", "test");
+        a.status = Some("approved".into());
+        // Pass Some regex even though it's Equals — should be ignored
+        let dummy_re = Regex::new(".*").unwrap();
+        assert!(cond.matches_artifact_with(&a, Some(&dummy_re)));
+    }
+
+    #[test]
+    fn matches_artifact_with_exists_ignores_compiled() {
+        let cond = Condition::Exists {
+            field: "description".into(),
+        };
+        let mut a = minimal_artifact("X-1", "test");
+        a.description = Some("present".into());
+        assert!(cond.matches_artifact_with(&a, None));
+    }
+}
