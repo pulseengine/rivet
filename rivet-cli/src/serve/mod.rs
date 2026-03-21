@@ -431,10 +431,11 @@ async fn wrap_full_page(
 
     let response = next.run(req).await;
 
-    // Only wrap GET requests to view routes (not /, assets, or APIs)
+    // Only wrap GET requests to view routes (not assets or APIs)
+    // For "/" without print=1, the index handler already renders the full page.
     if method == axum::http::Method::GET
         && !is_htmx
-        && path != "/"
+        && (path != "/" || is_print)
         && !path.starts_with("/api/")
         && !path.starts_with("/assets/")
         && !path.starts_with("/wasm/")

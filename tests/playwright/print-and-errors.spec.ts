@@ -21,6 +21,31 @@ test.describe("Print Mode", () => {
     await expect(page.locator("body")).toContainText("STPA");
   });
 
+  test("print view includes mermaid.js script", async ({ page }) => {
+    await page.goto("/stats?print=1");
+    const mermaidScript = page.locator('script[src="/assets/mermaid.js"]');
+    await expect(mermaidScript).toBeAttached();
+  });
+
+  test("print view loads mermaid library", async ({ page }) => {
+    await page.goto("/stats?print=1");
+    await page.waitForLoadState("networkidle");
+    const hasMermaid = await page.evaluate(
+      () => typeof (window as any).mermaid !== "undefined",
+    );
+    expect(hasMermaid).toBe(true);
+  });
+
+  test("print view uses print layout (no sidebar)", async ({ page }) => {
+    // Use a non-root path so the print middleware activates
+    await page.goto("/stats?print=1");
+    // Print layout should show "printed view" footer
+    await expect(page.locator("body")).toContainText("printed view");
+    // And should NOT have the sidebar nav
+    const navCount = await page.locator("nav").count();
+    expect(navCount).toBe(0);
+  });
+
   test("print button exists and has no URL constructor in onclick", async ({
     page,
   }) => {

@@ -241,11 +241,16 @@ pub(crate) fn print_layout(content: &str, _state: &AppState) -> Html<String> {
 <style>{FONTS_CSS}{CSS}</style>
 <style>
   @media print {{ nav, .context-bar, .nav-search-hint, #cmd-k-overlay, #loading-bar, .graph-controls, .svg-viewer-toolbar {{ display: none !important; }} main {{ padding: 1rem; max-width: 100%; }} .shell {{ display: block; }} }}
-  body {{ background: #fff; }}
+  body {{ background: #fff; color: #1a1a2e; }}
   .shell {{ display: block; }}
   nav, .context-bar, #cmd-k-overlay, #loading-bar {{ display: none; }}
   main {{ padding: 1.5rem 2rem; max-width: 100%; }}
 </style>
+<script src="/assets/mermaid.js"></script>
+<script>
+mermaid.initialize({{startOnLoad:false,theme:'default',securityLevel:'loose'}});
+document.addEventListener('DOMContentLoaded',function(){{mermaid.run({{querySelector:'.mermaid'}}).catch(function(){{}});}});
+</script>
 </head>
 <body>
 <main>
