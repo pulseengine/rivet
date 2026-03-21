@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1b27"/>
+      <stop offset="100%" style="stop-color:#2d2e3f"/>
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="128" height="128" rx="24" fill="url(#bg)"/>
+  <!-- Rivet symbol: stylized link/chain icon -->
+  <g transform="translate(64,64)" stroke="#89b4fa" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Top circle (requirement) -->
+    <circle cx="0" cy="-28" r="14" fill="rgba(137,180,250,0.15)"/>
+    <!-- Bottom-left circle (feature) -->
+    <circle cx="-24" cy="20" r="14" fill="rgba(166,227,161,0.15)" stroke="#a6e3a1"/>
+    <!-- Bottom-right circle (test) -->
+    <circle cx="24" cy="20" r="14" fill="rgba(249,226,175,0.15)" stroke="#f9e2af"/>
+    <!-- Links -->
+    <line x1="0" y1="-14" x2="-18" y2="10" opacity="0.7"/>
+    <line x1="0" y1="-14" x2="18" y2="10" opacity="0.7"/>
+    <line x1="-10" y1="20" x2="10" y2="20" opacity="0.7" stroke="#a6e3a1"/>
+    <!-- Center dot (rivet) -->
+    <circle cx="0" cy="0" r="4" fill="#89b4fa"/>
+  </g>
+  <!-- R letter -->
+  <text x="64" y="120" text-anchor="middle" font-family="system-ui,sans-serif" font-size="14" font-weight="700" fill="#cdd6f4" opacity="0.6">RIVET</text>
+</svg>
