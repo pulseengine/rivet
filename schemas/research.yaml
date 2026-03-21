@@ -1,0 +1,218 @@
+# Research schema for rivet
+#
+# Tracks market research, competitive analysis, patent landscape findings,
+# technology evaluations, and academic paper references. Enables traceability
+# from research findings to requirements and architecture decisions.
+
+schema:
+  name: research
+  version: "0.1.0"
+  namespace: "http://pulseengine.dev/ns/research#"
+  extends: [common]
+  description: >
+    Research artifact types for tracking market analysis, competitive
+    intelligence, patent landscape, technology evaluation, and academic
+    references that inform product requirements and architecture.
+
+artifact-types:
+
+  - name: market-finding
+    description: >
+      A finding about a target market or domain — pain points, current
+      tools, standards, regulatory requirements, and opportunities.
+    fields:
+      - name: domain
+        type: string
+        required: true
+        description: Target domain (e.g., automotive, aerospace, medical, iiot)
+      - name: finding-type
+        type: string
+        required: true
+        allowed-values:
+          - pain-point
+          - opportunity
+          - standard
+          - regulation
+          - tool-gap
+          - market-size
+      - name: source
+        type: string
+        required: false
+        description: Source URL or reference
+      - name: confidence
+        type: string
+        required: false
+        allowed-values: [high, medium, low]
+        description: Confidence level in the finding
+    link-fields:
+      - name: motivates
+        link-type: traces-to
+        target-types: [requirement, feature]
+        required: false
+        cardinality: zero-or-many
+
+  - name: competitive-analysis
+    description: >
+      Analysis of a competing or related tool — capabilities, limitations,
+      licensing, activity status, and differentiation opportunity.
+    fields:
+      - name: tool-name
+        type: string
+        required: true
+      - name: tool-url
+        type: string
+        required: false
+      - name: vendor
+        type: string
+        required: false
+      - name: tool-status
+        type: string
+        required: true
+        allowed-values: [active, maintained, unmaintained, dead, commercial]
+      - name: approach
+        type: string
+        required: false
+        description: Technical approach (e.g., heuristic, evolutionary, exact)
+      - name: constraints-handled
+        type: list<string>
+        required: false
+      - name: global-optimal
+        type: boolean
+        required: false
+        description: Whether the tool provides provably optimal solutions
+      - name: limitations
+        type: text
+        required: false
+      - name: differentiation
+        type: text
+        required: false
+        description: How spar differentiates from this tool
+    link-fields:
+      - name: competes-with
+        link-type: traces-to
+        target-types: [competitive-analysis, aadl-tool]
+        required: false
+        cardinality: zero-or-many
+
+  - name: patent-finding
+    description: >
+      A patent or patent family relevant to the product space — what it
+      covers, its limitations, and freedom-to-operate assessment.
+    fields:
+      - name: patent-number
+        type: string
+        required: true
+      - name: assignee
+        type: string
+        required: false
+      - name: filed-date
+        type: string
+        required: false
+      - name: patent-status
+        type: string
+        required: false
+        allowed-values: [active, expired, abandoned]
+      - name: claims-summary
+        type: text
+        required: true
+        description: Summary of what the patent claims
+      - name: freedom-to-operate
+        type: string
+        required: false
+        allowed-values: [clear, review-needed, risk]
+        description: Assessment of freedom to operate
+      - name: relevance
+        type: text
+        required: false
+    link-fields:
+      - name: constrains
+        link-type: traces-to
+        target-types: [requirement, feature, design-decision]
+        required: false
+        cardinality: zero-or-many
+
+  - name: technology-evaluation
+    description: >
+      Evaluation of a technology, library, or approach for potential
+      adoption — capabilities, maturity, compatibility, and recommendation.
+    fields:
+      - name: technology
+        type: string
+        required: true
+      - name: category
+        type: string
+        required: true
+        allowed-values:
+          - solver
+          - library
+          - protocol
+          - standard
+          - algorithm
+          - framework
+      - name: maturity
+        type: string
+        required: true
+        allowed-values: [production, stable, beta, alpha, research]
+      - name: rust-compatible
+        type: boolean
+        required: false
+      - name: wasm-compatible
+        type: boolean
+        required: false
+      - name: license
+        type: string
+        required: false
+      - name: recommendation
+        type: string
+        required: false
+        allowed-values: [adopt, trial, assess, hold]
+    link-fields:
+      - name: enables
+        link-type: traces-to
+        target-types: [requirement, design-decision]
+        required: false
+        cardinality: zero-or-many
+
+  - name: academic-reference
+    description: >
+      An academic paper, thesis, or technical report that informs the
+      product design — key findings and relevance.
+    fields:
+      - name: authors
+        type: string
+        required: true
+      - name: year
+        type: number
+        required: true
+      - name: venue
+        type: string
+        required: false
+        description: Conference, journal, or institution
+      - name: url
+        type: string
+        required: false
+      - name: key-finding
+        type: text
+        required: true
+      - name: relevance
+        type: text
+        required: false
+    link-fields:
+      - name: informs
+        link-type: traces-to
+        target-types: [requirement, design-decision, technology-evaluation]
+        required: false
+        cardinality: zero-or-many
+
+link-types:
+  - name: motivates
+    inverse: motivated-by
+    description: A research finding motivates a requirement or feature
+    source-types: [market-finding, academic-reference]
+    target-types: [requirement, feature]
+
+  - name: evaluates
+    inverse: evaluated-by
+    description: A technology evaluation assesses a potential adoption
+    source-types: [technology-evaluation]
+    target-types: [requirement, design-decision]
