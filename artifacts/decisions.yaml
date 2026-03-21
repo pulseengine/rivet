@@ -12,6 +12,7 @@ artifacts:
       - type: satisfies
         target: REQ-006
     fields:
+      baseline: v0.1.0
       rationale: >
         OSLC is an OASIS standard that Polarion, DOORS, and codebeamer
         already support natively. One adapter handles all tools. Per-tool
@@ -41,6 +42,7 @@ artifacts:
       - type: satisfies
         target: REQ-004
     fields:
+      baseline: v0.1.0
       rationale: >
         petgraph is a mature, well-tested Rust graph library. It provides
         efficient algorithms for cycle detection, topological sort, and
@@ -66,6 +68,7 @@ artifacts:
       - type: satisfies
         target: REQ-003
     fields:
+      baseline: v0.1.0
       source-ref: rivet-core/src/schema.rs:1
       rationale: >
         Merging allows a base common schema to be extended by domain-specific
@@ -86,6 +89,7 @@ artifacts:
       - type: satisfies
         target: REQ-008
     fields:
+      baseline: v0.1.0
       rationale: >
         WIT provides a language-agnostic interface definition. Adapters can
         be written in any language that compiles to WASM components, not
@@ -106,6 +110,7 @@ artifacts:
       - type: satisfies
         target: REQ-007
     fields:
+      baseline: v0.1.0
       rationale: >
         axum is already a workspace dependency. HTMX keeps the frontend
         simple (server-rendered HTML fragments). No JS build toolchain
@@ -126,6 +131,7 @@ artifacts:
       - type: satisfies
         target: REQ-001
     fields:
+      baseline: v0.1.0
       rationale: >
         Flat structures are easier to navigate and understand. Modern
         Rust projects favor fewer nesting levels with clear module
@@ -148,6 +154,7 @@ artifacts:
       - type: satisfies
         target: REQ-009
     fields:
+      baseline: v0.1.0
       rationale: >
         GitHub releases are immutable, versioned, and fetchable via API.
         Tying test evidence to releases creates append-only per-version
@@ -171,6 +178,7 @@ artifacts:
       - type: satisfies
         target: REQ-012
     fields:
+      baseline: v0.1.0
       rationale: >
         Edition 2024 brings the latest language features. The CI pipeline
         mirrors ASPICE SWE.4-6 verification levels: unit tests (proptest,
@@ -193,6 +201,7 @@ artifacts:
       - type: satisfies
         target: REQ-013
     fields:
+      baseline: v0.1.0
       rationale: >
         Criterion provides statistical analysis, regression detection,
         and HTML reports. Benchmarks at multiple scales catch O(n^2)
@@ -217,6 +226,7 @@ artifacts:
       - type: satisfies
         target: REQ-016
     fields:
+      baseline: v0.1.0
       rationale: >
         ASPICE 4.0 broadened "testing" to "verification measures" — the
         schema should reflect this. Cybersecurity as a separate schema
@@ -241,6 +251,7 @@ artifacts:
       - type: satisfies
         target: REQ-017
     fields:
+      baseline: v0.2.0-dev
       rationale: >
         Git trailers are a well-supported standard, parseable via
         git log --format='%(trailers)', git interpret-trailers, and
@@ -265,6 +276,7 @@ artifacts:
       - type: satisfies
         target: REQ-017
     fields:
+      baseline: v0.2.0-dev
       rationale: >
         Git is the single source of truth for commit data. Materializing
         commits to YAML creates a redundant data store that drifts from
@@ -291,6 +303,7 @@ artifacts:
       - type: satisfies
         target: REQ-019
     fields:
+      baseline: v0.2.0-dev
       rationale: >
         Type-based exemption handles the 80% case (dependency bumps,
         formatting, CI tweaks) with zero friction. The explicit skip

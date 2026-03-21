@@ -22,6 +22,12 @@ docs:
 
 results: results
 
+baselines:
+  - name: v0.1.0
+    description: Initial release — core validation, STPA, ASPICE schemas, CLI, dashboard
+  - name: v0.2.0-dev
+    description: Current development — cross-repo, mutations, STPA-Sec, export, AADL
+
 commits:
   format: trailers
   trailers:

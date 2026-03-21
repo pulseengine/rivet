@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::error::Error;
-use crate::model::{Artifact, ArtifactId};
+use crate::model::{Artifact, ArtifactId, BaselineConfig};
 
 /// In-memory artifact store.
 ///
@@ -40,18 +40,24 @@ impl Store {
         let artifact_type = artifact.artifact_type.clone();
 
         // Remove from old type index if updating
-        if let Some(old) = self.artifacts.get(&id) {
+        let is_update = if let Some(old) = self.artifacts.get(&id) {
             if old.artifact_type != artifact_type {
                 if let Some(ids) = self.by_type.get_mut(&old.artifact_type) {
                     ids.retain(|i| i != &id);
                 }
+                // Type changed: not yet in the new type's list
+                false
+            } else {
+                // Same type: already in the type index, skip re-adding
+                true
             }
-        }
+        } else {
+            false
+        };
 
         self.artifacts.insert(id.clone(), artifact);
-        let ids = self.by_type.entry(artifact_type).or_default();
-        if !ids.contains(&id) {
-            ids.push(id);
+        if !is_update {
+            self.by_type.entry(artifact_type).or_default().push(id);
         }
     }
 
@@ -104,5 +110,37 @@ impl Store {
     #[inline]
     pub fn contains(&self, id: &str) -> bool {
         self.artifacts.contains_key(id)
+    }
+
+    /// Create a scoped store containing only artifacts in the given baseline
+    /// and all prior baselines (cumulative).
+    ///
+    /// Artifacts whose `baseline` field matches the target or any earlier
+    /// baseline (by declaration order) are included. Artifacts with no
+    /// baseline field are excluded from scoped stores.
+    pub fn scoped(&self, baseline: &str, baselines: &[BaselineConfig]) -> Store {
+        // Find the index of the target baseline in the ordered list
+        let target_idx = baselines.iter().position(|b| b.name == baseline);
+        let target_idx = match target_idx {
+            Some(idx) => idx,
+            None => return self.clone(), // Unknown baseline, return full store
+        };
+
+        // Collect baseline names up to and including target
+        let included: Vec<&str> = baselines[..=target_idx]
+            .iter()
+            .map(|b| b.name.as_str())
+            .collect();
+
+        // Filter artifacts: include only those whose baseline is in the included set
+        let mut scoped = Store::new();
+        for artifact in self.artifacts.values() {
+            if let Some(art_baseline) = artifact.baseline() {
+                if included.contains(&art_baseline) {
+                    scoped.upsert(artifact.clone());
+                }
+            }
+        }
+        scoped
     }
 }

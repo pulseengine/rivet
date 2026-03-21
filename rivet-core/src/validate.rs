@@ -43,10 +43,14 @@ pub fn validate(store: &Store, schema: &Schema, graph: &LinkGraph) -> Vec<Diagno
         &schema.conditional_rules,
     ));
 
-    // 8. Check conditional rules
+    // 8. Check conditional rules (pre-compile regexes to avoid re-compilation per artifact)
     for rule in &schema.conditional_rules {
+        let compiled_re = rule.when.compile_regex();
         for artifact in store.iter() {
-            if rule.when.matches_artifact(artifact) {
+            if rule
+                .when
+                .matches_artifact_with(artifact, compiled_re.as_ref())
+            {
                 diagnostics.extend(rule.then.check(artifact, &rule.name, rule.severity));
             }
         }
@@ -102,7 +106,7 @@ pub fn validate_structural(store: &Store, schema: &Schema, graph: &LinkGraph) ->
             if let Some(allowed) = &field.allowed_values {
                 if let Some(value) = artifact.fields.get(&field.name) {
                     if let Some(s) = value.as_str() {
-                        if !allowed.contains(&s.to_string()) {
+                        if !allowed.iter().any(|a| a == s) {
                             diagnostics.push(Diagnostic {
                                 severity: Severity::Warning,
                                 artifact_id: Some(artifact.id.clone()),

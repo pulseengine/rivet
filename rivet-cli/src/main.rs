@@ -181,6 +181,10 @@ enum Command {
         /// Skip cross-repo validation (broken external refs, backlinks, circular deps, version conflicts)
         #[arg(long)]
         skip_external_validation: bool,
+
+        /// Scope validation to a named baseline (cumulative)
+        #[arg(long)]
+        baseline: Option<String>,
     },
 
     /// List artifacts, optionally filtered by type
@@ -196,6 +200,10 @@ enum Command {
         /// Output format: "text" (default) or "json"
         #[arg(short, long, default_value = "text")]
         format: String,
+
+        /// Scope listing to a named baseline (cumulative)
+        #[arg(long)]
+        baseline: Option<String>,
     },
 
     /// Show artifact summary statistics
@@ -203,6 +211,10 @@ enum Command {
         /// Output format: "text" (default) or "json"
         #[arg(short, long, default_value = "text")]
         format: String,
+
+        /// Scope statistics to a named baseline (cumulative)
+        #[arg(long)]
+        baseline: Option<String>,
     },
 
     /// Show traceability coverage report
@@ -222,6 +234,10 @@ enum Command {
         /// Directories to scan for test markers (default: src/ tests/)
         #[arg(long = "scan-paths", value_delimiter = ',')]
         scan_paths: Vec<PathBuf>,
+
+        /// Scope coverage to a named baseline (cumulative)
+        #[arg(long)]
+        baseline: Option<String>,
     },
 
     /// Generate a traceability matrix
@@ -305,6 +321,10 @@ enum Command {
         /// JSON array of version entries for config.js switcher: [{"label":"v0.1.0","path":"../v0.1.0/"}]
         #[arg(long)]
         versions: Option<String>,
+
+        /// Scope export to a named baseline (cumulative)
+        #[arg(long)]
+        baseline: Option<String>,
     },
 
     /// Introspect loaded schemas (types, links, rules)
@@ -540,6 +560,9 @@ enum Command {
         /// Path to the batch YAML file
         file: PathBuf,
     },
+
+    /// Start the language server (LSP over stdio)
+    Lsp,
 }
 
 #[derive(Subcommand)]
@@ -639,41 +662,55 @@ fn run(cli: Cli) -> Result<bool> {
     if let Command::CommitMsgCheck { file } = &cli.command {
         return cmd_commit_msg_check(&cli, file);
     }
+    if let Command::Lsp = &cli.command {
+        return cmd_lsp(&cli);
+    }
 
     match &cli.command {
         Command::Init { .. }
         | Command::Docs { .. }
         | Command::Context
-        | Command::CommitMsgCheck { .. } => unreachable!(),
+        | Command::CommitMsgCheck { .. }
+        | Command::Lsp => unreachable!(),
         Command::Stpa { path, schema } => cmd_stpa(path, schema.as_deref(), &cli),
         Command::Validate {
             format,
             incremental,
             verify_incremental,
             skip_external_validation,
+            baseline,
         } => cmd_validate(
             &cli,
             format,
             *incremental,
             *verify_incremental,
             *skip_external_validation,
+            baseline.as_deref(),
         ),
         Command::List {
             r#type,
             status,
             format,
-        } => cmd_list(&cli, r#type.as_deref(), status.as_deref(), format),
-        Command::Stats { format } => cmd_stats(&cli, format),
+            baseline,
+        } => cmd_list(
+            &cli,
+            r#type.as_deref(),
+            status.as_deref(),
+            format,
+            baseline.as_deref(),
+        ),
+        Command::Stats { format, baseline } => cmd_stats(&cli, format, baseline.as_deref()),
         Command::Coverage {
             format,
             fail_under,
             tests,
             scan_paths,
+            baseline,
         } => {
             if *tests {
                 cmd_coverage_tests(&cli, format, scan_paths)
             } else {
-                cmd_coverage(&cli, format, fail_under.as_ref())
+                cmd_coverage(&cli, format, fail_under.as_ref(), baseline.as_deref())
             }
         }
         Command::Matrix {
@@ -695,6 +732,7 @@ fn run(cli: Cli) -> Result<bool> {
             homepage,
             version_label,
             versions,
+            baseline,
         } => cmd_export(
             &cli,
             format,
@@ -705,6 +743,7 @@ fn run(cli: Cli) -> Result<bool> {
             homepage.as_deref(),
             version_label.as_deref(),
             versions.as_deref(),
+            baseline.as_deref(),
         ),
         Command::Impact {
             since,
@@ -1247,6 +1286,7 @@ fn cmd_validate(
     incremental: bool,
     verify_incremental: bool,
     skip_external_validation: bool,
+    baseline_name: Option<&str>,
 ) -> Result<bool> {
     check_for_updates();
 
@@ -1264,6 +1304,22 @@ fn cmd_validate(
         doc_store,
         ..
     } = ctx;
+
+    // Apply baseline scoping if requested
+    let (store, graph) = if let Some(bl) = baseline_name {
+        if let Some(ref baselines) = config.baselines {
+            let scoped = store.scoped(bl, baselines);
+            let scoped_graph = LinkGraph::build(&scoped, &schema);
+            println!("Baseline: {bl} ({} artifacts in scope)\n", scoped.len());
+            (scoped, scoped_graph)
+        } else {
+            eprintln!("warning: --baseline specified but no baselines defined in rivet.yaml");
+            (store, graph)
+        }
+    } else {
+        (store, graph)
+    };
+
     let doc_store = doc_store.unwrap_or_default();
     let mut diagnostics = validate::validate(&store, &schema, &graph);
     diagnostics.extend(validate::validate_documents(&doc_store, &store));
@@ -1714,9 +1770,10 @@ fn cmd_list(
     type_filter: Option<&str>,
     status_filter: Option<&str>,
     format: &str,
+    baseline_name: Option<&str>,
 ) -> Result<bool> {
     let ctx = ProjectContext::load(cli)?;
-    let store = ctx.store;
+    let store = apply_baseline_scope(ctx.store, baseline_name, &ctx.config);
 
     let query = rivet_core::query::Query {
         artifact_type: type_filter.map(|s| s.to_string()),
@@ -1761,9 +1818,14 @@ fn cmd_list(
 }
 
 /// Print summary statistics.
-fn cmd_stats(cli: &Cli, format: &str) -> Result<bool> {
+fn cmd_stats(cli: &Cli, format: &str, baseline_name: Option<&str>) -> Result<bool> {
     let ctx = ProjectContext::load(cli)?;
-    let (store, graph) = (ctx.store, ctx.graph);
+    let store = apply_baseline_scope(ctx.store, baseline_name, &ctx.config);
+    let graph = if baseline_name.is_some() {
+        LinkGraph::build(&store, &ctx.schema)
+    } else {
+        ctx.graph
+    };
 
     let orphans = graph.orphans(&store);
 
@@ -1801,9 +1863,20 @@ fn cmd_stats(cli: &Cli, format: &str) -> Result<bool> {
 }
 
 /// Show traceability coverage report.
-fn cmd_coverage(cli: &Cli, format: &str, fail_under: Option<&f64>) -> Result<bool> {
+fn cmd_coverage(
+    cli: &Cli,
+    format: &str,
+    fail_under: Option<&f64>,
+    baseline_name: Option<&str>,
+) -> Result<bool> {
     let ctx = ProjectContext::load(cli)?;
-    let (store, schema, graph) = (ctx.store, ctx.schema, ctx.graph);
+    let store = apply_baseline_scope(ctx.store, baseline_name, &ctx.config);
+    let schema = ctx.schema;
+    let graph = if baseline_name.is_some() {
+        LinkGraph::build(&store, &schema)
+    } else {
+        ctx.graph
+    };
     let report = coverage::compute_coverage(&store, &schema, &graph);
 
     if format == "json" {
@@ -2085,6 +2158,7 @@ fn cmd_export(
     homepage: Option<&str>,
     version_label: Option<&str>,
     versions_json: Option<&str>,
+    baseline_name: Option<&str>,
 ) -> Result<bool> {
     if format == "html" {
         return cmd_export_html(
@@ -2102,7 +2176,8 @@ fn cmd_export(
     use rivet_core::adapter::{Adapter, AdapterConfig};
 
     let ctx = ProjectContext::load(cli)?;
-    let artifacts: Vec<_> = ctx.store.iter().cloned().collect();
+    let store = apply_baseline_scope(ctx.store, baseline_name, &ctx.config);
+    let artifacts: Vec<_> = store.iter().cloned().collect();
     let config = AdapterConfig::default();
 
     let bytes = match format {
@@ -2322,6 +2397,7 @@ fn cmd_diff(
                         incremental: false,
                         verify_incremental: false,
                         skip_external_validation: false,
+                        baseline: None,
                     },
                 };
                 let head_cli = Cli {
@@ -2333,6 +2409,7 @@ fn cmd_diff(
                         incremental: false,
                         verify_incremental: false,
                         skip_external_validation: false,
+                        baseline: None,
                     },
                 };
                 let bc = ProjectContext::load(&base_cli)?;
@@ -3676,6 +3753,28 @@ fn cmd_baseline_list(cli: &Cli) -> Result<bool> {
     Ok(true)
 }
 
+/// Apply baseline scoping to a store if a baseline name is provided.
+///
+/// Returns the original store unmodified when no baseline is requested
+/// or when no baselines are configured in the project.
+fn apply_baseline_scope(
+    store: Store,
+    baseline_name: Option<&str>,
+    config: &ProjectConfig,
+) -> Store {
+    let Some(bl) = baseline_name else {
+        return store;
+    };
+    if let Some(ref baselines) = config.baselines {
+        let scoped = store.scoped(bl, baselines);
+        eprintln!("Baseline: {bl} ({} artifacts in scope)", scoped.len());
+        scoped
+    } else {
+        eprintln!("warning: --baseline specified but no baselines defined in rivet.yaml");
+        store
+    }
+}
+
 struct ProjectContext {
     config: ProjectConfig,
     store: Store,
@@ -4375,6 +4474,57 @@ fn cmd_batch(cli: &Cli, file: &std::path::Path) -> Result<bool> {
         "\nbatch: applied {} mutation(s) successfully",
         batch.mutations.len()
     );
+    Ok(true)
+}
+
+fn cmd_lsp(_cli: &Cli) -> Result<bool> {
+    use lsp_server::{Connection, Message};
+    use lsp_types::*;
+
+    eprintln!("rivet lsp: starting language server...");
+
+    let (connection, io_threads) = Connection::stdio();
+
+    let server_capabilities = ServerCapabilities {
+        text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
+        diagnostic_provider: Some(DiagnosticServerCapabilities::Options(DiagnosticOptions {
+            identifier: Some("rivet".to_string()),
+            ..Default::default()
+        })),
+        hover_provider: Some(HoverProviderCapability::Simple(true)),
+        definition_provider: Some(OneOf::Left(true)),
+        completion_provider: Some(CompletionOptions {
+            trigger_characters: Some(vec!["[".to_string(), ":".to_string()]),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    let init_params = connection.initialize(serde_json::to_value(server_capabilities).unwrap())?;
+    let _params: InitializeParams = serde_json::from_value(init_params)?;
+
+    eprintln!("rivet lsp: initialized");
+
+    // Main message loop
+    for msg in &connection.receiver {
+        match msg {
+            Message::Request(req) => {
+                if connection.handle_shutdown(&req)? {
+                    break;
+                }
+                // TODO: handle requests (hover, goto-definition, completion)
+                eprintln!("rivet lsp: unhandled request: {}", req.method);
+            }
+            Message::Notification(notif) => {
+                eprintln!("rivet lsp: notification: {}", notif.method);
+                // TODO: handle didOpen, didChange, didSave
+            }
+            Message::Response(_) => {}
+        }
+    }
+
+    io_threads.join()?;
+    eprintln!("rivet lsp: shut down");
     Ok(true)
 }
 

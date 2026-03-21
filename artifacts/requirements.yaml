@@ -10,6 +10,7 @@ artifacts:
     fields:
       priority: must
       category: functional
+      baseline: v0.1.0
 
   - id: REQ-002
     type: requirement
@@ -23,6 +24,7 @@ artifacts:
     fields:
       priority: must
       category: functional
+      baseline: v0.1.0
 
   - id: REQ-003
     type: requirement
@@ -36,6 +38,7 @@ artifacts:
     fields:
       priority: must
       category: functional
+      baseline: v0.1.0
 
   - id: REQ-004
     type: requirement
@@ -49,6 +52,7 @@ artifacts:
     fields:
       priority: must
       category: functional
+      baseline: v0.1.0
 
     links:
       - type: satisfies
@@ -69,6 +73,7 @@ artifacts:
     fields:
       priority: should
       category: interface
+      baseline: v0.1.0
 
     links:
       - type: satisfies
@@ -87,6 +92,7 @@ artifacts:
     fields:
       priority: should
       category: interface
+      baseline: v0.1.0
 
     links:
       - type: satisfies
@@ -105,6 +111,7 @@ artifacts:
     fields:
       priority: must
       category: functional
+      baseline: v0.1.0
     links:
       - type: satisfies
         target: SC-18
@@ -120,6 +127,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      baseline: v0.1.0
     links:
       - type: satisfies
         target: SC-16
@@ -136,6 +144,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      baseline: v0.1.0
 
     links:
       - type: satisfies
@@ -152,6 +161,7 @@ artifacts:
     fields:
       priority: must
       category: functional
+      baseline: v0.1.0
 
     links:
       - type: satisfies
@@ -166,6 +176,7 @@ artifacts:
     fields:
       priority: must
       category: constraint
+      baseline: v0.1.0
 
   - id: REQ-012
     type: requirement
@@ -179,6 +190,7 @@ artifacts:
     fields:
       priority: must
       category: non-functional
+      baseline: v0.1.0
 
   - id: REQ-013
     type: requirement
@@ -192,6 +204,7 @@ artifacts:
     fields:
       priority: must
       category: non-functional
+      baseline: v0.1.0
 
   - id: REQ-014
     type: requirement
@@ -206,6 +219,7 @@ artifacts:
     fields:
       priority: must
       category: non-functional
+      baseline: v0.1.0
 
   - id: REQ-015
     type: requirement
@@ -223,6 +237,7 @@ artifacts:
     fields:
       priority: must
       category: functional
+      baseline: v0.1.0
 
     links:
       - type: satisfies
@@ -240,6 +255,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      baseline: v0.1.0
 
     links:
       - type: satisfies
@@ -258,6 +274,7 @@ artifacts:
     fields:
       priority: must
       category: functional
+      baseline: v0.2.0-dev
 
     links:
       - type: satisfies
@@ -277,6 +294,7 @@ artifacts:
     fields:
       priority: must
       category: functional
+      baseline: v0.2.0-dev
 
     links:
       - type: satisfies
@@ -294,6 +312,7 @@ artifacts:
     fields:
       priority: must
       category: functional
+      baseline: v0.2.0-dev
 
     links:
       - type: satisfies
@@ -309,6 +328,7 @@ artifacts:
     fields:
       priority: must
       category: functional
+      baseline: v0.2.0-dev
 
     links:
       - type: satisfies
@@ -326,6 +346,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      baseline: v0.2.0-dev
 
     links:
       - type: satisfies
@@ -341,6 +362,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      baseline: v0.2.0-dev
 
   - id: REQ-023
     type: requirement
@@ -362,6 +384,7 @@ artifacts:
       priority: should
       category: functional
       upstream-ref: "eclipse-score/docs-as-code#180"
+      baseline: v0.2.0-dev
 
   - id: REQ-024
     type: requirement
@@ -377,6 +400,7 @@ artifacts:
       priority: should
       category: functional
       upstream-ref: "eclipse-score/docs-as-code#314, eclipse-score/process_description#535"
+      baseline: v0.2.0-dev
 
     links:
       - type: satisfies
@@ -395,6 +419,7 @@ artifacts:
       priority: should
       category: interface
       upstream-ref: "eclipse-score/score#1695"
+      baseline: v0.2.0-dev
 
     links:
       - type: satisfies
@@ -414,6 +439,7 @@ artifacts:
       priority: should
       category: functional
       upstream-ref: "eclipse-score/score#2521, eclipse-score/score#2619"
+      baseline: v0.2.0-dev
 
     links:
       - type: satisfies
@@ -434,6 +460,7 @@ artifacts:
       priority: should
       category: functional
       upstream-ref: "eclipse-score/reference_integration (known_good.json)"
+      baseline: v0.2.0-dev
 
     links:
       - type: satisfies
@@ -455,6 +482,7 @@ artifacts:
     fields:
       priority: must
       category: non-functional
+      baseline: v0.2.0-dev
 
   - id: REQ-029
     type: requirement
@@ -475,6 +503,7 @@ artifacts:
     fields:
       priority: must
       category: non-functional
+      baseline: v0.2.0-dev
 
   - id: REQ-031
     type: requirement
@@ -499,6 +528,7 @@ artifacts:
     fields:
       priority: must
       category: functional
+      baseline: v0.2.0-dev
 
   - id: REQ-030
     type: requirement
@@ -519,6 +549,7 @@ artifacts:
     fields:
       priority: should
       category: non-functional
+      baseline: v0.2.0-dev
 
   - id: REQ-032
     type: requirement
@@ -530,6 +561,7 @@ artifacts:
     fields:
       category: functional
       priority: should
+      baseline: v0.2.0-dev
 
   - id: REQ-033
     type: requirement
@@ -541,6 +573,7 @@ artifacts:
     fields:
       category: functional
       priority: should
+      baseline: v0.2.0-dev
 
   - id: REQ-034
     type: requirement
@@ -552,6 +585,7 @@ artifacts:
     fields:
       category: functional
       priority: must
+      baseline: v0.2.0-dev
     links:
       - type: satisfies
         target: SC-2
@@ -566,6 +600,7 @@ artifacts:
     fields:
       category: functional
       priority: must
+      baseline: v0.2.0-dev
 
   - id: REQ-036
     type: requirement
@@ -577,3 +612,4 @@ artifacts:
     fields:
       category: functional
       priority: should
+      baseline: v0.2.0-dev

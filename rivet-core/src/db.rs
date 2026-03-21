@@ -140,10 +140,14 @@ pub fn evaluate_conditional_rules(
         &schema.conditional_rules,
     ));
 
-    // Evaluate each conditional rule against each artifact
+    // Evaluate each conditional rule against each artifact (pre-compile regexes)
     for rule in &schema.conditional_rules {
+        let compiled_re = rule.when.compile_regex();
         for artifact in store.iter() {
-            if rule.when.matches_artifact(artifact) {
+            if rule
+                .when
+                .matches_artifact_with(artifact, compiled_re.as_ref())
+            {
                 diagnostics.extend(rule.then.check(artifact, &rule.name, rule.severity));
             }
         }

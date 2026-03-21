@@ -23,7 +23,6 @@ use rivet_core::matrix::{self, Direction};
 use rivet_core::model::ProjectConfig;
 use rivet_core::schema::Severity;
 use rivet_core::store::Store;
-use rivet_core::validate;
 
 use super::components::{self, ViewParams};
 use super::layout;
@@ -52,7 +51,7 @@ fn stats_partial(state: &AppState) -> String {
     types.sort();
 
     let orphans = graph.orphans(store);
-    let diagnostics = validate::validate(store, &state.schema, graph);
+    let diagnostics = &state.cached_diagnostics;
     let errors = diagnostics
         .iter()
         .filter(|d| d.severity == Severity::Error)
@@ -1486,7 +1485,7 @@ pub(crate) async fn validate_view(
     Query(params): Query<ViewParams>,
 ) -> Html<String> {
     let state = state.read().await;
-    let diagnostics = validate::validate(&state.store, &state.schema, &state.graph);
+    let diagnostics = &state.cached_diagnostics;
 
     let errors = diagnostics
         .iter()
@@ -1532,15 +1531,9 @@ pub(crate) async fn validate_view(
         current_query,
     ));
 
-    // Show errors first, then warnings, then info
-    let mut sorted = diagnostics;
-    sorted.sort_by_key(|d| match d.severity {
-        Severity::Error => 0,
-        Severity::Warning => 1,
-        Severity::Info => 2,
-    });
-
-    // Apply severity filter
+    // Apply severity filter and sort: errors first, then warnings, then info.
+    // We work from the cached (immutable) diagnostics, so sorting is done via
+    // the filtered+collected vec below rather than mutating in place.
     let severity_filter = match current_status {
         "error" => Some(Severity::Error),
         "warning" => Some(Severity::Warning),
@@ -1553,7 +1546,7 @@ pub(crate) async fn validate_view(
         Some(current_query.to_lowercase())
     };
 
-    let filtered: Vec<_> = sorted
+    let mut filtered: Vec<_> = diagnostics
         .iter()
         .filter(|d| {
             if let Some(ref sev) = severity_filter {
@@ -1576,6 +1569,13 @@ pub(crate) async fn validate_view(
             true
         })
         .collect();
+
+    // Sort: errors first, then warnings, then info
+    filtered.sort_by_key(|d| match d.severity {
+        Severity::Error => 0,
+        Severity::Warning => 1,
+        Severity::Info => 2,
+    });
 
     let filtered_count = filtered.len();
     if filtered_count == 0 {
