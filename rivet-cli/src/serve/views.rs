@@ -1040,7 +1040,7 @@ pub(crate) async fn graph_view(
                 .unwrap_or_default();
             let title = artifact.map(|a| a.title.clone()).unwrap_or_default();
             let sublabel = if title.len() > 28 {
-                Some(format!("{}...", &title[..26]))
+                Some(format!("{}...", title.chars().take(26).collect::<String>()))
             } else if title.is_empty() {
                 None
             } else {
@@ -1268,7 +1268,7 @@ pub(crate) async fn artifact_graph(
                 .unwrap_or_default();
             let title = artifact.map(|a| a.title.clone()).unwrap_or_default();
             let sublabel = if title.len() > 28 {
-                Some(format!("{}...", &title[..26]))
+                Some(format!("{}...", title.chars().take(26).collect::<String>()))
             } else if title.is_empty() {
                 None
             } else {
@@ -3707,8 +3707,8 @@ pub(crate) async fn results_view(State(state): State<SharedState>) -> Html<Strin
              </tr>",
             id = html_escape(&run.run.id),
             ts = html_escape(&run.run.timestamp),
-            src = run.run.source.as_deref().unwrap_or("-"),
-            env = run.run.environment.as_deref().unwrap_or("-"),
+            src = html_escape(run.run.source.as_deref().unwrap_or("-")),
+            env = html_escape(run.run.environment.as_deref().unwrap_or("-")),
         ));
     }
 
@@ -4203,7 +4203,7 @@ pub(crate) async fn source_file_view(
                 "<tr><td><a hx-get=\"/artifacts/{id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{id}\">{id}</a></td><td>{}</td><td>{}</td><td>{line_info}</td></tr>",
                 badge_for_type(&fref.artifact_type),
                 html_escape(&fref.title),
-                id = fref.id,
+                id = html_escape(&fref.id),
             ));
         }
         html.push_str("</tbody></table></div>");

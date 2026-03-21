@@ -818,16 +818,19 @@ fn resolve_inline(
             // Find closing ]]
             if let Some(end) = text[i + 2..].find("]]") {
                 let id = text[i + 2..i + 2 + end].trim();
+                let esc_id = html_escape(id);
                 if artifact_exists(id) {
                     result.push_str(&format!(
-                        "<a class=\"artifact-ref\" hx-get=\"/artifacts/{id}\" hx-target=\"#content\" href=\"/artifacts/{id}\">{id}</a>"
+                        "<a class=\"artifact-ref\" hx-get=\"/artifacts/{esc_id}\" hx-target=\"#content\" href=\"/artifacts/{esc_id}\">{esc_id}</a>"
                     ));
                 } else if document_exists(id) {
                     result.push_str(&format!(
-                        "<a class=\"doc-ref\" hx-get=\"/documents/{id}\" hx-target=\"#content\" href=\"/documents/{id}\">{id}</a>"
+                        "<a class=\"doc-ref\" hx-get=\"/documents/{esc_id}\" hx-target=\"#content\" href=\"/documents/{esc_id}\">{esc_id}</a>"
                     ));
                 } else {
-                    result.push_str(&format!("<span class=\"artifact-ref broken\">{id}</span>"));
+                    result.push_str(&format!(
+                        "<span class=\"artifact-ref broken\">{esc_id}</span>"
+                    ));
                 }
                 // Skip past ]]
                 let skip_to = i + 2 + end + 2;
@@ -898,7 +901,10 @@ enum TraceDirection {
 /// Render the default artifact embed card (type badge, status badge, title, truncated description).
 fn render_embed_default(info: &ArtifactInfo) -> String {
     let desc_preview = if info.description.len() > 150 {
-        format!("{}…", &info.description[..150])
+        format!(
+            "{}…",
+            info.description.chars().take(150).collect::<String>()
+        )
     } else {
         info.description.clone()
     };
