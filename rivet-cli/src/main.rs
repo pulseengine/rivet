@@ -4885,6 +4885,7 @@ fn cmd_batch(cli: &Cli, file: &std::path::Path) -> Result<bool> {
 fn cmd_lsp(cli: &Cli) -> Result<bool> {
     use lsp_server::{Connection, Message, Response};
     use lsp_types::*;
+    use rivet_core::db::RivetDatabase;
 
     eprintln!("rivet lsp: starting language server...");
 
@@ -4917,40 +4918,54 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
 
     eprintln!("rivet lsp: project root: {}", project_dir.display());
 
-    // Load project
+    // Initialize salsa database for incremental computation
+    let mut db = RivetDatabase::new();
     let config_path = project_dir.join("rivet.yaml");
-    let (store, schema, graph) = if config_path.exists() {
+    let schemas_dir = resolve_schemas_dir(cli);
+
+    let (source_set, schema_set) = if config_path.exists() {
         let config = rivet_core::load_project_config(&config_path).unwrap_or_else(|e| {
             eprintln!("rivet lsp: failed to load config: {e}");
             std::process::exit(1);
         });
-        let schemas_dir = resolve_schemas_dir(cli);
-        let schema = rivet_core::load_schemas(&config.project.schemas, &schemas_dir)
-            .unwrap_or_else(|e| {
-                eprintln!("rivet lsp: schema error: {e}");
-                rivet_core::load_schemas(&[], &schemas_dir).unwrap()
-            });
-        let mut store = Store::new();
+
+        // Load schema contents into salsa inputs
+        let schema_contents =
+            rivet_core::embedded::load_schema_contents(&config.project.schemas, &schemas_dir);
+        let schema_refs: Vec<(&str, &str)> = schema_contents
+            .iter()
+            .map(|(n, c)| (n.as_str(), c.as_str()))
+            .collect();
+        let schema_set = db.load_schemas(&schema_refs);
+
+        // Discover all YAML source files and load them into salsa inputs
+        let mut source_pairs: Vec<(String, String)> = Vec::new();
         for source in &config.sources {
-            if let Ok(artifacts) = rivet_core::load_artifacts(source, &project_dir) {
-                for artifact in artifacts {
-                    store.upsert(artifact);
-                }
-            }
+            let source_path = project_dir.join(&source.path);
+            let _ = collect_yaml_files(&source_path, &mut source_pairs);
         }
-        let graph = LinkGraph::build(&store, &schema);
-        (store, schema, graph)
+        let source_refs: Vec<(&str, &str)> = source_pairs
+            .iter()
+            .map(|(p, c)| (p.as_str(), c.as_str()))
+            .collect();
+        let source_set = db.load_sources(&source_refs);
+
+        (source_set, schema_set)
     } else {
         eprintln!("rivet lsp: no rivet.yaml found, running with empty store");
-        let empty_store = Store::new();
-        let empty_schema = rivet_core::load_schemas(&[], &resolve_schemas_dir(cli)).unwrap();
-        let empty_graph = LinkGraph::build(&empty_store, &empty_schema);
-        (empty_store, empty_schema, empty_graph)
+        let schema_set = db.load_schemas(&[]);
+        let source_set = db.load_sources(&[]);
+        (source_set, schema_set)
     };
 
-    // Publish initial diagnostics
-    lsp_publish_diagnostics(&connection, &store, &schema, &graph);
-    eprintln!("rivet lsp: initialized with {} artifacts", store.len());
+    // Publish initial diagnostics from salsa
+    let store = db.store(source_set);
+    let diagnostics = db.diagnostics(source_set, schema_set);
+    lsp_publish_salsa_diagnostics(&connection, &diagnostics, &store);
+    eprintln!(
+        "rivet lsp: initialized with {} artifacts (salsa incremental)",
+        store.len()
+    );
 
     // Main message loop
     for msg in &connection.receiver {
@@ -4963,6 +4978,7 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                 match method {
                     "textDocument/hover" => {
                         let params: HoverParams = serde_json::from_value(req.params.clone())?;
+                        let store = db.store(source_set);
                         let result = lsp_hover(&params, &store);
                         connection.sender.send(Message::Response(Response {
                             id: req.id,
@@ -4973,6 +4989,7 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                     "textDocument/definition" => {
                         let params: GotoDefinitionParams =
                             serde_json::from_value(req.params.clone())?;
+                        let store = db.store(source_set);
                         let result = lsp_goto_definition(&params, &store);
                         connection.sender.send(Message::Response(Response {
                             id: req.id,
@@ -4982,6 +4999,8 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                     }
                     "textDocument/completion" => {
                         let params: CompletionParams = serde_json::from_value(req.params.clone())?;
+                        let store = db.store(source_set);
+                        let schema = db.schema(schema_set);
                         let result = lsp_completion(&params, &store, &schema);
                         connection.sender.send(Message::Response(Response {
                             id: req.id,
@@ -5000,10 +5019,67 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                 }
             }
             Message::Notification(notif) => {
-                if notif.method == "textDocument/didSave" {
-                    eprintln!("rivet lsp: file saved, re-validating...");
-                    // TODO: reload project and re-publish diagnostics
-                    // For now, just log
+                match notif.method.as_str() {
+                    "textDocument/didSave" => {
+                        if let Ok(params) = serde_json::from_value::<DidSaveTextDocumentParams>(
+                            notif.params.clone(),
+                        ) {
+                            let path = lsp_uri_to_path(&params.text_document.uri);
+                            if let Some(path) = path {
+                                let path_str = path.to_string_lossy().to_string();
+                                // Read the saved file content from disk
+                                let content = std::fs::read_to_string(&path).unwrap_or_default();
+                                let updated =
+                                    db.update_source(source_set, &path_str, content.clone());
+                                if !updated {
+                                    // New file not yet tracked — add it to the source set
+                                    if path_str.ends_with(".yaml") || path_str.ends_with(".yml") {
+                                        db.add_source(source_set, &path_str, content);
+                                        eprintln!("rivet lsp: added new source file: {}", path_str);
+                                    }
+                                }
+                                // Re-query diagnostics (salsa recomputes only what changed)
+                                let diagnostics = db.diagnostics(source_set, schema_set);
+                                let store = db.store(source_set);
+                                lsp_publish_salsa_diagnostics(&connection, &diagnostics, &store);
+                                eprintln!(
+                                    "rivet lsp: incremental revalidation complete ({} diagnostics, {} artifacts)",
+                                    diagnostics.len(),
+                                    store.len()
+                                );
+                            }
+                        }
+                    }
+                    "textDocument/didChange" => {
+                        // Text sync is FULL, so each change provides the complete document
+                        if let Ok(params) = serde_json::from_value::<DidChangeTextDocumentParams>(
+                            notif.params.clone(),
+                        ) {
+                            let path = lsp_uri_to_path(&params.text_document.uri);
+                            if let Some(path) = path {
+                                let path_str = path.to_string_lossy().to_string();
+                                // With FULL sync, the last content change is the whole document
+                                if let Some(change) = params.content_changes.last() {
+                                    let updated = db.update_source(
+                                        source_set,
+                                        &path_str,
+                                        change.text.clone(),
+                                    );
+                                    if updated {
+                                        // Re-query diagnostics incrementally
+                                        let diagnostics = db.diagnostics(source_set, schema_set);
+                                        let store = db.store(source_set);
+                                        lsp_publish_salsa_diagnostics(
+                                            &connection,
+                                            &diagnostics,
+                                            &store,
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
                 }
             }
             Message::Response(_) => {}
@@ -5070,19 +5146,21 @@ fn lsp_word_at_position(content: &str, line: u32, character: u32) -> String {
         .unwrap_or_default()
 }
 
-fn lsp_publish_diagnostics(
+/// Publish diagnostics from salsa's incremental validation output.
+///
+/// Takes pre-computed diagnostics and the current store (both from salsa),
+/// maps them to LSP diagnostic notifications grouped by source file.
+fn lsp_publish_salsa_diagnostics(
     connection: &lsp_server::Connection,
+    diagnostics: &[validate::Diagnostic],
     store: &Store,
-    schema: &rivet_core::schema::Schema,
-    graph: &LinkGraph,
 ) {
     use lsp_types::*;
 
-    let diagnostics = validate::validate(store, schema, graph);
     let mut file_diags: std::collections::HashMap<std::path::PathBuf, Vec<lsp_types::Diagnostic>> =
         std::collections::HashMap::new();
 
-    for diag in &diagnostics {
+    for diag in diagnostics {
         let art_id = match diag.artifact_id {
             Some(ref id) => id.as_str(),
             None => continue,

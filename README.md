@@ -17,142 +17,191 @@
 &nbsp;
 
 <h6>
+  <a href="https://github.com/pulseengine/spar">Spar</a>
+  &middot;
+  <a href="https://github.com/pulseengine/etch">Etch</a>
+  &middot;
   <a href="https://github.com/pulseengine/meld">Meld</a>
-  &middot;
-  <a href="https://github.com/pulseengine/loom">Loom</a>
-  &middot;
-  <a href="https://github.com/pulseengine/synth">Synth</a>
-  &middot;
-  <a href="https://github.com/pulseengine/kiln">Kiln</a>
-  &middot;
-  <a href="https://github.com/pulseengine/sigil">Sigil</a>
 </h6>
 
 </div>
 
 &nbsp;
 
-Meld fuses. Loom weaves. Synth transpiles. Kiln fires. Sigil seals. **Rivet binds.**
+Spar parses. Etch renders. Meld fuses. **Rivet binds.**
 
-Rivet is a schema-driven SDLC artifact manager for safety-critical systems. It keeps requirements, architecture, design, test specifications, and safety analysis artifacts as YAML files in git — then validates link integrity, traceability coverage, and completeness rules against mergeable schemas. No database, no external service, just text files and a fast CLI.
+Rivet is a schema-driven SDLC artifact manager for safety-critical systems. It keeps requirements, architecture, design, test specifications, and safety analysis artifacts as YAML files in git — then validates link integrity, traceability coverage, and completeness rules against mergeable schemas.
 
-Built for Automotive SPICE and STPA workflows, with ReqIF interchange and OSLC sync on the roadmap.
+No database, no external service, just text files and a fast Rust CLI.
+
+## Features
+
+- **Schema-driven validation** — artifact types, link types, cardinality, traceability rules
+- **STPA + STPA-Sec** — full safety and security analysis with 15+ artifact types
+- **ASPICE V-model** — stakeholder→system→software→verification traceability chain
+- **Eclipse SCORE** — 40+ artifact types from the SCORE metamodel
+- **Dashboard** — `rivet serve` with filter/sort/pagination, graph, STPA hierarchy, print mode
+- **LSP server** — `rivet lsp` with diagnostics, hover, go-to-definition, completions (salsa incremental)
+- **VS Code extension** — embedded dashboard, live validation, Cmd+K search
+- **HTML export** — static site with STPA, graph, documents, matrix, coverage
+- **Gherkin export** — `rivet export --gherkin` generates .feature files from acceptance criteria
+- **Self-contained binary** — HTMX, Mermaid, fonts bundled; works offline
+- **Cross-repo linking** — `rivet sync` with external project references
+- **Baseline scoping** — `rivet validate --baseline v0.1.0` for version-scoped validation
+- **AI agent support** — `rivet init --agents` generates AGENTS.md (25+ tools)
+- **ReqIF 1.2** — import/export for DOORS, Polarion, codebeamer interchange
+- **235+ Playwright E2E tests** — full route coverage with CI integration
 
 ## Quick Start
 
 ```bash
-# From source
+# Install
 cargo install --path rivet-cli
 
-# Validate a project
+# Initialize a project
+rivet init --preset dev
+
+# Validate artifacts
 rivet validate
 
-# Validate STPA files directly
-rivet stpa path/to/stpa/
+# Start the dashboard
+rivet serve
+
+# Start with live reload on file changes
+rivet serve --watch
 
 # Show artifact stats
 rivet stats
 
-# Traceability matrix
-rivet matrix --from requirement --to feature --link satisfies --direction backward
+# Generate AGENTS.md for AI coding agents
+rivet init --agents
+```
+
+## Dashboard
+
+```bash
+rivet serve --port 3000
+```
+
+The dashboard provides:
+- Artifact list with filter/sort/pagination
+- Traceability graph (Etch layout engine)
+- STPA + STPA-Sec hierarchy with filter bar
+- Coverage matrix
+- Document viewer with `[[ID]]` wiki-links
+- Source browser with artifact cross-references
+- Validation diagnostics with severity filtering
+- Cmd+K global search
+- Print mode (`?print=1`)
+
+## VS Code Extension
+
+The `vscode-rivet` extension provides:
+- LSP client with real-time diagnostics (squiggly lines on broken links)
+- Hover info (artifact title, type, description)
+- Go-to-definition (click artifact ID → jump to YAML source)
+- Completions (artifact IDs, link types from schema)
+- Embedded dashboard as a WebView panel
+
+```bash
+cd vscode-rivet && npm install && npm run compile
 ```
 
 ## How It Works
 
-1. **Define schemas** — YAML files declaring artifact types, link types, field constraints, and traceability rules
+1. **Define schemas** — YAML files declaring artifact types, link types, field constraints
 2. **Write artifacts** — YAML files with typed, linked lifecycle artifacts
-3. **Validate** — Rivet loads schemas, imports artifacts, builds a link graph, and checks everything
+3. **Validate** — Rivet checks link integrity, required fields, cardinality, traceability rules
 
 ```
-rivet.yaml          # Project config: which schemas, which sources
+rivet.yaml              # Project config
 schemas/
-  common.yaml       # Base link types (satisfies, verifies, derives-from, ...)
-  stpa.yaml         # STPA artifact types and completeness rules
-  aspice.yaml       # ASPICE V-model types and traceability rules
-  dev.yaml          # Lightweight dev tracking (requirements, decisions, features)
-artifacts/
-  requirements.yaml # Your artifacts in generic YAML format
-  decisions.yaml
-  features.yaml
+  common.yaml           # Base link types (satisfies, verifies, ...)
+  stpa.yaml             # STPA methodology (10 types, 7 rules)
+  stpa-sec.yaml         # STPA-Sec adversarial analysis (5 types)
+  aspice.yaml           # ASPICE V-model (14 types, 10 rules)
+  cybersecurity.yaml    # ISO 21434 / ASPICE SEC.1-4 (10 types)
+  score.yaml            # Eclipse SCORE metamodel (40+ types)
+  dev.yaml              # Lightweight dev tracking (3 types)
+  aadl.yaml             # AADL architecture (3 types)
+artifacts/              # Your lifecycle artifacts
+safety/stpa/            # STPA analysis files
+safety/stpa-sec/        # STPA-Sec security analysis
+docs/                   # Documents with {{artifact:ID}} embeds
 ```
 
-### Schema-Driven Validation
+## Adapters
 
-Schemas define what's valid. Rivet enforces it:
+- **generic-yaml** — canonical format with explicit `type` and `links`
+- **stpa-yaml** — STPA analysis files (losses, hazards, UCAs, control structure)
+- **aadl** — AADL architecture via spar (direct `.aadl` parsing or JSON)
+- **reqif** — ReqIF 1.2 XML for ALM tool interchange
+- **needs-json** — sphinx-needs JSON export import
+- **WASM components** — custom format adapters via WIT interface
 
-- **Artifact types** — known types with required/optional fields and allowed values
-- **Link types** — typed, directional with automatic inverse computation
-- **Cardinality** — exactly-one, one-or-many, zero-or-one, zero-or-many
-- **Target types** — which artifact types a link may point to
-- **Traceability rules** — "every hazard must link to at least one loss" (error), "every requirement should be covered" (warning)
+## CLI Commands
 
-### Adapters
-
-Rivet uses pluggable adapters to import artifacts from different formats:
-
-- **generic-yaml** — canonical format with explicit `type` and `links` array
-- **stpa-yaml** — imports from STPA analysis files (losses, hazards, UCAs, control structure)
-- **WASM components** — adapter interface defined via WIT for custom formats
-
-## Dogfooding
-
-Rivet tracks its own development. Run `rivet validate` in this repo to see 30 artifacts (12 requirements, 6 design decisions, 12 features) validated against the `dev` schema with traceability coverage checks.
-
-```bash
-$ rivet validate
-Diagnostics:
-  WARN: [REQ-009] Every requirement should be satisfied by at least one design decision or feature
-  WARN: [REQ-011] Every requirement should be satisfied by at least one design decision or feature
-  WARN: [REQ-012] Every requirement should be satisfied by at least one design decision or feature
-
-Result: PASS (3 warnings)
-
-$ rivet matrix --from requirement --to feature --link satisfies --direction backward
-Coverage: 8/12 (66.7%)
-```
-
-## Supported Domains
-
-### STPA (Systems-Theoretic Process Analysis)
-
-10 artifact types covering the full STPA methodology: losses, hazards, sub-hazards, system constraints, controllers, controlled processes, control actions, UCAs, controller constraints, and loss scenarios. 7 completeness rules enforce proper linking.
-
-### Automotive SPICE
-
-14 artifact types spanning the V-model from stakeholder requirements through system/software architecture, design, and testing. 10 traceability rules encode ASPICE bidirectional traceability requirements.
+| Command | Purpose |
+|---------|---------|
+| `rivet validate` | Check link integrity, coverage, required fields |
+| `rivet list` | List artifacts with type/status/search filters |
+| `rivet stats` | Show artifact counts by type |
+| `rivet serve` | Start the interactive dashboard |
+| `rivet lsp` | Start the LSP server (for editors) |
+| `rivet add` | Create a new artifact with auto-generated ID |
+| `rivet link` | Add a link between artifacts |
+| `rivet modify` | Update artifact fields |
+| `rivet remove` | Remove an artifact |
+| `rivet batch` | Atomic multi-mutation from a YAML file |
+| `rivet export` | Generate HTML, ReqIF, YAML, or Gherkin output |
+| `rivet import` | Import from ReqIF, sphinx-needs JSON |
+| `rivet impact` | Show change impact analysis |
+| `rivet coverage` | Show traceability coverage |
+| `rivet matrix` | Compute traceability matrix |
+| `rivet sync` | Sync external project dependencies |
+| `rivet commits` | Check commit-to-artifact traceability |
+| `rivet init` | Initialize a new project or generate AGENTS.md |
 
 ## Architecture
 
 ```
-rivet-core/         # Library: model, store, links (petgraph), schema, validation, adapters
-rivet-cli/          # Binary: validate, list, stats, matrix, stpa commands
-schemas/            # Built-in domain schemas (common, stpa, aspice, dev)
-artifacts/          # Rivet's own lifecycle artifacts (dogfooding)
-wit/                # WIT interface for WASM component adapters
+rivet-core/     # Library: model, store, links, schema, validation, adapters, LSP DB
+rivet-cli/      # Binary: CLI commands, axum+HTMX dashboard, LSP server
+etch/           # Graph layout engine (Sugiyama, compound, orthogonal routing)
+vscode-rivet/   # VS Code extension (LSP client, WebView dashboard)
+schemas/        # Built-in domain schemas (8 schemas)
+```
+
+## Dogfooding
+
+Rivet tracks its own development — 447 artifacts across 19 types, validated on every commit.
+
+```bash
+$ rivet validate
+Result: PASS (0 warnings)
+
+$ rivet stats
+  requirement         36
+  design-decision     39
+  feature             80
+  hazard              18
+  uca                 57
+  sec-loss             5
+  sec-hazard           6
+  ...
+  TOTAL              447
 ```
 
 ## Development
 
 ```bash
-cargo build                # Build
-cargo test                 # Test (5 integration tests)
-cargo clippy -- -D warnings  # Lint
-cargo fmt                  # Format
-rivet validate             # Self-validate
+cargo build                    # Build
+cargo test --all               # 500+ tests
+cargo clippy -- -D warnings    # Lint
+cargo fmt                      # Format
+rivet validate                 # Self-validate
+cd tests/playwright && npx playwright test  # 235+ E2E tests
 ```
-
-## Roadmap
-
-| Phase | Feature | Status |
-|-------|---------|--------|
-| 1 | STPA + ASPICE schemas, validation, CLI | Done |
-| 1 | Generic YAML + STPA adapters | Done |
-| 1 | Link graph, traceability matrix | Done |
-| 1 | Dogfooding (self-tracking) | Done |
-| 2 | `rivet serve` (axum + HTMX dashboard) | Planned |
-| 2 | ReqIF 1.2 import/export | Planned |
-| 3 | OSLC client (Polarion, DOORS sync) | Planned |
-| 3 | WASM adapter runtime | Planned |
 
 ## License
 
@@ -162,6 +211,6 @@ Apache-2.0
 
 <div align="center">
 
-<sub>Part of <a href="https://github.com/pulseengine">PulseEngine</a> &mdash; formally verified WebAssembly toolchain for safety-critical systems</sub>
+<sub>Part of <a href="https://github.com/pulseengine">PulseEngine</a> &mdash; toolchain for safety-critical systems</sub>
 
 </div>

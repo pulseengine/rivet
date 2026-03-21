@@ -68,7 +68,8 @@ pub struct SchemaInputSet {
 pub fn parse_artifacts(db: &dyn salsa::Database, source: SourceFile) -> Vec<Artifact> {
     let content = source.content(db);
     let path = source.path(db);
-    match parse_generic_yaml(&content, None) {
+    let source_path = std::path::Path::new(&path);
+    match parse_generic_yaml(&content, Some(source_path)) {
         Ok(artifacts) => artifacts,
         Err(e) => {
             log::warn!("Failed to parse {}: {}", path, e);
@@ -295,6 +296,23 @@ impl RivetDatabase {
         schema_set: SchemaInputSet,
     ) -> Vec<Diagnostic> {
         evaluate_conditional_rules(self, source_set, schema_set)
+    }
+
+    /// Add a new source file to an existing source file set.
+    ///
+    /// Creates a new `SourceFile` input and rebuilds the set with the
+    /// additional file included. Returns the updated `SourceFileSet`.
+    pub fn add_source(
+        &mut self,
+        source_set: SourceFileSet,
+        path: &str,
+        content: String,
+    ) -> SourceFileSet {
+        let new_file = SourceFile::new(self, path.to_string(), content);
+        let mut files = source_set.files(self);
+        files.push(new_file);
+        source_set.set_files(self).to(files);
+        source_set
     }
 }
 
