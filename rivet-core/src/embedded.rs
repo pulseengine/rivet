@@ -49,6 +49,31 @@ pub fn load_embedded_schema(name: &str) -> Result<SchemaFile, Error> {
         .map_err(|e| Error::Schema(format!("parsing embedded schema '{name}': {e}")))
 }
 
+/// Load schema content strings, falling back to embedded when files are not found.
+///
+/// Returns `(name, content)` pairs suitable for feeding into the salsa database.
+pub fn load_schema_contents(
+    schema_names: &[String],
+    schemas_dir: &std::path::Path,
+) -> Vec<(String, String)> {
+    let mut result = Vec::new();
+
+    for name in schema_names {
+        let path = schemas_dir.join(format!("{name}.yaml"));
+        if path.exists() {
+            if let Ok(content) = std::fs::read_to_string(&path) {
+                result.push((name.clone(), content));
+            }
+        } else if let Some(content) = embedded_schema(name) {
+            result.push((name.clone(), content.to_string()));
+        } else {
+            log::warn!("schema '{name}' not found on disk or embedded");
+        }
+    }
+
+    result
+}
+
 /// Load and merge schemas, falling back to embedded when files are not found.
 pub fn load_schemas_with_fallback(
     schema_names: &[String],
