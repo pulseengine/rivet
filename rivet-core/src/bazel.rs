@@ -1153,4 +1153,40 @@ module(name = "test", version = "0.1.0")
         // The module call should still be extracted.
         assert_eq!(module.name.as_deref(), Some("test"));
     }
+
+    // rivet: verifies REQ-028
+    #[test]
+    fn lex_carriage_return_newlines() {
+        // Test \r\n (Windows) line endings produce Newline tokens
+        let src = "module(\r\n  name = \"test\"\r\n)\r\n";
+        let tokens = lex(src);
+        let newline_count = tokens
+            .iter()
+            .filter(|t| t.kind == SyntaxKind::Newline)
+            .count();
+        assert!(
+            newline_count >= 2,
+            "expected at least 2 newline tokens from \\r\\n, got {newline_count}"
+        );
+    }
+
+    // rivet: verifies REQ-028
+    #[test]
+    fn lex_dot_token() {
+        // Test that dot (.) is lexed as its own token (used in method calls)
+        let src = "foo.bar";
+        let tokens = lex(src);
+        let dot_tokens: Vec<_> = tokens
+            .iter()
+            .filter(|t| t.kind == SyntaxKind::Dot)
+            .collect();
+        assert_eq!(
+            dot_tokens.len(),
+            1,
+            "expected exactly 1 Dot token, got {}: {:?}",
+            dot_tokens.len(),
+            tokens.iter().map(|t| (t.kind, t.text)).collect::<Vec<_>>()
+        );
+        assert_eq!(dot_tokens[0].text, ".");
+    }
 }
