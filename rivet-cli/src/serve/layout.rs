@@ -3,7 +3,6 @@
 use axum::response::Html;
 use rivet_core::document::html_escape;
 use rivet_core::schema::Severity;
-use rivet_core::validate;
 
 use super::AppState;
 use super::js;
@@ -11,8 +10,8 @@ use super::styles;
 
 pub(crate) fn page_layout(content: &str, state: &AppState) -> Html<String> {
     let artifact_count = state.store.len();
-    let diagnostics = validate::validate(&state.store, &state.schema, &state.graph);
-    let error_count = diagnostics
+    let error_count = state
+        .cached_diagnostics
         .iter()
         .filter(|d| d.severity == Severity::Error)
         .count();
@@ -156,7 +155,7 @@ pub(crate) fn page_layout(content: &str, state: &AppState) -> Html<String> {
 <script src="/assets/htmx.js"></script>
 <script src="/assets/mermaid.js"></script>
 <script>
-mermaid.initialize({{startOnLoad:false,theme:'neutral',securityLevel:'loose'}});
+mermaid.initialize({{startOnLoad:false,theme:'neutral',securityLevel:'strict'}});
 function renderMermaid(){{mermaid.run({{querySelector:'.mermaid'}}).catch(function(){{}})}}
 document.addEventListener('htmx:afterSwap',renderMermaid);
 document.addEventListener('DOMContentLoaded',renderMermaid);
@@ -248,7 +247,7 @@ pub(crate) fn print_layout(content: &str, _state: &AppState) -> Html<String> {
 </style>
 <script src="/assets/mermaid.js"></script>
 <script>
-mermaid.initialize({{startOnLoad:false,theme:'default',securityLevel:'loose'}});
+mermaid.initialize({{startOnLoad:false,theme:'default',securityLevel:'strict'}});
 document.addEventListener('DOMContentLoaded',function(){{mermaid.run({{querySelector:'.mermaid'}}).catch(function(){{}});}});
 </script>
 </head>
