@@ -311,6 +311,140 @@ fn reload_state(
     })
 }
 
+/// Spawn a detached background thread that watches the filesystem for changes
+/// to artifact YAML files, schema files, and documents, then triggers a reload.
+fn spawn_file_watcher(
+    port: u16,
+    project_path: &std::path::Path,
+    schemas_dir: &std::path::Path,
+    source_paths: &[PathBuf],
+    doc_dirs: &[PathBuf],
+) {
+    use notify::{RecursiveMode, Watcher};
+    use std::sync::mpsc;
+    use std::time::{Duration, Instant};
+
+    let (tx, rx) = mpsc::channel();
+
+    let mut watcher =
+        match notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+            if let Ok(event) = res {
+                use notify::EventKind;
+                match event.kind {
+                    EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_) => {
+                        // Filter to only relevant file extensions
+                        let dominated = event.paths.iter().any(|p| {
+                            p.extension()
+                                .and_then(|e| e.to_str())
+                                .is_some_and(|ext| matches!(ext, "yaml" | "yml" | "md"))
+                        });
+                        if dominated {
+                            let _ = tx.send(());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }) {
+            Ok(w) => w,
+            Err(e) => {
+                eprintln!("[watch] failed to create file watcher: {e}");
+                return;
+            }
+        };
+
+    // Watch rivet.yaml
+    let rivet_yaml = project_path.join("rivet.yaml");
+    if rivet_yaml.exists() {
+        if let Err(e) = watcher.watch(&rivet_yaml, RecursiveMode::NonRecursive) {
+            eprintln!("[watch] failed to watch {}: {e}", rivet_yaml.display());
+        }
+    }
+
+    // Watch schemas directory
+    if schemas_dir.exists() {
+        if let Err(e) = watcher.watch(schemas_dir, RecursiveMode::Recursive) {
+            eprintln!("[watch] failed to watch {}: {e}", schemas_dir.display());
+        }
+    }
+
+    // Watch source directories
+    for src in source_paths {
+        if src.exists() {
+            let mode = if src.is_dir() {
+                RecursiveMode::Recursive
+            } else {
+                RecursiveMode::NonRecursive
+            };
+            if let Err(e) = watcher.watch(src, mode) {
+                eprintln!("[watch] failed to watch {}: {e}", src.display());
+            }
+        }
+    }
+
+    // Watch doc directories
+    for doc_dir in doc_dirs {
+        if doc_dir.exists() {
+            if let Err(e) = watcher.watch(doc_dir, RecursiveMode::Recursive) {
+                eprintln!("[watch] failed to watch {}: {e}", doc_dir.display());
+            }
+        }
+    }
+
+    // Detached thread — dies when the process exits
+    std::thread::spawn(move || {
+        // Keep the watcher alive for the lifetime of this thread
+        let _watcher = watcher;
+        let debounce = Duration::from_millis(300);
+        let mut last_reload = Instant::now() - debounce;
+
+        loop {
+            // Block until we get a change notification
+            if rx.recv().is_err() {
+                break; // Sender dropped, watcher gone
+            }
+
+            // Drain any additional events that arrived
+            while rx.try_recv().is_ok() {}
+
+            // Debounce: skip if we reloaded recently
+            let elapsed = last_reload.elapsed();
+            if elapsed < debounce {
+                std::thread::sleep(debounce - elapsed);
+                // Drain again after sleeping
+                while rx.try_recv().is_ok() {}
+            }
+
+            eprintln!("[watch] reloading...");
+            last_reload = Instant::now();
+
+            // Fire POST /reload with HX-Request header
+            match std::net::TcpStream::connect(format!("127.0.0.1:{port}")) {
+                Ok(mut stream) => {
+                    use std::io::Write;
+                    let request = format!(
+                        "POST /reload HTTP/1.1\r\n\
+                         Host: 127.0.0.1:{port}\r\n\
+                         HX-Request: true\r\n\
+                         Content-Length: 0\r\n\
+                         Connection: close\r\n\
+                         \r\n"
+                    );
+                    let _ = stream.write_all(request.as_bytes());
+                    let _ = stream.flush();
+                    // Read response (don't care about contents, just drain)
+                    let _ = std::io::Read::read_to_end(&mut stream, &mut Vec::new());
+                }
+                Err(e) => {
+                    eprintln!("[watch] failed to connect for reload: {e}");
+                }
+            }
+        }
+    });
+
+    eprintln!("[watch] watching for file changes...");
+}
+
 /// Start the axum HTTP server on the given port.
 #[allow(clippy::too_many_arguments)]
 pub async fn run(
@@ -325,6 +459,8 @@ pub async fn run(
     doc_dirs: Vec<PathBuf>,
     port: u16,
     bind: String,
+    watch: bool,
+    source_paths: Vec<PathBuf>,
 ) -> Result<()> {
     let git = capture_git_info(&project_path);
     let loaded_at = std::process::Command::new("date")
@@ -345,6 +481,11 @@ pub async fn run(
     };
 
     let cached_diagnostics = rivet_core::validate::validate(&store, &schema, &graph);
+
+    // Clone paths before moving into AppState so they remain available for the watcher.
+    let project_path_for_watch = project_path.clone();
+    let schemas_dir_for_watch = schemas_dir.clone();
+    let doc_dirs_for_watch = doc_dirs.clone();
 
     let state: SharedState = Arc::new(RwLock::new(AppState {
         store,
@@ -402,7 +543,7 @@ pub async fn run(
         .route("/assets/mermaid.js", get(mermaid_asset))
         .route("/reload", post(reload_handler))
         .with_state(state.clone())
-        .layer(axum::middleware::from_fn_with_state(state, wrap_full_page))
+        .layer(axum::middleware::from_fn_with_state(state.clone(), wrap_full_page))
         .layer(axum::middleware::map_response(
             |mut response: axum::response::Response| async move {
                 response.headers_mut().insert(
@@ -416,9 +557,27 @@ pub async fn run(
         ));
 
     let addr = format!("{bind}:{port}");
-    eprintln!("rivet dashboard listening on http://{bind}:{port}");
-
     let listener = tokio::net::TcpListener::bind(&addr).await?;
+    let actual_port = listener.local_addr()?.port();
+
+    // When port=0 the OS picks a free port — update the stored context.
+    if actual_port != port {
+        let mut guard = state.write().await;
+        guard.context.port = actual_port;
+    }
+
+    eprintln!("rivet dashboard listening on http://{bind}:{actual_port}");
+
+    if watch {
+        spawn_file_watcher(
+            actual_port,
+            &project_path_for_watch,
+            &schemas_dir_for_watch,
+            &source_paths,
+            &doc_dirs_for_watch,
+        );
+    }
+
     axum::serve(listener, app).await?;
     Ok(())
 }
