@@ -90,6 +90,71 @@ impl Artifact {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_helpers::minimal_artifact;
+
+    #[test]
+    fn artifact_baseline_returns_field_value() {
+        let mut a = minimal_artifact("A-1", "req");
+        a.fields.insert(
+            "baseline".into(),
+            serde_yaml::Value::String("v0.2.0".into()),
+        );
+        assert_eq!(a.baseline(), Some("v0.2.0"));
+    }
+
+    #[test]
+    fn artifact_baseline_returns_none_when_missing() {
+        let a = minimal_artifact("A-1", "req");
+        assert_eq!(a.baseline(), None);
+    }
+
+    #[test]
+    fn artifact_baseline_returns_none_for_non_string() {
+        let mut a = minimal_artifact("A-1", "req");
+        a.fields
+            .insert("baseline".into(), serde_yaml::Value::Bool(true));
+        assert_eq!(a.baseline(), None);
+    }
+
+    #[test]
+    fn baseline_config_deserializes() {
+        let yaml = r#"
+name: v0.1.0
+description: Initial release
+"#;
+        let config: BaselineConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.name, "v0.1.0");
+        assert_eq!(config.description.as_deref(), Some("Initial release"));
+    }
+
+    #[test]
+    fn baseline_config_deserializes_without_description() {
+        let yaml = "name: v0.2.0\n";
+        let config: BaselineConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.name, "v0.2.0");
+        assert_eq!(config.description, None);
+    }
+
+    #[test]
+    fn baseline_config_list_deserializes() {
+        let yaml = r#"
+- name: v0.1.0
+  description: First baseline
+- name: v0.2.0
+- name: v0.3.0
+  description: Third baseline
+"#;
+        let configs: Vec<BaselineConfig> = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(configs.len(), 3);
+        assert_eq!(configs[0].name, "v0.1.0");
+        assert_eq!(configs[1].description, None);
+        assert_eq!(configs[2].name, "v0.3.0");
+    }
+}
+
 /// Configuration for a named baseline (release scope).
 ///
 /// Baselines are declared in order in `rivet.yaml`. Validation and
