@@ -162,9 +162,10 @@ document.addEventListener('DOMContentLoaded',renderMermaid);
 </script>
 </head>
 <body>
+<a href="#content" class="skip-link">Skip to content</a>
 <div id="loading-bar"></div>
 <div class="shell">
-<nav>
+<nav role="navigation" aria-label="Main navigation">
   <h1>Rivet</h1>
   <ul>
     <li><a hx-get="/stats" hx-target="#content" hx-push-url="true" href="/stats" class="active"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="1.5" width="5" height="5" rx="1"/><rect x="9.5" y="1.5" width="5" height="5" rx="1"/><rect x="1.5" y="9.5" width="5" height="5" rx="1"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/></svg></span> Overview</span></a></li>
@@ -195,7 +196,7 @@ document.addEventListener('DOMContentLoaded',renderMermaid);
 </nav>
 <div class="content-area">
 {context_bar}
-<main id="content" hx-swap="innerHTML transition:true">
+<main id="content" role="main" hx-swap="innerHTML transition:true">
 {content}
 <div class="footer">Powered by Rivet v{version}</div>
 </main>
@@ -205,7 +206,7 @@ document.addEventListener('DOMContentLoaded',renderMermaid);
   <div class="cmd-k-modal">
     <div class="cmd-k-head">
       <span class="cmd-k-icon">&#128269;</span>
-      <input id="cmd-k-input" class="cmd-k-input" type="text" placeholder="Search artifacts, documents..." autocomplete="off" spellcheck="false">
+      <input id="cmd-k-input" class="cmd-k-input" type="text" placeholder="Search artifacts, documents..." autocomplete="off" spellcheck="false" aria-label="Search artifacts">
     </div>
     <div id="cmd-k-results" class="cmd-k-results">
       <div class="cmd-k-empty">Type to search artifacts and documents</div>

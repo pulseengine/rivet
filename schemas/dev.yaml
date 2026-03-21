@@ -54,6 +54,13 @@ artifact-types:
         type: string
         required: false
         allowed-values: [phase-1, phase-2, phase-3, future]
+      - name: acceptance-criteria
+        type: list<string>
+        required: false
+        description: >
+          Structured acceptance criteria in given/when/then format.
+          Each entry is a string like "Given X, When Y, Then Z".
+          Use `rivet export --gherkin` to generate .feature files.
     link-fields:
       - name: satisfies
         link-type: satisfies

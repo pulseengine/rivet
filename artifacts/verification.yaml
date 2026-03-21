@@ -16,6 +16,10 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-1
+      acceptance-criteria:
+        - "Given a YAML artifact file, When rivet loads it, Then the artifact is stored with correct ID and title"
+        - "Given a store with artifacts, When querying by type, Then only artifacts of that type are returned"
+        - "Given two store snapshots, When computing diff, Then added/removed/modified artifacts are identified"
 
   - id: TEST-002
     type: feature

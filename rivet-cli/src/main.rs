@@ -2465,6 +2465,10 @@ fn cmd_export(
         );
     }
 
+    if format == "gherkin" {
+        return cmd_export_gherkin(cli, output, baseline_name);
+    }
+
     use rivet_core::adapter::{Adapter, AdapterConfig};
 
     let ctx = ProjectContext::load(cli)?;
@@ -2487,7 +2491,7 @@ fn cmd_export(
         }
         other => {
             anyhow::bail!(
-                "unsupported export format: {other} (supported: reqif, generic-yaml, html)"
+                "unsupported export format: {other} (supported: reqif, generic-yaml, html, gherkin)"
             )
         }
     };
@@ -2504,6 +2508,115 @@ fn cmd_export(
         std::io::stdout()
             .write_all(&bytes)
             .context("writing to stdout")?;
+    }
+
+    Ok(true)
+}
+
+/// Export artifacts with acceptance-criteria fields to Gherkin .feature files.
+fn cmd_export_gherkin(
+    cli: &Cli,
+    output: Option<&std::path::Path>,
+    baseline_name: Option<&str>,
+) -> Result<bool> {
+    let ctx = ProjectContext::load(cli)?;
+    let baselines = ctx.config.baselines.as_deref().unwrap_or(&[]);
+    let store = if let Some(name) = baseline_name {
+        ctx.store.scoped(name, baselines)
+    } else {
+        ctx.store.clone()
+    };
+
+    let out_dir = output.unwrap_or(std::path::Path::new("features"));
+    std::fs::create_dir_all(out_dir).with_context(|| format!("creating {}", out_dir.display()))?;
+
+    let mut file_count = 0;
+    let mut scenario_count = 0;
+
+    for art in store.iter() {
+        let criteria = art
+            .fields
+            .get("acceptance-criteria")
+            .and_then(|v| v.as_sequence());
+        let Some(criteria) = criteria else { continue };
+        if criteria.is_empty() {
+            continue;
+        }
+
+        // Build .feature file
+        let mut feature = String::new();
+        feature.push_str(&format!(
+            "# Generated from {} by rivet export --gherkin\n",
+            art.id
+        ));
+        feature.push_str(&format!("Feature: {} — {}\n", art.id, art.title));
+        if let Some(ref desc) = art.description {
+            for line in desc.lines().take(5) {
+                feature.push_str(&format!("  {}\n", line.trim()));
+            }
+        }
+        feature.push('\n');
+
+        // Generate linked requirements as tags
+        let req_tags: Vec<String> = art
+            .links
+            .iter()
+            .filter(|l| l.link_type == "verifies" || l.link_type == "satisfies")
+            .map(|l| format!("@{}", l.target))
+            .collect();
+
+        for (i, criterion) in criteria.iter().enumerate() {
+            let text = criterion.as_str().unwrap_or_default();
+            if text.is_empty() {
+                continue;
+            }
+
+            // Parse "Given X, When Y, Then Z" or just use as-is
+            if !req_tags.is_empty() {
+                feature.push_str(&format!("  {}\n", req_tags.join(" ")));
+            }
+            feature.push_str(&format!("  Scenario: {} criterion {}\n", art.id, i + 1));
+
+            // Try to parse structured given/when/then
+            let parts: Vec<&str> = text.splitn(3, ',').collect();
+            if parts.len() >= 3
+                && parts[0].trim().to_lowercase().starts_with("given")
+                && parts[1].trim().to_lowercase().starts_with("when")
+            {
+                feature.push_str(&format!("    {}\n", parts[0].trim()));
+                feature.push_str(&format!("    {}\n", parts[1].trim()));
+                feature.push_str(&format!("    {}\n", parts[2].trim()));
+            } else {
+                // Freeform — wrap in Given/Then
+                feature.push_str(
+                    "    Given the system is operational
+",
+                );
+                feature.push_str(&format!("    Then {}\n", text));
+            }
+            feature.push('\n');
+            scenario_count += 1;
+        }
+
+        // Write to file
+        let filename = format!("{}.feature", art.id.to_lowercase().replace('-', "_"));
+        let path = out_dir.join(&filename);
+        std::fs::write(&path, &feature).with_context(|| format!("writing {}", path.display()))?;
+        file_count += 1;
+    }
+
+    eprintln!(
+        "Exported {} scenarios across {} .feature files to {}",
+        scenario_count,
+        file_count,
+        out_dir.display()
+    );
+
+    if file_count == 0 {
+        eprintln!(
+            "hint: No artifacts have acceptance-criteria fields. Add them:\n\
+             rivet modify TEST-001 --set-field 'acceptance-criteria=[\"Given X, When Y, Then Z\"]'"
+        );
     }
 
     Ok(true)
