@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1774070308223,
+  "lastUpdate": 1774073957199,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
@@ -5183,6 +5183,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1492847,
             "range": "± 14755",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "fb2efbf792e47113baa511f919af740232ae66eb",
+          "message": "feat: LSP foundation, baseline-scoped validation, performance fixes (#58)\n\nThree workstreams:\n\n1. LSP foundation (rivet lsp):\n   - lsp-server + lsp-types dependencies\n   - Lsp subcommand with stdio connection\n   - Server capabilities: text sync, diagnostics, hover, goto-def, completion\n   - Main message loop with shutdown handling\n   - Foundation for incremental validation via salsa\n\n2. Baseline-scoped validation (--baseline flag):\n   - BaselineConfig in rivet.yaml (ordered, cumulative)\n   - Artifact.baseline() helper reads from fields map\n   - Store::scoped() filters by baseline (cumulative inclusion)\n   - --baseline flag on validate, list, stats, coverage, export\n   - Dogfood: v0.1.0 (53 artifacts) and v0.2.0-dev baselines defined\n   - REQ/DD/FEAT artifacts tagged with baseline fields\n\n3. Performance fixes (7.8x store speedup):\n   - O(n²) Store::upsert fixed (linear contains → direct insert)\n   - Regex pre-compilation for conditional rules (N×M → M compiles)\n   - Cow<str> for get_field_value (zero-copy field reads)\n   - Allocation-free allowed_values check\n   - Hoisted forward-map entry in LinkGraph::build\n   - Cached diagnostics in AppState (no re-validation per page view)\n\nImplements: FEAT-047\nSatisfies: REQ-029\n\nCo-authored-by: Test <test@test.com>\nCo-authored-by: Claude Opus 4.6 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-03-21T07:10:32+01:00",
+          "tree_id": "089045fe7ccd2b2b49637f8cd1b658c1f6ab89a8",
+          "url": "https://github.com/pulseengine/rivet/commit/fb2efbf792e47113baa511f919af740232ae66eb"
+        },
+        "date": 1774073956441,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 78235,
+            "range": "± 1555",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 825204,
+            "range": "± 4338",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 14088151,
+            "range": "± 1035041",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2262,
+            "range": "± 18",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 26831,
+            "range": "± 315",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 387294,
+            "range": "± 2189",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 96,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 922237,
+            "range": "± 24428",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 166954,
+            "range": "± 2200",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1935374,
+            "range": "± 16358",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 32297177,
+            "range": "± 1797763",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 41760,
+            "range": "± 1008",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 474304,
+            "range": "± 1945",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 5509606,
+            "range": "± 465065",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4454,
+            "range": "± 17",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 60294,
+            "range": "± 539",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 772044,
+            "range": "± 6310",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 62651,
+            "range": "± 384",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 698284,
+            "range": "± 2389",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8762539,
+            "range": "± 568912",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 853,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7812,
+            "range": "± 200",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 114850,
+            "range": "± 680",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 23062,
+            "range": "± 316",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 162130,
+            "range": "± 1368",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1497256,
+            "range": "± 19721",
             "unit": "ns/iter"
           }
         ]
