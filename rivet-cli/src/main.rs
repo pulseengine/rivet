@@ -382,12 +382,15 @@ enum Command {
 
     /// Start the HTMX-powered dashboard server
     Serve {
-        /// Port to listen on
+        /// Port to listen on (0 = auto-assign)
         #[arg(short = 'P', long, default_value = "3000")]
         port: u16,
         /// Address to bind to (default: 127.0.0.1, localhost only)
         #[arg(short = 'B', long, default_value = "127.0.0.1")]
         bind: String,
+        /// Watch filesystem for changes and auto-reload
+        #[arg(long)]
+        watch: bool,
     },
 
     /// Sync external project dependencies into .rivet/repos/
@@ -766,9 +769,10 @@ fn run(cli: Cli) -> Result<bool> {
             format,
             strict,
         } => cmd_commits(&cli, since.as_deref(), range.as_deref(), format, *strict),
-        Command::Serve { port, bind } => {
+        Command::Serve { port, bind, watch } => {
             check_for_updates();
             let port = *port;
+            let watch = *watch;
             let bind = bind.clone();
             if bind == "0.0.0.0" || bind == "::" {
                 eprintln!(
@@ -785,6 +789,13 @@ fn run(cli: Cli) -> Result<bool> {
                     doc_dirs.push(dir);
                 }
             }
+            // Collect source dirs for file watcher
+            let source_paths: Vec<PathBuf> = ctx
+                .config
+                .sources
+                .iter()
+                .map(|s| cli.project.join(&s.path))
+                .collect();
             let project_name = ctx.config.project.name.clone();
             let project_path =
                 std::fs::canonicalize(&cli.project).unwrap_or_else(|_| cli.project.clone());
@@ -796,11 +807,13 @@ fn run(cli: Cli) -> Result<bool> {
                 ctx.doc_store.unwrap_or_default(),
                 ctx.result_store.unwrap_or_default(),
                 project_name,
-                project_path,
-                schemas_dir,
-                doc_dirs,
+                project_path.clone(),
+                schemas_dir.clone(),
+                doc_dirs.clone(),
                 port,
                 bind,
+                watch,
+                source_paths,
             ))?;
             Ok(true)
         }

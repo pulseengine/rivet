@@ -32,6 +32,7 @@ petgraph = { workspace = true }
 urlencoding = { workspace = true }
 lsp-server = "0.7"
 lsp-types = "0.97"
+notify = "7"
 
 [dev-dependencies]
 serde_json = { workspace = true }

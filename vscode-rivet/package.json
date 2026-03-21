@@ -1,0 +1,89 @@
+{
+  "name": "rivet-sdlc",
+  "displayName": "Rivet SDLC",
+  "description": "SDLC artifact traceability with live validation, hover info, and embedded dashboard",
+  "publisher": "pulseengine",
+  "version": "0.2.0",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pulseengine/rivet"
+  },
+  "icon": "icon.png",
+  "galleryBanner": {
+    "color": "#1a1b27",
+    "theme": "dark"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Linters",
+    "Programming Languages",
+    "Visualization"
+  ],
+  "activationEvents": [
+    "workspaceContains:rivet.yaml"
+  ],
+  "main": "./out/extension",
+  "contributes": {
+    "commands": [
+      {
+        "command": "rivet.showDashboard",
+        "title": "Show Dashboard",
+        "category": "Rivet"
+      },
+      {
+        "command": "rivet.showGraph",
+        "title": "Show Traceability Graph",
+        "category": "Rivet"
+      },
+      {
+        "command": "rivet.showSTPA",
+        "title": "Show STPA Analysis",
+        "category": "Rivet"
+      },
+      {
+        "command": "rivet.validate",
+        "title": "Validate Artifacts",
+        "category": "Rivet"
+      },
+      {
+        "command": "rivet.addArtifact",
+        "title": "Add Artifact",
+        "category": "Rivet"
+      }
+    ],
+    "configuration": {
+      "title": "Rivet SDLC",
+      "properties": {
+        "rivet.binaryPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to rivet binary (leave empty to find on PATH)"
+        },
+        "rivet.serve.port": {
+          "type": "number",
+          "default": 0,
+          "description": "Port for the embedded dashboard (0 = auto-assign)"
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^22",
+    "typescript": "^5.9.0",
+    "esbuild": "^0.25.0"
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run esbuild -- --production",
+    "compile": "tsc -b",
+    "esbuild": "node ./bin/esbuild.js",
+    "watch": "tsc -b -w",
+    "package": "npx @vscode/vsce package"
+  }
+}
