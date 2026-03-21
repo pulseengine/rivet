@@ -162,6 +162,10 @@ enum Command {
         /// Directory to initialize (defaults to current directory)
         #[arg(long, default_value = ".")]
         dir: PathBuf,
+
+        /// Generate AGENTS.md (and CLAUDE.md shim) from current project state
+        #[arg(long)]
+        agents: bool,
     },
 
     /// Validate artifacts against schemas
@@ -643,8 +647,12 @@ fn run(cli: Cli) -> Result<bool> {
         preset,
         schema,
         dir,
+        agents,
     } = &cli.command
     {
+        if *agents {
+            return cmd_init_agents(&cli);
+        }
         return cmd_init(name.as_deref(), preset, schema, dir);
     }
     if let Command::Docs {
@@ -1202,6 +1210,277 @@ rivet stats        # Show summary statistics
         "\nInitialized rivet project '{}' in {} (preset: {preset})",
         project_name,
         dir.display()
+    );
+
+    Ok(true)
+}
+
+/// Collapse newlines and pipes so a description fits in a markdown table cell.
+fn sanitize_for_table(s: &str) -> String {
+    s.replace('\n', " ")
+        .replace('|', "/")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Generate AGENTS.md (and CLAUDE.md shim) from current project state.
+fn cmd_init_agents(cli: &Cli) -> Result<bool> {
+    let config_path = cli.project.join("rivet.yaml");
+
+    // Try to load project config — it's okay if it doesn't exist
+    let has_project = config_path.exists();
+
+    if !has_project {
+        anyhow::bail!(
+            "No rivet.yaml found in {}. Run `rivet init` first, then `rivet init --agents`.",
+            cli.project.display()
+        );
+    }
+
+    let config = rivet_core::load_project_config(&config_path)
+        .with_context(|| format!("loading {}", config_path.display()))?;
+
+    let schemas_dir = resolve_schemas_dir(cli);
+    let schema = rivet_core::load_schemas(&config.project.schemas, &schemas_dir)
+        .context("loading schemas")?;
+
+    // Load artifacts
+    let mut store = Store::new();
+    for source in &config.sources {
+        match rivet_core::load_artifacts(source, &cli.project) {
+            Ok(artifacts) => {
+                for artifact in artifacts {
+                    store.upsert(artifact);
+                }
+            }
+            Err(e) => {
+                eprintln!("warning: could not load source '{}': {}", source.path, e);
+            }
+        }
+    }
+
+    // Build link graph and validate
+    let graph = LinkGraph::build(&store, &schema);
+    let diagnostics = validate::validate(&store, &schema, &graph);
+    let error_count = diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Error)
+        .count();
+    let validation_status = if error_count > 0 {
+        format!("{} errors", error_count)
+    } else {
+        "pass".to_string()
+    };
+
+    // Collect artifact types with counts, sorted
+    let mut type_counts: Vec<(String, usize)> = store
+        .types()
+        .map(|t| (t.to_string(), store.count_by_type(t)))
+        .collect();
+    type_counts.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let total_count = store.len();
+    let type_count = type_counts.len();
+
+    // Schema list
+    let schema_list = config.project.schemas.join(", ");
+
+    // Source paths
+    let source_paths = config
+        .sources
+        .iter()
+        .map(|s| format!("`{}`", s.path))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    // Doc paths
+    let doc_paths = if config.docs.is_empty() {
+        "(none configured)".to_string()
+    } else {
+        config
+            .docs
+            .iter()
+            .map(|d| format!("`{}`", d))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+
+    // Artifact types table
+    let mut artifact_types_section = String::new();
+    artifact_types_section.push_str("| Type | Count | Description |\n");
+    artifact_types_section.push_str("|------|------:|-------------|\n");
+    for (type_name, count) in &type_counts {
+        let desc = schema
+            .artifact_type(type_name)
+            .map(|t| sanitize_for_table(&t.description))
+            .unwrap_or_default();
+        artifact_types_section.push_str(&format!("| `{}` | {} | {} |\n", type_name, count, desc));
+    }
+    // Also include artifact types that exist in schema but have zero instances
+    let mut schema_only_types: Vec<(&String, &rivet_core::schema::ArtifactTypeDef)> = schema
+        .artifact_types
+        .iter()
+        .filter(|(name, _)| !type_counts.iter().any(|(n, _)| n == *name))
+        .collect();
+    schema_only_types.sort_by_key(|(name, _)| name.to_string());
+    for (type_name, type_def) in &schema_only_types {
+        let desc = sanitize_for_table(&type_def.description);
+        artifact_types_section.push_str(&format!("| `{}` | 0 | {} |\n", type_name, desc));
+    }
+
+    // Link types section
+    let mut link_types_section = String::new();
+    let mut link_type_names: Vec<&String> = schema.link_types.keys().collect();
+    link_type_names.sort();
+    link_types_section.push_str("| Link Type | Description | Inverse |\n");
+    link_types_section.push_str("|-----------|-------------|--------|\n");
+    for lt_name in &link_type_names {
+        let lt = &schema.link_types[*lt_name];
+        let inverse = lt.inverse.as_deref().unwrap_or("-");
+        link_types_section.push_str(&format!(
+            "| `{}` | {} | `{}` |\n",
+            lt_name, lt.description, inverse
+        ));
+    }
+
+    // Commit traceability section
+    let commits_section = if let Some(ref commits) = config.commits {
+        let mut s = String::new();
+        s.push_str("\n## Commit Traceability\n\n");
+        s.push_str("This project enforces commit-to-artifact traceability.\n\n");
+        if !commits.trailers.is_empty() {
+            s.push_str("Required git trailers:\n");
+            let mut trailers: Vec<_> = commits.trailers.iter().collect();
+            trailers.sort_by_key(|(k, _)| (*k).clone());
+            for (trailer, link_type) in &trailers {
+                s.push_str(&format!(
+                    "- `{}` -> maps to link type `{}`\n",
+                    trailer, link_type
+                ));
+            }
+        }
+        if !commits.exempt_types.is_empty() {
+            s.push_str(&format!(
+                "\nExempt artifact types (no trailer required): {}\n",
+                commits
+                    .exempt_types
+                    .iter()
+                    .map(|t| format!("`{}`", t))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        s.push_str(&format!(
+            "\nTo skip traceability for a commit, add: `{}`\n",
+            commits.skip_trailer
+        ));
+        s
+    } else {
+        String::new()
+    };
+
+    // Build the AGENTS.md content
+    let agents_md = format!(
+        r#"<!-- Auto-generated by `rivet init --agents`. Re-run to update after artifact changes. -->
+# AGENTS.md — Rivet Project Instructions
+
+> This file was generated by `rivet init --agents`. Re-run the command
+> any time artifacts change to keep this file current.
+
+## Project Overview
+
+This project uses **Rivet** for SDLC artifact traceability.
+- Config: `rivet.yaml`
+- Schemas: {schema_list}
+- Artifacts: {total_count} across {type_count} types
+- Validation: `rivet validate` (current status: {validation_status})
+
+## Available Commands
+
+| Command | Purpose | Example |
+|---------|---------|---------|
+| `rivet validate` | Check link integrity, coverage, required fields | `rivet validate --format json` |
+| `rivet list` | List artifacts with filters | `rivet list --type requirement --format json` |
+| `rivet stats` | Show artifact counts by type | `rivet stats --format json` |
+| `rivet add` | Create a new artifact | `rivet add -t requirement --title "..." --link "satisfies:SC-1"` |
+| `rivet link` | Add a link between artifacts | `rivet link SOURCE -t satisfies --target TARGET` |
+| `rivet serve` | Start the dashboard | `rivet serve --port 3000` |
+| `rivet export` | Generate HTML reports | `rivet export --format html --output ./dist` |
+| `rivet impact` | Show change impact | `rivet impact --since HEAD~1` |
+| `rivet coverage` | Show traceability coverage | `rivet coverage --format json` |
+| `rivet diff` | Compare artifact versions | `rivet diff --base path/old --head path/new` |
+
+## Artifact Types
+
+{artifact_types_section}
+## Working with Artifacts
+
+### File Structure
+- Artifacts are stored as YAML files in: {source_paths}
+- Schema definitions: `schemas/` directory
+- Documents: {doc_paths}
+
+### Creating Artifacts
+```bash
+rivet add -t requirement --title "New requirement" --status draft --link "satisfies:SC-1"
+```
+
+### Validating Changes
+Always run `rivet validate` after modifying artifact YAML files.
+Use `rivet validate --format json` for machine-readable output.
+
+### Link Types
+
+{link_types_section}
+## Conventions
+
+- Artifact IDs follow the pattern: PREFIX-NNN (e.g., REQ-001, FEAT-042)
+- Use `rivet add` to create artifacts (auto-generates next ID)
+- Always include traceability links when creating artifacts
+- Run `rivet validate` before committing
+{commits_section}"#
+    );
+
+    // Write AGENTS.md (always regenerate — reflects current project state)
+    let agents_path = cli.project.join("AGENTS.md");
+    let agents_verb = if agents_path.exists() {
+        "updated"
+    } else {
+        "created"
+    };
+    std::fs::write(&agents_path, &agents_md)
+        .with_context(|| format!("writing {}", agents_path.display()))?;
+    println!("  {agents_verb} {}", agents_path.display());
+
+    // Generate CLAUDE.md shim if it doesn't already exist
+    let claude_path = cli.project.join("CLAUDE.md");
+    if !claude_path.exists() {
+        let trailer_line = if config.commits.is_some() {
+            "- Commit messages require artifact trailers (Implements/Fixes/Verifies/Satisfies/Refs)\n"
+        } else {
+            ""
+        };
+        let claude_md = format!(
+            r#"# CLAUDE.md
+
+See [AGENTS.md](AGENTS.md) for project instructions.
+
+Additional Claude Code settings:
+- Use `rivet validate` to verify changes to artifact YAML files
+- Use `rivet list --format json` for machine-readable artifact queries
+{trailer_line}"#
+        );
+        std::fs::write(&claude_path, &claude_md)
+            .with_context(|| format!("writing {}", claude_path.display()))?;
+        println!("  created {}", claude_path.display());
+    } else {
+        println!("  CLAUDE.md already exists, skipping");
+    }
+
+    println!(
+        "\nGenerated AGENTS.md for project '{}' ({} artifacts, {} types)",
+        config.project.name, total_count, type_count
     );
 
     Ok(true)
