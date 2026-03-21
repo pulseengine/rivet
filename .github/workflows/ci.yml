@@ -100,6 +100,34 @@ jobs:
           path: tests/playwright/test-results/
           if-no-files-found: ignore
 
+  # ── VS Code Extension ────────────────────────────────────────────────
+  vscode-extension:
+    name: VS Code Extension
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build rivet binary
+        run: cargo build --release
+      - name: Add rivet to PATH
+        run: echo "$PWD/target/release" >> $GITHUB_PATH
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install extension dependencies
+        working-directory: vscode-rivet
+        run: npm ci
+      - name: Compile extension
+        working-directory: vscode-rivet
+        run: npm run compile
+      - name: Run extension tests (headless VS Code)
+        working-directory: vscode-rivet
+        run: xvfb-run -a npm test
+        env:
+          DISPLAY: ':99.0'
+
   # ── Security audits ──────────────────────────────────────────────────
   audit:
     name: Security Audit (RustSec)
