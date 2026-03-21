@@ -34,6 +34,17 @@ a{color:var(--accent);text-decoration:none;transition:color var(--transition)}
 a:hover{color:var(--accent-hover)}
 a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
 
+/* ── Screen-reader-only utility (accessibility) ──────────────── */
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;
+  overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+/* ── Skip-to-content link (accessibility) ────────────────────── */
+.skip-link{position:absolute;top:-100%;left:1rem;z-index:10000;
+  padding:.5rem 1rem;background:var(--accent);color:#fff;font-weight:600;
+  border-radius:0 0 var(--radius-sm) var(--radius-sm);font-size:.875rem;
+  text-decoration:none;transition:top .15s ease}
+.skip-link:focus{top:0}
+
 /* ── Shell layout ─────────────────────────────────────────────── */
 .shell{display:flex;min-height:100vh}
 .content-area{display:flex;flex-direction:column;flex:1;min-width:0}

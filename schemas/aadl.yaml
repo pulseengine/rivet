@@ -61,6 +61,11 @@ artifact-types:
         target-types: [system-req, sw-req, system-arch-component, requirement, feature]
         required: false
         cardinality: zero-or-many
+      - name: contains
+        link-type: contains
+        target-types: [aadl-component]
+        required: false
+        cardinality: zero-or-many
 
   - name: aadl-analysis-result
     description: Output of a spar analysis pass
@@ -170,6 +175,12 @@ artifact-types:
         cardinality: zero-or-many
 
 link-types:
+  - name: contains
+    inverse: contained-by
+    description: Parent AADL component contains a child sub-component
+    source-types: [aadl-component]
+    target-types: [aadl-component]
+
   - name: modeled-by
     inverse: models
     description: An architecture component is modeled by an AADL component

@@ -574,7 +574,7 @@ pub(crate) async fn artifacts_list(
     html.push_str("<div class=\"artifacts-main\">");
 
     // Sortable column headers
-    html.push_str("<table class=\"sortable\" id=\"artifacts-table\"><thead><tr>");
+    html.push_str("<table class=\"sortable\" id=\"artifacts-table\"><caption class=\"sr-only\">Artifacts list</caption><thead><tr>");
     html.push_str(&components::sortable_header(
         "ID",
         "id",
@@ -3176,7 +3176,7 @@ fn stpa_partial(state: &AppState, params: &ViewParams) -> Html<String> {
         });
 
         html.push_str(
-            "<table class=\"stpa-uca-table\"><thead><tr>\
+            "<table class=\"stpa-uca-table\"><caption class=\"sr-only\">Unsafe Control Actions</caption><thead><tr>\
              <th>ID</th><th>Control Action</th><th>UCA Type</th>\
              <th>Description</th><th>Linked Hazards</th>\
              </tr></thead><tbody>",
@@ -3506,7 +3506,7 @@ fn stpa_partial(state: &AppState, params: &ViewParams) -> Html<String> {
         if show_sec_uca_table {
             html.push_str(
                 "<div class=\"card\"><h3>Security Unsafe Control Actions</h3>\
-                 <table class=\"stpa-uca-table\"><thead><tr>\
+                 <table class=\"stpa-uca-table\"><caption class=\"sr-only\">Security Unsafe Control Actions</caption><thead><tr>\
                  <th>ID</th><th>Controller</th><th>UCA Type</th>\
                  <th>Attacker</th><th>Description</th><th>Hazards</th>\
                  </tr></thead><tbody>",

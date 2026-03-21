@@ -9,6 +9,12 @@ artifacts:
     links:
       - type: allocated-from
         target: REQ-001
+      - type: contains
+        target: ARCH-CORE-001
+      - type: contains
+        target: ARCH-CLI-001
+      - type: contains
+        target: ARCH-DASH-001
     fields:
       category: system
       aadl-package: RivetSystem
@@ -47,6 +53,26 @@ artifacts:
         target: REQ-001
       - type: allocated-from
         target: REQ-002
+      - type: contains
+        target: ARCH-CORE-SCHEMA
+      - type: contains
+        target: ARCH-CORE-STORE
+      - type: contains
+        target: ARCH-CORE-ADAPTERS
+      - type: contains
+        target: ARCH-CORE-GRAPH
+      - type: contains
+        target: ARCH-CORE-VALIDATE
+      - type: contains
+        target: ARCH-CORE-MATRIX
+      - type: contains
+        target: ARCH-CORE-DIFF
+      - type: contains
+        target: ARCH-CORE-DOC
+      - type: contains
+        target: ARCH-CORE-QUERY
+      - type: contains
+        target: ARCH-CORE-RESULTS
     fields:
       category: process
       aadl-package: RivetSystem
@@ -127,6 +153,16 @@ artifacts:
         target: REQ-001
       - type: allocated-from
         target: REQ-005
+      - type: contains
+        target: ARCH-ADAPT-GENERIC
+      - type: contains
+        target: ARCH-ADAPT-STPA
+      - type: contains
+        target: ARCH-ADAPT-AADL
+      - type: contains
+        target: ARCH-ADAPT-REQIF
+      - type: contains
+        target: ARCH-ADAPT-WASM
     fields:
       category: thread
       aadl-package: RivetSystem
