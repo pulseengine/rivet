@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -220,6 +221,10 @@ impl TryFrom<ConditionRaw> for Condition {
 // Manual Serialize implementation for Condition → flat YAML output
 impl Condition {
     /// Check whether an artifact satisfies this condition.
+    ///
+    /// **Note:** For `Matches` conditions this compiles the regex on every call.
+    /// In hot loops, prefer [`matches_artifact_with`] and pre-compile via
+    /// [`compile_regex`].
     #[inline]
     pub fn matches_artifact(&self, artifact: &Artifact) -> bool {
         match self {
@@ -235,31 +240,62 @@ impl Condition {
             Condition::Exists { field } => get_field_value(artifact, field).is_some(),
         }
     }
+
+    /// Like [`matches_artifact`] but accepts a pre-compiled regex for `Matches`
+    /// conditions, avoiding repeated `Regex::new` calls in tight loops.
+    #[inline]
+    pub fn matches_artifact_with(&self, artifact: &Artifact, compiled: Option<&Regex>) -> bool {
+        match self {
+            Condition::Equals { field, value } => {
+                get_field_value(artifact, field).is_some_and(|v| v == *value)
+            }
+            Condition::Matches { field, .. } => {
+                if let Some(re) = compiled {
+                    get_field_value(artifact, field).is_some_and(|v| re.is_match(&v))
+                } else {
+                    // Fallback: compile inline (shouldn't normally happen)
+                    self.matches_artifact(artifact)
+                }
+            }
+            Condition::Exists { field } => get_field_value(artifact, field).is_some(),
+        }
+    }
+
+    /// Pre-compile the regex for a `Matches` condition.
+    /// Returns `None` for `Equals` / `Exists` conditions or invalid patterns.
+    pub fn compile_regex(&self) -> Option<Regex> {
+        match self {
+            Condition::Matches { pattern, .. } => Regex::new(pattern).ok(),
+            _ => None,
+        }
+    }
 }
 
 /// Get a string value for a field from an artifact, checking base fields first.
+///
+/// Returns a `Cow<str>` to avoid cloning when the value is already a `&str`.
 #[inline]
-fn get_field_value(artifact: &Artifact, field: &str) -> Option<String> {
+fn get_field_value<'a>(artifact: &'a Artifact, field: &str) -> Option<Cow<'a, str>> {
     match field {
-        "status" => artifact.status.clone(),
-        "description" => artifact.description.clone(),
-        "title" => Some(artifact.title.clone()),
-        "id" => Some(artifact.id.clone()),
+        "status" => artifact.status.as_deref().map(Cow::Borrowed),
+        "description" => artifact.description.as_deref().map(Cow::Borrowed),
+        "title" => Some(Cow::Borrowed(&artifact.title)),
+        "id" => Some(Cow::Borrowed(&artifact.id)),
         _ => {
             // Check tags: if field == "tags", join them
             if field == "tags" {
                 if artifact.tags.is_empty() {
                     None
                 } else {
-                    Some(artifact.tags.join(","))
+                    Some(Cow::Owned(artifact.tags.join(",")))
                 }
             } else {
                 // Check fields map
                 artifact.fields.get(field).map(|v| match v {
-                    serde_yaml::Value::String(s) => s.clone(),
-                    serde_yaml::Value::Bool(b) => b.to_string(),
-                    serde_yaml::Value::Number(n) => n.to_string(),
-                    _ => format!("{v:?}"),
+                    serde_yaml::Value::String(s) => Cow::Borrowed(s.as_str()),
+                    serde_yaml::Value::Bool(b) => Cow::Owned(b.to_string()),
+                    serde_yaml::Value::Number(n) => Cow::Owned(n.to_string()),
+                    _ => Cow::Owned(format!("{v:?}")),
                 })
             }
         }

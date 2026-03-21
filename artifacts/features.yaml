@@ -16,6 +16,7 @@ artifacts:
         target: DD-031
     fields:
       phase: phase-1
+      baseline: v0.1.0
 
   - id: FEAT-002
     type: feature
@@ -32,6 +33,7 @@ artifacts:
         target: DD-032
     fields:
       phase: phase-1
+      baseline: v0.1.0
 
   - id: FEAT-003
     type: feature
@@ -46,6 +48,7 @@ artifacts:
         target: REQ-010
     fields:
       phase: phase-1
+      baseline: v0.1.0
 
   - id: FEAT-004
     type: feature
@@ -62,6 +65,7 @@ artifacts:
         target: DD-002
     fields:
       phase: phase-1
+      baseline: v0.1.0
 
   - id: FEAT-005
     type: feature
@@ -77,6 +81,7 @@ artifacts:
         target: REQ-004
     fields:
       phase: phase-1
+      baseline: v0.1.0
 
   - id: FEAT-006
     type: feature
@@ -91,6 +96,7 @@ artifacts:
         target: REQ-004
     fields:
       phase: phase-1
+      baseline: v0.1.0
 
   - id: FEAT-007
     type: feature
@@ -105,6 +111,7 @@ artifacts:
         target: REQ-007
     fields:
       phase: phase-1
+      baseline: v0.1.0
 
   - id: FEAT-008
     type: feature
@@ -121,6 +128,7 @@ artifacts:
         target: REQ-002
     fields:
       phase: phase-1
+      baseline: v0.1.0
 
   - id: FEAT-009
     type: feature
@@ -137,6 +145,7 @@ artifacts:
         target: DD-005
     fields:
       phase: phase-2
+      baseline: v0.1.0
 
   - id: FEAT-010
     type: feature
@@ -152,6 +161,7 @@ artifacts:
         target: DD-034
     fields:
       phase: phase-2
+      baseline: v0.1.0
 
   - id: FEAT-011
     type: feature
@@ -168,6 +178,7 @@ artifacts:
         target: DD-001
     fields:
       phase: phase-3
+      baseline: v0.2.0-dev
 
   - id: FEAT-012
     type: feature
@@ -184,6 +195,7 @@ artifacts:
         target: DD-004
     fields:
       phase: phase-3
+      baseline: v0.2.0-dev
 
   - id: FEAT-013
     type: feature
@@ -198,6 +210,7 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-1
+      baseline: v0.1.0
 
   - id: FEAT-014
     type: feature
@@ -215,6 +228,7 @@ artifacts:
         target: REQ-009
     fields:
       phase: phase-1
+      baseline: v0.1.0
 
   - id: FEAT-015
     type: feature
@@ -232,6 +246,7 @@ artifacts:
         target: DD-009
     fields:
       phase: phase-1
+      baseline: v0.1.0
 
   - id: FEAT-016
     type: feature
@@ -253,6 +268,7 @@ artifacts:
         target: DD-010
     fields:
       phase: phase-1
+      baseline: v0.1.0
 
   - id: FEAT-017
     type: feature
@@ -272,6 +288,7 @@ artifacts:
         target: DD-010
     fields:
       phase: phase-1
+      baseline: v0.1.0
 
   - id: FEAT-018
     type: feature
@@ -291,6 +308,7 @@ artifacts:
         target: DD-033
     fields:
       phase: phase-2
+      baseline: v0.1.0
 
   - id: FEAT-019
     type: feature
@@ -307,6 +325,7 @@ artifacts:
         target: REQ-001
     fields:
       phase: phase-2
+      baseline: v0.1.0
 
   - id: FEAT-020
     type: feature
@@ -324,6 +343,7 @@ artifacts:
         target: REQ-007
     fields:
       phase: phase-3
+      baseline: v0.2.0-dev
 
   - id: FEAT-021
     type: feature
@@ -340,6 +360,7 @@ artifacts:
         target: REQ-010
     fields:
       phase: phase-2
+      baseline: v0.1.0
 
   - id: FEAT-022
     type: feature
@@ -356,6 +377,7 @@ artifacts:
         target: REQ-007
     fields:
       phase: phase-2
+      baseline: v0.1.0
 
   - id: FEAT-023
     type: feature
@@ -373,6 +395,7 @@ artifacts:
         target: REQ-010
     fields:
       phase: phase-2
+      baseline: v0.1.0
 
   - id: FEAT-024
     type: feature
@@ -389,6 +412,7 @@ artifacts:
         target: REQ-007
     fields:
       phase: phase-2
+      baseline: v0.1.0
 
   - id: FEAT-025
     type: feature
@@ -405,6 +429,7 @@ artifacts:
         target: REQ-007
     fields:
       phase: phase-2
+      baseline: v0.1.0
 
   - id: FEAT-026
     type: feature
@@ -422,6 +447,7 @@ artifacts:
         target: REQ-010
     fields:
       phase: phase-2
+      baseline: v0.1.0
 
   - id: FEAT-027
     type: feature
@@ -437,6 +463,7 @@ artifacts:
         target: REQ-007
     fields:
       phase: phase-2
+      baseline: v0.1.0
 
   - id: FEAT-028
     type: feature
@@ -453,6 +480,7 @@ artifacts:
         target: REQ-007
     fields:
       phase: phase-2
+      baseline: v0.1.0
 
   - id: FEAT-029
     type: feature
@@ -472,6 +500,7 @@ artifacts:
         target: REQ-018
     fields:
       phase: phase-3
+      baseline: v0.2.0-dev
 
   - id: FEAT-030
     type: feature
@@ -491,6 +520,7 @@ artifacts:
         target: REQ-019
     fields:
       phase: phase-3
+      baseline: v0.2.0-dev
 
   - id: FEAT-031
     type: feature
@@ -507,6 +537,7 @@ artifacts:
         target: REQ-017
     fields:
       phase: phase-3
+      baseline: v0.2.0-dev
 
   - id: FEAT-032
     type: feature
@@ -526,6 +557,7 @@ artifacts:
         target: DD-012
     fields:
       phase: phase-3
+      baseline: v0.2.0-dev
 
   - id: FEAT-033
     type: feature
@@ -636,6 +668,7 @@ artifacts:
         target: DD-018
     fields:
       phase: phase-3
+      baseline: v0.2.0-dev
 
   - id: FEAT-041
     type: feature
@@ -655,6 +688,7 @@ artifacts:
         target: DD-019
     fields:
       phase: phase-3
+      baseline: v0.2.0-dev
 
   - id: FEAT-042
     type: feature
@@ -674,6 +708,7 @@ artifacts:
         target: DD-020
     fields:
       phase: phase-3
+      baseline: v0.2.0-dev
 
   - id: FEAT-043
     type: feature
@@ -694,6 +729,7 @@ artifacts:
         target: DD-021
     fields:
       phase: phase-3
+      baseline: v0.2.0-dev
 
   - id: FEAT-044
     type: feature
@@ -714,6 +750,7 @@ artifacts:
         target: DD-022
     fields:
       phase: phase-3
+      baseline: v0.2.0-dev
 
   - id: FEAT-045
     type: feature
@@ -733,6 +770,7 @@ artifacts:
         target: REQ-007
     fields:
       phase: phase-3
+      baseline: v0.2.0-dev
 
   - id: FEAT-057
     type: feature
@@ -751,6 +789,7 @@ artifacts:
         target: REQ-007
     fields:
       phase: phase-3
+      baseline: v0.2.0-dev
 
   - id: FEAT-052
     type: feature
@@ -771,6 +810,7 @@ artifacts:
         target: DD-028
     fields:
       phase: phase-3
+      baseline: v0.2.0-dev
 
   - id: FEAT-053
     type: feature
@@ -790,6 +830,7 @@ artifacts:
         target: DD-028
     fields:
       phase: phase-3
+      baseline: v0.2.0-dev
 
   - id: FEAT-054
     type: feature
@@ -811,6 +852,7 @@ artifacts:
         target: DD-028
     fields:
       phase: phase-3
+      baseline: v0.2.0-dev
 
   - id: FEAT-055
     type: feature
@@ -834,6 +876,7 @@ artifacts:
         target: DD-028
     fields:
       phase: phase-3
+      baseline: v0.2.0-dev
 
   - id: FEAT-056
     type: feature
@@ -853,6 +896,7 @@ artifacts:
         target: REQ-007
     fields:
       phase: phase-3
+      baseline: v0.2.0-dev
 
   - id: FEAT-046
     type: feature
@@ -875,6 +919,7 @@ artifacts:
         target: DD-023
     fields:
       phase: phase-3
+      baseline: v0.2.0-dev
 
   - id: FEAT-047
     type: feature
@@ -897,6 +942,7 @@ artifacts:
         target: DD-024
     fields:
       phase: phase-3
+      baseline: v0.2.0-dev
 
   - id: FEAT-048
     type: feature
@@ -920,6 +966,7 @@ artifacts:
         target: DD-024
     fields:
       phase: phase-3
+      baseline: v0.2.0-dev
 
   - id: FEAT-049
     type: feature
@@ -939,6 +986,7 @@ artifacts:
         target: DD-025
     fields:
       phase: phase-3
+      baseline: v0.2.0-dev
 
   - id: FEAT-050
     type: feature
@@ -1075,6 +1123,7 @@ artifacts:
         target: REQ-011
     fields:
       phase: phase-2
+      baseline: v0.1.0
 
   - id: FEAT-065
     type: feature
@@ -1092,3 +1141,4 @@ artifacts:
         target: REQ-012
     fields:
       phase: phase-2
+      baseline: v0.1.0

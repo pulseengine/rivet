@@ -59,40 +59,44 @@ impl LinkGraph {
             node_map.insert(artifact.id.clone(), idx);
         }
 
-        // Create edges for all links
+        // Create edges for all links.
+        // Hoist the forward-map entry outside the inner link loop so we only
+        // hash the source key once per artifact (not once per link).
         for artifact in store.iter() {
+            let src_id = &artifact.id;
+            if artifact.links.is_empty() {
+                continue;
+            }
+
+            // Pre-fetch forward vec for this artifact (one hash lookup, not N)
+            let fwd_vec = forward.entry(src_id.clone()).or_default();
+
             for link in &artifact.links {
-                if store.contains(&link.target) {
+                let lt = &link.link_type;
+                let tgt = &link.target;
+                if store.contains(tgt) {
                     // Valid link — add forward, backward, and graph edge
-                    forward
-                        .entry(artifact.id.clone())
-                        .or_default()
-                        .push(ResolvedLink {
-                            source: artifact.id.clone(),
-                            target: link.target.clone(),
-                            link_type: link.link_type.clone(),
-                        });
+                    fwd_vec.push(ResolvedLink {
+                        source: src_id.clone(),
+                        target: tgt.clone(),
+                        link_type: lt.clone(),
+                    });
 
-                    let inverse_type = schema.inverse_of(&link.link_type).map(|s| s.to_string());
-                    backward
-                        .entry(link.target.clone())
-                        .or_default()
-                        .push(Backlink {
-                            source: artifact.id.clone(),
-                            link_type: link.link_type.clone(),
-                            inverse_type,
-                        });
+                    let inverse_type = schema.inverse_of(lt).map(|s| s.to_string());
+                    backward.entry(tgt.clone()).or_default().push(Backlink {
+                        source: src_id.clone(),
+                        link_type: lt.clone(),
+                        inverse_type,
+                    });
 
-                    if let (Some(&src), Some(&dst)) =
-                        (node_map.get(&artifact.id), node_map.get(&link.target))
-                    {
-                        graph.add_edge(src, dst, link.link_type.clone());
+                    if let (Some(&src), Some(&dst)) = (node_map.get(src_id), node_map.get(tgt)) {
+                        graph.add_edge(src, dst, lt.clone());
                     }
                 } else {
                     broken.push(ResolvedLink {
-                        source: artifact.id.clone(),
-                        target: link.target.clone(),
-                        link_type: link.link_type.clone(),
+                        source: src_id.clone(),
+                        target: tgt.clone(),
+                        link_type: lt.clone(),
                     });
                 }
             }

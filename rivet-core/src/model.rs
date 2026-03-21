@@ -79,6 +79,27 @@ impl Artifact {
     pub fn has_link_type(&self, link_type: &str) -> bool {
         self.links.iter().any(|l| l.link_type == link_type)
     }
+
+    /// Return the baseline this artifact belongs to, if any.
+    ///
+    /// The baseline is read from the `baseline` key in the `fields` map
+    /// rather than being a first-class struct field, keeping the data
+    /// model backward-compatible.
+    pub fn baseline(&self) -> Option<&str> {
+        self.fields.get("baseline").and_then(|v| v.as_str())
+    }
+}
+
+/// Configuration for a named baseline (release scope).
+///
+/// Baselines are declared in order in `rivet.yaml`. Validation and
+/// coverage can be scoped to a baseline, which cumulatively includes
+/// all artifacts from earlier baselines.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BaselineConfig {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 /// Configuration for commit-to-artifact traceability.
@@ -140,6 +161,10 @@ pub struct ProjectConfig {
     /// External project dependencies for cross-repo linking.
     #[serde(default)]
     pub externals: Option<BTreeMap<String, ExternalProject>>,
+    /// Named baselines for scoped validation and coverage.
+    /// Order matters: earlier baselines are cumulatively included in later ones.
+    #[serde(default)]
+    pub baselines: Option<Vec<BaselineConfig>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

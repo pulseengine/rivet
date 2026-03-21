@@ -187,6 +187,9 @@ pub(crate) struct AppState {
     pub(crate) doc_dirs: Vec<PathBuf>,
     /// External projects loaded at startup (empty if none configured).
     pub(crate) externals: Vec<ExternalInfo>,
+    /// Cached validation diagnostics — computed once at load/reload time
+    /// instead of on every page request.
+    pub(crate) cached_diagnostics: Vec<rivet_core::validate::Diagnostic>,
 }
 
 /// Convenience alias so handler signatures stay compact.
@@ -291,6 +294,8 @@ fn reload_state(
         port,
     };
 
+    let cached_diagnostics = rivet_core::validate::validate(&store, &schema, &graph);
+
     Ok(AppState {
         store,
         schema,
@@ -302,6 +307,7 @@ fn reload_state(
         schemas_dir: schemas_dir.to_path_buf(),
         doc_dirs,
         externals,
+        cached_diagnostics,
     })
 }
 
@@ -338,6 +344,8 @@ pub async fn run(
         port,
     };
 
+    let cached_diagnostics = rivet_core::validate::validate(&store, &schema, &graph);
+
     let state: SharedState = Arc::new(RwLock::new(AppState {
         store,
         schema,
@@ -349,6 +357,7 @@ pub async fn run(
         schemas_dir,
         doc_dirs,
         externals: Vec::new(),
+        cached_diagnostics,
     }));
 
     let app = Router::new()
