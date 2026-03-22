@@ -24,6 +24,14 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('rivet.showSTPA', () => showDashboard(context, '/stpa')),
     vscode.commands.registerCommand('rivet.validate', () => runValidate()),
     vscode.commands.registerCommand('rivet.addArtifact', () => addArtifact()),
+    vscode.commands.registerCommand('rivet.navigateTo', (urlPath: string) => showDashboard(context, urlPath)),
+  );
+
+  // --- Sidebar Tree View ---
+  const treeProvider = new RivetTreeProvider();
+  vscode.window.registerTreeDataProvider('rivetExplorer', treeProvider);
+  context.subscriptions.push(
+    vscode.commands.registerCommand('rivet.refreshTree', () => treeProvider.refresh()),
   );
 
   // --- Status Bar ---
@@ -178,7 +186,9 @@ async function showDashboard(context: vscode.ExtensionContext, urlPath: string =
   }
 
   // Map localhost to a VS Code-accessible URI (works in WebViews)
-  const localUri = vscode.Uri.parse(`http://127.0.0.1:${dashboardPort}${urlPath}`);
+  // ?embed=1 strips the sidebar (VS Code tree view handles navigation)
+  const sep = urlPath.includes('?') ? '&' : '?';
+  const localUri = vscode.Uri.parse(`http://127.0.0.1:${dashboardPort}${urlPath}${sep}embed=1`);
   const mappedUri = await vscode.env.asExternalUri(localUri);
 
   if (dashboardPanel) {
@@ -286,5 +296,50 @@ async function addArtifact() {
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     vscode.window.showErrorMessage(`Failed to add artifact: ${msg}`);
+  }
+}
+
+// --- Sidebar Tree View ---
+
+class RivetTreeProvider implements vscode.TreeDataProvider<RivetTreeItem> {
+  private _onDidChangeTreeData = new vscode.EventEmitter<void>();
+  readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+
+  refresh(): void {
+    this._onDidChangeTreeData.fire();
+  }
+
+  getTreeItem(element: RivetTreeItem): vscode.TreeItem {
+    return element;
+  }
+
+  getChildren(element?: RivetTreeItem): RivetTreeItem[] {
+    if (element) return [];
+
+    return [
+      new RivetTreeItem('Stats', '/stats', 'dashboard'),
+      new RivetTreeItem('Artifacts', '/artifacts', 'symbol-class'),
+      new RivetTreeItem('Validation', '/validate', 'pass'),
+      new RivetTreeItem('STPA', '/stpa', 'shield'),
+      new RivetTreeItem('Graph', '/graph', 'type-hierarchy'),
+      new RivetTreeItem('Documents', '/documents', 'book'),
+      new RivetTreeItem('Matrix', '/matrix', 'table'),
+      new RivetTreeItem('Coverage', '/coverage', 'checklist'),
+      new RivetTreeItem('Source', '/source', 'code'),
+      new RivetTreeItem('Results', '/results', 'beaker'),
+      new RivetTreeItem('Help', '/help', 'question'),
+    ];
+  }
+}
+
+class RivetTreeItem extends vscode.TreeItem {
+  constructor(label: string, public readonly urlPath: string, icon: string) {
+    super(label, vscode.TreeItemCollapsibleState.None);
+    this.iconPath = new vscode.ThemeIcon(icon);
+    this.command = {
+      command: 'rivet.navigateTo',
+      title: label,
+      arguments: [urlPath],
+    };
   }
 }

@@ -27,6 +27,23 @@
   ],
   "main": "./out/extension",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "rivet",
+          "title": "Rivet SDLC",
+          "icon": "icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "rivet": [
+        {
+          "id": "rivetExplorer",
+          "name": "Explorer"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "rivet.showDashboard",
