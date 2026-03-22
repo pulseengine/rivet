@@ -1072,4 +1072,4 @@ pub(crate) mod components;
 pub(crate) mod js;
 pub(crate) mod layout;
 pub(crate) mod styles;
-mod views;
+pub(crate) mod views;

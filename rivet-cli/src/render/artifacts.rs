@@ -351,9 +351,26 @@ pub(crate) fn render_artifact_detail(ctx: &RenderContext, id: &str) -> RenderRes
         .as_ref()
         .map(|p| p.display().to_string());
 
+    // Source file link (shown at top for quick access)
+    let source_link = if let Some(ref sf) = source_file {
+        let filename = std::path::Path::new(sf)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(sf);
+        format!(
+            " <span class=\"meta\" style=\"float:right;font-size:.85rem\">\
+             <a href=\"#\" onclick=\"return false\" title=\"{}\">&#128196; {}</a></span>",
+            html_escape(sf),
+            html_escape(filename),
+        )
+    } else {
+        String::new()
+    };
+
     let mut html = format!(
-        "<h2>{}</h2><p class=\"meta\">{}</p>",
+        "<h2>{}{}</h2><p class=\"meta\">{}</p>",
         html_escape(&artifact.id),
+        source_link,
         badge_for_type(&artifact.artifact_type)
     );
 

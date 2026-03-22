@@ -5122,7 +5122,20 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
 
                         let response_value = match parent {
                             None => {
-                                // Build document list from artifact source files
+                                // Documents from DocumentStore (markdown docs)
+                                let documents: Vec<_> = doc_store.iter().map(|doc| {
+                                    let source = doc.source_file.as_ref()
+                                        .map(|p| p.display().to_string())
+                                        .unwrap_or_default();
+                                    serde_json::json!({
+                                        "kind": "document", "label": &doc.title,
+                                        "description": &source,
+                                        "path": &doc.id,
+                                        "page": format!("/documents/{}", &doc.id)
+                                    })
+                                }).collect();
+
+                                // Artifact source files (YAML files with artifacts)
                                 let mut file_map: std::collections::BTreeMap<String, (String, usize)> = std::collections::BTreeMap::new();
                                 for artifact in render_store.iter() {
                                     if let Some(ref sf) = artifact.source_file {
@@ -5143,11 +5156,10 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                                         entry.1 += 1;
                                     }
                                 }
-                                let documents: Vec<_> = file_map.iter().map(|(path, (name, count))| {
+                                let sources: Vec<_> = file_map.iter().map(|(path, (name, count))| {
                                     serde_json::json!({
-                                        "kind": "document", "label": name, "description": path,
-                                        "artifactCount": count, "path": path,
-                                        "page": format!("/documents/{}", std::path::Path::new(path).file_stem().and_then(|s| s.to_str()).unwrap_or(""))
+                                        "kind": "source", "label": name, "description": path,
+                                        "artifactCount": count, "path": path
                                     })
                                 }).collect();
 
@@ -5156,27 +5168,22 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                                     serde_json::json!({"kind":"view","label":"Artifacts","page":"/artifacts","icon":"symbol-class"}),
                                     serde_json::json!({"kind":"view","label":"Validation","page":"/validate","icon":"pass"}),
                                     serde_json::json!({"kind":"view","label":"STPA","page":"/stpa","icon":"shield"}),
-                                    serde_json::json!({"kind":"view","label":"Graph","page":"/graph","icon":"type-hierarchy"}),
-                                    serde_json::json!({"kind":"view","label":"Matrix","page":"/matrix","icon":"table"}),
-                                    serde_json::json!({"kind":"view","label":"Coverage","page":"/coverage","icon":"checklist"}),
                                 ];
 
-                                let help = vec![
-                                    serde_json::json!({"kind":"help","label":"Documentation","page":"/help/docs"}),
-                                    serde_json::json!({"kind":"help","label":"Schema Reference","page":"/help/schema"}),
-                                    serde_json::json!({"kind":"help","label":"Link Types","page":"/help/links"}),
-                                    serde_json::json!({"kind":"help","label":"Validation Rules","page":"/help/rules"}),
+                                let mut categories = vec![
+                                    serde_json::json!({"kind":"category","label":"Views","children":views}),
                                 ];
+                                if !sources.is_empty() {
+                                    categories.push(serde_json::json!({"kind":"category","label":"Artifact Files","children":sources}));
+                                }
+                                if !documents.is_empty() {
+                                    categories.insert(0, serde_json::json!({"kind":"category","label":"Documents","children":documents}));
+                                }
 
-                                serde_json::json!({
-                                    "items": [
-                                        {"kind":"category","label":"Documents","children":documents},
-                                        {"kind":"category","label":"Views","children":views},
-                                        {"kind":"category","label":"Help","children":help},
-                                    ]
-                                })
+                                serde_json::json!({ "items": categories })
                             }
                             Some(parent_path) => {
+                                // Expand source file: show artifacts from this file
                                 let mut items: Vec<_> = render_store.iter()
                                     .filter(|a| a.source_file.as_ref().is_some_and(|sf| sf.display().to_string() == parent_path))
                                     .map(|a| serde_json::json!({

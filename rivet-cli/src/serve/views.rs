@@ -4805,7 +4805,7 @@ pub(crate) async fn traceability_history(
 /// Handles the special `__type:{type}` convention used by the `{{table:TYPE:FIELDS}}`
 /// embed: returns a synthetic `ArtifactInfo` whose `tags` list contains all artifact IDs
 /// of the requested type.
-fn build_artifact_info(
+pub(crate) fn build_artifact_info(
     id: &str,
     store: &rivet_core::store::Store,
     graph: &rivet_core::links::LinkGraph,

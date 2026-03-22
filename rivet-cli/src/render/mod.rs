@@ -11,6 +11,7 @@ use crate::serve::{ExternalInfo, RepoContext};
 
 pub(crate) mod artifacts;
 pub(crate) mod components;
+pub(crate) mod documents;
 pub(crate) mod helpers;
 pub(crate) mod stats;
 pub(crate) mod stpa;
@@ -41,23 +42,32 @@ pub(crate) struct RenderResult {
 }
 
 pub(crate) fn render_page(ctx: &RenderContext, page: &str, params: &crate::serve::components::ViewParams) -> RenderResult {
-    match page {
+    // Strip query string if present (e.g., /artifacts?q=foo → /artifacts)
+    let (path, _query) = page.split_once('?').unwrap_or((page, ""));
+
+    match path {
         "/" | "/stats" => RenderResult {
             html: stats::render_stats(ctx),
             title: "Stats".to_string(),
             source_file: None,
             source_line: None,
         },
-        p if p.starts_with("/artifacts/") => {
-            let id = &p["/artifacts/".len()..];
-            artifacts::render_artifact_detail(ctx, id)
-        }
         "/artifacts" => RenderResult {
             html: artifacts::render_artifacts_list(ctx, params),
             title: "Artifacts".to_string(),
             source_file: None,
             source_line: None,
         },
+        p if p.starts_with("/artifacts/") => {
+            let rest = &p["/artifacts/".len()..];
+            // Extract artifact ID (stop at next slash for sub-routes like /graph, /preview)
+            let (id, sub) = rest.split_once('/').unwrap_or((rest, ""));
+            match sub {
+                "" => artifacts::render_artifact_detail(ctx, id),
+                // Sub-routes like /artifacts/{id}/graph are not yet available
+                _ => artifacts::render_artifact_detail(ctx, id),
+            }
+        }
         "/validate" => RenderResult {
             html: validate::render_validate(ctx, params),
             title: "Validation".to_string(),
@@ -70,12 +80,24 @@ pub(crate) fn render_page(ctx: &RenderContext, page: &str, params: &crate::serve
             source_file: None,
             source_line: None,
         },
+        "/documents" => RenderResult {
+            html: documents::render_documents_list(ctx),
+            title: "Documents".to_string(),
+            source_file: None,
+            source_line: None,
+        },
+        p if p.starts_with("/documents/") => {
+            let id = &p["/documents/".len()..];
+            documents::render_document_detail(ctx, id)
+        }
         _ => RenderResult {
             html: format!(
-                "<div class=\"error\"><h2>Not Found</h2><p>Page <code>{}</code> is not available.</p></div>",
-                rivet_core::document::html_escape(page)
+                "<div class=\"card\" style=\"margin:2rem\"><h2>Not Available</h2>\
+                 <p>The <code>{}</code> view is not yet available in VS Code.</p>\
+                 <p style=\"color:var(--text-muted);margin-top:.5rem\">Use <code>rivet serve</code> to view it in your browser.</p></div>",
+                rivet_core::document::html_escape(path)
             ),
-            title: "Not Found".to_string(),
+            title: "Not Available".to_string(),
             source_file: None,
             source_line: None,
         },

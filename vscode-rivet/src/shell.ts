@@ -16,11 +16,11 @@ export function getShellHtml(
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy"
     content="default-src 'none';
-             style-src 'nonce-${nonce}';
+             style-src 'unsafe-inline';
              script-src 'nonce-${nonce}';
              font-src ${webview.cspSource} data:;
              img-src ${webview.cspSource} data:;">
-  <style nonce="${nonce}">
+  <style>
     :root {
       --bg: var(--vscode-editor-background);
       --surface: var(--vscode-editorWidget-background);
@@ -33,16 +33,14 @@ export function getShellHtml(
       --success: var(--vscode-testing-iconPassed);
     }
     ${css}
+    #stale-banner { display:none;padding:8px 16px;background:var(--vscode-editorInfo-background,#1a3a5c);color:var(--text);cursor:pointer;text-align:center;font-size:13px; }
+    #loading-placeholder { display:flex;align-items:center;justify-content:center;height:80vh;color:var(--text-muted); }
   </style>
 </head>
 <body>
-  <div id="stale-banner" style="display:none;padding:8px 16px;background:var(--vscode-editorInfo-background,#1a3a5c);color:var(--text);cursor:pointer;text-align:center;font-size:13px;">
-    Content changed \u2014 click to refresh
-  </div>
+  <div id="stale-banner">Content changed — click to refresh</div>
   <main id="content">
-    <div style="display:flex;align-items:center;justify-content:center;height:80vh;color:var(--text-muted)">
-      Loading...
-    </div>
+    <div id="loading-placeholder">Loading...</div>
   </main>
   <script nonce="${nonce}" src="${mermaidUri}"></script>
   <script nonce="${nonce}">

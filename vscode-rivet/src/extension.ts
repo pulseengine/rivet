@@ -338,7 +338,7 @@ class RivetTreeProvider implements vscode.TreeDataProvider<RivetTreeNode> {
 
     if (element.kind === 'category' && element.childData) {
       return element.childData.map(item => {
-        const hasChildren = item.kind === 'document';
+        const hasChildren = item.kind === 'source';
         const desc = item.artifactCount !== undefined
           ? `${item.description || ''} (${item.artifactCount})`
           : item.description;
@@ -350,7 +350,7 @@ class RivetTreeProvider implements vscode.TreeDataProvider<RivetTreeNode> {
       });
     }
 
-    if (element.kind === 'document' && element.sourcePath) {
+    if (element.kind === 'source' && element.sourcePath) {
       try {
         const result: any = await client.sendRequest('rivet/treeData', { parent: element.sourcePath });
         return (result.items || []).map((item: TreeItemData) => new RivetTreeNode(
@@ -383,7 +383,8 @@ class RivetTreeNode extends vscode.TreeItem {
     // Icons
     if (icon) this.iconPath = new vscode.ThemeIcon(icon);
     else if (kind === 'category') this.iconPath = new vscode.ThemeIcon('folder');
-    else if (kind === 'document') this.iconPath = new vscode.ThemeIcon('file-text');
+    else if (kind === 'document') this.iconPath = new vscode.ThemeIcon('book');
+    else if (kind === 'source') this.iconPath = new vscode.ThemeIcon('file-code');
     else if (kind === 'artifact') this.iconPath = new vscode.ThemeIcon('symbol-property');
     else if (kind === 'help') this.iconPath = new vscode.ThemeIcon('question');
 
