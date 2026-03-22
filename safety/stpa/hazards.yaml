@@ -201,6 +201,28 @@ hazards:
       cross-repo links break without warning and traceability is lost.
     losses: [L-1, L-3]
 
+  - id: H-19
+    title: LSP server provides stale validation results after file change
+    description: >
+      The LSP server's salsa incremental database is not invalidated when
+      a file is saved via textDocument/didSave.  The cached diagnostics
+      from a previous file version are returned to the editor as current
+      validation results.  In a worst-case environment where the developer
+      trusts the editor's inline diagnostics, stale PASS results hide
+      newly introduced traceability violations.
+    losses: [L-1, L-2, L-5]
+
+  - id: H-20
+    title: Dashboard WebView in VS Code exposes artifact data via iframe postMessage
+    description: >
+      The VS Code extension hosts the rivet dashboard in a WebView panel.
+      If the WebView does not restrict postMessage origins, a malicious
+      extension or compromised workspace can send navigation commands or
+      read artifact data via the iframe message channel.  In a worst-case
+      environment where sensitive requirements or safety analyses are
+      displayed, this enables data exfiltration without filesystem access.
+    losses: [L-3, L-5]
+
 sub-hazards:
   # --- H-1 refinements: types of stale references ---
   - id: H-1.1

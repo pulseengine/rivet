@@ -673,6 +673,50 @@ loss-scenarios:
       - No URL allowlist or domain restriction for external repos
       - sync command does not use --config core.hooksPath=/dev/null
 
+  - id: LS-L-4
+    title: Salsa memoization returns cached diagnostics from a previous file version
+    uca: UCA-C-26
+    type: inadequate-process-model
+    hazards: [H-19, H-9]
+    scenario: >
+      The developer edits an artifact YAML file, adding a broken link
+      (target: NOPE-999), and saves via Ctrl+S. The editor sends
+      textDocument/didSave to the LSP server. The LSP handler calls
+      the salsa validation query, but the file-content input was set
+      when the file was first opened and has not been updated. Salsa
+      returns the memoized diagnostics from the pre-edit file content.
+      The editor shows zero errors. The developer proceeds to commit,
+      believing the file is valid, while it contains a broken link
+      that would have been caught by a fresh validation pass.
+    process-model-flaw: >
+      The LSP server's salsa database believes its file-content input
+      still matches the on-disk content because the didSave handler
+      does not call set_file_content() to update the input query.
+    causal-factors:
+      - didSave handler does not re-read file and update salsa input
+      - Salsa input queries are set once at file-open time
+      - No test verifies that diagnostics change after a file save
+
+  - id: LS-L-5
+    title: VS Code extension postMessage handler accepts navigation commands from any origin
+    uca: UCA-C-27
+    type: control-path
+    hazards: [H-20]
+    scenario: >
+      A malicious VS Code extension installed in the same workspace
+      obtains a reference to the rivet dashboard WebView panel. It
+      posts a message { type: "navigate", path: "/artifacts" } to
+      the WebView. The dashboard's message handler does not check
+      event.origin or event.source and processes the command, returning
+      the full artifact list HTML to the caller via a response
+      postMessage. The malicious extension extracts proprietary
+      requirement text from the HTML payload and exfiltrates it to
+      an external server.
+    causal-factors:
+      - WebView message handler does not validate event.origin
+      - No Content-Security-Policy restricting frame-ancestors
+      - VS Code extension API allows cross-extension WebView messaging
+
   - id: LS-C-15
     title: Lifecycle check misses cybersecurity downstream requirements
     uca: UCA-C-24

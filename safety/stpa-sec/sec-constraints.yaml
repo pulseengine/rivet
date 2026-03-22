@@ -94,3 +94,18 @@ artifacts:
     links:
       - type: prevents-sec-hazard
         target: SH-6
+
+  - id: SSC-7
+    type: sec-constraint
+    title: LSP must only process files within the project's configured source paths
+    status: approved
+    description: >
+      The LSP server must validate that any file URI received via
+      textDocument/didChange or textDocument/didSave is within the
+      project's configured source paths (as declared in rivet.yaml).
+      Files outside the configured sources must be ignored with a
+      diagnostic log entry.  This prevents injection of crafted
+      artifact content from non-project files.
+    links:
+      - type: prevents-sec-hazard
+        target: SH-7

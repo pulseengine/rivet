@@ -34,7 +34,7 @@ test.describe("STPA View", () => {
     await page.goto("/stpa");
     await waitForHtmx(page);
     await expect(
-      page.locator("text=Security Unsafe Control Actions"),
+      page.getByRole("heading", { name: "Security Unsafe Control Actions" }),
     ).toBeVisible();
     await expect(page.locator("body")).toContainText("SUCA-CLI-1");
   });

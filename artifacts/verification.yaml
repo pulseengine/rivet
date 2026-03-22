@@ -293,3 +293,392 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-2
+
+  - id: TEST-016
+    type: feature
+    title: Dashboard HTTP serve integration tests
+    status: approved
+    description: >
+      Integration tests for the axum HTTP dashboard server (FEAT-009). Verifies
+      that rivet serve starts, serves the index page with correct Content-Type,
+      returns artifact detail views, renders traceability matrix and graph pages,
+      responds to reload endpoint, and returns proper error codes for unknown routes.
+    tags: [testing, dashboard, swe-5]
+    links:
+      - type: verifies
+        target: REQ-007
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-2
+
+  - id: TEST-017
+    type: feature
+    title: Commit traceability trailer parsing and coverage tests
+    status: approved
+    description: >
+      Tests for commit-to-artifact traceability covering FEAT-029 through FEAT-032.
+      Verifies git trailer extraction, conventional commit type exemption, Trace-skip
+      opt-out handling, orphan commit detection across traced paths, ephemeral commit
+      node injection into the link graph, and commit coverage report generation.
+    tags: [testing, git, traceability, swe-5]
+    links:
+      - type: verifies
+        target: REQ-017
+      - type: verifies
+        target: REQ-018
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-3
+
+  - id: TEST-018
+    type: feature
+    title: Cross-repo linking and external artifact resolution tests
+    status: approved
+    description: >
+      Tests for cross-repo features covering FEAT-033 through FEAT-039. Verifies
+      externals config block parsing, prefix:ID syntax resolution, rivet sync
+      fetch/clone operations, rivet lock pin generation, cross-repo link validation,
+      circular dependency detection, and dashboard external project browsing.
+    tags: [testing, cross-repo, swe-5]
+    links:
+      - type: verifies
+        target: REQ-020
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-3
+
+  - id: TEST-019
+    type: feature
+    title: Conditional validation rules tests
+    status: approved
+    description: >
+      Tests for conditional validation rules (FEAT-040). Verifies when/then syntax
+      parsing in schema YAML, field value equality matching, regex pattern matching,
+      field existence checks, required-fields enforcement, required-links enforcement,
+      and conditional rule evaluation after static rules in the validation pipeline.
+    tags: [testing, validation, schema, swe-5]
+    links:
+      - type: verifies
+        target: REQ-023
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-3
+
+  - id: TEST-020
+    type: feature
+    title: Impact analysis command tests
+    status: approved
+    description: >
+      Tests for rivet impact command (FEAT-041). Verifies content hash computation,
+      baseline diff against tags and commits, transitive link graph walk for affected
+      artifacts, --since and --baseline flag handling, JSON output format, and
+      dashboard integration highlighting impacted artifacts.
+    tags: [testing, traceability, baseline, swe-5]
+    links:
+      - type: verifies
+        target: REQ-024
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-3
+
+  - id: TEST-021
+    type: feature
+    title: sphinx-needs JSON adapter import tests
+    status: approved
+    description: >
+      Tests for sphinx-needs JSON import adapter (FEAT-042). Verifies needs.json
+      parsing, configurable type-mapping application, id-transform rules, nested
+      content handling, docname metadata preservation, underscore ID conversion,
+      and full roundtrip from needs.json to rivet artifact store.
+    tags: [testing, adapter, interchange, swe-5]
+    links:
+      - type: verifies
+        target: REQ-025
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-3
+
+  - id: TEST-022
+    type: feature
+    title: Test traceability source scanner tests
+    status: approved
+    description: >
+      Tests for the test scanner (FEAT-043). Verifies Rust attribute marker
+      extraction, Python decorator marker extraction, comment tag scanning,
+      JUnit XML result file parsing, cargo test JSON parsing, ephemeral test
+      node injection into the link graph, configurable marker patterns, and
+      coverage report generation via rivet coverage --tests.
+    tags: [testing, traceability, automation, swe-5]
+    links:
+      - type: verifies
+        target: REQ-026
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-3
+
+  - id: TEST-023
+    type: feature
+    title: Build-system dependency provider tests
+    status: approved
+    description: >
+      Tests for build-system providers (FEAT-044 through FEAT-046). Verifies Bazel
+      MODULE.bazel parsing for bazel_dep() and git_override(), Nix flake.lock input
+      pin parsing, custom JSON provider reading, repo URL resolution, pinned commit
+      extraction, workspace path resolution, and rowan CST construction for
+      the Starlark subset grammar.
+    tags: [testing, cross-repo, bazel, nix, swe-5]
+    links:
+      - type: verifies
+        target: REQ-027
+      - type: verifies
+        target: REQ-028
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-3
+
+  - id: TEST-024
+    type: feature
+    title: Salsa incremental validation database tests
+    status: approved
+    description: >
+      Tests for salsa validation database (FEAT-047 and FEAT-048). Verifies
+      input query setup for file contents, tracked query invalidation on file
+      change, incremental parse_artifacts recomputation, schema merge caching,
+      conditional rule evaluation as tracked queries, dependency tracking for
+      artifact field values, and equivalence between incremental and full
+      validation results.
+    tags: [testing, validation, salsa, swe-5]
+    links:
+      - type: verifies
+        target: REQ-029
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-3
+
+  - id: TEST-025
+    type: feature
+    title: CLI mutation commands (add/modify/remove/link/unlink) tests
+    status: approved
+    description: >
+      Tests for CLI mutation commands (FEAT-052 through FEAT-056). Verifies
+      rivet add with auto-ID generation and schema validation, rivet modify
+      with field/status/tag updates, rivet remove with dangling link prevention,
+      rivet link/unlink with cardinality constraint checks, and rivet next-id
+      computation for all prefix patterns.
+    tags: [testing, cli, mutation, swe-5]
+    links:
+      - type: verifies
+        target: REQ-031
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-3
+
+  - id: TEST-026
+    type: feature
+    title: Markdown rendering and rich embed tests
+    status: approved
+    description: >
+      Tests for markdown rendering and embed features (FEAT-058 through FEAT-060).
+      Verifies pulldown-cmark heading, list, code block, and emphasis rendering,
+      embed directive modifier syntax (full, links, upstream, downstream, chain,
+      table), enriched ArtifactInfo resolution with forward links, backlinks,
+      and resolved titles, and schema-driven link traversal in document output.
+    tags: [testing, rendering, documents, swe-5]
+    links:
+      - type: verifies
+        target: REQ-032
+      - type: verifies
+        target: REQ-033
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-3
+
+  - id: TEST-027
+    type: feature
+    title: yaml_edit lossless YAML editor tests
+    status: approved
+    description: >
+      Tests for the yaml_edit module (FEAT-061). Verifies indentation-aware
+      YAML editing, comment preservation, multi-line string handling, list
+      item insertion/removal, field value updates without reformatting adjacent
+      content, and YAML 1.2.2 spec compliance for edge cases including
+      anchors, tags, and flow collections.
+    tags: [testing, yaml, parsing, swe-4]
+    links:
+      - type: verifies
+        target: REQ-034
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-3
+
+  - id: TEST-028
+    type: feature
+    title: HTML export document generation tests
+    status: approved
+    description: >
+      Tests for HTML export (FEAT-062 and FEAT-063). Verifies document pages
+      are generated in docs/ subdirectory, wiki-links resolve to static .html
+      hrefs, artifact embeds render inline, version switcher config.js is
+      generated with correct version data, homepage link renders correctly,
+      and the complete export directory structure matches expectations.
+    tags: [testing, export, documents, swe-5]
+    links:
+      - type: verifies
+        target: REQ-035
+      - type: verifies
+        target: REQ-036
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-3
+
+  - id: TEST-029
+    type: feature
+    title: CI quality gates and MSRV enforcement tests
+    status: approved
+    description: >
+      Tests for CI and MSRV enforcement (FEAT-064 and FEAT-065). Verifies
+      Cargo.toml declares edition 2024 and rust-version 1.85, MSRV compilation
+      succeeds with minimum toolchain, GitHub Actions workflow includes all
+      quality gate steps (fmt, clippy, test, audit, deny, coverage, miri,
+      proptest, vet), and each gate runs independently.
+    tags: [testing, ci, toolchain, swe-6]
+    links:
+      - type: verifies
+        target: REQ-011
+      - type: verifies
+        target: REQ-012
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-2
+
+  - id: TEST-030
+    type: feature
+    title: Dashboard Playwright end-to-end tests
+    status: approved
+    description: >
+      Playwright browser automation tests for the dashboard (FEAT-009). Verifies
+      page navigation, artifact detail view rendering, traceability matrix
+      interactivity, graph pan/zoom/drag, Cmd+K search, hover previews,
+      document viewer rendering, source viewer with line anchors, and
+      self-contained asset loading (no CDN requests).
+    tags: [testing, dashboard, playwright, swe-6]
+    links:
+      - type: verifies
+        target: REQ-007
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-2
+
+  - id: TEST-031
+    type: feature
+    title: LSP server protocol and handler tests
+    status: approved
+    description: >
+      Tests for the Language Server Protocol server. Verifies initialization
+      handshake, textDocument/didOpen and didSave notifications trigger
+      re-validation, publishDiagnostics emits correct artifact-level diagnostics,
+      completion provider suggests artifact IDs and link types, goto-definition
+      resolves artifact references to file locations, and hover shows artifact
+      summaries.
+    tags: [testing, lsp, swe-5]
+    links:
+      - type: verifies
+        target: REQ-029
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-3
+
+  - id: TEST-032
+    type: feature
+    title: Gherkin export and BDD scenario generation tests
+    status: approved
+    description: >
+      Tests for Gherkin/cucumber export functionality. Verifies that acceptance
+      criteria fields on artifacts are exported as Gherkin Feature/Scenario/
+      Given-When-Then syntax, scenario outline generation for parameterized
+      criteria, tag mapping from artifact tags to Gherkin tags, and roundtrip
+      parsing of generated .feature files.
+    tags: [testing, gherkin, bdd, swe-5]
+    links:
+      - type: verifies
+        target: REQ-014
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-3
+
+  - id: TEST-033
+    type: feature
+    title: AADL adapter and architecture model tests
+    status: approved
+    description: >
+      Tests for the AADL adapter (FEAT-018 and FEAT-019). Verifies spar CLI
+      JSON output parsing, component type and implementation extraction,
+      aadl-component and aadl-analysis-result artifact creation, allocated-from
+      link generation to requirements, and self-model dogfood validation of
+      the arch/ directory AADL files.
+    tags: [testing, aadl, adapter, swe-5]
+    links:
+      - type: verifies
+        target: REQ-001
+      - type: verifies
+        target: REQ-005
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-2
+
+  - id: TEST-034
+    type: feature
+    title: STPA-Sec schema validation and artifact tests
+    status: approved
+    description: >
+      Tests for the STPA-Sec security extension schema. Verifies sec-loss,
+      sec-hazard, sec-constraint, sec-uca, and sec-scenario artifact type
+      validation, CIA impact field enforcement, adversarial-causation required
+      field on sec-uca, security link type resolution (leads-to-sec-loss,
+      prevents-sec-hazard, leads-to-sec-hazard, caused-by-sec-uca), and
+      traceability rule completeness checks.
+    tags: [testing, stpa-sec, security, swe-5]
+    links:
+      - type: verifies
+        target: REQ-004
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-2
+
+  - id: TEST-035
+    type: feature
+    title: SCORE schema conformance and ASPICE mapping tests
+    status: approved
+    description: >
+      Tests for the SCORE project schema overlay. Verifies that the score
+      schema merges cleanly with common and aspice schemas, SCORE-specific
+      artifact types (research, benchmark, gap-analysis) validate correctly,
+      ASPICE traceability rules apply to SCORE artifact chains, and coverage
+      metrics compute correctly for SCORE domain artifacts.
+    tags: [testing, score, schema, swe-5]
+    links:
+      - type: verifies
+        target: REQ-010
+      - type: satisfies
+        target: REQ-014
+    fields:
+      phase: phase-3

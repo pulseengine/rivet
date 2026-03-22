@@ -515,3 +515,25 @@ controller-constraints:
       external sync operations.
     ucas: [UCA-L-7]
     hazards: [H-17, H-14]
+
+  # =========================================================================
+  # LSP server constraints (Phase 3 extension)
+  # =========================================================================
+  - id: CC-C-26
+    controller: CTRL-CORE
+    constraint: >
+      LSP must invalidate salsa cache and re-query diagnostics on every
+      didSave notification. Updated diagnostics must be published within
+      500 ms for stores under 5000 artifacts.
+    ucas: [UCA-C-26]
+    hazards: [H-19, H-9]
+
+  - id: CC-C-27
+    controller: CTRL-CORE
+    constraint: >
+      WebView must restrict iframe sandbox to allow-scripts
+      allow-same-origin only. postMessage handlers must validate
+      the origin before accepting navigation commands or returning
+      artifact data.
+    ucas: [UCA-C-27]
+    hazards: [H-20]

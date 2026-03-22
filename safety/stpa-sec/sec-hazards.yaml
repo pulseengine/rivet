@@ -121,3 +121,24 @@ artifacts:
     fields:
       cia-impact: [availability]
       severity: medium
+
+  - id: SH-7
+    type: sec-hazard
+    title: LSP server accepts didChange from non-project files, allowing code injection into validation
+    status: approved
+    description: >
+      The LSP server processes textDocument/didChange and didSave
+      notifications for any file URI sent by the editor, regardless of
+      whether the file is within the project's configured source paths.
+      An attacker who controls a file outside the project (e.g., via a
+      symlink or workspace folder injection) can send crafted YAML content
+      that is parsed by the validation pipeline, injecting artifacts or
+      triggering schema violations that mask real issues.
+    links:
+      - type: leads-to-sec-loss
+        target: SL-2
+      - type: leads-to-sec-loss
+        target: SL-5
+    fields:
+      cia-impact: [integrity]
+      severity: high
