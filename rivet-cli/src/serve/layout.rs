@@ -263,3 +263,40 @@ document.addEventListener('DOMContentLoaded',function(){{mermaid.run({{querySele
         CSS = styles::CSS,
     ))
 }
+
+/// Embed layout — no sidebar, no context bar, just content with HTMX.
+/// Used when the dashboard is embedded in VS Code WebView.
+pub(crate) fn embed_layout(content: &str, _state: &AppState) -> Html<String> {
+    let version = env!("CARGO_PKG_VERSION");
+    Html(format!(
+        r##"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Rivet</title>
+<style>{FONTS_CSS}{CSS}</style>
+<style>
+  body {{ background: var(--bg); color: var(--text); margin: 0; }}
+  main {{ padding: 1rem 1.5rem; max-width: 100%; }}
+</style>
+<script src="/assets/htmx.js"></script>
+<script src="/assets/mermaid.js"></script>
+<script>
+mermaid.initialize({{startOnLoad:false,theme:'neutral',securityLevel:'strict'}});
+function renderMermaid(){{mermaid.run({{querySelector:'.mermaid'}}).catch(function(){{}})}}
+document.addEventListener('htmx:afterSwap',renderMermaid);
+document.addEventListener('DOMContentLoaded',renderMermaid);
+</script>
+</head>
+<body>
+<main id="content">
+{content}
+</main>
+<div style="padding:.5rem 1.5rem;font-size:.75rem;color:var(--text-secondary)">Rivet v{version}</div>
+</body>
+</html>"##,
+        FONTS_CSS = styles::FONTS_CSS,
+        CSS = styles::CSS,
+    ))
+}

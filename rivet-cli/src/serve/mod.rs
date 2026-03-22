@@ -595,15 +595,16 @@ async fn wrap_full_page(
     let query = req.uri().query().unwrap_or("").to_string();
     let is_htmx = req.headers().contains_key("hx-request");
     let is_print = query.contains("print=1");
+    let is_embed = query.contains("embed=1");
     let method = req.method().clone();
 
     let response = next.run(req).await;
 
     // Only wrap GET requests to view routes (not assets or APIs)
-    // For "/" without print=1, the index handler already renders the full page.
+    // For "/" without print/embed, the index handler already renders the full page.
     if method == axum::http::Method::GET
         && !is_htmx
-        && (path != "/" || is_print)
+        && (path != "/" || is_print || is_embed)
         && !path.starts_with("/api/")
         && !path.starts_with("/assets/")
         && !path.starts_with("/wasm/")
@@ -617,6 +618,9 @@ async fn wrap_full_page(
         let app = state.read().await;
         if is_print {
             return layout::print_layout(&content, &app).into_response();
+        }
+        if is_embed {
+            return layout::embed_layout(&content, &app).into_response();
         }
         return layout::page_layout(&content, &app).into_response();
     }
