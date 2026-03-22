@@ -79,6 +79,13 @@ export async function activate(context: vscode.ExtensionContext) {
       dispose: () => { client?.stop().catch(() => {}); },
     });
 
+    client.onNotification('rivet/artifactsChanged', (_params: any) => {
+      treeProvider.refresh();
+      if (panel) {
+        panel.webview.postMessage({ type: 'stale' });
+      }
+    });
+
     statusBarItem.text = '$(shield) Rivet';
     console.log(`rivet LSP started: ${rivetPath}`);
   } catch (err: unknown) {
@@ -266,45 +273,107 @@ async function addArtifact() {
 
 // --- Sidebar Tree View ---
 
-class RivetTreeProvider implements vscode.TreeDataProvider<RivetTreeItem> {
+interface TreeItemData {
+  kind: string;
+  label: string;
+  description?: string;
+  page?: string;
+  icon?: string;
+  path?: string;
+  artifactCount?: number;
+  type?: string;
+  children?: TreeItemData[];
+}
+
+class RivetTreeProvider implements vscode.TreeDataProvider<RivetTreeNode> {
   private _onDidChangeTreeData = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+  private treeData: TreeItemData[] = [];
 
   refresh(): void {
+    this.treeData = [];
     this._onDidChangeTreeData.fire();
   }
 
-  getTreeItem(element: RivetTreeItem): vscode.TreeItem {
+  getTreeItem(element: RivetTreeNode): vscode.TreeItem {
     return element;
   }
 
-  getChildren(element?: RivetTreeItem): RivetTreeItem[] {
-    if (element) return [];
+  async getChildren(element?: RivetTreeNode): Promise<RivetTreeNode[]> {
+    if (!client) return [];
 
-    return [
-      new RivetTreeItem('Stats', '/stats', 'dashboard'),
-      new RivetTreeItem('Artifacts', '/artifacts', 'symbol-class'),
-      new RivetTreeItem('Validation', '/validate', 'pass'),
-      new RivetTreeItem('STPA', '/stpa', 'shield'),
-      new RivetTreeItem('Graph', '/graph', 'type-hierarchy'),
-      new RivetTreeItem('Documents', '/documents', 'book'),
-      new RivetTreeItem('Matrix', '/matrix', 'table'),
-      new RivetTreeItem('Coverage', '/coverage', 'checklist'),
-      new RivetTreeItem('Source', '/source', 'code'),
-      new RivetTreeItem('Results', '/results', 'beaker'),
-      new RivetTreeItem('Help', '/help', 'question'),
-    ];
+    if (!element) {
+      if (this.treeData.length === 0) {
+        try {
+          const result: any = await client.sendRequest('rivet/treeData', { parent: null });
+          this.treeData = result.items || [];
+        } catch { return []; }
+      }
+      return this.treeData.map(cat => new RivetTreeNode(
+        cat.label, cat.kind, undefined,
+        vscode.TreeItemCollapsibleState.Collapsed,
+        cat.children,
+      ));
+    }
+
+    if (element.kind === 'category' && element.childData) {
+      return element.childData.map(item => {
+        const hasChildren = item.kind === 'document';
+        const desc = item.artifactCount !== undefined
+          ? `${item.description || ''} (${item.artifactCount})`
+          : item.description;
+        return new RivetTreeNode(
+          item.label, item.kind, item.page,
+          hasChildren ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None,
+          undefined, desc, item.icon, item.path,
+        );
+      });
+    }
+
+    if (element.kind === 'document' && element.sourcePath) {
+      try {
+        const result: any = await client.sendRequest('rivet/treeData', { parent: element.sourcePath });
+        return (result.items || []).map((item: TreeItemData) => new RivetTreeNode(
+          item.label, item.kind, item.page,
+          vscode.TreeItemCollapsibleState.None,
+          undefined, item.description, undefined, undefined, item.type,
+        ));
+      } catch { return []; }
+    }
+
+    return [];
   }
 }
 
-class RivetTreeItem extends vscode.TreeItem {
-  constructor(label: string, public readonly urlPath: string, icon: string) {
-    super(label, vscode.TreeItemCollapsibleState.None);
-    this.iconPath = new vscode.ThemeIcon(icon);
-    this.command = {
-      command: 'rivet.navigateTo',
-      title: label,
-      arguments: [urlPath],
-    };
+class RivetTreeNode extends vscode.TreeItem {
+  constructor(
+    label: string,
+    public readonly kind: string,
+    public readonly page?: string,
+    collapsibleState = vscode.TreeItemCollapsibleState.None,
+    public readonly childData?: TreeItemData[],
+    description?: string,
+    icon?: string,
+    public readonly sourcePath?: string,
+    artifactType?: string,
+  ) {
+    super(label, collapsibleState);
+    if (description) this.description = description;
+
+    // Icons
+    if (icon) this.iconPath = new vscode.ThemeIcon(icon);
+    else if (kind === 'category') this.iconPath = new vscode.ThemeIcon('folder');
+    else if (kind === 'document') this.iconPath = new vscode.ThemeIcon('file-text');
+    else if (kind === 'artifact') this.iconPath = new vscode.ThemeIcon('symbol-property');
+    else if (kind === 'help') this.iconPath = new vscode.ThemeIcon('question');
+
+    // Click action
+    if (page) {
+      this.command = {
+        command: 'rivet.navigateTo',
+        title: label,
+        arguments: [page],
+      };
+    }
   }
 }
