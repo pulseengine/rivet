@@ -2695,6 +2695,17 @@ fn cmd_export_html(
         }
     }
 
+    // Load test results if configured.
+    let mut result_store = ResultStore::new();
+    if let Some(ref results_path) = config.results {
+        let dir = cli.project.join(results_path);
+        let runs = results::load_results(&dir)
+            .with_context(|| format!("loading results from '{results_path}'"))?;
+        for run in runs {
+            result_store.insert(run);
+        }
+    }
+
     let out_dir = output.unwrap_or(std::path::Path::new("dist"));
 
     std::fs::create_dir_all(out_dir).with_context(|| format!("creating {}", out_dir.display()))?;
@@ -2746,6 +2757,22 @@ fn cmd_export_html(
             (
                 "validation.html".to_string(),
                 export::render_validation(&diagnostics, &export_config),
+            ),
+            (
+                "stpa.html".to_string(),
+                export::render_stpa(&store, &graph, &export_config),
+            ),
+            (
+                "graph.html".to_string(),
+                export::render_graph(&store, &graph, &export_config),
+            ),
+            (
+                "source.html".to_string(),
+                export::render_source(&store, &export_config),
+            ),
+            (
+                "results.html".to_string(),
+                export::render_results(&result_store, &export_config),
             ),
         ];
 

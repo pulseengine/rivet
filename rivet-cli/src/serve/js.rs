@@ -430,6 +430,19 @@ pub(crate) const GRAPH_JS: &str = r#"
       });
     }
   });
+
+  // ── VS Code WebView bridge ──────────────────────────────
+  // If running inside a VS Code WebView iframe, send navigation
+  // messages to the parent frame so the editor can open source files.
+  if(window.parent !== window){
+    document.addEventListener('click',function(e){
+      var link=e.target.closest('a[hx-get^="/artifacts/"]');
+      if(link){
+        var id=link.getAttribute('hx-get').replace('/artifacts/','');
+        window.parent.postMessage({type:'rivet-navigate',artifactId:id},'*');
+      }
+    });
+  }
 })();
 </script>
 "#;

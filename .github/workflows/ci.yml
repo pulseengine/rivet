@@ -134,9 +134,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: rustsec/audit-check@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          tool: cargo-audit
+      - name: Run cargo audit
+        run: cargo audit
 
   deny:
     name: Cargo Deny (licenses, bans, sources, advisories)
@@ -211,12 +215,11 @@ jobs:
         env:
           PROPTEST_CASES: "1000"
 
-  # ── Mutation testing ────────────────────────────────────────────────
+  # ── Mutation testing (hard gate — zero surviving mutants) ────────────
   mutants:
     name: Mutation Testing
     needs: [test]
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -226,7 +229,19 @@ jobs:
         with:
           tool: cargo-mutants
       - name: Run cargo-mutants on rivet-core
-        run: cargo mutants -p rivet-core --timeout 120 --jobs 4 --output mutants-out -- --lib
+        run: cargo mutants -p rivet-core --timeout 120 --jobs 4 --output mutants-out -- --lib || true
+      - name: Check surviving mutants
+        run: |
+          MISSED=0
+          if [ -f mutants-out/missed.txt ]; then
+            MISSED=$(wc -l < mutants-out/missed.txt | tr -d ' ')
+          fi
+          echo "Surviving mutants: $MISSED"
+          if [ "$MISSED" -gt 0 ]; then
+            echo "::error::$MISSED mutant(s) survived — add tests to kill them"
+            cat mutants-out/missed.txt | head -30
+            exit 1
+          fi
       - name: Upload mutants report
         if: always()
         uses: actions/upload-artifact@v4
