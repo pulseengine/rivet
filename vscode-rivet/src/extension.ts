@@ -44,11 +44,13 @@ export async function activate(context: vscode.ExtensionContext) {
     return;
   }
 
+  const lspWorkspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   try {
     const serverOptions: ServerOptions = {
       command: rivetPath,
       args: ['lsp'],
       transport: TransportKind.stdio,
+      options: { cwd: lspWorkspaceRoot },
     };
 
     const clientOptions: LanguageClientOptions = {
@@ -70,10 +72,13 @@ export async function activate(context: vscode.ExtensionContext) {
     });
 
     statusBarItem.text = '$(shield) Rivet';
+    console.log(`rivet LSP started: ${rivetPath}`);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    vscode.window.showWarningMessage(`Rivet LSP failed to start: ${msg}`);
+    vscode.window.showWarningMessage(`Rivet LSP failed to start (${rivetPath}): ${msg}`);
     statusBarItem.text = '$(shield) Rivet (LSP error)';
+    console.error(`rivet LSP error: ${msg}, binary: ${rivetPath}, cwd: ${lspWorkspaceRoot}`);
+    // Continue without LSP — serve and commands still work
   }
 
   // --- Start serve --watch in background ---
