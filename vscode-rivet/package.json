@@ -3,7 +3,7 @@
   "displayName": "Rivet SDLC",
   "description": "SDLC artifact traceability with live validation, hover info, and embedded dashboard",
   "publisher": "pulseengine",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -69,6 +69,10 @@
         "command": "rivet.addArtifact",
         "title": "Add Artifact",
         "category": "Rivet"
+      },
+      {
+        "command": "rivet.showSource",
+        "title": "Rivet: Show Source"
       }
     ],
     "configuration": {
@@ -106,6 +110,7 @@
     "compile": "tsc -b",
     "esbuild": "node ./bin/esbuild.js",
     "watch": "tsc -b -w",
+    "test": "node ./out/test/runTest.js",
     "package": "npx @vscode/vsce package"
   }
 }

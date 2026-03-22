@@ -2,18 +2,22 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 
-import { execFileSync, ChildProcess, spawn } from 'child_process';
+import { execFileSync } from 'child_process';
 import {
   LanguageClient,
   LanguageClientOptions,
   ServerOptions,
 } from 'vscode-languageclient/node';
+import { getShellHtml } from './shell';
 
 let client: LanguageClient | undefined;
-let serveProcess: ChildProcess | undefined;
-let dashboardPanel: vscode.WebviewPanel | undefined;
-let dashboardPort: number | undefined;
+let panel: vscode.WebviewPanel | undefined;
+let currentPage: string = '/stats';
+let currentSeq: number = 0;
+let cachedCss: string = '';
 let statusBarItem: vscode.StatusBarItem;
+let currentSourceFile: string | undefined;
+let currentSourceLine: number | undefined;
 
 export async function activate(context: vscode.ExtensionContext) {
   // --- Commands ---
@@ -24,6 +28,22 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('rivet.validate', () => runValidate()),
     vscode.commands.registerCommand('rivet.addArtifact', () => addArtifact()),
     vscode.commands.registerCommand('rivet.navigateTo', (urlPath: string) => showDashboard(context, urlPath)),
+    vscode.commands.registerCommand('rivet.showSource', async () => {
+      if (!currentSourceFile) {
+        vscode.window.showInformationMessage('No source file for current view');
+        return;
+      }
+      const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      if (!workspaceRoot) return;
+
+      const filePath = path.isAbsolute(currentSourceFile)
+        ? currentSourceFile
+        : path.join(workspaceRoot, currentSourceFile);
+      const uri = vscode.Uri.file(filePath);
+      const line = Math.max(0, (currentSourceLine || 1) - 1);
+      const range = new vscode.Range(line, 0, line, 0);
+      await vscode.window.showTextDocument(uri, { selection: range, viewColumn: vscode.ViewColumn.One });
+    }),
   );
 
   // --- Sidebar Tree View ---
@@ -77,6 +97,13 @@ export async function activate(context: vscode.ExtensionContext) {
       dispose: () => { client?.stop().catch(() => {}); },
     });
 
+    client.onNotification('rivet/artifactsChanged', (_params: any) => {
+      treeProvider.refresh();
+      if (panel) {
+        panel.webview.postMessage({ type: 'stale' });
+      }
+    });
+
     statusBarItem.text = '$(shield) Rivet';
     console.log(`rivet LSP started: ${rivetPath}`);
   } catch (err: unknown) {
@@ -84,18 +111,11 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.window.showWarningMessage(`Rivet LSP failed to start (${rivetPath}): ${msg}`);
     statusBarItem.text = '$(shield) Rivet (LSP error)';
     console.error(`rivet LSP error: ${msg}, binary: ${rivetPath}, cwd: ${lspWorkspaceRoot}`);
-    // Continue without LSP — serve and commands still work
+    // Continue without LSP — commands still work
   }
-
-  // --- Start serve --watch in background ---
-  startServe(context, rivetPath);
 }
 
 export function deactivate() {
-  if (serveProcess) {
-    serveProcess.kill();
-    serveProcess = undefined;
-  }
   return client?.stop().catch(() => {});
 }
 
@@ -129,71 +149,82 @@ function findRivetBinary(context: vscode.ExtensionContext): string | undefined {
   return undefined;
 }
 
-// --- Serve process ---
+// --- Dashboard (WebView panel) ---
 
-function startServe(context: vscode.ExtensionContext, rivetPath: string) {
-  const configuredPort = vscode.workspace.getConfiguration('rivet').get<number>('serve.port') || 0;
-
-  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  if (!workspaceRoot) return;
-
-  // Check rivet.yaml exists
-  if (!fs.existsSync(path.join(workspaceRoot, 'rivet.yaml'))) return;
-
-  serveProcess = spawn(rivetPath, [
-    'serve',
-    '--port', String(configuredPort),
-    '--watch',
-  ], {
-    cwd: workspaceRoot,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-
-  // Capture the port from stdout
-  serveProcess.stderr?.on('data', (data: Buffer) => {
-    const line = data.toString();
-    const match = line.match(/listening on http:\/\/[\w.]+:(\d+)/);
-    if (match) {
-      dashboardPort = parseInt(match[1], 10);
-      statusBarItem.text = `$(shield) Rivet :${dashboardPort}`;
-      console.log(`rivet serve started on port ${dashboardPort}`);
-    }
-    // Forward watch reload messages
-    if (line.includes('[watch]')) {
-      console.log(`rivet: ${line.trim()}`);
-    }
-  });
-
-  serveProcess.on('exit', (code) => {
-    console.log(`rivet serve exited with code ${code}`);
-    serveProcess = undefined;
-    dashboardPort = undefined;
-    statusBarItem.text = '$(shield) Rivet';
-  });
-
-  context.subscriptions.push({
-    dispose: () => {
-      serveProcess?.kill();
-      serveProcess = undefined;
-    },
-  });
-}
-
-// --- Dashboard ---
-
-async function showDashboard(_context: vscode.ExtensionContext, urlPath: string = '/') {
-  if (!dashboardPort) {
-    vscode.window.showWarningMessage(
-      'Rivet dashboard not running. Waiting for serve to start...'
-    );
+async function showDashboard(context: vscode.ExtensionContext, urlPath: string = '/stats') {
+  if (!client) {
+    vscode.window.showWarningMessage('Rivet LSP not connected.');
     return;
   }
 
-  // Use VS Code's Simple Browser which handles SSH port forwarding correctly
-  const uri = vscode.Uri.parse(`http://127.0.0.1:${dashboardPort}/embed${urlPath}`);
-  await vscode.commands.executeCommand('simpleBrowser.api.open', uri, {
-    viewColumn: vscode.ViewColumn.Beside,
-  });
+  if (!cachedCss) {
+    try {
+      cachedCss = await client.sendRequest('rivet/css') as string;
+    } catch { cachedCss = ''; }
+  }
+
+  if (panel) {
+    panel.reveal(vscode.ViewColumn.Beside);
+  } else {
+    panel = vscode.window.createWebviewPanel(
+      'rivetDashboard',
+      'Rivet',
+      vscode.ViewColumn.Beside,
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'assets')],
+      },
+    );
+
+    panel.webview.html = getShellHtml(panel.webview, context.extensionUri, cachedCss);
+
+    panel.webview.onDidReceiveMessage(async (msg) => {
+      if (msg.type === 'navigate') {
+        await navigateTo(msg.path);
+      } else if (msg.type === 'refresh') {
+        await navigateTo(currentPage);
+      } else if (msg.type === 'openSource') {
+        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        if (workspaceRoot && msg.file) {
+          const filePath = path.isAbsolute(msg.file)
+            ? msg.file
+            : path.join(workspaceRoot, msg.file);
+          const uri = vscode.Uri.file(filePath);
+          await vscode.window.showTextDocument(uri, { viewColumn: vscode.ViewColumn.One });
+        }
+      }
+    });
+
+    panel.onDidDispose(() => { panel = undefined; });
+  }
+
+  await navigateTo(urlPath);
+}
+
+async function navigateTo(page: string) {
+  if (!panel || !client) return;
+
+  const seq = ++currentSeq;
+  currentPage = page;
+
+  try {
+    const result: any = await client.sendRequest('rivet/render', { page, params: {}, seq });
+    if (seq !== currentSeq) return;
+
+    panel.title = result.title || 'Rivet';
+    currentSourceFile = result.sourceFile || undefined;
+    currentSourceLine = result.sourceLine || undefined;
+    panel.webview.postMessage({ type: 'update', html: result.html, title: result.title });
+  } catch (err: unknown) {
+    if (seq !== currentSeq) return;
+    const msg = err instanceof Error ? err.message : String(err);
+    panel.webview.postMessage({
+      type: 'update',
+      html: `<div style="padding:2rem;color:var(--error)"><h2>Render Error</h2><p>${msg}</p></div>`,
+      title: 'Error',
+    });
+  }
 }
 
 // --- Validate command ---
@@ -271,45 +302,108 @@ async function addArtifact() {
 
 // --- Sidebar Tree View ---
 
-class RivetTreeProvider implements vscode.TreeDataProvider<RivetTreeItem> {
+interface TreeItemData {
+  kind: string;
+  label: string;
+  description?: string;
+  page?: string;
+  icon?: string;
+  path?: string;
+  artifactCount?: number;
+  type?: string;
+  children?: TreeItemData[];
+}
+
+class RivetTreeProvider implements vscode.TreeDataProvider<RivetTreeNode> {
   private _onDidChangeTreeData = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+  private treeData: TreeItemData[] = [];
 
   refresh(): void {
+    this.treeData = [];
     this._onDidChangeTreeData.fire();
   }
 
-  getTreeItem(element: RivetTreeItem): vscode.TreeItem {
+  getTreeItem(element: RivetTreeNode): vscode.TreeItem {
     return element;
   }
 
-  getChildren(element?: RivetTreeItem): RivetTreeItem[] {
-    if (element) return [];
+  async getChildren(element?: RivetTreeNode): Promise<RivetTreeNode[]> {
+    if (!client) return [];
 
-    return [
-      new RivetTreeItem('Stats', '/stats', 'dashboard'),
-      new RivetTreeItem('Artifacts', '/artifacts', 'symbol-class'),
-      new RivetTreeItem('Validation', '/validate', 'pass'),
-      new RivetTreeItem('STPA', '/stpa', 'shield'),
-      new RivetTreeItem('Graph', '/graph', 'type-hierarchy'),
-      new RivetTreeItem('Documents', '/documents', 'book'),
-      new RivetTreeItem('Matrix', '/matrix', 'table'),
-      new RivetTreeItem('Coverage', '/coverage', 'checklist'),
-      new RivetTreeItem('Source', '/source', 'code'),
-      new RivetTreeItem('Results', '/results', 'beaker'),
-      new RivetTreeItem('Help', '/help', 'question'),
-    ];
+    if (!element) {
+      if (this.treeData.length === 0) {
+        try {
+          const result: any = await client.sendRequest('rivet/treeData', { parent: null });
+          this.treeData = result.items || [];
+        } catch { return []; }
+      }
+      return this.treeData.map(cat => new RivetTreeNode(
+        cat.label, cat.kind, undefined,
+        vscode.TreeItemCollapsibleState.Collapsed,
+        cat.children,
+      ));
+    }
+
+    if (element.kind === 'category' && element.childData) {
+      return element.childData.map(item => {
+        const hasChildren = item.kind === 'source';
+        const desc = item.artifactCount !== undefined
+          ? `${item.description || ''} (${item.artifactCount})`
+          : item.description;
+        return new RivetTreeNode(
+          item.label, item.kind, item.page,
+          hasChildren ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None,
+          undefined, desc, item.icon, item.path,
+        );
+      });
+    }
+
+    if (element.kind === 'source' && element.sourcePath) {
+      try {
+        const result: any = await client.sendRequest('rivet/treeData', { parent: element.sourcePath });
+        return (result.items || []).map((item: TreeItemData) => new RivetTreeNode(
+          item.label, item.kind, item.page,
+          vscode.TreeItemCollapsibleState.None,
+          undefined, item.description, undefined, undefined, item.type,
+        ));
+      } catch { return []; }
+    }
+
+    return [];
   }
 }
 
-class RivetTreeItem extends vscode.TreeItem {
-  constructor(label: string, public readonly urlPath: string, icon: string) {
-    super(label, vscode.TreeItemCollapsibleState.None);
-    this.iconPath = new vscode.ThemeIcon(icon);
-    this.command = {
-      command: 'rivet.navigateTo',
-      title: label,
-      arguments: [urlPath],
-    };
+class RivetTreeNode extends vscode.TreeItem {
+  constructor(
+    label: string,
+    public readonly kind: string,
+    public readonly page?: string,
+    collapsibleState = vscode.TreeItemCollapsibleState.None,
+    public readonly childData?: TreeItemData[],
+    description?: string,
+    icon?: string,
+    public readonly sourcePath?: string,
+    artifactType?: string,
+  ) {
+    super(label, collapsibleState);
+    if (description) this.description = description;
+
+    // Icons
+    if (icon) this.iconPath = new vscode.ThemeIcon(icon);
+    else if (kind === 'category') this.iconPath = new vscode.ThemeIcon('folder');
+    else if (kind === 'document') this.iconPath = new vscode.ThemeIcon('book');
+    else if (kind === 'source') this.iconPath = new vscode.ThemeIcon('file-code');
+    else if (kind === 'artifact') this.iconPath = new vscode.ThemeIcon('symbol-property');
+    else if (kind === 'help') this.iconPath = new vscode.ThemeIcon('question');
+
+    // Click action
+    if (page) {
+      this.command = {
+        command: 'rivet.navigateTo',
+        title: label,
+        arguments: [page],
+      };
+    }
   }
 }

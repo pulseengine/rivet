@@ -18,6 +18,7 @@ use rivet_core::store::Store;
 use rivet_core::validate;
 
 mod docs;
+mod render;
 mod schema_cmd;
 mod serve;
 
@@ -4994,6 +4995,52 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
         store.len()
     );
 
+    // Build supplementary state for rendering
+    let render_schema = db.schema(schema_set);
+    let mut render_graph = rivet_core::links::LinkGraph::build(&store, &render_schema);
+
+    let mut doc_store = rivet_core::document::DocumentStore::new();
+    let mut result_store = rivet_core::results::ResultStore::new();
+
+    // Load documents and results from config
+    if config_path.exists() {
+        if let Ok(config) = rivet_core::load_project_config(&config_path) {
+            for docs_path in &config.docs {
+                let dir = project_dir.join(docs_path);
+                if let Ok(docs) = rivet_core::document::load_documents(&dir) {
+                    for doc in docs {
+                        doc_store.insert(doc);
+                    }
+                }
+            }
+            if let Some(ref results_path) = config.results {
+                let dir = project_dir.join(results_path);
+                if let Ok(runs) = rivet_core::results::load_results(&dir) {
+                    for run in runs {
+                        result_store.insert(run);
+                    }
+                }
+            }
+        }
+    }
+
+    let repo_context = crate::serve::RepoContext {
+        project_name: project_dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown")
+            .to_string(),
+        project_path: project_dir.display().to_string(),
+        git: crate::serve::capture_git_info(&project_dir),
+        loaded_at: String::new(),
+        siblings: Vec::new(),
+        port: 0,
+    };
+
+    let externals: Vec<crate::serve::ExternalInfo> = Vec::new();
+    let mut render_store = store;
+    let mut diagnostics_cache = diagnostics;
+
     // Main message loop
     for msg in &connection.receiver {
         match msg {
@@ -5035,6 +5082,176 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                             error: None,
                         }))?;
                     }
+                    "rivet/render" => {
+                        let params: serde_json::Value = req.params.clone();
+                        let page = params.get("page").and_then(|v| v.as_str()).unwrap_or("/");
+                        let seq = params.get("seq").and_then(|v| v.as_u64()).unwrap_or(0);
+                        let view_params = params
+                            .get("params")
+                            .and_then(|p| {
+                                serde_json::from_value::<crate::serve::components::ViewParams>(
+                                    p.clone(),
+                                )
+                                .ok()
+                            })
+                            .unwrap_or_default();
+
+                        let ctx = crate::render::RenderContext {
+                            store: &render_store,
+                            schema: &render_schema,
+                            graph: &render_graph,
+                            doc_store: &doc_store,
+                            result_store: &result_store,
+                            diagnostics: &diagnostics_cache,
+                            context: &repo_context,
+                            externals: &externals,
+                            project_path: &project_dir,
+                            schemas_dir: &schemas_dir,
+                        };
+
+                        let result = crate::render::render_page(&ctx, page, &view_params);
+                        connection.sender.send(Message::Response(Response {
+                            id: req.id,
+                            result: Some(serde_json::json!({
+                                "html": result.html,
+                                "title": result.title,
+                                "sourceFile": result.source_file,
+                                "sourceLine": result.source_line,
+                                "seq": seq,
+                            })),
+                            error: None,
+                        }))?;
+                    }
+                    "rivet/treeData" => {
+                        let params: serde_json::Value = req.params.clone();
+                        let parent = params.get("parent").and_then(|v| v.as_str());
+
+                        let response_value = match parent {
+                            None => {
+                                // Documents from DocumentStore (markdown docs)
+                                let documents: Vec<_> = doc_store
+                                    .iter()
+                                    .map(|doc| {
+                                        let source = doc
+                                            .source_file
+                                            .as_ref()
+                                            .map(|p| p.display().to_string())
+                                            .unwrap_or_default();
+                                        serde_json::json!({
+                                            "kind": "document", "label": &doc.title,
+                                            "description": &source,
+                                            "path": &doc.id,
+                                            "page": format!("/documents/{}", &doc.id)
+                                        })
+                                    })
+                                    .collect();
+
+                                // Artifact source files (YAML files with artifacts)
+                                let mut file_map: std::collections::BTreeMap<
+                                    String,
+                                    (String, usize),
+                                > = std::collections::BTreeMap::new();
+                                for artifact in render_store.iter() {
+                                    if let Some(ref sf) = artifact.source_file {
+                                        let path = sf.display().to_string();
+                                        let entry =
+                                            file_map.entry(path.clone()).or_insert_with(|| {
+                                                let name = std::path::Path::new(&path)
+                                                    .file_stem()
+                                                    .and_then(|s| s.to_str())
+                                                    .unwrap_or("unknown")
+                                                    .replace('-', " ");
+                                                let name = name
+                                                    .split_whitespace()
+                                                    .map(|w| {
+                                                        let mut c = w.chars();
+                                                        match c.next() {
+                                                            None => String::new(),
+                                                            Some(f) => {
+                                                                f.to_uppercase().to_string()
+                                                                    + c.as_str()
+                                                            }
+                                                        }
+                                                    })
+                                                    .collect::<Vec<_>>()
+                                                    .join(" ");
+                                                (name, 0)
+                                            });
+                                        entry.1 += 1;
+                                    }
+                                }
+                                let sources: Vec<_> = file_map
+                                    .iter()
+                                    .map(|(path, (name, count))| {
+                                        serde_json::json!({
+                                            "kind": "source", "label": name, "description": path,
+                                            "artifactCount": count, "path": path
+                                        })
+                                    })
+                                    .collect();
+
+                                let views = vec![
+                                    serde_json::json!({"kind":"view","label":"Stats","page":"/stats","icon":"dashboard"}),
+                                    serde_json::json!({"kind":"view","label":"Artifacts","page":"/artifacts","icon":"symbol-class"}),
+                                    serde_json::json!({"kind":"view","label":"Validation","page":"/validate","icon":"pass"}),
+                                    serde_json::json!({"kind":"view","label":"STPA","page":"/stpa","icon":"shield"}),
+                                    serde_json::json!({"kind":"view","label":"Documents","page":"/documents","icon":"book"}),
+                                ];
+
+                                let help = vec![
+                                    serde_json::json!({"kind":"view","label":"Help","page":"/help","icon":"question"}),
+                                    serde_json::json!({"kind":"view","label":"Schema Types","page":"/help/schema","icon":"symbol-class"}),
+                                    serde_json::json!({"kind":"view","label":"Link Types","page":"/help/links","icon":"link"}),
+                                    serde_json::json!({"kind":"view","label":"Traceability Rules","page":"/help/rules","icon":"checklist"}),
+                                    serde_json::json!({"kind":"view","label":"Documentation","page":"/help/docs","icon":"notebook"}),
+                                ];
+
+                                let mut categories = vec![
+                                    serde_json::json!({"kind":"category","label":"Views","children":views}),
+                                    serde_json::json!({"kind":"category","label":"Help","children":help}),
+                                ];
+                                if !sources.is_empty() {
+                                    categories.push(serde_json::json!({"kind":"category","label":"Artifact Files","children":sources}));
+                                }
+                                if !documents.is_empty() {
+                                    categories.insert(0, serde_json::json!({"kind":"category","label":"Documents","children":documents}));
+                                }
+
+                                serde_json::json!({ "items": categories })
+                            }
+                            Some(parent_path) => {
+                                // Expand source file: show artifacts from this file
+                                let mut items: Vec<_> = render_store.iter()
+                                    .filter(|a| a.source_file.as_ref().is_some_and(|sf| sf.display().to_string() == parent_path))
+                                    .map(|a| serde_json::json!({
+                                        "kind":"artifact","label":&a.id,"description":&a.title,
+                                        "page":format!("/artifacts/{}",a.id),"type":&a.artifact_type,
+                                        "sourceFile":parent_path
+                                    }))
+                                    .collect();
+                                items.sort_by(|a, b| a["label"].as_str().cmp(&b["label"].as_str()));
+                                serde_json::json!({"items": items})
+                            }
+                        };
+
+                        connection.sender.send(Message::Response(Response {
+                            id: req.id,
+                            result: Some(response_value),
+                            error: None,
+                        }))?;
+                    }
+                    "rivet/css" => {
+                        let css = format!(
+                            "{}\n{}",
+                            crate::render::styles::FONTS_CSS,
+                            crate::render::styles::CSS
+                        );
+                        connection.sender.send(Message::Response(Response {
+                            id: req.id,
+                            result: Some(serde_json::to_value(css)?),
+                            error: None,
+                        }))?;
+                    }
                     _ => {
                         eprintln!("rivet lsp: unhandled request: {method}");
                         connection.sender.send(Message::Response(Response {
@@ -5066,14 +5283,40 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                                     }
                                 }
                                 // Re-query diagnostics (salsa recomputes only what changed)
-                                let diagnostics = db.diagnostics(source_set, schema_set);
-                                let store = db.store(source_set);
-                                lsp_publish_salsa_diagnostics(&connection, &diagnostics, &store);
+                                let new_diagnostics = db.diagnostics(source_set, schema_set);
+                                let new_store = db.store(source_set);
+                                lsp_publish_salsa_diagnostics(
+                                    &connection,
+                                    &new_diagnostics,
+                                    &new_store,
+                                );
                                 eprintln!(
                                     "rivet lsp: incremental revalidation complete ({} diagnostics, {} artifacts)",
-                                    diagnostics.len(),
-                                    store.len()
+                                    new_diagnostics.len(),
+                                    new_store.len()
                                 );
+
+                                // Rebuild render state
+                                render_store = db.store(source_set);
+                                let render_schema = db.schema(schema_set);
+                                render_graph = rivet_core::links::LinkGraph::build(
+                                    &render_store,
+                                    &render_schema,
+                                );
+                                diagnostics_cache = db.diagnostics(source_set, schema_set);
+
+                                // Send artifactsChanged notification
+                                let changed_notification = lsp_server::Notification {
+                                    method: "rivet/artifactsChanged".to_string(),
+                                    params: serde_json::json!({
+                                        "artifactCount": render_store.len(),
+                                        "documentCount": doc_store.len(),
+                                        "changedFiles": [path_str.clone()]
+                                    }),
+                                };
+                                connection
+                                    .sender
+                                    .send(Message::Notification(changed_notification))?;
                             }
                         }
                     }

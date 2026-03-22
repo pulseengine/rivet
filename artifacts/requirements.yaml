@@ -613,3 +613,52 @@ artifacts:
       category: functional
       priority: should
       baseline: v0.2.0-dev
+
+  - id: REQ-037
+    type: requirement
+    title: SysML v2 artifact import
+    status: draft
+    description: >
+      Import requirement and constraint elements from SysML v2 textual notation
+      files (.sysml) as rivet artifacts. Parse SysML v2 using a rowan-based
+      lossless parser (same pattern as spar's AADL parser). Extract requirement
+      elements with their attributes, rationale, and satisfy/verify relationships,
+      mapping them to rivet artifact YAML.
+    tags: [sysml, adapter, future]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.3.0
+
+  - id: REQ-038
+    type: requirement
+    title: SysML v2 to AADL model lowering
+    status: draft
+    description: >
+      Lower SysML v2 system models to AADL execution platform models where
+      timing, scheduling, and resource binding semantics exist. Implements
+      the mapping rules specified by SEI's "Extending SysML v2 with AADL
+      Concepts" research. Enables multi-level architecture analysis:
+      SysML v2 (system-level) to AADL (deployment-level) to implementation.
+    tags: [sysml, aadl, architecture, future]
+    fields:
+      priority: could
+      category: functional
+      baseline: v0.3.0
+
+  - id: REQ-039
+    type: requirement
+    title: Draft-aware validation severity
+    status: draft
+    description: >
+      Validation diagnostics for traceability rules (missing required links,
+      incomplete coverage) must respect artifact maturity. Artifacts with
+      status "draft" produce info-level diagnostics for unfulfilled links
+      instead of errors. Only "active" or "approved" artifacts are held to
+      full traceability enforcement. This distinguishes "not yet done" from
+      "broken" in projects with work-in-progress artifacts.
+    tags: [validation, workflow, core]
+    fields:
+      priority: must
+      category: functional
+      baseline: v0.3.0

@@ -1142,3 +1142,92 @@ artifacts:
     fields:
       phase: phase-2
       baseline: v0.1.0
+
+  - id: FEAT-066
+    type: feature
+    title: VS Code LSP-based WebView rendering
+    status: active
+    description: >
+      VS Code extension renders dashboard views via custom LSP requests
+      (rivet/render, rivet/treeData, rivet/css) instead of embedding a web
+      server. Shell document pattern loads assets once, content updates via
+      postMessage. Works in local and SSH Remote environments without port
+      forwarding. Tree view with expandable artifact files and documents.
+    tags: [vscode, lsp, rendering, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-007
+    fields:
+      phase: phase-3
+      baseline: v0.3.0
+
+  - id: FEAT-067
+    type: feature
+    title: SysML v2 parser (spar-sysml2 crate)
+    status: draft
+    description: >
+      Rowan-based lossless parser for SysML v2 textual notation. Same
+      architecture as spar-parser (AADL): grammar definition, lexer,
+      parser with error recovery, rowan CST. Covers KerML kernel library
+      and SysML v2 language constructs including requirements, constraints,
+      use cases, and allocations.
+    tags: [sysml, parser, future]
+    links:
+      - type: satisfies
+        target: REQ-037
+    fields:
+      phase: future
+      baseline: v0.3.0
+
+  - id: FEAT-068
+    type: feature
+    title: SysML v2 to AADL model lowering
+    status: draft
+    description: >
+      Transform SysML v2 system architecture models into AADL execution
+      platform models. Maps SysML v2 parts/ports to AADL components/features,
+      SysML v2 allocations to AADL bindings, and SysML v2 timing constraints
+      to AADL properties. Based on SEI's SysML v2 + AADL mapping rules.
+    tags: [sysml, aadl, lowering, future]
+    links:
+      - type: satisfies
+        target: REQ-038
+    fields:
+      phase: future
+      baseline: v0.3.0
+
+  - id: FEAT-069
+    type: feature
+    title: SysML v2 requirement adapter for rivet
+    status: draft
+    description: >
+      Adapter that extracts requirement elements from parsed SysML v2 files
+      and generates rivet artifact YAML. Maps SysML v2 satisfy/verify
+      relationships to rivet link types. Enables tracing through
+      SysML v2 (system) → AADL (deployment) → code (implementation).
+    tags: [sysml, adapter, future]
+    links:
+      - type: satisfies
+        target: REQ-037
+    fields:
+      phase: future
+      baseline: v0.3.0
+
+  - id: FEAT-070
+    type: feature
+    title: Draft-aware validation severity
+    status: draft
+    description: >
+      Validation engine downgrades traceability rule violations from error
+      to info for artifacts with status "draft". Missing required links on
+      draft artifacts produce informational diagnostics ("link not yet
+      established") rather than errors. Active/approved artifacts enforce
+      full traceability. Configurable via schema field
+      "enforce-links-for-status" with default ["active", "approved"].
+    tags: [validation, workflow, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-039
+    fields:
+      phase: phase-3
+      baseline: v0.3.0

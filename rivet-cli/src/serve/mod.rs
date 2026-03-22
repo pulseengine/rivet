@@ -57,7 +57,7 @@ pub(crate) struct RepoContext {
     pub(crate) port: u16,
 }
 
-fn capture_git_info(project_path: &std::path::Path) -> Option<GitInfo> {
+pub(crate) fn capture_git_info(project_path: &std::path::Path) -> Option<GitInfo> {
     let branch = std::process::Command::new("git")
         .args(["rev-parse", "--abbrev-ref", "HEAD"])
         .current_dir(project_path)
@@ -190,6 +190,24 @@ pub(crate) struct AppState {
     /// Cached validation diagnostics — computed once at load/reload time
     /// instead of on every page request.
     pub(crate) cached_diagnostics: Vec<rivet_core::validate::Diagnostic>,
+}
+
+impl AppState {
+    /// Build a [`crate::render::RenderContext`] borrowing from this state.
+    pub(crate) fn as_render_context(&self) -> crate::render::RenderContext<'_> {
+        crate::render::RenderContext {
+            store: &self.store,
+            schema: &self.schema,
+            graph: &self.graph,
+            doc_store: &self.doc_store,
+            result_store: &self.result_store,
+            diagnostics: &self.cached_diagnostics,
+            context: &self.context,
+            externals: &self.externals,
+            project_path: &self.project_path_buf,
+            schemas_dir: &self.schemas_dir,
+        }
+    }
 }
 
 /// Convenience alias so handler signatures stay compact.
@@ -1054,4 +1072,4 @@ pub(crate) mod components;
 pub(crate) mod js;
 pub(crate) mod layout;
 pub(crate) mod styles;
-mod views;
+pub(crate) mod views;

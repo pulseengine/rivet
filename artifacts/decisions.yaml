@@ -879,3 +879,64 @@ artifacts:
         missing optional WASM assets.
       alternatives: Serve from filesystem at runtime. Rejected because it
         requires deploying assets separately from the binary.
+
+  - id: DD-040
+    type: design-decision
+    title: Status-driven traceability enforcement
+    status: draft
+    description: >
+      Traceability rule enforcement is gated on artifact status. Draft
+      artifacts get info-level diagnostics for missing links; active and
+      approved artifacts get errors. The schema defines which statuses
+      enforce traceability via "enforce-links-for-status" (default:
+      ["active", "approved"]). This separates "not yet done" from
+      "structurally broken" without requiring a separate completeness
+      field or workflow state machine.
+    tags: [validation, workflow, architecture]
+    links:
+      - type: satisfies
+        target: REQ-039
+      - type: implements
+        target: FEAT-070
+    fields:
+      rationale: >
+        Projects always have work-in-progress artifacts where links are not
+        yet established. Treating these as errors forces teams to either
+        suppress warnings globally (losing signal) or add placeholder links
+        (creating noise). Using the existing status field avoids new concepts
+        while giving clear semantics: draft = aspirational tracing,
+        active/approved = enforced tracing.
+      alternatives: >
+        (1) Separate completeness field (rejected: adds a new dimension to
+        every artifact for a single validation behavior). (2) Baseline-scoped
+        enforcement (rejected: baselines are release markers, not workflow
+        state). (3) Per-rule severity override (rejected: too granular,
+        rule-level config does not match the artifact-level intent).
+
+  - id: DD-041
+    type: design-decision
+    title: Shared render module for serve, LSP, and export
+    status: active
+    description: >
+      HTML rendering extracted from serve/views.rs into a render/ module
+      with pure functions taking RenderContext and returning HTML strings.
+      Serve wraps in page/embed/print layouts. LSP returns via custom
+      rivet/render request for VS Code WebViews. Future HTML export calls
+      the same functions for static site generation.
+    tags: [architecture, rendering, vscode]
+    links:
+      - type: implements
+        target: FEAT-066
+      - type: satisfies
+        target: REQ-007
+    fields:
+      rationale: >
+        Three consumers need the same rendered output: serve (browser),
+        VS Code (WebView via LSP), and export (static HTML). Duplicating
+        rendering logic is unmaintainable. Pure functions with a shared
+        RenderContext allow each consumer to construct the context from
+        its own data source while sharing all HTML generation.
+      alternatives: >
+        (1) VS Code embeds serve via iframe (rejected: fails over SSH Remote).
+        (2) Separate TypeScript renderer (rejected: duplicates rendering).
+        (3) Template engine (rejected: string building is sufficient).
