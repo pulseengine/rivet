@@ -107,7 +107,19 @@ function findRivetBinary(context: vscode.ExtensionContext): string | undefined {
   const configured = vscode.workspace.getConfiguration('rivet').get<string>('binaryPath');
   if (configured && configured.length > 0 && fs.existsSync(configured)) return configured;
 
-  // Check bundled binary (platform+arch specific)
+  // Prefer PATH — works correctly for SSH Remote (binary matches remote arch)
+  try {
+    const cmd = process.platform === 'win32' ? 'where' : 'which';
+    const found = execFileSync(cmd, ['rivet'], { encoding: 'utf8' }).trim();
+    if (found) {
+      console.log(`rivet: using PATH binary at ${found}`);
+      return found;
+    }
+  } catch {
+    // Not on PATH, fall through to bundled
+  }
+
+  // Fallback: bundled binary (platform+arch specific)
   const binaryName = process.platform === 'win32' ? 'rivet.exe' : 'rivet';
   const platformDir = `${process.platform}-${process.arch}`;
   const bundledPlatform = path.join(context.extensionPath, 'bin', platformDir, binaryName);
@@ -116,13 +128,7 @@ function findRivetBinary(context: vscode.ExtensionContext): string | undefined {
   const bundled = path.join(context.extensionPath, 'bin', binaryName);
   if (fs.existsSync(bundled)) return bundled;
 
-  // Check PATH
-  try {
-    const cmd = process.platform === 'win32' ? 'where' : 'which';
-    return execFileSync(cmd, ['rivet'], { encoding: 'utf8' }).trim();
-  } catch {
-    return undefined;
-  }
+  return undefined;
 }
 
 // --- Serve process ---
