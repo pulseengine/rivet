@@ -210,9 +210,19 @@ pub fn validate_structural(store: &Store, schema: &Schema, graph: &LinkGraph) ->
     // 7. Check traceability rules (forward + backlink coverage)
     for rule in &schema.traceability_rules {
         for id in store.by_type(&rule.source_type) {
+            let artifact = store.get(id).unwrap();
+
+            // Draft artifacts get downgraded to Info for traceability rule violations.
+            // Active and approved artifacts receive full error-level enforcement.
+            let effective_severity =
+                if artifact.status.as_deref().map(str::to_lowercase).as_deref() == Some("draft") {
+                    Severity::Info
+                } else {
+                    rule.severity
+                };
+
             // Forward link check
             if let Some(required_link) = &rule.required_link {
-                let artifact = store.get(id).unwrap();
                 let has_link = artifact.links.iter().any(|l| {
                     l.link_type == *required_link
                         && store
@@ -221,7 +231,7 @@ pub fn validate_structural(store: &Store, schema: &Schema, graph: &LinkGraph) ->
                 });
                 if !has_link {
                     diagnostics.push(Diagnostic {
-                        severity: rule.severity,
+                        severity: effective_severity,
                         artifact_id: Some(id.clone()),
                         rule: rule.name.clone(),
                         message: format!(
@@ -242,7 +252,7 @@ pub fn validate_structural(store: &Store, schema: &Schema, graph: &LinkGraph) ->
                 });
                 if !has_backlink {
                     diagnostics.push(Diagnostic {
-                        severity: rule.severity,
+                        severity: effective_severity,
                         artifact_id: Some(id.clone()),
                         rule: rule.name.clone(),
                         message: rule.description.clone(),
@@ -285,7 +295,9 @@ mod tests {
     use super::*;
     use crate::links::LinkGraph;
     use crate::model::{Artifact, Link};
-    use crate::schema::{ArtifactTypeDef, Condition, ConditionalRule, Requirement, Severity};
+    use crate::schema::{
+        ArtifactTypeDef, Condition, ConditionalRule, Requirement, Severity, TraceabilityRule,
+    };
     use crate::test_helpers::{minimal_artifact, minimal_schema};
     use std::collections::BTreeMap;
 
@@ -656,6 +668,98 @@ then:
         let diags = crate::schema::check_conditional_consistency(&rules);
         assert!(!diags.is_empty());
         assert!(diags[0].message.contains("dup"));
+    }
+
+    /// Helper: build a Schema with a single traceability rule requiring a forward link.
+    fn make_schema_with_forward_traceability_rule() -> Schema {
+        let mut file = minimal_schema("test");
+        file.artifact_types = vec![ArtifactTypeDef {
+            name: "design-decision".to_string(),
+            description: "Design decision".to_string(),
+            fields: vec![],
+            link_fields: vec![],
+            aspice_process: None,
+        }];
+        file.traceability_rules = vec![TraceabilityRule {
+            name: "dd-needs-satisfies".into(),
+            description: "Every design-decision must satisfy a requirement".into(),
+            source_type: "design-decision".into(),
+            required_link: Some("satisfies".into()),
+            required_backlink: None,
+            target_types: vec!["requirement".into()],
+            from_types: vec![],
+            severity: Severity::Error,
+        }];
+        Schema::merge(&[file])
+    }
+
+    // rivet: verifies FEAT-070
+    #[test]
+    fn draft_artifact_missing_required_link_gets_info_severity() {
+        let schema = make_schema_with_forward_traceability_rule();
+        let mut store = Store::new();
+        // Draft artifact — missing the required 'satisfies' link
+        let mut art = minimal_artifact("DD-001", "design-decision");
+        art.status = Some("draft".to_string());
+        store.insert(art).unwrap();
+        let graph = LinkGraph::build(&store, &schema);
+        let diags = validate_structural(&store, &schema, &graph);
+        let rule_diags: Vec<_> = diags
+            .iter()
+            .filter(|d| d.rule == "dd-needs-satisfies")
+            .collect();
+        assert_eq!(rule_diags.len(), 1, "should produce one diagnostic");
+        assert_eq!(
+            rule_diags[0].severity,
+            Severity::Info,
+            "draft artifact traceability violation must be Info, not Error"
+        );
+    }
+
+    // rivet: verifies FEAT-070
+    #[test]
+    fn active_artifact_missing_required_link_gets_error_severity() {
+        let schema = make_schema_with_forward_traceability_rule();
+        let mut store = Store::new();
+        // Active artifact — missing the required 'satisfies' link
+        let mut art = minimal_artifact("DD-002", "design-decision");
+        art.status = Some("active".to_string());
+        store.insert(art).unwrap();
+        let graph = LinkGraph::build(&store, &schema);
+        let diags = validate_structural(&store, &schema, &graph);
+        let rule_diags: Vec<_> = diags
+            .iter()
+            .filter(|d| d.rule == "dd-needs-satisfies")
+            .collect();
+        assert_eq!(rule_diags.len(), 1, "should produce one diagnostic");
+        assert_eq!(
+            rule_diags[0].severity,
+            Severity::Error,
+            "active artifact traceability violation must be Error"
+        );
+    }
+
+    // rivet: verifies FEAT-070
+    #[test]
+    fn approved_artifact_missing_required_link_gets_error_severity() {
+        let schema = make_schema_with_forward_traceability_rule();
+        let mut store = Store::new();
+        // Approved artifact — missing the required 'satisfies' link
+        let mut art = minimal_artifact("DD-003", "design-decision");
+        art.status = Some("approved".to_string());
+        store.insert(art).unwrap();
+        let graph = LinkGraph::build(&store, &schema);
+        let diags = validate_structural(&store, &schema, &graph);
+        let rule_diags: Vec<_> = diags
+            .iter()
+            .filter(|d| d.rule == "dd-needs-satisfies")
+            .collect();
+        assert_eq!(rule_diags.len(), 1, "should produce one diagnostic");
+        assert_eq!(
+            rule_diags[0].severity,
+            Severity::Error,
+            "approved artifact traceability violation must be Error"
+        );
     }
 
     // rivet: verifies REQ-023
