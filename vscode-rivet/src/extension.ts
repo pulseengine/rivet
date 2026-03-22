@@ -12,7 +12,7 @@ import {
 
 let client: LanguageClient | undefined;
 let serveProcess: ChildProcess | undefined;
-
+let dashboardPanel: vscode.WebviewPanel | undefined;
 let dashboardPort: number | undefined;
 let statusBarItem: vscode.StatusBarItem;
 
@@ -156,9 +156,9 @@ function startServe(context: vscode.ExtensionContext, rivetPath: string) {
   });
 }
 
-// --- Dashboard ---
+// --- Dashboard WebView ---
 
-function showDashboard(_context: vscode.ExtensionContext, urlPath: string = '/') {
+async function showDashboard(context: vscode.ExtensionContext, urlPath: string = '/') {
   if (!dashboardPort) {
     vscode.window.showWarningMessage(
       'Rivet dashboard not running. Waiting for serve to start...'
@@ -166,9 +166,43 @@ function showDashboard(_context: vscode.ExtensionContext, urlPath: string = '/')
     return;
   }
 
-  // Open in the user's default browser — VS Code WebViews can't access localhost
-  const url = vscode.Uri.parse(`http://127.0.0.1:${dashboardPort}${urlPath}`);
-  vscode.env.openExternal(url);
+  // Map localhost to a VS Code-accessible URI (works in WebViews)
+  const localUri = vscode.Uri.parse(`http://127.0.0.1:${dashboardPort}${urlPath}`);
+  const mappedUri = await vscode.env.asExternalUri(localUri);
+
+  if (dashboardPanel) {
+    dashboardPanel.reveal(vscode.ViewColumn.Beside);
+    dashboardPanel.webview.html = getDashboardHtml(mappedUri.toString());
+    return;
+  }
+
+  dashboardPanel = vscode.window.createWebviewPanel(
+    'rivetDashboard',
+    'Rivet Dashboard',
+    vscode.ViewColumn.Beside,
+    {
+      enableScripts: true,
+      retainContextWhenHidden: true,
+    },
+  );
+
+  dashboardPanel.webview.html = getDashboardHtml(mappedUri.toString());
+  dashboardPanel.onDidDispose(() => { dashboardPanel = undefined; });
+}
+
+function getDashboardHtml(url: string): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; frame-src ${url} http://127.0.0.1:* https://*.vscode-cdn.net; style-src 'unsafe-inline';">
+  <style>html,body,iframe{margin:0;padding:0;width:100%;height:100%;border:none;overflow:hidden}</style>
+</head>
+<body>
+  <iframe src="${url}" allow="same-origin"></iframe>
+</body>
+</html>`;
 }
 
 // --- Validate command ---
