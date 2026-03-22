@@ -3,7 +3,7 @@
   "displayName": "Rivet SDLC",
   "description": "SDLC artifact traceability with live validation, hover info, and embedded dashboard",
   "publisher": "pulseengine",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "license": "MIT",
   "repository": {
     "type": "git",
