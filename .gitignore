@@ -10,3 +10,4 @@
 # WASM binary assets (built or downloaded, not committed)
 rivet-cli/assets/wasm/*.wasm
 rivet-cli/assets/wasm/js/
+vscode-rivet/node_modules/
