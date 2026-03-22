@@ -4995,6 +4995,52 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
         store.len()
     );
 
+    // Build supplementary state for rendering
+    let render_schema = db.schema(schema_set);
+    let mut render_graph = rivet_core::links::LinkGraph::build(&store, &render_schema);
+
+    let mut doc_store = rivet_core::document::DocumentStore::new();
+    let mut result_store = rivet_core::results::ResultStore::new();
+
+    // Load documents and results from config
+    if config_path.exists() {
+        if let Ok(config) = rivet_core::load_project_config(&config_path) {
+            for docs_path in &config.docs {
+                let dir = project_dir.join(docs_path);
+                if let Ok(docs) = rivet_core::document::load_documents(&dir) {
+                    for doc in docs {
+                        doc_store.insert(doc);
+                    }
+                }
+            }
+            if let Some(ref results_path) = config.results {
+                let dir = project_dir.join(results_path);
+                if let Ok(runs) = rivet_core::results::load_results(&dir) {
+                    for run in runs {
+                        result_store.insert(run);
+                    }
+                }
+            }
+        }
+    }
+
+    let repo_context = crate::serve::RepoContext {
+        project_name: project_dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown")
+            .to_string(),
+        project_path: project_dir.display().to_string(),
+        git: crate::serve::capture_git_info(&project_dir),
+        loaded_at: String::new(),
+        siblings: Vec::new(),
+        port: 0,
+    };
+
+    let externals: Vec<crate::serve::ExternalInfo> = Vec::new();
+    let mut render_store = store;
+    let mut diagnostics_cache = diagnostics;
+
     // Main message loop
     for msg in &connection.receiver {
         match msg {
@@ -5067,14 +5113,40 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                                     }
                                 }
                                 // Re-query diagnostics (salsa recomputes only what changed)
-                                let diagnostics = db.diagnostics(source_set, schema_set);
-                                let store = db.store(source_set);
-                                lsp_publish_salsa_diagnostics(&connection, &diagnostics, &store);
+                                let new_diagnostics = db.diagnostics(source_set, schema_set);
+                                let new_store = db.store(source_set);
+                                lsp_publish_salsa_diagnostics(
+                                    &connection,
+                                    &new_diagnostics,
+                                    &new_store,
+                                );
                                 eprintln!(
                                     "rivet lsp: incremental revalidation complete ({} diagnostics, {} artifacts)",
-                                    diagnostics.len(),
-                                    store.len()
+                                    new_diagnostics.len(),
+                                    new_store.len()
                                 );
+
+                                // Rebuild render state
+                                render_store = db.store(source_set);
+                                let render_schema = db.schema(schema_set);
+                                render_graph = rivet_core::links::LinkGraph::build(
+                                    &render_store,
+                                    &render_schema,
+                                );
+                                diagnostics_cache = db.diagnostics(source_set, schema_set);
+
+                                // Send artifactsChanged notification
+                                let changed_notification = lsp_server::Notification {
+                                    method: "rivet/artifactsChanged".to_string(),
+                                    params: serde_json::json!({
+                                        "artifactCount": render_store.len(),
+                                        "documentCount": doc_store.len(),
+                                        "changedFiles": [path_str.clone()]
+                                    }),
+                                };
+                                connection
+                                    .sender
+                                    .send(Message::Notification(changed_notification))?;
                             }
                         }
                     }

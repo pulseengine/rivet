@@ -57,7 +57,7 @@ pub(crate) struct RepoContext {
     pub(crate) port: u16,
 }
 
-fn capture_git_info(project_path: &std::path::Path) -> Option<GitInfo> {
+pub(crate) fn capture_git_info(project_path: &std::path::Path) -> Option<GitInfo> {
     let branch = std::process::Command::new("git")
         .args(["rev-parse", "--abbrev-ref", "HEAD"])
         .current_dir(project_path)
