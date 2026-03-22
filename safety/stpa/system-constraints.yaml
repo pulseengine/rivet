@@ -198,3 +198,23 @@ system-constraints:
       if a path is unreachable rather than silently skipping the external.
       Platform-specific path separators must be normalized.
     hazards: [H-18]
+
+  - id: SC-21
+    title: LSP must re-validate within 500ms of file save for stores under 5000 artifacts
+    description: >
+      When the LSP server receives a textDocument/didSave notification,
+      it must invalidate the salsa cache for the changed file and
+      re-publish diagnostics within 500 ms for projects containing
+      fewer than 5000 artifacts.  Stale cached results must never be
+      returned after a save event.
+    hazards: [H-19]
+
+  - id: SC-22
+    title: VS Code WebView must use sandbox restrictions for dashboard content
+    description: >
+      The VS Code extension's WebView panel must be created with
+      sandbox restrictions that prevent arbitrary script execution
+      from non-trusted origins.  The WebView must only accept
+      postMessage commands from the extension host and must not
+      relay artifact data to untrusted iframe origins.
+    hazards: [H-20]

@@ -907,3 +907,44 @@ external-sync-ucas:
 
   too-early-too-late: []
   stopped-too-soon: []
+
+# =============================================================================
+# Core Engine UCAs — LSP Server (Phase 3 extension)
+# =============================================================================
+lsp-ucas:
+  control-action: Provide incremental validation diagnostics via LSP
+  controller: CTRL-CORE
+
+  not-providing:
+    - id: UCA-C-26
+      description: >
+        LSP does not provide updated diagnostics after file save when
+        salsa cache is stale.
+      context: >
+        Developer saves a YAML artifact file in their editor. The LSP
+        server receives a textDocument/didSave notification but does not
+        invalidate the salsa input query for the changed file. The editor
+        continues to display diagnostics from the previous file version.
+      hazards: [H-19, H-9]
+      rationale: >
+        Stale diagnostics in the editor create false confidence that the
+        artifact file is valid, hiding newly introduced traceability errors.
+
+  providing:
+    - id: UCA-C-27
+      description: >
+        Dashboard WebView provides artifact data to untrusted iframe
+        origins via postMessage.
+      context: >
+        The VS Code extension hosts the rivet dashboard in a WebView
+        panel. A malicious extension or compromised workspace script
+        sends postMessage events to the WebView iframe. The WebView
+        message handler does not validate the origin, accepts navigation
+        commands, and returns artifact data to the untrusted sender.
+      hazards: [H-20]
+      rationale: >
+        Unrestricted postMessage handling allows data exfiltration of
+        sensitive artifacts without requiring filesystem access.
+
+  too-early-too-late: []
+  stopped-too-soon: []
