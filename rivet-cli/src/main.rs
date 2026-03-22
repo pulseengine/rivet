@@ -5086,8 +5086,14 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                         let params: serde_json::Value = req.params.clone();
                         let page = params.get("page").and_then(|v| v.as_str()).unwrap_or("/");
                         let seq = params.get("seq").and_then(|v| v.as_u64()).unwrap_or(0);
-                        let view_params = params.get("params")
-                            .and_then(|p| serde_json::from_value::<crate::serve::components::ViewParams>(p.clone()).ok())
+                        let view_params = params
+                            .get("params")
+                            .and_then(|p| {
+                                serde_json::from_value::<crate::serve::components::ViewParams>(
+                                    p.clone(),
+                                )
+                                .ok()
+                            })
                             .unwrap_or_default();
 
                         let ctx = crate::render::RenderContext {
@@ -5123,45 +5129,66 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                         let response_value = match parent {
                             None => {
                                 // Documents from DocumentStore (markdown docs)
-                                let documents: Vec<_> = doc_store.iter().map(|doc| {
-                                    let source = doc.source_file.as_ref()
-                                        .map(|p| p.display().to_string())
-                                        .unwrap_or_default();
-                                    serde_json::json!({
-                                        "kind": "document", "label": &doc.title,
-                                        "description": &source,
-                                        "path": &doc.id,
-                                        "page": format!("/documents/{}", &doc.id)
+                                let documents: Vec<_> = doc_store
+                                    .iter()
+                                    .map(|doc| {
+                                        let source = doc
+                                            .source_file
+                                            .as_ref()
+                                            .map(|p| p.display().to_string())
+                                            .unwrap_or_default();
+                                        serde_json::json!({
+                                            "kind": "document", "label": &doc.title,
+                                            "description": &source,
+                                            "path": &doc.id,
+                                            "page": format!("/documents/{}", &doc.id)
+                                        })
                                     })
-                                }).collect();
+                                    .collect();
 
                                 // Artifact source files (YAML files with artifacts)
-                                let mut file_map: std::collections::BTreeMap<String, (String, usize)> = std::collections::BTreeMap::new();
+                                let mut file_map: std::collections::BTreeMap<
+                                    String,
+                                    (String, usize),
+                                > = std::collections::BTreeMap::new();
                                 for artifact in render_store.iter() {
                                     if let Some(ref sf) = artifact.source_file {
                                         let path = sf.display().to_string();
-                                        let entry = file_map.entry(path.clone()).or_insert_with(|| {
-                                            let name = std::path::Path::new(&path)
-                                                .file_stem().and_then(|s| s.to_str()).unwrap_or("unknown")
-                                                .replace('-', " ");
-                                            let name = name.split_whitespace().map(|w| {
-                                                let mut c = w.chars();
-                                                match c.next() {
-                                                    None => String::new(),
-                                                    Some(f) => f.to_uppercase().to_string() + c.as_str(),
-                                                }
-                                            }).collect::<Vec<_>>().join(" ");
-                                            (name, 0)
-                                        });
+                                        let entry =
+                                            file_map.entry(path.clone()).or_insert_with(|| {
+                                                let name = std::path::Path::new(&path)
+                                                    .file_stem()
+                                                    .and_then(|s| s.to_str())
+                                                    .unwrap_or("unknown")
+                                                    .replace('-', " ");
+                                                let name = name
+                                                    .split_whitespace()
+                                                    .map(|w| {
+                                                        let mut c = w.chars();
+                                                        match c.next() {
+                                                            None => String::new(),
+                                                            Some(f) => {
+                                                                f.to_uppercase().to_string()
+                                                                    + c.as_str()
+                                                            }
+                                                        }
+                                                    })
+                                                    .collect::<Vec<_>>()
+                                                    .join(" ");
+                                                (name, 0)
+                                            });
                                         entry.1 += 1;
                                     }
                                 }
-                                let sources: Vec<_> = file_map.iter().map(|(path, (name, count))| {
-                                    serde_json::json!({
-                                        "kind": "source", "label": name, "description": path,
-                                        "artifactCount": count, "path": path
+                                let sources: Vec<_> = file_map
+                                    .iter()
+                                    .map(|(path, (name, count))| {
+                                        serde_json::json!({
+                                            "kind": "source", "label": name, "description": path,
+                                            "artifactCount": count, "path": path
+                                        })
                                     })
-                                }).collect();
+                                    .collect();
 
                                 let views = vec![
                                     serde_json::json!({"kind":"view","label":"Stats","page":"/stats","icon":"dashboard"}),
@@ -5202,7 +5229,7 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                                         "sourceFile":parent_path
                                     }))
                                     .collect();
-                                items.sort_by(|a,b| a["label"].as_str().cmp(&b["label"].as_str()));
+                                items.sort_by(|a, b| a["label"].as_str().cmp(&b["label"].as_str()));
                                 serde_json::json!({"items": items})
                             }
                         };
@@ -5214,7 +5241,11 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                         }))?;
                     }
                     "rivet/css" => {
-                        let css = format!("{}\n{}", crate::render::styles::FONTS_CSS, crate::render::styles::CSS);
+                        let css = format!(
+                            "{}\n{}",
+                            crate::render::styles::FONTS_CSS,
+                            crate::render::styles::CSS
+                        );
                         connection.sender.send(Message::Response(Response {
                             id: req.id,
                             result: Some(serde_json::to_value(css)?),

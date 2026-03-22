@@ -54,7 +54,9 @@ pub(crate) fn render_help(ctx: &RenderContext) -> String {
     html.push_str("<h3 style=\"margin:0 0 1rem\">Schema Linkage</h3>");
     html.push_str("<pre class=\"mermaid\">\ngraph LR\n");
     for rule in &schema.traceability_rules {
-        let link_label = rule.required_link.as_deref()
+        let link_label = rule
+            .required_link
+            .as_deref()
             .or(rule.required_backlink.as_deref())
             .unwrap_or(&rule.name);
         for target in &rule.target_types {
@@ -275,21 +277,33 @@ pub(crate) fn render_docs_topic(slug: &str) -> RenderResult {
         if let Some(h1) = line.strip_prefix("# ") {
             html.push_str(&format!("<h2>{}</h2>", html_escape(h1)));
         } else if let Some(h2) = line.strip_prefix("## ") {
-            html.push_str(&format!("<h3 style=\"margin-top:1.5rem\">{}</h3>", html_escape(h2)));
+            html.push_str(&format!(
+                "<h3 style=\"margin-top:1.5rem\">{}</h3>",
+                html_escape(h2)
+            ));
         } else if let Some(h3) = line.strip_prefix("### ") {
-            html.push_str(&format!("<h4 style=\"margin-top:1rem\">{}</h4>", html_escape(h3)));
+            html.push_str(&format!(
+                "<h4 style=\"margin-top:1rem\">{}</h4>",
+                html_escape(h3)
+            ));
         } else if line.starts_with('|') {
             if !in_table {
                 html.push_str(r#"<div style="overflow-x:auto;margin:.75rem 0"><table>"#);
                 in_table = true;
             }
-            if line.chars().all(|c| c == '|' || c == '-' || c == ' ' || c == ':') {
+            if line
+                .chars()
+                .all(|c| c == '|' || c == '-' || c == ' ' || c == ':')
+            {
                 // Skip separator rows
             } else {
                 html.push_str("<tr>");
                 let cells: Vec<&str> = line.split('|').collect();
                 for cell in &cells[1..cells.len().saturating_sub(1)] {
-                    html.push_str(&format!("<td style=\"padding:.25rem .75rem\">{}</td>", html_escape(cell.trim())));
+                    html.push_str(&format!(
+                        "<td style=\"padding:.25rem .75rem\">{}</td>",
+                        html_escape(cell.trim())
+                    ));
                 }
                 html.push_str("</tr>");
             }
@@ -301,12 +315,19 @@ pub(crate) fn render_docs_topic(slug: &str) -> RenderResult {
             if line.is_empty() {
                 html.push_str("<br>");
             } else {
-                html.push_str(&format!("<p style=\"margin:.25rem 0;font-size:.88rem;line-height:1.6\">{}</p>", html_escape(line)));
+                html.push_str(&format!(
+                    "<p style=\"margin:.25rem 0;font-size:.88rem;line-height:1.6\">{}</p>",
+                    html_escape(line)
+                ));
             }
         }
     }
-    if in_table { html.push_str("</table></div>"); }
-    if in_code_block { html.push_str("</pre>"); }
+    if in_table {
+        html.push_str("</table></div>");
+    }
+    if in_code_block {
+        html.push_str("</pre>");
+    }
     html.push_str("</div>");
 
     RenderResult {

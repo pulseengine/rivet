@@ -42,7 +42,11 @@ pub(crate) struct RenderResult {
     pub(crate) source_line: Option<u32>,
 }
 
-pub(crate) fn render_page(ctx: &RenderContext, page: &str, params: &crate::serve::components::ViewParams) -> RenderResult {
+pub(crate) fn render_page(
+    ctx: &RenderContext,
+    page: &str,
+    params: &crate::serve::components::ViewParams,
+) -> RenderResult {
     // Strip query string if present (e.g., /artifacts?q=foo → /artifacts)
     let (path, _query) = page.split_once('?').unwrap_or((page, ""));
 

@@ -213,7 +213,9 @@ pub(crate) async fn artifacts_list(
 ) -> Html<String> {
     let state = state.read().await;
     let ctx = state.as_render_context();
-    Html(crate::render::artifacts::render_artifacts_list(&ctx, &params))
+    Html(crate::render::artifacts::render_artifacts_list(
+        &ctx, &params,
+    ))
 }
 
 /// Compact preview tooltip for an artifact — loaded on hover.

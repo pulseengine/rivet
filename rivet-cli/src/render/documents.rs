@@ -2,9 +2,9 @@ use std::collections::BTreeMap;
 
 use rivet_core::document::{self, html_escape};
 
-use super::helpers::badge_for_type;
 use super::RenderContext;
 use super::RenderResult;
+use super::helpers::badge_for_type;
 
 /// Render the documents list page.
 pub(crate) fn render_documents_list(ctx: &RenderContext) -> String {
@@ -219,10 +219,7 @@ pub(crate) fn render_document_detail(ctx: &RenderContext, id: &str) -> RenderRes
 
     html.push_str("<p><a href=\"/documents\">&larr; Back to documents</a></p>");
 
-    let source_file = doc
-        .source_file
-        .as_ref()
-        .map(|p| p.display().to_string());
+    let source_file = doc.source_file.as_ref().map(|p| p.display().to_string());
 
     RenderResult {
         html,
