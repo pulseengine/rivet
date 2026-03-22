@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import * as net from 'net';
+
 import { execFileSync, ChildProcess, spawn } from 'child_process';
 import {
   LanguageClient,
@@ -12,7 +12,7 @@ import {
 
 let client: LanguageClient | undefined;
 let serveProcess: ChildProcess | undefined;
-let dashboardPanel: vscode.WebviewPanel | undefined;
+
 let dashboardPort: number | undefined;
 let statusBarItem: vscode.StatusBarItem;
 
@@ -156,9 +156,9 @@ function startServe(context: vscode.ExtensionContext, rivetPath: string) {
   });
 }
 
-// --- Dashboard WebView ---
+// --- Dashboard ---
 
-function showDashboard(context: vscode.ExtensionContext, path: string = '/') {
+function showDashboard(_context: vscode.ExtensionContext, urlPath: string = '/') {
   if (!dashboardPort) {
     vscode.window.showWarningMessage(
       'Rivet dashboard not running. Waiting for serve to start...'
@@ -166,111 +166,9 @@ function showDashboard(context: vscode.ExtensionContext, path: string = '/') {
     return;
   }
 
-  if (dashboardPanel) {
-    dashboardPanel.reveal(vscode.ViewColumn.Beside);
-    // Navigate to the requested path
-    dashboardPanel.webview.html = getDashboardHtml(dashboardPort, path);
-    return;
-  }
-
-  dashboardPanel = vscode.window.createWebviewPanel(
-    'rivetDashboard',
-    'Rivet Dashboard',
-    vscode.ViewColumn.Beside,
-    {
-      enableScripts: true,
-      retainContextWhenHidden: true,
-    },
-  );
-
-  dashboardPanel.webview.html = getDashboardHtml(dashboardPort, path);
-
-  // Handle messages from the webview (e.g., navigate to artifact)
-  dashboardPanel.webview.onDidReceiveMessage(
-    async (message: { command: string; artifactId?: string; file?: string; line?: number }) => {
-      if (message.command === 'openArtifact') {
-        if (message.file) {
-          // Direct file path provided — open it
-          const uri = vscode.Uri.file(message.file);
-          vscode.workspace.openTextDocument(uri).then((doc) => {
-            const line = message.line || 0;
-            vscode.window.showTextDocument(doc, {
-              selection: new vscode.Range(line, 0, line, 0),
-              viewColumn: vscode.ViewColumn.One,
-            });
-          });
-        } else if (message.artifactId) {
-          // No file path — search for the artifact by ID
-          const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-          if (!wsRoot) return;
-          try {
-            const result = execFileSync('grep', [
-              '-rn', `id: ${message.artifactId}`,
-              'artifacts/', 'safety/',
-            ], {
-              cwd: wsRoot,
-              encoding: 'utf8',
-              timeout: 5000,
-            });
-            const firstLine = result.split('\n')[0];
-            if (firstLine) {
-              const match = firstLine.match(/^(.+):(\d+):/);
-              if (match) {
-                const filePath = wsRoot + '/' + match[1];
-                const lineNum = Math.max(0, parseInt(match[2], 10) - 1);
-                const uri = vscode.Uri.file(filePath);
-                const doc = await vscode.workspace.openTextDocument(uri);
-                await vscode.window.showTextDocument(doc, {
-                  selection: new vscode.Range(lineNum, 0, lineNum, 0),
-                  viewColumn: vscode.ViewColumn.One,
-                });
-              }
-            }
-          } catch {
-            // grep may fail if directories don't exist or artifact not found
-          }
-        }
-      }
-    },
-    undefined,
-    context.subscriptions,
-  );
-
-  dashboardPanel.onDidDispose(() => {
-    dashboardPanel = undefined;
-  });
-}
-
-function getDashboardHtml(port: number, initialPath: string): string {
-  const url = `http://127.0.0.1:${port}${initialPath}`;
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <style>
-    html, body, iframe {
-      margin: 0; padding: 0; width: 100%; height: 100%;
-      border: none; overflow: hidden;
-    }
-  </style>
-</head>
-<body>
-  <iframe id="dashboard" src="${url}" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
-  <script>
-    window.addEventListener('message', (e) => {
-      if (e.data && e.data.type === 'rivet-navigate') {
-        const vscode = acquireVsCodeApi();
-        vscode.postMessage({
-          command: 'openArtifact',
-          artifactId: e.data.artifactId,
-          file: e.data.file,
-          line: e.data.line
-        });
-      }
-    });
-  </script>
-</body>
-</html>`;
+  // Open in the user's default browser — VS Code WebViews can't access localhost
+  const url = vscode.Uri.parse(`http://127.0.0.1:${dashboardPort}${urlPath}`);
+  vscode.env.openExternal(url);
 }
 
 // --- Validate command ---
