@@ -184,6 +184,15 @@ async function showDashboard(context: vscode.ExtensionContext, urlPath: string =
         await navigateTo(msg.path);
       } else if (msg.type === 'refresh') {
         await navigateTo(currentPage);
+      } else if (msg.type === 'openSource') {
+        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        if (workspaceRoot && msg.file) {
+          const filePath = path.isAbsolute(msg.file)
+            ? msg.file
+            : path.join(workspaceRoot, msg.file);
+          const uri = vscode.Uri.file(filePath);
+          await vscode.window.showTextDocument(uri, { viewColumn: vscode.ViewColumn.One });
+        }
       }
     });
 

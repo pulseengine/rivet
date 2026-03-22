@@ -12,6 +12,7 @@ use crate::serve::{ExternalInfo, RepoContext};
 pub(crate) mod artifacts;
 pub(crate) mod components;
 pub(crate) mod documents;
+pub(crate) mod help;
 pub(crate) mod helpers;
 pub(crate) mod stats;
 pub(crate) mod stpa;
@@ -89,6 +90,44 @@ pub(crate) fn render_page(ctx: &RenderContext, page: &str, params: &crate::serve
         p if p.starts_with("/documents/") => {
             let id = &p["/documents/".len()..];
             documents::render_document_detail(ctx, id)
+        }
+        "/help" => RenderResult {
+            html: help::render_help(ctx),
+            title: "Help".to_string(),
+            source_file: None,
+            source_line: None,
+        },
+        "/help/schema" => RenderResult {
+            html: help::render_schema_list(ctx),
+            title: "Schema Types".to_string(),
+            source_file: None,
+            source_line: None,
+        },
+        p if p.starts_with("/help/schema/") => {
+            let name = &p["/help/schema/".len()..];
+            help::render_schema_show(ctx, name)
+        }
+        "/help/links" => RenderResult {
+            html: help::render_links(ctx),
+            title: "Link Types".to_string(),
+            source_file: None,
+            source_line: None,
+        },
+        "/help/rules" => RenderResult {
+            html: help::render_rules(ctx),
+            title: "Traceability Rules".to_string(),
+            source_file: None,
+            source_line: None,
+        },
+        "/help/docs" => RenderResult {
+            html: help::render_docs_list(),
+            title: "Documentation".to_string(),
+            source_file: None,
+            source_line: None,
+        },
+        p if p.starts_with("/help/docs/") => {
+            let slug = &p["/help/docs/".len()..];
+            help::render_docs_topic(slug)
         }
         _ => RenderResult {
             html: format!(

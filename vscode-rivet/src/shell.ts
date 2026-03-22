@@ -46,8 +46,17 @@ export function getShellHtml(
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     document.addEventListener('click', (e) => {
-      const a = e.target.closest('a[href^="/"]');
-      if (a) {
+      const a = e.target.closest('a');
+      if (!a) return;
+      // Source file links — open in editor
+      const sourceFile = a.getAttribute('data-source-file');
+      if (sourceFile) {
+        e.preventDefault();
+        vscode.postMessage({ type: 'openSource', file: sourceFile });
+        return;
+      }
+      // Internal navigation links
+      if (a.getAttribute('href') && a.getAttribute('href').startsWith('/')) {
         e.preventDefault();
         vscode.postMessage({ type: 'navigate', path: a.getAttribute('href') });
       }

@@ -5168,10 +5168,20 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                                     serde_json::json!({"kind":"view","label":"Artifacts","page":"/artifacts","icon":"symbol-class"}),
                                     serde_json::json!({"kind":"view","label":"Validation","page":"/validate","icon":"pass"}),
                                     serde_json::json!({"kind":"view","label":"STPA","page":"/stpa","icon":"shield"}),
+                                    serde_json::json!({"kind":"view","label":"Documents","page":"/documents","icon":"book"}),
+                                ];
+
+                                let help = vec![
+                                    serde_json::json!({"kind":"view","label":"Help","page":"/help","icon":"question"}),
+                                    serde_json::json!({"kind":"view","label":"Schema Types","page":"/help/schema","icon":"symbol-class"}),
+                                    serde_json::json!({"kind":"view","label":"Link Types","page":"/help/links","icon":"link"}),
+                                    serde_json::json!({"kind":"view","label":"Traceability Rules","page":"/help/rules","icon":"checklist"}),
+                                    serde_json::json!({"kind":"view","label":"Documentation","page":"/help/docs","icon":"notebook"}),
                                 ];
 
                                 let mut categories = vec![
                                     serde_json::json!({"kind":"category","label":"Views","children":views}),
+                                    serde_json::json!({"kind":"category","label":"Help","children":help}),
                                 ];
                                 if !sources.is_empty() {
                                     categories.push(serde_json::json!({"kind":"category","label":"Artifact Files","children":sources}));

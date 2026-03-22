@@ -352,6 +352,7 @@ pub(crate) fn render_artifact_detail(ctx: &RenderContext, id: &str) -> RenderRes
         .map(|p| p.display().to_string());
 
     // Source file link (shown at top for quick access)
+    // Uses data-source-file attribute — the VS Code nav shim picks this up
     let source_link = if let Some(ref sf) = source_file {
         let filename = std::path::Path::new(sf)
             .file_name()
@@ -359,7 +360,7 @@ pub(crate) fn render_artifact_detail(ctx: &RenderContext, id: &str) -> RenderRes
             .unwrap_or(sf);
         format!(
             " <span class=\"meta\" style=\"float:right;font-size:.85rem\">\
-             <a href=\"#\" onclick=\"return false\" title=\"{}\">&#128196; {}</a></span>",
+             <a href=\"#\" data-source-file=\"{}\" title=\"Open source file\">&#128196; {}</a></span>",
             html_escape(sf),
             html_escape(filename),
         )
