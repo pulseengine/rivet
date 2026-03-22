@@ -190,9 +190,8 @@ async function showDashboard(context: vscode.ExtensionContext, urlPath: string =
   }
 
   // Map localhost to a VS Code-accessible URI (works in WebViews)
-  // ?embed=1 strips the sidebar (VS Code tree view handles navigation)
-  const sep = urlPath.includes('?') ? '&' : '?';
-  const localUri = vscode.Uri.parse(`http://127.0.0.1:${dashboardPort}${urlPath}${sep}embed=1`);
+  // /embed prefix strips the sidebar (VS Code tree view handles navigation)
+  const localUri = vscode.Uri.parse(`http://127.0.0.1:${dashboardPort}/embed${urlPath}`);
   const mappedUri = await vscode.env.asExternalUri(localUri);
 
   if (dashboardPanel) {
@@ -221,7 +220,7 @@ function getDashboardHtml(url: string): string {
 <head>
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none'; frame-src ${url} http://127.0.0.1:* https://*.vscode-cdn.net; style-src 'unsafe-inline';">
+        content="default-src 'none'; frame-src http://127.0.0.1:* https://*.vscode-cdn.net; style-src 'unsafe-inline';">
   <style>html,body,iframe{margin:0;padding:0;width:100%;height:100%;border:none;overflow:hidden}</style>
 </head>
 <body>

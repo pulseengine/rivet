@@ -591,12 +591,41 @@ async fn wrap_full_page(
     req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
-    let path = req.uri().path().to_string();
+    let original_path = req.uri().path().to_string();
     let query = req.uri().query().unwrap_or("").to_string();
     let is_htmx = req.headers().contains_key("hx-request");
     let is_print = query.contains("print=1");
-    let is_embed = query.contains("embed=1");
+    let is_embed = query.contains("embed=1")
+        || original_path.starts_with("/embed/")
+        || original_path == "/embed";
     let method = req.method().clone();
+
+    // Strip /embed prefix so existing route handlers match
+    let req = if is_embed && original_path.starts_with("/embed") {
+        let new_path = original_path.strip_prefix("/embed").unwrap_or("/");
+        let new_path = if new_path.is_empty() { "/" } else { new_path };
+        let mut parts = req.uri().clone().into_parts();
+        let new_pq = if query.is_empty() {
+            new_path.to_string()
+        } else {
+            format!("{new_path}?{query}")
+        };
+        parts.path_and_query = Some(new_pq.parse().unwrap());
+        let new_uri = axum::http::Uri::from_parts(parts).unwrap();
+        let (mut head, body) = req.into_parts();
+        head.uri = new_uri;
+        axum::extract::Request::from_parts(head, body)
+    } else {
+        req
+    };
+    let path = if is_embed && original_path.starts_with("/embed") {
+        original_path
+            .strip_prefix("/embed")
+            .unwrap_or("/")
+            .to_string()
+    } else {
+        original_path
+    };
 
     let response = next.run(req).await;
 
