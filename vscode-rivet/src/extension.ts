@@ -199,14 +199,16 @@ function showDashboard(context: vscode.ExtensionContext, path: string = '/') {
               viewColumn: vscode.ViewColumn.One,
             });
           });
-        } else if (message.artifactId && workspaceRoot) {
+        } else if (message.artifactId) {
           // No file path — search for the artifact by ID
+          const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+          if (!wsRoot) return;
           try {
             const result = execFileSync('grep', [
               '-rn', `id: ${message.artifactId}`,
               'artifacts/', 'safety/',
             ], {
-              cwd: workspaceRoot,
+              cwd: wsRoot,
               encoding: 'utf8',
               timeout: 5000,
             });
@@ -214,7 +216,7 @@ function showDashboard(context: vscode.ExtensionContext, path: string = '/') {
             if (firstLine) {
               const match = firstLine.match(/^(.+):(\d+):/);
               if (match) {
-                const filePath = path.join(workspaceRoot, match[1]);
+                const filePath = wsRoot + '/' + match[1];
                 const lineNum = Math.max(0, parseInt(match[2], 10) - 1);
                 const uri = vscode.Uri.file(filePath);
                 const doc = await vscode.workspace.openTextDocument(uri);
