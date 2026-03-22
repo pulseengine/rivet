@@ -7,7 +7,6 @@ import {
   LanguageClient,
   LanguageClientOptions,
   ServerOptions,
-  TransportKind,
 } from 'vscode-languageclient/node';
 
 let client: LanguageClient | undefined;
@@ -57,7 +56,6 @@ export async function activate(context: vscode.ExtensionContext) {
     const serverOptions: ServerOptions = {
       command: rivetPath,
       args: ['lsp'],
-      transport: TransportKind.stdio,
       options: { cwd: lspWorkspaceRoot },
     };
 
