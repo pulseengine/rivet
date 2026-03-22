@@ -4,6 +4,11 @@
 [advisories]
 # Vulnerabilities are denied by default in cargo-deny >=0.16.
 # Yanked crates produce warnings by default.
+ignore = [
+    # `instant` is unmaintained (RUSTSEC-2024-0384) but pulled in transitively
+    # by notify 7.0.0 → notify-types. No fix available upstream yet.
+    "RUSTSEC-2024-0384",
+]
 
 [licenses]
 # Confidence threshold for license detection
