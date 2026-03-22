@@ -192,6 +192,24 @@ pub(crate) struct AppState {
     pub(crate) cached_diagnostics: Vec<rivet_core::validate::Diagnostic>,
 }
 
+impl AppState {
+    /// Build a [`crate::render::RenderContext`] borrowing from this state.
+    pub(crate) fn as_render_context(&self) -> crate::render::RenderContext<'_> {
+        crate::render::RenderContext {
+            store: &self.store,
+            schema: &self.schema,
+            graph: &self.graph,
+            doc_store: &self.doc_store,
+            result_store: &self.result_store,
+            diagnostics: &self.cached_diagnostics,
+            context: &self.context,
+            externals: &self.externals,
+            project_path: &self.project_path_buf,
+            schemas_dir: &self.schemas_dir,
+        }
+    }
+}
+
 /// Convenience alias so handler signatures stay compact.
 pub(crate) type SharedState = Arc<RwLock<AppState>>;
 

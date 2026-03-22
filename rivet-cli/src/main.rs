@@ -18,6 +18,7 @@ use rivet_core::store::Store;
 use rivet_core::validate;
 
 mod docs;
+mod render;
 mod schema_cmd;
 mod serve;
 
