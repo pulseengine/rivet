@@ -16,6 +16,8 @@ let currentPage: string = '/stats';
 let currentSeq: number = 0;
 let cachedCss: string = '';
 let statusBarItem: vscode.StatusBarItem;
+let currentSourceFile: string | undefined;
+let currentSourceLine: number | undefined;
 
 export async function activate(context: vscode.ExtensionContext) {
   // --- Commands ---
@@ -26,6 +28,22 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('rivet.validate', () => runValidate()),
     vscode.commands.registerCommand('rivet.addArtifact', () => addArtifact()),
     vscode.commands.registerCommand('rivet.navigateTo', (urlPath: string) => showDashboard(context, urlPath)),
+    vscode.commands.registerCommand('rivet.showSource', async () => {
+      if (!currentSourceFile) {
+        vscode.window.showInformationMessage('No source file for current view');
+        return;
+      }
+      const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      if (!workspaceRoot) return;
+
+      const filePath = path.isAbsolute(currentSourceFile)
+        ? currentSourceFile
+        : path.join(workspaceRoot, currentSourceFile);
+      const uri = vscode.Uri.file(filePath);
+      const line = Math.max(0, (currentSourceLine || 1) - 1);
+      const range = new vscode.Range(line, 0, line, 0);
+      await vscode.window.showTextDocument(uri, { selection: range, viewColumn: vscode.ViewColumn.One });
+    }),
   );
 
   // --- Sidebar Tree View ---
@@ -186,6 +204,8 @@ async function navigateTo(page: string) {
     if (seq !== currentSeq) return;
 
     panel.title = result.title || 'Rivet';
+    currentSourceFile = result.sourceFile || undefined;
+    currentSourceLine = result.sourceLine || undefined;
     panel.webview.postMessage({ type: 'update', html: result.html, title: result.title });
   } catch (err: unknown) {
     if (seq !== currentSeq) return;

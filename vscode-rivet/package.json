@@ -69,6 +69,10 @@
         "command": "rivet.addArtifact",
         "title": "Add Artifact",
         "category": "Rivet"
+      },
+      {
+        "command": "rivet.showSource",
+        "title": "Rivet: Show Source"
       }
     ],
     "configuration": {
