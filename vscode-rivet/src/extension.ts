@@ -187,16 +187,47 @@ function showDashboard(context: vscode.ExtensionContext, path: string = '/') {
 
   // Handle messages from the webview (e.g., navigate to artifact)
   dashboardPanel.webview.onDidReceiveMessage(
-    (message: { command: string; artifactId?: string; file?: string; line?: number }) => {
-      if (message.command === 'openArtifact' && message.file) {
-        const uri = vscode.Uri.file(message.file);
-        vscode.workspace.openTextDocument(uri).then((doc) => {
-          const line = message.line || 0;
-          vscode.window.showTextDocument(doc, {
-            selection: new vscode.Range(line, 0, line, 0),
-            viewColumn: vscode.ViewColumn.One,
+    async (message: { command: string; artifactId?: string; file?: string; line?: number }) => {
+      if (message.command === 'openArtifact') {
+        if (message.file) {
+          // Direct file path provided — open it
+          const uri = vscode.Uri.file(message.file);
+          vscode.workspace.openTextDocument(uri).then((doc) => {
+            const line = message.line || 0;
+            vscode.window.showTextDocument(doc, {
+              selection: new vscode.Range(line, 0, line, 0),
+              viewColumn: vscode.ViewColumn.One,
+            });
           });
-        });
+        } else if (message.artifactId && workspaceRoot) {
+          // No file path — search for the artifact by ID
+          try {
+            const result = execFileSync('grep', [
+              '-rn', `id: ${message.artifactId}`,
+              'artifacts/', 'safety/',
+            ], {
+              cwd: workspaceRoot,
+              encoding: 'utf8',
+              timeout: 5000,
+            });
+            const firstLine = result.split('\n')[0];
+            if (firstLine) {
+              const match = firstLine.match(/^(.+):(\d+):/);
+              if (match) {
+                const filePath = path.join(workspaceRoot, match[1]);
+                const lineNum = Math.max(0, parseInt(match[2], 10) - 1);
+                const uri = vscode.Uri.file(filePath);
+                const doc = await vscode.workspace.openTextDocument(uri);
+                await vscode.window.showTextDocument(doc, {
+                  selection: new vscode.Range(lineNum, 0, lineNum, 0),
+                  viewColumn: vscode.ViewColumn.One,
+                });
+              }
+            }
+          } catch {
+            // grep may fail if directories don't exist or artifact not found
+          }
+        }
       }
     },
     undefined,
@@ -223,6 +254,19 @@ function getDashboardHtml(port: number, initialPath: string): string {
 </head>
 <body>
   <iframe id="dashboard" src="${url}" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
+  <script>
+    window.addEventListener('message', (e) => {
+      if (e.data && e.data.type === 'rivet-navigate') {
+        const vscode = acquireVsCodeApi();
+        vscode.postMessage({
+          command: 'openArtifact',
+          artifactId: e.data.artifactId,
+          file: e.data.file,
+          line: e.data.line
+        });
+      }
+    });
+  </script>
 </body>
 </html>`;
 }

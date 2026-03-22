@@ -20,6 +20,7 @@ use std::fmt::Write as _;
 use crate::coverage;
 use crate::document::{self, ArtifactInfo, DocumentStore};
 use crate::links::LinkGraph;
+use crate::results::ResultStore;
 use crate::schema::{Schema, Severity};
 use crate::store::Store;
 use crate::validate::Diagnostic;
@@ -482,6 +483,8 @@ fn nav_bar(active: &str, _config: &ExportConfig, is_single_page: bool) -> String
         ("coverage", "Coverage", "coverage.html"),
         ("validation", "Validation", "validation.html"),
         ("graph", "Graph", "graph.html"),
+        ("source", "Source", "source.html"),
+        ("results", "Results", "results.html"),
     ];
 
     let mut out = String::from("<header class=\"export-header\">\n<nav>\n");
@@ -698,6 +701,8 @@ pub fn render_index(
     let cov_href = "./coverage.html";
     let val_href = "./validation.html";
     let graph_href = "./graph.html";
+    let source_href = "./source.html";
+    let results_href = "./results.html";
 
     out.push_str("<h2>Report Pages</h2>\n<ul>\n");
     writeln!(
@@ -740,6 +745,18 @@ pub fn render_index(
         out,
         "<li><a href=\"{graph_href}\">Traceability Graph</a> \
          &mdash; artifact dependency visualization</li>"
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "<li><a href=\"{source_href}\">Source Browser</a> \
+         &mdash; artifacts listed by source file</li>"
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "<li><a href=\"{results_href}\">Test Results</a> \
+         &mdash; test run results and pass rates</li>"
     )
     .unwrap();
     out.push_str("</ul>\n");
@@ -1744,6 +1761,248 @@ fn render_section_graph(store: &Store, link_graph: &LinkGraph) -> String {
     out
 }
 
+// ── Source browser page ──────────────────────────────────────────────────
+
+/// Render the source browser page listing all artifact source files.
+pub fn render_source(store: &Store, config: &ExportConfig) -> String {
+    let timestamp = timestamp_now();
+    let version = env!("CARGO_PKG_VERSION");
+    let is_single_page = false;
+
+    let mut out = page_header("Source Browser", config, is_single_page);
+    out.push_str(&nav_bar("source", config, is_single_page));
+
+    out.push_str("<main>\n<h1>Source Browser</h1>\n");
+
+    // Group artifacts by source file.
+    let mut by_file: BTreeMap<String, Vec<&crate::model::Artifact>> = BTreeMap::new();
+    for art in store.iter() {
+        let file_key = art
+            .source_file
+            .as_ref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "(unknown)".to_string());
+        by_file.entry(file_key).or_default().push(art);
+    }
+
+    if by_file.is_empty() {
+        out.push_str("<p>No source files found.</p>\n");
+    } else {
+        writeln!(
+            out,
+            "<p>{} source file(s) containing {} artifact(s).</p>",
+            by_file.len(),
+            store.len(),
+        )
+        .unwrap();
+
+        // Summary table
+        out.push_str(
+            "<table><thead><tr>\
+             <th>File</th><th>Artifact Count</th><th>Types</th>\
+             </tr></thead><tbody>\n",
+        );
+        for (file, arts) in &by_file {
+            let encoded = html_escape(file).replace(['/', '\\'], "_");
+            let mut types: Vec<&str> = arts.iter().map(|a| a.artifact_type.as_str()).collect();
+            types.sort();
+            types.dedup();
+            writeln!(
+                out,
+                "<tr><td><a href=\"#file-{encoded}\">{file_disp}</a></td>\
+                 <td>{count}</td><td>{types}</td></tr>",
+                file_disp = html_escape(file),
+                count = arts.len(),
+                types = types
+                    .iter()
+                    .map(|t| html_escape(t))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            )
+            .unwrap();
+        }
+        out.push_str("</tbody></table>\n");
+
+        // Per-file artifact sections
+        for (file, arts) in &by_file {
+            let encoded = html_escape(file).replace(['/', '\\'], "_");
+            writeln!(
+                out,
+                "<h2 id=\"file-{encoded}\">{file_disp} <small>({count} artifacts)</small></h2>",
+                file_disp = html_escape(file),
+                count = arts.len(),
+            )
+            .unwrap();
+
+            out.push_str(
+                "<table><thead><tr>\
+                 <th>ID</th><th>Type</th><th>Title</th><th>Status</th>\
+                 </tr></thead><tbody>\n",
+            );
+            for art in arts {
+                writeln!(
+                    out,
+                    "<tr><td><a href=\"./requirements.html#art-{id}\">{id}</a></td>\
+                     <td>{atype}</td><td>{title}</td><td>{status}</td></tr>",
+                    id = html_escape(&art.id),
+                    atype = html_escape(&art.artifact_type),
+                    title = html_escape(&art.title),
+                    status = art
+                        .status
+                        .as_deref()
+                        .map(|s| status_badge(Some(s)))
+                        .unwrap_or_default(),
+                )
+                .unwrap();
+            }
+            out.push_str("</tbody></table>\n");
+        }
+    }
+
+    out.push_str("</main>\n");
+    out.push_str(&page_footer(version, &timestamp, is_single_page));
+    out
+}
+
+// ── Results page ────────────────────────────────────────────────────────
+
+/// Render the test results page.
+pub fn render_results(result_store: &ResultStore, config: &ExportConfig) -> String {
+    let timestamp = timestamp_now();
+    let version = env!("CARGO_PKG_VERSION");
+    let is_single_page = false;
+
+    let mut out = page_header("Test Results", config, is_single_page);
+    out.push_str(&nav_bar("results", config, is_single_page));
+
+    out.push_str("<main>\n<h1>Test Results</h1>\n");
+
+    if result_store.is_empty() {
+        out.push_str(
+            "<div class=\"artifact-section\">\n\
+             <h3>No Test Results</h3>\n\
+             <p>No test result files were found. To add results, create YAML files \
+             in a <code>results/</code> directory with the following structure:</p>\n\
+             <pre><code>run:\n\
+             \x20 id: run-001\n\
+             \x20 timestamp: 2026-03-22T10:00:00Z\n\
+             \x20 source: CI\n\
+             results:\n\
+             \x20 - artifact: REQ-001\n\
+             \x20   status: pass\n\
+             \x20 - artifact: REQ-002\n\
+             \x20   status: fail\n\
+             \x20   message: Threshold exceeded\n\
+             </code></pre>\n\
+             </div>\n",
+        );
+    } else {
+        let summary = result_store.summary();
+
+        // Summary cards
+        out.push_str("<div class=\"summary-grid\">\n");
+        writeln!(
+            out,
+            "<div class=\"summary-card\"><div class=\"label\">Test Runs</div>\
+             <div class=\"value\">{}</div></div>",
+            summary.total_runs,
+        )
+        .unwrap();
+        writeln!(
+            out,
+            "<div class=\"summary-card\"><div class=\"label\">Total Results</div>\
+             <div class=\"value\">{}</div></div>",
+            summary.total_results,
+        )
+        .unwrap();
+
+        let rate = summary.pass_rate();
+        let rate_class = if rate >= 100.0 - f64::EPSILON {
+            "badge-green"
+        } else if rate >= 80.0 {
+            "badge-yellow"
+        } else {
+            "badge-red"
+        };
+        writeln!(
+            out,
+            "<div class=\"summary-card\"><div class=\"label\">Pass Rate</div>\
+             <div class=\"value\"><span class=\"badge {rate_class}\">{rate:.1}%</span></div></div>",
+        )
+        .unwrap();
+
+        writeln!(
+            out,
+            "<div class=\"summary-card\"><div class=\"label\">Passed</div>\
+             <div class=\"value\" style=\"color:var(--green)\">{}</div></div>",
+            summary.pass_count,
+        )
+        .unwrap();
+        writeln!(
+            out,
+            "<div class=\"summary-card\"><div class=\"label\">Failed</div>\
+             <div class=\"value\" style=\"color:var(--red)\">{}</div></div>",
+            summary.fail_count + summary.error_count,
+        )
+        .unwrap();
+        out.push_str("</div>\n");
+
+        // Per-run results
+        for run in result_store.runs() {
+            writeln!(
+                out,
+                "<h2>Run: {} <small>({})</small></h2>",
+                html_escape(&run.run.id),
+                html_escape(&run.run.timestamp),
+            )
+            .unwrap();
+
+            if let Some(ref src) = run.run.source {
+                writeln!(out, "<p>Source: {}</p>", html_escape(src)).unwrap();
+            }
+            if let Some(ref env) = run.run.environment {
+                writeln!(out, "<p>Environment: {}</p>", html_escape(env)).unwrap();
+            }
+            if let Some(ref commit) = run.run.commit {
+                writeln!(out, "<p>Commit: <code>{}</code></p>", html_escape(commit)).unwrap();
+            }
+
+            out.push_str(
+                "<table><thead><tr>\
+                 <th>Artifact</th><th>Status</th><th>Duration</th><th>Message</th>\
+                 </tr></thead><tbody>\n",
+            );
+            for result in &run.results {
+                let status_class = match result.status {
+                    crate::results::TestStatus::Pass => "badge-green",
+                    crate::results::TestStatus::Fail | crate::results::TestStatus::Error => {
+                        "badge-red"
+                    }
+                    crate::results::TestStatus::Skip => "badge-default",
+                    crate::results::TestStatus::Blocked => "badge-yellow",
+                };
+                writeln!(
+                    out,
+                    "<tr><td><a href=\"./requirements.html#art-{id}\">{id}</a></td>\
+                     <td><span class=\"badge {cls}\">{status}</span></td>\
+                     <td>{dur}</td><td>{msg}</td></tr>",
+                    id = html_escape(&result.artifact),
+                    cls = status_class,
+                    status = result.status,
+                    dur = result.duration.as_deref().unwrap_or(""),
+                    msg = html_escape(result.message.as_deref().unwrap_or("")),
+                )
+                .unwrap();
+            }
+            out.push_str("</tbody></table>\n");
+        }
+    }
+
+    out.push_str("</main>\n");
+    out.push_str(&page_footer(version, &timestamp, is_single_page));
+    out
+}
+
 // ── Document renderers ──────────────────────────────────────────────────
 
 /// Render the documents index page listing all documents with links.
@@ -2480,6 +2739,12 @@ pub fn render_readme(config: &ExportConfig) -> String {
         "<li><strong>graph.html</strong> &mdash; Traceability graph visualization (SVG)</li>\n",
     );
     out.push_str(
+        "<li><strong>source.html</strong> &mdash; Source browser listing artifacts by file</li>\n",
+    );
+    out.push_str(
+        "<li><strong>results.html</strong> &mdash; Test run results and pass rates</li>\n",
+    );
+    out.push_str(
         "<li><strong>config.js</strong> &mdash; Runtime configuration file (see below)</li>\n",
     );
     out.push_str("</ul>\n");
@@ -2672,6 +2937,7 @@ mod tests {
     fn all_pages_contain_nav_and_footer() {
         let (store, schema, graph, diagnostics) = test_fixtures();
         let cfg = default_config();
+        let result_store = ResultStore::new();
 
         let pages = [
             render_index(&store, &schema, &graph, &diagnostics, "Test", "0.1.0", &cfg),
@@ -2681,6 +2947,8 @@ mod tests {
             render_validation(&diagnostics, &cfg),
             render_stpa(&store, &graph, &cfg),
             render_graph(&store, &graph, &cfg),
+            render_source(&store, &cfg),
+            render_results(&result_store, &cfg),
         ];
 
         for (i, page) in pages.iter().enumerate() {
@@ -2797,6 +3065,8 @@ mod tests {
         assert!(html.contains("./validation.html"));
         assert!(html.contains("./stpa.html"));
         assert!(html.contains("./graph.html"));
+        assert!(html.contains("./source.html"));
+        assert!(html.contains("./results.html"));
         // No absolute path prefixes
         assert!(!html.contains("/projects/"));
     }
@@ -3164,5 +3434,157 @@ mod tests {
         );
         assert!(html.contains("./stpa.html"), "index missing stpa link");
         assert!(html.contains("./graph.html"), "index missing graph link");
+    }
+
+    // ── Source page tests ─────────────────────────────────────────────
+
+    // rivet: verifies REQ-035
+    #[test]
+    fn source_page_renders_empty_store() {
+        let store = Store::new();
+        let html = render_source(&store, &default_config());
+        assert!(html.contains("<!DOCTYPE html>"));
+        assert!(html.contains("Source Browser"));
+        assert!(html.contains("No source files found"));
+        assert!(html.contains("<nav>"));
+        assert!(html.contains("Generated by Rivet"));
+    }
+
+    // rivet: verifies REQ-035
+    #[test]
+    fn source_page_groups_artifacts_by_file() {
+        let (store, _schema, _graph, _) = test_fixtures();
+        let html = render_source(&store, &default_config());
+        assert!(html.contains("Source Browser"));
+        // All artifacts should appear (they have no source_file set, so grouped under "(unknown)")
+        assert!(html.contains("(unknown)"));
+        assert!(html.contains("REQ-001"));
+        assert!(html.contains("DD-001"));
+        assert!(html.contains("FEAT-001"));
+        // Should have artifact count
+        assert!(html.contains("4 artifact(s)"));
+    }
+
+    // rivet: verifies REQ-035
+    #[test]
+    fn source_page_with_source_files() {
+        let schema = test_schema();
+        let mut store = Store::new();
+        let mut a1 = make_artifact("REQ-010", "requirement", &[]);
+        a1.source_file = Some(std::path::PathBuf::from("artifacts/reqs.yaml"));
+        store.insert(a1).unwrap();
+        let mut a2 = make_artifact("DD-010", "design-decision", &[]);
+        a2.source_file = Some(std::path::PathBuf::from("artifacts/reqs.yaml"));
+        store.insert(a2).unwrap();
+        let mut a3 = make_artifact("FEAT-010", "feature", &[]);
+        a3.source_file = Some(std::path::PathBuf::from("artifacts/features.yaml"));
+        store.insert(a3).unwrap();
+
+        let html = render_source(&store, &default_config());
+        assert!(html.contains("2 source file(s)"));
+        assert!(html.contains("3 artifact(s)"));
+        assert!(html.contains("artifacts/reqs.yaml"));
+        assert!(html.contains("artifacts/features.yaml"));
+        // Links to requirements page
+        assert!(html.contains("requirements.html#art-REQ-010"));
+        drop(schema);
+    }
+
+    // rivet: verifies REQ-035
+    #[test]
+    fn source_page_has_file_anchors() {
+        let schema = test_schema();
+        let mut store = Store::new();
+        let mut a = make_artifact("REQ-020", "requirement", &[]);
+        a.source_file = Some(std::path::PathBuf::from("artifacts/test.yaml"));
+        store.insert(a).unwrap();
+
+        let html = render_source(&store, &default_config());
+        // File anchor should exist
+        assert!(html.contains("id=\"file-"));
+        // Table header
+        assert!(html.contains("<th>File</th>"));
+        assert!(html.contains("<th>Artifact Count</th>"));
+        assert!(html.contains("<th>Types</th>"));
+        drop(schema);
+    }
+
+    // ── Results page tests ────────────────────────────────────────────
+
+    // rivet: verifies REQ-035
+    #[test]
+    fn results_page_renders_empty_state() {
+        let result_store = ResultStore::new();
+        let html = render_results(&result_store, &default_config());
+        assert!(html.contains("<!DOCTYPE html>"));
+        assert!(html.contains("Test Results"));
+        assert!(html.contains("No Test Results"));
+        assert!(html.contains("results/"));
+        assert!(html.contains("<nav>"));
+        assert!(html.contains("Generated by Rivet"));
+    }
+
+    // rivet: verifies REQ-035
+    #[test]
+    fn results_page_shows_summary() {
+        use crate::results::{RunMetadata, TestResult, TestRun, TestStatus};
+
+        let mut result_store = ResultStore::new();
+        result_store.insert(TestRun {
+            run: RunMetadata {
+                id: "run-1".into(),
+                timestamp: "2026-03-20T10:00:00Z".into(),
+                source: Some("CI".into()),
+                environment: Some("Linux".into()),
+                commit: Some("abc123".into()),
+            },
+            results: vec![
+                TestResult {
+                    artifact: "REQ-001".into(),
+                    status: TestStatus::Pass,
+                    duration: Some("1.2s".into()),
+                    message: None,
+                },
+                TestResult {
+                    artifact: "REQ-002".into(),
+                    status: TestStatus::Fail,
+                    duration: None,
+                    message: Some("Threshold exceeded".into()),
+                },
+            ],
+            source_file: None,
+        });
+
+        let html = render_results(&result_store, &default_config());
+        assert!(html.contains("Test Results"));
+        // Summary cards
+        assert!(html.contains("Test Runs"));
+        assert!(html.contains("Pass Rate"));
+        assert!(html.contains("50.0%"));
+        // Run details
+        assert!(html.contains("run-1"));
+        assert!(html.contains("CI"));
+        assert!(html.contains("Linux"));
+        assert!(html.contains("abc123"));
+        // Results table
+        assert!(html.contains("REQ-001"));
+        assert!(html.contains("REQ-002"));
+        assert!(html.contains("badge-green"));
+        assert!(html.contains("badge-red"));
+        assert!(html.contains("Threshold exceeded"));
+        assert!(html.contains("1.2s"));
+        // Links to requirements
+        assert!(html.contains("requirements.html#art-REQ-001"));
+    }
+
+    // rivet: verifies REQ-035
+    #[test]
+    fn nav_bar_includes_source_and_results() {
+        let cfg = default_config();
+        let nav = nav_bar("index", &cfg, false);
+        assert!(nav.contains("source.html"), "nav missing source link");
+        assert!(nav.contains("results.html"), "nav missing results link");
+        assert!(nav.contains(">Source<"), "nav missing Source label");
+        assert!(nav.contains(">Results<"), "nav missing Results label");
     }
 }
