@@ -14,6 +14,7 @@ pub(crate) mod components;
 pub(crate) mod helpers;
 pub(crate) mod stats;
 pub(crate) mod stpa;
+pub(crate) mod styles;
 pub(crate) mod validate;
 
 /// Shared context for all render functions.
