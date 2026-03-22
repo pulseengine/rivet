@@ -110,6 +110,7 @@
     "compile": "tsc -b",
     "esbuild": "node ./bin/esbuild.js",
     "watch": "tsc -b -w",
+    "test": "node ./out/test/runTest.js",
     "package": "npx @vscode/vsce package"
   }
 }
