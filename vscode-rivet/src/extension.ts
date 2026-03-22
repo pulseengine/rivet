@@ -179,9 +179,9 @@ function startServe(context: vscode.ExtensionContext, rivetPath: string) {
   });
 }
 
-// --- Dashboard WebView ---
+// --- Dashboard ---
 
-async function showDashboard(context: vscode.ExtensionContext, urlPath: string = '/') {
+async function showDashboard(_context: vscode.ExtensionContext, urlPath: string = '/') {
   if (!dashboardPort) {
     vscode.window.showWarningMessage(
       'Rivet dashboard not running. Waiting for serve to start...'
@@ -189,44 +189,11 @@ async function showDashboard(context: vscode.ExtensionContext, urlPath: string =
     return;
   }
 
-  // Map localhost to a VS Code-accessible URI (works in WebViews)
-  // /embed prefix strips the sidebar (VS Code tree view handles navigation)
-  const localUri = vscode.Uri.parse(`http://127.0.0.1:${dashboardPort}/embed${urlPath}`);
-  const mappedUri = await vscode.env.asExternalUri(localUri);
-
-  if (dashboardPanel) {
-    dashboardPanel.reveal(vscode.ViewColumn.Beside);
-    dashboardPanel.webview.html = getDashboardHtml(mappedUri.toString());
-    return;
-  }
-
-  dashboardPanel = vscode.window.createWebviewPanel(
-    'rivetDashboard',
-    'Rivet Dashboard',
-    vscode.ViewColumn.Beside,
-    {
-      enableScripts: true,
-      retainContextWhenHidden: true,
-    },
-  );
-
-  dashboardPanel.webview.html = getDashboardHtml(mappedUri.toString());
-  dashboardPanel.onDidDispose(() => { dashboardPanel = undefined; });
-}
-
-function getDashboardHtml(url: string): string {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none'; frame-src http://127.0.0.1:* https://*.vscode-cdn.net; style-src 'unsafe-inline';">
-  <style>html,body,iframe{margin:0;padding:0;width:100%;height:100%;border:none;overflow:hidden}</style>
-</head>
-<body>
-  <iframe src="${url}" allow="same-origin"></iframe>
-</body>
-</html>`;
+  // Use VS Code's Simple Browser which handles SSH port forwarding correctly
+  const uri = vscode.Uri.parse(`http://127.0.0.1:${dashboardPort}/embed${urlPath}`);
+  await vscode.commands.executeCommand('simpleBrowser.api.open', uri, {
+    viewColumn: vscode.ViewColumn.Beside,
+  });
 }
 
 // --- Validate command ---
