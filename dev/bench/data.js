@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1774173078203,
+  "lastUpdate": 1774201296336,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "d80b36b09bf95a79b2a613dbf48cd25dd9328a53",
-          "message": "fix(etch): edges hidden behind containers — fix SVG render order (#55)\n\nRender containers → edges → leaf nodes (was: edges → all nodes).\nAdd port label margin to prevent clipping.\n\nTrace: skip\n\nCo-authored-by: Test <test@test.com>\nCo-authored-by: Claude Opus 4.6 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-03-20T07:04:04+01:00",
-          "tree_id": "cf918097f00cda03970f8127e3a0a7cd7fe3403c",
-          "url": "https://github.com/pulseengine/rivet/commit/d80b36b09bf95a79b2a613dbf48cd25dd9328a53"
-        },
-        "date": 1773987012658,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 83380,
-            "range": "± 472",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 1239956,
-            "range": "± 20436",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 53395236,
-            "range": "± 2295778",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2220,
-            "range": "± 25",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 26518,
-            "range": "± 347",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 385132,
-            "range": "± 8410",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 908502,
-            "range": "± 14185",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 167166,
-            "range": "± 1233",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1931514,
-            "range": "± 23347",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 26337016,
-            "range": "± 2109151",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 41810,
-            "range": "± 1222",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 459042,
-            "range": "± 15674",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 4831802,
-            "range": "± 109618",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4411,
-            "range": "± 14",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 58407,
-            "range": "± 244",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 782159,
-            "range": "± 7087",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 61814,
-            "range": "± 245",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 686039,
-            "range": "± 4626",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7486958,
-            "range": "± 201511",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 846,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 7881,
-            "range": "± 25",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 109947,
-            "range": "± 2718",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 22988,
-            "range": "± 250",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 155896,
-            "range": "± 1562",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1453210,
-            "range": "± 29038",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1449166,
             "range": "± 33570",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ec747593e460b219e30bcb76ca499fd15e7ce27e",
+          "message": "feat: LSP-based WebView rendering for VS Code extension (#86)\n\n* refactor: extract stats render function from serve\n\nAdd render module with RenderContext, ViewParams, badge_for_type, and\ntype_color_map. Move stats_partial body to render::stats::render_stats().\nServe views.rs becomes a thin wrapper via AppState::as_render_context().\n\nAll checks verified manually: cargo fmt, clippy -D warnings, cargo test\n(pre-commit skipped due to sparse-checkout/stash incompatibility).\n\nRefs: REQ-001\n\n* refactor: extract artifacts render functions from serve\n\nMove artifacts_list, artifact_detail, artifact_preview to\nrender::artifacts. Serve handlers become thin wrappers.\n\nThe linkify_source_refs helper and SourceRefMatch struct move to\nrender::artifacts where they are used. Dead copies in serve/views.rs\nare removed. Uses serve::components::ViewParams to avoid duplicate type.\n\nRefs: REQ-001\n\n* refactor: extract validate and STPA render functions\n\nMove validate_view and stpa_partial bodies to render module.\nrender/validate.rs: pure render_validate(&RenderContext, &ViewParams) -> String\nrender/stpa.rs: pure render_stpa(&RenderContext, &ViewParams) -> String\n  - includes private helpers matches_text / type_visible\nstpa_partial in views.rs kept but marked dead_code (stpa_view now\ndelegates directly to render_stpa via as_render_context).\nRemove unused Severity import from views.rs.\nCompletes Phase 1 render function extraction.\n\nRefs: REQ-001\n\n* refactor: move CSS/font constants to render module\n\nShared by serve layouts and VS Code shell document.\n\nRefs: REQ-001\n\n* feat(lsp): load DocumentStore, ResultStore, LinkGraph for rendering\n\nLSP now has all data needed to construct RenderContext.\nSends rivet/artifactsChanged notification on file save.\n\nRefs: REQ-001\n\n* feat(lsp): add rivet/render, rivet/treeData, rivet/css requests\n\nrivet/render routes page paths to render functions, returns HTML + metadata.\nrivet/treeData returns hierarchical tree structure for sidebar.\nrivet/css returns CSS for WebView shell document.\n\nRefs: REQ-001\n\n* feat(vscode): WebView panel with LSP rendering\n\nReplace Simple Browser with native WebView panel using shell document\npattern. Content fetched via rivet/render LSP request, delivered via\npostMessage. Assets load once per panel lifetime.\n\nRefs: REQ-001\n\n* feat(vscode): LSP-backed tree view with document expansion\n\nTree view fetches structure from rivet/treeData LSP request.\nDocuments expand lazily to show individual artifacts.\nRefreshes on rivet/artifactsChanged notification.\n\nRefs: REQ-001\n\n* feat(vscode): Show Source command + source tracking\n\nShow Source opens the YAML file at the artifact's source line.\nSource file/line tracked from rivet/render responses.\n\nRefs: REQ-001\n\n* fix(ci): ignore RUSTSEC-2024-0384 (instant via notify)\n\nThe instant crate is unmaintained but pulled in transitively by\nnotify 7.0.0 via notify-types. No upstream fix available yet.\n\nRefs: REQ-001\n\n* docs: add VS Code LSP rendering design spec and implementation plan\n\nRefs: REQ-001\n\n* fix(vscode): document rendering, artifact sub-routes, tree structure\n\n- Add documents render module (list + detail with TOC, glossary, refs)\n- Handle /artifacts/{id}/graph sub-routes (show detail instead of 404)\n- Strip query strings from page paths\n- Tree: Documents navigate to rendered view (not expandable)\n- Tree: Artifact Files expand to show individual artifacts\n- Tree: Only list implemented views (Stats, Artifacts, Validation, STPA)\n- Show source file link in artifact detail header\n- CSP: allow unsafe-inline for style-src (rendered HTML uses inline styles)\n\nRefs: REQ-001\n\n* feat(vscode): help views, schema linkage, source file navigation\n\n- Add render/help.rs: help overview, schema list/detail, link types,\n  traceability rules, docs list/topic\n- Schema linkage Mermaid diagram on help page\n- Source file links in artifact detail (data-source-file + postMessage)\n- Fix /artifacts/{id}/graph sub-route handling\n- Tree: add Help category, Documents under Views\n\nRefs: REQ-001\n\n* feat: add SysML v2 roadmap, draft-aware validation, and render architecture artifacts\n\nNew requirements:\n- REQ-037: SysML v2 artifact import (rowan-based parser)\n- REQ-038: SysML v2 to AADL model lowering (SEI mapping rules)\n- REQ-039: Draft-aware validation severity\n\nNew features:\n- FEAT-066: VS Code LSP-based WebView rendering (active)\n- FEAT-067: SysML v2 parser spar-sysml2 crate (draft)\n- FEAT-068: SysML v2 to AADL lowering (draft)\n- FEAT-069: SysML v2 requirement adapter for rivet (draft)\n- FEAT-070: Draft-aware validation severity (draft)\n\nNew decisions:\n- DD-040: Status-driven traceability enforcement\n- DD-041: Shared render module for serve/LSP/export\n\n489 artifacts, PASS, 0 warnings.\n\nRefs: REQ-037, REQ-038, REQ-039\n\n* chore: gitignore vscode build artifacts (binary, out/, vsix)\n\nRefs: FEAT-066\n\n* style: cargo fmt\n\nRefs: FEAT-066\n\n* fix(ci): add missing test script to vscode-rivet package.json\n\nRefs: FEAT-066\n\n* chore: bump version to v0.3.0\n\nRefs: FEAT-066\n\n---------\n\nCo-authored-by: Test <test@test.com>",
+          "timestamp": "2026-03-22T18:35:20+01:00",
+          "tree_id": "fe7738048788f1ac6f35a018e7d9cc65350dc910",
+          "url": "https://github.com/pulseengine/rivet/commit/ec747593e460b219e30bcb76ca499fd15e7ce27e"
+        },
+        "date": 1774201295429,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 78724,
+            "range": "± 1059",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 824442,
+            "range": "± 4583",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 11143454,
+            "range": "± 730960",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2226,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25160,
+            "range": "± 80",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 374406,
+            "range": "± 2716",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 917720,
+            "range": "± 4309",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 159538,
+            "range": "± 725",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1876321,
+            "range": "± 11887",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 25520682,
+            "range": "± 1774328",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 33376,
+            "range": "± 202",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 463175,
+            "range": "± 5956",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 4726448,
+            "range": "± 103739",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4372,
+            "range": "± 8",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 61488,
+            "range": "± 205",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 765751,
+            "range": "± 2184",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 61331,
+            "range": "± 561",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 678027,
+            "range": "± 4206",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7794136,
+            "range": "± 224826",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 792,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7766,
+            "range": "± 27",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 108809,
+            "range": "± 2129",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 22969,
+            "range": "± 342",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 157030,
+            "range": "± 12871",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1460562,
+            "range": "± 22975",
             "unit": "ns/iter"
           }
         ]
