@@ -9,6 +9,7 @@ use rivet_core::validate::Diagnostic;
 
 use crate::serve::{ExternalInfo, RepoContext};
 
+pub(crate) mod artifacts;
 pub(crate) mod components;
 pub(crate) mod helpers;
 pub(crate) mod stats;
