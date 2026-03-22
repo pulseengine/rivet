@@ -11,3 +11,6 @@
 rivet-cli/assets/wasm/*.wasm
 rivet-cli/assets/wasm/js/
 vscode-rivet/node_modules/
+vscode-rivet/bin/rivet
+vscode-rivet/out/
+vscode-rivet/*.vsix
