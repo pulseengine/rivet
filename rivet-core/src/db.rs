@@ -15,6 +15,7 @@
 use salsa::Setter;
 
 use crate::formats::generic::parse_generic_yaml;
+use crate::formats::stpa;
 use crate::links::LinkGraph;
 use crate::model::Artifact;
 use crate::schema::{Schema, SchemaFile};
@@ -60,7 +61,10 @@ pub struct SchemaInputSet {
 
 // ── Tracked functions ───────────────────────────────────────────────────
 
-/// Parse artifacts from a single source file using the generic YAML adapter.
+/// Parse artifacts from a single source file.
+///
+/// Detects STPA files by filename and uses the stpa-yaml adapter;
+/// all other files use the generic YAML adapter.
 ///
 /// This is a salsa tracked function — results are memoized and only
 /// recomputed when the `SourceFile` content changes.
@@ -69,11 +73,38 @@ pub fn parse_artifacts(db: &dyn salsa::Database, source: SourceFile) -> Vec<Arti
     let content = source.content(db);
     let path = source.path(db);
     let source_path = std::path::Path::new(&path);
-    match parse_generic_yaml(&content, Some(source_path)) {
-        Ok(artifacts) => artifacts,
-        Err(e) => {
-            log::warn!("Failed to parse {}: {}", path, e);
-            vec![]
+
+    // STPA files use a different YAML format (losses:, hazards:, etc.)
+    let filename = source_path
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or("");
+    let is_stpa = matches!(
+        filename,
+        "losses.yaml"
+            | "hazards.yaml"
+            | "system-constraints.yaml"
+            | "control-structure.yaml"
+            | "ucas.yaml"
+            | "controller-constraints.yaml"
+            | "loss-scenarios.yaml"
+    );
+
+    if is_stpa {
+        match stpa::import_stpa_file(source_path) {
+            Ok(artifacts) => artifacts,
+            Err(e) => {
+                log::warn!("Failed to parse STPA file {}: {}", path, e);
+                vec![]
+            }
+        }
+    } else {
+        match parse_generic_yaml(&content, Some(source_path)) {
+            Ok(artifacts) => artifacts,
+            Err(e) => {
+                log::warn!("Failed to parse {}: {}", path, e);
+                vec![]
+            }
         }
     }
 }
