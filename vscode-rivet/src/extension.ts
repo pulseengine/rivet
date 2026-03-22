@@ -65,7 +65,9 @@ export async function activate(context: vscode.ExtensionContext) {
 
     client = new LanguageClient('rivet', 'Rivet SDLC', serverOptions, clientOptions);
     await client.start();
-    context.subscriptions.push({ dispose: () => client?.stop() });
+    context.subscriptions.push({
+      dispose: () => { client?.stop().catch(() => {}); },
+    });
 
     statusBarItem.text = '$(shield) Rivet';
   } catch (err: unknown) {
@@ -83,7 +85,7 @@ export function deactivate() {
     serveProcess.kill();
     serveProcess = undefined;
   }
-  return client?.stop();
+  return client?.stop().catch(() => {});
 }
 
 // --- Binary discovery ---
@@ -92,8 +94,12 @@ function findRivetBinary(context: vscode.ExtensionContext): string | undefined {
   const configured = vscode.workspace.getConfiguration('rivet').get<string>('binaryPath');
   if (configured && configured.length > 0 && fs.existsSync(configured)) return configured;
 
-  // Check bundled binary
+  // Check bundled binary (platform+arch specific)
   const binaryName = process.platform === 'win32' ? 'rivet.exe' : 'rivet';
+  const platformDir = `${process.platform}-${process.arch}`;
+  const bundledPlatform = path.join(context.extensionPath, 'bin', platformDir, binaryName);
+  if (fs.existsSync(bundledPlatform)) return bundledPlatform;
+  // Fallback: plain bin/ (single-platform dev builds)
   const bundled = path.join(context.extensionPath, 'bin', binaryName);
   if (fs.existsSync(bundled)) return bundled;
 
