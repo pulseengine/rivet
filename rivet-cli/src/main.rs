@@ -5196,6 +5196,12 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                                     serde_json::json!({"kind":"view","label":"Validation","page":"/validate","icon":"pass"}),
                                     serde_json::json!({"kind":"view","label":"STPA","page":"/stpa","icon":"shield"}),
                                     serde_json::json!({"kind":"view","label":"Documents","page":"/documents","icon":"book"}),
+                                    serde_json::json!({"kind":"view","label":"Graph","page":"/graph","icon":"type-hierarchy"}),
+                                    serde_json::json!({"kind":"view","label":"Matrix","page":"/matrix","icon":"table"}),
+                                    serde_json::json!({"kind":"view","label":"Coverage","page":"/coverage","icon":"checklist"}),
+                                    serde_json::json!({"kind":"view","label":"Source","page":"/source","icon":"code"}),
+                                    serde_json::json!({"kind":"view","label":"Traceability","page":"/traceability","icon":"git-compare"}),
+                                    serde_json::json!({"kind":"view","label":"Doc Linkage","page":"/doc-linkage","icon":"link"}),
                                 ];
 
                                 let help = vec![
