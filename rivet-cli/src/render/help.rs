@@ -1,8 +1,10 @@
 use rivet_core::document::html_escape;
 use rivet_core::markdown::render_markdown;
+use rivet_core::schema::{Cardinality, Severity};
 
 use super::RenderContext;
 use super::RenderResult;
+use super::helpers::badge_for_type;
 
 /// Render the help overview page.
 pub(crate) fn render_help(ctx: &RenderContext) -> String {
@@ -49,10 +51,86 @@ pub(crate) fn render_help(ctx: &RenderContext) -> String {
     ));
     html.push_str("</div>");
 
-    // Schema linkage diagram (Mermaid)
+    // Schema linkage diagram (Mermaid) — traceability rules + link type relationships
     html.push_str("<div class=\"card\" style=\"padding:1.25rem;margin-top:1rem\">");
     html.push_str("<h3 style=\"margin:0 0 1rem\">Schema Linkage</h3>");
     html.push_str("<pre class=\"mermaid\">\ngraph LR\n");
+
+    // Group artifact types by domain for subgraphs
+    // Collect types that appear in any rule/link (to avoid empty subgraphs)
+    let mut aspice_types: Vec<&str> = Vec::new();
+    let mut stpa_types: Vec<&str> = Vec::new();
+    let mut dev_types: Vec<&str> = Vec::new();
+    let mut other_types: Vec<&str> = Vec::new();
+
+    let mut sorted_types: Vec<_> = schema.artifact_types.values().collect();
+    sorted_types.sort_by_key(|t| &t.name);
+    for t in &sorted_types {
+        match t.aspice_process.as_deref() {
+            Some(p) if p.starts_with("SWE") || p.starts_with("SYS") || p.starts_with("MAN") || p.starts_with("SUP") => {
+                aspice_types.push(&t.name);
+            }
+            _ if t.name.starts_with("loss")
+                || t.name.starts_with("hazard")
+                || t.name.starts_with("uca")
+                || t.name.starts_with("controller")
+                || t.name.starts_with("system-constraint")
+                || t.name.starts_with("control-action")
+                || t.name.starts_with("feedback")
+                || t.name.starts_with("causal-factor")
+                || t.name.starts_with("safety-constraint")
+                || t.name.starts_with("loss-scenario")
+                || t.name.starts_with("controlled-process")
+                || t.name.starts_with("sub-hazard")
+                || t.name.starts_with("sec-")
+                || t.name.starts_with("asset")
+                || t.name.starts_with("threat")
+                || t.name.starts_with("vulnerability")
+                || t.name.starts_with("attack-path")
+                || t.name.starts_with("cybersecurity")
+                || t.name.starts_with("security")
+                || t.name.starts_with("risk-") => {
+                stpa_types.push(&t.name);
+            }
+            _ if t.name == "requirement" || t.name == "feature" || t.name == "design-decision" => {
+                dev_types.push(&t.name);
+            }
+            _ => {
+                other_types.push(&t.name);
+            }
+        }
+    }
+
+    if !aspice_types.is_empty() {
+        html.push_str("    subgraph ASPICE\n");
+        for tn in &aspice_types {
+            html.push_str(&format!("        {}[\"{}\"]\n", tn.replace('-', "_"), tn));
+        }
+        html.push_str("    end\n");
+    }
+    if !stpa_types.is_empty() {
+        html.push_str("    subgraph Safety\n");
+        for tn in &stpa_types {
+            html.push_str(&format!("        {}[\"{}\"]\n", tn.replace('-', "_"), tn));
+        }
+        html.push_str("    end\n");
+    }
+    if !dev_types.is_empty() {
+        html.push_str("    subgraph Dev\n");
+        for tn in &dev_types {
+            html.push_str(&format!("        {}[\"{}\"]\n", tn.replace('-', "_"), tn));
+        }
+        html.push_str("    end\n");
+    }
+    if !other_types.is_empty() {
+        html.push_str("    subgraph Other\n");
+        for tn in &other_types {
+            html.push_str(&format!("        {}[\"{}\"]\n", tn.replace('-', "_"), tn));
+        }
+        html.push_str("    end\n");
+    }
+
+    // Edges from traceability rules
     for rule in &schema.traceability_rules {
         let link_label = rule
             .required_link
@@ -69,7 +147,6 @@ pub(crate) fn render_help(ctx: &RenderContext) -> String {
                 target,
             ));
         }
-        // If no target_types, use from_types as reverse
         if rule.target_types.is_empty() {
             for from in &rule.from_types {
                 html.push_str(&format!(
@@ -83,6 +160,30 @@ pub(crate) fn render_help(ctx: &RenderContext) -> String {
             }
         }
     }
+
+    // Additional edges from link_types (source_types → target_types)
+    // De-duplicate to avoid excessive arrows
+    let mut seen_link_edges: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut sorted_link_types: Vec<_> = schema.link_types.values().collect();
+    sorted_link_types.sort_by_key(|l| &l.name);
+    for lt in &sorted_link_types {
+        for src in &lt.source_types {
+            for tgt in &lt.target_types {
+                let key = format!("{}-{}-{}", src, lt.name, tgt);
+                if seen_link_edges.insert(key) {
+                    html.push_str(&format!(
+                        "    {}[\"{}\"] -.->|{}| {}[\"{}\"]\n",
+                        src.replace('-', "_"),
+                        src,
+                        lt.name,
+                        tgt.replace('-', "_"),
+                        tgt,
+                    ));
+                }
+            }
+        }
+    }
+
     html.push_str("</pre>");
     html.push_str("</div>");
 
@@ -142,14 +243,264 @@ pub(crate) fn render_schema_list(ctx: &RenderContext) -> String {
     html
 }
 
-/// Render a single schema type detail.
+/// Render a single schema type detail with rich structured HTML.
 pub(crate) fn render_schema_show(ctx: &RenderContext, name: &str) -> RenderResult {
-    let raw = crate::schema_cmd::cmd_show(ctx.schema, name, "text");
+    let schema = ctx.schema;
 
-    let mut html = String::with_capacity(8192);
+    let Some(t) = schema.artifact_type(name) else {
+        // Fallback: unknown type
+        let raw = crate::schema_cmd::cmd_show(schema, name, "text");
+        let mut html = String::with_capacity(2048);
+        html.push_str("<div style=\"margin-bottom:1rem\"><a href=\"/help/schema\" style=\"font-size:.85rem\">&larr; All types</a></div>");
+        html.push_str("<div class=\"card\" style=\"padding:1.5rem\"><pre style=\"font-size:.82rem;line-height:1.6;white-space:pre-wrap\">");
+        html.push_str(&html_escape(&raw));
+        html.push_str("</pre></div>");
+        return RenderResult {
+            html,
+            title: format!("Schema: {name}"),
+            source_file: None,
+            source_line: None,
+        };
+    };
+
+    let mut html = String::with_capacity(12288);
+
+    // Back link
     html.push_str("<div style=\"margin-bottom:1rem\"><a href=\"/help/schema\" style=\"font-size:.85rem\">&larr; All types</a></div>");
-    html.push_str("<div class=\"card\" style=\"padding:1.5rem\"><pre style=\"font-size:.82rem;line-height:1.6;white-space:pre-wrap\">");
-    html.push_str(&html_escape(&raw));
+
+    // ── Header ───────────────────────────────────────────────────────────
+    html.push_str("<div class=\"card\" style=\"padding:1.5rem;margin-bottom:1rem\">");
+    html.push_str("<div style=\"display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;margin-bottom:.75rem\">");
+    html.push_str("<h2 style=\"margin:0\">");
+    html.push_str(&badge_for_type(&t.name));
+    html.push_str("</h2>");
+    if let Some(ref proc) = t.aspice_process {
+        html.push_str(&format!(
+            "<span style=\"font-size:.78rem;padding:.2rem .6rem;border-radius:4px;\
+             background:rgba(13,110,253,.12);color:#0d6efd;font-family:var(--mono)\">{}</span>",
+            html_escape(proc)
+        ));
+    }
+    html.push_str("</div>");
+    html.push_str(&format!(
+        "<div style=\"font-size:.9rem;opacity:.85;line-height:1.6\">{}</div>",
+        render_markdown(&t.description)
+    ));
+    html.push_str("</div>");
+
+    // ── Fields table ─────────────────────────────────────────────────────
+    if !t.fields.is_empty() {
+        html.push_str("<div class=\"card\" style=\"padding:1.25rem;margin-bottom:1rem\">");
+        html.push_str("<h3 style=\"margin:0 0 .75rem\">Fields</h3>");
+        html.push_str("<table><thead><tr>\
+            <th>Name</th><th>Type</th><th>Required</th><th>Description</th><th>Allowed Values</th>\
+            </tr></thead><tbody>");
+        for f in &t.fields {
+            let req_badge = if f.required {
+                "<span style=\"color:#dc3545;font-size:.75rem;font-weight:600\">required</span>"
+            } else {
+                "<span style=\"opacity:.5;font-size:.75rem\">optional</span>"
+            };
+            let desc = f.description.as_deref().unwrap_or("");
+            let vals = f.allowed_values.as_ref().map(|v| {
+                v.iter()
+                    .map(|x| format!("<code style=\"font-size:.75rem\">{}</code>", html_escape(x)))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            }).unwrap_or_default();
+            html.push_str(&format!(
+                "<tr>\
+                 <td><code>{name}</code></td>\
+                 <td><code style=\"font-size:.78rem;opacity:.8\">{ftype}</code></td>\
+                 <td>{req}</td>\
+                 <td style=\"font-size:.85rem\">{desc}</td>\
+                 <td style=\"font-size:.82rem\">{vals}</td>\
+                 </tr>",
+                name = html_escape(&f.name),
+                ftype = html_escape(&f.field_type),
+                req = req_badge,
+                desc = html_escape(desc),
+                vals = vals,
+            ));
+        }
+        html.push_str("</tbody></table></div>");
+    }
+
+    // ── Link fields table ─────────────────────────────────────────────────
+    if !t.link_fields.is_empty() {
+        html.push_str("<div class=\"card\" style=\"padding:1.25rem;margin-bottom:1rem\">");
+        html.push_str("<h3 style=\"margin:0 0 .75rem\">Link Fields</h3>");
+        html.push_str("<table><thead><tr>\
+            <th>Name</th><th>Link Type</th><th>Target Types</th><th>Required</th><th>Cardinality</th>\
+            </tr></thead><tbody>");
+        for lf in &t.link_fields {
+            let req_badge = if lf.required {
+                "<span style=\"color:#dc3545;font-size:.75rem;font-weight:600\">required</span>"
+            } else {
+                "<span style=\"opacity:.5;font-size:.75rem\">optional</span>"
+            };
+            let card_str = match lf.cardinality {
+                Cardinality::ExactlyOne => "exactly-one",
+                Cardinality::ZeroOrMany => "zero-or-many",
+                Cardinality::ZeroOrOne => "zero-or-one",
+                Cardinality::OneOrMany => "one-or-many",
+            };
+            let targets = if lf.target_types.is_empty() {
+                "<span style=\"opacity:.5\">any</span>".to_string()
+            } else {
+                lf.target_types
+                    .iter()
+                    .map(|tt| format!(
+                        "<a href=\"/help/schema/{tt}\" style=\"font-size:.82rem\">{}</a>",
+                        html_escape(tt),
+                        tt = html_escape(tt)
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            html.push_str(&format!(
+                "<tr>\
+                 <td><code>{name}</code></td>\
+                 <td><code style=\"font-size:.78rem;opacity:.8\">{lt}</code></td>\
+                 <td>{targets}</td>\
+                 <td>{req}</td>\
+                 <td style=\"font-size:.82rem;opacity:.7\">{card}</td>\
+                 </tr>",
+                name = html_escape(&lf.name),
+                lt = html_escape(&lf.link_type),
+                targets = targets,
+                req = req_badge,
+                card = card_str,
+            ));
+        }
+        html.push_str("</tbody></table></div>");
+    }
+
+    // ── Traceability rules ────────────────────────────────────────────────
+    let rules: Vec<_> = schema
+        .traceability_rules
+        .iter()
+        .filter(|r| r.source_type == t.name)
+        .collect();
+    if !rules.is_empty() {
+        html.push_str("<div class=\"card\" style=\"padding:1.25rem;margin-bottom:1rem\">");
+        html.push_str("<h3 style=\"margin:0 0 .75rem\">Traceability Rules</h3>");
+        html.push_str("<table><thead><tr><th>Rule</th><th>Severity</th><th>Description</th><th>Details</th></tr></thead><tbody>");
+        for r in &rules {
+            let (sev_color, sev_label) = match r.severity {
+                Severity::Error => ("#dc3545", "error"),
+                Severity::Warning => ("#fd7e14", "warning"),
+                Severity::Info => ("#0dcaf0", "info"),
+            };
+            let details = if let Some(ref link) = r.required_link {
+                let targets = if r.target_types.is_empty() { "any".to_string() } else { r.target_types.join(", ") };
+                format!("requires link <code>{}</code> → [{}]", html_escape(link), html_escape(&targets))
+            } else if let Some(ref bl) = r.required_backlink {
+                let from = if r.from_types.is_empty() { "any".to_string() } else { r.from_types.join(", ") };
+                format!("requires backlink <code>{}</code> from [{}]", html_escape(bl), html_escape(&from))
+            } else {
+                String::new()
+            };
+            html.push_str(&format!(
+                "<tr>\
+                 <td><code style=\"font-size:.78rem\">{name}</code></td>\
+                 <td><span style=\"color:{sev_color};font-size:.75rem;font-weight:600\">{sev}</span></td>\
+                 <td style=\"font-size:.85rem\">{desc}</td>\
+                 <td style=\"font-size:.82rem\">{details}</td>\
+                 </tr>",
+                name = html_escape(&r.name),
+                sev_color = sev_color,
+                sev = sev_label,
+                desc = html_escape(&r.description),
+                details = details,
+            ));
+        }
+        html.push_str("</tbody></table></div>");
+    }
+
+    // ── Artifact count + link to artifact list ────────────────────────────
+    let artifact_count = ctx.store.count_by_type(&t.name);
+    html.push_str("<div class=\"card\" style=\"padding:1.25rem;margin-bottom:1rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap\">");
+    html.push_str(&format!(
+        "<span style=\"font-size:1.5rem;font-weight:700\">{artifact_count}</span>\
+         <span style=\"opacity:.7;font-size:.9rem\">artifacts of this type</span>"
+    ));
+    if artifact_count > 0 {
+        html.push_str(&format!(
+            "<a href=\"/artifacts?types={name}\" style=\"margin-left:auto;font-size:.85rem\">View artifacts &rarr;</a>",
+            name = html_escape(&t.name)
+        ));
+    }
+    html.push_str("</div>");
+
+    // ── Per-type Mermaid diagram ──────────────────────────────────────────
+    // Collect outgoing links (this type → others) and incoming (others → this type)
+    let mut diagram_edges: Vec<String> = Vec::new();
+    let type_node = format!("{}[[\"{name}\"]]", name.replace('-', "_"), name = t.name);
+
+    // From link_fields of this type
+    for lf in &t.link_fields {
+        for target in &lf.target_types {
+            diagram_edges.push(format!(
+                "    {} -->|{}| {}[\"{}\"]",
+                name.replace('-', "_"),
+                html_escape(&lf.link_type),
+                target.replace('-', "_"),
+                target,
+            ));
+        }
+        if lf.target_types.is_empty() {
+            diagram_edges.push(format!(
+                "    {} -->|{}| any[\"any\"]",
+                name.replace('-', "_"),
+                html_escape(&lf.link_type),
+            ));
+        }
+    }
+
+    // Incoming: other types whose link_fields target this type
+    let mut sorted_types: Vec<_> = schema.artifact_types.values().collect();
+    sorted_types.sort_by_key(|t| &t.name);
+    for other_type in &sorted_types {
+        if other_type.name == t.name {
+            continue;
+        }
+        for lf in &other_type.link_fields {
+            if lf.target_types.contains(&t.name) {
+                diagram_edges.push(format!(
+                    "    {}[\"{}\"] -->|{}| {}",
+                    other_type.name.replace('-', "_"),
+                    other_type.name,
+                    html_escape(&lf.link_type),
+                    name.replace('-', "_"),
+                ));
+            }
+        }
+    }
+
+    if !diagram_edges.is_empty() {
+        html.push_str("<div class=\"card\" style=\"padding:1.25rem;margin-bottom:1rem\">");
+        html.push_str("<h3 style=\"margin:0 0 .75rem\">Linkage Diagram</h3>");
+        html.push_str("<pre class=\"mermaid\">\ngraph LR\n");
+        // Current type node (highlighted)
+        html.push_str(&format!("    {}\n", type_node));
+        html.push_str(&format!(
+            "    style {} fill:#6f42c1,color:#fff,stroke:#6f42c1\n",
+            name.replace('-', "_")
+        ));
+        for edge in &diagram_edges {
+            html.push_str(edge);
+            html.push('\n');
+        }
+        html.push_str("</pre></div>");
+    }
+
+    // ── Example YAML ─────────────────────────────────────────────────────
+    let example = crate::schema_cmd::generate_example_yaml_pub(t, schema);
+    html.push_str("<div class=\"card\" style=\"padding:1.25rem;margin-bottom:1rem\">");
+    html.push_str("<h3 style=\"margin:0 0 .75rem\">Example YAML</h3>");
+    html.push_str(r#"<pre style="font-size:.82rem;line-height:1.6;white-space:pre-wrap;background:var(--bg);padding:1rem;border-radius:var(--radius-sm)">"#);
+    html.push_str(&html_escape(&example));
     html.push_str("</pre></div>");
 
     RenderResult {
