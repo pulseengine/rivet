@@ -13,15 +13,15 @@ test.describe("Documents", () => {
     await page.goto("/documents");
     await waitForHtmx(page);
 
-    // Get the hx-get path of the first document link (always correct)
-    const firstLink = page.locator("a[hx-get^='/documents/']").first();
-    const hxGet = await firstLink.getAttribute("hx-get");
-    if (!hxGet) {
+    // Get the href of the first document link
+    const firstLink = page.locator("a[href^='/documents/']").first();
+    const href = await firstLink.getAttribute("href");
+    if (!href) {
       test.skip();
       return;
     }
 
-    const resp = await page.goto(hxGet);
+    const resp = await page.goto(href);
     expect(resp?.status()).toBe(200);
     await expect(page.locator(".doc-body")).toBeVisible();
   });

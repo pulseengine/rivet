@@ -48,21 +48,17 @@ test.describe("Help View", () => {
     await page.goto("/help");
     await waitForHtmx(page);
 
-    const schemaLink = page.locator("a[href='/help/schema']");
+    const schemaLink = page.locator("a[href='/help/schema']").first();
     await expect(schemaLink).toBeVisible();
-    expect(await schemaLink.getAttribute("hx-get")).toBe("/help/schema");
 
-    const linksLink = page.locator("a[href='/help/links']");
+    const linksLink = page.locator("a[href='/help/links']").first();
     await expect(linksLink).toBeVisible();
-    expect(await linksLink.getAttribute("hx-get")).toBe("/help/links");
 
-    const rulesLink = page.locator("a[href='/help/rules']");
+    const rulesLink = page.locator("a[href='/help/rules']").first();
     await expect(rulesLink).toBeVisible();
-    expect(await rulesLink.getAttribute("hx-get")).toBe("/help/rules");
 
-    const docsLink = page.locator("a[href='/help/docs']");
+    const docsLink = page.locator("a[href='/help/docs']").first();
     await expect(docsLink).toBeVisible();
-    expect(await docsLink.getAttribute("hx-get")).toBe("/help/docs");
   });
 });
 
@@ -96,19 +92,16 @@ test.describe("Help Schema", () => {
     await page.goto("/help/schema");
     await waitForHtmx(page);
 
-    // Schema rows have hx-get to /help/schema/<name>
-    const typeRow = page
-      .locator("tr[hx-get^='/help/schema/']")
-      .first();
-    const hxGet = await typeRow.getAttribute("hx-get");
-    if (!hxGet) {
+    // Schema rows have links to /help/schema/<name>
+    const typeLink = page.locator("a[href^='/help/schema/']").first();
+    const href = await typeLink.getAttribute("href");
+    if (!href) {
       test.skip();
       return;
     }
 
-    const resp = await page.goto(hxGet);
+    const resp = await page.goto(href);
     expect(resp?.status()).toBe(200);
-    // Should show the type detail with a back link
     await expect(page.locator("a[href='/help/schema']")).toBeVisible();
   });
 
@@ -151,7 +144,7 @@ test.describe("Help Links", () => {
     // Use getByRole to target the back link specifically (not the nav link)
     const backLink = page.getByRole("link", { name: /← Help/ });
     await expect(backLink).toBeVisible();
-    expect(await backLink.getAttribute("hx-get")).toBe("/help");
+    expect(await backLink.getAttribute("href")).toBe("/help");
   });
 });
 
