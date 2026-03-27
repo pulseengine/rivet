@@ -508,3 +508,85 @@ fn init_then_validate_roundtrip() {
         "freshly-initialized project should have 0 validation errors, got {errors}"
     );
 }
+
+// ── rivet export --format html ──────────────────────────────────────────
+
+/// `rivet export --format html` generates a static site in the output directory.
+/// Verifies that index.html, artifacts/index.html, and at least one
+/// artifacts/{id}.html exist and contain meaningful content.
+#[test]
+fn export_html_generates_static_site() {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let out_dir = tmp.path().join("site");
+
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "export",
+            "--format",
+            "html",
+            "--output",
+            out_dir.to_str().unwrap(),
+        ])
+        .output()
+        .expect("failed to execute rivet export --format html");
+
+    assert!(
+        output.status.success(),
+        "rivet export --format html must exit 0. stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // index.html must exist and contain artifact count
+    let index_path = out_dir.join("index.html");
+    assert!(
+        index_path.exists(),
+        "index.html must exist at {}",
+        index_path.display()
+    );
+    let index_html = std::fs::read_to_string(&index_path).expect("read index.html");
+    assert!(
+        index_html.contains("<!DOCTYPE html>"),
+        "index.html must be a full HTML document"
+    );
+    // The stats page mentions total artifacts
+    assert!(
+        index_html.contains("artifact") || index_html.contains("Artifact"),
+        "index.html must mention artifacts"
+    );
+
+    // artifacts/index.html must exist
+    let artifacts_index = out_dir.join("artifacts").join("index.html");
+    assert!(
+        artifacts_index.exists(),
+        "artifacts/index.html must exist"
+    );
+    let artifacts_html = std::fs::read_to_string(&artifacts_index).expect("read artifacts/index.html");
+    assert!(
+        artifacts_html.contains("<!DOCTYPE html>"),
+        "artifacts/index.html must be a full HTML document"
+    );
+
+    // At least one artifacts/{id}.html must exist
+    let artifacts_dir = out_dir.join("artifacts");
+    let has_detail_page = std::fs::read_dir(&artifacts_dir)
+        .expect("read artifacts dir")
+        .filter_map(|e| e.ok())
+        .any(|e| {
+            let name = e.file_name();
+            let name_str = name.to_string_lossy();
+            name_str.ends_with(".html") && name_str != "index.html"
+        });
+    assert!(
+        has_detail_page,
+        "at least one artifacts/{{id}}.html must be generated"
+    );
+
+    // validate/index.html must exist
+    let validate_path = out_dir.join("validate").join("index.html");
+    assert!(
+        validate_path.exists(),
+        "validate/index.html must exist"
+    );
+}

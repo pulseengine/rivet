@@ -213,7 +213,7 @@ impl AppState {
 pub(crate) type SharedState = Arc<RwLock<AppState>>;
 
 /// Build a fresh `AppState` by loading everything from disk.
-fn reload_state(
+pub(crate) fn reload_state(
     project_path: &std::path::Path,
     schemas_dir: &std::path::Path,
     port: u16,
