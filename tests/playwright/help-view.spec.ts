@@ -44,6 +44,15 @@ test.describe("Help View", () => {
     await expect(page.locator("body")).toContainText("rivet serve");
   });
 
+  test("help page shows schema linkage Mermaid diagram", async ({ page }) => {
+    await page.goto("/help");
+    await waitForHtmx(page);
+    await expect(page.locator("body")).toContainText("Schema Linkage");
+    // Mermaid source should contain graph LR and type names
+    const mermaidSource = page.locator("pre.mermaid, .mermaid");
+    await expect(mermaidSource.first()).toBeVisible();
+  });
+
   test("help quick-link cards have correct hrefs", async ({ page }) => {
     await page.goto("/help");
     await waitForHtmx(page);
@@ -109,8 +118,60 @@ test.describe("Help Schema", () => {
     const resp = await page.goto("/help/schema/requirement");
     expect(resp?.status()).toBe(200);
     await expect(page.locator("body")).toContainText("requirement");
-    // Should have a back-link to the schema list
     await expect(page.locator("a[href='/help/schema']")).toBeVisible();
+  });
+
+  test("schema detail shows fields table", async ({ page }) => {
+    await page.goto("/help/schema/requirement");
+    await waitForHtmx(page);
+    const fieldsTable = page.locator("table").first();
+    await expect(fieldsTable).toBeVisible();
+    // Should have common fields like title, description, status
+    await expect(page.locator("body")).toContainText("title");
+  });
+
+  test("schema detail shows link fields section", async ({ page }) => {
+    await page.goto("/help/schema/requirement");
+    await waitForHtmx(page);
+    // Requirement type should have link fields (satisfies, etc.)
+    await expect(page.locator("body")).toContainText(/link|Link/);
+  });
+
+  test("schema detail shows linkage diagram", async ({ page }) => {
+    await page.goto("/help/schema/requirement");
+    await waitForHtmx(page);
+    // Mermaid renders to SVG, or the source pre.mermaid exists
+    const svg = page.locator("svg").first();
+    const mermaidPre = page.locator("pre.mermaid").first();
+    const hasSvg = await svg.isVisible().catch(() => false);
+    const hasPre = await mermaidPre.isVisible().catch(() => false);
+    expect(hasSvg || hasPre).toBeTruthy();
+  });
+
+  test("schema detail shows artifact count", async ({ page }) => {
+    await page.goto("/help/schema/requirement");
+    await waitForHtmx(page);
+    // Should show how many artifacts of this type exist
+    await expect(page.locator("body")).toContainText(/\d+\s*(artifact|Artifact)/);
+  });
+
+  test("schema detail shows example YAML", async ({ page }) => {
+    await page.goto("/help/schema/requirement");
+    await waitForHtmx(page);
+    // Should show example YAML block
+    await expect(page.locator("body")).toContainText(/example|Example/i);
+  });
+
+  test("schema detail for design-decision type", async ({ page }) => {
+    const resp = await page.goto("/help/schema/design-decision");
+    expect(resp?.status()).toBe(200);
+    await expect(page.locator("body")).toContainText("design-decision");
+  });
+
+  test("schema detail for loss type", async ({ page }) => {
+    const resp = await page.goto("/help/schema/loss");
+    expect(resp?.status()).toBe(200);
+    await expect(page.locator("body")).toContainText("loss");
   });
 });
 
