@@ -1213,6 +1213,41 @@ artifacts:
       phase: future
       baseline: v0.3.0
 
+  - id: FEAT-071
+    type: feature
+    title: JUnit XML test result import
+    status: draft
+    description: >
+      CLI command rivet import --format junit that reads JUnit XML test
+      result files and creates rivet TestRun entries in results/. Maps
+      JUnit testcase elements to artifact IDs via naming convention or
+      explicit mapping. Enables CI pipelines to feed test evidence into
+      rivet's traceability chain.
+    tags: [testing, import, ci, future]
+    links:
+      - type: satisfies
+        target: REQ-040
+    fields:
+      phase: future
+      baseline: v0.4.0
+
+  - id: FEAT-072
+    type: feature
+    title: Test report conformance workflow
+    status: draft
+    description: >
+      Automated workflow: CI runs tests, imports results as rivet artifacts,
+      generates a test report document, creates a PR with the report. Human
+      reviews and merges. Release includes the report as both a rivet
+      artifact and a download. Dogfoods rivet's own test evidence tracking.
+    tags: [testing, ci, workflow, dogfood, future]
+    links:
+      - type: satisfies
+        target: REQ-040
+    fields:
+      phase: future
+      baseline: v0.4.0
+
   - id: FEAT-070
     type: feature
     title: Draft-aware validation severity
