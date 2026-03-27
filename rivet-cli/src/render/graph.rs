@@ -10,7 +10,7 @@ use rivet_core::document::html_escape;
 use rivet_core::store::Store;
 
 use super::RenderContext;
-use super::helpers::type_color_map;
+use super::helpers::{type_color_map, type_shape_map};
 
 // ── Graph params (mirrored from serve/views.rs for render_page routing) ──
 
@@ -203,6 +203,7 @@ pub(crate) fn render_graph_view(ctx: &RenderContext, params: &GraphParams) -> St
     let colors = type_color_map();
     let svg_opts = SvgOptions {
         type_colors: colors.clone(),
+        type_shapes: type_shape_map(),
         highlight: params.focus.clone().filter(|s| !s.is_empty()),
         interactive: true,
         base_url: Some("/artifacts".into()),
@@ -353,6 +354,7 @@ pub(crate) fn render_artifact_graph(ctx: &RenderContext, id: &str, params: &EgoP
     let colors = type_color_map();
     let svg_opts = SvgOptions {
         type_colors: colors.clone(),
+        type_shapes: type_shape_map(),
         highlight: Some(id.to_string()),
         interactive: true,
         base_url: Some("/artifacts".into()),

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use etch::svg::ShapeProvider;
 use rivet_core::document::html_escape;
 
 // ── Color palette ────────────────────────────────────────────────────────
@@ -60,6 +61,155 @@ pub(crate) fn type_color_map() -> HashMap<String, String> {
         .iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect()
+}
+
+// ── Shape providers ───────────────────────────────────────────────────────
+
+/// Build a map from artifact type name to a custom SVG shape provider.
+///
+/// Each provider receives `(node_type, x, y, width, height, fill, stroke)`
+/// and returns a raw SVG element string that replaces the default `<rect>`.
+/// Types not in this map fall back to the etch default rectangle.
+pub(crate) fn type_shape_map() -> HashMap<String, ShapeProvider> {
+    let mut map: HashMap<String, ShapeProvider> = HashMap::new();
+
+    // requirement → rounded rectangle (rx=10)
+    map.insert(
+        "requirement".into(),
+        Box::new(|_nt, x, y, w, h, fill, stroke| {
+            format!(
+                r#"<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="10" ry="10" fill="{fill}" stroke="{stroke}" stroke-width="2"/>"#
+            )
+        }),
+    );
+
+    // design-decision → diamond/rhombus
+    map.insert(
+        "design-decision".into(),
+        Box::new(|_nt, x, y, w, h, fill, stroke| {
+            let cx = x + w / 2.0;
+            let cy = y + h / 2.0;
+            format!(
+                r#"<polygon points="{},{} {},{} {},{} {},{}" fill="{fill}" stroke="{stroke}" stroke-width="1.5"/>"#,
+                cx, y,          // top
+                x + w, cy,      // right
+                cx, y + h,      // bottom
+                x, cy,          // left
+            )
+        }),
+    );
+
+    // feature → hexagon
+    map.insert(
+        "feature".into(),
+        Box::new(|_nt, x, y, w, h, fill, stroke| {
+            let cx = x + w / 2.0;
+            format!(
+                r#"<polygon points="{},{} {},{} {},{} {},{} {},{} {},{}" fill="{fill}" stroke="{stroke}" stroke-width="1.5"/>"#,
+                cx, y,                   // top center
+                x + w, y + h * 0.25,    // top-right
+                x + w, y + h * 0.75,    // bottom-right
+                cx, y + h,              // bottom center
+                x, y + h * 0.75,        // bottom-left
+                x, y + h * 0.25,        // top-left
+            )
+        }),
+    );
+
+    // loss → red-bordered rectangle (danger indicator, no rounding)
+    map.insert(
+        "loss".into(),
+        Box::new(|_nt, x, y, w, h, fill, _stroke| {
+            format!(
+                "<rect x=\"{x}\" y=\"{y}\" width=\"{w}\" height=\"{h}\" rx=\"0\" ry=\"0\" fill=\"{fill}\" stroke=\"#dc3545\" stroke-width=\"2.5\"/>"
+            )
+        }),
+    );
+
+    // hazard → triangle (warning shape)
+    map.insert(
+        "hazard".into(),
+        Box::new(|_nt, x, y, w, h, fill, stroke| {
+            let cx = x + w / 2.0;
+            format!(
+                r#"<polygon points="{},{} {},{} {},{}" fill="{fill}" stroke="{stroke}" stroke-width="1.5"/>"#,
+                cx, y,          // top center
+                x + w, y + h,   // bottom right
+                x, y + h,       // bottom left
+            )
+        }),
+    );
+
+    // system-constraint → octagon
+    map.insert(
+        "system-constraint".into(),
+        Box::new(|_nt, x, y, w, h, fill, stroke| {
+            let ox = w * 0.25; // corner cut
+            let oy = h * 0.25;
+            format!(
+                r#"<polygon points="{},{} {},{} {},{} {},{} {},{} {},{} {},{} {},{}" fill="{fill}" stroke="{stroke}" stroke-width="1.5"/>"#,
+                x + ox, y,
+                x + w - ox, y,
+                x + w, y + oy,
+                x + w, y + h - oy,
+                x + w - ox, y + h,
+                x + ox, y + h,
+                x, y + h - oy,
+                x, y + oy,
+            )
+        }),
+    );
+
+    // safety-constraint → same octagon shape as system-constraint
+    map.insert(
+        "safety-constraint".into(),
+        Box::new(|_nt, x, y, w, h, fill, stroke| {
+            let ox = w * 0.25;
+            let oy = h * 0.25;
+            format!(
+                r#"<polygon points="{},{} {},{} {},{} {},{} {},{} {},{} {},{} {},{}" fill="{fill}" stroke="{stroke}" stroke-width="1.5"/>"#,
+                x + ox, y,
+                x + w - ox, y,
+                x + w, y + oy,
+                x + w, y + h - oy,
+                x + w - ox, y + h,
+                x + ox, y + h,
+                x, y + h - oy,
+                x, y + oy,
+            )
+        }),
+    );
+
+    // uca → parallelogram (slanted right)
+    map.insert(
+        "uca".into(),
+        Box::new(|_nt, x, y, w, h, fill, stroke| {
+            let skew = w * 0.12; // horizontal skew amount
+            format!(
+                r#"<polygon points="{},{} {},{} {},{} {},{}" fill="{fill}" stroke="{stroke}" stroke-width="1.5"/>"#,
+                x + skew, y,        // top left (shifted right)
+                x + w, y,           // top right
+                x + w - skew, y + h,// bottom right (shifted left)
+                x, y + h,           // bottom left
+            )
+        }),
+    );
+
+    // test / verification → rounded rect with a checkmark-style badge border
+    for type_name in &["test", "verification", "sw-verification", "system-verification",
+                        "sw-unit-verification", "sw-integration-verification",
+                        "system-integration-verification", "qualification-verification"] {
+        map.insert(
+            type_name.to_string(),
+            Box::new(|_nt, x, y, w, h, fill, stroke| {
+                format!(
+                    r#"<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="6" ry="6" fill="{fill}" stroke="{stroke}" stroke-width="1.5" stroke-dasharray="4 2"/>"#
+                )
+            }),
+        );
+    }
+
+    map
 }
 
 /// Return a colored badge `<span>` for an artifact type.
