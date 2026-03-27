@@ -5562,6 +5562,7 @@ fn lsp_publish_salsa_diagnostics(
         }
     }
 
+    // Publish diagnostics for files that have them
     for (path, diags) in &file_diags {
         if let Some(uri) = lsp_path_to_uri(path) {
             let params = PublishDiagnosticsParams {
@@ -5575,6 +5576,28 @@ fn lsp_publish_salsa_diagnostics(
                     params: serde_json::to_value(params).unwrap(),
                 },
             ));
+        }
+    }
+
+    // Clear diagnostics for source files that no longer have issues.
+    // Without this, stale diagnostics remain in VS Code after fixes.
+    for artifact in store.iter() {
+        if let Some(ref path) = artifact.source_file {
+            if !file_diags.contains_key(path) {
+                if let Some(uri) = lsp_path_to_uri(path) {
+                    let params = PublishDiagnosticsParams {
+                        uri,
+                        diagnostics: Vec::new(),
+                        version: None,
+                    };
+                    let _ = connection.sender.send(lsp_server::Message::Notification(
+                        lsp_server::Notification {
+                            method: "textDocument/publishDiagnostics".to_string(),
+                            params: serde_json::to_value(params).unwrap(),
+                        },
+                    ));
+                }
+            }
         }
     }
 
