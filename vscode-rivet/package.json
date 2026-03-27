@@ -83,10 +83,10 @@
           "default": "",
           "description": "Path to rivet binary (leave empty to find on PATH)"
         },
-        "rivet.serve.port": {
-          "type": "number",
-          "default": 0,
-          "description": "Port for the embedded dashboard (0 = auto-assign)"
+        "rivet.projectPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the directory containing rivet.yaml (leave empty to auto-detect in workspace)"
         }
       }
     }
