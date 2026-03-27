@@ -183,8 +183,9 @@ export async function activate(context: vscode.ExtensionContext) {
 
     client.onNotification('rivet/artifactsChanged', (_params: any) => {
       treeProvider.refresh();
-      if (panel) {
-        panel.webview.postMessage({ type: 'stale' });
+      // Auto-refresh the WebView with current page
+      if (panel && currentPage) {
+        navigateTo(currentPage);
       }
     });
 

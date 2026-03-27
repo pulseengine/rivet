@@ -5138,13 +5138,32 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                         };
 
                         let result = crate::render::render_page(&ctx, page, &view_params);
+
+                        // If we have a source file but no line, find the artifact's line
+                        let source_line = result.source_line.or_else(|| {
+                            if let (Some(sf), true) = (&result.source_file, page.starts_with("/artifacts/")) {
+                                let (path, _query) = page.split_once('?').unwrap_or((page, ""));
+                                let rest = &path["/artifacts/".len()..];
+                                let (id, _) = rest.split_once('/').unwrap_or((rest, ""));
+                                let full_path = if std::path::Path::new(sf).is_absolute() {
+                                    std::path::PathBuf::from(sf)
+                                } else {
+                                    project_dir.join(sf)
+                                };
+                                let line = lsp_find_artifact_line(&full_path, id);
+                                Some(line)
+                            } else {
+                                None
+                            }
+                        });
+
                         connection.sender.send(Message::Response(Response {
                             id: req.id,
                             result: Some(serde_json::json!({
                                 "html": result.html,
                                 "title": result.title,
                                 "sourceFile": result.source_file,
-                                "sourceLine": result.source_line,
+                                "sourceLine": source_line,
                                 "seq": seq,
                             })),
                             error: None,
