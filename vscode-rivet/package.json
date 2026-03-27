@@ -73,6 +73,19 @@
       {
         "command": "rivet.showSource",
         "title": "Rivet: Show Source"
+      },
+      {
+        "command": "rivet.searchArtifact",
+        "title": "Search Artifacts",
+        "category": "Rivet"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "rivet.searchArtifact",
+        "key": "ctrl+shift+f",
+        "mac": "cmd+shift+f",
+        "when": "view == rivetExplorer"
       }
     ],
     "configuration": {

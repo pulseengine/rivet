@@ -5286,6 +5286,53 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                             error: None,
                         }))?;
                     }
+                    "rivet/search" => {
+                        let params: serde_json::Value = req.params.clone();
+                        let query = params
+                            .get("query")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        let query_lower = query.to_lowercase();
+
+                        let mut results: Vec<serde_json::Value> = Vec::new();
+
+                        if !query_lower.is_empty() {
+                            for artifact in render_store.iter() {
+                                let id_str = artifact.id.to_string();
+                                if id_str.to_lowercase().contains(&query_lower)
+                                    || artifact.title.to_lowercase().contains(&query_lower)
+                                {
+                                    results.push(serde_json::json!({
+                                        "id": id_str,
+                                        "title": artifact.title,
+                                        "type": artifact.artifact_type,
+                                        "page": format!("/artifacts/{}", id_str),
+                                    }));
+                                }
+                            }
+
+                            for doc in doc_store.iter() {
+                                if doc.id.to_lowercase().contains(&query_lower)
+                                    || doc.title.to_lowercase().contains(&query_lower)
+                                {
+                                    results.push(serde_json::json!({
+                                        "id": doc.id,
+                                        "title": doc.title,
+                                        "type": "document",
+                                        "page": format!("/documents/{}", doc.id),
+                                    }));
+                                }
+                            }
+
+                            results.truncate(50);
+                        }
+
+                        connection.sender.send(Message::Response(Response {
+                            id: req.id,
+                            result: Some(serde_json::json!({ "results": results })),
+                            error: None,
+                        }))?;
+                    }
                     _ => {
                         eprintln!("rivet lsp: unhandled request: {method}");
                         connection.sender.send(Message::Response(Response {

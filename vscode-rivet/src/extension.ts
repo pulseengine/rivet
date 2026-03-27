@@ -82,6 +82,45 @@ export async function activate(context: vscode.ExtensionContext) {
       const range = new vscode.Range(line, 0, line, 0);
       await vscode.window.showTextDocument(uri, { selection: range, viewColumn: vscode.ViewColumn.One });
     }),
+    vscode.commands.registerCommand('rivet.searchArtifact', async () => {
+      if (!client) {
+        vscode.window.showWarningMessage('Rivet LSP not connected.');
+        return;
+      }
+
+      const quickPick = vscode.window.createQuickPick();
+      quickPick.placeholder = 'Search artifacts and documents...';
+      quickPick.matchOnDescription = true;
+
+      let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+
+      quickPick.onDidChangeValue(value => {
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(async () => {
+          if (value.length < 2) { quickPick.items = []; return; }
+          try {
+            const result: any = await client!.sendRequest('rivet/search', { query: value });
+            quickPick.items = (result.results || []).map((r: any) => ({
+              label: `$(symbol-property) ${r.id}`,
+              description: r.title,
+              detail: r.type,
+              page: r.page,
+            }));
+          } catch { quickPick.items = []; }
+        }, 150);
+      });
+
+      quickPick.onDidAccept(() => {
+        const item = quickPick.selectedItems[0] as any;
+        if (item?.page) {
+          vscode.commands.executeCommand('rivet.navigateTo', item.page);
+        }
+        quickPick.hide();
+      });
+
+      quickPick.onDidHide(() => quickPick.dispose());
+      quickPick.show();
+    }),
   );
 
   // --- Sidebar Tree View ---
