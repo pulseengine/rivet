@@ -4433,8 +4433,12 @@ fn cmd_import(
 }
 
 /// Import test results from external formats (currently: JUnit XML).
-fn cmd_import_results(format: &str, file: &std::path::Path, output: &std::path::Path) -> Result<bool> {
-    use rivet_core::junit::{parse_junit_xml, ImportSummary};
+fn cmd_import_results(
+    format: &str,
+    file: &std::path::Path,
+    output: &std::path::Path,
+) -> Result<bool> {
+    use rivet_core::junit::{ImportSummary, parse_junit_xml};
     use rivet_core::results::TestRunFile;
 
     match format {
@@ -4450,8 +4454,9 @@ fn cmd_import_results(format: &str, file: &std::path::Path, output: &std::path::
                 return Ok(true);
             }
 
-            std::fs::create_dir_all(output)
-                .with_context(|| format!("failed to create output directory {}", output.display()))?;
+            std::fs::create_dir_all(output).with_context(|| {
+                format!("failed to create output directory {}", output.display())
+            })?;
 
             for run in &runs {
                 let filename = format!("{}.yaml", run.run.id);
@@ -4460,8 +4465,8 @@ fn cmd_import_results(format: &str, file: &std::path::Path, output: &std::path::
                     run: run.run.clone(),
                     results: run.results.clone(),
                 };
-                let yaml = serde_yaml::to_string(&run_file)
-                    .context("failed to serialize run to YAML")?;
+                let yaml =
+                    serde_yaml::to_string(&run_file).context("failed to serialize run to YAML")?;
                 std::fs::write(&out_path, &yaml)
                     .with_context(|| format!("failed to write {}", out_path.display()))?;
             }
@@ -4480,9 +4485,7 @@ fn cmd_import_results(format: &str, file: &std::path::Path, output: &std::path::
             Ok(true)
         }
         other => {
-            anyhow::bail!(
-                "unknown import format: '{other}' (supported: junit)"
-            )
+            anyhow::bail!("unknown import format: '{other}' (supported: junit)")
         }
     }
 }
@@ -5106,7 +5109,12 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
     let diagnostics = db.diagnostics(source_set, schema_set);
     let mut prev_diagnostic_files: std::collections::HashSet<std::path::PathBuf> =
         std::collections::HashSet::new();
-    lsp_publish_salsa_diagnostics(&connection, &diagnostics, &store, &mut prev_diagnostic_files);
+    lsp_publish_salsa_diagnostics(
+        &connection,
+        &diagnostics,
+        &store,
+        &mut prev_diagnostic_files,
+    );
     eprintln!(
         "rivet lsp: initialized with {} artifacts (salsa incremental)",
         store.len()

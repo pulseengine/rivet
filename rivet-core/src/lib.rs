@@ -11,6 +11,7 @@ pub mod export;
 pub mod externals;
 pub mod formats;
 pub mod impact;
+pub mod junit;
 pub mod lifecycle;
 pub mod links;
 pub mod markdown;
@@ -20,7 +21,6 @@ pub mod mutate;
 #[cfg(feature = "oslc")]
 pub mod oslc;
 pub mod query;
-pub mod junit;
 pub mod reqif;
 pub mod results;
 pub mod schema;

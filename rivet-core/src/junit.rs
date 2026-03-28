@@ -20,8 +20,8 @@
 
 use std::collections::HashMap;
 
-use quick_xml::events::Event;
 use quick_xml::Reader;
+use quick_xml::events::Event;
 
 use crate::error::Error;
 use crate::results::{RunMetadata, TestResult, TestRun, TestStatus};
@@ -111,8 +111,12 @@ struct ParsedCase {
 enum Outcome {
     #[default]
     Pass,
-    Fail { message: Option<String> },
-    Error { message: Option<String> },
+    Fail {
+        message: Option<String>,
+    },
+    Error {
+        message: Option<String>,
+    },
     Skipped,
 }
 
@@ -250,7 +254,10 @@ fn parse_suites(xml: &str) -> Result<Vec<ParsedSuite>, Error> {
                 if text_ctx == TextContext::Failure || text_ctx == TextContext::Error {
                     if let Some(ref mut c) = current_case {
                         if c.body.is_none() {
-                            let text = e.unescape().map(|s| s.trim().to_string()).unwrap_or_default();
+                            let text = e
+                                .unescape()
+                                .map(|s| s.trim().to_string())
+                                .unwrap_or_default();
                             if !text.is_empty() {
                                 c.body = Some(text);
                             }
@@ -306,7 +313,13 @@ fn suite_to_run(suite: ParsedSuite, index: usize) -> TestRun {
     let safe_name: String = suite
         .name
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect();
     let run_id = if safe_name.is_empty() {
         format!("junit-import-{index}")
@@ -373,7 +386,13 @@ pub struct ImportSummary {
 
 impl ImportSummary {
     pub fn from_runs(runs: &[TestRun]) -> Self {
-        let mut s = Self { total: 0, pass: 0, fail: 0, error: 0, skip: 0 };
+        let mut s = Self {
+            total: 0,
+            pass: 0,
+            fail: 0,
+            error: 0,
+            skip: 0,
+        };
         for run in runs {
             for r in &run.results {
                 s.total += 1;
