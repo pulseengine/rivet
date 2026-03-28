@@ -67,7 +67,12 @@ pub(crate) fn render_help(ctx: &RenderContext) -> String {
     sorted_types.sort_by_key(|t| &t.name);
     for t in &sorted_types {
         match t.aspice_process.as_deref() {
-            Some(p) if p.starts_with("SWE") || p.starts_with("SYS") || p.starts_with("MAN") || p.starts_with("SUP") => {
+            Some(p)
+                if p.starts_with("SWE")
+                    || p.starts_with("SYS")
+                    || p.starts_with("MAN")
+                    || p.starts_with("SUP") =>
+            {
                 aspice_types.push(&t.name);
             }
             _ if t.name.starts_with("loss")
@@ -89,7 +94,8 @@ pub(crate) fn render_help(ctx: &RenderContext) -> String {
                 || t.name.starts_with("attack-path")
                 || t.name.starts_with("cybersecurity")
                 || t.name.starts_with("security")
-                || t.name.starts_with("risk-") => {
+                || t.name.starts_with("risk-") =>
+            {
                 stpa_types.push(&t.name);
             }
             _ if t.name == "requirement" || t.name == "feature" || t.name == "design-decision" => {
@@ -292,9 +298,11 @@ pub(crate) fn render_schema_show(ctx: &RenderContext, name: &str) -> RenderResul
     if !t.fields.is_empty() {
         html.push_str("<div class=\"card\" style=\"padding:1.25rem;margin-bottom:1rem\">");
         html.push_str("<h3 style=\"margin:0 0 .75rem\">Fields</h3>");
-        html.push_str("<table><thead><tr>\
+        html.push_str(
+            "<table><thead><tr>\
             <th>Name</th><th>Type</th><th>Required</th><th>Description</th><th>Allowed Values</th>\
-            </tr></thead><tbody>");
+            </tr></thead><tbody>",
+        );
         for f in &t.fields {
             let req_badge = if f.required {
                 "<span style=\"color:#dc3545;font-size:.75rem;font-weight:600\">required</span>"
@@ -302,12 +310,18 @@ pub(crate) fn render_schema_show(ctx: &RenderContext, name: &str) -> RenderResul
                 "<span style=\"opacity:.5;font-size:.75rem\">optional</span>"
             };
             let desc = f.description.as_deref().unwrap_or("");
-            let vals = f.allowed_values.as_ref().map(|v| {
-                v.iter()
-                    .map(|x| format!("<code style=\"font-size:.75rem\">{}</code>", html_escape(x)))
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            }).unwrap_or_default();
+            let vals = f
+                .allowed_values
+                .as_ref()
+                .map(|v| {
+                    v.iter()
+                        .map(|x| {
+                            format!("<code style=\"font-size:.75rem\">{}</code>", html_escape(x))
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .unwrap_or_default();
             html.push_str(&format!(
                 "<tr>\
                  <td><code>{name}</code></td>\
@@ -350,11 +364,13 @@ pub(crate) fn render_schema_show(ctx: &RenderContext, name: &str) -> RenderResul
             } else {
                 lf.target_types
                     .iter()
-                    .map(|tt| format!(
-                        "<a href=\"/help/schema/{tt}\" style=\"font-size:.82rem\">{}</a>",
-                        html_escape(tt),
-                        tt = html_escape(tt)
-                    ))
+                    .map(|tt| {
+                        format!(
+                            "<a href=\"/help/schema/{tt}\" style=\"font-size:.82rem\">{}</a>",
+                            html_escape(tt),
+                            tt = html_escape(tt)
+                        )
+                    })
                     .collect::<Vec<_>>()
                     .join(", ")
             };
@@ -393,11 +409,27 @@ pub(crate) fn render_schema_show(ctx: &RenderContext, name: &str) -> RenderResul
                 Severity::Info => ("#0dcaf0", "info"),
             };
             let details = if let Some(ref link) = r.required_link {
-                let targets = if r.target_types.is_empty() { "any".to_string() } else { r.target_types.join(", ") };
-                format!("requires link <code>{}</code> → [{}]", html_escape(link), html_escape(&targets))
+                let targets = if r.target_types.is_empty() {
+                    "any".to_string()
+                } else {
+                    r.target_types.join(", ")
+                };
+                format!(
+                    "requires link <code>{}</code> → [{}]",
+                    html_escape(link),
+                    html_escape(&targets)
+                )
             } else if let Some(ref bl) = r.required_backlink {
-                let from = if r.from_types.is_empty() { "any".to_string() } else { r.from_types.join(", ") };
-                format!("requires backlink <code>{}</code> from [{}]", html_escape(bl), html_escape(&from))
+                let from = if r.from_types.is_empty() {
+                    "any".to_string()
+                } else {
+                    r.from_types.join(", ")
+                };
+                format!(
+                    "requires backlink <code>{}</code> from [{}]",
+                    html_escape(bl),
+                    html_escape(&from)
+                )
             } else {
                 String::new()
             };

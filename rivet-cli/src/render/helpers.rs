@@ -196,9 +196,16 @@ pub(crate) fn type_shape_map() -> HashMap<String, ShapeProvider> {
     );
 
     // test / verification → rounded rect with a checkmark-style badge border
-    for type_name in &["test", "verification", "sw-verification", "system-verification",
-                        "sw-unit-verification", "sw-integration-verification",
-                        "system-integration-verification", "qualification-verification"] {
+    for type_name in &[
+        "test",
+        "verification",
+        "sw-verification",
+        "system-verification",
+        "sw-unit-verification",
+        "sw-integration-verification",
+        "system-integration-verification",
+        "qualification-verification",
+    ] {
         map.insert(
             type_name.to_string(),
             Box::new(|_nt, x, y, w, h, fill, stroke| {

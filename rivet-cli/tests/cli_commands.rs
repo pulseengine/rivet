@@ -558,11 +558,9 @@ fn export_html_generates_static_site() {
 
     // artifacts/index.html must exist
     let artifacts_index = out_dir.join("artifacts").join("index.html");
-    assert!(
-        artifacts_index.exists(),
-        "artifacts/index.html must exist"
-    );
-    let artifacts_html = std::fs::read_to_string(&artifacts_index).expect("read artifacts/index.html");
+    assert!(artifacts_index.exists(), "artifacts/index.html must exist");
+    let artifacts_html =
+        std::fs::read_to_string(&artifacts_index).expect("read artifacts/index.html");
     assert!(
         artifacts_html.contains("<!DOCTYPE html>"),
         "artifacts/index.html must be a full HTML document"
@@ -585,8 +583,5 @@ fn export_html_generates_static_site() {
 
     // validate/index.html must exist
     let validate_path = out_dir.join("validate").join("index.html");
-    assert!(
-        validate_path.exists(),
-        "validate/index.html must exist"
-    );
+    assert!(validate_path.exists(), "validate/index.html must exist");
 }

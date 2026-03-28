@@ -43,7 +43,9 @@ pub(crate) async fn external_detail(
 ) -> Html<String> {
     let state = state.read().await;
     let ctx = state.as_render_context();
-    Html(crate::render::externals::render_external_detail(&ctx, &prefix))
+    Html(crate::render::externals::render_external_detail(
+        &ctx, &prefix,
+    ))
 }
 
 // ── Artifacts ────────────────────────────────────────────────────────────
@@ -129,7 +131,9 @@ pub(crate) async fn artifact_graph(
     let state = state.read().await;
     let ctx = state.as_render_context();
     let rparams = crate::render::graph::EgoParams { hops: params.hops };
-    Html(crate::render::graph::render_artifact_graph(&ctx, &id, &rparams))
+    Html(crate::render::graph::render_artifact_graph(
+        &ctx, &id, &rparams,
+    ))
 }
 
 // ── Validation ───────────────────────────────────────────────────────────
@@ -191,7 +195,9 @@ pub(crate) async fn matrix_cell_detail(
         link_type: params.link_type,
         direction: params.direction,
     };
-    Html(crate::render::matrix::render_matrix_cell_detail(&ctx, &rparams))
+    Html(crate::render::matrix::render_matrix_cell_detail(
+        &ctx, &rparams,
+    ))
 }
 
 // ── Coverage ─────────────────────────────────────────────────────────────
@@ -233,7 +239,10 @@ pub(crate) async fn search_view(
 ) -> Html<String> {
     let state = state.read().await;
     let ctx = state.as_render_context();
-    Html(crate::render::search::render_search_view(&ctx, params.q.as_deref()))
+    Html(crate::render::search::render_search_view(
+        &ctx,
+        params.q.as_deref(),
+    ))
 }
 
 // ── Verification ─────────────────────────────────────────────────────────
@@ -243,7 +252,6 @@ pub(crate) async fn verification_view(State(state): State<SharedState>) -> Html<
     let ctx = state.as_render_context();
     Html(crate::render::results::render_verification_view(&ctx))
 }
-
 
 // ── STPA ─────────────────────────────────────────────────────────────────
 
@@ -255,7 +263,6 @@ pub(crate) async fn stpa_view(
     let ctx = state.as_render_context();
     Html(crate::render::stpa::render_stpa(&ctx, &params))
 }
-
 
 // ── Results ──────────────────────────────────────────────────────────────
 
@@ -288,7 +295,9 @@ pub(crate) async fn source_file_view(
 ) -> Html<String> {
     let state = state.read().await;
     let ctx = state.as_render_context();
-    Html(crate::render::source::render_source_file_view(&ctx, &raw_path))
+    Html(crate::render::source::render_source_file_view(
+        &ctx, &raw_path,
+    ))
 }
 
 // ── Diff ─────────────────────────────────────────────────────────────────
@@ -345,7 +354,9 @@ pub(crate) async fn traceability_view(
         status: params.status,
         search: params.search,
     };
-    Html(crate::render::traceability::render_traceability_view(&ctx, &rparams))
+    Html(crate::render::traceability::render_traceability_view(
+        &ctx, &rparams,
+    ))
 }
 
 pub(crate) async fn traceability_history(
@@ -354,10 +365,10 @@ pub(crate) async fn traceability_history(
 ) -> Html<String> {
     let state = state.read().await;
     let ctx = state.as_render_context();
-    let rparams = crate::render::traceability::TraceHistoryParams {
-        file: params.file,
-    };
-    Html(crate::render::traceability::render_traceability_history(&ctx, &rparams))
+    let rparams = crate::render::traceability::TraceHistoryParams { file: params.file };
+    Html(crate::render::traceability::render_traceability_history(
+        &ctx, &rparams,
+    ))
 }
 
 // ── Help / Docs / Schema dashboard views ───────────────────────────────

@@ -2644,7 +2644,10 @@ fn cmd_export_html(
     use crate::serve::components::ViewParams;
 
     let schemas_dir = resolve_schemas_dir(cli);
-    let project_path = cli.project.canonicalize().unwrap_or_else(|_| cli.project.clone());
+    let project_path = cli
+        .project
+        .canonicalize()
+        .unwrap_or_else(|_| cli.project.clone());
 
     // Load project state using the same pipeline as `rivet serve`.
     let state = serve::reload_state(&project_path, &schemas_dir, 0)
@@ -2681,8 +2684,15 @@ fn cmd_export_html(
             String::new()
         };
         let stpa_types = [
-            "loss", "hazard", "sub-hazard", "system-constraint", "controller",
-            "controlled-process", "control-action", "uca", "controller-constraint",
+            "loss",
+            "hazard",
+            "sub-hazard",
+            "system-constraint",
+            "controller",
+            "controlled-process",
+            "control-action",
+            "uca",
+            "controller-constraint",
             "loss-scenario",
         ];
         let stpa_count: usize = stpa_types
@@ -2760,21 +2770,18 @@ document.addEventListener('DOMContentLoaded',function(){{
     // Helper: render a page, wrap it, and write it to a relative path within out_dir.
     // `rel_path` is like "index.html" or "artifacts/index.html".
     // `page` is the route string passed to render_page().
-    let write_page = |rel_path: &str,
-                      page: &str,
-                      title: &str,
-                      out_dir: &std::path::Path|
-     -> Result<()> {
-        let result = render::render_page(&ctx, page, &params);
-        let html = wrap_page(title, &result.html);
-        let dest = out_dir.join(rel_path);
-        if let Some(parent) = dest.parent() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("creating directory {}", parent.display()))?;
-        }
-        std::fs::write(&dest, &html).with_context(|| format!("writing {}", dest.display()))?;
-        Ok(())
-    };
+    let write_page =
+        |rel_path: &str, page: &str, title: &str, out_dir: &std::path::Path| -> Result<()> {
+            let result = render::render_page(&ctx, page, &params);
+            let html = wrap_page(title, &result.html);
+            let dest = out_dir.join(rel_path);
+            if let Some(parent) = dest.parent() {
+                std::fs::create_dir_all(parent)
+                    .with_context(|| format!("creating directory {}", parent.display()))?;
+            }
+            std::fs::write(&dest, &html).with_context(|| format!("writing {}", dest.display()))?;
+            Ok(())
+        };
 
     // ── Top-level pages ──────────────────────────────────────────────
     write_page("index.html", "/stats", "Overview", out_dir)?;
@@ -2795,11 +2802,21 @@ document.addEventListener('DOMContentLoaded',function(){{
     page_count += 1;
     write_page("help/index.html", "/help", "Help", out_dir)?;
     page_count += 1;
-    write_page("help/schema/index.html", "/help/schema", "Schema Types", out_dir)?;
+    write_page(
+        "help/schema/index.html",
+        "/help/schema",
+        "Schema Types",
+        out_dir,
+    )?;
     page_count += 1;
     write_page("help/links.html", "/help/links", "Link Types", out_dir)?;
     page_count += 1;
-    write_page("help/rules.html", "/help/rules", "Traceability Rules", out_dir)?;
+    write_page(
+        "help/rules.html",
+        "/help/rules",
+        "Traceability Rules",
+        out_dir,
+    )?;
     page_count += 1;
 
     // ── Per-artifact detail pages ────────────────────────────────────
@@ -2812,8 +2829,7 @@ document.addEventListener('DOMContentLoaded',function(){{
     }
 
     // ── Per-schema-type help pages ───────────────────────────────────
-    let schema_type_names: Vec<String> =
-        state.schema.artifact_types.keys().cloned().collect();
+    let schema_type_names: Vec<String> = state.schema.artifact_types.keys().cloned().collect();
     for name in &schema_type_names {
         let rel = format!("help/schema/{name}.html");
         let page = format!("/help/schema/{name}");
@@ -2830,10 +2846,7 @@ document.addEventListener('DOMContentLoaded',function(){{
         page_count += 1;
     }
 
-    eprintln!(
-        "Exported {page_count} pages to {}/",
-        out_dir.display()
-    );
+    eprintln!("Exported {page_count} pages to {}/", out_dir.display());
     Ok(true)
 }
 
@@ -5141,7 +5154,9 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
 
                         // If we have a source file but no line, find the artifact's line
                         let source_line = result.source_line.or_else(|| {
-                            if let (Some(sf), true) = (&result.source_file, page.starts_with("/artifacts/")) {
+                            if let (Some(sf), true) =
+                                (&result.source_file, page.starts_with("/artifacts/"))
+                            {
                                 let (path, _query) = page.split_once('?').unwrap_or((page, ""));
                                 let rest = &path["/artifacts/".len()..];
                                 let (id, _) = rest.split_once('/').unwrap_or((rest, ""));
@@ -5307,10 +5322,7 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                     }
                     "rivet/search" => {
                         let params: serde_json::Value = req.params.clone();
-                        let query = params
-                            .get("query")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("");
+                        let query = params.get("query").and_then(|v| v.as_str()).unwrap_or("");
                         let query_lower = query.to_lowercase();
 
                         let mut results: Vec<serde_json::Value> = Vec::new();

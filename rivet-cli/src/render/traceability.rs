@@ -335,7 +335,10 @@ pub(crate) fn render_traceability_view(ctx: &RenderContext, params: &TraceParams
     html
 }
 
-pub(crate) fn render_traceability_history(ctx: &RenderContext, params: &TraceHistoryParams) -> String {
+pub(crate) fn render_traceability_history(
+    ctx: &RenderContext,
+    params: &TraceHistoryParams,
+) -> String {
     let pp = ctx.project_path;
 
     let file = match params.file {

@@ -114,8 +114,8 @@ pub(crate) fn apply_filters_to_graph(
     sub
 }
 
-fn node_info_for(store: &Store, n: &String) -> NodeInfo {
-    let artifact = store.get(n.as_str());
+fn node_info_for(store: &Store, n: &str) -> NodeInfo {
+    let artifact = store.get(n);
     let atype = artifact
         .map(|a| a.artifact_type.clone())
         .unwrap_or_default();
@@ -148,8 +148,8 @@ fn node_info_for(store: &Store, n: &String) -> NodeInfo {
     };
 
     NodeInfo {
-        id: n.clone(),
-        label: n.clone(),
+        id: n.to_owned(),
+        label: n.to_owned(),
         node_type: atype,
         sublabel,
         parent,

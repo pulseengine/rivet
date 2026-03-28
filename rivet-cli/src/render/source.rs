@@ -221,8 +221,7 @@ fn extract_file_ref(val: &str, target_file: &str) -> Option<(String, Option<u32>
 pub(crate) fn render_source_file_view(ctx: &RenderContext, raw_path: &str) -> String {
     let project_path = ctx.project_path;
     let store = ctx.store;
-    let decoded =
-        urlencoding::decode(raw_path).unwrap_or(std::borrow::Cow::Borrowed(raw_path));
+    let decoded = urlencoding::decode(raw_path).unwrap_or(std::borrow::Cow::Borrowed(raw_path));
     let rel_path = decoded.as_ref();
 
     let full_path = project_path.join(rel_path);
