@@ -227,8 +227,11 @@ fn reload_returns_hx_location() {
 
     // Simulate reload with HX-Current-URL header
     use std::io::{Read, Write};
+    // reload_state re-reads the entire project from disk, which can be
+    // significantly slower under CI coverage / proptest instrumentation.
+    // Use a generous timeout to avoid flaky failures.
     let mut stream = std::net::TcpStream::connect(format!("127.0.0.1:{port}")).expect("connect");
-    stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
+    stream.set_read_timeout(Some(Duration::from_secs(30))).ok();
 
     let request = format!(
         "POST /reload HTTP/1.1\r\n\
@@ -241,7 +244,9 @@ fn reload_returns_hx_location() {
     stream.write_all(request.as_bytes()).expect("write");
 
     let mut response = Vec::new();
-    stream.read_to_end(&mut response).ok();
+    stream
+        .read_to_end(&mut response)
+        .expect("read reload response");
     let response = String::from_utf8_lossy(&response).to_string();
 
     // Should contain HX-Location header pointing to /results
