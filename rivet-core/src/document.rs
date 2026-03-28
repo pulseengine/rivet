@@ -186,8 +186,13 @@ pub fn load_documents(dir: &Path) -> Result<Vec<Document>, Error> {
         let content = std::fs::read_to_string(&path)
             .map_err(|e| Error::Io(format!("{}: {e}", path.display())))?;
 
-        // Skip files without frontmatter (e.g. plain README.md).
+        // Skip files without YAML frontmatter (e.g. plain README.md).
+        // Warn so users know these aren't being tracked.
         if !content.starts_with("---") {
+            log::info!(
+                "skipping {} (no YAML frontmatter — add --- header to include as rivet document)",
+                path.display()
+            );
             continue;
         }
 

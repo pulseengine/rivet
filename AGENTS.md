@@ -60,7 +60,15 @@ This project uses **Rivet** for SDLC artifact traceability.
 ### File Structure
 - Artifacts are stored as YAML files in: `artifacts`, `safety/stpa`, `safety/stpa-sec`
 - Schema definitions: `schemas/` directory
-- Documents: `docs`, `arch`
+- Documents: `docs`, `arch` (markdown files with YAML frontmatter)
+  - **Documents MUST start with `---` YAML frontmatter** to be tracked by rivet
+  - Required frontmatter fields: `id`, `title`, `type` (usually `document`)
+  - Files without frontmatter (plain markdown) are silently skipped
+  - Plans in `docs/plans/` are NOT rivet documents (no frontmatter needed)
+- Do NOT recreate statistics, coverage, linkage, or other data that rivet already provides
+  - Use `rivet stats`, `rivet list`, `rivet coverage`, `rivet validate` to query data
+  - Use `rivet export --html` to generate a full static site
+  - Use the VS Code extension tree view and rendered views for browsing
 
 ### Creating Artifacts
 ```bash
