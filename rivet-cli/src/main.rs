@@ -449,6 +449,20 @@ enum Command {
         config_entries: Vec<(String, String)>,
     },
 
+    /// Import test results or artifacts from external formats
+    ImportResults {
+        /// Input format (currently: "junit")
+        #[arg(long)]
+        format: String,
+
+        /// Input file path
+        file: PathBuf,
+
+        /// Output directory for results YAML (default: results/)
+        #[arg(long, default_value = "results")]
+        output: PathBuf,
+    },
+
     /// Print the next available ID for a given artifact type or prefix
     NextId {
         /// Artifact type (e.g., requirement, feature, design-decision)
@@ -830,6 +844,11 @@ fn run(cli: Cli) -> Result<bool> {
             source,
             config_entries,
         } => cmd_import(adapter, source, config_entries),
+        Command::ImportResults {
+            format,
+            file,
+            output,
+        } => cmd_import_results(format, file, output),
         Command::NextId {
             r#type,
             prefix,
@@ -4413,6 +4432,61 @@ fn cmd_import(
     Ok(true)
 }
 
+/// Import test results from external formats (currently: JUnit XML).
+fn cmd_import_results(format: &str, file: &std::path::Path, output: &std::path::Path) -> Result<bool> {
+    use rivet_core::junit::{parse_junit_xml, ImportSummary};
+    use rivet_core::results::TestRunFile;
+
+    match format {
+        "junit" => {
+            let xml = std::fs::read_to_string(file)
+                .with_context(|| format!("failed to read {}", file.display()))?;
+
+            let runs = parse_junit_xml(&xml)
+                .with_context(|| format!("failed to parse JUnit XML from {}", file.display()))?;
+
+            if runs.is_empty() {
+                println!("No test suites found in {}", file.display());
+                return Ok(true);
+            }
+
+            std::fs::create_dir_all(output)
+                .with_context(|| format!("failed to create output directory {}", output.display()))?;
+
+            for run in &runs {
+                let filename = format!("{}.yaml", run.run.id);
+                let out_path = output.join(&filename);
+                let run_file = TestRunFile {
+                    run: run.run.clone(),
+                    results: run.results.clone(),
+                };
+                let yaml = serde_yaml::to_string(&run_file)
+                    .context("failed to serialize run to YAML")?;
+                std::fs::write(&out_path, &yaml)
+                    .with_context(|| format!("failed to write {}", out_path.display()))?;
+            }
+
+            let summary = ImportSummary::from_runs(&runs);
+            println!(
+                "Imported {} test results ({} pass, {} fail, {} error, {} skip) → {}",
+                summary.total,
+                summary.pass,
+                summary.fail,
+                summary.error,
+                summary.skip,
+                output.display(),
+            );
+
+            Ok(true)
+        }
+        other => {
+            anyhow::bail!(
+                "unknown import format: '{other}' (supported: junit)"
+            )
+        }
+    }
+}
+
 /// Parse a key=value pair for mutation commands.
 fn parse_key_val_mutation(s: &str) -> Result<(String, String), String> {
     let pos = s
@@ -5030,7 +5104,9 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
     // Publish initial diagnostics from salsa
     let store = db.store(source_set);
     let diagnostics = db.diagnostics(source_set, schema_set);
-    lsp_publish_salsa_diagnostics(&connection, &diagnostics, &store);
+    let mut prev_diagnostic_files: std::collections::HashSet<std::path::PathBuf> =
+        std::collections::HashSet::new();
+    lsp_publish_salsa_diagnostics(&connection, &diagnostics, &store, &mut prev_diagnostic_files);
     eprintln!(
         "rivet lsp: initialized with {} artifacts (salsa incremental)",
         store.len()
@@ -5401,6 +5477,7 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                                     &connection,
                                     &new_diagnostics,
                                     &new_store,
+                                    &mut prev_diagnostic_files,
                                 );
                                 eprintln!(
                                     "rivet lsp: incremental revalidation complete ({} diagnostics, {} artifacts)",
@@ -5455,6 +5532,7 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                                             &connection,
                                             &diagnostics,
                                             &store,
+                                            &mut prev_diagnostic_files,
                                         );
                                     }
                                 }
@@ -5532,10 +5610,17 @@ fn lsp_word_at_position(content: &str, line: u32, character: u32) -> String {
 ///
 /// Takes pre-computed diagnostics and the current store (both from salsa),
 /// maps them to LSP diagnostic notifications grouped by source file.
+///
+/// `prev_diagnostic_files` tracks which files had diagnostics on the previous
+/// call. Files that previously had diagnostics but no longer do receive an
+/// explicit empty publish, clearing stale markers in the editor. This handles
+/// the cross-file case: fixing a broken link in file A clears diagnostics in
+/// file B that referenced A, even if B has no artifacts being reloaded.
 fn lsp_publish_salsa_diagnostics(
     connection: &lsp_server::Connection,
     diagnostics: &[validate::Diagnostic],
     store: &Store,
+    prev_diagnostic_files: &mut std::collections::HashSet<std::path::PathBuf>,
 ) {
     use lsp_types::*;
 
@@ -5574,7 +5659,7 @@ fn lsp_publish_salsa_diagnostics(
         }
     }
 
-    // Publish diagnostics for files that have them
+    // Publish diagnostics for files that currently have them
     for (path, diags) in &file_diags {
         if let Some(uri) = lsp_path_to_uri(path) {
             let params = PublishDiagnosticsParams {
@@ -5591,27 +5676,30 @@ fn lsp_publish_salsa_diagnostics(
         }
     }
 
-    // Clear diagnostics for source files that no longer have issues.
-    // Without this, stale diagnostics remain in VS Code after fixes.
-    for artifact in store.iter() {
-        if let Some(ref path) = artifact.source_file {
-            if !file_diags.contains_key(path) {
-                if let Some(uri) = lsp_path_to_uri(path) {
-                    let params = PublishDiagnosticsParams {
-                        uri,
-                        diagnostics: Vec::new(),
-                        version: None,
-                    };
-                    let _ = connection.sender.send(lsp_server::Message::Notification(
-                        lsp_server::Notification {
-                            method: "textDocument/publishDiagnostics".to_string(),
-                            params: serde_json::to_value(params).unwrap(),
-                        },
-                    ));
-                }
+    // Clear diagnostics for files that had them last time but no longer do.
+    // This covers cross-file cases (e.g. fixing a broken link in ucas.yaml
+    // clears stale errors in controller-constraints.yaml) and also the edge
+    // case where a file's artifacts were removed from the store entirely.
+    for path in prev_diagnostic_files.iter() {
+        if !file_diags.contains_key(path) {
+            if let Some(uri) = lsp_path_to_uri(path) {
+                let params = PublishDiagnosticsParams {
+                    uri,
+                    diagnostics: Vec::new(),
+                    version: None,
+                };
+                let _ = connection.sender.send(lsp_server::Message::Notification(
+                    lsp_server::Notification {
+                        method: "textDocument/publishDiagnostics".to_string(),
+                        params: serde_json::to_value(params).unwrap(),
+                    },
+                ));
             }
         }
     }
+
+    // Update the tracked set to reflect this publish cycle
+    *prev_diagnostic_files = file_diags.keys().cloned().collect();
 
     eprintln!(
         "rivet lsp: published {} diagnostics across {} files",
