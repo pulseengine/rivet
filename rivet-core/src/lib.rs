@@ -20,6 +20,7 @@ pub mod mutate;
 #[cfg(feature = "oslc")]
 pub mod oslc;
 pub mod query;
+pub mod junit;
 pub mod reqif;
 pub mod results;
 pub mod schema;
