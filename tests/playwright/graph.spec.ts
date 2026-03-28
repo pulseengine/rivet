@@ -28,4 +28,24 @@ test.describe("Graph View", () => {
     // Type filter checkboxes should be present
     await expect(page.locator("input[type='checkbox']").first()).toBeVisible();
   });
+
+  test("graph SVG contains custom polygon shapes", async ({ page }) => {
+    await page.goto("/graph?types=requirement,design-decision&depth=2");
+    await waitForHtmx(page);
+    await expect(page.locator("svg").first()).toBeVisible({ timeout: 15_000 });
+    // Custom shapes render as polygon elements (diamonds, hexagons, etc.)
+    const polygons = page.locator("svg polygon");
+    const count = await polygons.count();
+    expect(count).toBeGreaterThan(0);
+  });
+
+  test("graph SVG contains rounded rect shapes", async ({ page }) => {
+    await page.goto("/graph?types=requirement&depth=2");
+    await waitForHtmx(page);
+    await expect(page.locator("svg").first()).toBeVisible({ timeout: 15_000 });
+    // Requirement type renders as rounded rect (rx attribute)
+    const roundedRects = page.locator("svg rect[rx]");
+    const count = await roundedRects.count();
+    expect(count).toBeGreaterThan(0);
+  });
 });

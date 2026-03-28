@@ -18,6 +18,45 @@ let cachedCss: string = '';
 let statusBarItem: vscode.StatusBarItem;
 let currentSourceFile: string | undefined;
 let currentSourceLine: number | undefined;
+let rivetProjectRoot: string | undefined;
+
+/**
+ * Find the directory containing rivet.yaml. Searches:
+ * 1. Configured rivet.projectPath setting
+ * 2. Each workspace folder root
+ * 3. Up to 3 levels deep in each workspace folder
+ */
+function findRivetProjectRoot(): string | undefined {
+  const configured = vscode.workspace.getConfiguration('rivet').get<string>('projectPath');
+  if (configured && fs.existsSync(path.join(configured, 'rivet.yaml'))) return configured;
+
+  for (const folder of vscode.workspace.workspaceFolders || []) {
+    const root = folder.uri.fsPath;
+    if (fs.existsSync(path.join(root, 'rivet.yaml'))) return root;
+  }
+
+  // Search up to 3 levels deep
+  for (const folder of vscode.workspace.workspaceFolders || []) {
+    const root = folder.uri.fsPath;
+    try {
+      for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+        if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'node_modules' || entry.name === 'target') continue;
+        const sub = path.join(root, entry.name);
+        if (fs.existsSync(path.join(sub, 'rivet.yaml'))) return sub;
+        // One more level
+        try {
+          for (const entry2 of fs.readdirSync(sub, { withFileTypes: true })) {
+            if (!entry2.isDirectory() || entry2.name.startsWith('.')) continue;
+            const sub2 = path.join(sub, entry2.name);
+            if (fs.existsSync(path.join(sub2, 'rivet.yaml'))) return sub2;
+          }
+        } catch { /* ignore permission errors */ }
+      }
+    } catch { /* ignore */ }
+  }
+
+  return undefined;
+}
 
 export async function activate(context: vscode.ExtensionContext) {
   // --- Commands ---
@@ -33,16 +72,54 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.window.showInformationMessage('No source file for current view');
         return;
       }
-      const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-      if (!workspaceRoot) return;
+      if (!rivetProjectRoot) return;
 
       const filePath = path.isAbsolute(currentSourceFile)
         ? currentSourceFile
-        : path.join(workspaceRoot, currentSourceFile);
+        : path.join(rivetProjectRoot, currentSourceFile);
       const uri = vscode.Uri.file(filePath);
       const line = Math.max(0, (currentSourceLine || 1) - 1);
       const range = new vscode.Range(line, 0, line, 0);
       await vscode.window.showTextDocument(uri, { selection: range, viewColumn: vscode.ViewColumn.One });
+    }),
+    vscode.commands.registerCommand('rivet.searchArtifact', async () => {
+      if (!client) {
+        vscode.window.showWarningMessage('Rivet LSP not connected.');
+        return;
+      }
+
+      const quickPick = vscode.window.createQuickPick();
+      quickPick.placeholder = 'Search artifacts and documents...';
+      quickPick.matchOnDescription = true;
+
+      let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+
+      quickPick.onDidChangeValue(value => {
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(async () => {
+          if (value.length < 2) { quickPick.items = []; return; }
+          try {
+            const result: any = await client!.sendRequest('rivet/search', { query: value });
+            quickPick.items = (result.results || []).map((r: any) => ({
+              label: `$(symbol-property) ${r.id}`,
+              description: r.title,
+              detail: r.type,
+              page: r.page,
+            }));
+          } catch { quickPick.items = []; }
+        }, 150);
+      });
+
+      quickPick.onDidAccept(() => {
+        const item = quickPick.selectedItems[0] as any;
+        if (item?.page) {
+          vscode.commands.executeCommand('rivet.navigateTo', item.page);
+        }
+        quickPick.hide();
+      });
+
+      quickPick.onDidHide(() => quickPick.dispose());
+      quickPick.show();
     }),
   );
 
@@ -71,12 +148,19 @@ export async function activate(context: vscode.ExtensionContext) {
     return;
   }
 
-  const lspWorkspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  rivetProjectRoot = findRivetProjectRoot();
+  if (!rivetProjectRoot) {
+    statusBarItem.text = '$(shield) Rivet (no rivet.yaml)';
+    console.log('rivet: no rivet.yaml found in workspace');
+    return;
+  }
+  console.log(`rivet: project root at ${rivetProjectRoot}`);
+
   try {
     const serverOptions: ServerOptions = {
       command: rivetPath,
       args: ['lsp'],
-      options: { cwd: lspWorkspaceRoot },
+      options: { cwd: rivetProjectRoot },
     };
 
     const clientOptions: LanguageClientOptions = {
@@ -99,8 +183,9 @@ export async function activate(context: vscode.ExtensionContext) {
 
     client.onNotification('rivet/artifactsChanged', (_params: any) => {
       treeProvider.refresh();
-      if (panel) {
-        panel.webview.postMessage({ type: 'stale' });
+      // Auto-refresh the WebView with current page
+      if (panel && currentPage) {
+        navigateTo(currentPage);
       }
     });
 
@@ -110,7 +195,7 @@ export async function activate(context: vscode.ExtensionContext) {
     const msg = err instanceof Error ? err.message : String(err);
     vscode.window.showWarningMessage(`Rivet LSP failed to start (${rivetPath}): ${msg}`);
     statusBarItem.text = '$(shield) Rivet (LSP error)';
-    console.error(`rivet LSP error: ${msg}, binary: ${rivetPath}, cwd: ${lspWorkspaceRoot}`);
+    console.error(`rivet LSP error: ${msg}, binary: ${rivetPath}, cwd: ${rivetProjectRoot}`);
     // Continue without LSP — commands still work
   }
 }
@@ -185,11 +270,10 @@ async function showDashboard(context: vscode.ExtensionContext, urlPath: string =
       } else if (msg.type === 'refresh') {
         await navigateTo(currentPage);
       } else if (msg.type === 'openSource') {
-        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-        if (workspaceRoot && msg.file) {
+        if (rivetProjectRoot && msg.file) {
           const filePath = path.isAbsolute(msg.file)
             ? msg.file
-            : path.join(workspaceRoot, msg.file);
+            : path.join(rivetProjectRoot, msg.file);
           const uri = vscode.Uri.file(filePath);
           await vscode.window.showTextDocument(uri, { viewColumn: vscode.ViewColumn.One });
         }
@@ -236,12 +320,14 @@ async function runValidate() {
     return;
   }
 
-  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  if (!workspaceRoot) return;
+  if (!rivetProjectRoot) {
+    vscode.window.showErrorMessage('No rivet.yaml found in workspace');
+    return;
+  }
 
   try {
     const output = execFileSync(rivetPath, ['validate', '--format', 'text'], {
-      cwd: workspaceRoot,
+      cwd: rivetProjectRoot,
       encoding: 'utf8',
       timeout: 30000,
     });
@@ -268,8 +354,10 @@ async function addArtifact() {
     return;
   }
 
-  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  if (!workspaceRoot) return;
+  if (!rivetProjectRoot) {
+    vscode.window.showErrorMessage('No rivet.yaml found in workspace');
+    return;
+  }
 
   // Quick-pick for type
   const artifactType = await vscode.window.showQuickPick(
@@ -289,7 +377,7 @@ async function addArtifact() {
     const output = execFileSync(rivetPath, [
       'add', '-t', artifactType, '--title', title,
     ], {
-      cwd: workspaceRoot,
+      cwd: rivetProjectRoot,
       encoding: 'utf8',
       timeout: 10000,
     });

@@ -646,6 +646,23 @@ artifacts:
       category: functional
       baseline: v0.3.0
 
+  - id: REQ-040
+    type: requirement
+    title: Test report lifecycle integration
+    status: draft
+    description: >
+      CI test runs produce structured results (JUnit XML) that are imported
+      into rivet as test result artifacts. The workflow is: run tests, import
+      results via rivet import --format junit, create a test report artifact
+      in results/, conformance review, commit report as PR, include in
+      release. Test evidence becomes part of the traceability chain — rivet
+      dogfoods its own test tracking.
+    tags: [testing, ci, dogfood, future]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.4.0
+
   - id: REQ-039
     type: requirement
     title: Draft-aware validation severity

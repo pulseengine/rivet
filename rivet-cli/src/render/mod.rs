@@ -11,12 +11,22 @@ use crate::serve::{ExternalInfo, RepoContext};
 
 pub(crate) mod artifacts;
 pub(crate) mod components;
+pub(crate) mod coverage;
+pub(crate) mod diff;
+pub(crate) mod doc_linkage;
 pub(crate) mod documents;
+pub(crate) mod externals;
+pub(crate) mod graph;
 pub(crate) mod help;
 pub(crate) mod helpers;
+pub(crate) mod matrix;
+pub(crate) mod results;
+pub(crate) mod search;
+pub(crate) mod source;
 pub(crate) mod stats;
 pub(crate) mod stpa;
 pub(crate) mod styles;
+pub(crate) mod traceability;
 pub(crate) mod validate;
 
 /// Shared context for all render functions.
@@ -133,6 +143,142 @@ pub(crate) fn render_page(
             let slug = &p["/help/docs/".len()..];
             help::render_docs_topic(slug)
         }
+        "/graph" => {
+            let params = graph::GraphParams {
+                types: None,
+                link_types: None,
+                depth: 0,
+                focus: None,
+            };
+            RenderResult {
+                html: graph::render_graph_view(ctx, &params),
+                title: "Graph".to_string(),
+                source_file: None,
+                source_line: None,
+            }
+        }
+        p if p.starts_with("/graph") => {
+            let params = graph::GraphParams {
+                types: None,
+                link_types: None,
+                depth: 0,
+                focus: None,
+            };
+            RenderResult {
+                html: graph::render_graph_view(ctx, &params),
+                title: "Graph".to_string(),
+                source_file: None,
+                source_line: None,
+            }
+        }
+        "/matrix" => {
+            let params = matrix::MatrixParams {
+                from: None,
+                to: None,
+                link: None,
+                direction: None,
+            };
+            RenderResult {
+                html: matrix::render_matrix_view(ctx, &params),
+                title: "Matrix".to_string(),
+                source_file: None,
+                source_line: None,
+            }
+        }
+        "/coverage" => RenderResult {
+            html: coverage::render_coverage_view(ctx),
+            title: "Coverage".to_string(),
+            source_file: None,
+            source_line: None,
+        },
+        "/search" => RenderResult {
+            html: search::render_search_view(ctx, None),
+            title: "Search".to_string(),
+            source_file: None,
+            source_line: None,
+        },
+        "/verification" => RenderResult {
+            html: results::render_verification_view(ctx),
+            title: "Verification".to_string(),
+            source_file: None,
+            source_line: None,
+        },
+        "/results" => RenderResult {
+            html: results::render_results_view(ctx),
+            title: "Results".to_string(),
+            source_file: None,
+            source_line: None,
+        },
+        p if p.starts_with("/results/") => {
+            let run_id = &p["/results/".len()..];
+            RenderResult {
+                html: results::render_result_detail(ctx, run_id),
+                title: "Result".to_string(),
+                source_file: None,
+                source_line: None,
+            }
+        }
+        "/source" => RenderResult {
+            html: source::render_source_tree_view(ctx),
+            title: "Source".to_string(),
+            source_file: None,
+            source_line: None,
+        },
+        p if p.starts_with("/source/") => {
+            let file_path = &p["/source/".len()..];
+            RenderResult {
+                html: source::render_source_file_view(ctx, file_path),
+                title: "Source".to_string(),
+                source_file: None,
+                source_line: None,
+            }
+        }
+        "/diff" => {
+            let params = diff::DiffParams {
+                base: None,
+                head: None,
+            };
+            RenderResult {
+                html: diff::render_diff_view(ctx, &params),
+                title: "Diff".to_string(),
+                source_file: None,
+                source_line: None,
+            }
+        }
+        "/traceability" => {
+            let params = traceability::TraceParams {
+                root_type: None,
+                status: None,
+                search: None,
+            };
+            RenderResult {
+                html: traceability::render_traceability_view(ctx, &params),
+                title: "Traceability".to_string(),
+                source_file: None,
+                source_line: None,
+            }
+        }
+        "/externals" => RenderResult {
+            html: externals::render_externals_list(ctx),
+            title: "Externals".to_string(),
+            source_file: None,
+            source_line: None,
+        },
+        p if p.starts_with("/externals/") => {
+            let prefix = &p["/externals/".len()..];
+            RenderResult {
+                html: externals::render_external_detail(ctx, prefix),
+                title: "External".to_string(),
+                source_file: None,
+                source_line: None,
+            }
+        }
+        "/doc-linkage" => RenderResult {
+            html: doc_linkage::render_doc_linkage_view(ctx),
+            title: "Document Linkage".to_string(),
+            source_file: None,
+            source_line: None,
+        },
         _ => RenderResult {
             html: format!(
                 "<div class=\"card\" style=\"margin:2rem\"><h2>Not Available</h2>\

@@ -167,7 +167,7 @@ pub(crate) fn render_document_detail(ctx: &RenderContext, id: &str) -> RenderRes
     let body_html = document::render_to_html(
         doc,
         |aid| store.contains(aid),
-        |aid| crate::serve::views::build_artifact_info(aid, store, graph),
+        |aid| crate::render::source::build_artifact_info(aid, store, graph),
         |did| doc_store.get(did).is_some(),
     );
     html.push_str(&body_html);

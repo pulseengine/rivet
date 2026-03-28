@@ -12,11 +12,23 @@ use crate::layout::GraphLayout;
 // Public types
 // ---------------------------------------------------------------------------
 
+/// SVG shape element for a node — replaces the default `<rect>`.
+///
+/// The shape provider returns raw SVG element(s) as a string.
+/// The string is inserted directly into the SVG `<g>` for the node,
+/// replacing the default rectangle.
+pub type ShapeProvider = Box<dyn Fn(&str, f64, f64, f64, f64, &str, &str) -> String + Send + Sync>;
+
 /// Options that control SVG rendering.
-#[derive(Debug, Clone)]
 pub struct SvgOptions {
     /// Map from node type to fill colour (CSS value).
     pub type_colors: HashMap<String, String>,
+    /// Map from node type to custom SVG shape provider.
+    ///
+    /// The function receives `(node_type, x, y, width, height, fill, stroke_color)`
+    /// and returns raw SVG element string (e.g. `<path d="..." />`).
+    /// If no provider is set for a type, the default `<rect>` is used.
+    pub type_shapes: HashMap<String, ShapeProvider>,
     /// Font family for all text.
     pub font_family: String,
     /// Font size in px.
@@ -43,6 +55,7 @@ impl Default for SvgOptions {
     fn default() -> Self {
         Self {
             type_colors: HashMap::new(),
+            type_shapes: HashMap::new(),
             font_family: "system-ui, -apple-system, sans-serif".into(),
             font_size: 13.0,
             padding: 20.0,
@@ -54,6 +67,20 @@ impl Default for SvgOptions {
             base_url: None,
             highlight: None,
         }
+    }
+}
+
+// SvgOptions can't derive Debug/Clone due to Box<dyn Fn>
+impl std::fmt::Debug for SvgOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SvgOptions")
+            .field("type_colors", &self.type_colors)
+            .field(
+                "type_shapes",
+                &format!("<{} providers>", self.type_shapes.len()),
+            )
+            .field("font_family", &self.font_family)
+            .finish()
     }
 }
 
@@ -142,7 +169,7 @@ fn write_style(svg: &mut String, options: &SvgOptions) {
     write!(
         svg,
         "  <style>\n\
-         \x20   .node rect {{ stroke: #333; stroke-width: 1.5; }}\n\
+         \x20   .node rect, .node path, .node ellipse {{ stroke: #333; stroke-width: 1.5; }}\n\
          \x20   .node text {{ font-family: {font}; font-size: {fs}px; \
          fill: #222; text-anchor: middle; dominant-baseline: central; }}\n\
          \x20   .node .sublabel {{ font-size: {}px; fill: #666; }}\n\
@@ -152,8 +179,8 @@ fn write_style(svg: &mut String, options: &SvgOptions) {
          \x20   .edge text {{ font-family: {font}; font-size: {}px; \
          fill: #555; text-anchor: middle; dominant-baseline: central; \
          font-weight: 500; }}\n\
-         \x20   .node.container rect {{ stroke-dasharray: 4 2; }}\n\
-         \x20   .node:hover rect {{ filter: brightness(0.92); }}\n\
+         \x20   .node.container rect, .node.container path {{ stroke-dasharray: 4 2; }}\n\
+         \x20   .node:hover rect, .node:hover path, .node:hover ellipse {{ filter: brightness(0.92); }}\n\
          \x20   .port circle {{ stroke: #333; stroke-width: 0.8; }}\n\
          \x20   .port.data circle {{ fill: #4a90d9; }}\n\
          \x20   .port.event circle {{ fill: #e67e22; }}\n\
@@ -248,7 +275,7 @@ fn write_nodes(svg: &mut String, layout: &GraphLayout, options: &SvgOptions, con
         )
         .unwrap();
 
-        // Rectangle.
+        // Node shape.
         let r = options.rounded_corners;
         let is_highlighted = options.highlight.as_ref().is_some_and(|h| h == &node.id);
         let stroke_w = if is_highlighted {
@@ -260,18 +287,32 @@ fn write_nodes(svg: &mut String, layout: &GraphLayout, options: &SvgOptions, con
         };
         let stroke_c = if is_highlighted { "#ff6600" } else { "#333" };
         let container_fill = if node.is_container {
-            // Lighten container fill for better contrast with children.
             lighten_color(fill)
         } else {
             fill.to_string()
         };
-        writeln!(
-            svg,
-            "        <rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" \
-             rx=\"{r}\" ry=\"{r}\" fill=\"{container_fill}\" stroke=\"{stroke_c}\" stroke-width=\"{stroke_w}\" />",
-            node.x, node.y, node.width, node.height,
-        )
-        .unwrap();
+
+        // Use custom shape provider if registered, otherwise default rect.
+        if let Some(shape_fn) = options.type_shapes.get(&node.node_type) {
+            let shape_svg = shape_fn(
+                &node.node_type,
+                node.x,
+                node.y,
+                node.width,
+                node.height,
+                &container_fill,
+                stroke_c,
+            );
+            writeln!(svg, "        {shape_svg}").unwrap();
+        } else {
+            writeln!(
+                svg,
+                "        <rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" \
+                 rx=\"{r}\" ry=\"{r}\" fill=\"{container_fill}\" stroke=\"{stroke_c}\" stroke-width=\"{stroke_w}\" />",
+                node.x, node.y, node.width, node.height,
+            )
+            .unwrap();
+        }
 
         if node.is_container {
             // Container: label in header bar.

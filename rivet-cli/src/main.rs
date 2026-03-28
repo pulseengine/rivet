@@ -2623,189 +2623,230 @@ fn cmd_export_gherkin(
     Ok(true)
 }
 
-/// Export to a static HTML site with document pages and config.js.
+/// Export to a static HTML site using the dashboard render module.
+///
+/// This generates one standalone `.html` file per view, using the same
+/// render functions as `rivet serve`. No HTMX is included — all links
+/// are plain `<a href="...">` anchors that work in any static file server
+/// or offline browser.
 #[allow(clippy::too_many_arguments)]
 fn cmd_export_html(
     cli: &Cli,
     output: Option<&std::path::Path>,
-    single_page: bool,
-    theme: &str,
-    offline: bool,
-    homepage: Option<&str>,
-    version_label: Option<&str>,
-    versions_json: Option<&str>,
+    _single_page: bool,
+    _theme: &str,
+    _offline: bool,
+    _homepage: Option<&str>,
+    _version_label: Option<&str>,
+    _versions_json: Option<&str>,
 ) -> Result<bool> {
-    use rivet_core::export::{self, ExportConfig, ExportTheme, VersionEntry};
+    use crate::render::styles;
+    use crate::serve::components::ViewParams;
 
-    let export_theme = match theme {
-        "light" => ExportTheme::Light,
-        "dark" => ExportTheme::Dark,
-        other => anyhow::bail!("unknown theme '{other}' (supported: dark, light)"),
+    let schemas_dir = resolve_schemas_dir(cli);
+    let project_path = cli
+        .project
+        .canonicalize()
+        .unwrap_or_else(|_| cli.project.clone());
+
+    // Load project state using the same pipeline as `rivet serve`.
+    let state = serve::reload_state(&project_path, &schemas_dir, 0)
+        .context("loading project for export")?;
+    let ctx = state.as_render_context();
+    let params = ViewParams::default();
+
+    // ── Mermaid JS (inlined so the site works offline) ──────────────
+    const MERMAID_JS: &str = include_str!("../assets/mermaid.min.js");
+
+    // ── Static layout wrapper ────────────────────────────────────────
+    // Produces a full HTML document with CSS + Mermaid, a nav sidebar
+    // with plain <a href="..."> links, and the page content in <main>.
+    // No HTMX is included — this is a completely static site.
+    let artifact_count = state.store.len();
+    let error_count = state
+        .cached_diagnostics
+        .iter()
+        .filter(|d| d.severity == rivet_core::schema::Severity::Error)
+        .count();
+
+    let wrap_page = |title: &str, content: &str| -> String {
+        let version = env!("CARGO_PKG_VERSION");
+        let project_name = &state.context.project_name;
+        let error_badge = if error_count > 0 {
+            format!("<span class=\"nav-badge nav-badge-error\">{error_count}</span>")
+        } else {
+            "<span class=\"nav-badge\">OK</span>".to_string()
+        };
+        let doc_count = state.doc_store.len();
+        let doc_badge = if doc_count > 0 {
+            format!("<span class=\"nav-badge\">{doc_count}</span>")
+        } else {
+            String::new()
+        };
+        let stpa_types = [
+            "loss",
+            "hazard",
+            "sub-hazard",
+            "system-constraint",
+            "controller",
+            "controlled-process",
+            "control-action",
+            "uca",
+            "controller-constraint",
+            "loss-scenario",
+        ];
+        let stpa_count: usize = stpa_types
+            .iter()
+            .map(|t| state.store.count_by_type(t))
+            .sum();
+        let stpa_nav = if stpa_count > 0 {
+            format!(
+                "<li><a href=\"stpa/index.html\">STPA \
+                 <span class=\"nav-badge\">{stpa_count}</span></a></li>"
+            )
+        } else {
+            String::new()
+        };
+        format!(
+            r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{title} — {project_name} — Rivet</title>
+<style>{fonts_css}{css}</style>
+<script>{mermaid_js}</script>
+<script>
+mermaid.initialize({{startOnLoad:false,theme:'neutral',securityLevel:'strict'}});
+document.addEventListener('DOMContentLoaded',function(){{
+  mermaid.run({{querySelector:'.mermaid'}}).catch(function(){{}});
+}});
+</script>
+</head>
+<body>
+<div class="shell">
+<nav role="navigation" aria-label="Main navigation">
+  <h1>Rivet</h1>
+  <ul>
+    <li><a href="../index.html">Overview
+      <span class="nav-badge">{artifact_count}</span></a></li>
+    <li><a href="../artifacts/index.html">Artifacts
+      <span class="nav-badge">{artifact_count}</span></a></li>
+    <li><a href="../validate/index.html">Validation
+      {error_badge}</a></li>
+    <li class="nav-divider"></li>
+    <li><a href="../matrix/index.html">Matrix</a></li>
+    <li><a href="../coverage/index.html">Coverage</a></li>
+    <li><a href="../graph/index.html">Graph</a></li>
+    <li><a href="../documents/index.html">Documents{doc_badge}</a></li>
+    <li class="nav-divider"></li>
+    {stpa_nav}
+    <li><a href="../help/index.html">Help &amp; Docs</a></li>
+  </ul>
+  <div style="padding:.75rem 1rem;font-size:.7rem;color:var(--sidebar-text)">
+    v{version}
+  </div>
+</nav>
+<div class="content-area">
+<main id="content" role="main">
+{content}
+<div class="footer">Generated by Rivet v{version} &mdash; <a href="index.html">Back to top</a></div>
+</main>
+</div>
+</div>
+</body>
+</html>"#,
+            fonts_css = styles::FONTS_CSS,
+            css = styles::CSS,
+            mermaid_js = MERMAID_JS,
+        )
     };
-
-    // Parse versions JSON if provided.
-    let versions: Vec<VersionEntry> = if let Some(json) = versions_json {
-        #[derive(serde::Deserialize)]
-        struct VersionJson {
-            label: String,
-            path: String,
-        }
-        let parsed: Vec<VersionJson> =
-            serde_json::from_str(json).context("parsing --versions JSON")?;
-        parsed
-            .into_iter()
-            .map(|v| VersionEntry {
-                label: v.label,
-                path: v.path,
-            })
-            .collect()
-    } else {
-        Vec::new()
-    };
-
-    let ctx = ProjectContext::load(cli)?;
-    let (store, schema, graph) = (ctx.store, ctx.schema, ctx.graph);
-    let diagnostics = validate::validate(&store, &schema, &graph);
-
-    // Load project config.
-    let config_path = cli.project.join("rivet.yaml");
-    let config = rivet_core::load_project_config(&config_path)
-        .with_context(|| format!("loading {}", config_path.display()))?;
-    let project_name = &config.project.name;
-    let version = env!("CARGO_PKG_VERSION");
-
-    // Resolve version label: CLI flag > rivet.yaml > fallback "dev".
-    let resolved_version_label = version_label
-        .map(String::from)
-        .or_else(|| config.project.version.clone())
-        .unwrap_or_else(|| "dev".to_string());
-
-    let export_config = ExportConfig {
-        theme: export_theme,
-        offline,
-    };
-
-    // Load documents from configured directories.
-    let mut doc_store = DocumentStore::new();
-    for docs_path in &config.docs {
-        let dir = cli.project.join(docs_path);
-        let docs = document::load_documents(&dir)
-            .with_context(|| format!("loading docs from '{docs_path}'"))?;
-        for doc in docs {
-            doc_store.insert(doc);
-        }
-    }
-
-    // Load test results if configured.
-    let mut result_store = ResultStore::new();
-    if let Some(ref results_path) = config.results {
-        let dir = cli.project.join(results_path);
-        let runs = results::load_results(&dir)
-            .with_context(|| format!("loading results from '{results_path}'"))?;
-        for run in runs {
-            result_store.insert(run);
-        }
-    }
 
     let out_dir = output.unwrap_or(std::path::Path::new("dist"));
-
     std::fs::create_dir_all(out_dir).with_context(|| format!("creating {}", out_dir.display()))?;
 
-    if single_page {
-        let html = export::render_single_page(
-            &store,
-            &schema,
-            &graph,
-            &diagnostics,
-            project_name,
-            version,
-            &export_config,
-            &doc_store,
-        );
-        let path = out_dir.join("index.html");
-        std::fs::write(&path, &html).with_context(|| format!("writing {}", path.display()))?;
-        println!("Exported single-page report to {}", out_dir.display());
-    } else {
-        let mut pages: Vec<(String, String)> = vec![
-            (
-                "index.html".to_string(),
-                export::render_index(
-                    &store,
-                    &schema,
-                    &graph,
-                    &diagnostics,
-                    project_name,
-                    version,
-                    &export_config,
-                ),
-            ),
-            (
-                "requirements.html".to_string(),
-                export::render_requirements(&store, &schema, &graph, &export_config),
-            ),
-            (
-                "documents.html".to_string(),
-                export::render_documents_index(&doc_store, &export_config),
-            ),
-            (
-                "matrix.html".to_string(),
-                export::render_traceability_matrix(&store, &schema, &graph, &export_config),
-            ),
-            (
-                "coverage.html".to_string(),
-                export::render_coverage(&store, &schema, &graph, &export_config),
-            ),
-            (
-                "validation.html".to_string(),
-                export::render_validation(&diagnostics, &export_config),
-            ),
-            (
-                "stpa.html".to_string(),
-                export::render_stpa(&store, &graph, &export_config),
-            ),
-            (
-                "graph.html".to_string(),
-                export::render_graph(&store, &graph, &export_config),
-            ),
-            (
-                "source.html".to_string(),
-                export::render_source(&store, &export_config),
-            ),
-            (
-                "results.html".to_string(),
-                export::render_results(&result_store, &export_config),
-            ),
-        ];
+    let mut page_count = 0usize;
 
-        // Render individual document pages.
-        for doc in doc_store.iter() {
-            let filename = format!("doc-{}.html", doc.id);
-            let html = export::render_document_page(doc, &store, &graph, &export_config);
-            pages.push((filename, html));
-        }
+    // Helper: render a page, wrap it, and write it to a relative path within out_dir.
+    // `rel_path` is like "index.html" or "artifacts/index.html".
+    // `page` is the route string passed to render_page().
+    let write_page =
+        |rel_path: &str, page: &str, title: &str, out_dir: &std::path::Path| -> Result<()> {
+            let result = render::render_page(&ctx, page, &params);
+            let html = wrap_page(title, &result.html);
+            let dest = out_dir.join(rel_path);
+            if let Some(parent) = dest.parent() {
+                std::fs::create_dir_all(parent)
+                    .with_context(|| format!("creating directory {}", parent.display()))?;
+            }
+            std::fs::write(&dest, &html).with_context(|| format!("writing {}", dest.display()))?;
+            Ok(())
+        };
 
-        // Render README.html explaining the export.
-        pages.push((
-            "README.html".to_string(),
-            export::render_readme(&export_config),
-        ));
+    // ── Top-level pages ──────────────────────────────────────────────
+    write_page("index.html", "/stats", "Overview", out_dir)?;
+    page_count += 1;
+    write_page("artifacts/index.html", "/artifacts", "Artifacts", out_dir)?;
+    page_count += 1;
+    write_page("validate/index.html", "/validate", "Validation", out_dir)?;
+    page_count += 1;
+    write_page("stpa/index.html", "/stpa", "STPA", out_dir)?;
+    page_count += 1;
+    write_page("documents/index.html", "/documents", "Documents", out_dir)?;
+    page_count += 1;
+    write_page("graph/index.html", "/graph", "Graph", out_dir)?;
+    page_count += 1;
+    write_page("matrix/index.html", "/matrix", "Matrix", out_dir)?;
+    page_count += 1;
+    write_page("coverage/index.html", "/coverage", "Coverage", out_dir)?;
+    page_count += 1;
+    write_page("help/index.html", "/help", "Help", out_dir)?;
+    page_count += 1;
+    write_page(
+        "help/schema/index.html",
+        "/help/schema",
+        "Schema Types",
+        out_dir,
+    )?;
+    page_count += 1;
+    write_page("help/links.html", "/help/links", "Link Types", out_dir)?;
+    page_count += 1;
+    write_page(
+        "help/rules.html",
+        "/help/rules",
+        "Traceability Rules",
+        out_dir,
+    )?;
+    page_count += 1;
 
-        for (filename, html) in &pages {
-            let path = out_dir.join(filename);
-            std::fs::write(&path, html).with_context(|| format!("writing {}", path.display()))?;
-        }
-
-        println!("Exported {} pages to {}/", pages.len(), out_dir.display());
+    // ── Per-artifact detail pages ────────────────────────────────────
+    let artifact_ids: Vec<String> = state.store.iter().map(|a| a.id.clone()).collect();
+    for id in &artifact_ids {
+        let rel = format!("artifacts/{id}.html");
+        let page = format!("/artifacts/{id}");
+        write_page(&rel, &page, id, out_dir)?;
+        page_count += 1;
     }
 
-    // Write config.js alongside the HTML output.
-    let config_js =
-        export::generate_config_js(homepage, &resolved_version_label, &versions, project_name);
-    let config_js_path = out_dir.join("config.js");
-    std::fs::write(&config_js_path, &config_js)
-        .with_context(|| format!("writing {}", config_js_path.display()))?;
-    println!("Wrote {}", config_js_path.display());
+    // ── Per-schema-type help pages ───────────────────────────────────
+    let schema_type_names: Vec<String> = state.schema.artifact_types.keys().cloned().collect();
+    for name in &schema_type_names {
+        let rel = format!("help/schema/{name}.html");
+        let page = format!("/help/schema/{name}");
+        write_page(&rel, &page, name, out_dir)?;
+        page_count += 1;
+    }
 
+    // ── Per-document detail pages ────────────────────────────────────
+    let doc_ids: Vec<String> = state.doc_store.iter().map(|d| d.id.clone()).collect();
+    for id in &doc_ids {
+        let rel = format!("documents/{id}.html");
+        let page = format!("/documents/{id}");
+        write_page(&rel, &page, id, out_dir)?;
+        page_count += 1;
+    }
+
+    eprintln!("Exported {page_count} pages to {}/", out_dir.display());
     Ok(true)
 }
 
@@ -5110,13 +5151,34 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                         };
 
                         let result = crate::render::render_page(&ctx, page, &view_params);
+
+                        // If we have a source file but no line, find the artifact's line
+                        let source_line = result.source_line.or_else(|| {
+                            if let (Some(sf), true) =
+                                (&result.source_file, page.starts_with("/artifacts/"))
+                            {
+                                let (path, _query) = page.split_once('?').unwrap_or((page, ""));
+                                let rest = &path["/artifacts/".len()..];
+                                let (id, _) = rest.split_once('/').unwrap_or((rest, ""));
+                                let full_path = if std::path::Path::new(sf).is_absolute() {
+                                    std::path::PathBuf::from(sf)
+                                } else {
+                                    project_dir.join(sf)
+                                };
+                                let line = lsp_find_artifact_line(&full_path, id);
+                                Some(line)
+                            } else {
+                                None
+                            }
+                        });
+
                         connection.sender.send(Message::Response(Response {
                             id: req.id,
                             result: Some(serde_json::json!({
                                 "html": result.html,
                                 "title": result.title,
                                 "sourceFile": result.source_file,
-                                "sourceLine": result.source_line,
+                                "sourceLine": source_line,
                                 "seq": seq,
                             })),
                             error: None,
@@ -5196,6 +5258,12 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                                     serde_json::json!({"kind":"view","label":"Validation","page":"/validate","icon":"pass"}),
                                     serde_json::json!({"kind":"view","label":"STPA","page":"/stpa","icon":"shield"}),
                                     serde_json::json!({"kind":"view","label":"Documents","page":"/documents","icon":"book"}),
+                                    serde_json::json!({"kind":"view","label":"Graph","page":"/graph","icon":"type-hierarchy"}),
+                                    serde_json::json!({"kind":"view","label":"Matrix","page":"/matrix","icon":"table"}),
+                                    serde_json::json!({"kind":"view","label":"Coverage","page":"/coverage","icon":"checklist"}),
+                                    serde_json::json!({"kind":"view","label":"Source","page":"/source","icon":"code"}),
+                                    serde_json::json!({"kind":"view","label":"Traceability","page":"/traceability","icon":"git-compare"}),
+                                    serde_json::json!({"kind":"view","label":"Doc Linkage","page":"/doc-linkage","icon":"link"}),
                                 ];
 
                                 let help = vec![
@@ -5249,6 +5317,50 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                         connection.sender.send(Message::Response(Response {
                             id: req.id,
                             result: Some(serde_json::to_value(css)?),
+                            error: None,
+                        }))?;
+                    }
+                    "rivet/search" => {
+                        let params: serde_json::Value = req.params.clone();
+                        let query = params.get("query").and_then(|v| v.as_str()).unwrap_or("");
+                        let query_lower = query.to_lowercase();
+
+                        let mut results: Vec<serde_json::Value> = Vec::new();
+
+                        if !query_lower.is_empty() {
+                            for artifact in render_store.iter() {
+                                let id_str = artifact.id.to_string();
+                                if id_str.to_lowercase().contains(&query_lower)
+                                    || artifact.title.to_lowercase().contains(&query_lower)
+                                {
+                                    results.push(serde_json::json!({
+                                        "id": id_str,
+                                        "title": artifact.title,
+                                        "type": artifact.artifact_type,
+                                        "page": format!("/artifacts/{}", id_str),
+                                    }));
+                                }
+                            }
+
+                            for doc in doc_store.iter() {
+                                if doc.id.to_lowercase().contains(&query_lower)
+                                    || doc.title.to_lowercase().contains(&query_lower)
+                                {
+                                    results.push(serde_json::json!({
+                                        "id": doc.id,
+                                        "title": doc.title,
+                                        "type": "document",
+                                        "page": format!("/documents/{}", doc.id),
+                                    }));
+                                }
+                            }
+
+                            results.truncate(50);
+                        }
+
+                        connection.sender.send(Message::Response(Response {
+                            id: req.id,
+                            result: Some(serde_json::json!({ "results": results })),
                             error: None,
                         }))?;
                     }
@@ -5462,6 +5574,7 @@ fn lsp_publish_salsa_diagnostics(
         }
     }
 
+    // Publish diagnostics for files that have them
     for (path, diags) in &file_diags {
         if let Some(uri) = lsp_path_to_uri(path) {
             let params = PublishDiagnosticsParams {
@@ -5475,6 +5588,28 @@ fn lsp_publish_salsa_diagnostics(
                     params: serde_json::to_value(params).unwrap(),
                 },
             ));
+        }
+    }
+
+    // Clear diagnostics for source files that no longer have issues.
+    // Without this, stale diagnostics remain in VS Code after fixes.
+    for artifact in store.iter() {
+        if let Some(ref path) = artifact.source_file {
+            if !file_diags.contains_key(path) {
+                if let Some(uri) = lsp_path_to_uri(path) {
+                    let params = PublishDiagnosticsParams {
+                        uri,
+                        diagnostics: Vec::new(),
+                        version: None,
+                    };
+                    let _ = connection.sender.send(lsp_server::Message::Notification(
+                        lsp_server::Notification {
+                            method: "textDocument/publishDiagnostics".to_string(),
+                            params: serde_json::to_value(params).unwrap(),
+                        },
+                    ));
+                }
+            }
         }
     }
 
