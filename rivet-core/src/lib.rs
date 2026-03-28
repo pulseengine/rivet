@@ -11,6 +11,7 @@ pub mod export;
 pub mod externals;
 pub mod formats;
 pub mod impact;
+pub mod junit;
 pub mod lifecycle;
 pub mod links;
 pub mod markdown;
