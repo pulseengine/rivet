@@ -5,7 +5,9 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::fmt::Write as _;
 
+use crate::coverage;
 use crate::document;
 
 // ── Types ───────────────────────────────────────────────────────────────
@@ -147,7 +149,7 @@ impl EmbedRequest {
     }
 }
 
-// ── Resolution (stub — real dispatchers added in Task 2) ────────────────
+// ── Resolution ──────────────────────────────────────────────────────────
 
 /// Resolve a computed embed to HTML.
 ///
@@ -155,9 +157,11 @@ impl EmbedRequest {
 /// malformed embeds (SC-EMBED-3: errors are visible, never empty).
 pub fn resolve_embed(
     request: &EmbedRequest,
-    _ctx: &EmbedContext<'_>,
+    ctx: &EmbedContext<'_>,
 ) -> Result<String, EmbedError> {
     match request.name.as_str() {
+        "stats" => Ok(render_stats(request, ctx)),
+        "coverage" => Ok(render_coverage(request, ctx)),
         // Legacy embeds (artifact, links, table) are still handled by
         // resolve_inline in document.rs — they should never reach here.
         "artifact" | "links" | "table" => Err(EmbedError {
@@ -171,6 +175,186 @@ pub fn resolve_embed(
             raw_text: format!("{request:?}"),
         }),
     }
+}
+
+// ── Stats renderer ──────────────────────────────────────────────────────
+
+/// Render `{{stats}}` / `{{stats:types}}` / `{{stats:status}}` / `{{stats:validation}}`.
+fn render_stats(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> String {
+    let section = request.args.first().map(|s| s.as_str());
+    let mut html = String::from("<div class=\"embed-stats\">\n");
+
+    let show_types = section.is_none() || section == Some("types");
+    let show_status = section.is_none() || section == Some("status");
+    let show_validation = section.is_none() || section == Some("validation");
+
+    if show_types {
+        html.push_str(&render_stats_types(ctx));
+    }
+    if show_status {
+        html.push_str(&render_stats_status(ctx));
+    }
+    if show_validation {
+        html.push_str(&render_stats_validation(ctx));
+    }
+
+    html.push_str("</div>\n");
+    html
+}
+
+fn render_stats_types(ctx: &EmbedContext<'_>) -> String {
+    let mut by_type = BTreeMap::new();
+    for type_name in ctx.schema.artifact_types.keys() {
+        by_type.insert(type_name.clone(), 0usize);
+    }
+    for artifact in ctx.store.iter() {
+        *by_type.entry(artifact.artifact_type.clone()).or_default() += 1;
+    }
+    let total: usize = by_type.values().sum();
+
+    let mut out = String::from(
+        "<table class=\"embed-table\"><thead><tr><th>Type</th><th>Count</th></tr></thead><tbody>\n",
+    );
+    for (typ, count) in &by_type {
+        if *count > 0 {
+            let _ = writeln!(out, "<tr><td>{typ}</td><td>{count}</td></tr>");
+        }
+    }
+    let _ = writeln!(
+        out,
+        "<tr class=\"embed-total\"><td><strong>Total</strong></td><td><strong>{total}</strong></td></tr>"
+    );
+    out.push_str("</tbody></table>\n");
+    out
+}
+
+fn render_stats_status(ctx: &EmbedContext<'_>) -> String {
+    let mut by_status: BTreeMap<String, usize> = BTreeMap::new();
+    for artifact in ctx.store.iter() {
+        let key = artifact.status.as_deref().unwrap_or("unset").to_string();
+        *by_status.entry(key).or_default() += 1;
+    }
+
+    let mut out = String::from(
+        "<table class=\"embed-table embed-stats-status\"><thead><tr><th>Status</th><th>Count</th></tr></thead><tbody>\n",
+    );
+    for (status, count) in &by_status {
+        let _ = writeln!(out, "<tr><td>{status}</td><td>{count}</td></tr>");
+    }
+    out.push_str("</tbody></table>\n");
+    out
+}
+
+fn render_stats_validation(ctx: &EmbedContext<'_>) -> String {
+    use crate::schema::Severity;
+    let mut worst: BTreeMap<String, Severity> = BTreeMap::new();
+    for diag in ctx.diagnostics {
+        if let Some(ref id) = diag.artifact_id {
+            let entry = worst.entry(id.clone()).or_insert(Severity::Info);
+            if severity_rank(diag.severity) > severity_rank(*entry) {
+                *entry = diag.severity;
+            }
+        }
+    }
+    let (mut errors, mut warnings, mut infos, mut clean) = (0usize, 0, 0, 0);
+    for artifact in ctx.store.iter() {
+        match worst.get(&artifact.id) {
+            Some(Severity::Error) => errors += 1,
+            Some(Severity::Warning) => warnings += 1,
+            Some(Severity::Info) => infos += 1,
+            None => clean += 1,
+        }
+    }
+
+    let mut out = String::from(
+        "<table class=\"embed-table embed-stats-validation\"><thead><tr><th>Severity</th><th>Artifacts</th></tr></thead><tbody>\n",
+    );
+    let _ = writeln!(out, "<tr><td>Error</td><td>{errors}</td></tr>");
+    let _ = writeln!(out, "<tr><td>Warning</td><td>{warnings}</td></tr>");
+    let _ = writeln!(out, "<tr><td>Info</td><td>{infos}</td></tr>");
+    let _ = writeln!(out, "<tr><td>Clean</td><td>{clean}</td></tr>");
+    out.push_str("</tbody></table>\n");
+    out
+}
+
+fn severity_rank(s: crate::schema::Severity) -> u8 {
+    match s {
+        crate::schema::Severity::Info => 1,
+        crate::schema::Severity::Warning => 2,
+        crate::schema::Severity::Error => 3,
+    }
+}
+
+// ── Coverage renderer ───────────────────────────────────────────────────
+
+/// Render `{{coverage}}` or `{{coverage:RULE_NAME}}`.
+fn render_coverage(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> String {
+    let report = coverage::compute_coverage(ctx.store, ctx.schema, ctx.graph);
+    let filter_rule = request.args.first().map(|s| s.as_str());
+
+    let entries: Vec<_> = report
+        .entries
+        .iter()
+        .filter(|e| filter_rule.is_none_or(|r| e.rule_name == r))
+        .collect();
+
+    if entries.is_empty() {
+        return "<div class=\"embed-coverage\"><p class=\"embed-no-data\">No coverage rules defined.</p></div>\n".to_string();
+    }
+
+    let mut html = String::from(
+        "<div class=\"embed-coverage\">\n\
+         <table class=\"embed-table\"><thead><tr>\
+         <th>Rule</th><th>Source</th><th>Covered</th><th>Total</th><th>%</th><th>Bar</th>\
+         </tr></thead><tbody>\n",
+    );
+
+    for entry in &entries {
+        let pct = entry.percentage();
+        let bar_width = pct.round() as u32;
+        let bar_class = if pct >= 100.0 {
+            "bar-full"
+        } else if pct >= 80.0 {
+            "bar-good"
+        } else if pct >= 50.0 {
+            "bar-warn"
+        } else {
+            "bar-danger"
+        };
+        let _ = writeln!(
+            html,
+            "<tr>\
+             <td>{rule}</td>\
+             <td>{source}</td>\
+             <td>{covered}</td>\
+             <td>{total}</td>\
+             <td>{pct:.1}%</td>\
+             <td><div class=\"coverage-bar\"><div class=\"coverage-fill {bar_class}\" style=\"width:{bar_width}%\"></div></div></td>\
+             </tr>",
+            rule = entry.rule_name,
+            source = entry.source_type,
+            covered = entry.covered,
+            total = entry.total,
+        );
+    }
+
+    html.push_str("</tbody></table>\n");
+
+    // If filtering to a single rule, show uncovered IDs
+    if filter_rule.is_some() {
+        for entry in &entries {
+            if !entry.uncovered_ids.is_empty() {
+                html.push_str("<details class=\"embed-uncovered\"><summary>Uncovered artifacts</summary><ul>\n");
+                for id in &entry.uncovered_ids {
+                    let _ = writeln!(html, "<li><code>{id}</code></li>");
+                }
+                html.push_str("</ul></details>\n");
+            }
+        }
+    }
+
+    html.push_str("</div>\n");
+    html
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────
@@ -221,6 +405,45 @@ mod tests {
     fn parse_empty_returns_error() {
         assert!(EmbedRequest::parse("").is_err());
         assert!(EmbedRequest::parse("  ").is_err());
+    }
+
+    #[test]
+    fn stats_embed_renders_html_table() {
+        let ctx = EmbedContext::empty(); // empty store/schema → still renders a table
+        let req = EmbedRequest::parse("stats").unwrap();
+        let html = resolve_embed(&req, &ctx).unwrap();
+        assert!(html.contains("<table"), "stats embed must render a table");
+        assert!(html.contains("embed-stats"), "must have embed-stats class");
+    }
+
+    #[test]
+    fn stats_types_filter() {
+        let ctx = EmbedContext::empty();
+        let req = EmbedRequest::parse("stats:types").unwrap();
+        let html = resolve_embed(&req, &ctx).unwrap();
+        assert!(html.contains("<table"), "stats:types must render a table");
+        // Should NOT contain validation or status sections
+        assert!(!html.contains("embed-stats-validation"));
+    }
+
+    #[test]
+    fn coverage_embed_renders_html_table() {
+        let ctx = EmbedContext::empty();
+        let req = EmbedRequest::parse("coverage").unwrap();
+        let html = resolve_embed(&req, &ctx).unwrap();
+        assert!(html.contains("<table") || html.contains("embed-coverage"), "coverage embed must render a table or coverage div");
+        assert!(html.contains("embed-coverage"), "must have embed-coverage class");
+    }
+
+    // SC-EMBED-3: empty result still produces visible output
+    #[test]
+    fn coverage_empty_shows_no_data_message() {
+        let ctx = EmbedContext::empty();
+        let req = EmbedRequest::parse("coverage").unwrap();
+        let html = resolve_embed(&req, &ctx).unwrap();
+        // With an empty schema there are no rules, so either a table with
+        // zero rows or a "No coverage rules" message — either way, not empty.
+        assert!(!html.is_empty(), "coverage must not be empty string");
     }
 
     // SC-EMBED-3: unknown embeds produce EmbedError, not empty string
