@@ -1116,7 +1116,7 @@ fn document_with_aadl_block_renders_placeholder() {
 
     let doc = rivet_core::document::parse_document(doc_content, None).unwrap();
     let html =
-        rivet_core::document::render_to_html(&doc, |id| id == "SYSREQ-001", |_| None, |_| false);
+        rivet_core::document::render_to_html(&doc, |id| id == "SYSREQ-001", |_| None, |_| false, |_| Ok(String::new()));
 
     // AADL block becomes a diagram placeholder
     assert!(html.contains("class=\"aadl-diagram\""));

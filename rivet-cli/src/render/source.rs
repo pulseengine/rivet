@@ -351,6 +351,7 @@ pub(crate) fn render_source_file_view(ctx: &RenderContext, raw_path: &str) -> St
                 |aid| store.contains(aid),
                 |aid| build_artifact_info(aid, store, graph),
                 |did| ctx.doc_store.get(did).is_some(),
+                |_req| Ok(String::new()),
             );
             let body_html = rewrite_image_paths(&body_html);
             html.push_str(&body_html);

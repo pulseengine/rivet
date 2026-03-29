@@ -2183,7 +2183,11 @@ fn render_document_body_for_export(
     };
 
     // Get the rendered HTML from the document module.
-    let raw_html = document::render_to_html(doc, artifact_exists, artifact_info, |_| false);
+    let raw_html = document::render_to_html(doc, artifact_exists, artifact_info, |_| false, |_req| {
+        // Phase 1: embeds in export are resolved with provenance in Task 5.
+        // For now, pass through to avoid breaking the build.
+        Ok(String::new())
+    });
 
     // Post-process: rewrite the HTMX-style artifact links to static links.
     // The document renderer produces:

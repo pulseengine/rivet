@@ -332,6 +332,7 @@ pub fn render_to_html(
     artifact_exists: impl Fn(&str) -> bool,
     artifact_info: impl Fn(&str) -> Option<ArtifactInfo>,
     document_exists: impl Fn(&str) -> bool,
+    embed_resolver: impl Fn(&crate::embed::EmbedRequest) -> Result<String, String>,
 ) -> String {
     let mut html = String::with_capacity(doc.body.len() * 2);
     let mut in_list = false;
@@ -464,7 +465,7 @@ pub fn render_to_html(
                 in_blockquote = false;
             }
             let text = &trimmed[level as usize + 1..];
-            let text = resolve_inline(text, &artifact_exists, &artifact_info, &document_exists);
+            let text = resolve_inline(text, &artifact_exists, &artifact_info, &document_exists, &embed_resolver);
             html.push_str(&format!("<h{level}>{text}</h{level}>\n"));
             continue;
         }
@@ -504,7 +505,7 @@ pub fn render_to_html(
                 html.push_str("<table><thead><tr>");
                 for cell in &cells {
                     let text =
-                        resolve_inline(cell, &artifact_exists, &artifact_info, &document_exists);
+                        resolve_inline(cell, &artifact_exists, &artifact_info, &document_exists, &embed_resolver);
                     html.push_str(&format!("<th>{text}</th>"));
                 }
                 html.push_str("</tr></thead><tbody>\n");
@@ -514,7 +515,7 @@ pub fn render_to_html(
                 html.push_str("<tr>");
                 for cell in &cells {
                     let text =
-                        resolve_inline(cell, &artifact_exists, &artifact_info, &document_exists);
+                        resolve_inline(cell, &artifact_exists, &artifact_info, &document_exists, &embed_resolver);
                     html.push_str(&format!("<td>{text}</td>"));
                 }
                 html.push_str("</tr>\n");
@@ -545,7 +546,7 @@ pub fn render_to_html(
                 html.push_str("<blockquote>");
                 in_blockquote = true;
             }
-            let text = resolve_inline(bq_text, &artifact_exists, &artifact_info, &document_exists);
+            let text = resolve_inline(bq_text, &artifact_exists, &artifact_info, &document_exists, &embed_resolver);
             html.push_str(&format!("<p>{text}</p>"));
             continue;
         }
@@ -578,6 +579,7 @@ pub fn render_to_html(
                 &artifact_exists,
                 &artifact_info,
                 &document_exists,
+                &embed_resolver,
             );
             html.push_str(&format!("<li>{text}</li>\n"));
             continue;
@@ -606,7 +608,7 @@ pub fn render_to_html(
                 html.push_str("<ol>\n");
                 in_ordered_list = true;
             }
-            let text = resolve_inline(rest, &artifact_exists, &artifact_info, &document_exists);
+            let text = resolve_inline(rest, &artifact_exists, &artifact_info, &document_exists, &embed_resolver);
             html.push_str(&format!("<li>{text}</li>\n"));
             continue;
         }
@@ -640,6 +642,7 @@ pub fn render_to_html(
             &artifact_exists,
             &artifact_info,
             &document_exists,
+            &embed_resolver,
         ));
     }
 
@@ -685,6 +688,7 @@ fn resolve_inline(
     artifact_exists: &impl Fn(&str) -> bool,
     artifact_info: &impl Fn(&str) -> Option<ArtifactInfo>,
     document_exists: &impl Fn(&str) -> bool,
+    embed_resolver: &impl Fn(&crate::embed::EmbedRequest) -> Result<String, String>,
 ) -> String {
     let mut result = String::with_capacity(text.len() * 2);
     let mut chars = text.char_indices().peekable();
@@ -815,6 +819,26 @@ fn resolve_inline(
                         chars.next();
                     }
                     continue;
+                }
+
+                // Computed embeds: dispatch to embed_resolver closure
+                if let Ok(req) = crate::embed::EmbedRequest::parse(inner) {
+                    if !req.is_legacy() {
+                        match embed_resolver(&req) {
+                            Ok(html) => result.push_str(&html),
+                            Err(err_html) => {
+                                result.push_str(&format!(
+                                    "<span class=\"embed-error\">{}</span>",
+                                    html_escape(&err_html),
+                                ));
+                            }
+                        }
+                        let skip_to = i + end + 2;
+                        while chars.peek().is_some_and(|&(j, _)| j < skip_to) {
+                            chars.next();
+                        }
+                        continue;
+                    }
                 }
             }
         }
@@ -1369,6 +1393,10 @@ impl DocumentStore {
 mod tests {
     use super::*;
 
+    fn noop_embed(_req: &crate::embed::EmbedRequest) -> Result<String, String> {
+        Ok(String::new())
+    }
+
     const SAMPLE_DOC: &str = r#"---
 id: SRS-001
 type: specification
@@ -1474,6 +1502,7 @@ See frontmatter.
             |id| id == "REQ-001" || id == "REQ-002",
             |_| None,
             |_| false,
+            noop_embed,
         );
         assert!(html.contains("artifact-ref"));
         assert!(html.contains("hx-get=\"/artifacts/REQ-001\""));
@@ -1484,7 +1513,7 @@ See frontmatter.
     #[test]
     fn render_html_headings() {
         let doc = parse_document(SAMPLE_DOC, None).unwrap();
-        let html = render_to_html(&doc, |_| true, |_| None, |_| false);
+        let html = render_to_html(&doc, |_| true, |_| None, |_| false, noop_embed);
         assert!(html.contains("<h1>"));
         assert!(html.contains("<h2>"));
         assert!(html.contains("<h3>"));
@@ -1514,7 +1543,7 @@ See frontmatter.
     fn render_aadl_code_block_placeholder() {
         let content = "---\nid: DOC-001\ntitle: Architecture\n---\n\n## Overview\n\n```aadl\nroot: FlightControl::Controller.Basic\n```\n\nSome text after.\n";
         let doc = parse_document(content, None).unwrap();
-        let html = render_to_html(&doc, |_| true, |_| None, |_| false);
+        let html = render_to_html(&doc, |_| true, |_| None, |_| false, noop_embed);
         assert!(html.contains("aadl-diagram"));
         assert!(html.contains("data-root=\"FlightControl::Controller.Basic\""));
         assert!(!html.contains("<pre><code>root: FlightControl"));
@@ -1574,7 +1603,7 @@ See frontmatter.
         let content =
             "---\nid: DOC-E\ntitle: Embed Test\n---\nSee {{artifact:REQ-001}} for details.\n";
         let doc = parse_document(content, None).unwrap();
-        let html = render_to_html(&doc, |_| true, info_fn, |_| false);
+        let html = render_to_html(&doc, |_| true, info_fn, |_| false, noop_embed);
         assert!(
             html.contains("artifact-embed"),
             "should contain embedded artifact card"
@@ -1593,7 +1622,7 @@ See frontmatter.
     fn artifact_embedding_broken_ref() {
         let content = "---\nid: DOC-B\ntitle: Broken\n---\nSee {{artifact:NOPE-999}} here.\n";
         let doc = parse_document(content, None).unwrap();
-        let html = render_to_html(&doc, |_| true, |_| None, |_| false);
+        let html = render_to_html(&doc, |_| true, |_| None, |_| false, noop_embed);
         assert!(
             html.contains("artifact-ref broken"),
             "broken embed should have broken class"
@@ -1641,7 +1670,7 @@ See frontmatter.
     fn embed_links_renders_outgoing_table() {
         let content = "---\nid: DOC-L\ntitle: Links\n---\n{{artifact:REQ-001:links}}\n";
         let doc = parse_document(content, None).unwrap();
-        let html = render_to_html(&doc, |_| true, rich_info_fn, |_| false);
+        let html = render_to_html(&doc, |_| true, rich_info_fn, |_| false, noop_embed);
         assert!(
             html.contains("Outgoing Links"),
             "should contain outgoing links heading"
@@ -1658,7 +1687,7 @@ See frontmatter.
     fn embed_links_renders_incoming_table() {
         let content = "---\nid: DOC-L\ntitle: Links\n---\n{{artifact:REQ-001:links}}\n";
         let doc = parse_document(content, None).unwrap();
-        let html = render_to_html(&doc, |_| true, rich_info_fn, |_| false);
+        let html = render_to_html(&doc, |_| true, rich_info_fn, |_| false, noop_embed);
         assert!(
             html.contains("Incoming Links"),
             "should contain incoming links heading"
@@ -1672,7 +1701,7 @@ See frontmatter.
     fn embed_full_shows_description_tags_fields_links() {
         let content = "---\nid: DOC-F\ntitle: Full\n---\n{{artifact:REQ-001:full}}\n";
         let doc = parse_document(content, None).unwrap();
-        let html = render_to_html(&doc, |_| true, rich_info_fn, |_| false);
+        let html = render_to_html(&doc, |_| true, rich_info_fn, |_| false, noop_embed);
         assert!(
             html.contains("artifact-embed-full"),
             "should have full class"
@@ -1700,7 +1729,7 @@ See frontmatter.
     fn embed_upstream_renders_trace() {
         let content = "---\nid: DOC-U\ntitle: Upstream\n---\n{{artifact:REQ-001:upstream:2}}\n";
         let doc = parse_document(content, None).unwrap();
-        let html = render_to_html(&doc, |_| true, rich_info_fn, |_| false);
+        let html = render_to_html(&doc, |_| true, rich_info_fn, |_| false, noop_embed);
         assert!(
             html.contains("artifact-embed-trace"),
             "should have trace class"
@@ -1722,7 +1751,7 @@ See frontmatter.
     fn embed_downstream_renders_trace() {
         let content = "---\nid: DOC-D\ntitle: Down\n---\n{{artifact:REQ-001:downstream:1}}\n";
         let doc = parse_document(content, None).unwrap();
-        let html = render_to_html(&doc, |_| true, rich_info_fn, |_| false);
+        let html = render_to_html(&doc, |_| true, rich_info_fn, |_| false, noop_embed);
         assert!(
             html.contains("artifact-embed-trace"),
             "should have trace class"
@@ -1744,7 +1773,7 @@ See frontmatter.
     fn embed_chain_renders_both_directions() {
         let content = "---\nid: DOC-C\ntitle: Chain\n---\n{{artifact:REQ-001:chain}}\n";
         let doc = parse_document(content, None).unwrap();
-        let html = render_to_html(&doc, |_| true, rich_info_fn, |_| false);
+        let html = render_to_html(&doc, |_| true, rich_info_fn, |_| false, noop_embed);
         assert!(
             html.contains("artifact-embed-chain"),
             "should have chain class"
@@ -1763,7 +1792,7 @@ See frontmatter.
     fn links_only_renders_tables_without_card_header() {
         let content = "---\nid: DOC-LO\ntitle: LinksOnly\n---\n{{links:REQ-001}}\n";
         let doc = parse_document(content, None).unwrap();
-        let html = render_to_html(&doc, |_| true, rich_info_fn, |_| false);
+        let html = render_to_html(&doc, |_| true, rich_info_fn, |_| false, noop_embed);
         assert!(
             html.contains("artifact-embed-links-only"),
             "should have links-only class"
@@ -1788,7 +1817,7 @@ See frontmatter.
     fn unknown_modifier_falls_back_to_default() {
         let content = "---\nid: DOC-X\ntitle: Unknown\n---\n{{artifact:REQ-001:bogus}}\n";
         let doc = parse_document(content, None).unwrap();
-        let html = render_to_html(&doc, |_| true, rich_info_fn, |_| false);
+        let html = render_to_html(&doc, |_| true, rich_info_fn, |_| false, noop_embed);
         // Should fall back to the default card rendering
         assert!(
             html.contains("artifact-embed"),
@@ -1806,6 +1835,46 @@ See frontmatter.
         assert!(
             !html.contains("artifact-embed-trace"),
             "should not use trace rendering"
+        );
+    }
+
+    #[test]
+    fn computed_embed_dispatches_to_resolver() {
+        let content = "---\nid: DOC-X\ntitle: Embed Test\n---\nData: {{stats}}\n";
+        let doc = parse_document(content, None).unwrap();
+        let html = render_to_html(
+            &doc,
+            |_| true,
+            |_| None,
+            |_| false,
+            |req| Ok(format!("<div class=\"mock-stats\">stats:{}</div>", req.name)),
+        );
+        assert!(
+            html.contains("mock-stats"),
+            "computed embed should be resolved via closure"
+        );
+        assert!(html.contains("stats:stats"), "should pass correct embed name");
+    }
+
+    // SC-EMBED-3
+    #[test]
+    fn unknown_embed_renders_visible_error() {
+        let content = "---\nid: DOC-U\ntitle: Unknown\n---\nSee {{bogus_embed}} here.\n";
+        let doc = parse_document(content, None).unwrap();
+        let html = render_to_html(
+            &doc,
+            |_| true,
+            |_| None,
+            |_| false,
+            |_| Err("Unknown embed: bogus_embed".to_string()),
+        );
+        assert!(
+            html.contains("embed-error"),
+            "unknown embed must render visible error"
+        );
+        assert!(
+            html.contains("bogus_embed"),
+            "error must show the unknown name"
         );
     }
 }
