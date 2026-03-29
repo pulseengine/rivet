@@ -64,9 +64,22 @@ fn start_server() -> (Child, u16) {
 fn fetch(port: u16, path: &str, htmx: bool) -> (u16, String, Vec<(String, String)>) {
     let _url = format!("http://127.0.0.1:{port}{path}");
 
-    // Use a minimal HTTP/1.1 request via TcpStream
+    // Use a minimal HTTP/1.1 request via TcpStream.
+    // Retry connect in case the server briefly drops between the health check and this call.
     use std::io::{Read, Write};
-    let mut stream = std::net::TcpStream::connect(format!("127.0.0.1:{port}")).expect("connect");
+    let addr = format!("127.0.0.1:{port}");
+    let mut stream = None;
+    for _ in 0..10 {
+        match std::net::TcpStream::connect(&addr) {
+            Ok(s) => {
+                stream = Some(s);
+                break;
+            }
+            Err(_) => std::thread::sleep(Duration::from_millis(100)),
+        }
+    }
+    let mut stream = stream
+        .unwrap_or_else(|| std::net::TcpStream::connect(&addr).expect("connect after retries"));
     stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
 
     let hx_header = if htmx { "HX-Request: true\r\n" } else { "" };
