@@ -559,7 +559,6 @@ pub async fn run(
                 .route("/artifacts", get(api::artifacts))
                 .route("/diagnostics", get(api::diagnostics))
                 .route("/coverage", get(api::coverage))
-                .route("/guide", get(api::guide))
                 .layer(CorsLayer::permissive())
                 .with_state(state.clone()),
         )

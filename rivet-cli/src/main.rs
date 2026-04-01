@@ -589,13 +589,6 @@ enum Command {
         file: PathBuf,
     },
 
-    /// Show project schema guide for AI agents and developers
-    Guide {
-        /// Output format: "json" (default) or "text"
-        #[arg(short, long, default_value = "json")]
-        format: String,
-    },
-
     /// Resolve a computed embed and print the result
     Embed {
         /// Embed query string, e.g. "stats:types" or "coverage:rule-name"
@@ -958,7 +951,6 @@ fn run(cli: Cli) -> Result<bool> {
         ),
         Command::Remove { id, force } => cmd_remove(&cli, id, *force),
         Command::Batch { file } => cmd_batch(&cli, file),
-        Command::Guide { format } => cmd_guide(&cli, format),
         Command::Embed { query, format } => cmd_embed(&cli, query, format),
     }
 }
@@ -5398,120 +5390,6 @@ fn cmd_batch(cli: &Cli, file: &std::path::Path) -> Result<bool> {
         "\nbatch: applied {} mutation(s) successfully",
         batch.mutations.len()
     );
-    Ok(true)
-}
-
-fn cmd_guide(cli: &Cli, format: &str) -> Result<bool> {
-    let ctx = ProjectContext::load(cli)?;
-
-    if format == "json" {
-        let mut types = Vec::new();
-        for t in ctx.schema.artifact_types.values() {
-            let mut type_obj = serde_json::Map::new();
-            type_obj.insert("name".into(), serde_json::Value::String(t.name.clone()));
-            type_obj.insert(
-                "description".into(),
-                serde_json::Value::String(t.description.clone()),
-            );
-            type_obj.insert(
-                "fields".into(),
-                serde_json::to_value(&t.fields).unwrap_or_default(),
-            );
-            type_obj.insert(
-                "link_fields".into(),
-                serde_json::to_value(&t.link_fields).unwrap_or_default(),
-            );
-            types.push(serde_json::Value::Object(type_obj));
-        }
-
-        let links: Vec<serde_json::Value> = ctx
-            .schema
-            .link_types
-            .values()
-            .map(|l| serde_json::to_value(l).unwrap_or_default())
-            .collect();
-
-        let rules: Vec<serde_json::Value> = ctx
-            .schema
-            .traceability_rules
-            .iter()
-            .map(|r| serde_json::to_value(r).unwrap_or_default())
-            .collect();
-
-        let guide = serde_json::json!({
-            "command": "guide",
-            "artifact_types": types,
-            "link_types": links,
-            "traceability_rules": rules,
-            "embed_syntax": [
-                {"pattern": "{{stats}}", "args": ["types", "status", "validation"]},
-                {"pattern": "{{coverage}}", "args": ["RULE_NAME"]},
-                {"pattern": "{{diagnostics}}", "args": ["error", "warning", "info"]},
-                {"pattern": "{{matrix}}", "args": ["FROM_TYPE:TO_TYPE"]},
-                {"pattern": "{{artifact:ID}}", "args": ["ID"]},
-                {"pattern": "{{table:TYPE:FIELDS}}", "args": ["TYPE", "FIELD,..."]},
-            ],
-            "commit_trailers": ["Implements", "Fixes", "Verifies", "Satisfies", "Refs"],
-        });
-
-        println!("{}", serde_json::to_string_pretty(&guide)?);
-    } else {
-        // Text format
-        println!("=== Artifact Types ===\n");
-        for t in ctx.schema.artifact_types.values() {
-            println!("  {} — {}", t.name, t.description);
-            for f in &t.fields {
-                let req = if f.required { " (required)" } else { "" };
-                println!("    field: {} [{}]{req}", f.name, f.field_type);
-            }
-            for l in &t.link_fields {
-                let req = if l.required { " (required)" } else { "" };
-                println!(
-                    "    link:  {} → {} [{}]{req}",
-                    l.name,
-                    l.target_types.join(", "),
-                    l.link_type,
-                );
-            }
-            println!();
-        }
-
-        println!("=== Link Types ===\n");
-        for l in ctx.schema.link_types.values() {
-            let inv = l
-                .inverse
-                .as_deref()
-                .map(|i| format!(" (inverse: {i})"))
-                .unwrap_or_default();
-            println!("  {}{inv} — {}", l.name, l.description);
-        }
-
-        println!("\n=== Traceability Rules ===\n");
-        for r in &ctx.schema.traceability_rules {
-            let link = r
-                .required_link
-                .as_deref()
-                .or(r.required_backlink.as_deref())
-                .unwrap_or("?");
-            println!(
-                "  {} [{:?}]: {} → {} via {}",
-                r.name,
-                r.severity,
-                r.source_type,
-                r.target_types.join(", "),
-                link,
-            );
-        }
-
-        println!("\n=== Embed Syntax ===\n");
-        println!("  {{{{stats}}}}              Project statistics");
-        println!("  {{{{coverage}}}}           Traceability coverage");
-        println!("  {{{{diagnostics}}}}        Validation issues");
-        println!("  {{{{matrix}}}}             Traceability matrix");
-        println!("  {{{{artifact:ID}}}}        Inline artifact card");
-        println!("  {{{{table:TYPE:FIELDS}}}}  Filtered table");
-    }
-
     Ok(true)
 }
 
