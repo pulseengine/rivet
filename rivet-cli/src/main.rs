@@ -583,6 +583,16 @@ enum Command {
         file: PathBuf,
     },
 
+    /// Resolve a computed embed and print the result
+    Embed {
+        /// Embed query string, e.g. "stats:types" or "coverage:rule-name"
+        query: String,
+
+        /// Output format: "html" or "text" (default)
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
     /// Start the language server (LSP over stdio)
     Lsp,
 }
@@ -902,6 +912,7 @@ fn run(cli: Cli) -> Result<bool> {
         ),
         Command::Remove { id, force } => cmd_remove(&cli, id, *force),
         Command::Batch { file } => cmd_batch(&cli, file),
+        Command::Embed { query, format } => cmd_embed(&cli, query, format),
     }
 }
 
@@ -2673,6 +2684,17 @@ fn cmd_export_html(
         .context("loading project for export")?;
     let ctx = state.as_render_context();
     let params = ViewParams::default();
+
+    // SC-EMBED-1: warn when working tree is dirty.
+    if let Some(ref git) = state.context.git {
+        if git.is_dirty {
+            eprintln!(
+                "warning: working tree is dirty ({} uncommitted change{}) — exported data may not match any commit",
+                git.dirty_count,
+                if git.dirty_count == 1 { "" } else { "s" },
+            );
+        }
+    }
 
     // ── Mermaid JS (inlined so the site works offline) ──────────────
     const MERMAID_JS: &str = include_str!("../assets/mermaid.min.js");
@@ -5026,6 +5048,75 @@ fn cmd_batch(cli: &Cli, file: &std::path::Path) -> Result<bool> {
         batch.mutations.len()
     );
     Ok(true)
+}
+
+fn cmd_embed(cli: &Cli, query: &str, format: &str) -> Result<bool> {
+    let schemas_dir = resolve_schemas_dir(cli);
+    let project_path = cli
+        .project
+        .canonicalize()
+        .unwrap_or_else(|_| cli.project.clone());
+
+    let state = crate::serve::reload_state(&project_path, &schemas_dir, 0)
+        .context("loading project for embed")?;
+
+    let request = rivet_core::embed::EmbedRequest::parse(query)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    let embed_ctx = rivet_core::embed::EmbedContext {
+        store: &state.store,
+        schema: &state.schema,
+        graph: &state.graph,
+        diagnostics: &state.cached_diagnostics,
+    };
+
+    match rivet_core::embed::resolve_embed(&request, &embed_ctx) {
+        Ok(html) => {
+            if format == "html" {
+                println!("{html}");
+            } else {
+                println!("{}", strip_html_tags(&html));
+            }
+            Ok(true)
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            Ok(false)
+        }
+    }
+}
+
+/// Minimal HTML tag stripper for terminal-friendly output.
+fn strip_html_tags(html: &str) -> String {
+    let mut result = String::with_capacity(html.len());
+    let mut in_tag = false;
+    let mut prev_was_newline = false;
+    for ch in html.chars() {
+        if ch == '<' {
+            in_tag = true;
+            continue;
+        }
+        if ch == '>' {
+            in_tag = false;
+            continue;
+        }
+        if !in_tag {
+            if ch == '\n' {
+                if !prev_was_newline {
+                    result.push('\n');
+                    prev_was_newline = true;
+                }
+            } else {
+                prev_was_newline = false;
+                result.push(ch);
+            }
+        }
+    }
+    result
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
 }
 
 fn cmd_lsp(cli: &Cli) -> Result<bool> {

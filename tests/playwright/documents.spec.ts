@@ -117,4 +117,51 @@ test.describe("Documents", () => {
       console.log("No .doc-ref links found — no cross-document references yet");
     }
   });
+
+  test("computed embeds do not produce visible errors", async ({ page }) => {
+    // Visit each document and verify no embed-error spans are present.
+    await page.goto("/documents");
+    await waitForHtmx(page);
+    const hxPaths = await page
+      .locator("a[href^='/documents/']")
+      .evaluateAll((els) =>
+        els.map((el) => el.getAttribute("href")).filter(Boolean),
+      );
+
+    for (const path of hxPaths as string[]) {
+      await page.goto(path);
+      await waitForHtmx(page);
+      const errorCount = await page.locator(".embed-error").count();
+      expect(errorCount).toBe(
+        0,
+        `document ${path} should have no embed-error spans`,
+      );
+    }
+  });
+
+  test("embed-stats renders a table when present", async ({ page }) => {
+    // Visit each document looking for embed-stats divs
+    await page.goto("/documents");
+    await waitForHtmx(page);
+    const hxPaths = await page
+      .locator("a[href^='/documents/']")
+      .evaluateAll((els) =>
+        els.map((el) => el.getAttribute("href")).filter(Boolean),
+      );
+
+    for (const path of hxPaths as string[]) {
+      await page.goto(path);
+      await waitForHtmx(page);
+      const statsCount = await page.locator(".embed-stats").count();
+      if (statsCount > 0) {
+        // If a stats embed exists, it should contain a table
+        await expect(page.locator(".embed-stats table").first()).toBeVisible();
+        return;
+      }
+    }
+    // No stats embeds found — test passes vacuously
+    console.log(
+      "No .embed-stats found in documents — add {{stats}} to a doc to test",
+    );
+  });
 });

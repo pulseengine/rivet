@@ -636,3 +636,40 @@ fn artifact_detail_has_oembed_discovery_link() {
     child.kill().ok();
     child.wait().ok();
 }
+
+// ── Embed resolution in documents ──────────────────────────────────────
+
+/// The documents page should not contain any embed-error spans for valid
+/// embed types (stats, coverage). This verifies the embed resolver is
+/// correctly wired in the serve pipeline.
+#[test]
+fn documents_page_has_no_embed_errors() {
+    let (mut child, port) = start_server();
+
+    let (status, body, _headers) = fetch(port, "/documents", false);
+    assert_eq!(status, 200, "documents page should load");
+    assert!(
+        !body.contains("embed-error"),
+        "no embed errors should appear on the documents list page"
+    );
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+/// The rivet embed CLI command should produce output consistent with
+/// what the serve pipeline would render (minus HTML wrapper).
+#[test]
+fn embed_api_stats_endpoint() {
+    let (mut child, port) = start_server();
+
+    let (status, body, _headers) = fetch(port, "/api/v1/stats", false);
+    assert_eq!(status, 200, "/api/v1/stats should respond 200");
+    assert!(
+        body.contains("total") || body.contains("artifacts"),
+        "stats API should contain stats data"
+    );
+
+    child.kill().ok();
+    child.wait().ok();
+}

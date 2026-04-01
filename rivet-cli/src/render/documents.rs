@@ -169,6 +169,15 @@ pub(crate) fn render_document_detail(ctx: &RenderContext, id: &str) -> RenderRes
         |aid| store.contains(aid),
         |aid| crate::render::source::build_artifact_info(aid, store, graph),
         |did| doc_store.get(did).is_some(),
+        |req| {
+            let embed_ctx = rivet_core::embed::EmbedContext {
+                store,
+                schema: ctx.schema,
+                graph,
+                diagnostics: ctx.diagnostics,
+            };
+            rivet_core::embed::resolve_embed(req, &embed_ctx).map_err(|e| e.to_string())
+        },
     );
     html.push_str(&body_html);
     html.push_str("</div></div>");
