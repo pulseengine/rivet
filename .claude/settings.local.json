@@ -16,7 +16,9 @@
       "Bash(cargo test:*)",
       "Bash(git add:*)",
       "Bash(cargo clippy:*)",
-      "Bash(git branch:*)"
+      "Bash(git branch:*)",
+      "Bash(gh run:*)",
+      "Bash(cargo fmt:*)"
     ]
   }
 }

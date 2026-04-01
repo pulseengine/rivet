@@ -465,7 +465,13 @@ pub fn render_to_html(
                 in_blockquote = false;
             }
             let text = &trimmed[level as usize + 1..];
-            let text = resolve_inline(text, &artifact_exists, &artifact_info, &document_exists, &embed_resolver);
+            let text = resolve_inline(
+                text,
+                &artifact_exists,
+                &artifact_info,
+                &document_exists,
+                &embed_resolver,
+            );
             html.push_str(&format!("<h{level}>{text}</h{level}>\n"));
             continue;
         }
@@ -504,8 +510,13 @@ pub fn render_to_html(
                 // First row is the header
                 html.push_str("<table><thead><tr>");
                 for cell in &cells {
-                    let text =
-                        resolve_inline(cell, &artifact_exists, &artifact_info, &document_exists, &embed_resolver);
+                    let text = resolve_inline(
+                        cell,
+                        &artifact_exists,
+                        &artifact_info,
+                        &document_exists,
+                        &embed_resolver,
+                    );
                     html.push_str(&format!("<th>{text}</th>"));
                 }
                 html.push_str("</tr></thead><tbody>\n");
@@ -514,8 +525,13 @@ pub fn render_to_html(
             } else if table_header_done {
                 html.push_str("<tr>");
                 for cell in &cells {
-                    let text =
-                        resolve_inline(cell, &artifact_exists, &artifact_info, &document_exists, &embed_resolver);
+                    let text = resolve_inline(
+                        cell,
+                        &artifact_exists,
+                        &artifact_info,
+                        &document_exists,
+                        &embed_resolver,
+                    );
                     html.push_str(&format!("<td>{text}</td>"));
                 }
                 html.push_str("</tr>\n");
@@ -546,7 +562,13 @@ pub fn render_to_html(
                 html.push_str("<blockquote>");
                 in_blockquote = true;
             }
-            let text = resolve_inline(bq_text, &artifact_exists, &artifact_info, &document_exists, &embed_resolver);
+            let text = resolve_inline(
+                bq_text,
+                &artifact_exists,
+                &artifact_info,
+                &document_exists,
+                &embed_resolver,
+            );
             html.push_str(&format!("<p>{text}</p>"));
             continue;
         }
@@ -608,7 +630,13 @@ pub fn render_to_html(
                 html.push_str("<ol>\n");
                 in_ordered_list = true;
             }
-            let text = resolve_inline(rest, &artifact_exists, &artifact_info, &document_exists, &embed_resolver);
+            let text = resolve_inline(
+                rest,
+                &artifact_exists,
+                &artifact_info,
+                &document_exists,
+                &embed_resolver,
+            );
             html.push_str(&format!("<li>{text}</li>\n"));
             continue;
         }
@@ -1847,13 +1875,21 @@ See frontmatter.
             |_| true,
             |_| None,
             |_| false,
-            |req| Ok(format!("<div class=\"mock-stats\">stats:{}</div>", req.name)),
+            |req| {
+                Ok(format!(
+                    "<div class=\"mock-stats\">stats:{}</div>",
+                    req.name
+                ))
+            },
         );
         assert!(
             html.contains("mock-stats"),
             "computed embed should be resolved via closure"
         );
-        assert!(html.contains("stats:stats"), "should pass correct embed name");
+        assert!(
+            html.contains("stats:stats"),
+            "should pass correct embed name"
+        );
     }
 
     // SC-EMBED-3

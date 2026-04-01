@@ -4354,8 +4354,7 @@ fn cmd_snapshot_capture(
             .join(format!("{snap_name}.json")),
     };
 
-    rivet_core::snapshot::write_to_file(&snap, &out_path)
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    rivet_core::snapshot::write_to_file(&snap, &out_path).map_err(|e| anyhow::anyhow!("{e}"))?;
 
     eprintln!(
         "Snapshot captured: {} ({} artifacts, {:.1}% coverage, {} diagnostics)",
@@ -4389,8 +4388,8 @@ fn cmd_snapshot_diff(
         }
     };
 
-    let baseline = rivet_core::snapshot::read_from_file(&baseline_file)
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let baseline =
+        rivet_core::snapshot::read_from_file(&baseline_file).map_err(|e| anyhow::anyhow!("{e}"))?;
 
     // Capture current state
     let state = crate::serve::reload_state(&project_path, &schemas_dir, 0)
@@ -4430,8 +4429,7 @@ fn cmd_snapshot_diff(
 
     match format {
         "json" => {
-            let json = serde_json::to_string_pretty(&delta)
-                .context("serializing delta")?;
+            let json = serde_json::to_string_pretty(&delta).context("serializing delta")?;
             println!("{json}");
         }
         "markdown" => {
@@ -4460,11 +4458,7 @@ fn cmd_snapshot_list(cli: &Cli) -> Result<bool> {
     let mut entries: Vec<_> = std::fs::read_dir(&snap_dir)
         .context("reading snapshots directory")?
         .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.path()
-                .extension()
-                .is_some_and(|ext| ext == "json")
-        })
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "json"))
         .collect();
 
     entries.sort_by_key(|e| e.file_name());
@@ -4532,7 +4526,11 @@ fn print_delta_text(
         "Delta: {} → {}",
         baseline.git_commit_short, delta.current_commit
     );
-    println!("  Artifacts: {} ({})", baseline.stats.total as isize + delta.stats.total, sign(delta.stats.total));
+    println!(
+        "  Artifacts: {} ({})",
+        baseline.stats.total as isize + delta.stats.total,
+        sign(delta.stats.total)
+    );
     for (t, &change) in &delta.stats.by_type {
         if change != 0 {
             println!("    {t}: {}", sign(change));
@@ -4592,14 +4590,22 @@ fn format_delta_markdown(
         md.push_str(&format!(
             "\n**{}** new diagnostic{}\n",
             delta.diagnostics.new_count,
-            if delta.diagnostics.new_count == 1 { "" } else { "s" },
+            if delta.diagnostics.new_count == 1 {
+                ""
+            } else {
+                "s"
+            },
         ));
     }
     if delta.diagnostics.resolved_count > 0 {
         md.push_str(&format!(
             "**{}** resolved diagnostic{}\n",
             delta.diagnostics.resolved_count,
-            if delta.diagnostics.resolved_count == 1 { "" } else { "s" },
+            if delta.diagnostics.resolved_count == 1 {
+                ""
+            } else {
+                "s"
+            },
         ));
     }
     md
@@ -5397,8 +5403,8 @@ fn cmd_embed(cli: &Cli, query: &str, format: &str) -> Result<bool> {
     let state = crate::serve::reload_state(&project_path, &schemas_dir, 0)
         .context("loading project for embed")?;
 
-    let request = rivet_core::embed::EmbedRequest::parse(query)
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let request =
+        rivet_core::embed::EmbedRequest::parse(query).map_err(|e| anyhow::anyhow!("{e}"))?;
 
     let embed_ctx = rivet_core::embed::EmbedContext {
         store: &state.store,

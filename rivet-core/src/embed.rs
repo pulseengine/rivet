@@ -159,10 +159,7 @@ impl EmbedRequest {
 ///
 /// Returns the rendered HTML string, or an `EmbedError` for unknown/
 /// malformed embeds (SC-EMBED-3: errors are visible, never empty).
-pub fn resolve_embed(
-    request: &EmbedRequest,
-    ctx: &EmbedContext<'_>,
-) -> Result<String, EmbedError> {
+pub fn resolve_embed(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> Result<String, EmbedError> {
     match request.name.as_str() {
         "stats" => Ok(render_stats(request, ctx)),
         "coverage" => Ok(render_coverage(request, ctx)),
@@ -409,10 +406,7 @@ fn render_diagnostics(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> String 
             Severity::Warning => "Warning",
             Severity::Info => "Info",
         };
-        let artifact = diag
-            .artifact_id
-            .as_deref()
-            .unwrap_or("—");
+        let artifact = diag.artifact_id.as_deref().unwrap_or("—");
         let _ = writeln!(
             html,
             "<tr class=\"{sev_class}\">\
@@ -430,9 +424,18 @@ fn render_diagnostics(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> String 
     html.push_str("</tbody></table>\n");
 
     // Summary footer
-    let errors = filtered.iter().filter(|d| d.severity == Severity::Error).count();
-    let warnings = filtered.iter().filter(|d| d.severity == Severity::Warning).count();
-    let infos = filtered.iter().filter(|d| d.severity == Severity::Info).count();
+    let errors = filtered
+        .iter()
+        .filter(|d| d.severity == Severity::Error)
+        .count();
+    let warnings = filtered
+        .iter()
+        .filter(|d| d.severity == Severity::Warning)
+        .count();
+    let infos = filtered
+        .iter()
+        .filter(|d| d.severity == Severity::Info)
+        .count();
     let _ = writeln!(
         html,
         "<p class=\"embed-summary\">{} issue{}: {} error{}, {} warning{}, {} info</p>",
@@ -475,7 +478,8 @@ fn render_matrix(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> String {
                     .as_deref()
                     .or(rule.required_backlink.as_deref())
                     .unwrap_or("");
-                let m = matrix::compute_matrix(ctx.store, ctx.graph, from, to, link_type, direction);
+                let m =
+                    matrix::compute_matrix(ctx.store, ctx.graph, from, to, link_type, direction);
                 html.push_str(&render_matrix_table(&m));
             } else {
                 // No rule found — try forward with auto-detected link type.
@@ -519,11 +523,7 @@ fn render_matrix(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> String {
                         link_type,
                         direction,
                     );
-                    let _ = writeln!(
-                        html,
-                        "<h4>{}</h4>",
-                        document::html_escape(&rule.name),
-                    );
+                    let _ = writeln!(html, "<h4>{}</h4>", document::html_escape(&rule.name),);
                     html.push_str(&render_matrix_table(&m));
                 }
             }
@@ -606,9 +606,10 @@ fn find_rule_for_types<'a>(
     from: &str,
     to: &str,
 ) -> Option<&'a crate::schema::TraceabilityRule> {
-    ctx.schema.traceability_rules.iter().find(|r| {
-        r.source_type == from && r.target_types.iter().any(|t| t == to)
-    })
+    ctx.schema
+        .traceability_rules
+        .iter()
+        .find(|r| r.source_type == from && r.target_types.iter().any(|t| t == to))
 }
 
 /// Auto-detect link type between two artifact types by scanning the graph.
@@ -752,8 +753,14 @@ mod tests {
         let ctx = EmbedContext::empty();
         let req = EmbedRequest::parse("coverage").unwrap();
         let html = resolve_embed(&req, &ctx).unwrap();
-        assert!(html.contains("<table") || html.contains("embed-coverage"), "coverage embed must render a table or coverage div");
-        assert!(html.contains("embed-coverage"), "must have embed-coverage class");
+        assert!(
+            html.contains("<table") || html.contains("embed-coverage"),
+            "coverage embed must render a table or coverage div"
+        );
+        assert!(
+            html.contains("embed-coverage"),
+            "must have embed-coverage class"
+        );
     }
 
     // SC-EMBED-3: empty result still produces visible output
@@ -784,9 +791,15 @@ mod tests {
     #[test]
     fn provenance_stamp_contains_commit_and_timestamp() {
         let stamp = render_provenance_stamp("abc1234", false);
-        assert!(stamp.contains("embed-provenance"), "must have provenance class");
+        assert!(
+            stamp.contains("embed-provenance"),
+            "must have provenance class"
+        );
         assert!(stamp.contains("abc1234"), "must contain commit hash");
-        assert!(stamp.contains("Computed at"), "must contain timestamp label");
+        assert!(
+            stamp.contains("Computed at"),
+            "must contain timestamp label"
+        );
     }
 
     #[test]
@@ -853,8 +866,14 @@ mod tests {
         let ctx = EmbedContext::empty();
         let req = EmbedRequest::parse("diagnostics").unwrap();
         let html = resolve_embed(&req, &ctx).unwrap();
-        assert!(html.contains("embed-diagnostics"), "must have diagnostics class");
-        assert!(html.contains("No diagnostics"), "empty context should show no-data message");
+        assert!(
+            html.contains("embed-diagnostics"),
+            "must have diagnostics class"
+        );
+        assert!(
+            html.contains("No diagnostics"),
+            "empty context should show no-data message"
+        );
     }
 
     #[test]
@@ -879,7 +898,10 @@ mod tests {
         let req = EmbedRequest::parse("matrix").unwrap();
         let html = resolve_embed(&req, &ctx).unwrap();
         assert!(html.contains("embed-matrix"), "must have matrix class");
-        assert!(html.contains("No traceability rules"), "empty schema should show no-rules message");
+        assert!(
+            html.contains("No traceability rules"),
+            "empty schema should show no-rules message"
+        );
     }
 
     #[test]

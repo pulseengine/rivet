@@ -670,7 +670,10 @@ fn snapshot_capture_writes_file() {
     let content = std::fs::read_to_string(&out_file).expect("read snapshot");
     let parsed: serde_json::Value =
         serde_json::from_str(&content).expect("snapshot must be valid JSON");
-    assert!(parsed.get("schema_version").is_some(), "must have schema_version");
+    assert!(
+        parsed.get("schema_version").is_some(),
+        "must have schema_version"
+    );
     assert!(parsed.get("stats").is_some(), "must have stats");
     assert!(parsed.get("coverage").is_some(), "must have coverage");
     assert!(parsed.get("diagnostics").is_some(), "must have diagnostics");

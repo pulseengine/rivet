@@ -90,12 +90,7 @@ pub struct GitContext {
 }
 
 /// Capture a snapshot from the current project state.
-pub fn capture(
-    store: &Store,
-    schema: &Schema,
-    graph: &LinkGraph,
-    git: &GitContext,
-) -> Snapshot {
+pub fn capture(store: &Store, schema: &Schema, graph: &LinkGraph, git: &GitContext) -> Snapshot {
     let diagnostics_vec = validate::validate(store, schema, graph);
     let coverage_report = coverage::compute_coverage(store, schema, graph);
 
@@ -243,11 +238,7 @@ pub fn compute_delta(baseline: &Snapshot, current: &Snapshot) -> SnapshotDelta {
         .rules
         .iter()
         .map(|r| {
-            let base = baseline
-                .coverage
-                .rules
-                .iter()
-                .find(|b| b.rule == r.rule);
+            let base = baseline.coverage.rules.iter().find(|b| b.rule == r.rule);
             CoverageRuleDelta {
                 rule: r.rule.clone(),
                 covered: r.covered as isize - base.map_or(0, |b| b.covered as isize),
@@ -299,8 +290,8 @@ pub fn compute_delta(baseline: &Snapshot, current: &Snapshot) -> SnapshotDelta {
 
 /// Write a snapshot to a JSON file.
 pub fn write_to_file(snapshot: &Snapshot, path: &std::path::Path) -> Result<(), String> {
-    let json = serde_json::to_string_pretty(snapshot)
-        .map_err(|e| format!("serializing snapshot: {e}"))?;
+    let json =
+        serde_json::to_string_pretty(snapshot).map_err(|e| format!("serializing snapshot: {e}"))?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("creating directory {}: {e}", parent.display()))?;
@@ -380,7 +371,10 @@ mod tests {
         let mut git = dummy_git();
         git.dirty = true;
         let snap = capture(&store, &schema, &graph, &git);
-        assert!(snap.git_dirty, "snapshot must record dirty tree (SC-EMBED-2)");
+        assert!(
+            snap.git_dirty,
+            "snapshot must record dirty tree (SC-EMBED-2)"
+        );
     }
 
     #[test]
@@ -389,6 +383,9 @@ mod tests {
         let schema = Schema::merge(&[]);
         let graph = LinkGraph::build(&store, &schema);
         let snap = capture(&store, &schema, &graph, &dummy_git());
-        assert_eq!(snap.schema_version, SCHEMA_VERSION, "must include schema_version (SC-EMBED-6)");
+        assert_eq!(
+            snap.schema_version, SCHEMA_VERSION,
+            "must include schema_version (SC-EMBED-6)"
+        );
     }
 }
