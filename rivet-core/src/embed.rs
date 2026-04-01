@@ -9,6 +9,7 @@ use std::fmt::Write as _;
 
 use crate::coverage;
 use crate::document;
+use crate::matrix;
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -162,6 +163,8 @@ pub fn resolve_embed(
     match request.name.as_str() {
         "stats" => Ok(render_stats(request, ctx)),
         "coverage" => Ok(render_coverage(request, ctx)),
+        "diagnostics" => Ok(render_diagnostics(request, ctx)),
+        "matrix" => Ok(render_matrix(request, ctx)),
         // Legacy embeds (artifact, links, table) are still handled by
         // resolve_inline in document.rs — they should never reach here.
         "artifact" | "links" | "table" => Err(EmbedError {
@@ -355,6 +358,266 @@ fn render_coverage(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> String {
 
     html.push_str("</div>\n");
     html
+}
+
+// ── Diagnostics renderer ────────────────────────────────────────────────
+
+/// Render `{{diagnostics}}` or `{{diagnostics:SEVERITY}}`.
+///
+/// Without args: all diagnostics. With severity arg: filtered by severity.
+fn render_diagnostics(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> String {
+    use crate::schema::Severity;
+
+    let filter_severity = request.args.first().map(|s| s.as_str());
+
+    let filtered: Vec<_> = ctx
+        .diagnostics
+        .iter()
+        .filter(|d| match filter_severity {
+            Some("error") => d.severity == Severity::Error,
+            Some("warning") => d.severity == Severity::Warning,
+            Some("info") => d.severity == Severity::Info,
+            _ => true,
+        })
+        .collect();
+
+    if filtered.is_empty() {
+        let scope = filter_severity.unwrap_or("any");
+        return format!(
+            "<div class=\"embed-diagnostics\"><p class=\"embed-no-data\">No diagnostics ({scope} severity).</p></div>\n"
+        );
+    }
+
+    let mut html = String::from(
+        "<div class=\"embed-diagnostics\">\n\
+         <table class=\"embed-table\"><thead><tr>\
+         <th>Severity</th><th>Artifact</th><th>Rule</th><th>Message</th>\
+         </tr></thead><tbody>\n",
+    );
+
+    for diag in &filtered {
+        let sev_class = match diag.severity {
+            Severity::Error => "sev-error",
+            Severity::Warning => "sev-warning",
+            Severity::Info => "sev-info",
+        };
+        let sev_label = match diag.severity {
+            Severity::Error => "Error",
+            Severity::Warning => "Warning",
+            Severity::Info => "Info",
+        };
+        let artifact = diag
+            .artifact_id
+            .as_deref()
+            .unwrap_or("—");
+        let _ = writeln!(
+            html,
+            "<tr class=\"{sev_class}\">\
+             <td>{sev_label}</td>\
+             <td><code>{artifact}</code></td>\
+             <td>{rule}</td>\
+             <td>{message}</td>\
+             </tr>",
+            artifact = document::html_escape(artifact),
+            rule = document::html_escape(&diag.rule),
+            message = document::html_escape(&diag.message),
+        );
+    }
+
+    html.push_str("</tbody></table>\n");
+
+    // Summary footer
+    let errors = filtered.iter().filter(|d| d.severity == Severity::Error).count();
+    let warnings = filtered.iter().filter(|d| d.severity == Severity::Warning).count();
+    let infos = filtered.iter().filter(|d| d.severity == Severity::Info).count();
+    let _ = writeln!(
+        html,
+        "<p class=\"embed-summary\">{} issue{}: {} error{}, {} warning{}, {} info</p>",
+        filtered.len(),
+        if filtered.len() == 1 { "" } else { "s" },
+        errors,
+        if errors == 1 { "" } else { "s" },
+        warnings,
+        if warnings == 1 { "" } else { "s" },
+        infos,
+    );
+
+    html.push_str("</div>\n");
+    html
+}
+
+// ── Matrix renderer ─────────────────────────────────────────────────────
+
+/// Render `{{matrix}}` or `{{matrix:FROM_TYPE:TO_TYPE}}`.
+///
+/// Without args: renders one matrix per traceability rule in the schema.
+/// With args: renders a specific matrix for the given source→target types.
+fn render_matrix(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> String {
+    let from_type = request.args.first().map(|s| s.as_str());
+    let to_type = request.args.get(1).map(|s| s.as_str());
+
+    let mut html = String::from("<div class=\"embed-matrix\">\n");
+
+    match (from_type, to_type) {
+        (Some(from), Some(to)) => {
+            // Find the matching traceability rule to get link type and direction.
+            if let Some(rule) = find_rule_for_types(ctx, from, to) {
+                let direction = if rule.required_backlink.is_some() {
+                    matrix::Direction::Backward
+                } else {
+                    matrix::Direction::Forward
+                };
+                let link_type = rule
+                    .required_link
+                    .as_deref()
+                    .or(rule.required_backlink.as_deref())
+                    .unwrap_or("");
+                let m = matrix::compute_matrix(ctx.store, ctx.graph, from, to, link_type, direction);
+                html.push_str(&render_matrix_table(&m));
+            } else {
+                // No rule found — try forward with auto-detected link type.
+                let link = auto_detect_link(ctx, from, to);
+                let m = matrix::compute_matrix(
+                    ctx.store,
+                    ctx.graph,
+                    from,
+                    to,
+                    &link,
+                    matrix::Direction::Forward,
+                );
+                html.push_str(&render_matrix_table(&m));
+            }
+        }
+        _ => {
+            // No args: render one matrix per traceability rule.
+            if ctx.schema.traceability_rules.is_empty() {
+                html.push_str("<p class=\"embed-no-data\">No traceability rules defined.</p>\n");
+            } else {
+                for rule in &ctx.schema.traceability_rules {
+                    let direction = if rule.required_backlink.is_some() {
+                        matrix::Direction::Backward
+                    } else {
+                        matrix::Direction::Forward
+                    };
+                    let link_type = rule
+                        .required_link
+                        .as_deref()
+                        .or(rule.required_backlink.as_deref())
+                        .unwrap_or("");
+                    let target_type = rule.target_types.first().map(|s| s.as_str()).unwrap_or("");
+                    if target_type.is_empty() {
+                        continue;
+                    }
+                    let m = matrix::compute_matrix(
+                        ctx.store,
+                        ctx.graph,
+                        &rule.source_type,
+                        target_type,
+                        link_type,
+                        direction,
+                    );
+                    let _ = writeln!(
+                        html,
+                        "<h4>{}</h4>",
+                        document::html_escape(&rule.name),
+                    );
+                    html.push_str(&render_matrix_table(&m));
+                }
+            }
+        }
+    }
+
+    html.push_str("</div>\n");
+    html
+}
+
+/// Render a single traceability matrix as an HTML table.
+fn render_matrix_table(m: &matrix::TraceabilityMatrix) -> String {
+    if m.rows.is_empty() {
+        return format!(
+            "<p class=\"embed-no-data\">No {} artifacts found.</p>\n",
+            document::html_escape(&m.source_type),
+        );
+    }
+
+    let pct = m.coverage_pct();
+    let bar_class = if pct >= 100.0 {
+        "bar-full"
+    } else if pct >= 80.0 {
+        "bar-good"
+    } else if pct >= 50.0 {
+        "bar-warn"
+    } else {
+        "bar-danger"
+    };
+
+    let mut html = format!(
+        "<table class=\"embed-table embed-matrix-table\">\
+         <thead><tr><th>{source}</th><th>{target} (linked)</th></tr></thead>\
+         <tbody>\n",
+        source = document::html_escape(&m.source_type),
+        target = document::html_escape(&m.target_type),
+    );
+
+    for row in &m.rows {
+        let targets_str = if row.targets.is_empty() {
+            "<span class=\"embed-uncovered-marker\">—</span>".to_string()
+        } else {
+            row.targets
+                .iter()
+                .map(|t| format!("<code>{}</code>", document::html_escape(&t.id)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let row_class = if row.targets.is_empty() {
+            " class=\"uncovered\""
+        } else {
+            ""
+        };
+        let _ = writeln!(
+            html,
+            "<tr{row_class}><td><code>{id}</code> {title}</td><td>{targets}</td></tr>",
+            id = document::html_escape(&row.source_id),
+            title = document::html_escape(&row.source_title),
+            targets = targets_str,
+        );
+    }
+
+    let _ = writeln!(
+        html,
+        "</tbody></table>\n\
+         <p class=\"embed-summary\">{covered}/{total} covered ({pct:.1}%) \
+         <span class=\"coverage-bar\" style=\"display:inline-block;width:100px;vertical-align:middle\">\
+         <span class=\"coverage-fill {bar_class}\" style=\"width:{bar_width}%\"></span></span></p>",
+        covered = m.covered,
+        total = m.total,
+        bar_width = pct.round() as u32,
+    );
+
+    html
+}
+
+/// Find a traceability rule matching the given source→target types.
+fn find_rule_for_types<'a>(
+    ctx: &'a EmbedContext<'_>,
+    from: &str,
+    to: &str,
+) -> Option<&'a crate::schema::TraceabilityRule> {
+    ctx.schema.traceability_rules.iter().find(|r| {
+        r.source_type == from && r.target_types.iter().any(|t| t == to)
+    })
+}
+
+/// Auto-detect link type between two artifact types by scanning the graph.
+fn auto_detect_link(ctx: &EmbedContext<'_>, from: &str, _to: &str) -> String {
+    // Look at the first artifact of from_type and find any outgoing link type.
+    for id in ctx.store.by_type(from) {
+        let links = ctx.graph.links_from(id);
+        if let Some(link) = links.first() {
+            return link.link_type.clone();
+        }
+    }
+    String::new()
 }
 
 // ── Provenance ──────────────────────────────────────────────────────────
@@ -568,5 +831,61 @@ mod tests {
     fn stats_is_not_legacy() {
         let req = EmbedRequest::parse("stats").unwrap();
         assert!(!req.is_legacy());
+    }
+
+    // ── Diagnostics tests ───────────────────────────────────────────
+
+    #[test]
+    fn diagnostics_embed_renders_no_data_when_empty() {
+        let ctx = EmbedContext::empty();
+        let req = EmbedRequest::parse("diagnostics").unwrap();
+        let html = resolve_embed(&req, &ctx).unwrap();
+        assert!(html.contains("embed-diagnostics"), "must have diagnostics class");
+        assert!(html.contains("No diagnostics"), "empty context should show no-data message");
+    }
+
+    #[test]
+    fn diagnostics_embed_is_not_unknown() {
+        let req = EmbedRequest::parse("diagnostics").unwrap();
+        let result = resolve_embed(&req, &EmbedContext::empty());
+        assert!(result.is_ok(), "diagnostics should be a known embed type");
+    }
+
+    #[test]
+    fn diagnostics_severity_filter_parses() {
+        let req = EmbedRequest::parse("diagnostics:error").unwrap();
+        assert_eq!(req.name, "diagnostics");
+        assert_eq!(req.args, vec!["error"]);
+    }
+
+    // ── Matrix tests ────────────────────────────────────────────────
+
+    #[test]
+    fn matrix_embed_renders_no_rules_when_empty() {
+        let ctx = EmbedContext::empty();
+        let req = EmbedRequest::parse("matrix").unwrap();
+        let html = resolve_embed(&req, &ctx).unwrap();
+        assert!(html.contains("embed-matrix"), "must have matrix class");
+        assert!(html.contains("No traceability rules"), "empty schema should show no-rules message");
+    }
+
+    #[test]
+    fn matrix_embed_is_not_unknown() {
+        let req = EmbedRequest::parse("matrix").unwrap();
+        let result = resolve_embed(&req, &EmbedContext::empty());
+        assert!(result.is_ok(), "matrix should be a known embed type");
+    }
+
+    #[test]
+    fn matrix_with_types_parses() {
+        let req = EmbedRequest::parse("matrix:requirement:feature").unwrap();
+        assert_eq!(req.name, "matrix");
+        assert_eq!(req.args, vec!["requirement", "feature"]);
+    }
+
+    #[test]
+    fn diagnostics_and_matrix_are_not_legacy() {
+        assert!(!EmbedRequest::parse("diagnostics").unwrap().is_legacy());
+        assert!(!EmbedRequest::parse("matrix").unwrap().is_legacy());
     }
 }

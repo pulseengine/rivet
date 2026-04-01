@@ -661,3 +661,55 @@ fn embed_unknown_returns_error() {
         "unknown embed should produce an error message. Got: {combined}"
     );
 }
+
+/// `rivet embed "diagnostics"` prints diagnostics or a no-data message.
+#[test]
+fn embed_diagnostics() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "embed",
+            "diagnostics",
+        ])
+        .output()
+        .expect("failed to execute rivet embed diagnostics");
+
+    assert!(
+        output.status.success(),
+        "rivet embed diagnostics must exit 0. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Severity") || stdout.contains("No diagnostics"),
+        "should contain diagnostics output. Got: {stdout}"
+    );
+}
+
+/// `rivet embed "matrix"` prints matrix data or a no-rules message.
+#[test]
+fn embed_matrix() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "embed",
+            "matrix",
+        ])
+        .output()
+        .expect("failed to execute rivet embed matrix");
+
+    assert!(
+        output.status.success(),
+        "rivet embed matrix must exit 0. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("covered") || stdout.contains("No traceability"),
+        "should contain matrix output. Got: {stdout}"
+    );
+}
