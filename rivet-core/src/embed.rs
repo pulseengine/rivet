@@ -643,6 +643,16 @@ pub fn render_provenance_stamp(commit_short: &str, is_dirty: bool) -> String {
     )
 }
 
+/// Return the current time as an ISO 8601 UTC string.
+pub fn epoch_to_iso8601() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let (y, m, d, h, min) = epoch_to_ymd_hm(secs);
+    format!("{y}-{m:02}-{d:02}T{h:02}:{min:02}:00Z")
+}
+
 /// Convert seconds since Unix epoch to (year, month, day, hour, minute) in UTC.
 fn epoch_to_ymd_hm(secs: u64) -> (u64, u64, u64, u64, u64) {
     let days = secs / 86400;

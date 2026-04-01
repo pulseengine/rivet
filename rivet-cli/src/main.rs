@@ -433,6 +433,12 @@ enum Command {
         action: BaselineAction,
     },
 
+    /// Capture or compare project snapshots for delta tracking
+    Snapshot {
+        #[command(subcommand)]
+        action: SnapshotAction,
+    },
+
     /// Import artifacts using a custom WASM adapter component
     #[cfg(feature = "wasm")]
     Import {
@@ -638,6 +644,30 @@ enum BaselineAction {
         strict: bool,
     },
     /// List baselines found across externals
+    List,
+}
+
+#[derive(Debug, Subcommand)]
+enum SnapshotAction {
+    /// Capture a snapshot of the current project state
+    Capture {
+        /// Snapshot name (default: git tag or HEAD short hash)
+        #[arg(long)]
+        name: Option<String>,
+        /// Output file path (default: snapshots/{name}.json)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
+    /// Compare current state against a baseline snapshot
+    Diff {
+        /// Path to the baseline snapshot JSON file
+        #[arg(long)]
+        baseline: Option<PathBuf>,
+        /// Output format: "text" (default), "json", or "markdown"
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+    /// List available snapshots
     List,
 }
 
@@ -847,6 +877,15 @@ fn run(cli: Cli) -> Result<bool> {
         Command::Baseline { action } => match action {
             BaselineAction::Verify { name, strict } => cmd_baseline_verify(&cli, name, *strict),
             BaselineAction::List => cmd_baseline_list(&cli),
+        },
+        Command::Snapshot { action } => match action {
+            SnapshotAction::Capture { name, output } => {
+                cmd_snapshot_capture(&cli, name.as_deref(), output.as_deref())
+            }
+            SnapshotAction::Diff { baseline, format } => {
+                cmd_snapshot_diff(&cli, baseline.as_deref(), format)
+            }
+            SnapshotAction::List => cmd_snapshot_list(&cli),
         },
         #[cfg(feature = "wasm")]
         Command::Import {
@@ -4266,6 +4305,304 @@ fn cmd_baseline_list(cli: &Cli) -> Result<bool> {
     }
 
     Ok(true)
+}
+
+// ── Snapshot commands ───────────────────────────────────────────────────
+
+fn cmd_snapshot_capture(
+    cli: &Cli,
+    name: Option<&str>,
+    output: Option<&std::path::Path>,
+) -> Result<bool> {
+    let schemas_dir = resolve_schemas_dir(cli);
+    let project_path = cli
+        .project
+        .canonicalize()
+        .unwrap_or_else(|_| cli.project.clone());
+
+    let state = crate::serve::reload_state(&project_path, &schemas_dir, 0)
+        .context("loading project for snapshot")?;
+
+    let git_ctx = match &state.context.git {
+        Some(git) => rivet_core::snapshot::GitContext {
+            commit: git.commit_short.clone(), // short is what we have from serve
+            commit_short: git.commit_short.clone(),
+            tag: None, // TODO: detect git tag
+            dirty: git.is_dirty,
+        },
+        None => rivet_core::snapshot::GitContext {
+            commit: "unknown".to_string(),
+            commit_short: "unknown".to_string(),
+            tag: None,
+            dirty: false,
+        },
+    };
+
+    let snap = rivet_core::snapshot::capture_with_data(
+        &state.store,
+        &state.cached_diagnostics,
+        &rivet_core::coverage::compute_coverage(&state.store, &state.schema, &state.graph),
+        &git_ctx,
+    );
+
+    // Determine output path
+    let snap_name = name.unwrap_or(&git_ctx.commit_short);
+    let out_path = match output {
+        Some(p) => p.to_path_buf(),
+        None => project_path
+            .join("snapshots")
+            .join(format!("{snap_name}.json")),
+    };
+
+    rivet_core::snapshot::write_to_file(&snap, &out_path)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    eprintln!(
+        "Snapshot captured: {} ({} artifacts, {:.1}% coverage, {} diagnostics)",
+        out_path.display(),
+        snap.stats.total,
+        snap.coverage.overall,
+        snap.diagnostics.errors + snap.diagnostics.warnings + snap.diagnostics.infos,
+    );
+
+    Ok(true)
+}
+
+fn cmd_snapshot_diff(
+    cli: &Cli,
+    baseline_path: Option<&std::path::Path>,
+    format: &str,
+) -> Result<bool> {
+    let schemas_dir = resolve_schemas_dir(cli);
+    let project_path = cli
+        .project
+        .canonicalize()
+        .unwrap_or_else(|_| cli.project.clone());
+
+    // Load baseline
+    let baseline_file = match baseline_path {
+        Some(p) => p.to_path_buf(),
+        None => {
+            // Auto-detect: find most recent snapshot in snapshots/
+            let snap_dir = project_path.join("snapshots");
+            find_latest_snapshot(&snap_dir)?
+        }
+    };
+
+    let baseline = rivet_core::snapshot::read_from_file(&baseline_file)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    // Capture current state
+    let state = crate::serve::reload_state(&project_path, &schemas_dir, 0)
+        .context("loading project for snapshot diff")?;
+
+    let git_ctx = match &state.context.git {
+        Some(git) => rivet_core::snapshot::GitContext {
+            commit: git.commit_short.clone(),
+            commit_short: git.commit_short.clone(),
+            tag: None,
+            dirty: git.is_dirty,
+        },
+        None => rivet_core::snapshot::GitContext {
+            commit: "unknown".to_string(),
+            commit_short: "unknown".to_string(),
+            tag: None,
+            dirty: false,
+        },
+    };
+
+    let current = rivet_core::snapshot::capture_with_data(
+        &state.store,
+        &state.cached_diagnostics,
+        &rivet_core::coverage::compute_coverage(&state.store, &state.schema, &state.graph),
+        &git_ctx,
+    );
+
+    // Check schema version compatibility (SC-EMBED-6)
+    if baseline.schema_version != current.schema_version {
+        eprintln!(
+            "warning: snapshot schema version mismatch (baseline: {}, current: {}) — delta may be inaccurate",
+            baseline.schema_version, current.schema_version,
+        );
+    }
+
+    let delta = rivet_core::snapshot::compute_delta(&baseline, &current);
+
+    match format {
+        "json" => {
+            let json = serde_json::to_string_pretty(&delta)
+                .context("serializing delta")?;
+            println!("{json}");
+        }
+        "markdown" => {
+            println!("{}", format_delta_markdown(&delta, &baseline));
+        }
+        _ => {
+            print_delta_text(&delta, &baseline);
+        }
+    }
+
+    Ok(true)
+}
+
+fn cmd_snapshot_list(cli: &Cli) -> Result<bool> {
+    let project_path = cli
+        .project
+        .canonicalize()
+        .unwrap_or_else(|_| cli.project.clone());
+    let snap_dir = project_path.join("snapshots");
+
+    if !snap_dir.exists() {
+        println!("No snapshots directory found.");
+        return Ok(true);
+    }
+
+    let mut entries: Vec<_> = std::fs::read_dir(&snap_dir)
+        .context("reading snapshots directory")?
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            e.path()
+                .extension()
+                .is_some_and(|ext| ext == "json")
+        })
+        .collect();
+
+    entries.sort_by_key(|e| e.file_name());
+
+    if entries.is_empty() {
+        println!("No snapshots found in {}/", snap_dir.display());
+    } else {
+        println!("Snapshots ({}):", entries.len());
+        for entry in &entries {
+            if let Ok(snap) = rivet_core::snapshot::read_from_file(&entry.path()) {
+                println!(
+                    "  {} — {} artifacts, {:.1}% cov, {} errors ({})",
+                    entry.file_name().to_string_lossy(),
+                    snap.stats.total,
+                    snap.coverage.overall,
+                    snap.diagnostics.errors,
+                    snap.created_at,
+                );
+            } else {
+                println!("  {} (invalid)", entry.file_name().to_string_lossy());
+            }
+        }
+    }
+
+    Ok(true)
+}
+
+fn find_latest_snapshot(snap_dir: &std::path::Path) -> Result<std::path::PathBuf> {
+    if !snap_dir.exists() {
+        anyhow::bail!("no snapshots directory found — run `rivet snapshot capture` first");
+    }
+
+    let mut files: Vec<_> = std::fs::read_dir(snap_dir)
+        .context("reading snapshots directory")?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "json"))
+        .collect();
+
+    files.sort_by_key(|e| {
+        e.metadata()
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+    });
+
+    files
+        .last()
+        .map(|e| e.path())
+        .ok_or_else(|| anyhow::anyhow!("no snapshot files found in {}", snap_dir.display()))
+}
+
+fn print_delta_text(
+    delta: &rivet_core::snapshot::SnapshotDelta,
+    baseline: &rivet_core::snapshot::Snapshot,
+) {
+    let sign = |v: isize| -> String {
+        if v > 0 {
+            format!("+{v}")
+        } else {
+            format!("{v}")
+        }
+    };
+
+    println!(
+        "Delta: {} → {}",
+        baseline.git_commit_short, delta.current_commit
+    );
+    println!("  Artifacts: {} ({})", baseline.stats.total as isize + delta.stats.total, sign(delta.stats.total));
+    for (t, &change) in &delta.stats.by_type {
+        if change != 0 {
+            println!("    {t}: {}", sign(change));
+        }
+    }
+    let fsign = |v: f64| -> String {
+        if v > 0.0 {
+            format!("+{v:.1}%")
+        } else {
+            format!("{v:.1}%")
+        }
+    };
+    println!("  Coverage: {}", fsign(delta.coverage.overall));
+    println!(
+        "  Diagnostics: {} new, {} resolved, errors {}",
+        delta.diagnostics.new_count,
+        delta.diagnostics.resolved_count,
+        sign(delta.diagnostics.errors),
+    );
+}
+
+fn format_delta_markdown(
+    delta: &rivet_core::snapshot::SnapshotDelta,
+    baseline: &rivet_core::snapshot::Snapshot,
+) -> String {
+    let sign = |v: isize| -> String {
+        if v > 0 {
+            format!("+{v}")
+        } else {
+            format!("{v}")
+        }
+    };
+
+    let mut md = format!(
+        "## Rivet Delta: {} → {}\n\n",
+        baseline.git_commit_short, delta.current_commit
+    );
+    md.push_str("| Metric | Value | Δ |\n|--------|-------|---|\n");
+    md.push_str(&format!(
+        "| Artifacts | {} | {} |\n",
+        baseline.stats.total as isize + delta.stats.total,
+        sign(delta.stats.total),
+    ));
+    let cov = baseline.coverage.overall + delta.coverage.overall;
+    let cov_delta = if delta.coverage.overall > 0.0 {
+        format!("+{:.1}%", delta.coverage.overall)
+    } else {
+        format!("{:.1}%", delta.coverage.overall)
+    };
+    md.push_str(&format!("| Coverage | {cov:.1}% | {cov_delta} |\n"));
+    md.push_str(&format!(
+        "| Errors | {} | {} |\n",
+        baseline.diagnostics.errors as isize + delta.diagnostics.errors,
+        sign(delta.diagnostics.errors),
+    ));
+    if delta.diagnostics.new_count > 0 {
+        md.push_str(&format!(
+            "\n**{}** new diagnostic{}\n",
+            delta.diagnostics.new_count,
+            if delta.diagnostics.new_count == 1 { "" } else { "s" },
+        ));
+    }
+    if delta.diagnostics.resolved_count > 0 {
+        md.push_str(&format!(
+            "**{}** resolved diagnostic{}\n",
+            delta.diagnostics.resolved_count,
+            if delta.diagnostics.resolved_count == 1 { "" } else { "s" },
+        ));
+    }
+    md
 }
 
 /// Apply baseline scoping to a store if a baseline name is provided.
