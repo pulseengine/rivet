@@ -7,6 +7,7 @@ use axum::extract::{Path, State};
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use tokio::sync::RwLock;
+use tower_http::cors::CorsLayer;
 
 /// HTMX bundled inline — no CDN dependency, works offline.
 const HTMX_JS: &str = include_str!("../../assets/htmx.min.js");
@@ -189,6 +190,8 @@ pub(crate) struct AppState {
     /// Cached validation diagnostics — computed once at load/reload time
     /// instead of on every page request.
     pub(crate) cached_diagnostics: Vec<rivet_core::validate::Diagnostic>,
+    /// Server start time for uptime calculation.
+    pub(crate) started_at: std::time::Instant,
 }
 
 impl AppState {
@@ -325,6 +328,7 @@ pub(crate) fn reload_state(
         doc_dirs,
         externals,
         cached_diagnostics,
+        started_at: std::time::Instant::now(),
     })
 }
 
@@ -516,6 +520,7 @@ pub async fn run(
         doc_dirs,
         externals: Vec::new(),
         cached_diagnostics,
+        started_at: std::time::Instant::now(),
     }));
 
     let app = Router::new()
@@ -545,6 +550,18 @@ pub async fn run(
         .route("/traceability", get(views::traceability_view))
         .route("/traceability/history", get(views::traceability_history))
         .route("/api/links/{id}", get(api_artifact_links))
+        .route("/oembed", get(api::oembed))
+        .nest(
+            "/api/v1",
+            Router::new()
+                .route("/health", get(api::health))
+                .route("/stats", get(api::stats))
+                .route("/artifacts", get(api::artifacts))
+                .route("/diagnostics", get(api::diagnostics))
+                .route("/coverage", get(api::coverage))
+                .layer(CorsLayer::permissive())
+                .with_state(state.clone()),
+        )
         .route("/wasm/{*path}", get(wasm_asset))
         .route("/help", get(views::help_view))
         .route("/help/docs", get(views::help_docs_list))
@@ -565,7 +582,7 @@ pub async fn run(
             |mut response: axum::response::Response| async move {
                 response.headers_mut().insert(
                     "Content-Security-Policy",
-                    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'"
+                    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; frame-ancestors *"
                         .parse()
                         .unwrap(),
                 );
@@ -652,6 +669,7 @@ async fn wrap_full_page(
         && !is_htmx
         && (path != "/" || is_print || is_embed)
         && !path.starts_with("/api/")
+        && !path.starts_with("/oembed")
         && !path.starts_with("/assets/")
         && !path.starts_with("/wasm/")
         && !path.starts_with("/source-raw/")
@@ -881,12 +899,13 @@ async fn reload_handler(
     State(state): State<SharedState>,
     headers: axum::http::HeaderMap,
 ) -> impl IntoResponse {
-    let (project_path, schemas_dir, port) = {
+    let (project_path, schemas_dir, port, started_at) = {
         let guard = state.read().await;
         (
             guard.project_path_buf.clone(),
             guard.schemas_dir.clone(),
             guard.context.port,
+            guard.started_at,
         )
     };
 
@@ -894,6 +913,7 @@ async fn reload_handler(
         Ok(new_state) => {
             let mut guard = state.write().await;
             *guard = new_state;
+            guard.started_at = started_at;
 
             // Redirect back to wherever the user was (HTMX sends HX-Current-URL).
             // Extract the path portion from the full URL (e.g. "http://localhost:3001/documents/DOC-001" → "/documents/DOC-001").
@@ -985,6 +1005,7 @@ async fn docs_asset(
     )
 }
 
+mod api;
 #[allow(dead_code)]
 pub(crate) mod components;
 pub(crate) mod js;

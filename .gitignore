@@ -6,6 +6,7 @@
 *.swo
 .DS_Store
 .claude/worktrees/
+.worktrees/
 
 # WASM binary assets (built or downloaded, not committed)
 rivet-cli/assets/wasm/*.wasm

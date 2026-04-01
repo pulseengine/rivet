@@ -44,9 +44,10 @@ fn start_server() -> (Child, u16) {
         .spawn()
         .expect("failed to start rivet serve");
 
-    // Wait for server to be ready (up to 15s for slow CI runners)
+    // Wait for server to be ready (up to 30s — 20 integration tests each
+    // spawn a server, so system resources can be tight under CI/coverage).
     let addr = format!("127.0.0.1:{port}");
-    for _ in 0..150 {
+    for _ in 0..300 {
         if std::net::TcpStream::connect(&addr).is_ok() {
             return (child, port);
         }
@@ -55,7 +56,7 @@ fn start_server() -> (Child, u16) {
     // Kill the child before panicking to avoid zombie processes.
     let _ = child.kill();
     let _ = child.wait();
-    panic!("server did not start within 15 seconds on port {port}");
+    panic!("server did not start within 30 seconds on port {port}");
 }
 
 /// Fetch a page via HTTP. If `htmx` is true, sends the HX-Request header
@@ -63,9 +64,22 @@ fn start_server() -> (Child, u16) {
 fn fetch(port: u16, path: &str, htmx: bool) -> (u16, String, Vec<(String, String)>) {
     let _url = format!("http://127.0.0.1:{port}{path}");
 
-    // Use a minimal HTTP/1.1 request via TcpStream
+    // Use a minimal HTTP/1.1 request via TcpStream.
+    // Retry connect in case the server briefly drops between the health check and this call.
     use std::io::{Read, Write};
-    let mut stream = std::net::TcpStream::connect(format!("127.0.0.1:{port}")).expect("connect");
+    let addr = format!("127.0.0.1:{port}");
+    let mut stream = None;
+    for _ in 0..10 {
+        match std::net::TcpStream::connect(&addr) {
+            Ok(s) => {
+                stream = Some(s);
+                break;
+            }
+            Err(_) => std::thread::sleep(Duration::from_millis(100)),
+        }
+    }
+    let mut stream = stream
+        .unwrap_or_else(|| std::net::TcpStream::connect(&addr).expect("connect after retries"));
     stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
 
     let hx_header = if htmx { "HX-Request: true\r\n" } else { "" };
@@ -226,8 +240,11 @@ fn reload_returns_hx_location() {
 
     // Simulate reload with HX-Current-URL header
     use std::io::{Read, Write};
+    // reload_state re-reads the entire project from disk, which can be
+    // significantly slower under CI coverage / proptest instrumentation.
+    // Use a generous timeout to avoid flaky failures.
     let mut stream = std::net::TcpStream::connect(format!("127.0.0.1:{port}")).expect("connect");
-    stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
+    stream.set_read_timeout(Some(Duration::from_secs(30))).ok();
 
     let request = format!(
         "POST /reload HTTP/1.1\r\n\
@@ -240,7 +257,9 @@ fn reload_returns_hx_location() {
     stream.write_all(request.as_bytes()).expect("write");
 
     let mut response = Vec::new();
-    stream.read_to_end(&mut response).ok();
+    stream
+        .read_to_end(&mut response)
+        .expect("read reload response");
     let response = String::from_utf8_lossy(&response).to_string();
 
     // Should contain HX-Location header pointing to /results
@@ -252,6 +271,366 @@ fn reload_returns_hx_location() {
         has_location || response.contains("/results"),
         "reload response must contain HX-Location header to stay on current page.\n\
          Response:\n{response}"
+    );
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+#[test]
+fn api_health_returns_json() {
+    let (mut child, port) = start_server();
+
+    let (status, body, headers) = fetch(port, "/api/v1/health", false);
+
+    assert_eq!(status, 200, "GET /api/v1/health should return 200");
+
+    let has_json_ct = headers
+        .iter()
+        .any(|(k, v)| k.eq_ignore_ascii_case("content-type") && v.contains("application/json"));
+    assert!(has_json_ct, "health endpoint must return application/json");
+
+    let json: serde_json::Value = serde_json::from_str(&body)
+        .unwrap_or_else(|e| panic!("health response is not valid JSON: {e}\nbody: {body}"));
+    assert_eq!(json["status"], "ok");
+    assert!(json["project"].is_string());
+    assert!(json["version"].is_string());
+    assert!(json["artifacts"].is_number());
+    assert!(json["uptime_seconds"].is_number());
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+#[test]
+fn api_v1_cors_headers() {
+    let (mut child, port) = start_server();
+
+    let (status, _body, headers) = fetch(port, "/api/v1/health", false);
+    assert_eq!(status, 200);
+
+    let has_cors = headers
+        .iter()
+        .any(|(k, _)| k.eq_ignore_ascii_case("access-control-allow-origin"));
+    assert!(
+        has_cors,
+        "API v1 endpoints must include CORS headers. Headers: {headers:?}"
+    );
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+#[test]
+fn oembed_valid_artifact() {
+    let (mut child, port) = start_server();
+
+    let raw_url = format!("http://127.0.0.1:{port}/artifacts/REQ-001");
+    let url = urlencoding::encode(&raw_url);
+    let (status, body, _headers) = fetch(port, &format!("/oembed?url={url}&format=json"), false);
+
+    assert_eq!(status, 200, "oEmbed with valid artifact should return 200");
+
+    let json: serde_json::Value = serde_json::from_str(&body)
+        .unwrap_or_else(|e| panic!("oEmbed response not valid JSON: {e}\nbody: {body}"));
+    assert_eq!(json["version"], "1.0");
+    assert_eq!(json["type"], "rich");
+    assert!(json["title"].as_str().unwrap().contains("REQ-001"));
+    assert!(json["html"].as_str().unwrap().contains("iframe"));
+    assert!(
+        json["html"]
+            .as_str()
+            .unwrap()
+            .contains("/embed/artifacts/REQ-001")
+    );
+    assert!(json["width"].is_number());
+    assert!(json["height"].is_number());
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+#[test]
+fn oembed_unknown_artifact_returns_404() {
+    let (mut child, port) = start_server();
+
+    let raw_url = format!("http://127.0.0.1:{port}/artifacts/NONEXISTENT-999");
+    let url = urlencoding::encode(&raw_url);
+    let (status, _body, _headers) = fetch(port, &format!("/oembed?url={url}"), false);
+
+    assert_eq!(
+        status, 404,
+        "oEmbed with unknown artifact should return 404"
+    );
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+#[test]
+fn oembed_non_artifact_url_returns_404() {
+    let (mut child, port) = start_server();
+
+    let raw_url = format!("http://127.0.0.1:{port}/coverage");
+    let url = urlencoding::encode(&raw_url);
+    let (status, _body, _headers) = fetch(port, &format!("/oembed?url={url}"), false);
+
+    assert_eq!(
+        status, 404,
+        "oEmbed with non-artifact URL should return 404"
+    );
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+#[test]
+fn oembed_xml_format_returns_501() {
+    let (mut child, port) = start_server();
+
+    let raw_url = format!("http://127.0.0.1:{port}/artifacts/REQ-001");
+    let url = urlencoding::encode(&raw_url);
+    let (status, _body, _headers) = fetch(port, &format!("/oembed?url={url}&format=xml"), false);
+
+    assert_eq!(status, 501, "oEmbed with format=xml should return 501");
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+#[test]
+fn oembed_maxwidth_clamps() {
+    let (mut child, port) = start_server();
+
+    let raw_url = format!("http://127.0.0.1:{port}/artifacts/REQ-001");
+    let url = urlencoding::encode(&raw_url);
+    let (status, body, _headers) = fetch(port, &format!("/oembed?url={url}&maxwidth=300"), false);
+
+    assert_eq!(status, 200);
+
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert!(
+        json["width"].as_u64().unwrap() <= 300,
+        "width should be clamped to maxwidth"
+    );
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+#[test]
+fn api_stats_response_shape() {
+    let (mut child, port) = start_server();
+
+    let (status, body, _headers) = fetch(port, "/api/v1/stats", false);
+    assert_eq!(status, 200);
+
+    let json: serde_json::Value = serde_json::from_str(&body)
+        .unwrap_or_else(|e| panic!("stats not valid JSON: {e}\nbody: {body}"));
+
+    assert!(json["total_artifacts"].is_number());
+    assert!(json["by_type"].is_object());
+    assert!(json["by_status"].is_object());
+    assert!(json["validation"].is_object());
+    assert!(json["coverage"].is_array());
+    assert!(json["by_origin"].is_object());
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+#[test]
+fn api_artifacts_unfiltered() {
+    let (mut child, port) = start_server();
+
+    let (status, body, _headers) = fetch(port, "/api/v1/artifacts", false);
+    assert_eq!(status, 200);
+
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert!(json["total"].as_u64().unwrap() > 0, "should have artifacts");
+    assert!(json["artifacts"].is_array());
+
+    let first = &json["artifacts"][0];
+    assert!(first["id"].is_string());
+    assert!(first["title"].is_string());
+    assert!(first["type"].is_string());
+    assert!(first["origin"].is_string());
+    assert!(first["links_out"].is_number());
+    assert!(first["links_in"].is_number());
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+#[test]
+fn api_artifacts_filter_by_type() {
+    let (mut child, port) = start_server();
+
+    let (status, body, _headers) = fetch(port, "/api/v1/artifacts?type=requirement", false);
+    assert_eq!(status, 200);
+
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    for art in json["artifacts"].as_array().unwrap() {
+        assert_eq!(
+            art["type"], "requirement",
+            "filtered artifacts must all be requirements"
+        );
+    }
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+#[test]
+fn api_artifacts_pagination() {
+    let (mut child, port) = start_server();
+
+    let (status, body, _headers) = fetch(port, "/api/v1/artifacts?limit=5", false);
+    assert_eq!(status, 200);
+
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let artifacts = json["artifacts"].as_array().unwrap();
+    assert!(
+        artifacts.len() <= 5,
+        "limit=5 should return at most 5 artifacts, got {}",
+        artifacts.len()
+    );
+    assert!(json["total"].as_u64().unwrap() >= artifacts.len() as u64);
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+#[test]
+fn api_artifacts_search() {
+    let (mut child, port) = start_server();
+
+    let (status, body, _headers) = fetch(port, "/api/v1/artifacts?q=STPA", false);
+    assert_eq!(status, 200);
+
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    for art in json["artifacts"].as_array().unwrap() {
+        let title = art["title"].as_str().unwrap().to_lowercase();
+        assert!(
+            title.contains("stpa"),
+            "search results must contain 'stpa' in title, got: {title}"
+        );
+    }
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+#[test]
+fn api_stats_total_matches_by_type_sum() {
+    let (mut child, port) = start_server();
+
+    let (status, body, _headers) = fetch(port, "/api/v1/stats", false);
+    assert_eq!(status, 200);
+
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let total = json["total_artifacts"].as_u64().unwrap();
+    let by_type_sum: u64 = json["by_type"]
+        .as_object()
+        .unwrap()
+        .values()
+        .map(|v| v.as_u64().unwrap())
+        .sum();
+
+    assert_eq!(
+        total, by_type_sum,
+        "total_artifacts ({total}) must equal sum of by_type values ({by_type_sum})"
+    );
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+#[test]
+fn api_diagnostics_response_shape() {
+    let (mut child, port) = start_server();
+
+    let (status, body, _headers) = fetch(port, "/api/v1/diagnostics", false);
+    assert_eq!(status, 200);
+
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert!(json["total"].is_number());
+    assert!(json["diagnostics"].is_array());
+
+    if let Some(first) = json["diagnostics"].as_array().and_then(|a| a.first()) {
+        assert!(first["severity"].is_string());
+        assert!(first["rule"].is_string());
+        assert!(first["message"].is_string());
+    }
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+#[test]
+fn api_diagnostics_filter_severity() {
+    let (mut child, port) = start_server();
+
+    let (status, body, _headers) = fetch(port, "/api/v1/diagnostics?severity=error", false);
+    assert_eq!(status, 200);
+
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    for diag in json["diagnostics"].as_array().unwrap() {
+        assert_eq!(
+            diag["severity"], "error",
+            "filtered diagnostics must all have error severity"
+        );
+    }
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+#[test]
+fn api_coverage_response_shape() {
+    let (mut child, port) = start_server();
+
+    let (status, body, _headers) = fetch(port, "/api/v1/coverage", false);
+    assert_eq!(status, 200);
+
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert!(json["rules"].is_array());
+
+    if let Some(first) = json["rules"].as_array().and_then(|a| a.first()) {
+        assert!(first["rule"].is_string());
+        assert!(first["source_type"].is_string());
+        assert!(first["link_type"].is_string());
+        assert!(first["direction"].is_string());
+        assert!(first["target_types"].is_array());
+        assert!(first["covered"].is_number());
+        assert!(first["total"].is_number());
+        assert!(first["uncovered"].is_array());
+
+        let pct = first["percentage"].as_f64().unwrap();
+        assert!(
+            (0.0..=100.0).contains(&pct),
+            "percentage must be 0..100, got {pct}"
+        );
+    }
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+#[test]
+fn artifact_detail_has_oembed_discovery_link() {
+    let (mut child, port) = start_server();
+
+    let (status, body, _headers) = fetch(port, "/artifacts/REQ-001", false);
+    assert_eq!(status, 200);
+
+    assert!(
+        body.contains("application/json+oembed"),
+        "artifact detail page must contain oEmbed discovery <link> tag"
+    );
+    assert!(
+        body.contains("/oembed?"),
+        "oEmbed discovery link must point to /oembed endpoint"
     );
 
     child.kill().ok();

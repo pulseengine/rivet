@@ -1248,6 +1248,23 @@ artifacts:
       phase: future
       baseline: v0.4.0
 
+  - id: FEAT-073
+    type: feature
+    title: JSON API with oEmbed and CORS
+    status: draft
+    description: >
+      REST JSON API under /api/v1/ with permissive CORS for Grafana
+      dashboard embedding. Includes health, stats, artifacts, diagnostics,
+      coverage endpoints plus an oEmbed provider at /oembed for rich
+      embeds of artifact detail pages.
+    tags: [api, serve, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-007
+    fields:
+      phase: phase-3
+      baseline: v0.3.1
+
   - id: FEAT-070
     type: feature
     title: Draft-aware validation severity
