@@ -585,3 +585,79 @@ fn export_html_generates_static_site() {
     let validate_path = out_dir.join("validate").join("index.html");
     assert!(validate_path.exists(), "validate/index.html must exist");
 }
+
+// ── rivet embed ────────────────────────────────────────────────────────
+
+/// `rivet embed "stats:types"` prints a stats table with type counts.
+#[test]
+fn embed_stats_types() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "embed",
+            "stats:types",
+        ])
+        .output()
+        .expect("failed to execute rivet embed stats:types");
+
+    assert!(
+        output.status.success(),
+        "rivet embed stats:types must exit 0. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Type") && stdout.contains("Count"),
+        "should contain a stats table header. Got: {stdout}"
+    );
+}
+
+/// `rivet embed "coverage"` prints coverage data or a no-rules message.
+#[test]
+fn embed_coverage() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "embed",
+            "coverage",
+        ])
+        .output()
+        .expect("failed to execute rivet embed coverage");
+
+    assert!(
+        output.status.success(),
+        "rivet embed coverage must exit 0. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Rule") || stdout.contains("No coverage"),
+        "should contain coverage output. Got: {stdout}"
+    );
+}
+
+/// `rivet embed "nonexistent"` reports an unknown embed error.
+#[test]
+fn embed_unknown_returns_error() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "embed",
+            "nonexistent",
+        ])
+        .output()
+        .expect("failed to execute rivet embed nonexistent");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let combined = format!("{stdout}{stderr}");
+    assert!(
+        combined.contains("Unknown embed") || combined.contains("unknown"),
+        "unknown embed should produce an error message. Got: {combined}"
+    );
+}
