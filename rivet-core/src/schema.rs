@@ -51,6 +51,20 @@ pub struct ArtifactTypeDef {
     pub link_fields: Vec<LinkFieldDef>,
     #[serde(default, rename = "aspice-process")]
     pub aspice_process: Option<String>,
+    /// Common mistakes and fix guidance for AI agents and help pages.
+    #[serde(default, rename = "common-mistakes")]
+    pub common_mistakes: Vec<MistakeGuide>,
+    /// Example YAML snippet shown in help pages and guide output.
+    #[serde(default)]
+    pub example: Option<String>,
+}
+
+/// A common mistake entry with problem description and fix command.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MistakeGuide {
+    pub problem: String,
+    #[serde(default, rename = "fix-command")]
+    pub fix_command: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

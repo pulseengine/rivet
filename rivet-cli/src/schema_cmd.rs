@@ -102,6 +102,16 @@ pub fn cmd_show(schema: &Schema, name: &str, format: &str) -> String {
             })
             .collect();
         let example = generate_example_yaml(t, schema);
+        let mistakes: Vec<serde_json::Value> = t
+            .common_mistakes
+            .iter()
+            .map(|m| {
+                serde_json::json!({
+                    "problem": m.problem,
+                    "fix_command": m.fix_command,
+                })
+            })
+            .collect();
         return serde_json::to_string_pretty(&serde_json::json!({
             "command": "schema-show",
             "artifact_type": {
@@ -111,7 +121,8 @@ pub fn cmd_show(schema: &Schema, name: &str, format: &str) -> String {
                 "fields": fields,
                 "link_fields": link_fields,
                 "traceability_rules": rules,
-                "example_yaml": example,
+                "example_yaml": t.example.as_deref().unwrap_or(&example),
+                "common_mistakes": mistakes,
             }
         }))
         .unwrap_or_default();
@@ -196,9 +207,24 @@ pub fn cmd_show(schema: &Schema, name: &str, format: &str) -> String {
         }
     }
 
+    // Common mistakes
+    if !t.common_mistakes.is_empty() {
+        out.push_str("\nCommon mistakes:\n");
+        for m in &t.common_mistakes {
+            out.push_str(&format!("  ⚠ {}\n", m.problem));
+            if let Some(ref fix) = m.fix_command {
+                out.push_str(&format!("    fix: {fix}\n"));
+            }
+        }
+    }
+
     // Example
     out.push_str("\nExample:\n");
-    out.push_str(&generate_example_yaml(t, schema));
+    if let Some(ref ex) = t.example {
+        out.push_str(ex);
+    } else {
+        out.push_str(&generate_example_yaml(t, schema));
+    }
 
     out
 }

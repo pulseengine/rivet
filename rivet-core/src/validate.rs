@@ -331,6 +331,8 @@ mod tests {
             fields: vec![],
             link_fields: vec![],
             aspice_process: None,
+            common_mistakes: vec![],
+            example: None,
         }];
         file.conditional_rules = conditional_rules;
         Schema::merge(&[file])
@@ -679,6 +681,8 @@ then:
             fields: vec![],
             link_fields: vec![],
             aspice_process: None,
+            common_mistakes: vec![],
+            example: None,
         }];
         file.traceability_rules = vec![TraceabilityRule {
             name: "dd-needs-satisfies".into(),
