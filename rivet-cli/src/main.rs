@@ -6086,35 +6086,49 @@ fn lsp_publish_salsa_diagnostics(
         std::collections::HashMap::new();
 
     for diag in diagnostics {
-        let art_id = match diag.artifact_id {
-            Some(ref id) => id.as_str(),
-            None => continue,
+        // Resolve source file: parse errors have source_file directly,
+        // validation diagnostics look up via artifact_id in the store.
+        let (path, line) = if let Some(ref sf) = diag.source_file {
+            // Parse error — use embedded line/column if available.
+            let line = diag.line.unwrap_or(0);
+            (sf.clone(), line)
+        } else if let Some(ref art_id) = diag.artifact_id {
+            let art = store.get(art_id);
+            let sf = art.and_then(|a| a.source_file.as_ref());
+            match sf {
+                Some(path) => {
+                    let line = lsp_find_artifact_line(path, art_id);
+                    (path.clone(), line)
+                }
+                None => continue,
+            }
+        } else {
+            continue;
         };
-        let art = store.get(art_id);
-        let source_file = art.and_then(|a| a.source_file.as_ref());
-        if let Some(path) = source_file {
-            let line = lsp_find_artifact_line(path, art_id);
-            file_diags
-                .entry(path.clone())
-                .or_default()
-                .push(lsp_types::Diagnostic {
-                    range: Range {
-                        start: Position { line, character: 0 },
-                        end: Position {
-                            line,
-                            character: 100,
-                        },
+        let col = diag.column.unwrap_or(0);
+        file_diags
+            .entry(path)
+            .or_default()
+            .push(lsp_types::Diagnostic {
+                range: Range {
+                    start: Position {
+                        line,
+                        character: col,
                     },
-                    severity: Some(match diag.severity {
-                        rivet_core::schema::Severity::Error => DiagnosticSeverity::ERROR,
-                        rivet_core::schema::Severity::Warning => DiagnosticSeverity::WARNING,
-                        rivet_core::schema::Severity::Info => DiagnosticSeverity::INFORMATION,
-                    }),
-                    source: Some("rivet".to_string()),
-                    message: diag.message.clone(),
-                    ..Default::default()
-                });
-        }
+                    end: Position {
+                        line,
+                        character: col + 100,
+                    },
+                },
+                severity: Some(match diag.severity {
+                    rivet_core::schema::Severity::Error => DiagnosticSeverity::ERROR,
+                    rivet_core::schema::Severity::Warning => DiagnosticSeverity::WARNING,
+                    rivet_core::schema::Severity::Info => DiagnosticSeverity::INFORMATION,
+                }),
+                source: Some("rivet".to_string()),
+                message: diag.message.clone(),
+                ..Default::default()
+            });
     }
 
     // Publish diagnostics for files that currently have them
@@ -6547,6 +6561,9 @@ mod lsp_tests {
             artifact_id: Some("REQ-001".into()),
             rule: "known-type".into(),
             message: "unknown artifact type 'requirement'".into(),
+            source_file: None,
+            line: None,
+            column: None,
         }];
 
         let mapped = map_diagnostics_to_lsp(&diagnostics, &store);
@@ -6587,6 +6604,9 @@ mod lsp_tests {
             artifact_id: Some("DD-001".into()),
             rule: "dd-must-satisfy".into(),
             message: "design-decision has no satisfies link".into(),
+            source_file: None,
+            line: None,
+            column: None,
         }];
 
         let mapped = map_diagnostics_to_lsp(&diagnostics, &store);
@@ -6624,6 +6644,9 @@ mod lsp_tests {
             artifact_id: Some("INFO-01".into()),
             rule: "info-check".into(),
             message: "informational note".into(),
+            source_file: None,
+            line: None,
+            column: None,
         }];
 
         let mapped = map_diagnostics_to_lsp(&diagnostics, &store);
@@ -6642,6 +6665,9 @@ mod lsp_tests {
             artifact_id: None,
             rule: "schema-level".into(),
             message: "schema error".into(),
+            source_file: None,
+            line: None,
+            column: None,
         }];
 
         let mapped = map_diagnostics_to_lsp(&diagnostics, &store);
@@ -6659,6 +6685,9 @@ mod lsp_tests {
             artifact_id: Some("MISSING-001".into()),
             rule: "test".into(),
             message: "broken".into(),
+            source_file: None,
+            line: None,
+            column: None,
         }];
 
         let mapped = map_diagnostics_to_lsp(&diagnostics, &store);
@@ -6727,18 +6756,27 @@ mod lsp_tests {
                 artifact_id: Some("A-001".into()),
                 rule: "test".into(),
                 message: "error in A".into(),
+                source_file: None,
+                line: None,
+                column: None,
             },
             validate::Diagnostic {
                 severity: Severity::Warning,
                 artifact_id: Some("B-001".into()),
                 rule: "test".into(),
                 message: "warning in B first".into(),
+                source_file: None,
+                line: None,
+                column: None,
             },
             validate::Diagnostic {
                 severity: Severity::Error,
                 artifact_id: Some("B-002".into()),
                 rule: "test".into(),
                 message: "error in B second".into(),
+                source_file: None,
+                line: None,
+                column: None,
             },
         ];
 
@@ -6787,6 +6825,9 @@ artifacts:
             artifact_id: Some("X-003".into()),
             rule: "test".into(),
             message: "problem with third".into(),
+            source_file: None,
+            line: None,
+            column: None,
         }];
 
         let mapped = map_diagnostics_to_lsp(&diagnostics, &store);

@@ -377,7 +377,7 @@ impl Requirement {
                 for field_name in fields {
                     let has_field = get_field_value(artifact, field_name).is_some();
                     if !has_field {
-                        diags.push(crate::validate::Diagnostic {
+                        diags.push(crate::validate::Diagnostic { source_file: None, line: None, column: None,
                             severity,
                             artifact_id: Some(artifact.id.clone()),
                             rule: rule_name.to_string(),
@@ -392,7 +392,7 @@ impl Requirement {
             Requirement::RequiredLinks { link_types } => {
                 for lt in link_types {
                     if !artifact.has_link_type(lt) {
-                        diags.push(crate::validate::Diagnostic {
+                        diags.push(crate::validate::Diagnostic { source_file: None, line: None, column: None,
                             severity,
                             artifact_id: Some(artifact.id.clone()),
                             rule: rule_name.to_string(),
@@ -427,6 +427,9 @@ pub fn check_conditional_consistency(
     for (i, rule) in rules.iter().enumerate() {
         if let Some(&prev_idx) = seen_names.get(rule.name.as_str()) {
             diagnostics.push(crate::validate::Diagnostic {
+                source_file: None,
+                line: None,
+                column: None,
                 severity: Severity::Warning,
                 artifact_id: None,
                 rule: "conditional-rule-consistency".to_string(),
@@ -446,7 +449,7 @@ pub fn check_conditional_consistency(
         for j in (i + 1)..rules.len() {
             if conditions_equivalent(&rules[i].when, &rules[j].when) {
                 if let Some(overlap) = requirements_overlap(&rules[i].then, &rules[j].then) {
-                    diagnostics.push(crate::validate::Diagnostic {
+                    diagnostics.push(crate::validate::Diagnostic { source_file: None, line: None, column: None,
                         severity: Severity::Warning,
                         artifact_id: None,
                         rule: "conditional-rule-consistency".to_string(),

@@ -10,6 +10,32 @@ pub struct Diagnostic {
     pub artifact_id: Option<String>,
     pub rule: String,
     pub message: String,
+    /// Source file for diagnostics not tied to an artifact (e.g., parse errors).
+    pub source_file: Option<std::path::PathBuf>,
+    /// 0-based line number (from serde_yaml error location).
+    pub line: Option<u32>,
+    /// 0-based column number.
+    pub column: Option<u32>,
+}
+
+impl Diagnostic {
+    /// Create a new diagnostic with no location info.
+    pub fn new(
+        severity: Severity,
+        artifact_id: Option<String>,
+        rule: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
+        Self {
+            severity,
+            artifact_id,
+            rule: rule.into(),
+            message: message.into(),
+            source_file: None,
+            line: None,
+            column: None,
+        }
+    }
 }
 
 impl std::fmt::Display for Diagnostic {
@@ -72,6 +98,9 @@ pub fn validate_structural(store: &Store, schema: &Schema, graph: &LinkGraph) ->
     for artifact in store.iter() {
         let Some(type_def) = schema.artifact_type(&artifact.artifact_type) else {
             diagnostics.push(Diagnostic {
+                source_file: None,
+                line: None,
+                column: None,
                 severity: Severity::Error,
                 artifact_id: Some(artifact.id.clone()),
                 rule: "known-type".to_string(),
@@ -91,6 +120,9 @@ pub fn validate_structural(store: &Store, schema: &Schema, graph: &LinkGraph) ->
                 };
                 if !has_base {
                     diagnostics.push(Diagnostic {
+                        source_file: None,
+                        line: None,
+                        column: None,
                         severity: Severity::Error,
                         artifact_id: Some(artifact.id.clone()),
                         rule: "required-field".to_string(),
@@ -109,6 +141,9 @@ pub fn validate_structural(store: &Store, schema: &Schema, graph: &LinkGraph) ->
                         // Value is already a YAML string — straightforward check
                         if !allowed.iter().any(|a| a == s) {
                             diagnostics.push(Diagnostic {
+                                source_file: None,
+                                line: None,
+                                column: None,
                                 severity: Severity::Warning,
                                 artifact_id: Some(artifact.id.clone()),
                                 rule: "allowed-values".to_string(),
@@ -128,6 +163,9 @@ pub fn validate_structural(store: &Store, schema: &Schema, graph: &LinkGraph) ->
                         };
                         if !candidates.iter().any(|c| allowed.iter().any(|a| a == c)) {
                             diagnostics.push(Diagnostic {
+                                source_file: None,
+                                line: None,
+                                column: None,
                                 severity: Severity::Warning,
                                 artifact_id: Some(artifact.id.clone()),
                                 rule: "allowed-values".to_string(),
@@ -139,7 +177,7 @@ pub fn validate_structural(store: &Store, schema: &Schema, graph: &LinkGraph) ->
                         }
                         // Warn when field is declared as string but YAML coerced the value
                         if field.field_type == "string" {
-                            diagnostics.push(Diagnostic {
+                            diagnostics.push(Diagnostic { source_file: None, line: None, column: None,
                                 severity: Severity::Warning,
                                 artifact_id: Some(artifact.id.clone()),
                                 rule: "yaml-type-coercion".to_string(),
@@ -162,6 +200,9 @@ pub fn validate_structural(store: &Store, schema: &Schema, graph: &LinkGraph) ->
                         };
                         if !allowed.iter().any(|a| a == &num_str) {
                             diagnostics.push(Diagnostic {
+                                source_file: None,
+                                line: None,
+                                column: None,
                                 severity: Severity::Warning,
                                 artifact_id: Some(artifact.id.clone()),
                                 rule: "allowed-values".to_string(),
@@ -173,7 +214,7 @@ pub fn validate_structural(store: &Store, schema: &Schema, graph: &LinkGraph) ->
                         }
                         // Warn when field is declared as string but YAML coerced the value
                         if field.field_type == "string" {
-                            diagnostics.push(Diagnostic {
+                            diagnostics.push(Diagnostic { source_file: None, line: None, column: None,
                                 severity: Severity::Warning,
                                 artifact_id: Some(artifact.id.clone()),
                                 rule: "yaml-type-coercion".to_string(),
@@ -199,6 +240,9 @@ pub fn validate_structural(store: &Store, schema: &Schema, graph: &LinkGraph) ->
             match link_field.cardinality {
                 Cardinality::ExactlyOne if count != 1 => {
                     diagnostics.push(Diagnostic {
+                        source_file: None,
+                        line: None,
+                        column: None,
                         severity: Severity::Error,
                         artifact_id: Some(artifact.id.clone()),
                         rule: "cardinality".to_string(),
@@ -210,6 +254,9 @@ pub fn validate_structural(store: &Store, schema: &Schema, graph: &LinkGraph) ->
                 }
                 Cardinality::OneOrMany if count == 0 && link_field.required => {
                     diagnostics.push(Diagnostic {
+                        source_file: None,
+                        line: None,
+                        column: None,
                         severity: Severity::Error,
                         artifact_id: Some(artifact.id.clone()),
                         rule: "cardinality".to_string(),
@@ -221,6 +268,9 @@ pub fn validate_structural(store: &Store, schema: &Schema, graph: &LinkGraph) ->
                 }
                 Cardinality::ZeroOrOne if count > 1 => {
                     diagnostics.push(Diagnostic {
+                        source_file: None,
+                        line: None,
+                        column: None,
                         severity: Severity::Warning,
                         artifact_id: Some(artifact.id.clone()),
                         rule: "cardinality".to_string(),
@@ -243,6 +293,9 @@ pub fn validate_structural(store: &Store, schema: &Schema, graph: &LinkGraph) ->
                         && !link_field.target_types.contains(&target.artifact_type)
                     {
                         diagnostics.push(Diagnostic {
+                            source_file: None,
+                            line: None,
+                            column: None,
                             severity: Severity::Error,
                             artifact_id: Some(artifact.id.clone()),
                             rule: "link-target-type".to_string(),
@@ -263,6 +316,9 @@ pub fn validate_structural(store: &Store, schema: &Schema, graph: &LinkGraph) ->
     // 6. Check broken links
     for broken in &graph.broken {
         diagnostics.push(Diagnostic {
+            source_file: None,
+            line: None,
+            column: None,
             severity: Severity::Error,
             artifact_id: Some(broken.source.clone()),
             rule: "broken-link".to_string(),
@@ -297,6 +353,9 @@ pub fn validate_structural(store: &Store, schema: &Schema, graph: &LinkGraph) ->
                 });
                 if !has_link {
                     diagnostics.push(Diagnostic {
+                        source_file: None,
+                        line: None,
+                        column: None,
                         severity: effective_severity,
                         artifact_id: Some(id.clone()),
                         rule: rule.name.clone(),
@@ -318,6 +377,9 @@ pub fn validate_structural(store: &Store, schema: &Schema, graph: &LinkGraph) ->
                 });
                 if !has_backlink {
                     diagnostics.push(Diagnostic {
+                        source_file: None,
+                        line: None,
+                        column: None,
                         severity: effective_severity,
                         artifact_id: Some(id.clone()),
                         rule: rule.name.clone(),
@@ -341,6 +403,9 @@ pub fn validate_documents(doc_store: &DocumentStore, store: &Store) -> Vec<Diagn
         for reference in &doc.references {
             if !store.contains(&reference.artifact_id) {
                 diagnostics.push(Diagnostic {
+                    source_file: None,
+                    line: None,
+                    column: None,
                     severity: Severity::Warning,
                     artifact_id: Some(doc.id.clone()),
                     rule: "doc-broken-ref".into(),
