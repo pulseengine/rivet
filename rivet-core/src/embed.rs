@@ -524,4 +524,49 @@ mod tests {
         let stamp = render_provenance_stamp("abc1234", false);
         assert!(!stamp.contains("dirty"), "clean stamp must not say dirty");
     }
+
+    // ── Parser edge cases ───────────────────────────────────────────
+
+    #[test]
+    fn parse_preserves_colons_in_args() {
+        let req = EmbedRequest::parse("table:requirement:id,title,status").unwrap();
+        assert_eq!(req.name, "table");
+        assert_eq!(req.args, vec!["requirement", "id,title,status"]);
+    }
+
+    #[test]
+    fn parse_trims_whitespace() {
+        let req = EmbedRequest::parse("  stats:types  ").unwrap();
+        assert_eq!(req.name, "stats");
+        assert_eq!(req.args, vec!["types"]);
+    }
+
+    #[test]
+    fn parse_multiple_options() {
+        let req = EmbedRequest::parse("stats delta=v0.3.0 format=table").unwrap();
+        assert_eq!(req.options.len(), 2);
+        assert_eq!(req.options["delta"], "v0.3.0");
+        assert_eq!(req.options["format"], "table");
+    }
+
+    #[test]
+    fn legacy_artifact_embed_parses() {
+        let req = EmbedRequest::parse("artifact:REQ-001:full:3").unwrap();
+        assert_eq!(req.name, "artifact");
+        assert_eq!(req.args, vec!["REQ-001", "full", "3"]);
+        assert!(req.is_legacy());
+    }
+
+    #[test]
+    fn legacy_links_embed_parses() {
+        let req = EmbedRequest::parse("links:REQ-001").unwrap();
+        assert_eq!(req.name, "links");
+        assert!(req.is_legacy());
+    }
+
+    #[test]
+    fn stats_is_not_legacy() {
+        let req = EmbedRequest::parse("stats").unwrap();
+        assert!(!req.is_legacy());
+    }
 }
