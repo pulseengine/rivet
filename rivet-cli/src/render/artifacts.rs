@@ -368,8 +368,19 @@ pub(crate) fn render_artifact_detail(ctx: &RenderContext, id: &str) -> RenderRes
         String::new()
     };
 
+    // oEmbed discovery tag — allows Notion/Confluence to auto-discover the embed
+    let oembed_discovery = format!(
+        r#"<link rel="alternate" type="application/json+oembed" href="http://localhost:{port}/oembed?url={encoded_url}&amp;format=json" title="{title}" />"#,
+        port = ctx.context.port,
+        encoded_url = urlencoding::encode(&format!(
+            "http://localhost:{}/artifacts/{}",
+            ctx.context.port, artifact.id
+        )),
+        title = html_escape(&format!("{}: {}", artifact.id, artifact.title)),
+    );
+
     let mut html = format!(
-        "<h2>{}{}</h2><p class=\"meta\">{}</p>",
+        "{oembed_discovery}<h2>{}{}</h2><p class=\"meta\">{}</p>",
         html_escape(&artifact.id),
         source_link,
         badge_for_type(&artifact.artifact_type)
