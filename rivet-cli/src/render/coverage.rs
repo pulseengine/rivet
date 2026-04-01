@@ -1,3 +1,5 @@
+use std::fmt::Write as _;
+
 use rivet_core::coverage;
 use rivet_core::document::html_escape;
 
@@ -44,8 +46,15 @@ pub(crate) fn render_coverage_view(ctx: &RenderContext) -> String {
         return html;
     }
 
+    let bl = ctx.baseline;
+    let has_delta = bl.is_some();
+
     html.push_str("<div class=\"card\"><h3>Coverage by Rule</h3>");
-    html.push_str("<table><thead><tr><th>Rule</th><th>Source Type</th><th>Link</th><th>Direction</th><th>Coverage</th><th style=\"width:30%\">Progress</th></tr></thead><tbody>");
+    if has_delta {
+        html.push_str("<table><thead><tr><th>Rule</th><th>Source Type</th><th>Link</th><th>Direction</th><th>Coverage</th><th>Δ</th><th style=\"width:25%\">Progress</th></tr></thead><tbody>");
+    } else {
+        html.push_str("<table><thead><tr><th>Rule</th><th>Source Type</th><th>Link</th><th>Direction</th><th>Coverage</th><th style=\"width:30%\">Progress</th></tr></thead><tbody>");
+    }
 
     for entry in &report.entries {
         let pct = entry.percentage();
@@ -62,28 +71,48 @@ pub(crate) fn render_coverage_view(ctx: &RenderContext) -> String {
             coverage::CoverageDirection::Backward => "backward",
         };
 
-        html.push_str(&format!(
+        let delta_cell = if has_delta {
+            let base_pct = bl
+                .and_then(|s| s.coverage.rules.iter().find(|r| r.rule == entry.rule_name))
+                .map_or(0.0, |r| r.percentage);
+            let diff = pct - base_pct;
+            if diff.abs() < 0.05 {
+                "<td>—</td>".to_string()
+            } else {
+                let (sign, color) = if diff > 0.0 {
+                    ("+", "#15713a")
+                } else {
+                    ("", "#c62828")
+                };
+                format!("<td style=\"color:{color};font-weight:600\">{sign}{diff:.1}%</td>")
+            }
+        } else {
+            String::new()
+        };
+
+        let _ = write!(
+            html,
             "<tr>\
-             <td title=\"{}\">{}</td>\
-             <td>{}</td>\
-             <td><span class=\"link-pill\">{}</span></td>\
-             <td>{}</td>\
-             <td><span class=\"badge {badge_class}\">{}/{} ({:.1}%)</span></td>\
+             <td title=\"{desc}\">{name}</td>\
+             <td>{source}</td>\
+             <td><span class=\"link-pill\">{link}</span></td>\
+             <td>{dir}</td>\
+             <td><span class=\"badge {badge_class}\">{covered}/{total} ({pct:.1}%)</span></td>\
+             {delta_cell}\
              <td>\
                <div style=\"background:#e5e5ea;border-radius:4px;height:18px;position:relative;overflow:hidden\">\
                  <div style=\"background:{bar_color};height:100%;width:{pct:.1}%;border-radius:4px;transition:width .3s ease\"></div>\
                </div>\
              </td>\
              </tr>",
-            html_escape(&entry.description),
-            html_escape(&entry.rule_name),
-            badge_for_type(&entry.source_type),
-            html_escape(&entry.link_type),
-            dir_label,
-            entry.covered,
-            entry.total,
-            pct,
-        ));
+            desc = html_escape(&entry.description),
+            name = html_escape(&entry.rule_name),
+            source = badge_for_type(&entry.source_type),
+            link = html_escape(&entry.link_type),
+            dir = dir_label,
+            covered = entry.covered,
+            total = entry.total,
+        );
     }
 
     html.push_str("</tbody></table></div>");

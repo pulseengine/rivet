@@ -2721,7 +2721,21 @@ fn cmd_export_html(
     // Load project state using the same pipeline as `rivet serve`.
     let state = serve::reload_state(&project_path, &schemas_dir, 0)
         .context("loading project for export")?;
-    let ctx = state.as_render_context();
+
+    // Auto-detect baseline snapshot for delta rendering.
+    let snap_dir = project_path.join("snapshots");
+    let baseline_snapshot = find_latest_snapshot(&snap_dir)
+        .ok()
+        .and_then(|path| rivet_core::snapshot::read_from_file(&path).ok());
+    if let Some(ref snap) = baseline_snapshot {
+        eprintln!(
+            "delta: comparing against baseline {} ({})",
+            snap.git_commit_short, snap.created_at,
+        );
+    }
+
+    let mut ctx = state.as_render_context();
+    ctx.baseline = baseline_snapshot.as_ref();
     let params = ViewParams::default();
 
     // SC-EMBED-1: warn when working tree is dirty.
@@ -5667,6 +5681,7 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                             externals: &externals,
                             project_path: &project_dir,
                             schemas_dir: &schemas_dir,
+                            baseline: None,
                         };
 
                         let result = crate::render::render_page(&ctx, page, &view_params);

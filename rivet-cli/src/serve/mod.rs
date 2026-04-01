@@ -208,6 +208,7 @@ impl AppState {
             externals: &self.externals,
             project_path: &self.project_path_buf,
             schemas_dir: &self.schemas_dir,
+            baseline: None,
         }
     }
 }
