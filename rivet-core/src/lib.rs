@@ -25,6 +25,7 @@ pub mod query;
 pub mod reqif;
 pub mod results;
 pub mod schema;
+pub mod snapshot;
 pub mod store;
 pub mod test_scanner;
 pub mod validate;

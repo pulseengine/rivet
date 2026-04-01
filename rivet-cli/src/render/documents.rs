@@ -175,6 +175,7 @@ pub(crate) fn render_document_detail(ctx: &RenderContext, id: &str) -> RenderRes
                 schema: ctx.schema,
                 graph,
                 diagnostics: ctx.diagnostics,
+                baseline: None,
             };
             rivet_core::embed::resolve_embed(req, &embed_ctx).map_err(|e| e.to_string())
         },

@@ -640,6 +640,65 @@ fn embed_coverage() {
     );
 }
 
+// ── rivet snapshot ─────────────────────────────────────────────────────
+
+/// `rivet snapshot capture` writes a JSON snapshot file.
+#[test]
+fn snapshot_capture_writes_file() {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let out_file = tmp.path().join("test-snap.json");
+
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "snapshot",
+            "capture",
+            "--output",
+            out_file.to_str().unwrap(),
+        ])
+        .output()
+        .expect("failed to execute rivet snapshot capture");
+
+    assert!(
+        output.status.success(),
+        "rivet snapshot capture must exit 0. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    assert!(out_file.exists(), "snapshot file must be created");
+    let content = std::fs::read_to_string(&out_file).expect("read snapshot");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&content).expect("snapshot must be valid JSON");
+    assert!(
+        parsed.get("schema_version").is_some(),
+        "must have schema_version"
+    );
+    assert!(parsed.get("stats").is_some(), "must have stats");
+    assert!(parsed.get("coverage").is_some(), "must have coverage");
+    assert!(parsed.get("diagnostics").is_some(), "must have diagnostics");
+}
+
+/// `rivet snapshot list` runs without error.
+#[test]
+fn snapshot_list_runs() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "snapshot",
+            "list",
+        ])
+        .output()
+        .expect("failed to execute rivet snapshot list");
+
+    assert!(
+        output.status.success(),
+        "rivet snapshot list must exit 0. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 /// `rivet embed "nonexistent"` reports an unknown embed error.
 #[test]
 fn embed_unknown_returns_error() {
@@ -659,5 +718,57 @@ fn embed_unknown_returns_error() {
     assert!(
         combined.contains("Unknown embed") || combined.contains("unknown"),
         "unknown embed should produce an error message. Got: {combined}"
+    );
+}
+
+/// `rivet embed "diagnostics"` prints diagnostics or a no-data message.
+#[test]
+fn embed_diagnostics() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "embed",
+            "diagnostics",
+        ])
+        .output()
+        .expect("failed to execute rivet embed diagnostics");
+
+    assert!(
+        output.status.success(),
+        "rivet embed diagnostics must exit 0. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Severity") || stdout.contains("No diagnostics"),
+        "should contain diagnostics output. Got: {stdout}"
+    );
+}
+
+/// `rivet embed "matrix"` prints matrix data or a no-rules message.
+#[test]
+fn embed_matrix() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "embed",
+            "matrix",
+        ])
+        .output()
+        .expect("failed to execute rivet embed matrix");
+
+    assert!(
+        output.status.success(),
+        "rivet embed matrix must exit 0. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("covered") || stdout.contains("No traceability"),
+        "should contain matrix output. Got: {stdout}"
     );
 }

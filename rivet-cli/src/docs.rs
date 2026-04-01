@@ -513,6 +513,60 @@ Headings (`##`, `###`, etc.) are parsed into sections. Documents with more
 than two sections automatically get a table of contents in the dashboard.
 Section-level artifact reference counts are shown in the TOC.
 
+## Computed Embeds
+
+Use `{{name}}` syntax to embed computed project data inline in documents:
+
+### Artifact embeds (legacy)
+
+```markdown
+{{artifact:REQ-001}}            — inline artifact card
+{{artifact:REQ-001:full}}       — full card with description, tags, links
+{{links:REQ-001}}               — incoming/outgoing link table
+{{table:requirement:id,title}}  — filtered artifact table
+```
+
+### Stats embed
+
+```markdown
+{{stats}}                       — full stats table (types, status, validation)
+{{stats:types}}                 — artifact counts by type only
+{{stats:status}}                — counts by status only
+{{stats:validation}}            — validation summary only
+```
+
+### Coverage embed
+
+```markdown
+{{coverage}}                    — all traceability rules with percentage bars
+{{coverage:rule-name}}          — single rule with uncovered artifact IDs
+```
+
+### Diagnostics embed
+
+```markdown
+{{diagnostics}}                 — all validation issues
+{{diagnostics:error}}           — errors only
+{{diagnostics:warning}}         — warnings only
+```
+
+### Matrix embed
+
+```markdown
+{{matrix}}                      — one matrix per traceability rule
+{{matrix:requirement:feature}}  — specific source→target matrix
+```
+
+### Error handling
+
+Unknown or malformed embeds render as a visible error (`embed-error` class),
+never an empty string. This ensures broken embeds are noticed during review.
+
+### In HTML export
+
+Computed embeds in exported HTML include a provenance footer with the git
+commit hash and timestamp, so reviewers can trace when data was generated.
+
 ## Validation
 
 Documents participate in validation:
