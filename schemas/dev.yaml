@@ -30,6 +30,20 @@ artifact-types:
       - name: derives-from
         link-type: derives-from
         cardinality: zero-or-many
+    common-mistakes:
+      - problem: "Requirement has no traceability — not satisfied by any design decision or feature"
+        fix-command: "rivet link REQ-XXX satisfies DD-XXX"
+      - problem: "Using 'implements' instead of 'satisfies' — requirements are satisfied, features implement"
+        fix-command: "Check link types: rivet schema links"
+    example: |
+      - id: REQ-001
+        type: requirement
+        title: System shall validate artifacts against schemas
+        status: approved
+        priority: must
+        links:
+          - type: satisfies
+            target: DD-001
 
   - name: design-decision
     description: An architectural or design decision with rationale
@@ -46,9 +60,36 @@ artifact-types:
         target-types: [requirement]
         required: true
         cardinality: one-or-many
+    common-mistakes:
+      - problem: "Design decision without rationale — the 'why' is more important than the 'what'"
+        fix-command: "rivet modify DD-XXX --set-field rationale='...'"
+      - problem: "Missing link to requirement — every decision must justify which requirement it satisfies"
+        fix-command: "rivet link DD-XXX satisfies REQ-XXX"
+    example: |
+      - id: DD-001
+        type: design-decision
+        title: Use YAML for artifact storage
+        status: approved
+        rationale: Human-readable, git-friendly, no database dependency
+        alternatives: SQLite, JSON, TOML
+        links:
+          - type: satisfies
+            target: REQ-001
 
   - name: feature
     description: A user-visible capability or feature
+    common-mistakes:
+      - problem: "Feature without acceptance criteria — makes verification ambiguous"
+        fix-command: "rivet modify FEAT-XXX --set-field acceptance-criteria='[\"Given...\"]'"
+    example: |
+      - id: FEAT-001
+        type: feature
+        title: Schema validation engine
+        status: approved
+        phase: phase-1
+        links:
+          - type: satisfies
+            target: REQ-001
     fields:
       - name: phase
         type: string
