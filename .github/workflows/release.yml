@@ -126,20 +126,15 @@ jobs:
           git push origin HEAD:main || true
 
   # ── Compliance report (HTML export) ───────────────────────────────────
+  # Uses snapshots already committed from PREVIOUS releases (not the one
+  # just captured). The new snapshot is for future release comparisons.
   build-compliance:
     name: Build compliance report
-    needs: [capture-snapshot]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-
-      - name: Download snapshot
-        uses: actions/download-artifact@v4
-        with:
-          name: snapshot
-          path: snapshots/
 
       - name: Generate compliance report
         id: report
