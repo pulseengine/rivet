@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1775082779224,
+  "lastUpdate": 1775084474873,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "8a6b87d2af223e3a9312e1fc77327ff06c367425",
-          "message": "feat: SCORE schema, LSP reload, audit fixes (UTF-8 panic, XSS, perf) (#61)\n\n* docs(schema): add research schema for market/competitive/patent/tech tracking\n\nNew artifact types: market-finding, competitive-analysis, patent-finding,\ntechnology-evaluation, academic-reference. Enables traceability from\nresearch findings to requirements and architecture decisions.\n\nTrace: skip\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* feat(schema): add Eclipse SCORE metamodel + fix critical audit findings\n\n1. SCORE schema (schemas/score.yaml): 40+ artifact types across 7 areas\n   (process, requirements, architecture, implementation, safety,\n   verification, documents) with 18 link types and 20 traceability rules\n\n2. LSP didSave reload: full project reload on file save with stale\n   diagnostic clearing and fresh republish\n\n3. Critical bug fixes from deep audit:\n   - UTF-8 string slicing panic: &title[..26] → chars().take(26)\n   - Mermaid securityLevel: 'loose' → 'strict' (prevent XSS via diagrams)\n   - Redundant validation: page_layout() now uses cached_diagnostics\n   - HTML escaping: source file refs, results view, wiki-link IDs\n\nFixes: FEAT-001\nSatisfies: SSC-4\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Test <test@test.com>\nCo-authored-by: Claude Opus 4.6 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-03-21T18:08:08+01:00",
-          "tree_id": "1f00d48a4c0d14af529c76d53cf98c2d318b372c",
-          "url": "https://github.com/pulseengine/rivet/commit/8a6b87d2af223e3a9312e1fc77327ff06c367425"
-        },
-        "date": 1774113275326,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 78154,
-            "range": "± 2469",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 824840,
-            "range": "± 4914",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 11749644,
-            "range": "± 1691370",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2207,
-            "range": "± 12",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 26877,
-            "range": "± 254",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 382857,
-            "range": "± 1014",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 925533,
-            "range": "± 4313",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 162277,
-            "range": "± 2742",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1902933,
-            "range": "± 37028",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 31372768,
-            "range": "± 2895151",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 40754,
-            "range": "± 123",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 463427,
-            "range": "± 4389",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 4754992,
-            "range": "± 47267",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4297,
-            "range": "± 54",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 58574,
-            "range": "± 376",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 796056,
-            "range": "± 3896",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 61840,
-            "range": "± 284",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 711778,
-            "range": "± 20669",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7684761,
-            "range": "± 293564",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 802,
-            "range": "± 4",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 7463,
-            "range": "± 27",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 115136,
-            "range": "± 728",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 23032,
-            "range": "± 289",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 157121,
-            "range": "± 2849",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1456515,
-            "range": "± 13795",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1359449,
             "range": "± 12064",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0661926d71cdb2e2acad7132a2b13b82221900a4",
+          "message": "feat: release-to-release delta in export + CI snapshot workflow (#97)\n\n* feat(export): auto-detect baseline snapshot and render delta columns\n\nExport auto-detects the most recent snapshot in snapshots/ and renders\nΔ columns in stats and coverage views:\n- Summary cards show +N/-N badges for artifacts, errors, warnings\n- By-type table gains a Δ column with per-type changes\n- Coverage summary shows Δ percentage\n- Coverage-by-rule table gains a Δ column with per-rule trend\n\nZero config — just have a snapshot file from a previous release and\nthe delta appears automatically in the next export.\n\n* ci: capture baseline snapshot on release tag push\n\nAdds a capture-snapshot job to the release workflow that:\n1. Runs rivet snapshot capture --name $TAG on every v* tag push\n2. Commits the snapshot JSON to main for future delta comparison\n3. Passes the snapshot to the compliance report job via artifact\n\nThe compliance report (rivet export --format html) will auto-detect\nthe previous snapshot and render delta columns in stats/coverage.\n\n* fix(ci): compliance report uses previous snapshot, not current\n\nThe compliance report should compare against the PREVIOUS release\nsnapshot (already committed to main), not the one just captured\nfor this release. This correctly shows 'what changed since last\nrelease' in the exported HTML delta columns.\n\nThe capture-snapshot job runs in parallel and commits the new\nsnapshot to main for future release comparisons.",
+          "timestamp": "2026-04-02T00:54:58+02:00",
+          "tree_id": "dca6a88aff155abb58a2b68e05fd3d8b088ca2c6",
+          "url": "https://github.com/pulseengine/rivet/commit/0661926d71cdb2e2acad7132a2b13b82221900a4"
+        },
+        "date": 1775084473913,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 80077,
+            "range": "± 324",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 820120,
+            "range": "± 12475",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 10683307,
+            "range": "± 646225",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2284,
+            "range": "± 54",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25086,
+            "range": "± 519",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 386586,
+            "range": "± 7890",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 94,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 919983,
+            "range": "± 24485",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 165964,
+            "range": "± 1705",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1958539,
+            "range": "± 18520",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 25577160,
+            "range": "± 1564458",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 44111,
+            "range": "± 184",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 498872,
+            "range": "± 4254",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 5278435,
+            "range": "± 108213",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4420,
+            "range": "± 33",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 60533,
+            "range": "± 299",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 850184,
+            "range": "± 4066",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 60372,
+            "range": "± 382",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 648723,
+            "range": "± 3640",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7340135,
+            "range": "± 778497",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 762,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7165,
+            "range": "± 112",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 111816,
+            "range": "± 1968",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 23928,
+            "range": "± 146",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 167399,
+            "range": "± 1746",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1575525,
+            "range": "± 19907",
             "unit": "ns/iter"
           }
         ]
