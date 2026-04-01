@@ -6318,3 +6318,482 @@ fn print_diagnostics(diagnostics: &[validate::Diagnostic]) {
         println!("{d}");
     }
 }
+
+// ── LSP unit tests ─────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod lsp_tests {
+    use super::*;
+
+    // ── lsp_word_at_position ───────────────────────────────────────────
+
+    #[test]
+    fn word_at_position_basic() {
+        let content = "id: REQ-001\ntitle: hello world";
+        assert_eq!(lsp_word_at_position(content, 0, 5), "REQ-001");
+    }
+
+    #[test]
+    fn word_at_position_start_of_line() {
+        let content = "REQ-001 is important";
+        assert_eq!(lsp_word_at_position(content, 0, 0), "REQ-001");
+    }
+
+    #[test]
+    fn word_at_position_end_of_word() {
+        let content = "REQ-001 is important";
+        // Cursor right after the last char of the word
+        assert_eq!(lsp_word_at_position(content, 0, 7), "REQ-001");
+    }
+
+    #[test]
+    fn word_at_position_middle_of_word() {
+        let content = "links to SWREQ-042 here";
+        assert_eq!(lsp_word_at_position(content, 0, 12), "SWREQ-042");
+    }
+
+    #[test]
+    fn word_at_position_with_underscores() {
+        let content = "some_long_identifier = 42";
+        assert_eq!(lsp_word_at_position(content, 0, 5), "some_long_identifier");
+    }
+
+    #[test]
+    fn word_at_position_empty_line() {
+        let content = "line one\n\nline three";
+        assert_eq!(lsp_word_at_position(content, 1, 0), "");
+    }
+
+    #[test]
+    fn word_at_position_beyond_last_line() {
+        let content = "only one line";
+        assert_eq!(lsp_word_at_position(content, 5, 0), "");
+    }
+
+    #[test]
+    fn word_at_position_cursor_on_whitespace() {
+        let content = "hello   world";
+        // Cursor in the whitespace gap — no word characters around it
+        assert_eq!(lsp_word_at_position(content, 0, 6), "");
+    }
+
+    #[test]
+    fn word_at_position_multiline() {
+        let content = "first line\nsecond REQ-099 here\nthird";
+        assert_eq!(lsp_word_at_position(content, 1, 10), "REQ-099");
+    }
+
+    #[test]
+    fn word_at_position_cursor_past_end_of_line() {
+        let content = "short";
+        // Cursor at column 100 — beyond line length
+        assert_eq!(lsp_word_at_position(content, 0, 100), "short");
+    }
+
+    #[test]
+    fn word_at_position_special_chars_stop_word() {
+        // Colon is not alphanumeric/dash/underscore, so it stops the word
+        let content = "target: REQ-001";
+        assert_eq!(lsp_word_at_position(content, 0, 0), "target");
+        assert_eq!(lsp_word_at_position(content, 0, 8), "REQ-001");
+    }
+
+    // ── lsp_find_artifact_line ─────────────────────────────────────────
+
+    #[test]
+    fn find_artifact_line_basic() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("reqs.yaml");
+        std::fs::write(
+            &path,
+            "artifacts:\n  - id: REQ-001\n    title: First\n  - id: REQ-002\n    title: Second\n",
+        )
+        .unwrap();
+
+        assert_eq!(lsp_find_artifact_line(&path, "REQ-001"), 1);
+        assert_eq!(lsp_find_artifact_line(&path, "REQ-002"), 3);
+    }
+
+    #[test]
+    fn find_artifact_line_with_dash_prefix() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("items.yaml");
+        std::fs::write(
+            &path,
+            "artifacts:\n- id: ITEM-A\n  title: Alpha\n- id: ITEM-B\n  title: Beta\n",
+        )
+        .unwrap();
+
+        assert_eq!(lsp_find_artifact_line(&path, "ITEM-A"), 1);
+        assert_eq!(lsp_find_artifact_line(&path, "ITEM-B"), 3);
+    }
+
+    #[test]
+    fn find_artifact_line_not_found_returns_zero() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("reqs.yaml");
+        std::fs::write(&path, "artifacts:\n  - id: REQ-001\n    title: First\n").unwrap();
+
+        assert_eq!(lsp_find_artifact_line(&path, "NONEXISTENT"), 0);
+    }
+
+    #[test]
+    fn find_artifact_line_nonexistent_file_returns_zero() {
+        let path = std::path::PathBuf::from("/tmp/does_not_exist_at_all.yaml");
+        assert_eq!(lsp_find_artifact_line(&path, "REQ-001"), 0);
+    }
+
+    #[test]
+    fn find_artifact_line_distinguishes_id_prefixes() {
+        // Ensure "REQ-00" does not match "REQ-001" (exact match only)
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("reqs.yaml");
+        std::fs::write(
+            &path,
+            "artifacts:\n  - id: REQ-001\n    title: A\n  - id: REQ-00\n    title: B\n",
+        )
+        .unwrap();
+
+        assert_eq!(lsp_find_artifact_line(&path, "REQ-001"), 1);
+        assert_eq!(lsp_find_artifact_line(&path, "REQ-00"), 3);
+    }
+
+    // ── lsp_uri_to_path / lsp_path_to_uri ──────────────────────────────
+
+    #[test]
+    fn uri_to_path_roundtrip() {
+        let path = std::path::Path::new("/tmp/project/reqs.yaml");
+        let uri = lsp_path_to_uri(path).expect("should produce URI");
+        let back = lsp_uri_to_path(&uri).expect("should parse back to path");
+        assert_eq!(back, path);
+    }
+
+    #[test]
+    fn uri_to_path_non_file_returns_none() {
+        let uri: lsp_types::Uri = "https://example.com/foo".parse().unwrap();
+        assert!(lsp_uri_to_path(&uri).is_none());
+    }
+
+    // ── Diagnostic → LSP mapping ───────────────────────────────────────
+
+    /// Helper: build LSP diagnostics from validate::Diagnostic items without
+    /// sending them over a connection. Mirrors the mapping logic in
+    /// `lsp_publish_salsa_diagnostics`.
+    fn map_diagnostics_to_lsp(
+        diagnostics: &[validate::Diagnostic],
+        store: &Store,
+    ) -> std::collections::HashMap<PathBuf, Vec<lsp_types::Diagnostic>> {
+        let mut file_diags: std::collections::HashMap<PathBuf, Vec<lsp_types::Diagnostic>> =
+            std::collections::HashMap::new();
+
+        for diag in diagnostics {
+            let art_id = match diag.artifact_id {
+                Some(ref id) => id.as_str(),
+                None => continue,
+            };
+            let art = store.get(art_id);
+            let source_file = art.and_then(|a| a.source_file.as_ref());
+            if let Some(path) = source_file {
+                let line = lsp_find_artifact_line(path, art_id);
+                file_diags
+                    .entry(path.clone())
+                    .or_default()
+                    .push(lsp_types::Diagnostic {
+                        range: lsp_types::Range {
+                            start: lsp_types::Position { line, character: 0 },
+                            end: lsp_types::Position {
+                                line,
+                                character: 100,
+                            },
+                        },
+                        severity: Some(match diag.severity {
+                            Severity::Error => lsp_types::DiagnosticSeverity::ERROR,
+                            Severity::Warning => lsp_types::DiagnosticSeverity::WARNING,
+                            Severity::Info => lsp_types::DiagnosticSeverity::INFORMATION,
+                        }),
+                        source: Some("rivet".to_string()),
+                        message: diag.message.clone(),
+                        ..Default::default()
+                    });
+            }
+        }
+
+        file_diags
+    }
+
+    #[test]
+    fn diagnostic_maps_error_severity() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("reqs.yaml");
+        std::fs::write(&path, "artifacts:\n  - id: REQ-001\n    title: Test\n").unwrap();
+
+        let mut store = Store::new();
+        store
+            .insert(rivet_core::model::Artifact {
+                id: "REQ-001".into(),
+                artifact_type: "requirement".into(),
+                title: "Test".into(),
+                description: None,
+                status: None,
+                tags: vec![],
+                links: vec![],
+                fields: std::collections::BTreeMap::new(),
+                source_file: Some(path.clone()),
+            })
+            .unwrap();
+
+        let diagnostics = vec![validate::Diagnostic {
+            severity: Severity::Error,
+            artifact_id: Some("REQ-001".into()),
+            rule: "known-type".into(),
+            message: "unknown artifact type 'requirement'".into(),
+        }];
+
+        let mapped = map_diagnostics_to_lsp(&diagnostics, &store);
+        let lsp_diags = mapped.get(&path).expect("should have diagnostics for file");
+        assert_eq!(lsp_diags.len(), 1);
+        assert_eq!(
+            lsp_diags[0].severity,
+            Some(lsp_types::DiagnosticSeverity::ERROR)
+        );
+        assert!(lsp_diags[0].message.contains("unknown artifact type"));
+        assert_eq!(lsp_diags[0].range.start.line, 1); // line of "- id: REQ-001"
+        assert_eq!(lsp_diags[0].source, Some("rivet".to_string()));
+    }
+
+    #[test]
+    fn diagnostic_maps_warning_severity() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("design.yaml");
+        std::fs::write(&path, "artifacts:\n  - id: DD-001\n    title: Decision\n").unwrap();
+
+        let mut store = Store::new();
+        store
+            .insert(rivet_core::model::Artifact {
+                id: "DD-001".into(),
+                artifact_type: "design-decision".into(),
+                title: "Decision".into(),
+                description: None,
+                status: None,
+                tags: vec![],
+                links: vec![],
+                fields: std::collections::BTreeMap::new(),
+                source_file: Some(path.clone()),
+            })
+            .unwrap();
+
+        let diagnostics = vec![validate::Diagnostic {
+            severity: Severity::Warning,
+            artifact_id: Some("DD-001".into()),
+            rule: "dd-must-satisfy".into(),
+            message: "design-decision has no satisfies link".into(),
+        }];
+
+        let mapped = map_diagnostics_to_lsp(&diagnostics, &store);
+        let lsp_diags = mapped.get(&path).unwrap();
+        assert_eq!(lsp_diags.len(), 1);
+        assert_eq!(
+            lsp_diags[0].severity,
+            Some(lsp_types::DiagnosticSeverity::WARNING)
+        );
+    }
+
+    #[test]
+    fn diagnostic_maps_info_severity() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("info.yaml");
+        std::fs::write(&path, "artifacts:\n  - id: INFO-01\n    title: Note\n").unwrap();
+
+        let mut store = Store::new();
+        store
+            .insert(rivet_core::model::Artifact {
+                id: "INFO-01".into(),
+                artifact_type: "note".into(),
+                title: "Note".into(),
+                description: None,
+                status: None,
+                tags: vec![],
+                links: vec![],
+                fields: std::collections::BTreeMap::new(),
+                source_file: Some(path.clone()),
+            })
+            .unwrap();
+
+        let diagnostics = vec![validate::Diagnostic {
+            severity: Severity::Info,
+            artifact_id: Some("INFO-01".into()),
+            rule: "info-check".into(),
+            message: "informational note".into(),
+        }];
+
+        let mapped = map_diagnostics_to_lsp(&diagnostics, &store);
+        let lsp_diags = mapped.get(&path).unwrap();
+        assert_eq!(
+            lsp_diags[0].severity,
+            Some(lsp_types::DiagnosticSeverity::INFORMATION)
+        );
+    }
+
+    #[test]
+    fn diagnostic_without_artifact_id_is_skipped() {
+        let store = Store::new();
+        let diagnostics = vec![validate::Diagnostic {
+            severity: Severity::Error,
+            artifact_id: None,
+            rule: "schema-level".into(),
+            message: "schema error".into(),
+        }];
+
+        let mapped = map_diagnostics_to_lsp(&diagnostics, &store);
+        assert!(
+            mapped.is_empty(),
+            "diagnostics without artifact_id should be skipped"
+        );
+    }
+
+    #[test]
+    fn diagnostic_for_unknown_artifact_is_skipped() {
+        let store = Store::new();
+        let diagnostics = vec![validate::Diagnostic {
+            severity: Severity::Error,
+            artifact_id: Some("MISSING-001".into()),
+            rule: "test".into(),
+            message: "broken".into(),
+        }];
+
+        let mapped = map_diagnostics_to_lsp(&diagnostics, &store);
+        assert!(
+            mapped.is_empty(),
+            "diagnostics for unknown artifacts should be skipped"
+        );
+    }
+
+    #[test]
+    fn multiple_diagnostics_grouped_by_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path_a = dir.path().join("a.yaml");
+        let path_b = dir.path().join("b.yaml");
+        std::fs::write(&path_a, "artifacts:\n  - id: A-001\n    title: Alpha\n").unwrap();
+        std::fs::write(
+            &path_b,
+            "artifacts:\n  - id: B-001\n    title: Beta\n  - id: B-002\n    title: Gamma\n",
+        )
+        .unwrap();
+
+        let mut store = Store::new();
+        store
+            .insert(rivet_core::model::Artifact {
+                id: "A-001".into(),
+                artifact_type: "req".into(),
+                title: "Alpha".into(),
+                description: None,
+                status: None,
+                tags: vec![],
+                links: vec![],
+                fields: std::collections::BTreeMap::new(),
+                source_file: Some(path_a.clone()),
+            })
+            .unwrap();
+        store
+            .insert(rivet_core::model::Artifact {
+                id: "B-001".into(),
+                artifact_type: "req".into(),
+                title: "Beta".into(),
+                description: None,
+                status: None,
+                tags: vec![],
+                links: vec![],
+                fields: std::collections::BTreeMap::new(),
+                source_file: Some(path_b.clone()),
+            })
+            .unwrap();
+        store
+            .insert(rivet_core::model::Artifact {
+                id: "B-002".into(),
+                artifact_type: "req".into(),
+                title: "Gamma".into(),
+                description: None,
+                status: None,
+                tags: vec![],
+                links: vec![],
+                fields: std::collections::BTreeMap::new(),
+                source_file: Some(path_b.clone()),
+            })
+            .unwrap();
+
+        let diagnostics = vec![
+            validate::Diagnostic {
+                severity: Severity::Error,
+                artifact_id: Some("A-001".into()),
+                rule: "test".into(),
+                message: "error in A".into(),
+            },
+            validate::Diagnostic {
+                severity: Severity::Warning,
+                artifact_id: Some("B-001".into()),
+                rule: "test".into(),
+                message: "warning in B first".into(),
+            },
+            validate::Diagnostic {
+                severity: Severity::Error,
+                artifact_id: Some("B-002".into()),
+                rule: "test".into(),
+                message: "error in B second".into(),
+            },
+        ];
+
+        let mapped = map_diagnostics_to_lsp(&diagnostics, &store);
+        assert_eq!(mapped.len(), 2, "should have two files");
+        assert_eq!(mapped[&path_a].len(), 1);
+        assert_eq!(mapped[&path_b].len(), 2);
+    }
+
+    #[test]
+    fn diagnostic_range_points_to_correct_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("multi.yaml");
+        // Third artifact is at line 6 (0-indexed)
+        std::fs::write(
+            &path,
+            "\
+artifacts:
+  - id: X-001
+    title: First
+  - id: X-002
+    title: Second
+  - id: X-003
+    title: Third
+",
+        )
+        .unwrap();
+
+        let mut store = Store::new();
+        store
+            .insert(rivet_core::model::Artifact {
+                id: "X-003".into(),
+                artifact_type: "req".into(),
+                title: "Third".into(),
+                description: None,
+                status: None,
+                tags: vec![],
+                links: vec![],
+                fields: std::collections::BTreeMap::new(),
+                source_file: Some(path.clone()),
+            })
+            .unwrap();
+
+        let diagnostics = vec![validate::Diagnostic {
+            severity: Severity::Error,
+            artifact_id: Some("X-003".into()),
+            rule: "test".into(),
+            message: "problem with third".into(),
+        }];
+
+        let mapped = map_diagnostics_to_lsp(&diagnostics, &store);
+        let lsp_diags = mapped.get(&path).unwrap();
+        // "  - id: X-003" is on line 5 (0-indexed)
+        assert_eq!(lsp_diags[0].range.start.line, 5);
+        assert_eq!(lsp_diags[0].range.start.character, 0);
+        assert_eq!(lsp_diags[0].range.end.character, 100);
+    }
+}
