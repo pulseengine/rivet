@@ -2069,6 +2069,10 @@ pub fn render_document_page(
     doc: &document::Document,
     store: &Store,
     graph: &LinkGraph,
+    schema: &Schema,
+    diagnostics: &[Diagnostic],
+    commit_short: &str,
+    is_dirty: bool,
     config: &ExportConfig,
 ) -> String {
     let timestamp = timestamp_now();
@@ -2098,7 +2102,9 @@ pub fn render_document_page(
 
     // Render the document body with resolved links for static export.
     let req_href = "./requirements.html";
-    let body_html = render_document_body_for_export(doc, store, graph, req_href);
+    let body_html = render_document_body_for_export(
+        doc, store, graph, schema, diagnostics, commit_short, is_dirty, req_href,
+    );
     out.push_str("<div class=\"doc-body\">\n");
     out.push_str(&body_html);
     out.push_str("</div>\n");
@@ -2117,6 +2123,10 @@ fn render_document_body_for_export(
     doc: &document::Document,
     store: &Store,
     graph: &LinkGraph,
+    schema: &Schema,
+    diagnostics: &[Diagnostic],
+    commit_short: &str,
+    is_dirty: bool,
     req_href: &str,
 ) -> String {
     // Use the document module's render_to_html with custom callbacks.
@@ -2183,10 +2193,21 @@ fn render_document_body_for_export(
     };
 
     // Get the rendered HTML from the document module.
-    let raw_html = document::render_to_html(doc, artifact_exists, artifact_info, |_| false, |_req| {
-        // Phase 1: embeds in export are resolved with provenance in Task 5.
-        // For now, pass through to avoid breaking the build.
-        Ok(String::new())
+    // Computed embeds are resolved with provenance stamps (SC-EMBED-4).
+    let raw_html = document::render_to_html(doc, artifact_exists, artifact_info, |_| false, |req| {
+        let embed_ctx = crate::embed::EmbedContext {
+            store,
+            schema,
+            graph,
+            diagnostics,
+        };
+        match crate::embed::resolve_embed(req, &embed_ctx) {
+            Ok(html) => {
+                let stamp = crate::embed::render_provenance_stamp(commit_short, is_dirty);
+                Ok(format!("{html}{stamp}"))
+            }
+            Err(e) => Err(e.to_string()),
+        }
     });
 
     // Post-process: rewrite the HTMX-style artifact links to static links.
@@ -3137,7 +3158,7 @@ mod tests {
             None,
         )
         .unwrap();
-        let html = render_document_page(&doc, &store, &graph, &cfg);
+        let html = render_document_page(&doc, &store, &graph, &_schema, &[], "abc1234", false, &cfg);
         assert!(html.contains("DOC-001"));
         assert!(html.contains("Design Doc"));
         assert!(html.contains("Design"));

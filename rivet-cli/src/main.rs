@@ -2685,6 +2685,17 @@ fn cmd_export_html(
     let ctx = state.as_render_context();
     let params = ViewParams::default();
 
+    // SC-EMBED-1: warn when working tree is dirty.
+    if let Some(ref git) = state.context.git {
+        if git.is_dirty {
+            eprintln!(
+                "warning: working tree is dirty ({} uncommitted change{}) — exported data may not match any commit",
+                git.dirty_count,
+                if git.dirty_count == 1 { "" } else { "s" },
+            );
+        }
+    }
+
     // ── Mermaid JS (inlined so the site works offline) ──────────────
     const MERMAID_JS: &str = include_str!("../assets/mermaid.min.js");
 

@@ -357,6 +357,51 @@ fn render_coverage(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> String {
     html
 }
 
+// ── Provenance ──────────────────────────────────────────────────────────
+
+/// Render a provenance footer for export (SC-EMBED-4).
+///
+/// Every computed embed in export must include the commit hash and timestamp
+/// so reviewers can trace exactly what code produced the exported data.
+pub fn render_provenance_stamp(commit_short: &str, is_dirty: bool) -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    // Convert epoch seconds to a human-readable UTC timestamp.
+    let (year, month, day, hours, minutes) = epoch_to_ymd_hm(timestamp);
+    let dirty_note = if is_dirty { " (dirty)" } else { "" };
+
+    format!(
+        "<div class=\"embed-provenance\">Computed at {year}-{month:02}-{day:02} {hours:02}:{minutes:02} UTC from commit {commit_short}{dirty_note}</div>\n"
+    )
+}
+
+/// Convert seconds since Unix epoch to (year, month, day, hour, minute) in UTC.
+fn epoch_to_ymd_hm(secs: u64) -> (u64, u64, u64, u64, u64) {
+    let days = secs / 86400;
+    let time_of_day = secs % 86400;
+    let hours = time_of_day / 3600;
+    let minutes = (time_of_day % 3600) / 60;
+
+    // Algorithm from Howard Hinnant's civil_from_days (public domain).
+    let z = days + 719468;
+    let era = z / 146097;
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+
+    (y, m, d, hours, minutes)
+}
+
 // ── Tests ───────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -456,5 +501,27 @@ mod tests {
         let html = err.to_error_html();
         assert!(html.contains("embed-error"), "must have embed-error class");
         assert!(html.contains("nonexistent"), "must show the unknown name");
+    }
+
+    // ── Provenance tests ────────────────────────────────────────────
+
+    #[test]
+    fn provenance_stamp_contains_commit_and_timestamp() {
+        let stamp = render_provenance_stamp("abc1234", false);
+        assert!(stamp.contains("embed-provenance"), "must have provenance class");
+        assert!(stamp.contains("abc1234"), "must contain commit hash");
+        assert!(stamp.contains("Computed at"), "must contain timestamp label");
+    }
+
+    #[test]
+    fn provenance_stamp_shows_dirty_when_dirty() {
+        let stamp = render_provenance_stamp("abc1234", true);
+        assert!(stamp.contains("dirty"), "must indicate dirty tree");
+    }
+
+    #[test]
+    fn provenance_stamp_clean_has_no_dirty() {
+        let stamp = render_provenance_stamp("abc1234", false);
+        assert!(!stamp.contains("dirty"), "clean stamp must not say dirty");
     }
 }
