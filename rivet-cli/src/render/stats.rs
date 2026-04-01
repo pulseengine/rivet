@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 
 use rivet_core::coverage;
 use rivet_core::document::html_escape;
@@ -6,6 +7,36 @@ use rivet_core::schema::Severity;
 
 use crate::render::RenderContext;
 use crate::render::helpers::badge_for_type;
+
+/// Render a delta badge like `+3` or `-2` with green/red styling.
+fn delta_badge(current: usize, baseline: usize) -> String {
+    let diff = current as isize - baseline as isize;
+    if diff == 0 {
+        return String::new();
+    }
+    let (sign, color) = if diff > 0 {
+        ("+", "#15713a")
+    } else {
+        ("", "#c62828")
+    };
+    format!(" <span style=\"font-size:.75em;color:{color};font-weight:600\">{sign}{diff}</span>")
+}
+
+/// Render a delta badge for percentages.
+fn delta_pct_badge(current: f64, baseline: f64) -> String {
+    let diff = current - baseline;
+    if diff.abs() < 0.05 {
+        return String::new();
+    }
+    let (sign, color) = if diff > 0.0 {
+        ("+", "#15713a")
+    } else {
+        ("", "#c62828")
+    };
+    format!(
+        " <span style=\"font-size:.75em;color:{color};font-weight:600\">{sign}{diff:.1}%</span>"
+    )
+}
 
 pub(crate) fn render_stats(ctx: &RenderContext) -> String {
     let store = ctx.store;
@@ -37,46 +68,79 @@ pub(crate) fn render_stats(ctx: &RenderContext) -> String {
         ctx.schema.traceability_rules.len(),
     );
 
-    // Summary cards with colored accents
+    // Summary cards with colored accents + delta badges
+    let bl = ctx.baseline;
     html.push_str("<div class=\"stat-grid\">");
-    html.push_str(&format!(
-        "<div class=\"stat-box stat-blue\"><div class=\"number\">{}</div><div class=\"label\">Artifacts</div></div>",
-        store.len()
-    ));
-    html.push_str(&format!(
+    let _ = write!(
+        html,
+        "<div class=\"stat-box stat-blue\"><div class=\"number\">{}{}</div><div class=\"label\">Artifacts</div></div>",
+        store.len(),
+        bl.map_or(String::new(), |s| delta_badge(store.len(), s.stats.total)),
+    );
+    let _ = write!(
+        html,
         "<div class=\"stat-box stat-green\"><div class=\"number\">{}</div><div class=\"label\">Types</div></div>",
-        types.len()
-    ));
-    html.push_str(&format!(
+        types.len(),
+    );
+    let _ = write!(
+        html,
         "<div class=\"stat-box stat-orange\"><div class=\"number\">{}</div><div class=\"label\">Orphans</div></div>",
-        orphans.len()
-    ));
-    html.push_str(&format!(
-        "<div class=\"stat-box stat-red\"><div class=\"number\">{}</div><div class=\"label\">Errors</div></div>",
-        errors
-    ));
-    html.push_str(&format!(
-        "<div class=\"stat-box stat-amber\"><div class=\"number\">{}</div><div class=\"label\">Warnings</div></div>",
-        warnings
-    ));
-    html.push_str(&format!(
+        orphans.len(),
+    );
+    let _ = write!(
+        html,
+        "<div class=\"stat-box stat-red\"><div class=\"number\">{}{}</div><div class=\"label\">Errors</div></div>",
+        errors,
+        bl.map_or(String::new(), |s| delta_badge(errors, s.diagnostics.errors)),
+    );
+    let _ = write!(
+        html,
+        "<div class=\"stat-box stat-amber\"><div class=\"number\">{}{}</div><div class=\"label\">Warnings</div></div>",
+        warnings,
+        bl.map_or(String::new(), |s| delta_badge(
+            warnings,
+            s.diagnostics.warnings
+        )),
+    );
+    let _ = write!(
+        html,
         "<div class=\"stat-box stat-purple\"><div class=\"number\">{}</div><div class=\"label\">Broken Links</div></div>",
-        graph.broken.len()
-    ));
-    html.push_str(&format!(
+        graph.broken.len(),
+    );
+    let _ = write!(
+        html,
         "<div class=\"stat-box stat-blue\"><div class=\"number\">{}</div><div class=\"label\">Documents</div></div>",
-        doc_store.len()
-    ));
+        doc_store.len(),
+    );
     html.push_str("</div>");
 
     // By-type table
-    html.push_str("<div class=\"card\"><h3>Artifacts by Type</h3><table><thead><tr><th>Type</th><th>Count</th></tr></thead><tbody>");
+    let has_delta = bl.is_some();
+    if has_delta {
+        html.push_str("<div class=\"card\"><h3>Artifacts by Type</h3><table><thead><tr><th>Type</th><th>Count</th><th>Δ</th></tr></thead><tbody>");
+    } else {
+        html.push_str("<div class=\"card\"><h3>Artifacts by Type</h3><table><thead><tr><th>Type</th><th>Count</th></tr></thead><tbody>");
+    }
     for t in &types {
-        html.push_str(&format!(
-            "<tr><td>{}</td><td>{}</td></tr>",
-            badge_for_type(t),
-            store.count_by_type(t)
-        ));
+        let count = store.count_by_type(t);
+        if has_delta {
+            let base_count = bl
+                .and_then(|s| s.stats.by_type.get(*t))
+                .copied()
+                .unwrap_or(0);
+            let _ = write!(
+                html,
+                "<tr><td>{}</td><td>{count}</td><td>{}</td></tr>",
+                badge_for_type(t),
+                delta_badge(count, base_count),
+            );
+        } else {
+            let _ = write!(
+                html,
+                "<tr><td>{}</td><td>{count}</td></tr>",
+                badge_for_type(t),
+            );
+        }
     }
     html.push_str("</tbody></table></div>");
 
@@ -134,11 +198,14 @@ pub(crate) fn render_stats(ctx: &RenderContext) -> String {
         };
         let total_covered: usize = cov_report.entries.iter().map(|e| e.covered).sum();
         let total_items: usize = cov_report.entries.iter().map(|e| e.total).sum();
+        let cov_delta = bl.map_or(String::new(), |s| {
+            delta_pct_badge(overall, s.coverage.overall)
+        });
         html.push_str(&format!(
             "<div class=\"card\">\
              <h3>Traceability Coverage</h3>\
              <div style=\"display:flex;align-items:center;gap:1.5rem;margin-bottom:0.75rem\">\
-               <div style=\"font-size:2rem;font-weight:700;color:{cov_color}\">{overall:.0}%</div>\
+               <div style=\"font-size:2rem;font-weight:700;color:{cov_color}\">{overall:.0}%{cov_delta}</div>\
                <div style=\"flex:1\">\
                  <div class=\"status-bar-track\" style=\"height:0.6rem\">\
                    <div class=\"status-bar-fill\" style=\"background:{cov_color};width:{overall:.1}%\"></div>\

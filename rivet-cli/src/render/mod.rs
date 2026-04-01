@@ -42,6 +42,8 @@ pub(crate) struct RenderContext<'a> {
     pub(crate) externals: &'a [ExternalInfo],
     pub(crate) project_path: &'a Path,
     pub(crate) schemas_dir: &'a Path,
+    /// Optional baseline snapshot for delta rendering in export.
+    pub(crate) baseline: Option<&'a rivet_core::snapshot::Snapshot>,
 }
 
 #[allow(dead_code)]

@@ -92,7 +92,42 @@ jobs:
           name: binary-${{ matrix.target }}
           path: ${{ env.ARCHIVE }}
 
+  # ── Baseline snapshot ─────────────────────────────────────────────────
+  capture-snapshot:
+    name: Capture baseline snapshot
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Capture snapshot
+        env:
+          TAG: ${{ github.ref_name }}
+        run: cargo run --release -- snapshot capture --name "$TAG"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: snapshot
+          path: snapshots/
+
+      - name: Commit snapshot to main
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add snapshots/
+          git diff --cached --quiet && exit 0
+          git commit -m "chore: capture baseline snapshot for $TAG"
+          git push origin HEAD:main || true
+
   # ── Compliance report (HTML export) ───────────────────────────────────
+  # Uses snapshots already committed from PREVIOUS releases (not the one
+  # just captured). The new snapshot is for future release comparisons.
   build-compliance:
     name: Build compliance report
     runs-on: ubuntu-latest
