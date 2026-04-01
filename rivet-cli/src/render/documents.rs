@@ -172,7 +172,7 @@ pub(crate) fn render_document_detail(ctx: &RenderContext, id: &str) -> RenderRes
         |req| {
             let embed_ctx = rivet_core::embed::EmbedContext {
                 store,
-                schema: &ctx.schema,
+                schema: ctx.schema,
                 graph,
                 diagnostics: ctx.diagnostics,
             };

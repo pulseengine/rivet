@@ -2065,6 +2065,7 @@ pub fn render_documents_index(doc_store: &DocumentStore, config: &ExportConfig) 
 ///
 /// Wiki-links `[[REQ-001]]` resolve to `./requirements.html#art-REQ-001`.
 /// Artifact embeds `{{artifact:ID}}` render the full card via `ArtifactInfo`.
+#[allow(clippy::too_many_arguments)]
 pub fn render_document_page(
     doc: &document::Document,
     store: &Store,
@@ -2119,6 +2120,7 @@ pub fn render_document_page(
 /// This wraps `document::render_to_html` but overrides the `[[ID]]` link
 /// resolution to point at `./requirements.html#art-ID` instead of HTMX
 /// endpoints, making it suitable for static sites.
+#[allow(clippy::too_many_arguments)]
 fn render_document_body_for_export(
     doc: &document::Document,
     store: &Store,
