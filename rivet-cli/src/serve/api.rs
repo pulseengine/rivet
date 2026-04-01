@@ -591,3 +591,268 @@ fn matches_filters(artifact: &rivet_core::model::Artifact, params: &ArtifactsPar
     }
     true
 }
+
+// ── Guide ──────────────────────────────────────────────────────────────
+
+#[derive(Serialize)]
+struct GuideResponse {
+    artifact_types: Vec<GuideArtifactType>,
+    link_types: Vec<GuideLinkType>,
+    traceability_rules: Vec<GuideRule>,
+    embed_syntax: Vec<GuideEmbed>,
+    commit_message: GuideCommitMessage,
+    common_mistakes: Vec<GuideMistake>,
+}
+
+#[derive(Serialize)]
+struct GuideArtifactType {
+    name: String,
+    description: String,
+    required_fields: Vec<GuideField>,
+    optional_fields: Vec<GuideField>,
+    required_links: Vec<GuideRequiredLink>,
+    valid_statuses: Vec<String>,
+    example_yaml: String,
+}
+
+#[derive(Serialize)]
+struct GuideField {
+    name: String,
+    #[serde(rename = "type")]
+    field_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    allowed_values: Option<Vec<String>>,
+}
+
+#[derive(Serialize)]
+struct GuideRequiredLink {
+    field: String,
+    link_type: String,
+    target_types: Vec<String>,
+    cardinality: String,
+}
+
+#[derive(Serialize)]
+struct GuideLinkType {
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    inverse: Option<String>,
+    description: String,
+}
+
+#[derive(Serialize)]
+struct GuideRule {
+    name: String,
+    description: String,
+    source_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    required_link: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    required_backlink: Option<String>,
+    target_types: Vec<String>,
+    severity: String,
+}
+
+#[derive(Serialize)]
+struct GuideEmbed {
+    pattern: String,
+    description: String,
+    args: Vec<String>,
+    options: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct GuideCommitMessage {
+    trailers: Vec<String>,
+    example: String,
+}
+
+#[derive(Serialize)]
+struct GuideMistake {
+    rule: String,
+    fix: String,
+}
+
+pub(crate) async fn guide(State(state): State<SharedState>) -> impl IntoResponse {
+    let guard = state.read().await;
+    let schema = &guard.schema;
+
+    // Artifact types
+    let artifact_types: Vec<GuideArtifactType> = schema
+        .artifact_types
+        .values()
+        .map(|t| {
+            let required_fields: Vec<GuideField> = t
+                .fields
+                .iter()
+                .filter(|f| f.required)
+                .map(|f| GuideField {
+                    name: f.name.clone(),
+                    field_type: f.field_type.clone(),
+                    description: f.description.clone(),
+                    allowed_values: f.allowed_values.clone(),
+                })
+                .collect();
+            let optional_fields: Vec<GuideField> = t
+                .fields
+                .iter()
+                .filter(|f| !f.required)
+                .map(|f| GuideField {
+                    name: f.name.clone(),
+                    field_type: f.field_type.clone(),
+                    description: f.description.clone(),
+                    allowed_values: f.allowed_values.clone(),
+                })
+                .collect();
+            let required_links: Vec<GuideRequiredLink> = t
+                .link_fields
+                .iter()
+                .filter(|l| l.required)
+                .map(|l| GuideRequiredLink {
+                    field: l.name.clone(),
+                    link_type: l.link_type.clone(),
+                    target_types: l.target_types.clone(),
+                    cardinality: format!("{:?}", l.cardinality).to_lowercase(),
+                })
+                .collect();
+
+            // Collect valid statuses from fields with allowed_values named "status"
+            let valid_statuses: Vec<String> = t
+                .fields
+                .iter()
+                .find(|f| f.name == "status")
+                .and_then(|f| f.allowed_values.clone())
+                .unwrap_or_default();
+
+            // Generate example YAML
+            let example_yaml = format!(
+                "- id: {prefix}-001\n  type: {name}\n  title: Example {name}\n  status: draft",
+                prefix = t
+                    .name
+                    .chars()
+                    .filter(|c| c.is_uppercase())
+                    .collect::<String>(),
+                name = t.name,
+            );
+
+            GuideArtifactType {
+                name: t.name.clone(),
+                description: t.description.clone(),
+                required_fields,
+                optional_fields,
+                required_links,
+                valid_statuses,
+                example_yaml,
+            }
+        })
+        .collect();
+
+    // Link types
+    let link_types: Vec<GuideLinkType> = schema
+        .link_types
+        .values()
+        .map(|l| GuideLinkType {
+            name: l.name.clone(),
+            inverse: l.inverse.clone(),
+            description: l.description.clone(),
+        })
+        .collect();
+
+    // Traceability rules
+    let traceability_rules: Vec<GuideRule> = schema
+        .traceability_rules
+        .iter()
+        .map(|r| GuideRule {
+            name: r.name.clone(),
+            description: r.description.clone(),
+            source_type: r.source_type.clone(),
+            required_link: r.required_link.clone(),
+            required_backlink: r.required_backlink.clone(),
+            target_types: r.target_types.clone(),
+            severity: format!("{:?}", r.severity).to_lowercase(),
+        })
+        .collect();
+
+    // Embed syntax reference
+    let embed_syntax = vec![
+        GuideEmbed {
+            pattern: "{{stats}}".into(),
+            description: "Project statistics table".into(),
+            args: vec!["types".into(), "status".into(), "validation".into()],
+            options: vec!["delta=BASELINE".into()],
+        },
+        GuideEmbed {
+            pattern: "{{coverage}}".into(),
+            description: "Traceability coverage with percentage bars".into(),
+            args: vec!["RULE_NAME".into()],
+            options: vec!["delta=BASELINE".into()],
+        },
+        GuideEmbed {
+            pattern: "{{diagnostics}}".into(),
+            description: "Validation issues table".into(),
+            args: vec!["error".into(), "warning".into(), "info".into()],
+            options: vec!["delta=BASELINE".into()],
+        },
+        GuideEmbed {
+            pattern: "{{matrix}}".into(),
+            description: "Inline traceability matrix".into(),
+            args: vec!["FROM_TYPE:TO_TYPE".into()],
+            options: vec![],
+        },
+        GuideEmbed {
+            pattern: "{{artifact:ID}}".into(),
+            description: "Embed artifact card inline".into(),
+            args: vec!["ID".into()],
+            options: vec![
+                "default".into(),
+                "full".into(),
+                "links".into(),
+                "upstream:N".into(),
+                "downstream:N".into(),
+            ],
+        },
+        GuideEmbed {
+            pattern: "{{table:TYPE:FIELDS}}".into(),
+            description: "Filtered artifact table".into(),
+            args: vec!["TYPE".into(), "FIELD,...".into()],
+            options: vec![],
+        },
+    ];
+
+    let commit_message = GuideCommitMessage {
+        trailers: vec![
+            "Implements".into(),
+            "Fixes".into(),
+            "Verifies".into(),
+            "Satisfies".into(),
+            "Refs".into(),
+        ],
+        example: "feat: add STPA loss scenarios\n\nImplements: FEAT-042".into(),
+    };
+
+    let common_mistakes = vec![
+        GuideMistake {
+            rule: "Every requirement needs an 'implements' link to at least one feature".into(),
+            fix: "Add links: [{type: implements, target: FEAT-xxx}]".into(),
+        },
+        GuideMistake {
+            rule: "Use the exact link type name from the schema, not synonyms".into(),
+            fix: "Check /api/v1/guide for valid link_types".into(),
+        },
+        GuideMistake {
+            rule: "Artifacts without status appear as 'unset' in reports".into(),
+            fix: "Add status: draft for new artifacts".into(),
+        },
+    ];
+
+    Json(GuideResponse {
+        artifact_types,
+        link_types,
+        traceability_rules,
+        embed_syntax,
+        commit_message,
+        common_mistakes,
+    })
+}

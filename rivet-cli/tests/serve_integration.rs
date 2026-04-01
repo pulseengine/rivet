@@ -673,3 +673,20 @@ fn embed_api_stats_endpoint() {
     child.kill().ok();
     child.wait().ok();
 }
+
+/// `/api/v1/guide` returns JSON with artifact_types and link_types.
+#[test]
+fn guide_api_endpoint() {
+    let (mut child, port) = start_server();
+
+    let (status, body, _headers) = fetch(port, "/api/v1/guide", false);
+    assert_eq!(status, 200, "/api/v1/guide should respond 200");
+    assert!(
+        body.contains("artifact_types") && body.contains("link_types"),
+        "guide API should contain schema info. Got: {}",
+        &body[..body.len().min(200)]
+    );
+
+    child.kill().ok();
+    child.wait().ok();
+}

@@ -640,6 +640,90 @@ fn embed_coverage() {
     );
 }
 
+// ── rivet guide ────────────────────────────────────────────────────────
+
+/// `rivet guide --format json` produces valid JSON with artifact_types.
+#[test]
+fn guide_json() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "guide",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("failed to execute rivet guide --format json");
+
+    assert!(
+        output.status.success(),
+        "rivet guide --format json must exit 0. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("guide JSON must be valid");
+
+    assert_eq!(
+        parsed.get("command").and_then(|v| v.as_str()),
+        Some("guide"),
+    );
+    assert!(
+        parsed
+            .get("artifact_types")
+            .and_then(|v| v.as_array())
+            .is_some(),
+        "guide JSON must contain artifact_types"
+    );
+    assert!(
+        parsed
+            .get("link_types")
+            .and_then(|v| v.as_array())
+            .is_some(),
+        "guide JSON must contain link_types"
+    );
+    assert!(
+        parsed
+            .get("traceability_rules")
+            .and_then(|v| v.as_array())
+            .is_some(),
+        "guide JSON must contain traceability_rules"
+    );
+}
+
+/// `rivet guide --format text` prints readable schema info.
+#[test]
+fn guide_text() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "guide",
+            "--format",
+            "text",
+        ])
+        .output()
+        .expect("failed to execute rivet guide --format text");
+
+    assert!(
+        output.status.success(),
+        "rivet guide --format text must exit 0. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Artifact Types"),
+        "text output must contain 'Artifact Types'"
+    );
+    assert!(
+        stdout.contains("Link Types"),
+        "text output must contain 'Link Types'"
+    );
+}
+
 // ── rivet snapshot ─────────────────────────────────────────────────────
 
 /// `rivet snapshot capture` writes a JSON snapshot file.
