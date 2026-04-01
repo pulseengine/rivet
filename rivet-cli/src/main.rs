@@ -5405,6 +5405,7 @@ fn cmd_embed(cli: &Cli, query: &str, format: &str) -> Result<bool> {
         schema: &state.schema,
         graph: &state.graph,
         diagnostics: &state.cached_diagnostics,
+        baseline: None,
     };
 
     match rivet_core::embed::resolve_embed(&request, &embed_ctx) {

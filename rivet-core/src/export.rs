@@ -2202,6 +2202,7 @@ fn render_document_body_for_export(
             schema,
             graph,
             diagnostics,
+            baseline: None,
         };
         match crate::embed::resolve_embed(req, &embed_ctx) {
             Ok(html) => {

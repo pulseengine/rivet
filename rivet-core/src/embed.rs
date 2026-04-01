@@ -80,6 +80,8 @@ pub struct EmbedContext<'a> {
     pub schema: &'a Schema,
     pub graph: &'a LinkGraph,
     pub diagnostics: &'a [Diagnostic],
+    /// Optional baseline snapshot for delta rendering (`delta=NAME` option).
+    pub baseline: Option<&'a crate::snapshot::Snapshot>,
 }
 
 impl<'a> EmbedContext<'a> {
@@ -96,6 +98,7 @@ impl<'a> EmbedContext<'a> {
             schema: &EMPTY_SCHEMA,
             graph: &EMPTY_GRAPH,
             diagnostics: &[],
+            baseline: None,
         }
     }
 }

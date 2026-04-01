@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh pr:*)",
+      "Bash(gh issue:*)",
+      "Bash(git fetch:*)",
+      "Bash(git merge:*)",
+      "Bash(git push:*)",
+      "Bash(git reset:*)",
+      "Bash(git config:*)",
+      "Bash(git commit:*)",
+      "Bash(git checkout:*)",
+      "Bash(git pull:*)",
+      "Bash(git cherry-pick:*)",
+      "Bash(cargo check:*)",
+      "Bash(cargo test:*)",
+      "Bash(git add:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(git branch:*)"
+    ]
+  }
+}
