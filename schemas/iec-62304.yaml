@@ -1,0 +1,253 @@
+# IEC 62304 Medical Device Software schema
+#
+# Defines artifact types and traceability rules for medical device
+# software lifecycle processes per IEC 62304:2006+A1:2015.
+#
+# IEC 62304 is the international standard for medical device software
+# lifecycle processes. It is harmonised under the EU MDR (2017/745) and
+# recognised by the FDA.
+#
+# Software safety classes drive rigour requirements:
+#   Class A — no injury or damage to health possible
+#   Class B — non-serious injury possible
+#   Class C — death or serious injury possible
+#
+# Lifecycle activities covered:
+#   - Software development planning (5.1)
+#   - Software requirements analysis (5.2)
+#   - Software architectural design (5.3)
+#   - Software detailed design (5.4)
+#   - Software unit implementation and verification (5.5)
+#   - Software integration and integration testing (5.6)
+#   - Software system testing (5.7)
+#   - Software release (5.8)
+#   - Software problem resolution (9)
+#   - Software change management (6)
+
+schema:
+  name: iec-62304
+  version: "0.1.0"
+  namespace: "http://pulseengine.dev/ns/iec-62304#"
+  extends: [common]
+  description: >
+    IEC 62304 medical device software lifecycle artifact types and
+    traceability rules.
+
+# ──────────────────────────────────────────────────────────────────────────
+# Artifact types
+# ──────────────────────────────────────────────────────────────────────────
+artifact-types:
+
+  # ── Planning (5.1) ──────────────────────────────────────────────────────
+
+  - name: sw-dev-plan
+    description: >
+      Software development plan (clause 5.1). Defines the development
+      lifecycle model, deliverables, traceability strategy, and
+      configuration management approach.
+    fields: []
+    link-fields: []
+
+  # ── Requirements (5.2) ──────────────────────────────────────────────────
+
+  - name: sw-req
+    description: >
+      Software requirement (clause 5.2). Includes functional, performance,
+      interface, and safety requirements. Safety class determines the
+      required level of verification rigour.
+    fields:
+      - name: sw-class
+        type: string
+        required: true
+        allowed-values: [A, B, C]
+        description: Software safety classification per IEC 62304
+      - name: risk-control
+        type: string
+        required: false
+        description: Risk control measure this requirement implements (if applicable)
+    link-fields:
+      - name: derived-from
+        link-type: derives-from
+        target-types: [sw-dev-plan]
+        required: true
+        cardinality: one-or-many
+
+  # ── Architecture (5.3) ──────────────────────────────────────────────────
+
+  - name: sw-arch-item
+    description: >
+      Software architecture item (clause 5.3). Identifies software items
+      at the architectural level and their segregation from non-safety
+      software.
+    fields:
+      - name: segregation-level
+        type: string
+        required: false
+        allowed-values: [none, partial, full]
+        description: Level of segregation from non-safety software
+    link-fields: []
+
+  # ── Detailed design (5.4) ───────────────────────────────────────────────
+
+  - name: sw-detailed-design
+    description: >
+      Software detailed design document (clause 5.4). Required for
+      Class B and Class C software items.
+    fields: []
+    link-fields: []
+
+  # ── Unit implementation (5.5) ───────────────────────────────────────────
+
+  - name: sw-unit
+    description: >
+      Software unit (clause 5.5). The smallest independently testable
+      element of the software architecture.
+    fields: []
+    link-fields:
+      - name: implements
+        link-type: implements
+        target-types: [sw-detailed-design]
+        required: true
+        cardinality: one-or-many
+
+  - name: sw-unit-verification
+    description: >
+      Software unit verification (clause 5.5). Demonstrates that the
+      unit meets its detailed design specification.
+    fields: []
+    link-fields:
+      - name: verifies
+        link-type: verifies
+        target-types: [sw-unit]
+        required: true
+        cardinality: one-or-many
+
+  # ── Integration (5.6) ───────────────────────────────────────────────────
+
+  - name: sw-integration
+    description: >
+      Software integration activity (clause 5.6). Documents the
+      integration of software units into software items and subsystems.
+    fields: []
+    link-fields:
+      - name: integrates
+        link-type: integrates
+        target-types: [sw-arch-item]
+        required: true
+        cardinality: one-or-many
+
+  - name: sw-integration-test
+    description: >
+      Software integration testing (clause 5.6). Verifies that integrated
+      software items function correctly together.
+    fields: []
+    link-fields:
+      - name: verifies
+        link-type: verifies
+        target-types: [sw-integration]
+        required: true
+        cardinality: one-or-many
+
+  # ── System testing (5.7) ────────────────────────────────────────────────
+
+  - name: sw-system-test
+    description: >
+      System-level software testing (clause 5.7). Demonstrates that the
+      integrated software system meets the software requirements.
+    fields: []
+    link-fields: []
+
+  # ── Release (5.8) ───────────────────────────────────────────────────────
+
+  - name: sw-release
+    description: >
+      Software release record (clause 5.8). Documents the released
+      software version, its known residual anomalies, and references
+      to all verification evidence.
+    fields: []
+    link-fields: []
+
+  # ── Problem resolution & change management ──────────────────────────────
+
+  - name: problem-report
+    description: >
+      Problem report / anomaly report (clause 9). Documents observed
+      problems, their investigation, and resolution.
+    fields: []
+    link-fields: []
+
+  - name: change-request
+    description: >
+      Change control record (clause 6). Documents requested changes,
+      their impact analysis, and approval status.
+    fields: []
+    link-fields: []
+
+  - name: traceability-record
+    description: >
+      Explicit traceability matrix snapshot documenting the state of
+      traceability between software items at a point in time.
+    fields: []
+    link-fields: []
+
+# ──────────────────────────────────────────────────────────────────────────
+# IEC 62304-specific link types
+# ──────────────────────────────────────────────────────────────────────────
+link-types:
+  - name: integrates
+    inverse: integrated-by
+    description: Integration activity brings together architectural items
+    source-types: [sw-integration]
+    target-types: [sw-arch-item]
+
+# ──────────────────────────────────────────────────────────────────────────
+# IEC 62304 traceability rules
+# ──────────────────────────────────────────────────────────────────────────
+traceability-rules:
+  # Forward traceability
+  - name: sw-req-derives-from-plan
+    description: Every software requirement must derive from the software development plan
+    source-type: sw-req
+    required-link: derives-from
+    target-types: [sw-dev-plan]
+    severity: error
+
+  # Unit verification coverage
+  - name: sw-unit-has-verification-classA
+    description: Every software unit should be verified (Class A — warning)
+    source-type: sw-unit
+    required-backlink: verifies
+    from-types: [sw-unit-verification]
+    severity: warning
+    condition:
+      field: sw-class
+      values: [A]
+
+  - name: sw-unit-has-verification-classBC
+    description: Every software unit must be verified (Class B/C — error)
+    source-type: sw-unit
+    required-backlink: verifies
+    from-types: [sw-unit-verification]
+    severity: error
+    condition:
+      field: sw-class
+      values: [B, C]
+
+  # Integration testing for Class C
+  - name: sw-arch-item-has-integration-test
+    description: Every architecture item must be integration-tested (Class C)
+    source-type: sw-arch-item
+    required-backlink: verifies
+    from-types: [sw-integration-test]
+    severity: error
+    condition:
+      field: sw-class
+      values: [C]
+
+  # Release completeness
+  - name: sw-release-has-system-tests
+    description: Every software release must reference all system test results
+    source-type: sw-release
+    required-backlink: verifies
+    from-types: [sw-system-test]
+    severity: error

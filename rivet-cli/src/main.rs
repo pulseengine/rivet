@@ -153,7 +153,8 @@ enum Command {
         #[arg(long)]
         name: Option<String>,
 
-        /// Preset: dev (default), aspice, stpa, cybersecurity, aadl
+        /// Preset: dev (default), aspice, stpa, cybersecurity, aadl, do-178c, en-50128
+        /// Preset: dev (default), aspice, stpa, cybersecurity, aadl, iec-61508, iec-62304
         #[arg(long, default_value = "dev")]
         preset: String,
 
@@ -1015,8 +1016,24 @@ fn resolve_preset(preset: &str) -> Result<InitPreset> {
             schemas: vec!["common", "stpa", "stpa-ai"],
             sample_files: vec![("ml-safety.yaml", STPA_AI_SAMPLE)],
         }),
+        "do-178c" => Ok(InitPreset {
+            schemas: vec!["common", "do-178c"],
+            sample_files: vec![("airborne-sw.yaml", DO_178C_SAMPLE)],
+        }),
+        "en-50128" => Ok(InitPreset {
+            schemas: vec!["common", "en-50128"],
+            sample_files: vec![("railway-sw.yaml", EN_50128_SAMPLE)],
+        }),
+        "iec-61508" => Ok(InitPreset {
+            schemas: vec!["common", "iec-61508"],
+            sample_files: vec![("safety.yaml", IEC_61508_SAMPLE)],
+        }),
+        "iec-62304" => Ok(InitPreset {
+            schemas: vec!["common", "iec-62304"],
+            sample_files: vec![("medical-sw.yaml", IEC_62304_SAMPLE)],
+        }),
         other => anyhow::bail!(
-            "unknown preset: '{other}' (valid: dev, aspice, stpa, stpa-ai, cybersecurity, aadl, eu-ai-act, safety-case)"
+            "unknown preset: '{other}' (valid: dev, aspice, stpa, stpa-ai, cybersecurity, aadl, eu-ai-act, safety-case, do-178c, en-50128, iec-61508, iec-62304)"
         ),
     }
 }
@@ -1583,6 +1600,203 @@ artifacts:
     links:
       - type: satisfies
         target: MON-001
+";
+
+const DO_178C_SAMPLE: &str = "\
+artifacts:
+  - id: PSAC-001
+    type: plan-for-sw-aspects
+    title: Plan for Software Aspects of Certification
+    status: draft
+    description: >
+      PSAC for the flight management software, DAL B.
+    fields:
+      dal: B
+
+  - id: HLR-001
+    type: hw-sw-req
+    title: System shall compute flight path within 100ms
+    status: draft
+    description: >
+      The flight management software shall compute an updated
+      flight path within 100ms of receiving new navigation data.
+    fields:
+      dal: B
+      derived: false
+
+  - id: LLR-001
+    type: lw-sw-req
+    title: Path solver shall use WGS-84 geodetic model
+    status: draft
+    description: >
+      The path computation module shall use the WGS-84 geodetic
+      model for all coordinate transformations.
+    fields:
+      dal: B
+
+  - id: DES-001
+    type: sw-design
+    title: Path computation module design
+    status: draft
+    description: >
+      Architectural design of the path computation module,
+      including data flow and timing constraints.
+    links:
+      - type: satisfies
+        target: HLR-001
+
+  - id: TC-001
+    type: hw-sw-test-case
+    title: Verify flight path computation timing
+    status: draft
+    description: >
+      Test that flight path is computed within 100ms under
+      maximum navigation data rate.
+    links:
+      - type: verifies
+        target: HLR-001
+";
+
+const EN_50128_SAMPLE: &str = "\
+artifacts:
+  - id: SIL-001
+    type: sw-safety-integrity-req
+    title: Interlocking software SIL 4
+    status: draft
+    description: >
+      The interlocking control software shall be developed to SIL 4
+      as determined by the system hazard analysis.
+    fields:
+      sil: SIL-4
+
+  - id: SWREQ-001
+    type: sw-req-spec
+    title: Route locking shall prevent conflicting movements
+    status: draft
+    description: >
+      The software shall ensure that no two conflicting train
+      movements can be simultaneously authorised on overlapping
+      track sections.
+    links:
+      - type: derives-from
+        target: SIL-001
+
+  - id: ARCH-001
+    type: sw-arch-spec
+    title: Interlocking software architecture
+    status: draft
+    description: >
+      Diverse redundant architecture with two independent
+      processing channels and a comparator.
+    fields:
+      architecture-technique: diverse-redundancy
+
+  - id: COMP-001
+    type: sw-component
+    title: Route conflict checker module
+    status: draft
+    description: >
+      Module implementing route conflict detection logic for
+      the primary processing channel.
+    links:
+      - type: implements
+        target: DSGN-001
+
+  - id: DSGN-001
+    type: sw-design-spec
+    title: Route conflict checker design
+    status: draft
+    description: >
+      Detailed design of the route conflict detection algorithm.
+
+  - id: MT-001
+    type: sw-module-test
+    title: Route conflict checker module test
+    status: draft
+    description: >
+      Unit tests verifying the route conflict checker against
+      all defined conflict scenarios.
+    links:
+      - type: verifies
+        target: COMP-001
+";
+
+const IEC_61508_SAMPLE: &str = "\
+artifacts:
+  - id: SC-001
+    type: safety-concept
+    title: Emergency shutdown safety concept
+    status: draft
+    description: >
+      Overall safety strategy for the emergency shutdown system
+      targeting SIL 3 integrity.
+    fields:
+      sil-target: SIL-3
+      scope: >
+        Covers all safety functions related to emergency shutdown
+        of the reactor coolant system.
+
+  - id: SR-001
+    type: safety-req
+    title: Emergency shutdown shall activate within 500ms
+    status: draft
+    description: >
+      The safety-related system shall initiate emergency shutdown
+      within 500ms of detecting an over-pressure condition.
+    fields:
+      sil: SIL-3
+      req-type: functional
+      allocation: ESD-Controller
+    links:
+      - type: derives-from
+        target: SC-001
+
+  - id: SF-001
+    type: safety-function
+    title: Over-pressure emergency shutdown
+    status: draft
+    description: >
+      Detects pressure exceeding 150 bar and actuates shutdown valves
+      to bring the system to a safe state.
+    fields:
+      sil: SIL-3
+      response-time: 500ms
+      diagnostic-coverage: high
+";
+
+const IEC_62304_SAMPLE: &str = "\
+artifacts:
+  - id: SDP-001
+    type: sw-dev-plan
+    title: Infusion pump software development plan
+    status: draft
+    description: >
+      Software development plan for the infusion pump control software,
+      classified as Class C per IEC 62304.
+
+  - id: SWREQ-001
+    type: sw-req
+    title: Flow rate accuracy within 5%
+    status: draft
+    description: >
+      The infusion pump software shall control the flow rate to within
+      +/- 5% of the set rate under all operating conditions.
+    fields:
+      sw-class: C
+      risk-control: Prevents over-infusion hazard
+    links:
+      - type: derives-from
+        target: SDP-001
+
+  - id: ARCH-001
+    type: sw-arch-item
+    title: Flow control module
+    status: draft
+    description: >
+      Software module responsible for closed-loop flow rate control,
+      fully segregated from non-safety user interface code.
+    fields:
+      segregation-level: full
 ";
 
 /// Initialize a new rivet project.

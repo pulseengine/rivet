@@ -1,0 +1,236 @@
+# EN 50128 Railway Software Safety Schema
+#
+# Defines artifact types and traceability rules for EN 50128:2011
+# (Railway applications — Communication, signalling and processing
+# systems — Software for railway control and protection systems).
+#
+# EN 50128 defines five Software Safety Integrity Levels (SIL 0–4)
+# that determine the rigour of software lifecycle activities.
+#
+# Key lifecycle phases modelled here:
+#   Requirements:   Safety integrity requirements, SW requirements
+#   Architecture:   Software architecture specification
+#   Design & Code:  Design specification, software components
+#   Testing:        Module test, integration test, system validation
+#   Assessment:     Independent safety assessment (SIL 3–4)
+#   Process:        Maintenance, deployment, change management,
+#                   tool qualification, safety case
+#
+# Traceability chain:
+#   SIL requirement → SW requirements → Architecture → Design → Component
+#   Component → Module test (verification)
+#   Architecture → Integration test (verification)
+#   SW requirements → System validation (validation)
+#   SIL 3–4 → Independent assessment
+
+schema:
+  name: en-50128
+  version: "0.1.0"
+  namespace: "http://pulseengine.dev/ns/en-50128#"
+  extends: [common]
+  description: >
+    EN 50128 railway software safety artifact types and traceability
+    rules for SIL 0 through SIL 4 certification evidence.
+
+# ──────────────────────────────────────────────────────────────────────────
+# Artifact types
+# ──────────────────────────────────────────────────────────────────────────
+artifact-types:
+
+  # ── Requirements ───────────────────────────────────────────────────────
+
+  - name: sw-safety-integrity-req
+    description: >
+      Software Safety Integrity Level requirement. Defines the SIL
+      applicable to the software or software component, derived from
+      system-level hazard analysis per EN 50129.
+    fields:
+      - name: sil
+        type: string
+        required: true
+        allowed-values: [SIL-0, SIL-1, SIL-2, SIL-3, SIL-4]
+        description: Software Safety Integrity Level
+    link-fields: []
+
+  - name: sw-req-spec
+    description: >
+      Software Requirements Specification. Describes functional and
+      non-functional requirements for the software.
+    fields: []
+    link-fields:
+      - name: derives-from
+        link-type: derives-from
+        target-types: [sw-safety-integrity-req]
+        required: true
+        cardinality: one-or-many
+
+  # ── Architecture & Design ──────────────────────────────────────────────
+
+  - name: sw-arch-spec
+    description: >
+      Software Architecture Specification. Describes the overall
+      structure, component decomposition, and interfaces.
+    fields:
+      - name: architecture-technique
+        type: string
+        required: false
+        description: >
+          Architectural technique or pattern used (e.g. defensive
+          programming, diverse redundancy, safety bag).
+    link-fields: []
+
+  - name: sw-design-spec
+    description: >
+      Software Design Specification. Detailed design of individual
+      software modules or components.
+    fields: []
+    link-fields: []
+
+  - name: sw-component
+    description: >
+      Software component or module. A unit of implemented software
+      that conforms to the design specification.
+    fields: []
+    link-fields:
+      - name: implements
+        link-type: implements
+        target-types: [sw-design-spec]
+        required: true
+        cardinality: one-or-many
+
+  # ── Verification & Validation ──────────────────────────────────────────
+
+  - name: sw-module-test
+    description: >
+      Module testing. Verifies individual software components against
+      their design specification.
+    fields: []
+    link-fields:
+      - name: verifies
+        link-type: verifies
+        target-types: [sw-component]
+        required: true
+        cardinality: one-or-many
+
+  - name: sw-integration-test
+    description: >
+      Integration testing. Verifies the software architecture by
+      testing component interactions and interfaces.
+    fields: []
+    link-fields:
+      - name: verifies
+        link-type: verifies
+        target-types: [sw-arch-spec]
+        required: true
+        cardinality: one-or-many
+
+  - name: sw-validation
+    description: >
+      System validation. Validates the software against its
+      requirements specification to confirm fitness for purpose.
+    fields: []
+    link-fields:
+      - name: validates
+        link-type: validates
+        target-types: [sw-req-spec]
+        required: true
+        cardinality: one-or-many
+
+  # ── Assessment & Process ───────────────────────────────────────────────
+
+  - name: sw-assessment
+    description: >
+      Independent safety assessment. Required for SIL 3 and SIL 4
+      software. Performed by an independent assessor to confirm that
+      the software meets its safety integrity requirements.
+    fields: []
+    link-fields: []
+
+  - name: sw-maintenance-plan
+    description: >
+      Software maintenance plan. Defines procedures for corrective,
+      adaptive, and perfective maintenance of the software.
+    fields: []
+    link-fields: []
+
+  - name: sw-deployment
+    description: >
+      Deployment record. Documents the deployment of software to
+      target railway systems, including version and configuration.
+    fields: []
+    link-fields: []
+
+  - name: change-management
+    description: >
+      Change management record. Tracks changes to the software,
+      including impact analysis and re-verification requirements.
+    fields: []
+    link-fields: []
+
+  - name: tool-qualification
+    description: >
+      Tool qualification record. Provides evidence that development
+      and verification tools (T2/T3 class) are suitable for use at
+      the required SIL level.
+    fields: []
+    link-fields: []
+
+  - name: sw-safety-case
+    description: >
+      Software safety case. Structured argument demonstrating that
+      the software is acceptably safe for its intended application.
+    fields: []
+    link-fields: []
+
+# ──────────────────────────────────────────────────────────────────────────
+# EN 50128-specific link types
+# ──────────────────────────────────────────────────────────────────────────
+link-types:
+  - name: validates
+    inverse: validated-by
+    description: Validation activity confirms that requirements are met
+    source-types: [sw-validation]
+    target-types: [sw-req-spec]
+
+# ──────────────────────────────────────────────────────────────────────────
+# EN 50128 traceability rules
+#
+# These encode the traceability requirements from EN 50128 for
+# railway software safety evidence.  `rivet validate` checks these
+# automatically.
+# ──────────────────────────────────────────────────────────────────────────
+traceability-rules:
+  # Every SW requirement must derive from a safety integrity requirement
+  - name: sw-req-derives-from-sil
+    description: Every software requirements specification must derive from a safety integrity requirement
+    source-type: sw-req-spec
+    required-link: derives-from
+    target-types: [sw-safety-integrity-req]
+    severity: error
+
+  # Every software component must be verified by module testing (SIL 2+)
+  - name: sw-component-verified
+    description: Every software component must be verified by at least one module test (required for SIL 2+)
+    source-type: sw-component
+    required-backlink: verifies
+    from-types: [sw-module-test]
+    severity: error
+
+  # Every architecture must be tested via integration testing
+  - name: sw-arch-integration-tested
+    description: Every software architecture specification must be verified by at least one integration test
+    source-type: sw-arch-spec
+    required-backlink: verifies
+    from-types: [sw-integration-test]
+    severity: error
+
+  # SIL 3–4 must have independent assessment
+  # (Note: This rule checks that assessment artifacts exist and reference
+  # the safety integrity requirement. Actual SIL-level filtering is a
+  # project-level concern documented in the assessment itself.)
+  - name: sil-3-4-needs-assessment
+    description: SIL 3 and SIL 4 software must have an independent safety assessment
+    source-type: sw-safety-integrity-req
+    required-backlink: verifies
+    from-types: [sw-assessment]
+    severity: error

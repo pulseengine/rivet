@@ -1,0 +1,317 @@
+# IEC 61508 Functional Safety schema
+#
+# Defines artifact types and traceability rules for functional safety
+# lifecycle management per IEC 61508 (all parts).
+#
+# IEC 61508 is the parent standard for functional safety of electrical/
+# electronic/programmable electronic (E/E/PE) safety-related systems.
+# Sector-specific standards (ISO 26262, IEC 62061, IEC 61511, etc.)
+# are derived from it.
+#
+# Safety Integrity Levels (SIL 1-4) drive rigour requirements:
+#   SIL 1 — lowest integrity
+#   SIL 4 — highest integrity (requires independent assessment)
+#
+# Lifecycle phases covered:
+#   - Concept (safety concept, hazard & risk assessment)
+#   - Specification (safety requirements, safety functions)
+#   - Design (HW architecture, SW architecture, SW modules)
+#   - Verification (SW verification, integration test, validation)
+#   - Assessment (independent safety assessment for SIL 3-4)
+#   - Management (safety plan, safety manual, modification requests)
+
+schema:
+  name: iec-61508
+  version: "0.1.0"
+  namespace: "http://pulseengine.dev/ns/iec-61508#"
+  extends: [common]
+  description: >
+    IEC 61508 functional safety artifact types and traceability rules
+    for E/E/PE safety-related systems.
+
+# ──────────────────────────────────────────────────────────────────────────
+# Artifact types
+# ──────────────────────────────────────────────────────────────────────────
+artifact-types:
+
+  # ── Concept phase ───────────────────────────────────────────────────────
+
+  - name: safety-concept
+    description: >
+      Overall safety strategy defining the approach to achieving functional
+      safety for the system. Establishes the target SIL and scope.
+    fields:
+      - name: sil-target
+        type: string
+        required: true
+        allowed-values: [SIL-1, SIL-2, SIL-3, SIL-4]
+        description: Target Safety Integrity Level
+      - name: scope
+        type: text
+        required: true
+        description: Scope of the safety concept (systems, functions, boundaries)
+    link-fields: []
+
+  - name: hazard-risk-assessment
+    description: >
+      Hazard and risk assessment identifying hazardous events, their
+      consequences, and frequency of occurrence. Drives SIL allocation.
+    fields:
+      - name: risk-level
+        type: string
+        required: true
+        allowed-values: [low, medium, high, very-high]
+        description: Overall risk level after assessment
+      - name: consequence
+        type: string
+        required: true
+        allowed-values: [negligible, marginal, critical, catastrophic]
+        description: Severity of consequences
+      - name: frequency
+        type: string
+        required: true
+        allowed-values: [incredible, remote, improbable, occasional, probable, frequent]
+        description: Frequency/likelihood of the hazardous event
+    link-fields: []
+
+  # ── Specification phase ─────────────────────────────────────────────────
+
+  - name: safety-req
+    description: >
+      Safety requirement derived from the safety concept. Specifies a
+      functional or systematic capability needed to achieve the target SIL.
+    fields:
+      - name: sil
+        type: string
+        required: true
+        allowed-values: [SIL-1, SIL-2, SIL-3, SIL-4]
+        description: Safety Integrity Level assigned to this requirement
+      - name: req-type
+        type: string
+        required: true
+        allowed-values: [functional, systematic]
+        description: Whether the requirement addresses random HW failures or systematic failures
+      - name: allocation
+        type: string
+        required: false
+        description: System element this requirement is allocated to
+    link-fields:
+      - name: derived-from
+        link-type: derives-from
+        target-types: [safety-concept]
+        required: true
+        cardinality: one-or-many
+
+  - name: safety-function
+    description: >
+      Safety function specification — a function implemented by a
+      safety-related system to achieve or maintain a safe state.
+    fields:
+      - name: sil
+        type: string
+        required: true
+        allowed-values: [SIL-1, SIL-2, SIL-3, SIL-4]
+        description: Safety Integrity Level of this function
+      - name: response-time
+        type: string
+        required: false
+        description: Maximum allowable response time (e.g. "100ms")
+      - name: diagnostic-coverage
+        type: string
+        required: false
+        allowed-values: [none, low, medium, high]
+        description: Diagnostic coverage level per IEC 61508-2
+    link-fields: []
+
+  # ── Hardware design ─────────────────────────────────────────────────────
+
+  - name: hw-arch
+    description: >
+      Hardware architecture element of a safety-related system.
+      Documents hardware fault tolerance and safe failure fraction.
+    fields:
+      - name: hft
+        type: number
+        required: true
+        description: Hardware Fault Tolerance (0, 1, or 2)
+      - name: sff
+        type: string
+        required: true
+        description: Safe Failure Fraction as percentage (e.g. "90%")
+    link-fields: []
+
+  # ── Software design ─────────────────────────────────────────────────────
+
+  - name: sw-safety-req
+    description: >
+      Software safety requirement derived from a system-level safety
+      requirement. Part of IEC 61508-3 software safety lifecycle.
+    fields: []
+    link-fields:
+      - name: derived-from
+        link-type: derives-from
+        target-types: [safety-req]
+        required: true
+        cardinality: one-or-many
+
+  - name: sw-arch
+    description: >
+      Software architecture for safety-related software. Must satisfy
+      software safety requirements per IEC 61508-3.
+    fields: []
+    link-fields:
+      - name: satisfies
+        link-type: satisfies
+        target-types: [sw-safety-req]
+        required: true
+        cardinality: one-or-many
+
+  - name: sw-module
+    description: >
+      Software module — a unit of implementation within the software
+      architecture. Subject to verification per IEC 61508-3.
+    fields: []
+    link-fields:
+      - name: implements
+        link-type: implements
+        target-types: [sw-arch]
+        required: true
+        cardinality: one-or-many
+
+  # ── Verification & validation ───────────────────────────────────────────
+
+  - name: sw-integration-test
+    description: >
+      Software integration test verifying that architectural components
+      work together correctly.
+    fields: []
+    link-fields:
+      - name: verifies
+        link-type: verifies
+        target-types: [sw-arch]
+        required: true
+        cardinality: one-or-many
+
+  - name: sw-verification
+    description: >
+      Verification activity for a software module — includes code review,
+      static analysis, unit testing, etc.
+    fields: []
+    link-fields:
+      - name: verifies
+        link-type: verifies
+        target-types: [sw-module]
+        required: true
+        cardinality: one-or-many
+
+  - name: validation
+    description: >
+      System-level validation demonstrating that safety functions meet
+      their specified requirements under real or simulated conditions.
+    fields: []
+    link-fields:
+      - name: validates
+        link-type: validates
+        target-types: [safety-function]
+        required: true
+        cardinality: one-or-many
+
+  # ── Assessment ──────────────────────────────────────────────────────────
+
+  - name: safety-assessment
+    description: >
+      Independent safety assessment, required for SIL 3 and SIL 4.
+      Performed by a person or organisation independent of the design team.
+    fields: []
+    link-fields:
+      - name: assesses
+        link-type: assesses
+        target-types: [safety-concept]
+        required: true
+        cardinality: one-or-many
+
+  # ── Management ──────────────────────────────────────────────────────────
+
+  - name: safety-plan
+    description: >
+      Project safety management plan defining roles, responsibilities,
+      activities, and milestones for achieving functional safety.
+    fields: []
+    link-fields: []
+
+  - name: safety-manual
+    description: >
+      Safety manual documenting information necessary for the safe
+      operation and maintenance of the safety-related system.
+    fields: []
+    link-fields: []
+
+  - name: modification-request
+    description: >
+      Change management record for modifications to safety-related
+      systems. Ensures changes are assessed for impact on safety.
+    fields: []
+    link-fields: []
+
+# ──────────────────────────────────────────────────────────────────────────
+# IEC 61508-specific link types
+# ──────────────────────────────────────────────────────────────────────────
+link-types:
+  - name: validates
+    inverse: validated-by
+    description: Validation activity demonstrates that a safety function meets its specification
+    source-types: [validation]
+    target-types: [safety-function]
+
+  - name: assesses
+    inverse: assessed-by
+    description: Independent safety assessment evaluates a safety concept
+    source-types: [safety-assessment]
+    target-types: [safety-concept]
+
+# ──────────────────────────────────────────────────────────────────────────
+# IEC 61508 traceability rules
+# ──────────────────────────────────────────────────────────────────────────
+traceability-rules:
+  # Forward traceability (top-down)
+  - name: safety-req-derives-from-concept
+    description: Every safety requirement must derive from a safety concept
+    source-type: safety-req
+    required-link: derives-from
+    target-types: [safety-concept]
+    severity: error
+
+  - name: sw-safety-req-derives-from-safety-req
+    description: Every software safety requirement must derive from a safety requirement
+    source-type: sw-safety-req
+    required-link: derives-from
+    target-types: [safety-req]
+    severity: error
+
+  # Reverse traceability (verification & validation coverage)
+  - name: sw-module-has-verification
+    description: Every software module should be verified
+    source-type: sw-module
+    required-backlink: verifies
+    from-types: [sw-verification]
+    severity: warning
+
+  - name: safety-function-has-validation
+    description: Every safety function must be validated
+    source-type: safety-function
+    required-backlink: validates
+    from-types: [validation]
+    severity: error
+
+  # Independent assessment for SIL 3-4
+  - name: safety-concept-has-assessment
+    description: >
+      SIL 3-4 safety concepts must have an independent safety assessment.
+      Required by IEC 61508-1 clause 8.2.15.
+    source-type: safety-concept
+    required-backlink: assesses
+    from-types: [safety-assessment]
+    severity: error
+    condition:
+      field: sil-target
+      values: [SIL-3, SIL-4]
