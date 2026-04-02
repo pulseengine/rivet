@@ -33,6 +33,7 @@ artifact-types:
     description: >
       An undesired or unplanned event involving something of value to
       stakeholders.  Losses define what the analysis aims to prevent.
+    yaml-section: losses
     fields:
       - name: stakeholders
         type: list<string>
@@ -45,6 +46,9 @@ artifact-types:
     description: >
       A system state or set of conditions that, together with worst-case
       environmental conditions, will lead to a loss.
+    yaml-section: hazards
+    shorthand-links:
+      losses: leads-to-loss
     fields:
       - name: severity
         type: string
@@ -60,6 +64,9 @@ artifact-types:
   - name: sub-hazard
     description: >
       A refinement of a hazard into a more specific unsafe condition.
+    yaml-section: sub-hazards
+    shorthand-links:
+      parent: refines
     fields: []
     link-fields:
       - name: parent
@@ -73,6 +80,9 @@ artifact-types:
     description: >
       A condition or behavior that must be satisfied to prevent a hazard.
       Each constraint is the inversion of a hazard.
+    yaml-section: system-constraints
+    shorthand-links:
+      hazards: prevents
     fields:
       - name: spec-baseline
         type: string
@@ -91,6 +101,7 @@ artifact-types:
       A system component (human or automated) responsible for issuing
       control actions.  Each controller has a process model — its internal
       beliefs about the state of the controlled process.
+    yaml-section: controllers
     fields:
       - name: controller-type
         type: string
@@ -110,6 +121,7 @@ artifact-types:
     description: >
       A process being controlled — the physical or data transformation
       acted upon by controllers.
+    yaml-section: controlled-processes
     fields: []
     link-fields: []
 
@@ -117,6 +129,7 @@ artifact-types:
     description: >
       An action issued by a controller to a controlled process or another
       controller.
+    yaml-section: control-actions
     fields:
       - name: action
         type: string
@@ -136,6 +149,10 @@ artifact-types:
 
   # ── Step 3 ──────────────────────────────────────────────────────────────
   - name: uca
+    yaml-section: ucas
+    shorthand-links:
+      hazards: leads-to-hazard
+      control-action: issued-by
     description: >
       An Unsafe Control Action — a control action that, in a particular
       context and worst-case environment, leads to a hazard.

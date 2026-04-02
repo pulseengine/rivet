@@ -57,6 +57,19 @@ pub struct ArtifactTypeDef {
     /// Example YAML snippet shown in help pages and guide output.
     #[serde(default)]
     pub example: Option<String>,
+    /// YAML section key for format-specific parsing (e.g., "losses" for loss type).
+    ///
+    /// When set, the schema-driven parser looks for this top-level key in YAML
+    /// files and extracts artifacts from it. Shorthand link fields (e.g., `hazards: [H-1]`)
+    /// are auto-converted to links using `shorthand-links` mapping.
+    #[serde(default, rename = "yaml-section")]
+    pub yaml_section: Option<String>,
+    /// Maps shorthand array fields to link types for format-specific parsing.
+    ///
+    /// Example: `{losses: leads-to-loss}` means `losses: [L-1]` in YAML becomes
+    /// `links: [{type: leads-to-loss, target: L-1}]`.
+    #[serde(default, rename = "shorthand-links")]
+    pub shorthand_links: std::collections::BTreeMap<String, String>,
 }
 
 /// A common mistake entry with problem description and fix command.
