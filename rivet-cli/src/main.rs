@@ -2091,10 +2091,7 @@ fn cmd_validate(
 /// The salsa path produces identical core diagnostics (structural + conditional
 /// rules) to the direct `validate::validate()` call, but benefits from
 /// incremental caching when used in watch/LSP modes.
-fn run_salsa_validation(
-    cli: &Cli,
-    config: &ProjectConfig,
-) -> Result<Vec<validate::Diagnostic>> {
+fn run_salsa_validation(cli: &Cli, config: &ProjectConfig) -> Result<Vec<validate::Diagnostic>> {
     use rivet_core::db::RivetDatabase;
     use std::time::Instant;
 
