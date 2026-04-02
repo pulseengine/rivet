@@ -1,0 +1,299 @@
+# ISO/PAS 8800 — AI Safety Lifecycle for Road Vehicles
+#
+# Defines artifact types and traceability rules for the full AI safety
+# lifecycle in road vehicle systems, covering AI element identification,
+# safety requirements, architectural and development measures, data
+# quality, training documentation, verification, validation, deployment,
+# runtime monitoring, tool qualification, and assurance arguments.
+#
+# Based on:
+#   - ISO/PAS 8800:2024 (published December 2024)
+#   - Road vehicles — Safety and artificial intelligence
+#
+# Usage:
+#   rivet init --preset iso-pas-8800
+#   schemas: [common, iso-pas-8800]
+
+schema:
+  name: iso-pas-8800
+  version: "0.1.0"
+  namespace: "http://pulseengine.dev/ns/iso-pas-8800#"
+  extends: [common]
+  description: >
+    ISO/PAS 8800 artifact types for AI safety in road vehicles. Covers
+    the complete AI safety lifecycle: element identification, safety
+    requirements, architectural and development measures, data quality,
+    training, verification, validation, deployment, runtime monitoring,
+    tool qualification, and assurance arguments.
+
+# ──────────────────────────────────────────────────────────────────────────
+# Artifact types
+# ──────────────────────────────────────────────────────────────────────────
+artifact-types:
+
+  # ── AI element identification ──────────────────────────────────────────
+  - name: ai-element
+    description: >
+      An AI component within the vehicle system. Each AI element is
+      characterized by its functional role (perception, decision, planning,
+      or control) and its safety relevance (ASIL rating or QM).
+    fields:
+      - name: ai-type
+        type: string
+        required: true
+        allowed-values: [perception, decision, planning, control]
+        description: Functional role of the AI element in the vehicle system
+      - name: safety-relevance
+        type: string
+        required: true
+        allowed-values: [ASIL-A, ASIL-B, ASIL-C, ASIL-D, QM]
+        description: ASIL classification or QM for elements without safety relevance
+    link-fields: []
+
+  # ── AI safety requirement ──────────────────────────────────────────────
+  - name: ai-safety-req
+    description: >
+      A safety requirement derived from or allocated to an AI element.
+      Specifies a performance criterion and its quantitative acceptance
+      threshold.
+    fields:
+      - name: performance-criterion
+        type: text
+        required: true
+        description: Performance criterion the AI element must satisfy
+      - name: acceptance-threshold
+        type: string
+        required: true
+        description: Quantitative acceptance threshold for the performance criterion
+    link-fields:
+      - name: ai-element
+        link-type: derives-from
+        target-types: [ai-element]
+        required: true
+        cardinality: one-or-many
+
+  # ── Architectural safety measure ───────────────────────────────────────
+  - name: ai-arch-measure
+    description: >
+      An architectural safety measure to address potential AI failures.
+      Types include redundancy, monitoring, fallback, and graceful
+      degradation strategies.
+    fields:
+      - name: measure-type
+        type: string
+        required: true
+        allowed-values: [redundancy, monitoring, fallback, graceful-degradation]
+        description: Category of architectural safety measure
+    link-fields:
+      - name: safety-req
+        link-type: satisfies
+        target-types: [ai-safety-req]
+        required: true
+        cardinality: one-or-many
+
+  # ── Development safety measure ─────────────────────────────────────────
+  - name: ai-dev-measure
+    description: >
+      A development process safety measure such as coding standards,
+      peer review, or static analysis applied during AI element
+      development.
+    fields: []
+    link-fields:
+      - name: safety-req
+        link-type: satisfies
+        target-types: [ai-safety-req]
+        required: true
+        cardinality: one-or-many
+
+  # ── Data quality requirement ───────────────────────────────────────────
+  - name: ai-data-req
+    description: >
+      A data quality requirement governing the datasets used to develop
+      an AI element. Specifies a quality metric and its minimum acceptable
+      threshold.
+    fields:
+      - name: data-quality-metric
+        type: string
+        required: true
+        description: Quality metric for the data (e.g. completeness, correctness, consistency)
+      - name: min-threshold
+        type: string
+        required: true
+        description: Minimum acceptable threshold for the data quality metric
+    link-fields:
+      - name: ai-element
+        link-type: governs
+        target-types: [ai-element]
+        required: true
+        cardinality: one-or-many
+
+  # ── Training record ────────────────────────────────────────────────────
+  - name: ai-training-record
+    description: >
+      Documentation of a training run for an AI element, including
+      dataset version, hyperparameters, and resulting metrics.
+    fields:
+      - name: dataset-version
+        type: string
+        required: true
+        description: Version identifier of the dataset used for this training run
+      - name: hyperparameters
+        type: text
+        required: true
+        description: Key hyperparameters used (learning rate, epochs, batch size, etc.)
+      - name: metric-results
+        type: text
+        required: true
+        description: Metrics achieved after training (accuracy, loss, F1, etc.)
+    link-fields:
+      - name: ai-element
+        link-type: trains
+        target-types: [ai-element]
+        required: true
+        cardinality: exactly-one
+
+  # ── Verification ───────────────────────────────────────────────────────
+  - name: ai-verification
+    description: >
+      Verification activity for an AI element, demonstrating that it
+      meets its specified safety requirements under defined conditions.
+    fields: []
+    link-fields:
+      - name: ai-element
+        link-type: verifies
+        target-types: [ai-element]
+        required: true
+        cardinality: one-or-many
+
+  # ── Validation ─────────────────────────────────────────────────────────
+  - name: ai-validation
+    description: >
+      Operational validation of an AI element, confirming that it
+      performs correctly in its intended operational environment.
+    fields: []
+    link-fields:
+      - name: ai-element
+        link-type: validates
+        target-types: [ai-element]
+        required: true
+        cardinality: one-or-many
+
+  # ── Deployment ─────────────────────────────────────────────────────────
+  - name: ai-deployment
+    description: >
+      Deployment configuration for an AI element, specifying the
+      target platform, runtime environment, and release conditions.
+    fields: []
+    link-fields:
+      - name: ai-element
+        link-type: deploys
+        target-types: [ai-element]
+        required: true
+        cardinality: one-or-many
+
+  # ── Monitoring ─────────────────────────────────────────────────────────
+  - name: ai-monitoring
+    description: >
+      Runtime monitoring specification for an AI element. Defines the
+      metrics, thresholds, and responses for detecting degradation or
+      failure during operation.
+    fields: []
+    link-fields:
+      - name: ai-element
+        link-type: monitors
+        target-types: [ai-element]
+        required: true
+        cardinality: one-or-many
+
+  # ── Tool qualification ─────────────────────────────────────────────────
+  - name: ai-tool-qual
+    description: >
+      Tool qualification record documenting that a development or
+      verification tool meets its required Tool Qualification Level (TQL).
+    fields:
+      - name: tool-class
+        type: string
+        required: true
+        allowed-values: [TQL-1, TQL-2, TQL-3, TQL-4, TQL-5]
+        description: Tool Qualification Level per ISO/PAS 8800
+    link-fields: []
+
+  # ── Assurance argument ─────────────────────────────────────────────────
+  - name: ai-assurance-argument
+    description: >
+      An assurance case argument for the safety of an AI element.
+      Structures evidence and reasoning to demonstrate that safety
+      requirements are met throughout the lifecycle.
+    fields: []
+    link-fields:
+      - name: ai-element
+        link-type: argues
+        target-types: [ai-element]
+        required: true
+        cardinality: one-or-many
+
+# ──────────────────────────────────────────────────────────────────────────
+# ISO/PAS 8800-specific link types
+# ──────────────────────────────────────────────────────────────────────────
+link-types:
+  - name: governs
+    inverse: governed-by
+    description: Data quality requirement governs an AI element's training data
+    source-types: [ai-data-req]
+    target-types: [ai-element]
+
+  - name: trains
+    inverse: trained-by
+    description: Training record documents a training run for an AI element
+    source-types: [ai-training-record]
+    target-types: [ai-element]
+
+  - name: deploys
+    inverse: deployed-by
+    description: Deployment configuration deploys an AI element
+    source-types: [ai-deployment]
+    target-types: [ai-element]
+
+  - name: monitors
+    inverse: monitored-by
+    description: Monitoring specification monitors an AI element at runtime
+    source-types: [ai-monitoring]
+    target-types: [ai-element]
+
+  - name: argues
+    inverse: argued-by
+    description: Assurance argument argues the safety of an AI element
+    source-types: [ai-assurance-argument]
+    target-types: [ai-element]
+
+# ──────────────────────────────────────────────────────────────────────────
+# ISO/PAS 8800 traceability rules
+# ──────────────────────────────────────────────────────────────────────────
+traceability-rules:
+  - name: ai-element-has-safety-req
+    description: Every AI element must have at least one safety requirement
+    source-type: ai-element
+    required-backlink: derives-from
+    from-types: [ai-safety-req]
+    severity: error
+
+  - name: ai-element-has-data-req
+    description: Every AI element should have at least one data quality requirement
+    source-type: ai-element
+    required-backlink: governs
+    from-types: [ai-data-req]
+    severity: warning
+
+  - name: ai-element-has-monitoring
+    description: Every AI element should have runtime monitoring specified
+    source-type: ai-element
+    required-backlink: monitors
+    from-types: [ai-monitoring]
+    severity: warning
+
+  - name: ai-safety-req-has-verification
+    description: Every AI safety requirement must be verified
+    source-type: ai-safety-req
+    required-backlink: verifies
+    from-types: [ai-verification]
+    severity: error

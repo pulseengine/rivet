@@ -20,6 +20,8 @@ pub const SCHEMA_SAFETY_CASE: &str = include_str!("../../schemas/safety-case.yam
 pub const SCHEMA_STPA_AI: &str = include_str!("../../schemas/stpa-ai.yaml");
 pub const SCHEMA_STPA_SEC: &str = include_str!("../../schemas/stpa-sec.yaml");
 pub const SCHEMA_RESEARCH: &str = include_str!("../../schemas/research.yaml");
+pub const SCHEMA_ISO_PAS_8800: &str = include_str!("../../schemas/iso-pas-8800.yaml");
+pub const SCHEMA_SOTIF: &str = include_str!("../../schemas/sotif.yaml");
 
 /// All known built-in schema names.
 pub const SCHEMA_NAMES: &[&str] = &[
@@ -35,6 +37,8 @@ pub const SCHEMA_NAMES: &[&str] = &[
     "eu-ai-act",
     "safety-case",
     "research",
+    "iso-pas-8800",
+    "sotif",
 ];
 
 /// Look up embedded schema content by name.
@@ -52,6 +56,8 @@ pub fn embedded_schema(name: &str) -> Option<&'static str> {
         "stpa-ai" => Some(SCHEMA_STPA_AI),
         "stpa-sec" => Some(SCHEMA_STPA_SEC),
         "research" => Some(SCHEMA_RESEARCH),
+        "iso-pas-8800" => Some(SCHEMA_ISO_PAS_8800),
+        "sotif" => Some(SCHEMA_SOTIF),
         _ => None,
     }
 }

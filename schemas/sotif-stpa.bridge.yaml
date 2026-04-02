@@ -1,0 +1,49 @@
+# Bridge: SOTIF ↔ STPA
+#
+# Maps SOTIF functional-insufficiency hazards to STPA loss scenarios
+# and vice versa.
+# Use with: rivet init --schema sotif,stpa
+#
+# STPA provides the control-structure-based hazard analysis;
+# SOTIF provides the functional-insufficiency hazard analysis.
+# This bridge links them so SOTIF hazards can be traced to STPA
+# loss scenarios, and STPA analysis can inform SOTIF triggering
+# condition identification.
+
+schema:
+  name: sotif-stpa-bridge
+  version: "0.1.0"
+  extends: [sotif, stpa]
+  description: >
+    Links SOTIF hazards to STPA loss scenarios and vice versa.
+    SOTIF hazards from functional insufficiencies map to STPA loss
+    scenarios, and STPA hazards can inform SOTIF triggering condition
+    identification.
+
+link-types:
+  - name: sotif-hazard-maps-to-loss-scenario
+    inverse: loss-scenario-mapped-from-sotif-hazard
+    description: SOTIF hazard maps to an STPA loss scenario describing the causal pathway
+    source-types: [sotif-hazard]
+    target-types: [loss-scenario]
+
+  - name: stpa-hazard-informs-sotif
+    inverse: sotif-informed-by-stpa-hazard
+    description: STPA hazard informs the identification of a SOTIF triggering condition
+    source-types: [hazard]
+    target-types: [sotif-triggering-condition]
+
+traceability-rules:
+  - name: sotif-hazard-has-loss-scenario
+    description: Every SOTIF hazard should map to at least one STPA loss scenario
+    source-type: sotif-hazard
+    required-link: sotif-hazard-maps-to-loss-scenario
+    target-types: [loss-scenario]
+    severity: warning
+
+  - name: stpa-hazard-informs-triggering-condition
+    description: STPA hazards should inform SOTIF triggering condition analysis
+    source-type: hazard
+    required-link: stpa-hazard-informs-sotif
+    target-types: [sotif-triggering-condition]
+    severity: info

@@ -1,0 +1,217 @@
+# ISO 21448 — Safety of the Intended Functionality (SOTIF)
+#
+# Defines artifact types and traceability rules for SOTIF analysis,
+# covering identification and mitigation of hazards arising from
+# functional insufficiencies in the intended functionality (as opposed
+# to system failures covered by ISO 26262).
+#
+# SOTIF addresses hazardous behavior caused by:
+#   - Sensor limitations
+#   - Algorithm limitations
+#   - Specification gaps
+#   - Unforeseen interaction effects
+#
+# Based on:
+#   - ISO 21448:2022 Road vehicles — Safety of the intended functionality
+#
+# Usage:
+#   rivet init --preset sotif
+#   schemas: [common, sotif]
+
+schema:
+  name: sotif
+  version: "0.1.0"
+  namespace: "http://pulseengine.dev/ns/sotif#"
+  extends: [common]
+  description: >
+    ISO 21448 SOTIF artifact types for analyzing and mitigating hazards
+    that arise from functional insufficiencies rather than system faults.
+    Covers hazard identification, triggering conditions, scenario-based
+    evaluation, acceptance criteria, verification, validation, and
+    strategies for known and unknown unsafe scenarios.
+
+# ──────────────────────────────────────────────────────────────────────────
+# Artifact types
+# ──────────────────────────────────────────────────────────────────────────
+artifact-types:
+
+  # ── SOTIF hazard ───────────────────────────────────────────────────────
+  - name: sotif-hazard
+    description: >
+      A hazard arising from a functional insufficiency in the intended
+      functionality. Unlike ISO 26262 hazards (system faults), SOTIF
+      hazards stem from limitations in sensors, algorithms, specifications,
+      or unforeseen interactions.
+    fields:
+      - name: insufficiency-type
+        type: string
+        required: true
+        allowed-values:
+          - sensor-limitation
+          - algorithm-limitation
+          - specification-gap
+          - interaction-effect
+        description: Category of functional insufficiency causing the hazard
+    link-fields: []
+
+  # ── Triggering condition ───────────────────────────────────────────────
+  - name: sotif-triggering-condition
+    description: >
+      An environmental or operational condition that triggers hazardous
+      behavior due to a functional insufficiency. Triggering conditions
+      define the circumstances under which a SOTIF hazard manifests.
+    fields:
+      - name: environment
+        type: text
+        required: true
+        description: Environmental conditions (weather, lighting, road, traffic, etc.)
+      - name: probability
+        type: string
+        required: false
+        description: Estimated probability or frequency of this triggering condition
+    link-fields:
+      - name: hazard
+        link-type: triggers
+        target-types: [sotif-hazard]
+        required: true
+        cardinality: one-or-many
+
+  # ── Scenario ───────────────────────────────────────────────────────────
+  - name: sotif-scenario
+    description: >
+      A test or evaluation scenario used to exercise a triggering
+      condition. Scenarios are categorized into the four SOTIF quadrants:
+      known-safe, known-unsafe, unknown-unsafe, and unknown-safe.
+    fields:
+      - name: scenario-type
+        type: string
+        required: true
+        allowed-values:
+          - known-safe
+          - known-unsafe
+          - unknown-unsafe
+          - unknown-safe
+        description: SOTIF scenario quadrant classification
+    link-fields:
+      - name: triggering-condition
+        link-type: exercises
+        target-types: [sotif-triggering-condition]
+        required: true
+        cardinality: one-or-many
+
+  # ── Acceptance criterion ───────────────────────────────────────────────
+  - name: sotif-acceptance-criterion
+    description: >
+      A quantitative acceptance threshold defining when residual risk
+      from a SOTIF hazard is considered acceptable. Specifies the metric
+      and its target value.
+    fields:
+      - name: metric
+        type: string
+        required: true
+        description: Metric used to evaluate acceptability (e.g. false-negative rate, MTTF)
+      - name: target-value
+        type: string
+        required: true
+        description: Target value the metric must achieve for acceptance
+    link-fields: []
+
+  # ── Verification ───────────────────────────────────────────────────────
+  - name: sotif-verification
+    description: >
+      A verification activity demonstrating that a SOTIF hazard has been
+      adequately identified and analyzed, and that mitigations are
+      correctly implemented.
+    fields: []
+    link-fields:
+      - name: hazard
+        link-type: verifies
+        target-types: [sotif-hazard]
+        required: true
+        cardinality: one-or-many
+
+  # ── Validation ─────────────────────────────────────────────────────────
+  - name: sotif-validation
+    description: >
+      A validation activity confirming that residual risk meets the
+      defined acceptance criteria. Provides evidence that the area of
+      unknown unsafe scenarios has been sufficiently reduced.
+    fields: []
+    link-fields:
+      - name: acceptance-criterion
+        link-type: validates
+        target-types: [sotif-acceptance-criterion]
+        required: true
+        cardinality: one-or-many
+
+  # ── Known unsafe scenario ──────────────────────────────────────────────
+  - name: sotif-known-unsafe
+    description: >
+      A known unsafe scenario with a defined mitigation strategy.
+      Represents a scenario that has been identified and for which
+      countermeasures have been designed.
+    fields: []
+    link-fields:
+      - name: hazard
+        link-type: mitigates
+        target-types: [sotif-hazard]
+        required: true
+        cardinality: one-or-many
+
+  # ── Unknown unsafe strategy ────────────────────────────────────────────
+  - name: sotif-unknown-unsafe
+    description: >
+      A strategy for discovering and reducing the area of unknown unsafe
+      scenarios. Specifies the exploration method used to uncover
+      previously unidentified hazardous conditions.
+    fields:
+      - name: exploration-method
+        type: string
+        required: true
+        allowed-values:
+          - simulation
+          - field-data
+          - adversarial-testing
+        description: Method used to explore the unknown-unsafe scenario space
+    link-fields: []
+
+# ──────────────────────────────────────────────────────────────────────────
+# SOTIF-specific link types
+# ──────────────────────────────────────────────────────────────────────────
+link-types:
+  - name: triggers
+    inverse: triggered-by
+    description: Triggering condition triggers a SOTIF hazard
+    source-types: [sotif-triggering-condition]
+    target-types: [sotif-hazard]
+
+  - name: exercises
+    inverse: exercised-by
+    description: Scenario exercises a triggering condition
+    source-types: [sotif-scenario]
+    target-types: [sotif-triggering-condition]
+
+# ──────────────────────────────────────────────────────────────────────────
+# SOTIF traceability rules
+# ──────────────────────────────────────────────────────────────────────────
+traceability-rules:
+  - name: sotif-hazard-has-triggering-condition
+    description: Every SOTIF hazard must have at least one triggering condition identified
+    source-type: sotif-hazard
+    required-backlink: triggers
+    from-types: [sotif-triggering-condition]
+    severity: error
+
+  - name: sotif-triggering-condition-has-scenario
+    description: Every triggering condition should have at least one scenario to exercise it
+    source-type: sotif-triggering-condition
+    required-backlink: exercises
+    from-types: [sotif-scenario]
+    severity: warning
+
+  - name: sotif-hazard-has-verification
+    description: Every SOTIF hazard must be verified
+    source-type: sotif-hazard
+    required-backlink: verifies
+    from-types: [sotif-verification]
+    severity: error

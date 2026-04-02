@@ -1,0 +1,48 @@
+# Bridge: ISO/PAS 8800 ↔ STPA-AI
+#
+# Maps STPA-AI machine learning artifacts to ISO/PAS 8800 AI safety
+# lifecycle artifacts.
+# Use with: rivet init --schema iso-pas-8800,stpa,stpa-ai
+#
+# STPA-AI provides the systematic hazard analysis for ML controllers;
+# ISO/PAS 8800 provides the normative AI safety lifecycle framework.
+# This bridge links them so STPA-AI analysis artifacts feed directly
+# into the ISO/PAS 8800 lifecycle documentation.
+
+schema:
+  name: iso-8800-stpa-bridge
+  version: "0.1.0"
+  extends: [iso-pas-8800, stpa, stpa-ai]
+  description: >
+    Links STPA-AI analysis artifacts to ISO/PAS 8800 AI safety lifecycle.
+    ML controllers map to AI elements, and training data sources map to
+    AI data requirements, enabling reuse of STPA-AI analysis in the
+    ISO/PAS 8800 framework.
+
+link-types:
+  - name: ml-controller-maps-to-ai-element
+    inverse: ai-element-mapped-from-ml-controller
+    description: STPA-AI ML controller maps to an ISO/PAS 8800 AI element
+    source-types: [ml-controller]
+    target-types: [ai-element]
+
+  - name: training-data-maps-to-data-req
+    inverse: data-req-mapped-from-training-data
+    description: STPA-AI training data source maps to an ISO/PAS 8800 data quality requirement
+    source-types: [training-data-source]
+    target-types: [ai-data-req]
+
+traceability-rules:
+  - name: ml-controller-has-ai-element
+    description: Every STPA-AI ML controller should map to an ISO/PAS 8800 AI element
+    source-type: ml-controller
+    required-link: ml-controller-maps-to-ai-element
+    target-types: [ai-element]
+    severity: warning
+
+  - name: training-data-has-data-req
+    description: Every STPA-AI training data source should map to an ISO/PAS 8800 data quality requirement
+    source-type: training-data-source
+    required-link: training-data-maps-to-data-req
+    target-types: [ai-data-req]
+    severity: warning
