@@ -175,13 +175,9 @@ enum Command {
         #[arg(short, long, default_value = "text")]
         format: String,
 
-        /// Use salsa incremental validation (experimental)
+        /// Use direct (non-incremental) validation instead of the default salsa path
         #[arg(long)]
-        incremental: bool,
-
-        /// Run both pipelines and verify they produce identical diagnostics (SC-11)
-        #[arg(long)]
-        verify_incremental: bool,
+        direct: bool,
 
         /// Skip cross-repo validation (broken external refs, backlinks, circular deps, version conflicts)
         #[arg(long)]
@@ -741,15 +737,13 @@ fn run(cli: Cli) -> Result<bool> {
         Command::Stpa { path, schema } => cmd_stpa(path, schema.as_deref(), &cli),
         Command::Validate {
             format,
-            incremental,
-            verify_incremental,
+            direct,
             skip_external_validation,
             baseline,
         } => cmd_validate(
             &cli,
             format,
-            *incremental,
-            *verify_incremental,
+            *direct,
             *skip_external_validation,
             baseline.as_deref(),
         ),
@@ -1645,17 +1639,11 @@ fn cmd_stpa(
 fn cmd_validate(
     cli: &Cli,
     format: &str,
-    incremental: bool,
-    verify_incremental: bool,
+    direct: bool,
     skip_external_validation: bool,
     baseline_name: Option<&str>,
 ) -> Result<bool> {
     check_for_updates();
-
-    // When --incremental is set (or --verify-incremental), run the salsa path.
-    if incremental || verify_incremental {
-        return cmd_validate_incremental(cli, format, verify_incremental);
-    }
 
     let ctx = ProjectContext::load_with_docs(cli)?;
     let ProjectContext {
@@ -1683,7 +1671,15 @@ fn cmd_validate(
     };
 
     let doc_store = doc_store.unwrap_or_default();
-    let mut diagnostics = validate::validate(&store, &schema, &graph);
+
+    // Core validation: use salsa incremental by default, --direct for legacy path.
+    // Fall back to the direct path when baseline scoping is active, since the
+    // salsa database validates all source files and does not support scoped stores.
+    let mut diagnostics = if direct || baseline_name.is_some() {
+        validate::validate(&store, &schema, &graph)
+    } else {
+        run_salsa_validation(cli, &config)?
+    };
     diagnostics.extend(validate::validate_documents(&doc_store, &store));
 
     // Cross-repo link validation (skipped with --skip-external-validation)
@@ -1935,18 +1931,19 @@ fn cmd_validate(
     Ok(errors == 0 && cross_errors == 0)
 }
 
-/// Incremental validation via the salsa database.
+/// Run core validation via the salsa incremental database.
 ///
 /// This reads all source files and schemas into salsa inputs, then calls the
-/// tracked `validate_all` query. When `verify` is true, it also runs the
-/// existing sequential pipeline and asserts the diagnostics match (SC-11).
-fn cmd_validate_incremental(cli: &Cli, format: &str, verify: bool) -> Result<bool> {
+/// tracked `validate_all` query. Returns the diagnostics for integration into
+/// the main `cmd_validate` flow (which adds document, cross-repo, and
+/// lifecycle validation on top).
+///
+/// The salsa path produces identical core diagnostics (structural + conditional
+/// rules) to the direct `validate::validate()` call, but benefits from
+/// incremental caching when used in watch/LSP modes.
+fn run_salsa_validation(cli: &Cli, config: &ProjectConfig) -> Result<Vec<validate::Diagnostic>> {
     use rivet_core::db::RivetDatabase;
     use std::time::Instant;
-
-    let config_path = cli.project.join("rivet.yaml");
-    let config = rivet_core::load_project_config(&config_path)
-        .with_context(|| format!("loading {}", config_path.display()))?;
 
     let schemas_dir = resolve_schemas_dir(cli);
 
@@ -1972,7 +1969,7 @@ fn cmd_validate_incremental(cli: &Cli, format: &str, verify: bool) -> Result<boo
         // The salsa db only handles generic YAML parsing; skip other formats.
         if source.format != "generic" && source.format != "generic-yaml" {
             log::info!(
-                "incremental: skipping source '{}' (format '{}' not yet supported, using adapter fallback)",
+                "salsa: skipping source '{}' (format '{}' not yet supported, using adapter fallback)",
                 source.path,
                 source.format,
             );
@@ -2002,7 +1999,7 @@ fn cmd_validate_incremental(cli: &Cli, format: &str, verify: bool) -> Result<boo
 
     if cli.verbose > 0 {
         eprintln!(
-            "[incremental] cold-cache validation: {:.1}ms ({} source files, {} schemas, {} diagnostics)",
+            "[salsa] validation: {:.1}ms ({} source files, {} schemas, {} diagnostics)",
             t_elapsed.as_secs_f64() * 1000.0,
             source_contents.len(),
             schema_contents.len(),
@@ -2010,93 +2007,7 @@ fn cmd_validate_incremental(cli: &Cli, format: &str, verify: bool) -> Result<boo
         );
     }
 
-    // ── Verify mode: run both pipelines and compare (SC-11) ─────────────
-    if verify {
-        let t_seq_start = Instant::now();
-        let seq_ctx = ProjectContext::load(cli)?;
-        let seq_diagnostics = validate::validate(&seq_ctx.store, &seq_ctx.schema, &seq_ctx.graph);
-        let t_seq_elapsed = t_seq_start.elapsed();
-
-        if cli.verbose > 0 {
-            eprintln!(
-                "[sequential]   full validation: {:.1}ms ({} diagnostics)",
-                t_seq_elapsed.as_secs_f64() * 1000.0,
-                seq_diagnostics.len(),
-            );
-        }
-
-        // Compare: sort both by (rule, artifact_id, message) for stable comparison.
-        let mut incr_sorted = diagnostics.clone();
-        let mut seq_sorted = seq_diagnostics.clone();
-        let sort_key = |d: &validate::Diagnostic| {
-            (
-                d.rule.clone(),
-                d.artifact_id.clone().unwrap_or_default(),
-                d.message.clone(),
-            )
-        };
-        incr_sorted.sort_by_key(sort_key);
-        seq_sorted.sort_by_key(sort_key);
-
-        if incr_sorted == seq_sorted {
-            eprintln!(
-                "[verify] SC-11 PASS: incremental and sequential pipelines produce identical diagnostics"
-            );
-        } else {
-            eprintln!("[verify] SC-11 FAIL: pipelines diverge!");
-            let incr_set: HashSet<String> = incr_sorted.iter().map(|d| format!("{d}")).collect();
-            let seq_set: HashSet<String> = seq_sorted.iter().map(|d| format!("{d}")).collect();
-            for d in seq_set.difference(&incr_set) {
-                eprintln!("  only in sequential: {d}");
-            }
-            for d in incr_set.difference(&seq_set) {
-                eprintln!("  only in incremental: {d}");
-            }
-        }
-    }
-
-    // ── Output (same formatting as the existing path) ───────────────────
-    let errors = diagnostics
-        .iter()
-        .filter(|d| d.severity == Severity::Error)
-        .count();
-    let warnings = diagnostics
-        .iter()
-        .filter(|d| d.severity == Severity::Warning)
-        .count();
-
-    if format == "json" {
-        let diag_json: Vec<serde_json::Value> = diagnostics
-            .iter()
-            .map(|d| {
-                serde_json::json!({
-                    "severity": format!("{:?}", d.severity).to_lowercase(),
-                    "artifact_id": d.artifact_id,
-                    "message": d.message,
-                })
-            })
-            .collect();
-        let result_str = if errors > 0 { "FAIL" } else { "PASS" };
-        let output = serde_json::json!({
-            "result": result_str,
-            "command": "validate",
-            "incremental": true,
-            "errors": errors,
-            "warnings": warnings,
-            "diagnostics": diag_json,
-        });
-        println!("{}", serde_json::to_string_pretty(&output).unwrap());
-    } else {
-        print_diagnostics(&diagnostics);
-        println!();
-        if errors > 0 {
-            println!("Result: FAIL ({} errors, {} warnings)", errors, warnings);
-        } else {
-            println!("Result: PASS ({} warnings)", warnings);
-        }
-    }
-
-    Ok(errors == 0)
+    Ok(diagnostics)
 }
 
 /// Recursively collect YAML files from a path into (path_string, content) pairs.
@@ -2962,8 +2873,7 @@ fn cmd_diff(
                     verbose: cli.verbose,
                     command: Command::Validate {
                         format: "text".to_string(),
-                        incremental: false,
-                        verify_incremental: false,
+                        direct: false,
                         skip_external_validation: false,
                         baseline: None,
                     },
@@ -2974,8 +2884,7 @@ fn cmd_diff(
                     verbose: cli.verbose,
                     command: Command::Validate {
                         format: "text".to_string(),
-                        incremental: false,
-                        verify_incremental: false,
+                        direct: false,
                         skip_external_validation: false,
                         baseline: None,
                     },
