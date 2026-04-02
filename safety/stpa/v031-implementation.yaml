@@ -1,0 +1,156 @@
+# STPA analysis of v0.3.1 implementation
+#
+# Covers the new subsystems: embed resolution, snapshot delta,
+# MCP server, convergence tracking, and schema composition.
+
+losses:
+  - id: L-IMPL-001
+    title: Exported compliance report contains stale or incorrect data
+    description: >
+      The HTML export shows delta values, coverage, or diagnostics
+      that don't match the actual project state. A compliance reviewer
+      (or notified body for EU AI Act) relies on incorrect data.
+
+  - id: L-IMPL-002
+    title: MCP tool returns invalid or inconsistent results
+    description: >
+      An AI agent queries rivet via MCP and receives wrong data
+      (stale validation, incorrect artifact list, wrong stats).
+      Agent makes decisions based on incorrect information.
+
+  - id: L-IMPL-003
+    title: Schema bridge creates incorrect traceability
+    description: >
+      A bridge schema links artifact types that shouldn't be linked,
+      or fails to link types that should be. Coverage reports show
+      false completeness or false gaps.
+
+  - id: L-IMPL-004
+    title: Convergence tracker gives wrong escalation guidance
+    description: >
+      The convergence tracker either fails to detect a stuck loop
+      (agent burns tokens forever) or falsely escalates when the
+      agent is actually making progress.
+
+hazards:
+  - id: H-IMPL-001
+    title: Snapshot captures incomplete or corrupted state
+    description: >
+      The snapshot omits diagnostics, miscounts artifacts, or
+      records wrong coverage percentages. Delta computation
+      then shows incorrect changes.
+    links:
+      - type: leads-to-loss
+        target: L-IMPL-001
+
+  - id: H-IMPL-002
+    title: Delta auto-detection picks wrong baseline
+    description: >
+      find_latest_snapshot() picks a snapshot from the current
+      release (just captured) instead of the previous release,
+      or picks a corrupted/partial snapshot file.
+    links:
+      - type: leads-to-loss
+        target: L-IMPL-001
+
+  - id: H-IMPL-003
+    title: MCP server loads stale project state
+    description: >
+      The MCP server loads project state once at startup and doesn't
+      reload when files change. Agent sees old validation results
+      after making changes.
+    links:
+      - type: leads-to-loss
+        target: L-IMPL-002
+
+  - id: H-IMPL-004
+    title: Embed resolver renders outdated data in export
+    description: >
+      The embed resolver uses cached data that doesn't reflect
+      recent changes. {{stats}} or {{coverage}} in a document
+      shows numbers that don't match the actual project.
+    links:
+      - type: leads-to-loss
+        target: L-IMPL-001
+
+  - id: H-IMPL-005
+    title: Bridge schema creates bidirectional rule conflicts
+    description: >
+      Two bridge schemas define conflicting traceability rules
+      for the same artifact type, causing impossible-to-satisfy
+      requirements or contradictory error messages.
+    links:
+      - type: leads-to-loss
+        target: L-IMPL-003
+
+  - id: H-IMPL-006
+    title: Failure signature hash collision
+    description: >
+      Two different diagnostic messages produce the same FNV-1a
+      hash, causing the convergence tracker to conflate unrelated
+      failures and give wrong escalation.
+    links:
+      - type: leads-to-loss
+        target: L-IMPL-004
+
+system-constraints:
+  - id: SC-IMPL-001
+    title: Snapshot MUST capture identical data to live validation
+    description: >
+      The snapshot's stats, coverage, and diagnostics MUST match
+      what rivet validate/stats/coverage would produce at the
+      same point in time. Use the same computation functions.
+    links:
+      - type: enforces
+        target: H-IMPL-001
+
+  - id: SC-IMPL-002
+    title: Delta MUST compare against the PREVIOUS release snapshot
+    description: >
+      The CI workflow captures the current snapshot AFTER the
+      compliance report is generated. The compliance report uses
+      the snapshot already in the repo (from the previous release).
+    links:
+      - type: enforces
+        target: H-IMPL-002
+
+  - id: SC-IMPL-003
+    title: MCP tools MUST reload project state on each call
+    description: >
+      Each MCP tool call loads fresh project state from disk.
+      No caching across calls. This ensures consistency at the
+      cost of performance (acceptable for agent interaction).
+    links:
+      - type: enforces
+        target: H-IMPL-003
+
+  - id: SC-IMPL-004
+    title: Embed resolver MUST use current AppState, not cached data
+    description: >
+      The embed resolver receives live EmbedContext from the caller.
+      In serve mode, this comes from the current AppState (which
+      reloads on file changes). In export mode, it's computed fresh.
+    links:
+      - type: enforces
+        target: H-IMPL-004
+
+  - id: SC-IMPL-005
+    title: Bridge schemas MUST NOT define artifact types
+    description: >
+      Bridge schemas contain only link_types and traceability_rules.
+      No artifact_types. This prevents type conflicts between
+      independently-developed schemas.
+    links:
+      - type: enforces
+        target: H-IMPL-005
+
+  - id: SC-IMPL-006
+    title: Convergence signature MUST include all diagnostic fields
+    description: >
+      The failure signature includes severity, rule, artifact_id,
+      and message hash. All four components must be present to
+      minimize hash collisions. The 64-bit FNV-1a hash space
+      makes collisions negligible for practical diagnostic counts.
+    links:
+      - type: enforces
+        target: H-IMPL-006

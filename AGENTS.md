@@ -9,7 +9,7 @@
 This project uses **Rivet** for SDLC artifact traceability.
 - Config: `rivet.yaml`
 - Schemas: common, dev, aadl, stpa, stpa-sec
-- Artifacts: 492 across 19 types
+- Artifacts: 518 across 19 types
 - Validation: `rivet validate` (current status: pass)
 
 ## Available Commands
@@ -22,8 +22,7 @@ This project uses **Rivet** for SDLC artifact traceability.
 | `rivet add` | Create a new artifact | `rivet add -t requirement --title "..." --link "satisfies:SC-1"` |
 | `rivet link` | Add a link between artifacts | `rivet link SOURCE -t satisfies --target TARGET` |
 | `rivet serve` | Start the dashboard | `rivet serve --port 3000` |
-| `rivet export --html` | Generate static HTML site | `rivet export --format html --output ./dist` |
-| `rivet lsp` | Start the language server (LSP over stdio) | `rivet lsp` |
+| `rivet export` | Generate HTML reports | `rivet export --format html --output ./dist` |
 | `rivet impact` | Show change impact | `rivet impact --since HEAD~1` |
 | `rivet coverage` | Show traceability coverage | `rivet coverage --format json` |
 | `rivet diff` | Compare artifact versions | `rivet diff --base path/old --head path/new` |
@@ -37,8 +36,8 @@ This project uses **Rivet** for SDLC artifact traceability.
 | `controlled-process` | 5 | A process being controlled — the physical or data transformation acted upon by controllers. |
 | `controller` | 7 | A system component (human or automated) responsible for issuing control actions. Each controller has a process model — its internal beliefs about the state of the controlled process. |
 | `controller-constraint` | 59 | A constraint on a controller's behavior derived by inverting a UCA. Specifies what the controller must or must not do. |
-| `design-decision` | 41 | An architectural or design decision with rationale |
-| `feature` | 107 | A user-visible capability or feature |
+| `design-decision` | 47 | An architectural or design decision with rationale |
+| `feature` | 127 | A user-visible capability or feature |
 | `hazard` | 20 | A system state or set of conditions that, together with worst-case environmental conditions, will lead to a loss. |
 | `loss` | 6 | An undesired or unplanned event involving something of value to stakeholders. Losses define what the analysis aims to prevent. |
 | `loss-scenario` | 34 | A causal pathway describing how a UCA could occur or how the control action could be improperly executed, leading to a hazard. |
@@ -60,15 +59,7 @@ This project uses **Rivet** for SDLC artifact traceability.
 ### File Structure
 - Artifacts are stored as YAML files in: `artifacts`, `safety/stpa`, `safety/stpa-sec`
 - Schema definitions: `schemas/` directory
-- Documents: `docs`, `arch` (markdown files with YAML frontmatter)
-  - **Documents MUST start with `---` YAML frontmatter** to be tracked by rivet
-  - Required frontmatter fields: `id`, `title`, `type` (usually `document`)
-  - Files without frontmatter (plain markdown) are silently skipped
-  - Plans in `docs/plans/` are NOT rivet documents (no frontmatter needed)
-- Do NOT recreate statistics, coverage, linkage, or other data that rivet already provides
-  - Use `rivet stats`, `rivet list`, `rivet coverage`, `rivet validate` to query data
-  - Use `rivet export --html` to generate a full static site
-  - Use the VS Code extension tree view and rendered views for browsing
+- Documents: `docs`, `arch`
 
 ### Creating Artifacts
 ```bash
@@ -78,11 +69,6 @@ rivet add -t requirement --title "New requirement" --status draft --link "satisf
 ### Validating Changes
 Always run `rivet validate` after modifying artifact YAML files.
 Use `rivet validate --format json` for machine-readable output.
-
-### Draft-Aware Validation
-Artifacts with `status: draft` receive **info**-level diagnostics (not warnings/errors)
-for missing required links. This allows drafts to exist without blocking CI while still
-surfacing traceability gaps. Promote to `status: approved` to enforce full link rules.
 
 ### Link Types
 
@@ -94,6 +80,7 @@ surfacing traceability gaps. Promote to `status: approved` to enforce full link 
 | `caused-by-uca` | Loss scenario is caused by an unsafe control action | `causes-scenario` |
 | `constrained-by` | Source is constrained by the target | `constrains` |
 | `constrains-controller` | Constraint applies to a specific controller | `controller-constrained-by` |
+| `contains` | Parent AADL component contains a child sub-component | `contained-by` |
 | `depends-on` | Source depends on target being completed first | `depended-on-by` |
 | `derives-from` | Source is derived from the target | `derived-into` |
 | `implements` | Source implements the target | `implemented-by` |
@@ -111,45 +98,6 @@ surfacing traceability gaps. Promote to `status: approved` to enforce full link 
 | `satisfies` | Source satisfies or fulfils the target | `satisfied-by` |
 | `traces-to` | General traceability link between any two artifacts | `traced-from` |
 | `verifies` | Source verifies or validates the target | `verified-by` |
-
-## Architecture Notes
-
-### Render Module (`rivet-cli/src/render/`)
-The `render/` module contains 18 extracted view render functions used by both the
-axum HTTP server and the LSP server. Modules include:
-`artifacts`, `components`, `coverage`, `diff`, `doc_linkage`, `documents`, `externals`,
-`graph`, `help`, `helpers`, `matrix`, `results`, `search`, `source`, `stats`, `stpa`,
-`styles`, `traceability`, `validate`
-
-The serve layer (`rivet-cli/src/serve/`) is a thin axum wrapper that calls into `render/`.
-The LSP server uses the same render functions via custom requests.
-
-### LSP Server (`rivet lsp`)
-The language server communicates over stdio and supports:
-- Standard LSP: diagnostics, hover, go-to-definition, completion
-- Custom requests:
-  - `rivet/render` — render a named view (page + params) to HTML
-  - `rivet/treeData` — return tree-view children for a given parent path
-  - `rivet/css` — return the full CSS bundle
-  - `rivet/artifactsChanged` — notification sent when artifacts reload
-
-### VS Code Extension
-- Creates a **WebviewPanel** (not Simple Browser) for rendered artifact views
-- Auto-detects `rivet.yaml` location by searching workspace roots up to 2 levels deep;
-  falls back to `rivet.workspaceRoot` setting
-- Provides a tree view (Documents, Views, Help, Artifact Files)
-- Supports artifact Quick Pick search via LSP `rivet/treeData`
-- Works correctly over SSH Remote (no port forwarding required)
-
-### HTML Export (`rivet export --html`)
-Generates a static HTML site using the shared render module. Output is self-contained
-with bundled assets (HTMX, Mermaid, fonts). Use `--output ./dist` to set the output
-directory.
-
-### Etch (`etch/`) — Graph Rendering
-The `etch` crate provides Sugiyama layout → SVG rendering for artifact graphs.
-It supports `type_shapes`: a map from node type to a custom `ShapeProvider` closure
-that returns raw SVG element strings. This allows per-artifact-type custom node shapes.
 
 ## Conventions
 

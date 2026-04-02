@@ -1,0 +1,234 @@
+# Features shipped in v0.3.1 development cycle (2026-04-01)
+artifacts:
+  # ── Embed system ────────────────────────────────────────────────────
+
+  - id: FEAT-074
+    type: feature
+    title: Computed embed system with EmbedRequest parser
+    status: approved
+    description: >
+      Unified {{name:arg key=val}} syntax for embedding computed project
+      data in documents. Parser, resolver, and HTML renderers for stats,
+      coverage, diagnostics, and matrix embeds.
+    links:
+      - type: satisfies
+        target: REQ-035
+
+  - id: FEAT-075
+    type: feature
+    title: Export provenance stamps on computed embeds
+    status: approved
+    description: >
+      Every computed embed in HTML export includes a provenance footer
+      with git commit hash and timestamp (SC-EMBED-4).
+    links:
+      - type: satisfies
+        target: REQ-035
+
+  - id: FEAT-076
+    type: feature
+    title: rivet embed CLI command
+    status: approved
+    description: >
+      CLI command for resolving computed embeds. Supports text and HTML
+      output formats for scripting and testing.
+    links:
+      - type: satisfies
+        target: REQ-001
+
+  # ── Snapshot and delta ─────────────────────────────────────────────
+
+  - id: FEAT-077
+    type: feature
+    title: Snapshot capture and diff for release-to-release delta
+    status: approved
+    description: >
+      rivet snapshot capture/diff/list commands. Captures project state
+      (stats, coverage, diagnostics) to JSON. Delta computation with
+      NEW/RESOLVED diagnostic tracking.
+    links:
+      - type: satisfies
+        target: REQ-001
+
+  - id: FEAT-078
+    type: feature
+    title: Auto-delta rendering in HTML export
+    status: approved
+    description: >
+      Export auto-detects previous snapshot and renders delta columns
+      in stats and coverage views. Zero config — presence of snapshot
+      file is sufficient.
+    links:
+      - type: satisfies
+        target: REQ-035
+
+  - id: FEAT-079
+    type: feature
+    title: CI snapshot workflow on release tag
+    status: approved
+    description: >
+      GitHub Actions workflow captures snapshot on v* tag push. Commits
+      to main for future delta comparison. Compliance report uses
+      previous snapshot for delta rendering.
+    links:
+      - type: satisfies
+        target: REQ-035
+
+  # ── MCP server ─────────────────────────────────────────────────────
+
+  - id: FEAT-080
+    type: feature
+    title: MCP server with stdio transport
+    status: approved
+    description: >
+      Model Context Protocol server over JSON-RPC 2.0 stdio. Three
+      initial tools: rivet_validate, rivet_list, rivet_stats. Compatible
+      with Claude Code, Cursor, and other MCP-capable agents.
+    links:
+      - type: satisfies
+        target: REQ-001
+
+  # ── Convergence tracking ───────────────────────────────────────────
+
+  - id: FEAT-081
+    type: feature
+    title: Agent convergence tracking via failure signatures
+    status: approved
+    description: >
+      Detects AI agent retry loops by fingerprinting validation failures
+      across runs. Escalates from Normal to ExpandedContext to
+      DifferentApproach to HumanReview.
+    links:
+      - type: satisfies
+        target: REQ-001
+
+  # ── CLI commands ───────────────────────────────────────────────────
+
+  - id: FEAT-082
+    type: feature
+    title: rivet get command for single-artifact read
+    status: approved
+    description: >
+      Retrieves a single artifact by ID with text, JSON, or YAML output.
+      Enables AI agents to inspect artifacts without parsing list output.
+    links:
+      - type: satisfies
+        target: REQ-001
+
+  # ── LSP fixes ──────────────────────────────────────────────────────
+
+  - id: FEAT-083
+    type: feature
+    title: LSP surfaces YAML parse errors as diagnostics
+    status: approved
+    description: >
+      Parse errors are shown as yaml-parse-error diagnostics with line
+      and column positions instead of silently returning empty results.
+    links:
+      - type: satisfies
+        target: REQ-002
+
+  - id: FEAT-084
+    type: feature
+    title: Type-aware allowed-values validation for YAML coercion
+    status: approved
+    description: >
+      Handles YAML boolean and number coercion in allowed-values checks.
+      Emits yaml-type-coercion warnings when string fields receive
+      non-string values.
+    links:
+      - type: satisfies
+        target: REQ-002
+
+  - id: FEAT-085
+    type: feature
+    title: Unknown link type and unknown field validation
+    status: approved
+    description: >
+      Validates that link types used by artifacts exist in the schema
+      and that artifact fields are defined in the schema for their type.
+    links:
+      - type: satisfies
+        target: REQ-002
+
+  - id: FEAT-086
+    type: feature
+    title: LSP validates document [[ID]] references
+    status: approved
+    description: >
+      Broken [[ID]] references in markdown documents are surfaced as
+      LSP diagnostics with file and line number.
+    links:
+      - type: satisfies
+        target: REQ-002
+
+  - id: FEAT-087
+    type: feature
+    title: Salsa incremental validation as default
+    status: approved
+    description: >
+      The salsa incremental validation pipeline is now the default for
+      rivet validate. Old direct path available via --direct flag.
+    links:
+      - type: satisfies
+        target: REQ-002
+
+  # ── Schemas ────────────────────────────────────────────────────────
+
+  - id: FEAT-088
+    type: feature
+    title: EU AI Act compliance schema with Annex IV mapping
+    status: approved
+    description: >
+      15 artifact types mapping to EU AI Act Annex IV and Articles 9-15.
+      14 link types, 12 traceability rules. Bridge schemas for STPA and
+      ASPICE composition. Init preset and example project.
+    links:
+      - type: satisfies
+        target: REQ-010
+
+  - id: FEAT-089
+    type: feature
+    title: GSN safety case schema
+    status: approved
+    description: >
+      Goal Structuring Notation for structured safety arguments. 6
+      artifact types, 5 link types, 4 traceability rules. Bridges to
+      STPA and EU AI Act. Covers UL 4600, ISO/PAS 8800.
+    links:
+      - type: satisfies
+        target: REQ-010
+
+  - id: FEAT-090
+    type: feature
+    title: STPA-for-AI extension schema
+    status: approved
+    description: >
+      7 ML lifecycle artifact types extending STPA for AI/ML systems.
+      5 traceability rules. Based on DeepSTPA, UniSTPA, ISO/PAS 8800.
+    links:
+      - type: satisfies
+        target: REQ-010
+
+  - id: FEAT-091
+    type: feature
+    title: Schema guidance fields (common-mistakes, example)
+    status: approved
+    description: >
+      Optional common-mistakes and example fields on ArtifactTypeDef.
+      Surfaced in rivet schema show output for AI agents and developers.
+    links:
+      - type: satisfies
+        target: REQ-010
+
+  - id: FEAT-092
+    type: feature
+    title: STPA analysis of LSP diagnostic accuracy
+    status: approved
+    description: >
+      Self-analysis of LSP hazards using rivet's own STPA schema.
+      3 losses, 4 hazards, 7 system constraints covering false negatives,
+      false positives, cascade errors, and misleading fix suggestions.
+    links:
+      - type: satisfies
+        target: REQ-004
