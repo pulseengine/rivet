@@ -18,10 +18,8 @@ pub const SCHEMA_SCORE: &str = include_str!("../../schemas/score.yaml");
 pub const SCHEMA_EU_AI_ACT: &str = include_str!("../../schemas/eu-ai-act.yaml");
 pub const SCHEMA_SAFETY_CASE: &str = include_str!("../../schemas/safety-case.yaml");
 pub const SCHEMA_STPA_AI: &str = include_str!("../../schemas/stpa-ai.yaml");
-pub const SCHEMA_DO_178C: &str = include_str!("../../schemas/do-178c.yaml");
-pub const SCHEMA_EN_50128: &str = include_str!("../../schemas/en-50128.yaml");
-pub const SCHEMA_IEC_61508: &str = include_str!("../../schemas/iec-61508.yaml");
-pub const SCHEMA_IEC_62304: &str = include_str!("../../schemas/iec-62304.yaml");
+pub const SCHEMA_STPA_SEC: &str = include_str!("../../schemas/stpa-sec.yaml");
+pub const SCHEMA_RESEARCH: &str = include_str!("../../schemas/research.yaml");
 
 /// All known built-in schema names.
 pub const SCHEMA_NAMES: &[&str] = &[
@@ -29,16 +27,14 @@ pub const SCHEMA_NAMES: &[&str] = &[
     "dev",
     "stpa",
     "stpa-ai",
+    "stpa-sec",
     "aspice",
     "cybersecurity",
     "aadl",
     "score",
     "eu-ai-act",
     "safety-case",
-    "do-178c",
-    "en-50128",
-    "iec-61508",
-    "iec-62304",
+    "research",
 ];
 
 /// Look up embedded schema content by name.
@@ -54,10 +50,8 @@ pub fn embedded_schema(name: &str) -> Option<&'static str> {
         "eu-ai-act" => Some(SCHEMA_EU_AI_ACT),
         "safety-case" => Some(SCHEMA_SAFETY_CASE),
         "stpa-ai" => Some(SCHEMA_STPA_AI),
-        "do-178c" => Some(SCHEMA_DO_178C),
-        "en-50128" => Some(SCHEMA_EN_50128),
-        "iec-61508" => Some(SCHEMA_IEC_61508),
-        "iec-62304" => Some(SCHEMA_IEC_62304),
+        "stpa-sec" => Some(SCHEMA_STPA_SEC),
+        "research" => Some(SCHEMA_RESEARCH),
         _ => None,
     }
 }

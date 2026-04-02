@@ -15,6 +15,7 @@ struct DocTopic {
 }
 
 const TOPICS: &[DocTopic] = &[
+    // ── Reference topics ───────────────────────────────────────────────
     DocTopic {
         slug: "artifact-format",
         title: "YAML artifact file format",
@@ -46,46 +47,16 @@ const TOPICS: &[DocTopic] = &[
         content: DOCUMENTS_DOC,
     },
     DocTopic {
+        slug: "embed-syntax",
+        title: "Computed embed syntax for documents and CLI",
+        category: "Reference",
+        content: EMBED_SYNTAX_DOC,
+    },
+    DocTopic {
         slug: "commit-traceability",
         title: "Commit-to-artifact traceability via git trailers",
         category: "Reference",
         content: COMMIT_TRACEABILITY_DOC,
-    },
-    DocTopic {
-        slug: "schema/common",
-        title: "Common base fields and link types",
-        category: "Schemas",
-        content: embedded::SCHEMA_COMMON,
-    },
-    DocTopic {
-        slug: "schema/dev",
-        title: "Development tracking schema (requirement, design-decision, feature)",
-        category: "Schemas",
-        content: embedded::SCHEMA_DEV,
-    },
-    DocTopic {
-        slug: "schema/stpa",
-        title: "STPA safety analysis schema (10 types)",
-        category: "Schemas",
-        content: STPA_DOC,
-    },
-    DocTopic {
-        slug: "schema/aspice",
-        title: "Automotive SPICE schema (14 types, ASPICE 4.0)",
-        category: "Schemas",
-        content: ASPICE_DOC,
-    },
-    DocTopic {
-        slug: "schema/cybersecurity",
-        title: "Cybersecurity schema (SEC.1-4, 10 types)",
-        category: "Schemas",
-        content: CYBERSECURITY_DOC,
-    },
-    DocTopic {
-        slug: "schema/aadl",
-        title: "AADL architecture schema (spar integration)",
-        category: "Schemas",
-        content: embedded::SCHEMA_AADL,
     },
     DocTopic {
         slug: "cross-repo",
@@ -124,12 +95,6 @@ const TOPICS: &[DocTopic] = &[
         content: BAZEL_DOC,
     },
     DocTopic {
-        slug: "schema/score",
-        title: "Eclipse SCORE metamodel schema (20 types)",
-        category: "Schemas",
-        content: embedded::SCHEMA_SCORE,
-    },
-    DocTopic {
         slug: "formal-verification",
         title: "Formal verification strategy (Kani, Verus, Rocq)",
         category: "Reference",
@@ -140,6 +105,85 @@ const TOPICS: &[DocTopic] = &[
         title: "HTML export deployment and customization",
         category: "Reference",
         content: HTML_EXPORT_DOC,
+    },
+    // ── Schema topics ──────────────────────────────────────────────────
+    DocTopic {
+        slug: "schemas-overview",
+        title: "All built-in schemas, bridges, and presets",
+        category: "Schemas",
+        content: SCHEMAS_OVERVIEW_DOC,
+    },
+    DocTopic {
+        slug: "schema/common",
+        title: "Common base fields and link types",
+        category: "Schemas",
+        content: embedded::SCHEMA_COMMON,
+    },
+    DocTopic {
+        slug: "schema/dev",
+        title: "Development tracking schema (requirement, design-decision, feature)",
+        category: "Schemas",
+        content: embedded::SCHEMA_DEV,
+    },
+    DocTopic {
+        slug: "schema/stpa",
+        title: "STPA safety analysis schema (10 types)",
+        category: "Schemas",
+        content: STPA_DOC,
+    },
+    DocTopic {
+        slug: "schema/stpa-sec",
+        title: "STPA-Sec adversarial threat extension",
+        category: "Schemas",
+        content: STPA_SEC_DOC,
+    },
+    DocTopic {
+        slug: "schema/stpa-ai",
+        title: "STPA-for-AI ML lifecycle extension",
+        category: "Schemas",
+        content: STPA_AI_DOC,
+    },
+    DocTopic {
+        slug: "schema/aspice",
+        title: "Automotive SPICE schema (14 types, ASPICE 4.0)",
+        category: "Schemas",
+        content: ASPICE_DOC,
+    },
+    DocTopic {
+        slug: "schema/cybersecurity",
+        title: "Cybersecurity schema (SEC.1-4, 10 types)",
+        category: "Schemas",
+        content: CYBERSECURITY_DOC,
+    },
+    DocTopic {
+        slug: "schema/aadl",
+        title: "AADL architecture schema (spar integration)",
+        category: "Schemas",
+        content: embedded::SCHEMA_AADL,
+    },
+    DocTopic {
+        slug: "schema/score",
+        title: "Eclipse SCORE metamodel schema (20 types)",
+        category: "Schemas",
+        content: embedded::SCHEMA_SCORE,
+    },
+    DocTopic {
+        slug: "schema/eu-ai-act",
+        title: "EU AI Act compliance schema (Annex IV, Articles 9-15)",
+        category: "Schemas",
+        content: EU_AI_ACT_DOC,
+    },
+    DocTopic {
+        slug: "schema/safety-case",
+        title: "GSN safety case schema (Goal Structuring Notation v3)",
+        category: "Schemas",
+        content: SAFETY_CASE_DOC,
+    },
+    DocTopic {
+        slug: "schema/research",
+        title: "Research tracking schema (market, patents, tech eval)",
+        category: "Schemas",
+        content: embedded::SCHEMA_RESEARCH,
     },
 ];
 
@@ -244,14 +288,23 @@ results: results            # Test results directory (JUnit XML, LCOV)
 
 ## Available Schemas
 
-| Name           | Types | Description                        |
-|----------------|-------|------------------------------------|
-| common         | 0     | Base fields, 8 link types          |
-| dev            | 3     | requirement, design-decision, feature |
-| stpa           | 10    | STPA losses through scenarios      |
-| aspice         | 14    | ASPICE 4.0 SYS.1-5, SWE.1-6       |
-| cybersecurity  | 10    | SEC.1-4, TARA, ISO 21434           |
-| aadl           | 3     | AADL components, analysis, flows   |
+| Name           | Types | Description                              |
+|----------------|-------|------------------------------------------|
+| common         | 0     | Base fields, 8 link types                |
+| dev            | 3     | requirement, design-decision, feature    |
+| stpa           | 10    | STPA losses through scenarios            |
+| stpa-sec       | 6     | STPA-Sec adversarial threat extension    |
+| stpa-ai        | 5     | STPA-for-AI ML lifecycle extension       |
+| aspice         | 14    | ASPICE 4.0 SYS.1-5, SWE.1-6             |
+| cybersecurity  | 10    | SEC.1-4, TARA, ISO 21434                 |
+| aadl           | 3     | AADL components, analysis, flows         |
+| score          | 20    | Eclipse SCORE metamodel (ISO 26262)      |
+| eu-ai-act      | 8     | EU AI Act Annex IV, Articles 9-15        |
+| safety-case    | 6     | GSN safety argument (Goal, Strategy, ...) |
+| research       | 5     | Market analysis, patents, tech eval      |
+
+See `rivet docs schemas-overview` for details on each schema, which presets
+use them, and how bridge schemas connect domains.
 
 ## Available Adapters
 
@@ -270,15 +323,36 @@ const CLI_DOC: &str = r#"# CLI Command Reference
 ```
 rivet validate              Validate all artifacts against schemas
 rivet list [-t TYPE]        List artifacts (filter by type/status)
+rivet get ID                Show a single artifact by ID (text/json/yaml)
 rivet stats                 Summary statistics and orphan detection
 rivet coverage              Traceability coverage report
 rivet matrix --from X --to Y  Traceability matrix between types
 rivet diff                  Compare artifact versions
-rivet export -f FORMAT      Export to reqif or generic-yaml
+rivet export -f FORMAT      Export to reqif, generic-yaml, or html
 rivet serve [-P PORT]       Start HTMX dashboard (default: 3000)
 rivet commits [--since N]   Commit-artifact traceability analysis
 rivet commit-msg-check F    Validate commit message trailers (hook)
+rivet impact --since REF    Change impact analysis (transitive)
 ```
+
+## Embed and Snapshot Commands
+
+```
+rivet embed QUERY           Resolve a computed embed (e.g. "stats:types")
+rivet embed QUERY -f html   Render embed as HTML fragment
+rivet snapshot capture      Capture current project state to JSON
+rivet snapshot diff         Compare current state against a baseline
+rivet snapshot list         List all captured snapshots
+```
+
+## MCP Server
+
+```
+rivet mcp                   Start the MCP server (stdio transport)
+```
+
+Exposes rivet tools to AI agents via the Model Context Protocol.
+The server uses stdio transport and only binds to the local process.
 
 ## Schema Commands
 
@@ -305,6 +379,26 @@ rivet init --preset aspice  Initialize with ASPICE schema + examples
 rivet context               Generate .rivet/agent-context.md
 ```
 
+Available presets: `dev`, `aspice`, `stpa`, `stpa-ai`, `cybersecurity`,
+`aadl`, `eu-ai-act`, `safety-case`.
+
+## Mutation Commands
+
+```
+rivet add --type TYPE --title TITLE   Create a new artifact
+rivet modify ID --set-status STATUS   Update artifact fields
+rivet link SRC --type T --target DST  Add a traceability link
+rivet unlink SRC --type T --target DST  Remove a link
+rivet remove ID                       Remove an artifact
+rivet next-id --type TYPE             Next available ID for a type
+```
+
+## Import Commands
+
+```
+rivet import-results --format junit FILE  Import JUnit XML test results
+```
+
 ## Global Flags
 
 ```
@@ -322,8 +416,11 @@ rivet schema list --format json
 rivet schema show sw-req --format json
 rivet validate --format json
 rivet list --format json
+rivet get ID --format json
 rivet stats --format json
 rivet coverage --format json
+rivet embed QUERY --format html
+rivet snapshot diff --format json
 rivet docs --grep PATTERN --format json
 ```
 "#;
@@ -1511,3 +1608,254 @@ Schema semantics modeled in Rocq via coq-of-rust:
 
 Related: [[REQ-030]], [[DD-025]]..[[DD-027]], [[FEAT-049]]..[[FEAT-051]]
 "#;
+
+// ── Embed syntax documentation ─────────────────────────────────────────
+
+const EMBED_SYNTAX_DOC: &str = r#"# Computed Embed Syntax
+
+Rivet documents and the CLI support `{{name}}` syntax for embedding live
+project data. Embeds are resolved at render time (dashboard, HTML export)
+or via `rivet embed QUERY`.
+
+## CLI Usage
+
+```
+rivet embed stats              # full stats table (text)
+rivet embed stats:types        # artifact counts by type
+rivet embed coverage -f html   # coverage bars as HTML fragment
+```
+
+## Embed Types
+
+### {{stats}} — Project statistics
+
+```markdown
+{{stats}}               Full stats table (types, status, validation)
+{{stats:types}}         Artifact counts by type only
+{{stats:status}}        Counts by status only
+{{stats:validation}}    Validation summary only
+```
+
+### {{coverage}} — Traceability coverage
+
+```markdown
+{{coverage}}            All traceability rules with percentage bars
+{{coverage:rule-name}}  Single rule with uncovered artifact IDs
+```
+
+### {{diagnostics}} — Validation diagnostics
+
+```markdown
+{{diagnostics}}         All validation issues (errors + warnings)
+{{diagnostics:error}}   Errors only
+{{diagnostics:warning}} Warnings only
+```
+
+### {{matrix}} — Traceability matrix
+
+```markdown
+{{matrix}}                          One matrix per traceability rule
+{{matrix:requirement:feature}}      Specific source-to-target matrix
+```
+
+### {{artifact:ID}} — Inline artifact card
+
+```markdown
+{{artifact:REQ-001}}          Compact artifact card (ID, type, title)
+{{artifact:REQ-001:full}}     Full card with description, tags, links
+```
+
+### {{links:ID}} — Link table for an artifact
+
+```markdown
+{{links:REQ-001}}             Incoming and outgoing link table
+```
+
+### {{table:TYPE:FIELDS}} — Filtered artifact table
+
+```markdown
+{{table:requirement:id,title,status}}         Table of requirements
+{{table:hazard:id,title,description}}         Table of hazards
+```
+
+Generates an HTML/text table listing all artifacts of TYPE with the
+specified FIELDS as columns. Fields are resolved from the artifact's
+standard properties (id, title, status, type, tags) and custom fields.
+
+## Error Handling
+
+- Unknown embed names render as a visible `embed-error` element
+- Malformed queries (missing colon separator, unknown sub-key) produce
+  a descriptive error message in the output
+- Embeds never silently produce empty output
+
+## In HTML Export
+
+Computed embeds in exported HTML include a provenance footer with the
+git commit hash and timestamp, so reviewers can trace when the data
+was generated.
+
+## In the Dashboard
+
+Embeds are resolved server-side and injected into the document view.
+They update live when artifacts change (no page reload needed in the
+HTMX dashboard).
+
+## Security
+
+- Embed names are a fixed allow-list; no user-defined embeds
+- No embed can trigger file I/O, shell execution, or unbounded computation
+- See STPA-Sec constraint SSC-IMPL-003
+"#;
+
+// ── Schemas overview documentation ─────────────────────────────────────
+
+const SCHEMAS_OVERVIEW_DOC: &str = r#"# Schemas Overview
+
+Rivet ships 12 built-in schemas covering safety, automotive, AI compliance,
+cybersecurity, and general development. Schemas are loaded by name in
+`rivet.yaml` and merged in order.
+
+## Core Schemas
+
+| Schema         | Types | Preset           | Description                              |
+|----------------|-------|------------------|------------------------------------------|
+| common         | 0     | (all presets)    | Base fields (id, title, status, tags, links) and 8 link types |
+| dev            | 3     | `dev`            | requirement, design-decision, feature    |
+| research       | 5     | —                | market-analysis, patent, tech-eval, competitor-analysis, academic-ref |
+
+## Safety Schemas
+
+| Schema         | Types | Preset           | Description                              |
+|----------------|-------|------------------|------------------------------------------|
+| stpa           | 10    | `stpa`           | STPA Steps 1-4: losses, hazards, system-constraints, control-structure, UCAs, controller-constraints, loss-scenarios |
+| stpa-sec       | 6     | —                | STPA-Sec extension: sec-loss, sec-hazard, sec-constraint, sec-uca, sec-scenario, sec-control-action (CIA triad, attacker model) |
+| stpa-ai        | 5     | `stpa-ai`        | STPA-for-AI: ml-data-source, ml-hazard, ml-uca, ml-scenario, ml-monitor (training provenance, retraining loops) |
+| safety-case    | 6     | `safety-case`    | GSN v3: goal, strategy, solution, context, justification, away-goal |
+
+## Automotive and Industrial Schemas
+
+| Schema         | Types | Preset           | Description                              |
+|----------------|-------|------------------|------------------------------------------|
+| aspice         | 14    | `aspice`         | Automotive SPICE 4.0: SYS.1-5, SWE.1-6 (V-model from stakeholder req to verification) |
+| cybersecurity  | 10    | `cybersecurity`  | ISO 21434 / UNECE R155: SEC.1-4, TARA, cybersecurity goals, claims, controls |
+| aadl           | 3     | `aadl`           | AADL architecture: aadl-component, aadl-analysis, aadl-flow (via spar integration) |
+| score          | 20    | —                | Eclipse SCORE metamodel: ISO 26262 V-model, FMEA, DFA, process support |
+
+## Regulatory Schemas
+
+| Schema         | Types | Preset           | Description                              |
+|----------------|-------|------------------|------------------------------------------|
+| eu-ai-act      | 8     | `eu-ai-act`      | EU AI Act Annex IV: risk-assessment, risk-mitigation, data-governance, human-oversight, accuracy-spec, robustness-spec, transparency-doc, post-market-plan |
+
+## Bridge Schemas
+
+Bridge schemas add cross-domain link types and traceability rules between
+two schemas. They are loaded automatically when both schemas are present,
+or can be added explicitly.
+
+| Bridge                          | Connects              | Key link types                          |
+|---------------------------------|-----------------------|-----------------------------------------|
+| eu-ai-act-stpa.bridge           | eu-ai-act + stpa      | risk-identified-by-stpa, mitigation-from-constraint |
+| eu-ai-act-aspice.bridge         | eu-ai-act + aspice    | ai-req-traces-to-stkh, ai-verified-by   |
+| safety-case-stpa.bridge         | safety-case + stpa    | goal-supported-by-analysis, solution-from-constraint |
+| safety-case-eu-ai-act.bridge    | safety-case + eu-ai-act | goal-for-compliance, solution-from-assessment |
+| stpa-dev.bridge                 | stpa + dev            | hazard-traces-to-req, constraint-implements-req |
+
+Bridge files live in `schemas/` with the `.bridge.yaml` extension.
+
+## Presets
+
+`rivet init --preset NAME` configures schemas automatically:
+
+| Preset         | Schemas loaded                  |
+|----------------|---------------------------------|
+| dev            | common, dev                     |
+| aspice         | common, aspice                  |
+| stpa           | common, stpa                    |
+| stpa-ai        | common, stpa, stpa-ai           |
+| cybersecurity  | common, cybersecurity           |
+| aadl           | common, dev, aadl               |
+| eu-ai-act      | common, eu-ai-act               |
+| safety-case    | common, safety-case             |
+
+## Combining Schemas
+
+Schemas are additive. List multiple schemas to combine domains:
+
+```yaml
+project:
+  schemas:
+    - common
+    - stpa
+    - stpa-sec
+    - eu-ai-act       # adds AI Act types
+    # Bridge loaded automatically when both eu-ai-act and stpa are present
+```
+
+## Validation Features
+
+Schemas drive validation. Key diagnostic rules include:
+
+- **unknown-type** — artifact uses a type not defined in any loaded schema
+- **unknown-link-type** — link uses a type not in the schema
+- **unknown-field** — artifact has a field not declared for its type
+- **type-aware coercion** — field values are coerced to the declared type
+  (e.g., `"42"` to `42` for number fields) before validation
+- **conditional rules** — `when`/`then` rules enforce state-dependent requirements
+  (see `rivet docs conditional-rules`)
+- **traceability rules** — schemas define required link chains (e.g., every
+  requirement must be verified-by at least one test)
+"#;
+
+// ── Schema doc constants (concat with references) ──────────────────────
+
+const EU_AI_ACT_DOC: &str = concat!(
+    include_str!("../../schemas/eu-ai-act.yaml"),
+    r#"
+
+## References
+
+- EU AI Act full text: https://artificialintelligenceact.eu/
+- Annex IV (Technical Documentation): https://artificialintelligenceact.eu/annex/4/
+- Article 9 (Risk Management): https://artificialintelligenceact.eu/article/9/
+"#
+);
+
+const SAFETY_CASE_DOC: &str = concat!(
+    include_str!("../../schemas/safety-case.yaml"),
+    r#"
+
+## References
+
+- GSN Community Standard v3 (2021).
+  https://scsc.uk/gsn
+- Kelly, T.P. (1998). *Arguing Safety — A Systematic Approach to
+  Managing Safety Cases*. PhD thesis, University of York.
+"#
+);
+
+const STPA_AI_DOC: &str = concat!(
+    include_str!("../../schemas/stpa-ai.yaml"),
+    r#"
+
+## References
+
+- Leveson, N.G. & Thomas, J.P. (2018). *STPA Handbook*.
+- Abdulkhaleq, A. et al. STPA for ML-based systems.
+- ISO/IEC 23894:2023 — AI Risk Management.
+"#
+);
+
+const STPA_SEC_DOC: &str = concat!(
+    include_str!("../../schemas/stpa-sec.yaml"),
+    r#"
+
+## References
+
+- Leveson, N.G. & Thomas, J.P. (2018). *STPA Handbook*, Chapter 2
+  (security extension).
+- Young, W. & Leveson, N.G. (2014). *An Integrated Approach to Safety
+  and Security Based on Systems Theory*. CACM 57(2).
+"#
+);
