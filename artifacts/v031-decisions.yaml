@@ -1,0 +1,116 @@
+# Design decisions for v0.3.1 development cycle
+artifacts:
+  - id: DD-042
+    type: design-decision
+    title: Closure-based embed resolver in render_to_html
+    status: approved
+    description: >
+      Each caller (serve, export, CLI) constructs an embed_resolver closure
+      capturing its own context. This avoids coupling the document renderer
+      to any specific data loading strategy.
+    fields:
+      rationale: >
+        Closure captures EmbedContext with whatever state the caller has.
+        No trait objects, no generics on render_to_html — just a simple
+        Fn(&EmbedRequest) -> Result<String, String>.
+      alternatives: >
+        Trait object (Box<dyn EmbedResolver>). Rejected: extra indirection,
+        lifetime complexity. Full AppState param. Rejected: couples document
+        renderer to serve-specific types.
+    links:
+      - type: satisfies
+        target: REQ-035
+
+  - id: DD-043
+    type: design-decision
+    title: Snapshot auto-detection via file system scan
+    status: approved
+    description: >
+      Export auto-detects the most recent snapshot in snapshots/ by
+      modification time. No rivet.yaml config needed.
+    fields:
+      rationale: >
+        Like git finding the merge base — the common ancestor is automatic.
+        Zero config for the common case, optional override for advanced use.
+      alternatives: >
+        Explicit snapshots.current config key in rivet.yaml. Rejected:
+        one more thing to forget to set, and breaks the zero-config goal.
+    links:
+      - type: satisfies
+        target: REQ-001
+
+  - id: DD-044
+    type: design-decision
+    title: MCP over raw JSON-RPC instead of rmcp crate
+    status: approved
+    description: >
+      Implemented MCP protocol manually using serde_json rather than
+      adding rmcp dependency.
+    fields:
+      rationale: >
+        The MCP protocol is simple JSON-RPC 2.0 with specific method names.
+        Avoids dependency churn in a fast-moving ecosystem. Our needs are
+        simple: 3 tools over stdio.
+      alternatives: >
+        rmcp crate (official Rust SDK). Rejected: adds dependency, API may
+        change rapidly. Can migrate later if needed.
+    links:
+      - type: satisfies
+        target: REQ-001
+
+  - id: DD-045
+    type: design-decision
+    title: Failure signature fingerprinting for convergence detection
+    status: approved
+    description: >
+      Uses FNV-1a hash of diagnostic message for fingerprinting rather
+      than exact string comparison.
+    fields:
+      rationale: >
+        Handles minor message variations (line numbers, counts) while
+        detecting the same root cause. Escalation thresholds (1/2/3/4+)
+        based on Thrum engine production experience.
+      alternatives: >
+        Exact string matching. Rejected: too brittle, line number changes
+        create false "new" failures. ML-based similarity. Rejected:
+        overkill for structured diagnostic messages.
+    links:
+      - type: satisfies
+        target: REQ-001
+
+  - id: DD-046
+    type: design-decision
+    title: Diagnostic struct extended with location fields
+    status: approved
+    description: >
+      Added source_file, line, column to Diagnostic rather than creating
+      a separate LspDiagnostic type.
+    fields:
+      rationale: >
+        One diagnostic type flows through the entire pipeline (validation →
+        salsa → LSP → CLI). No conversion at boundaries.
+      alternatives: >
+        Wrapper LspDiagnostic type. Rejected: requires conversion at every
+        boundary between core and CLI.
+    links:
+      - type: satisfies
+        target: REQ-002
+
+  - id: DD-047
+    type: design-decision
+    title: Schema bridges as separate YAML files
+    status: approved
+    description: >
+      Bridge schemas are standalone YAML files rather than embedded in
+      either base schema.
+    fields:
+      rationale: >
+        Keeps base schemas independent — neither needs to know about the
+        other. Users opt in by including the bridge in their schema list.
+        Mirrors how interface crates work in Rust.
+      alternatives: >
+        Inline bridge rules in one of the base schemas. Rejected: creates
+        dependency from aspice→stpa or vice versa.
+    links:
+      - type: satisfies
+        target: REQ-010
