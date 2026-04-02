@@ -1,0 +1,59 @@
+# Bridge: Safety Case ↔ EU AI Act
+#
+# Maps EU AI Act risk management artifacts to GSN safety case elements.
+# Use with: rivet init --schema safety-case,eu-ai-act
+#
+# EU AI Act provides the regulatory risk management framework;
+# GSN safety cases structure the argument that risks are managed.
+# This bridge links them so EU AI Act artifacts feed directly into
+# the safety argument structure.
+
+schema:
+  name: safety-case-eu-ai-act-bridge
+  version: "0.1.0"
+  extends: [safety-case, eu-ai-act]
+  description: >
+    Links EU AI Act risk management to GSN safety case arguments.
+    Risk assessments map to safety goals, risk mitigations and
+    performance evaluations map to safety solutions.
+
+link-types:
+  - name: goal-addresses-risk
+    inverse: risk-addressed-by-goal
+    description: Safety goal addresses an EU AI Act risk assessment
+    source-types: [safety-goal]
+    target-types: [risk-assessment]
+
+  - name: mitigation-as-evidence
+    inverse: evidence-from-mitigation
+    description: EU AI Act risk mitigation serves as evidence for a safety goal
+    source-types: [safety-solution]
+    target-types: [risk-mitigation]
+
+  - name: evaluation-as-evidence
+    inverse: evidence-from-evaluation
+    description: EU AI Act performance evaluation serves as evidence for a safety goal
+    source-types: [safety-solution]
+    target-types: [performance-evaluation]
+
+traceability-rules:
+  - name: risks-have-safety-goals
+    description: EU AI Act risk assessments should be addressed by safety goals
+    source-type: risk-assessment
+    required-backlink: goal-addresses-risk
+    from-types: [safety-goal]
+    severity: warning
+
+  - name: mitigations-provide-evidence
+    description: EU AI Act risk mitigations can serve as evidence for safety solutions
+    source-type: risk-mitigation
+    required-backlink: mitigation-as-evidence
+    from-types: [safety-solution]
+    severity: info
+
+  - name: evaluations-provide-evidence
+    description: EU AI Act performance evaluations can serve as evidence for safety solutions
+    source-type: performance-evaluation
+    required-backlink: evaluation-as-evidence
+    from-types: [safety-solution]
+    severity: info

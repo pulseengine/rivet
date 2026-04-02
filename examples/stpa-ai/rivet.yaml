@@ -1,0 +1,20 @@
+# STPA-for-AI Example — Autonomous Vehicle Pedestrian Detection
+#
+# Demonstrates STPA analysis extended with ML-specific artifact types
+# for an ML-based pedestrian detection system. Covers training data
+# provenance, data hazards, ML UCAs, and post-deployment monitoring.
+#
+# Run: rivet --schemas ../../schemas validate
+# Dashboard: rivet --schemas ../../schemas serve
+
+project:
+  name: av-pedestrian-detection
+  version: "0.1.0"
+  schemas:
+    - common
+    - stpa
+    - stpa-ai
+
+sources:
+  - path: artifacts
+    format: generic-yaml

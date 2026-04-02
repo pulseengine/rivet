@@ -1,0 +1,53 @@
+# Bridge: Safety Case ↔ STPA
+#
+# Maps STPA safety analysis artifacts to GSN safety case elements.
+# Use with: rivet init --schema safety-case,stpa
+#
+# STPA provides the systematic hazard analysis methodology;
+# GSN safety cases structure the argument that hazards are mitigated.
+# This bridge links them so STPA artifacts feed directly into the
+# safety argument structure.
+
+schema:
+  name: safety-case-stpa-bridge
+  version: "0.1.0"
+  extends: [safety-case, stpa]
+  description: >
+    Links STPA safety analysis to GSN safety case arguments.
+    STPA hazards and losses map to safety goals, system constraints
+    map to safety solutions, and verification results provide evidence.
+
+link-types:
+  - name: goal-addresses-hazard
+    inverse: hazard-addressed-by-goal
+    description: Safety goal addresses an STPA hazard or loss
+    source-types: [safety-goal]
+    target-types: [hazard, sub-hazard, loss]
+
+  - name: constraint-as-evidence
+    inverse: evidence-from-constraint
+    description: STPA system constraint serves as evidence for a safety goal
+    source-types: [safety-solution]
+    target-types: [system-constraint, controller-constraint]
+
+traceability-rules:
+  - name: stpa-hazards-have-safety-goals
+    description: STPA hazards should be addressed by safety goals in the safety case
+    source-type: hazard
+    required-backlink: goal-addresses-hazard
+    from-types: [safety-goal]
+    severity: warning
+
+  - name: stpa-losses-have-safety-goals
+    description: STPA losses should be addressed by safety goals in the safety case
+    source-type: loss
+    required-backlink: goal-addresses-hazard
+    from-types: [safety-goal]
+    severity: warning
+
+  - name: stpa-constraints-provide-evidence
+    description: STPA system constraints can serve as evidence for safety solutions
+    source-type: system-constraint
+    required-backlink: constraint-as-evidence
+    from-types: [safety-solution]
+    severity: info

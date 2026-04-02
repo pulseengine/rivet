@@ -1,0 +1,283 @@
+# STPA-for-AI extension schema
+#
+# Extends the base STPA schema with ML-specific artifact types covering
+# the full machine-learning lifecycle: training data provenance, data
+# hazards, ML-specific unsafe control actions, causal scenarios tied to
+# lifecycle phases, and post-deployment monitoring with retraining loops.
+#
+# Based on:
+#   - STPA Handbook (Leveson & Thomas, 2018)
+#   - STPA for ML (Abdulkhaleq et al.)
+#   - ISO/IEC 23894 (AI risk management)
+#
+# Usage:
+#   rivet init --preset stpa-ai
+#   schemas: [common, stpa, stpa-ai]
+
+schema:
+  name: stpa-ai
+  version: "0.1.0"
+  namespace: "http://pulseengine.dev/ns/stpa-ai#"
+  extends: [common, stpa]
+  description: >
+    STPA extension for AI/ML systems. Adds ML controller characterization,
+    training data provenance, data hazards, ML-specific UCAs and loss
+    scenarios, and post-deployment monitoring with retraining requirements.
+
+# ──────────────────────────────────────────────────────────────────────────
+# Artifact types
+# ──────────────────────────────────────────────────────────────────────────
+artifact-types:
+
+  # ── ML controller ──────────────────────────────────────────────────────
+  - name: ml-controller
+    description: >
+      An ML model acting as a controller in the control structure.
+      Refines a base STPA controller with model-specific metadata
+      (architecture, framework, latency).
+    fields:
+      - name: model-type
+        type: string
+        required: false
+        allowed-values: [cnn, transformer, ensemble, reinforcement]
+        description: ML model architecture category
+      - name: training-framework
+        type: string
+        required: false
+        description: Framework used for training (e.g. PyTorch, TensorFlow, scikit-learn)
+      - name: inference-latency-ms
+        type: string
+        required: false
+        description: Expected inference latency in milliseconds
+    link-fields:
+      - name: base-controller
+        link-type: refines
+        target-types: [controller]
+        required: true
+        cardinality: exactly-one
+
+  # ── Training data source ───────────────────────────────────────────────
+  - name: training-data-source
+    description: >
+      A dataset used to train an ML controller. Captures provenance,
+      collection methodology, and bias assessment.
+    fields:
+      - name: data-sources
+        type: text
+        required: true
+        description: Description of raw data sources and their origins
+      - name: collection-method
+        type: text
+        required: true
+        description: How data was collected (e.g. sensors, web scraping, manual annotation)
+      - name: labeling-method
+        type: string
+        required: false
+        description: How ground-truth labels were produced
+      - name: size
+        type: string
+        required: false
+        description: Dataset size (samples, hours, images, etc.)
+      - name: bias-assessment
+        type: text
+        required: true
+        description: Known biases and mitigation strategies
+      - name: distribution-characteristics
+        type: string
+        required: false
+        description: Statistical properties of the data distribution
+    link-fields:
+      - name: model
+        link-type: trains
+        target-types: [ml-controller]
+        required: true
+        cardinality: exactly-one
+
+  # ── Data hazard ────────────────────────────────────────────────────────
+  - name: data-hazard
+    description: >
+      A hazard arising from data quality, bias, or distribution issues
+      in training or operational data.
+    fields:
+      - name: hazard-category
+        type: string
+        required: true
+        allowed-values:
+          - bias
+          - distribution-shift
+          - labeling-error
+          - adversarial
+          - data-poisoning
+          - insufficient-coverage
+        description: Category of data-related hazard
+      - name: affected-population
+        type: string
+        required: false
+        description: Population or demographic group affected by this data hazard
+    link-fields:
+      - name: hazard
+        link-type: leads-to-hazard
+        target-types: [hazard]
+        required: true
+        cardinality: one-or-many
+
+  # ── ML-specific UCA ────────────────────────────────────────────────────
+  - name: ml-uca
+    description: >
+      An unsafe control action specific to ML failure modes, refining
+      a base STPA UCA with ML-specific characterization.
+    fields:
+      - name: ml-failure-mode
+        type: string
+        required: true
+        allowed-values:
+          - misclassification
+          - overconfidence
+          - out-of-distribution
+          - adversarial
+          - data-drift
+          - latency
+          - mode-collapse
+        description: ML-specific failure mode causing the unsafe action
+      - name: operational-design-domain
+        type: text
+        required: false
+        description: Conditions under which the ML controller is expected to operate correctly
+    link-fields:
+      - name: base-uca
+        link-type: refines
+        target-types: [uca]
+        required: true
+        cardinality: exactly-one
+
+  # ── ML loss scenario ──────────────────────────────────────────────────
+  - name: ml-loss-scenario
+    description: >
+      A causal scenario specific to ML systems, describing how an ML
+      failure leads to a loss. Tied to a lifecycle phase.
+    fields:
+      - name: causal-chain
+        type: text
+        required: true
+        description: Step-by-step causal chain from ML failure to loss
+      - name: lifecycle-phase
+        type: string
+        required: false
+        allowed-values:
+          - data-collection
+          - training
+          - validation
+          - deployment
+          - monitoring
+        description: ML lifecycle phase where the causal factor originates
+    link-fields:
+      - name: base-scenario
+        link-type: refines
+        target-types: [loss-scenario]
+        required: true
+        cardinality: exactly-one
+
+  # ── Monitoring trigger ─────────────────────────────────────────────────
+  - name: monitoring-trigger
+    description: >
+      A post-deployment monitoring condition that detects degradation
+      or drift in an ML controller's behavior.
+    fields:
+      - name: metric-name
+        type: string
+        required: true
+        description: Name of the monitored metric (e.g. accuracy, F1, PSI)
+      - name: threshold
+        type: string
+        required: true
+        description: Threshold value that triggers an alert or action
+      - name: detection-method
+        type: string
+        required: false
+        description: How the metric is computed and monitored
+    link-fields:
+      - name: model
+        link-type: monitors
+        target-types: [ml-controller]
+        required: true
+        cardinality: exactly-one
+
+  # ── Retraining requirement ─────────────────────────────────────────────
+  - name: retraining-requirement
+    description: >
+      A requirement to retrain the ML controller, triggered by a
+      monitoring condition being violated.
+    fields:
+      - name: trigger-condition
+        type: text
+        required: true
+        description: Condition that necessitates retraining
+      - name: validation-criteria
+        type: text
+        required: true
+        description: Acceptance criteria the retrained model must meet
+      - name: data-requirements
+        type: text
+        required: false
+        description: Requirements for additional or updated training data
+    link-fields:
+      - name: trigger
+        link-type: satisfies
+        target-types: [monitoring-trigger]
+        required: true
+        cardinality: exactly-one
+
+# ──────────────────────────────────────────────────────────────────────────
+# ML-specific link types
+# ──────────────────────────────────────────────────────────────────────────
+link-types:
+  - name: trains
+    inverse: trained-by
+    description: Training data source trains an ML controller
+    source-types: [training-data-source]
+    target-types: [ml-controller]
+
+  - name: monitors
+    inverse: monitored-by
+    description: Monitoring trigger watches an ML controller for degradation
+    source-types: [monitoring-trigger]
+    target-types: [ml-controller]
+
+# ──────────────────────────────────────────────────────────────────────────
+# STPA-AI traceability rules
+# ──────────────────────────────────────────────────────────────────────────
+traceability-rules:
+  - name: ml-controller-has-training-data
+    description: Every ML controller must have at least one training data source
+    source-type: ml-controller
+    required-backlink: trains
+    from-types: [training-data-source]
+    severity: error
+
+  - name: training-data-has-hazard-assessment
+    description: Every training data source should have a data hazard assessment
+    source-type: training-data-source
+    required-backlink: leads-to-hazard
+    from-types: [data-hazard]
+    severity: warning
+
+  - name: ml-uca-has-hazard
+    description: Every ML UCA must link to a hazard via the base UCA it refines
+    source-type: ml-uca
+    required-link: refines
+    target-types: [uca]
+    severity: error
+
+  - name: monitoring-trigger-has-retraining
+    description: Every monitoring trigger should have a retraining requirement
+    source-type: monitoring-trigger
+    required-backlink: satisfies
+    from-types: [retraining-requirement]
+    severity: warning
+
+  - name: ml-controller-has-monitoring
+    description: Every ML controller should be monitored post-deployment
+    source-type: ml-controller
+    required-backlink: monitors
+    from-types: [monitoring-trigger]
+    severity: warning
