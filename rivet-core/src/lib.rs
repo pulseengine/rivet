@@ -1,3 +1,5 @@
+#![allow(clippy::cloned_ref_to_slice_refs)]
+
 pub mod adapter;
 pub mod bazel;
 pub mod commits;
