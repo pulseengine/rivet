@@ -390,6 +390,50 @@ pub fn validate_structural(store: &Store, schema: &Schema, graph: &LinkGraph) ->
         }
     }
 
+    // 8. Check unknown link types (not defined in schema)
+    for artifact in store.iter() {
+        for link in &artifact.links {
+            if !schema.link_types.contains_key(&link.link_type) {
+                diagnostics.push(Diagnostic {
+                    source_file: None,
+                    line: None,
+                    column: None,
+                    severity: Severity::Warning,
+                    artifact_id: Some(artifact.id.clone()),
+                    rule: "unknown-link-type".to_string(),
+                    message: format!(
+                        "link type '{}' is not defined in the schema",
+                        link.link_type
+                    ),
+                });
+            }
+        }
+    }
+
+    // 9. Check unknown fields (not defined in schema for this artifact type)
+    for artifact in store.iter() {
+        if let Some(type_def) = schema.artifact_type(&artifact.artifact_type) {
+            let known_fields: std::collections::HashSet<&str> =
+                type_def.fields.iter().map(|f| f.name.as_str()).collect();
+            for field_name in artifact.fields.keys() {
+                if !known_fields.contains(field_name.as_str()) {
+                    diagnostics.push(Diagnostic {
+                        source_file: None,
+                        line: None,
+                        column: None,
+                        severity: Severity::Info,
+                        artifact_id: Some(artifact.id.clone()),
+                        rule: "unknown-field".to_string(),
+                        message: format!(
+                            "field '{}' is not defined in schema for type '{}'",
+                            field_name, artifact.artifact_type
+                        ),
+                    });
+                }
+            }
+        }
+    }
+
     diagnostics
 }
 
