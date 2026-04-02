@@ -1,0 +1,1040 @@
+//! Rowan-based lossless YAML CST parser.
+//!
+//! Parses the subset of YAML used by rivet artifact files: block mappings,
+//! block sequences, flow sequences, scalars (plain, quoted, block), and
+//! comments. Preserves all whitespace and comments for round-tripping.
+//!
+//! Does NOT handle: anchors/aliases, tags, flow mappings, complex keys,
+//! multi-document streams, or merge keys. These produce Error nodes.
+
+use rowan::GreenNodeBuilder;
+
+// ── Syntax kinds ────────────────────────────────────────────────────────
+
+/// Token and node kinds for the YAML CST.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(u16)]
+pub enum SyntaxKind {
+    // ── Tokens ──────────────────────────────────────────────────────
+    /// Spaces or tabs (never spans a newline).
+    Whitespace = 0,
+    /// A single `\n` or `\r\n`.
+    Newline,
+    /// `# comment text` through end of line.
+    Comment,
+    /// `-` (sequence item indicator).
+    Dash,
+    /// `:` (key-value separator).
+    Colon,
+    /// `,`
+    Comma,
+    /// `[`
+    LBracket,
+    /// `]`
+    RBracket,
+    /// `|` (literal block scalar indicator).
+    Pipe,
+    /// `>` (folded block scalar indicator).
+    Gt,
+    /// Unquoted scalar text (may contain spaces, stops at `:`, `#`, newline).
+    PlainScalar,
+    /// `'single quoted'` including the quotes.
+    SingleQuotedScalar,
+    /// `"double quoted"` including the quotes.
+    DoubleQuotedScalar,
+    /// A continuation line of a block scalar (indented text after `|` or `>`).
+    BlockScalarLine,
+    /// `---` document start marker.
+    DirectiveMarker,
+    /// `...` document end marker.
+    DocumentEnd,
+
+    // ── Composite nodes ─────────────────────────────────────────────
+    /// Root of the tree.
+    Root,
+    /// A block mapping (sequence of key-value pairs at the same indent).
+    Mapping,
+    /// A single `key: value` pair.
+    MappingEntry,
+    /// The key portion of a mapping entry.
+    Key,
+    /// The value portion of a mapping entry.
+    Value,
+    /// A block sequence (`- item` lines at the same indent).
+    Sequence,
+    /// A single `- item`.
+    SequenceItem,
+    /// A flow sequence `[a, b, c]`.
+    FlowSequence,
+    /// A `|` or `>` block scalar with continuation lines.
+    BlockScalar,
+
+    // ── Error recovery ──────────────────────────────────────────────
+    /// A span the parser could not interpret.
+    Error,
+}
+
+impl From<SyntaxKind> for rowan::SyntaxKind {
+    fn from(kind: SyntaxKind) -> Self {
+        Self(kind as u16)
+    }
+}
+
+// ── Language definition ─────────────────────────────────────────────────
+
+/// Rowan language tag for YAML.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum YamlLanguage {}
+
+impl rowan::Language for YamlLanguage {
+    type Kind = SyntaxKind;
+
+    fn kind_from_raw(raw: rowan::SyntaxKind) -> SyntaxKind {
+        assert!(raw.0 <= SyntaxKind::Error as u16);
+        // SAFETY: SyntaxKind is repr(u16) with contiguous discriminants.
+        unsafe { std::mem::transmute(raw.0) }
+    }
+
+    fn kind_to_raw(kind: SyntaxKind) -> rowan::SyntaxKind {
+        kind.into()
+    }
+}
+
+/// Convenience alias.
+pub type SyntaxNode = rowan::SyntaxNode<YamlLanguage>;
+
+// ── Lexer ───────────────────────────────────────────────────────────────
+
+/// A single token produced by the lexer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Token<'src> {
+    pub kind: SyntaxKind,
+    pub text: &'src str,
+}
+
+/// Lex a YAML source string into tokens.
+///
+/// Every byte of the input is accounted for (whitespace and comments are kept).
+pub fn lex(source: &str) -> Vec<Token<'_>> {
+    let mut tokens = Vec::new();
+    let bytes = source.as_bytes();
+    let mut pos = 0;
+
+    while pos < bytes.len() {
+        let start = pos;
+        let b = bytes[pos];
+
+        match b {
+            // Newline
+            b'\n' => {
+                pos += 1;
+                tokens.push(Token {
+                    kind: SyntaxKind::Newline,
+                    text: &source[start..pos],
+                });
+            }
+            b'\r' => {
+                pos += 1;
+                if pos < bytes.len() && bytes[pos] == b'\n' {
+                    pos += 1;
+                }
+                tokens.push(Token {
+                    kind: SyntaxKind::Newline,
+                    text: &source[start..pos],
+                });
+            }
+            // Whitespace (spaces/tabs, not newlines)
+            b' ' | b'\t' => {
+                while pos < bytes.len() && (bytes[pos] == b' ' || bytes[pos] == b'\t') {
+                    pos += 1;
+                }
+                tokens.push(Token {
+                    kind: SyntaxKind::Whitespace,
+                    text: &source[start..pos],
+                });
+            }
+            // Comment
+            b'#' => {
+                while pos < bytes.len() && bytes[pos] != b'\n' && bytes[pos] != b'\r' {
+                    pos += 1;
+                }
+                tokens.push(Token {
+                    kind: SyntaxKind::Comment,
+                    text: &source[start..pos],
+                });
+            }
+            // Dash: could be `---` (directive marker), `- ` (sequence item), or plain scalar
+            b'-' => {
+                if pos + 2 < bytes.len() && bytes[pos + 1] == b'-' && bytes[pos + 2] == b'-' {
+                    // Check it's `---` at start of line or followed by whitespace/newline/EOF
+                    let after = pos + 3;
+                    if after >= bytes.len()
+                        || bytes[after] == b'\n'
+                        || bytes[after] == b'\r'
+                        || bytes[after] == b' '
+                    {
+                        pos += 3;
+                        tokens.push(Token {
+                            kind: SyntaxKind::DirectiveMarker,
+                            text: &source[start..pos],
+                        });
+                        continue;
+                    }
+                }
+                // `- ` or `-\n` = sequence indicator
+                if pos + 1 >= bytes.len()
+                    || bytes[pos + 1] == b' '
+                    || bytes[pos + 1] == b'\n'
+                    || bytes[pos + 1] == b'\r'
+                {
+                    pos += 1;
+                    tokens.push(Token {
+                        kind: SyntaxKind::Dash,
+                        text: &source[start..pos],
+                    });
+                } else {
+                    // Part of a plain scalar (e.g., `- ` is NOT this, but `-foo` is)
+                    pos = lex_plain_scalar(source, bytes, pos);
+                    tokens.push(Token {
+                        kind: SyntaxKind::PlainScalar,
+                        text: &source[start..pos],
+                    });
+                }
+            }
+            // Colon: only a separator when followed by space, newline, or EOF
+            b':' => {
+                if pos + 1 >= bytes.len()
+                    || bytes[pos + 1] == b' '
+                    || bytes[pos + 1] == b'\n'
+                    || bytes[pos + 1] == b'\r'
+                {
+                    pos += 1;
+                    tokens.push(Token {
+                        kind: SyntaxKind::Colon,
+                        text: &source[start..pos],
+                    });
+                } else {
+                    // Part of plain scalar (e.g., `http://example.com`)
+                    pos = lex_plain_scalar(source, bytes, pos);
+                    tokens.push(Token {
+                        kind: SyntaxKind::PlainScalar,
+                        text: &source[start..pos],
+                    });
+                }
+            }
+            b',' => {
+                pos += 1;
+                tokens.push(Token {
+                    kind: SyntaxKind::Comma,
+                    text: &source[start..pos],
+                });
+            }
+            b'[' => {
+                pos += 1;
+                tokens.push(Token {
+                    kind: SyntaxKind::LBracket,
+                    text: &source[start..pos],
+                });
+            }
+            b']' => {
+                pos += 1;
+                tokens.push(Token {
+                    kind: SyntaxKind::RBracket,
+                    text: &source[start..pos],
+                });
+            }
+            b'|' => {
+                pos += 1;
+                tokens.push(Token {
+                    kind: SyntaxKind::Pipe,
+                    text: &source[start..pos],
+                });
+            }
+            b'>' => {
+                pos += 1;
+                tokens.push(Token {
+                    kind: SyntaxKind::Gt,
+                    text: &source[start..pos],
+                });
+            }
+            // Document end marker
+            b'.' if pos + 2 < bytes.len() && bytes[pos + 1] == b'.' && bytes[pos + 2] == b'.' => {
+                pos += 3;
+                tokens.push(Token {
+                    kind: SyntaxKind::DocumentEnd,
+                    text: &source[start..pos],
+                });
+            }
+            // Single-quoted scalar
+            b'\'' => {
+                pos += 1;
+                while pos < bytes.len() {
+                    if bytes[pos] == b'\'' {
+                        pos += 1;
+                        // Escaped quote '' inside single-quoted string
+                        if pos < bytes.len() && bytes[pos] == b'\'' {
+                            pos += 1;
+                            continue;
+                        }
+                        break;
+                    }
+                    pos += 1;
+                }
+                tokens.push(Token {
+                    kind: SyntaxKind::SingleQuotedScalar,
+                    text: &source[start..pos],
+                });
+            }
+            // Double-quoted scalar
+            b'"' => {
+                pos += 1;
+                while pos < bytes.len() && bytes[pos] != b'"' {
+                    if bytes[pos] == b'\\' {
+                        pos += 1; // skip escaped char
+                    }
+                    pos += 1;
+                }
+                if pos < bytes.len() {
+                    pos += 1; // closing quote
+                }
+                tokens.push(Token {
+                    kind: SyntaxKind::DoubleQuotedScalar,
+                    text: &source[start..pos],
+                });
+            }
+            // Plain scalar (anything else)
+            _ => {
+                pos = lex_plain_scalar(source, bytes, pos);
+                tokens.push(Token {
+                    kind: SyntaxKind::PlainScalar,
+                    text: &source[start..pos],
+                });
+            }
+        }
+    }
+
+    tokens
+}
+
+/// Advance past a plain (unquoted) scalar value.
+///
+/// Stops at: newline, `#` preceded by space, `: ` (colon+space), `,`, `]`, `}`.
+fn lex_plain_scalar(_source: &str, bytes: &[u8], start: usize) -> usize {
+    let mut pos = start;
+    while pos < bytes.len() {
+        match bytes[pos] {
+            b'\n' | b'\r' => break,
+            b'#' if pos > start && bytes[pos - 1] == b' ' => break,
+            b':' if pos + 1 < bytes.len()
+                && (bytes[pos + 1] == b' '
+                    || bytes[pos + 1] == b'\n'
+                    || bytes[pos + 1] == b'\r') =>
+            {
+                break;
+            }
+            b':' if pos + 1 >= bytes.len() => break,
+            b',' | b']' | b'}' => break,
+            _ => pos += 1,
+        }
+    }
+    // Trim trailing whitespace from the scalar
+    while pos > start && (bytes[pos - 1] == b' ' || bytes[pos - 1] == b'\t') {
+        pos -= 1;
+    }
+    // If we trimmed everything, take at least one char
+    if pos == start && start < bytes.len() {
+        pos = start + 1;
+    }
+    pos
+}
+
+// ── Parser ──────────────────────────────────────────────────────────────
+
+/// Parse errors with byte offset.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParseError {
+    pub offset: usize,
+    pub message: String,
+}
+
+/// Parse a YAML source string into a rowan green tree.
+///
+/// Returns the green node and any parse errors. The tree is lossless:
+/// `SyntaxNode::new_root(green).text() == source`.
+pub fn parse(source: &str) -> (rowan::GreenNode, Vec<ParseError>) {
+    let tokens = lex(source);
+    let mut parser = Parser::new(&tokens, source);
+    parser.parse_root();
+    let green = parser.builder.finish();
+    (green, parser.errors)
+}
+
+struct Parser<'src> {
+    tokens: &'src [Token<'src>],
+    pos: usize,
+    builder: GreenNodeBuilder<'static>,
+    errors: Vec<ParseError>,
+    /// Cumulative byte offset for error reporting.
+    byte_offset: usize,
+    /// Source bytes for indent computation.
+    source_bytes: &'src [u8],
+}
+
+impl<'src> Parser<'src> {
+    fn new(tokens: &'src [Token<'src>], source: &'src str) -> Self {
+        Self {
+            tokens,
+            pos: 0,
+            builder: GreenNodeBuilder::new(),
+            errors: Vec::new(),
+            byte_offset: 0,
+            source_bytes: source.as_bytes(),
+        }
+    }
+
+    // ── Token access ────────────────────────────────────────────────
+
+    fn current(&self) -> Option<&Token<'src>> {
+        self.tokens.get(self.pos)
+    }
+
+    fn current_kind(&self) -> Option<SyntaxKind> {
+        self.current().map(|t| t.kind)
+    }
+
+    fn at(&self, kind: SyntaxKind) -> bool {
+        self.current_kind() == Some(kind)
+    }
+
+    fn at_eof(&self) -> bool {
+        self.pos >= self.tokens.len()
+    }
+
+    /// Consume the current token, adding it to the builder.
+    fn bump(&mut self) {
+        if self.pos < self.tokens.len() {
+            let kind = self.tokens[self.pos].kind;
+            let text = self.tokens[self.pos].text;
+            self.builder.token(kind.into(), text);
+            self.byte_offset += text.len();
+            self.pos += 1;
+        }
+    }
+
+    /// Consume the current token, adding it with a different kind.
+    fn bump_as(&mut self, kind: SyntaxKind) {
+        if self.pos < self.tokens.len() {
+            let text = self.tokens[self.pos].text;
+            self.builder.token(kind.into(), text);
+            self.byte_offset += text.len();
+            self.pos += 1;
+        }
+    }
+
+    /// Consume newlines and comments, but NOT leading whitespace on a new line
+    /// (since whitespace determines YAML structure).
+    fn eat_trivia(&mut self) {
+        loop {
+            match self.current_kind() {
+                Some(SyntaxKind::Newline) => self.bump(),
+                Some(SyntaxKind::Comment) => self.bump(),
+                Some(SyntaxKind::Whitespace) => {
+                    // Only eat whitespace if it's NOT at the start of a line
+                    // (i.e., there's non-newline content before it on this line).
+                    // If the previous token was a Newline, this whitespace is
+                    // structurally significant (indent) — don't eat it here.
+                    if self.pos > 0 && self.tokens[self.pos - 1].kind == SyntaxKind::Newline {
+                        break; // This is line-leading indent — stop
+                    }
+                    self.bump();
+                }
+                _ => break,
+            }
+        }
+    }
+
+    /// Consume whitespace (not newlines or comments).
+    fn eat_spaces(&mut self) {
+        while self.at(SyntaxKind::Whitespace) {
+            self.bump();
+        }
+    }
+
+    /// Get the column (indent level) of the current token in the source text.
+    ///
+    /// Computes from `byte_offset` by walking back to find the last newline.
+    fn current_indent(&self) -> usize {
+        if self.pos >= self.tokens.len() {
+            return 0;
+        }
+        // byte_offset points to the start of the current token.
+        // Walk back in the source to find the start of the current line.
+        let src = self.source_bytes;
+        let mut col = 0;
+        let mut offset = self.byte_offset;
+        while offset > 0 {
+            offset -= 1;
+            if src[offset] == b'\n' {
+                break;
+            }
+            col += 1;
+        }
+        if offset == 0 && src[0] != b'\n' {
+            col = self.byte_offset; // at start of file
+        }
+        col
+    }
+
+    // ── Parsing ─────────────────────────────────────────────────────
+
+    fn parse_root(&mut self) {
+        self.builder.start_node(SyntaxKind::Root.into());
+        self.eat_trivia();
+        // Skip document start marker if present
+        if self.at(SyntaxKind::DirectiveMarker) {
+            self.bump();
+            self.eat_trivia();
+        }
+        // Parse root content (mapping or sequence)
+        if !self.at_eof() {
+            if self.at(SyntaxKind::Dash) {
+                self.parse_block_sequence(0);
+            } else {
+                self.parse_block_mapping(0);
+            }
+        }
+        // Consume any remaining trivia
+        while !self.at_eof() {
+            self.bump();
+        }
+        self.builder.finish_node();
+    }
+
+    fn parse_block_mapping(&mut self, min_indent: usize) {
+        self.builder.start_node(SyntaxKind::Mapping.into());
+        loop {
+            self.eat_trivia();
+            // Consume line-leading whitespace (indent)
+            if self.at(SyntaxKind::Whitespace) {
+                self.bump();
+            }
+            if self.at_eof() {
+                break;
+            }
+            let indent = self.current_indent();
+            if indent < min_indent {
+                break;
+            }
+            // Must be at a key (plain scalar, quoted scalar)
+            match self.current_kind() {
+                Some(
+                    SyntaxKind::PlainScalar
+                    | SyntaxKind::SingleQuotedScalar
+                    | SyntaxKind::DoubleQuotedScalar,
+                ) => {
+                    self.parse_mapping_entry(indent);
+                }
+                Some(SyntaxKind::Dash) if indent == min_indent => {
+                    // Sequence at same indent — we're done with this mapping
+                    break;
+                }
+                Some(SyntaxKind::DirectiveMarker | SyntaxKind::DocumentEnd) => break,
+                _ => {
+                    // Error recovery: skip this line
+                    self.builder.start_node(SyntaxKind::Error.into());
+                    self.errors.push(ParseError {
+                        offset: self.byte_offset,
+                        message: format!("expected mapping key, found {:?}", self.current_kind()),
+                    });
+                    self.skip_to_next_line();
+                    self.builder.finish_node();
+                }
+            }
+        }
+        self.builder.finish_node();
+    }
+
+    fn parse_mapping_entry(&mut self, entry_indent: usize) {
+        self.builder.start_node(SyntaxKind::MappingEntry.into());
+
+        // Key
+        self.builder.start_node(SyntaxKind::Key.into());
+        self.bump(); // consume the key scalar
+        self.builder.finish_node();
+
+        // Expect colon
+        self.eat_spaces();
+        if self.at(SyntaxKind::Colon) {
+            self.bump();
+        } else {
+            self.errors.push(ParseError {
+                offset: self.byte_offset,
+                message: "expected ':' after mapping key".into(),
+            });
+            self.builder.finish_node();
+            return;
+        }
+
+        // Value
+        self.eat_spaces();
+        self.builder.start_node(SyntaxKind::Value.into());
+
+        match self.current_kind() {
+            // Block scalar: | or >
+            Some(SyntaxKind::Pipe | SyntaxKind::Gt) => {
+                self.parse_block_scalar(entry_indent);
+            }
+            // Flow sequence: [...]
+            Some(SyntaxKind::LBracket) => {
+                self.parse_flow_sequence();
+            }
+            // Inline scalar value on the same line — consume everything until newline.
+            // This handles values containing colons like "title: This is: complex"
+            Some(
+                SyntaxKind::PlainScalar
+                | SyntaxKind::SingleQuotedScalar
+                | SyntaxKind::DoubleQuotedScalar,
+            ) => {
+                // Consume all tokens on this line as part of the value
+                while !self.at_eof()
+                    && !self.at(SyntaxKind::Newline)
+                    && !self.at(SyntaxKind::Comment)
+                {
+                    self.bump();
+                }
+                // Eat trailing comment on the same line
+                if self.at(SyntaxKind::Comment) {
+                    self.bump();
+                }
+            }
+            // Newline: value is on the next line (nested mapping or sequence)
+            Some(SyntaxKind::Newline) | Some(SyntaxKind::Comment) => {
+                // Eat newline + comments
+                while matches!(
+                    self.current_kind(),
+                    Some(SyntaxKind::Newline | SyntaxKind::Comment | SyntaxKind::Whitespace)
+                ) {
+                    self.bump();
+                }
+                if !self.at_eof() {
+                    let child_indent = self.current_indent();
+                    if child_indent > entry_indent {
+                        if self.at(SyntaxKind::Dash) {
+                            self.parse_block_sequence(child_indent);
+                        } else {
+                            self.parse_block_mapping(child_indent);
+                        }
+                    }
+                    // If child_indent <= entry_indent, empty value
+                }
+            }
+            // Empty value or EOF
+            _ => {}
+        }
+
+        self.builder.finish_node(); // Value
+        self.builder.finish_node(); // MappingEntry
+    }
+
+    fn parse_block_sequence(&mut self, min_indent: usize) {
+        self.builder.start_node(SyntaxKind::Sequence.into());
+        loop {
+            self.eat_trivia();
+            if self.at(SyntaxKind::Whitespace) {
+                self.bump();
+            }
+            if self.at_eof() {
+                break;
+            }
+            let indent = self.current_indent();
+            if indent < min_indent {
+                break;
+            }
+            if !self.at(SyntaxKind::Dash) {
+                break;
+            }
+
+            self.builder.start_node(SyntaxKind::SequenceItem.into());
+            self.bump(); // consume `-`
+            self.eat_spaces();
+
+            // Item value
+            match self.current_kind() {
+                Some(SyntaxKind::LBracket) => {
+                    self.parse_flow_sequence();
+                }
+                Some(SyntaxKind::Pipe | SyntaxKind::Gt) => {
+                    self.parse_block_scalar(indent);
+                }
+                Some(
+                    SyntaxKind::PlainScalar
+                    | SyntaxKind::SingleQuotedScalar
+                    | SyntaxKind::DoubleQuotedScalar,
+                ) => {
+                    // Could be a simple scalar OR the start of a mapping (key: value)
+                    // Peek ahead for colon
+                    let has_colon = self.peek_colon_after_scalar();
+                    if has_colon {
+                        // This is a nested mapping inside the sequence item
+                        let item_indent = indent + 2; // items are indented past the `-`
+                        self.parse_block_mapping(self.current_indent());
+                        let _ = item_indent;
+                    } else {
+                        self.bump(); // just a scalar value
+                    }
+                }
+                Some(SyntaxKind::Newline | SyntaxKind::Comment) => {
+                    // Eat trivia, then check for nested content
+                    while matches!(
+                        self.current_kind(),
+                        Some(SyntaxKind::Newline | SyntaxKind::Comment | SyntaxKind::Whitespace)
+                    ) {
+                        self.bump();
+                    }
+                    if !self.at_eof() {
+                        let child_indent = self.current_indent();
+                        if child_indent > indent {
+                            if self.at(SyntaxKind::Dash) {
+                                self.parse_block_sequence(child_indent);
+                            } else {
+                                self.parse_block_mapping(child_indent);
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+
+            self.builder.finish_node(); // SequenceItem
+        }
+        self.builder.finish_node(); // Sequence
+    }
+
+    fn parse_flow_sequence(&mut self) {
+        self.builder.start_node(SyntaxKind::FlowSequence.into());
+        self.bump(); // consume `[`
+
+        loop {
+            self.eat_trivia();
+            if self.at_eof() || self.at(SyntaxKind::RBracket) {
+                break;
+            }
+            // Consume a value
+            match self.current_kind() {
+                Some(
+                    SyntaxKind::PlainScalar
+                    | SyntaxKind::SingleQuotedScalar
+                    | SyntaxKind::DoubleQuotedScalar,
+                ) => {
+                    self.bump();
+                }
+                Some(SyntaxKind::LBracket) => {
+                    self.parse_flow_sequence(); // nested
+                }
+                _ => {
+                    // Error: unexpected token in flow sequence
+                    self.builder.start_node(SyntaxKind::Error.into());
+                    self.errors.push(ParseError {
+                        offset: self.byte_offset,
+                        message: "unexpected token in flow sequence".into(),
+                    });
+                    self.bump();
+                    self.builder.finish_node();
+                }
+            }
+            self.eat_trivia();
+            if self.at(SyntaxKind::Comma) {
+                self.bump();
+            }
+        }
+
+        if self.at(SyntaxKind::RBracket) {
+            self.bump();
+        } else {
+            self.errors.push(ParseError {
+                offset: self.byte_offset,
+                message: "expected ']' to close flow sequence".into(),
+            });
+        }
+        self.builder.finish_node();
+    }
+
+    fn parse_block_scalar(&mut self, parent_indent: usize) {
+        self.builder.start_node(SyntaxKind::BlockScalar.into());
+        self.bump(); // consume `|` or `>`
+
+        // Optional chomp/keep indicator and width on the same line
+        self.eat_spaces();
+        if matches!(
+            self.current_kind(),
+            Some(SyntaxKind::PlainScalar | SyntaxKind::Dash)
+        ) {
+            self.bump_as(SyntaxKind::PlainScalar); // chomp indicator like `|+`, `|-`, `|2`
+        }
+        if self.at(SyntaxKind::Comment) {
+            self.bump();
+        }
+
+        // Consume newline after header
+        if self.at(SyntaxKind::Newline) {
+            self.bump();
+        }
+
+        // Consume continuation lines (indented deeper than parent)
+        loop {
+            if self.at_eof() {
+                break;
+            }
+            // Check if next content line is indented deeper
+            let mut lookahead = self.pos;
+            let mut line_indent = 0;
+            let mut is_blank = true;
+            while lookahead < self.tokens.len() {
+                match self.tokens[lookahead].kind {
+                    SyntaxKind::Whitespace => {
+                        line_indent = self.tokens[lookahead].text.len();
+                        lookahead += 1;
+                    }
+                    SyntaxKind::Newline => {
+                        // Blank line — keep it as part of block scalar
+                        break;
+                    }
+                    _ => {
+                        is_blank = false;
+                        break;
+                    }
+                }
+            }
+
+            if is_blank && lookahead < self.tokens.len() {
+                // Blank line: consume whitespace + newline
+                while self.pos <= lookahead && !self.at_eof() {
+                    self.bump_as(SyntaxKind::BlockScalarLine);
+                }
+                continue;
+            }
+
+            if line_indent <= parent_indent {
+                break; // Back to parent indent or less — end of block scalar
+            }
+
+            // Consume the entire line as BlockScalarLine
+            while !self.at_eof() && !self.at(SyntaxKind::Newline) {
+                self.bump_as(SyntaxKind::BlockScalarLine);
+            }
+            if self.at(SyntaxKind::Newline) {
+                self.bump_as(SyntaxKind::BlockScalarLine);
+            }
+        }
+
+        self.builder.finish_node();
+    }
+
+    // ── Helpers ─────────────────────────────────────────────────────
+
+    /// Look ahead to see if there's a colon after the current scalar.
+    fn peek_colon_after_scalar(&self) -> bool {
+        let mut i = self.pos + 1;
+        while i < self.tokens.len() {
+            match self.tokens[i].kind {
+                SyntaxKind::Whitespace => i += 1,
+                SyntaxKind::Colon => return true,
+                _ => return false,
+            }
+        }
+        false
+    }
+
+    /// Skip tokens until the next newline (for error recovery).
+    fn skip_to_next_line(&mut self) {
+        while !self.at_eof() {
+            if self.at(SyntaxKind::Newline) {
+                self.bump();
+                return;
+            }
+            self.bump();
+        }
+    }
+}
+
+// ── Public API ──────────────────────────────────────────────────────────
+
+/// Compute a line-start offset table from source text.
+///
+/// Returns a `Vec<u32>` where `line_starts[i]` is the byte offset of line `i`.
+/// Line 0 starts at offset 0.
+pub fn line_starts(source: &str) -> Vec<u32> {
+    let mut starts = vec![0u32];
+    for (i, b) in source.bytes().enumerate() {
+        if b == b'\n' {
+            starts.push((i + 1) as u32);
+        }
+    }
+    starts
+}
+
+/// Convert a byte offset to (line, column) using a line-starts table.
+///
+/// Both line and column are 0-based.
+pub fn offset_to_line_col(line_starts: &[u32], offset: u32) -> (u32, u32) {
+    let line = line_starts
+        .partition_point(|&s| s <= offset)
+        .saturating_sub(1);
+    let col = offset - line_starts[line];
+    (line as u32, col)
+}
+
+// ── Tests ───────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse_and_check(source: &str) -> SyntaxNode {
+        let (green, errors) = parse(source);
+        let root = SyntaxNode::new_root(green);
+        // Lossless round-trip
+        assert_eq!(
+            root.text().to_string(),
+            source,
+            "round-trip failed for:\n{source}"
+        );
+        if !errors.is_empty() {
+            panic!("unexpected parse errors: {errors:?}");
+        }
+        root
+    }
+
+    #[test]
+    fn simple_mapping() {
+        parse_and_check("key: value\n");
+    }
+
+    #[test]
+    fn nested_mapping() {
+        parse_and_check("parent:\n  child: value\n  other: stuff\n");
+    }
+
+    #[test]
+    fn sequence() {
+        parse_and_check("items:\n  - one\n  - two\n  - three\n");
+    }
+
+    #[test]
+    fn mapping_in_sequence() {
+        parse_and_check(
+            "artifacts:\n  - id: REQ-001\n    title: First\n  - id: REQ-002\n    title: Second\n",
+        );
+    }
+
+    #[test]
+    fn flow_sequence() {
+        parse_and_check("tags: [foo, bar, baz]\n");
+    }
+
+    #[test]
+    fn block_scalar_literal() {
+        parse_and_check("description: |\n  Line one\n  Line two\n");
+    }
+
+    #[test]
+    fn block_scalar_folded() {
+        parse_and_check("description: >\n  Folded line one\n  Folded line two\n");
+    }
+
+    #[test]
+    fn comments_preserved() {
+        let source = "# Top comment\nkey: value # inline\n";
+        parse_and_check(source);
+    }
+
+    #[test]
+    fn quoted_strings() {
+        parse_and_check("single: 'hello world'\ndouble: \"hello world\"\n");
+    }
+
+    #[test]
+    fn empty_value() {
+        parse_and_check("key:\n");
+    }
+
+    #[test]
+    fn document_start_marker() {
+        parse_and_check("---\nkey: value\n");
+    }
+
+    #[test]
+    fn complex_stpa_structure() {
+        let source = "\
+losses:
+  - id: L-001
+    title: Loss of vehicle control
+    description: >
+      Driver loses ability to control vehicle trajectory.
+    stakeholders: [driver, passengers]
+
+hazards:
+  - id: H-001
+    title: Unintended acceleration
+    losses: [L-001]
+";
+        parse_and_check(source);
+    }
+
+    #[test]
+    fn generic_artifacts() {
+        let source = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: First requirement
+    status: draft
+    tags: [core, safety]
+    links:
+      - type: satisfies
+        target: FEAT-001
+    fields:
+      priority: must
+";
+        parse_and_check(source);
+    }
+
+    #[test]
+    fn line_starts_computation() {
+        let source = "line0\nline1\nline2\n";
+        let starts = line_starts(source);
+        assert_eq!(starts, vec![0, 6, 12, 18]);
+    }
+
+    #[test]
+    fn offset_to_line_col_basic() {
+        let source = "abc\ndef\nghi\n";
+        let starts = line_starts(source);
+        assert_eq!(offset_to_line_col(&starts, 0), (0, 0)); // 'a'
+        assert_eq!(offset_to_line_col(&starts, 4), (1, 0)); // 'd'
+        assert_eq!(offset_to_line_col(&starts, 5), (1, 1)); // 'e'
+        assert_eq!(offset_to_line_col(&starts, 8), (2, 0)); // 'g'
+    }
+
+    #[test]
+    fn url_in_value_not_split() {
+        // Colon inside URL should not be treated as mapping separator
+        parse_and_check("homepage: http://example.com\n");
+    }
+
+    #[test]
+    fn colon_in_value() {
+        parse_and_check("title: This is a title: with colon\n");
+    }
+
+    #[test]
+    fn error_recovery_on_bad_input() {
+        let source = "good: value\n][invalid\nbetter: ok\n";
+        let (green, errors) = parse(source);
+        let root = SyntaxNode::new_root(green);
+        // Round-trip still works
+        assert_eq!(root.text().to_string(), source);
+        // But there should be errors
+        assert!(!errors.is_empty(), "should have parse errors");
+    }
+}

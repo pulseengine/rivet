@@ -30,6 +30,7 @@ pub mod snapshot;
 pub mod store;
 pub mod test_scanner;
 pub mod validate;
+pub mod yaml_cst;
 pub mod yaml_edit;
 
 #[cfg(test)]
