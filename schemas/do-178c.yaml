@@ -1,0 +1,253 @@
+# DO-178C Airborne Software Safety Schema
+#
+# Defines artifact types and traceability rules for DO-178C (Software
+# Considerations in Airborne Systems and Equipment Certification).
+#
+# DO-178C is the primary standard for airborne software development.
+# It defines five Design Assurance Levels (DAL A through E) that
+# determine the rigor of software lifecycle activities.
+#
+# Key lifecycle data items modelled here:
+#   Plans:    PSAC, SDP, SVP
+#   Reqs:     High-Level (HW-SW) and Low-Level requirements
+#   Design:   Software Design Description
+#   Code:     Source Code, Executable Object Code
+#   Testing:  High-Level and Low-Level test cases, test results
+#   Process:  Problem Reports, SCI, SAS
+#
+# Traceability is central to DO-178C certification evidence:
+#   - Requirements → Design → Code (forward)
+#   - Test Cases → Requirements (reverse/verification)
+#   - SAS → PSAC (planning ↔ accomplishment)
+
+schema:
+  name: do-178c
+  version: "0.1.0"
+  namespace: "http://pulseengine.dev/ns/do-178c#"
+  extends: [common]
+  description: >
+    DO-178C airborne software artifact types and traceability rules
+    for DAL A through E certification evidence.
+
+# ──────────────────────────────────────────────────────────────────────────
+# Artifact types
+# ──────────────────────────────────────────────────────────────────────────
+artifact-types:
+
+  # ── Plans ──────────────────────────────────────────────────────────────
+
+  - name: plan-for-sw-aspects
+    description: >
+      Plan for Software Aspects of Certification (PSAC). Defines the
+      software lifecycle, DAL, and means of compliance for the project.
+    fields:
+      - name: dal
+        type: string
+        required: true
+        allowed-values: [A, B, C, D, E]
+        description: Design Assurance Level for the software
+    link-fields: []
+
+  - name: sw-dev-plan
+    description: >
+      Software Development Plan (SDP). Describes the software
+      development environment, standards, and processes.
+    fields: []
+    link-fields: []
+
+  - name: sw-verification-plan
+    description: >
+      Software Verification Plan (SVP). Defines the verification
+      strategy, methods, and tools for the software lifecycle.
+    fields: []
+    link-fields: []
+
+  # ── Requirements ───────────────────────────────────────────────────────
+
+  - name: hw-sw-req
+    description: >
+      High-Level Requirement. Specifies what the software must do,
+      derived from system requirements and the system/software interface.
+    fields:
+      - name: dal
+        type: string
+        required: true
+        allowed-values: [A, B, C, D, E]
+        description: Design Assurance Level applicable to this requirement
+      - name: derived
+        type: boolean
+        required: false
+        description: >
+          Whether this is a derived requirement (not directly traceable
+          to a system requirement). Derived requirements need additional
+          review and approval per DO-178C §5.2.1.
+    link-fields: []
+
+  - name: lw-sw-req
+    description: >
+      Low-Level Requirement. Specifies detailed software behavior
+      derived from high-level requirements and software architecture.
+    fields:
+      - name: dal
+        type: string
+        required: true
+        allowed-values: [A, B, C, D, E]
+        description: Design Assurance Level applicable to this requirement
+    link-fields: []
+
+  # ── Design & Code ──────────────────────────────────────────────────────
+
+  - name: sw-design
+    description: >
+      Software Design Description. Describes the software architecture,
+      data flow, and control flow that satisfies high-level requirements.
+    fields: []
+    link-fields:
+      - name: satisfies
+        link-type: satisfies
+        target-types: [hw-sw-req]
+        required: true
+        cardinality: one-or-many
+
+  - name: source-code
+    description: >
+      Source Code artifact. Represents a unit of source code that
+      implements one or more low-level requirements.
+    fields: []
+    link-fields:
+      - name: implements
+        link-type: implements
+        target-types: [lw-sw-req]
+        required: true
+        cardinality: one-or-many
+
+  - name: executable
+    description: >
+      Executable Object Code. The compiled, linked binary produced
+      from source code for target hardware.
+    fields: []
+    link-fields: []
+
+  # ── Verification ───────────────────────────────────────────────────────
+
+  - name: hw-sw-test-case
+    description: >
+      High-Level Test Case. Verifies that high-level requirements are
+      correctly implemented and behave as specified.
+    fields: []
+    link-fields:
+      - name: verifies
+        link-type: verifies
+        target-types: [hw-sw-req]
+        required: true
+        cardinality: one-or-many
+
+  - name: lw-sw-test-case
+    description: >
+      Low-Level Test Case. Verifies that low-level requirements are
+      correctly implemented in source code.
+    fields: []
+    link-fields:
+      - name: verifies
+        link-type: verifies
+        target-types: [lw-sw-req]
+        required: true
+        cardinality: one-or-many
+
+  - name: sw-test-result
+    description: >
+      Test execution result. Records the outcome of executing a
+      high-level or low-level test case.
+    fields: []
+    link-fields:
+      - name: executes
+        link-type: executes
+        target-types: [hw-sw-test-case, lw-sw-test-case]
+        required: true
+        cardinality: one-or-many
+
+  # ── Process artifacts ──────────────────────────────────────────────────
+
+  - name: problem-report
+    description: >
+      Problem Report (PR). Documents a deficiency discovered during
+      development, verification, or operation of the software.
+    fields: []
+    link-fields: []
+
+  - name: sw-config-index
+    description: >
+      Software Configuration Index (SCI). Identifies the configuration
+      of the software product, including all lifecycle data items.
+    fields: []
+    link-fields: []
+
+  - name: sw-accomplishment-summary
+    description: >
+      Software Accomplishment Summary (SAS). Summarises the software
+      lifecycle activities and compliance status, referencing the PSAC.
+    fields: []
+    link-fields:
+      - name: references
+        link-type: satisfies
+        target-types: [plan-for-sw-aspects]
+        required: true
+        cardinality: one-or-many
+
+# ──────────────────────────────────────────────────────────────────────────
+# DO-178C-specific link types
+# ──────────────────────────────────────────────────────────────────────────
+link-types:
+  - name: executes
+    inverse: executed-by
+    description: Test result executes (is a run of) a test case
+    source-types: [sw-test-result]
+    target-types: [hw-sw-test-case, lw-sw-test-case]
+
+# ──────────────────────────────────────────────────────────────────────────
+# DO-178C traceability rules
+#
+# These encode the bidirectional traceability requirements mandated by
+# DO-178C for certification credit.  `rivet validate` checks these
+# automatically.
+# ──────────────────────────────────────────────────────────────────────────
+traceability-rules:
+  # Every high-level requirement must be verified by a test case
+  - name: hw-sw-req-verified
+    description: Every high-level requirement must be verified by at least one high-level test case
+    source-type: hw-sw-req
+    required-backlink: verifies
+    from-types: [hw-sw-test-case]
+    severity: error
+
+  # Every low-level requirement must be verified by a test case (DAL A-C)
+  - name: lw-sw-req-verified
+    description: Every low-level requirement must be verified by at least one low-level test case (required for DAL A-C)
+    source-type: lw-sw-req
+    required-backlink: verifies
+    from-types: [lw-sw-test-case]
+    severity: error
+
+  # Every source code artifact must implement a low-level requirement
+  - name: source-code-implements-req
+    description: Every source code artifact must implement at least one low-level requirement
+    source-type: source-code
+    required-link: implements
+    target-types: [lw-sw-req]
+    severity: error
+
+  # Every design must satisfy a high-level requirement
+  - name: sw-design-satisfies-req
+    description: Every software design must satisfy at least one high-level requirement
+    source-type: sw-design
+    required-link: satisfies
+    target-types: [hw-sw-req]
+    severity: error
+
+  # SAS must reference the PSAC
+  - name: sas-references-psac
+    description: Every Software Accomplishment Summary must reference the Plan for Software Aspects of Certification
+    source-type: sw-accomplishment-summary
+    required-link: satisfies
+    target-types: [plan-for-sw-aspects]
+    severity: error

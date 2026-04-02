@@ -18,6 +18,8 @@ pub const SCHEMA_SCORE: &str = include_str!("../../schemas/score.yaml");
 pub const SCHEMA_EU_AI_ACT: &str = include_str!("../../schemas/eu-ai-act.yaml");
 pub const SCHEMA_SAFETY_CASE: &str = include_str!("../../schemas/safety-case.yaml");
 pub const SCHEMA_STPA_AI: &str = include_str!("../../schemas/stpa-ai.yaml");
+pub const SCHEMA_DO_178C: &str = include_str!("../../schemas/do-178c.yaml");
+pub const SCHEMA_EN_50128: &str = include_str!("../../schemas/en-50128.yaml");
 
 /// All known built-in schema names.
 pub const SCHEMA_NAMES: &[&str] = &[
@@ -31,6 +33,8 @@ pub const SCHEMA_NAMES: &[&str] = &[
     "score",
     "eu-ai-act",
     "safety-case",
+    "do-178c",
+    "en-50128",
 ];
 
 /// Look up embedded schema content by name.
@@ -46,6 +50,8 @@ pub fn embedded_schema(name: &str) -> Option<&'static str> {
         "eu-ai-act" => Some(SCHEMA_EU_AI_ACT),
         "safety-case" => Some(SCHEMA_SAFETY_CASE),
         "stpa-ai" => Some(SCHEMA_STPA_AI),
+        "do-178c" => Some(SCHEMA_DO_178C),
+        "en-50128" => Some(SCHEMA_EN_50128),
         _ => None,
     }
 }
