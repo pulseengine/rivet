@@ -447,15 +447,18 @@ pub fn validate_documents(doc_store: &DocumentStore, store: &Store) -> Vec<Diagn
         for reference in &doc.references {
             if !store.contains(&reference.artifact_id) {
                 diagnostics.push(Diagnostic {
-                    source_file: None,
-                    line: None,
+                    // Attach the document's source file and the reference's
+                    // 1-based line (converted to 0-based) so the LSP can
+                    // publish positioned diagnostics in the markdown file.
+                    source_file: doc.source_file.clone(),
+                    line: Some(reference.line.saturating_sub(1) as u32),
                     column: None,
                     severity: Severity::Warning,
                     artifact_id: Some(doc.id.clone()),
                     rule: "doc-broken-ref".into(),
                     message: format!(
-                        "document references [[{}]] (line {}) which does not exist",
-                        reference.artifact_id, reference.line
+                        "document references [[{}]] which does not exist",
+                        reference.artifact_id
                     ),
                 });
             }

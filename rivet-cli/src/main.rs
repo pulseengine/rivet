@@ -18,6 +18,7 @@ use rivet_core::store::Store;
 use rivet_core::validate;
 
 mod docs;
+mod mcp;
 mod render;
 mod schema_cmd;
 mod serve;
@@ -190,6 +191,16 @@ enum Command {
         /// Track failure convergence across runs to detect agent retry loops
         #[arg(long)]
         track_convergence: bool,
+    },
+
+    /// Show a single artifact by ID
+    Get {
+        /// Artifact ID to retrieve
+        id: String,
+
+        /// Output format: "text" (default), "json", or "yaml"
+        #[arg(short, long, default_value = "text")]
+        format: String,
     },
 
     /// List artifacts, optionally filtered by type
@@ -601,6 +612,9 @@ enum Command {
 
     /// Start the language server (LSP over stdio)
     Lsp,
+
+    /// Start the MCP server (stdio transport)
+    Mcp,
 }
 
 #[derive(Subcommand)]
@@ -731,13 +745,17 @@ fn run(cli: Cli) -> Result<bool> {
     if let Command::Lsp = &cli.command {
         return cmd_lsp(&cli);
     }
+    if let Command::Mcp = &cli.command {
+        return cmd_mcp();
+    }
 
     match &cli.command {
         Command::Init { .. }
         | Command::Docs { .. }
         | Command::Context
         | Command::CommitMsgCheck { .. }
-        | Command::Lsp => unreachable!(),
+        | Command::Lsp
+        | Command::Mcp => unreachable!(),
         Command::Stpa { path, schema } => cmd_stpa(path, schema.as_deref(), &cli),
         Command::Validate {
             format,
@@ -765,6 +783,7 @@ fn run(cli: Cli) -> Result<bool> {
             format,
             baseline.as_deref(),
         ),
+        Command::Get { id, format } => cmd_get(&cli, id, format),
         Command::Stats { format, baseline } => cmd_stats(&cli, format, baseline.as_deref()),
         Command::Coverage {
             format,
@@ -2237,6 +2256,92 @@ fn collect_yaml_files(path: &std::path::Path, out: &mut Vec<(String, String)>) -
         }
     }
     Ok(())
+}
+
+/// Show a single artifact by ID.
+fn cmd_get(cli: &Cli, id: &str, format: &str) -> Result<bool> {
+    let ctx = ProjectContext::load(cli)?;
+
+    let Some(artifact) = ctx.store.get(id) else {
+        eprintln!("error: artifact '{}' not found", id);
+        return Ok(false);
+    };
+
+    match format {
+        "json" => {
+            let links_json: Vec<serde_json::Value> = artifact
+                .links
+                .iter()
+                .map(|l| {
+                    serde_json::json!({
+                        "type": l.link_type,
+                        "target": l.target,
+                    })
+                })
+                .collect();
+            let fields_json: serde_json::Value = artifact
+                .fields
+                .iter()
+                .map(|(k, v)| {
+                    let json_val = serde_json::to_value(v).unwrap_or(serde_json::Value::Null);
+                    (k.clone(), json_val)
+                })
+                .collect::<serde_json::Map<String, serde_json::Value>>()
+                .into();
+            let output = serde_json::json!({
+                "command": "get",
+                "id": artifact.id,
+                "type": artifact.artifact_type,
+                "title": artifact.title,
+                "status": artifact.status.as_deref().unwrap_or(""),
+                "description": artifact.description.as_deref().unwrap_or(""),
+                "tags": artifact.tags,
+                "links": links_json,
+                "fields": fields_json,
+            });
+            println!("{}", serde_json::to_string_pretty(&output).unwrap());
+        }
+        "yaml" => {
+            // Serialize the artifact back to YAML
+            let yaml = serde_yaml::to_string(artifact)
+                .unwrap_or_else(|e| format!("# failed to serialize: {e}"));
+            print!("{yaml}");
+        }
+        _ => {
+            // Human-readable text format
+            println!("ID:          {}", artifact.id);
+            println!("Type:        {}", artifact.artifact_type);
+            println!("Title:       {}", artifact.title);
+            println!("Status:      {}", artifact.status.as_deref().unwrap_or("-"));
+            if let Some(desc) = &artifact.description {
+                println!("Description: {}", desc.trim());
+            }
+            if !artifact.tags.is_empty() {
+                println!("Tags:        {}", artifact.tags.join(", "));
+            }
+            if !artifact.fields.is_empty() {
+                println!("Fields:");
+                for (key, value) in &artifact.fields {
+                    let val_str = match value {
+                        serde_yaml::Value::String(s) => s.clone(),
+                        other => serde_yaml::to_string(other)
+                            .unwrap_or_default()
+                            .trim()
+                            .to_string(),
+                    };
+                    println!("  {}: {}", key, val_str);
+                }
+            }
+            if !artifact.links.is_empty() {
+                println!("Links:");
+                for link in &artifact.links {
+                    println!("  {} -> {}", link.link_type, link.target);
+                }
+            }
+        }
+    }
+
+    Ok(true)
 }
 
 /// List artifacts.
@@ -5590,6 +5695,11 @@ fn strip_html_tags(html: &str) -> String {
         .replace("&quot;", "\"")
 }
 
+fn cmd_mcp() -> Result<bool> {
+    mcp::run()?;
+    Ok(true)
+}
+
 fn cmd_lsp(cli: &Cli) -> Result<bool> {
     use lsp_server::{Connection, Message, Response};
     use lsp_types::*;
@@ -5666,23 +5776,8 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
         (source_set, schema_set)
     };
 
-    // Publish initial diagnostics from salsa
-    let store = db.store(source_set);
-    let diagnostics = db.diagnostics(source_set, schema_set);
-    let mut prev_diagnostic_files: std::collections::HashSet<std::path::PathBuf> =
-        std::collections::HashSet::new();
-    lsp_publish_salsa_diagnostics(
-        &connection,
-        &diagnostics,
-        &store,
-        &mut prev_diagnostic_files,
-    );
-    eprintln!(
-        "rivet lsp: initialized with {} artifacts (salsa incremental)",
-        store.len()
-    );
-
     // Build supplementary state for rendering
+    let store = db.store(source_set);
     let render_schema = db.schema(schema_set);
     let mut render_graph = rivet_core::links::LinkGraph::build(&store, &render_schema);
 
@@ -5710,6 +5805,26 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
             }
         }
     }
+
+    // Publish initial diagnostics from salsa, plus document [[ID]] reference
+    // validation.  validate_documents() checks that every [[ID]] wiki-link in
+    // markdown documents points to an artifact that exists in the store;
+    // broken refs are surfaced as LSP warnings in the source .md file.
+    let mut diagnostics = db.diagnostics(source_set, schema_set);
+    diagnostics.extend(validate::validate_documents(&doc_store, &store));
+    let mut prev_diagnostic_files: std::collections::HashSet<std::path::PathBuf> =
+        std::collections::HashSet::new();
+    lsp_publish_salsa_diagnostics(
+        &connection,
+        &diagnostics,
+        &store,
+        &mut prev_diagnostic_files,
+    );
+    eprintln!(
+        "rivet lsp: initialized with {} artifacts, {} documents (salsa incremental)",
+        store.len(),
+        doc_store.len()
+    );
 
     let repo_context = crate::serve::RepoContext {
         project_name: project_dir
@@ -6042,8 +6157,12 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                                     }
                                 }
                                 // Re-query diagnostics (salsa recomputes only what changed)
-                                let new_diagnostics = db.diagnostics(source_set, schema_set);
+                                // and append document [[ID]] reference validation so
+                                // broken wiki-links in markdown files are reported.
+                                let mut new_diagnostics = db.diagnostics(source_set, schema_set);
                                 let new_store = db.store(source_set);
+                                new_diagnostics
+                                    .extend(validate::validate_documents(&doc_store, &new_store));
                                 lsp_publish_salsa_diagnostics(
                                     &connection,
                                     &new_diagnostics,
@@ -6064,6 +6183,10 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                                     &render_schema,
                                 );
                                 diagnostics_cache = db.diagnostics(source_set, schema_set);
+                                diagnostics_cache.extend(validate::validate_documents(
+                                    &doc_store,
+                                    &render_store,
+                                ));
 
                                 // Send artifactsChanged notification
                                 let changed_notification = lsp_server::Notification {
@@ -6096,9 +6219,14 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                                         change.text.clone(),
                                     );
                                     if updated {
-                                        // Re-query diagnostics incrementally
-                                        let diagnostics = db.diagnostics(source_set, schema_set);
+                                        // Re-query diagnostics incrementally,
+                                        // including document [[ID]] reference validation.
+                                        let mut diagnostics =
+                                            db.diagnostics(source_set, schema_set);
                                         let store = db.store(source_set);
+                                        diagnostics.extend(validate::validate_documents(
+                                            &doc_store, &store,
+                                        ));
                                         lsp_publish_salsa_diagnostics(
                                             &connection,
                                             &diagnostics,
