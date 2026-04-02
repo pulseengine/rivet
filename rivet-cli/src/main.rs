@@ -1011,8 +1011,12 @@ fn resolve_preset(preset: &str) -> Result<InitPreset> {
             schemas: vec!["common", "safety-case"],
             sample_files: vec![("safety-case.yaml", SAFETY_CASE_SAMPLE)],
         }),
+        "stpa-ai" => Ok(InitPreset {
+            schemas: vec!["common", "stpa", "stpa-ai"],
+            sample_files: vec![("ml-safety.yaml", STPA_AI_SAMPLE)],
+        }),
         other => anyhow::bail!(
-            "unknown preset: '{other}' (valid: dev, aspice, stpa, cybersecurity, aadl, eu-ai-act, safety-case)"
+            "unknown preset: '{other}' (valid: dev, aspice, stpa, stpa-ai, cybersecurity, aadl, eu-ai-act, safety-case)"
         ),
     }
 }
@@ -1417,6 +1421,168 @@ artifacts:
     links:
       - type: supports
         target: G-002
+";
+
+const STPA_AI_SAMPLE: &str = "\
+artifacts:
+  - id: L-001
+    type: loss
+    title: Loss of pedestrian safety
+    status: draft
+    description: >
+      Pedestrian is struck by autonomous vehicle due to perception
+      or decision failure, resulting in injury or death.
+    fields:
+      stakeholders: [pedestrians, vehicle-occupants, operator]
+
+  - id: H-001
+    type: hazard
+    title: Vehicle fails to stop for pedestrian in crosswalk
+    status: draft
+    description: >
+      Vehicle does not decelerate when a pedestrian is present in
+      the planned trajectory, leading to L-001.
+    fields:
+      severity: catastrophic
+    links:
+      - type: leads-to-loss
+        target: L-001
+
+  - id: CTRL-001
+    type: controller
+    title: Perception and braking controller
+    status: draft
+    description: >
+      Automated controller responsible for detecting obstacles and
+      issuing brake commands.
+    fields:
+      controller-type: automated
+
+  - id: ML-CTRL-001
+    type: ml-controller
+    title: Pedestrian detection CNN
+    status: draft
+    description: >
+      Convolutional neural network that detects pedestrians in camera
+      frames and outputs bounding boxes with confidence scores.
+    fields:
+      model-type: cnn
+      training-framework: PyTorch
+      inference-latency-ms: 35
+    links:
+      - type: refines
+        target: CTRL-001
+
+  - id: TDS-001
+    type: training-data-source
+    title: Pedestrian detection training dataset
+    status: draft
+    description: >
+      Combined dataset of urban driving scenes with annotated
+      pedestrian bounding boxes.
+    fields:
+      data-sources: >
+        NuScenes (40k frames), internal fleet recordings (120k frames),
+        synthetic scenes from CARLA simulator (80k frames).
+      collection-method: >
+        Fleet vehicles equipped with front-facing cameras. Frames
+        sampled at 2 Hz during urban driving. Synthetic data generated
+        with randomized pedestrian models and lighting.
+      labeling-method: Semi-automated with human QA review
+      size: 240k annotated frames
+      bias-assessment: >
+        Under-representation of wheelchair users and children under 5.
+        Night-time scenes are 15% of dataset vs 30% of operating hours.
+        Mitigation: targeted collection campaign planned for Q3.
+      distribution-characteristics: >
+        70% daytime, 15% dusk/dawn, 15% night. Urban environments only.
+    links:
+      - type: trains
+        target: ML-CTRL-001
+
+  - id: DH-001
+    type: data-hazard
+    title: Insufficient night-time pedestrian coverage
+    status: draft
+    description: >
+      Training data under-represents night-time conditions, risking
+      degraded detection performance in low-light scenarios.
+    fields:
+      hazard-category: insufficient-coverage
+      affected-population: Pedestrians in low-light conditions
+    links:
+      - type: leads-to-hazard
+        target: H-001
+
+  - id: UCA-001
+    type: uca
+    title: Controller does not issue brake when pedestrian detected
+    status: draft
+    description: >
+      Not providing a brake command when a pedestrian is detected
+      in the vehicle path leads to H-001.
+    fields:
+      uca-type: not-providing
+      context: >
+        Pedestrian is in crosswalk, vehicle approaching at city speed.
+    links:
+      - type: issued-by
+        target: CTRL-001
+      - type: leads-to-hazard
+        target: H-001
+
+  - id: ML-UCA-001
+    type: ml-uca
+    title: CNN misclassifies pedestrian as background at night
+    status: draft
+    description: >
+      The pedestrian detection model fails to detect a pedestrian
+      in low-light conditions due to distribution gap in training data.
+    fields:
+      ml-failure-mode: misclassification
+      operational-design-domain: >
+        Urban roads, speed below 50 km/h, ambient light above 1 lux.
+    links:
+      - type: refines
+        target: UCA-001
+
+  - id: MON-001
+    type: monitoring-trigger
+    title: Detection accuracy drop monitor
+    status: draft
+    description: >
+      Monitors real-time pedestrian detection accuracy against
+      ground-truth from shadow-mode lidar cross-check.
+    fields:
+      metric-name: pedestrian-recall
+      threshold: accuracy below 0.95 over rolling 7-day window
+      detection-method: >
+        Lidar-based shadow detector provides ground-truth labels;
+        camera detections compared daily.
+    links:
+      - type: monitors
+        target: ML-CTRL-001
+
+  - id: RTR-001
+    type: retraining-requirement
+    title: Retrain on low-light failures
+    status: draft
+    description: >
+      When night-time recall drops below threshold, retrain with
+      augmented low-light dataset.
+    fields:
+      trigger-condition: >
+        Pedestrian recall at night (ambient light < 10 lux) falls
+        below 0.93 for 3 consecutive days.
+      validation-criteria: >
+        Retrained model must achieve >= 0.96 recall on night-time
+        holdout set and not regress on daytime recall (>= 0.98).
+      data-requirements: >
+        Minimum 20k additional night-time frames with pedestrian
+        annotations from diverse urban environments.
+    links:
+      - type: satisfies
+        target: MON-001
 ";
 
 /// Initialize a new rivet project.

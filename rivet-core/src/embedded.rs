@@ -17,12 +17,14 @@ pub const SCHEMA_AADL: &str = include_str!("../../schemas/aadl.yaml");
 pub const SCHEMA_SCORE: &str = include_str!("../../schemas/score.yaml");
 pub const SCHEMA_EU_AI_ACT: &str = include_str!("../../schemas/eu-ai-act.yaml");
 pub const SCHEMA_SAFETY_CASE: &str = include_str!("../../schemas/safety-case.yaml");
+pub const SCHEMA_STPA_AI: &str = include_str!("../../schemas/stpa-ai.yaml");
 
 /// All known built-in schema names.
 pub const SCHEMA_NAMES: &[&str] = &[
     "common",
     "dev",
     "stpa",
+    "stpa-ai",
     "aspice",
     "cybersecurity",
     "aadl",
@@ -43,6 +45,7 @@ pub fn embedded_schema(name: &str) -> Option<&'static str> {
         "score" => Some(SCHEMA_SCORE),
         "eu-ai-act" => Some(SCHEMA_EU_AI_ACT),
         "safety-case" => Some(SCHEMA_SAFETY_CASE),
+        "stpa-ai" => Some(SCHEMA_STPA_AI),
         _ => None,
     }
 }
