@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1775154471286,
+  "lastUpdate": 1775156866365,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "ad82f4bdfd3d85b2d8472c9501fee1cd01defe4e",
-          "message": "feat(lsp): salsa incremental validation + README rewrite for v0.2.0 (#69)\n\n1. Salsa incremental in LSP:\n   - Per-file tracking via salsa SourceFile inputs\n   - didSave updates only the changed file, salsa recomputes affected results\n   - didChange updates from editor buffer for instant feedback\n   - Hover/goto-def/completion query salsa DB (always current)\n   - New files auto-added to source set on save\n   - parse_artifacts now sets source_file for LSP diagnostic mapping\n   - load_schema_contents helper for feeding schemas to salsa\n\n2. README rewrite:\n   - Updated for v0.2.0 (was stuck at Phase 1)\n   - Features list: LSP, VS Code, Gherkin, baselines, AGENTS.md, 235+ Playwright\n   - Full CLI command table (20 commands)\n   - Dashboard capabilities documented\n   - VS Code extension section\n   - 447 artifacts dogfooding, 500+ tests\n   - Updated PulseEngine nav (Spar, Etch, Meld)\n\nImplements: FEAT-047\nSatisfies: REQ-029\n\nCo-authored-by: Test <test@test.com>\nCo-authored-by: Claude Opus 4.6 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-03-21T22:15:29+01:00",
-          "tree_id": "a113c5b545d25142ecfcb40a1e6c4df8a79591ad",
-          "url": "https://github.com/pulseengine/rivet/commit/ad82f4bdfd3d85b2d8472c9501fee1cd01defe4e"
-        },
-        "date": 1774129090236,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 76220,
-            "range": "± 714",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 850099,
-            "range": "± 11148",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 13454657,
-            "range": "± 586875",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1716,
-            "range": "± 8",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 19324,
-            "range": "± 41",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 365850,
-            "range": "± 1545",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 87,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 87,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 87,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 840535,
-            "range": "± 3124",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 160500,
-            "range": "± 422",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1853842,
-            "range": "± 6859",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 37024255,
-            "range": "± 1976722",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 35923,
-            "range": "± 116",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 416797,
-            "range": "± 1351",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 5616597,
-            "range": "± 294230",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 3951,
-            "range": "± 9",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 41569,
-            "range": "± 119",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 787810,
-            "range": "± 3612",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 54289,
-            "range": "± 123",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 589182,
-            "range": "± 1963",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 8000223,
-            "range": "± 437428",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 611,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 5097,
-            "range": "± 10",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 151962,
-            "range": "± 4770",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 21052,
-            "range": "± 72",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 147746,
-            "range": "± 450",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1359993,
-            "range": "± 34877",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1337541,
             "range": "± 60304",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ffeff760ef2e0405fe4642c57d751678c6d274e4",
+          "message": "feat: domain schemas — IEC 61508, IEC 62304, DO-178C, EN 50128 (#102) (#115)\n\n* feat(schema): DO-178C airborne + EN 50128 railway safety schemas (#102)\n\nDO-178C (aviation): 14 artifact types covering PSAC through SAS,\nDAL-based traceability rules, HW/LW requirement → test → source chain.\n\nEN 50128 (railway): 14 artifact types covering SIL requirements\nthrough deployment, tool qualification, independent assessment.\n\nBoth registered as embedded schemas with init presets.\n\n* feat(schema): IEC 61508 functional safety + IEC 62304 medical device schemas (#102)\n\nIEC 61508 (industrial functional safety): 15 artifact types covering\nsafety concept through modification request, SIL-based traceability\nrules, independent assessment for SIL 3-4.\n\nIEC 62304 (medical device software): 13 artifact types covering\nSW development plan through release, class-conditional verification\n(A/B/C), problem and change management.\n\nBoth registered as embedded schemas with init presets.\nSchema count: 16 built-in.",
+          "timestamp": "2026-04-02T21:01:03+02:00",
+          "tree_id": "a80bda4f5aa4044f6021c914c2b8aa414a5be930",
+          "url": "https://github.com/pulseengine/rivet/commit/ffeff760ef2e0405fe4642c57d751678c6d274e4"
+        },
+        "date": 1775156865359,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 78791,
+            "range": "± 3275",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 833432,
+            "range": "± 4265",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 11765689,
+            "range": "± 1629250",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2202,
+            "range": "± 7",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 27344,
+            "range": "± 275",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 394445,
+            "range": "± 1056",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 921415,
+            "range": "± 14416",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 154876,
+            "range": "± 1591",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1794847,
+            "range": "± 25637",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 28417228,
+            "range": "± 3482646",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 80132,
+            "range": "± 394",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 871183,
+            "range": "± 4456",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 9606767,
+            "range": "± 491721",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4386,
+            "range": "± 43",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 61230,
+            "range": "± 534",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 774842,
+            "range": "± 1956",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 61847,
+            "range": "± 530",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 697163,
+            "range": "± 1763",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7702121,
+            "range": "± 233965",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 803,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7196,
+            "range": "± 35",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 122636,
+            "range": "± 795",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 22123,
+            "range": "± 65",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 153836,
+            "range": "± 666",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1433132,
+            "range": "± 55007",
             "unit": "ns/iter"
           }
         ]
