@@ -512,6 +512,8 @@ mod tests {
             aspice_process: None,
             common_mistakes: vec![],
             example: None,
+            yaml_section: None,
+            shorthand_links: std::collections::BTreeMap::new(),
         }];
         file.conditional_rules = conditional_rules;
         Schema::merge(&[file])
@@ -862,6 +864,8 @@ then:
             aspice_process: None,
             common_mistakes: vec![],
             example: None,
+            yaml_section: None,
+            shorthand_links: std::collections::BTreeMap::new(),
         }];
         file.traceability_rules = vec![TraceabilityRule {
             name: "dd-needs-satisfies".into(),
@@ -1003,6 +1007,8 @@ then:
             aspice_process: None,
             common_mistakes: vec![],
             example: None,
+            yaml_section: None,
+            shorthand_links: std::collections::BTreeMap::new(),
         }];
         Schema::merge(&[file])
     }

@@ -476,6 +476,8 @@ mod tests {
                 aspice_process: None,
                 common_mistakes: vec![],
                 example: None,
+                yaml_section: None,
+                shorthand_links: std::collections::BTreeMap::new(),
             },
             ArtifactTypeDef {
                 name: "feature".to_string(),
@@ -485,6 +487,8 @@ mod tests {
                 aspice_process: None,
                 common_mistakes: vec![],
                 example: None,
+                yaml_section: None,
+                shorthand_links: std::collections::BTreeMap::new(),
             },
         ];
         schema_file.link_types = vec![LinkTypeDef {
