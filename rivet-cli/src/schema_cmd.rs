@@ -2,6 +2,8 @@
 //!
 //! Provides `list`, `show`, `links`, `rules` for both humans and AI agents.
 
+use std::collections::HashSet;
+
 use rivet_core::schema::{Cardinality, Schema, Severity};
 
 /// List all artifact types.
@@ -392,5 +394,116 @@ fn generate_example_yaml(t: &rivet_core::schema::ArtifactTypeDef, _schema: &Sche
         }
     }
 
+    out
+}
+
+/// Validate that loaded schemas are well-formed.
+pub fn cmd_validate(schema: &Schema) -> String {
+    let mut issues: Vec<(String, String)> = Vec::new();
+    let type_names: HashSet<&str> = schema.artifact_types.keys().map(|s| s.as_str()).collect();
+    let link_names: HashSet<&str> = schema.link_types.keys().map(|s| s.as_str()).collect();
+
+    // Check traceability rules
+    for rule in &schema.traceability_rules {
+        if !type_names.contains(rule.source_type.as_str()) {
+            issues.push((
+                "ERROR".into(),
+                format!(
+                    "rule '{}': source-type '{}' not a known artifact type",
+                    rule.name, rule.source_type
+                ),
+            ));
+        }
+        if let Some(ref link) = rule.required_link {
+            if !link_names.contains(link.as_str()) {
+                issues.push((
+                    "ERROR".into(),
+                    format!(
+                        "rule '{}': required-link '{}' not a known link type",
+                        rule.name, link
+                    ),
+                ));
+            }
+        }
+        if let Some(ref link) = rule.required_backlink {
+            if !link_names.contains(link.as_str()) {
+                issues.push((
+                    "ERROR".into(),
+                    format!(
+                        "rule '{}': required-backlink '{}' not a known link type",
+                        rule.name, link
+                    ),
+                ));
+            }
+        }
+        for target in &rule.target_types {
+            if !type_names.contains(target.as_str()) {
+                issues.push((
+                    "WARN".into(),
+                    format!(
+                        "rule '{}': target-type '{}' not a known artifact type",
+                        rule.name, target
+                    ),
+                ));
+            }
+        }
+        for from in &rule.from_types {
+            if !type_names.contains(from.as_str()) {
+                issues.push((
+                    "WARN".into(),
+                    format!(
+                        "rule '{}': from-type '{}' not a known artifact type",
+                        rule.name, from
+                    ),
+                ));
+            }
+        }
+    }
+
+    // Check link-fields on artifact types
+    for type_def in schema.artifact_types.values() {
+        for lf in &type_def.link_fields {
+            if !link_names.contains(lf.link_type.as_str()) {
+                issues.push((
+                    "ERROR".into(),
+                    format!(
+                        "type '{}': link-field '{}' references unknown link type '{}'",
+                        type_def.name, lf.name, lf.link_type
+                    ),
+                ));
+            }
+            for target in &lf.target_types {
+                if !type_names.contains(target.as_str()) {
+                    issues.push((
+                        "WARN".into(),
+                        format!(
+                            "type '{}': link-field '{}' references unknown target type '{}'",
+                            type_def.name, lf.name, target
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+
+    let errors = issues.iter().filter(|(s, _)| s == "ERROR").count();
+    let warnings = issues.iter().filter(|(s, _)| s == "WARN").count();
+
+    if issues.is_empty() {
+        return format!(
+            "Schema valid: {} artifact types, {} link types, {} rules\n",
+            schema.artifact_types.len(),
+            schema.link_types.len(),
+            schema.traceability_rules.len(),
+        );
+    }
+
+    let mut out = String::from("Schema validation:\n\n");
+    for (severity, message) in &issues {
+        out.push_str(&format!("  {severity}: {message}\n"));
+    }
+    out.push_str(&format!(
+        "\nResult: {errors} error(s), {warnings} warning(s)\n"
+    ));
     out
 }
