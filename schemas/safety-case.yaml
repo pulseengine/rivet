@@ -1,0 +1,327 @@
+# GSN (Goal Structuring Notation) safety case schema
+#
+# Defines artifact types and traceability rules for structured safety
+# arguments following the GSN Community Standard v3.
+#
+# GSN elements:
+#   Goal       — a claim about the system's safety
+#   Strategy   — the argument approach decomposing a goal into sub-goals
+#   Solution   — evidence supporting a goal
+#   Context    — assumptions or scope bounding a goal
+#   Justification — rationale for a strategy or goal
+#   Away Goal  — reference to an argument in another module
+#
+# This schema is reusable across any project building a structured
+# safety argument — automotive, aerospace, medical devices, etc.
+
+schema:
+  name: safety-case
+  version: "0.1.0"
+  namespace: "http://pulseengine.dev/ns/safety-case#"
+  extends: [common]
+  description: >
+    GSN (Goal Structuring Notation) safety case artifact types and
+    traceability rules for structured safety arguments.
+
+# ──────────────────────────────────────────────────────────────────────────
+# Artifact types
+# ──────────────────────────────────────────────────────────────────────────
+artifact-types:
+
+  # ── Goal (G) ───────────────────────────────────────────────────────────
+  - name: safety-goal
+    description: >
+      A claim about the system's safety that must be supported by evidence
+      or decomposed into sub-goals via a strategy.
+    fields:
+      - name: claim
+        type: text
+        required: true
+        description: The safety claim being made
+      - name: goal-type
+        type: string
+        required: true
+        allowed-values: [system-level, element-level, operational, derived]
+        description: Classification of the safety goal
+      - name: asil
+        type: string
+        required: false
+        allowed-values: [QM, A, B, C, D]
+        description: Automotive Safety Integrity Level (if applicable)
+      - name: undeveloped
+        type: boolean
+        required: false
+        description: Whether the goal is not yet supported by evidence or sub-goals
+    link-fields:
+      - name: sub-goal-of
+        link-type: sub-goal-of
+        target-types: [safety-goal]
+        required: false
+        cardinality: zero-or-many
+    example: |
+      - id: G-001
+        type: safety-goal
+        title: System is acceptably safe for intended operation
+        status: draft
+        fields:
+          claim: |
+            The autonomous braking system is acceptably safe
+            for operation on public roads at speeds up to 130 km/h.
+          goal-type: system-level
+
+  # ── Strategy (S) ───────────────────────────────────────────────────────
+  - name: safety-strategy
+    description: >
+      The argument approach used to decompose a goal into sub-goals.
+      Explains why the sub-goals are sufficient to support the parent goal.
+    fields:
+      - name: rationale
+        type: text
+        required: true
+        description: Why this decomposition is sufficient
+      - name: method
+        type: string
+        required: false
+        allowed-values: [decomposition, substitution, concretion, calculation]
+        description: GSN argumentation pattern used
+    link-fields:
+      - name: decomposes
+        link-type: decomposes
+        target-types: [safety-goal]
+        required: true
+        cardinality: exactly-one
+    example: |
+      - id: S-001
+        type: safety-strategy
+        title: Argue over identified hazards
+        status: draft
+        fields:
+          rationale: |
+            Decompose the top-level safety goal by arguing that each
+            identified hazard is adequately mitigated.
+          method: decomposition
+        links:
+          - type: decomposes
+            target: G-001
+
+  # ── Solution (Sn) ──────────────────────────────────────────────────────
+  - name: safety-solution
+    description: >
+      Evidence supporting a safety goal. References a concrete piece of
+      evidence such as a test report, analysis, or formal proof.
+    fields:
+      - name: evidence-type
+        type: string
+        required: true
+        allowed-values: [test-report, analysis, simulation, review, field-data, formal-proof]
+        description: Category of evidence provided
+      - name: evidence-ref
+        type: string
+        required: false
+        description: Reference to the evidence artifact (document, URI, test ID)
+      - name: confidence
+        type: string
+        required: false
+        allowed-values: [high, medium, low]
+        description: Confidence level in the evidence
+    link-fields:
+      - name: supports
+        link-type: supports
+        target-types: [safety-goal]
+        required: true
+        cardinality: one-or-many
+    example: |
+      - id: Sn-001
+        type: safety-solution
+        title: AEB system test report
+        status: draft
+        fields:
+          evidence-type: test-report
+          evidence-ref: TR-AEB-2026-001
+          confidence: high
+        links:
+          - type: supports
+            target: G-002
+
+  # ── Context (C) ────────────────────────────────────────────────────────
+  - name: safety-context
+    description: >
+      Assumptions, environmental conditions, or scope bounding a safety
+      goal or strategy.
+    fields:
+      - name: context-type
+        type: string
+        required: false
+        allowed-values: [assumption, scope, definition, operational-environment]
+        description: What kind of context this provides
+      - name: statement
+        type: text
+        required: true
+        description: The contextual statement or assumption
+    link-fields:
+      - name: scopes
+        link-type: scopes
+        target-types: [safety-goal, safety-strategy]
+        required: true
+        cardinality: one-or-many
+    example: |
+      - id: C-001
+        type: safety-context
+        title: Operating environment definition
+        status: draft
+        fields:
+          context-type: scope
+          statement: |
+            The system operates on public roads in EU member states,
+            at speeds between 0 and 130 km/h, in all weather conditions.
+        links:
+          - type: scopes
+            target: G-001
+
+  # ── Justification (J) ──────────────────────────────────────────────────
+  - name: safety-justification
+    description: >
+      Rationale explaining why a goal or strategy is appropriate. Provides
+      reasoning that is not evidence but supports the argument structure.
+    fields:
+      - name: rationale
+        type: text
+        required: true
+        description: The justification rationale
+    link-fields:
+      - name: justifies
+        link-type: justifies
+        target-types: [safety-goal, safety-strategy]
+        required: true
+        cardinality: one-or-many
+    example: |
+      - id: J-001
+        type: safety-justification
+        title: ASIL D allocation rationale
+        status: draft
+        fields:
+          rationale: |
+            ASIL D is allocated to the braking sub-goal because
+            ISO 26262 clause 7 requires the highest integrity for
+            safety goals related to unintended vehicle motion.
+        links:
+          - type: justifies
+            target: G-002
+
+  # ── Away Goal (AG) ─────────────────────────────────────────────────────
+  - name: away-goal
+    description: >
+      Reference to a safety goal that is argued in a separate safety case
+      module. Used for modular safety arguments.
+    fields:
+      - name: module-ref
+        type: string
+        required: true
+        description: Identifier or path of the external safety case module
+      - name: external-goal-id
+        type: string
+        required: true
+        description: ID of the goal in the external module
+      - name: interface-status
+        type: string
+        required: false
+        allowed-values: [agreed, proposed, disputed]
+        description: Status of the inter-module interface agreement
+    link-fields:
+      - name: sub-goal-of
+        link-type: sub-goal-of
+        target-types: [safety-goal]
+        required: true
+        cardinality: one-or-many
+    example: |
+      - id: AG-001
+        type: away-goal
+        title: Sensor subsystem safety (see sensor-safety-case)
+        status: draft
+        fields:
+          module-ref: sensor-safety-case
+          external-goal-id: G-SENSOR-001
+          interface-status: agreed
+        links:
+          - type: sub-goal-of
+            target: G-003
+
+# ──────────────────────────────────────────────────────────────────────────
+# Link types
+# ──────────────────────────────────────────────────────────────────────────
+link-types:
+  - name: decomposes
+    inverse: decomposed-by
+    description: Strategy decomposes a safety goal into sub-goals
+    source-types: [safety-strategy]
+    target-types: [safety-goal]
+
+  - name: supports
+    inverse: supported-by
+    description: Solution provides evidence supporting a safety goal
+    source-types: [safety-solution]
+    target-types: [safety-goal]
+
+  - name: scopes
+    inverse: scoped-by
+    description: Context provides scope or assumptions for a goal or strategy
+    source-types: [safety-context]
+    target-types: [safety-goal, safety-strategy]
+
+  - name: justifies
+    inverse: justified-by
+    description: Justification provides rationale for a goal or strategy
+    source-types: [safety-justification]
+    target-types: [safety-goal, safety-strategy]
+
+  - name: sub-goal-of
+    inverse: has-sub-goal
+    description: Goal is a sub-goal of a parent goal (direct or via away-goal)
+    source-types: [safety-goal, away-goal]
+    target-types: [safety-goal]
+
+# ──────────────────────────────────────────────────────────────────────────
+# Traceability rules
+#
+# These encode the structural integrity rules for GSN safety arguments.
+# `rivet validate` checks these automatically.
+# ──────────────────────────────────────────────────────────────────────────
+traceability-rules:
+  # Every safety goal must be supported by evidence or decomposed into sub-goals
+  - name: goal-has-support
+    description: >
+      Every safety goal must be supported by evidence (solution) or
+      decomposed into sub-goals (via strategy), unless marked undeveloped
+    source-type: safety-goal
+    required-backlink: supported-by
+    from-types: [safety-solution]
+    alternate-backlinks:
+      - link-type: decomposed-by
+        from-types: [safety-strategy]
+      - link-type: has-sub-goal
+        from-types: [safety-goal, away-goal]
+    severity: error
+
+  # Every strategy must decompose a goal
+  - name: strategy-decomposes-goal
+    description: Every safety strategy must decompose a safety goal
+    source-type: safety-strategy
+    required-link: decomposes
+    target-types: [safety-goal]
+    severity: error
+
+  # Every solution must support a goal
+  - name: solution-supports-goal
+    description: Every safety solution must support a safety goal
+    source-type: safety-solution
+    required-link: supports
+    target-types: [safety-goal]
+    severity: error
+
+  # Top-level goals should have context
+  - name: goal-has-context
+    description: Top-level safety goals should have context defining scope and assumptions
+    source-type: safety-goal
+    required-backlink: scoped-by
+    from-types: [safety-context]
+    severity: warning

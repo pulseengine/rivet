@@ -1007,8 +1007,12 @@ fn resolve_preset(preset: &str) -> Result<InitPreset> {
             schemas: vec!["common", "eu-ai-act"],
             sample_files: vec![("ai-system.yaml", EU_AI_ACT_SAMPLE)],
         }),
+        "safety-case" => Ok(InitPreset {
+            schemas: vec!["common", "safety-case"],
+            sample_files: vec![("safety-case.yaml", SAFETY_CASE_SAMPLE)],
+        }),
         other => anyhow::bail!(
-            "unknown preset: '{other}' (valid: dev, aspice, stpa, cybersecurity, aadl, eu-ai-act)"
+            "unknown preset: '{other}' (valid: dev, aspice, stpa, cybersecurity, aadl, eu-ai-act, safety-case)"
         ),
     }
 }
@@ -1346,6 +1350,73 @@ artifacts:
     links:
       - type: transparency-for
         target: AI-SYS-001
+";
+
+const SAFETY_CASE_SAMPLE: &str = "\
+artifacts:
+  - id: G-001
+    type: safety-goal
+    title: System is acceptably safe for intended operation
+    status: draft
+    description: >
+      Top-level safety claim for the system under analysis.
+    fields:
+      claim: >
+        The system is acceptably safe for its intended operation,
+        considering all identified hazards and operational conditions.
+      goal-type: system-level
+
+  - id: C-001
+    type: safety-context
+    title: Operating environment definition
+    status: draft
+    fields:
+      context-type: scope
+      statement: >
+        The system operates within its defined operational design domain.
+        All identified hazards have been analysed using systematic methods.
+    links:
+      - type: scopes
+        target: G-001
+
+  - id: S-001
+    type: safety-strategy
+    title: Argue over identified hazards
+    status: draft
+    fields:
+      rationale: >
+        Decompose the top-level safety goal by arguing that each
+        identified hazard is adequately mitigated through design
+        measures and verified by evidence.
+      method: decomposition
+    links:
+      - type: decomposes
+        target: G-001
+
+  - id: G-002
+    type: safety-goal
+    title: Hazard H-001 is adequately mitigated
+    status: draft
+    fields:
+      claim: >
+        The identified hazard is mitigated to an acceptable level
+        through design measures and operational constraints.
+      goal-type: derived
+    links:
+      - type: sub-goal-of
+        target: G-001
+
+  - id: Sn-001
+    type: safety-solution
+    title: Verification test report for hazard mitigation
+    status: draft
+    fields:
+      evidence-type: test-report
+      evidence-ref: TR-001
+      confidence: high
+    links:
+      - type: supports
+        target: G-002
 ";
 
 /// Initialize a new rivet project.
