@@ -772,3 +772,109 @@ fn embed_matrix() {
         "should contain matrix output. Got: {stdout}"
     );
 }
+
+// ── rivet get ──────────────────────────────────────────────────────────
+
+/// `rivet get REQ-001` succeeds and shows the artifact in text format.
+#[test]
+fn get_text_shows_artifact() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "get",
+            "REQ-001",
+        ])
+        .output()
+        .expect("failed to execute rivet get REQ-001");
+
+    assert!(
+        output.status.success(),
+        "rivet get REQ-001 must exit 0. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("REQ-001"),
+        "output must contain artifact ID. Got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("requirement"),
+        "output must contain artifact type. Got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("Text-file-first"),
+        "output must contain artifact title. Got:\n{stdout}"
+    );
+}
+
+/// `rivet get REQ-001 --format json` produces valid JSON with id, type, title.
+#[test]
+fn get_json_produces_valid_output() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "get",
+            "REQ-001",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("failed to execute rivet get REQ-001 --format json");
+
+    assert!(
+        output.status.success(),
+        "rivet get REQ-001 --format json must exit 0. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("get JSON must be valid");
+
+    assert_eq!(
+        parsed.get("command").and_then(|v| v.as_str()),
+        Some("get"),
+        "JSON envelope must have command 'get'"
+    );
+    assert_eq!(
+        parsed.get("id").and_then(|v| v.as_str()),
+        Some("REQ-001"),
+        "JSON must contain correct id"
+    );
+    assert_eq!(
+        parsed.get("type").and_then(|v| v.as_str()),
+        Some("requirement"),
+        "JSON must contain correct type"
+    );
+    assert!(
+        parsed.get("title").and_then(|v| v.as_str()).is_some(),
+        "JSON must contain title"
+    );
+}
+
+/// `rivet get NONEXISTENT` returns non-zero exit code and prints an error.
+#[test]
+fn get_nonexistent_returns_error() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "get",
+            "NONEXISTENT",
+        ])
+        .output()
+        .expect("failed to execute rivet get NONEXISTENT");
+
+    assert!(
+        !output.status.success(),
+        "rivet get NONEXISTENT must exit non-zero"
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("not found"),
+        "stderr must mention 'not found'. Got:\n{stderr}"
+    );
+}
