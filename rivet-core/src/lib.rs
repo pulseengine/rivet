@@ -32,6 +32,7 @@ pub mod test_scanner;
 pub mod validate;
 pub mod yaml_cst;
 pub mod yaml_edit;
+pub mod yaml_hir;
 
 #[cfg(test)]
 pub mod test_helpers;
