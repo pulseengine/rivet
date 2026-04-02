@@ -2,31 +2,46 @@
 #
 # Covers new attack surfaces introduced by MCP server,
 # snapshot files, and embed resolution.
+#
+# Converted from STPA-native keys (losses:/hazards:/sec-constraints:)
+# to artifacts: format for compatibility with the generic-yaml adapter
+# used by the safety/stpa-sec source directory.
 
-losses:
+artifacts:
+  # ── Losses ──────────────────────────────────────────────────────────────
+
   - id: SL-IMPL-001
+    type: sec-loss
     title: Unauthorized modification of compliance artifacts
+    status: draft
     description: >
       An attacker modifies snapshot files or YAML artifacts to
       change validation results, making non-compliant deliverables
       appear compliant.
 
   - id: SL-IMPL-002
+    type: sec-loss
     title: Information disclosure via MCP server
+    status: draft
     description: >
       The MCP server exposes artifact data, validation diagnostics,
       and project structure to unauthorized agents.
 
   - id: SL-IMPL-003
+    type: sec-loss
     title: Code injection via embed syntax in documents
+    status: draft
     description: >
       Malicious {{embed}} syntax in a document causes unexpected
       behavior during rendering — HTML injection, path traversal,
       or resource exhaustion.
 
-hazards:
+  # ── Hazards ─────────────────────────────────────────────────────────────
+
   - id: SH-IMPL-001
+    type: sec-hazard
     title: Snapshot files not integrity-checked
+    status: draft
     description: >
       Snapshot JSON files are loaded and trusted without any
       integrity verification. A tampered snapshot could show
@@ -36,7 +51,9 @@ hazards:
         target: SL-IMPL-001
 
   - id: SH-IMPL-002
+    type: sec-hazard
     title: MCP server has no authentication
+    status: draft
     description: >
       The MCP stdio transport has no authentication mechanism.
       Any process that can connect to stdin/stdout can invoke
@@ -46,7 +63,9 @@ hazards:
         target: SL-IMPL-002
 
   - id: SH-IMPL-003
+    type: sec-hazard
     title: Embed resolver processes untrusted input
+    status: draft
     description: >
       The EmbedRequest parser processes content from user-authored
       documents. Malformed or adversarial embed syntax could
@@ -56,7 +75,9 @@ hazards:
         target: SL-IMPL-003
 
   - id: SH-IMPL-004
+    type: sec-hazard
     title: YAML deserialization of untrusted snapshot files
+    status: draft
     description: >
       Snapshot JSON files are deserialized with serde_json. While
       JSON is safer than YAML (no code execution), a maliciously
@@ -65,55 +86,66 @@ hazards:
       - type: leads-to-loss
         target: SL-IMPL-001
 
-sec-constraints:
+  # ── Security Constraints ────────────────────────────────────────────────
+
   - id: SSC-IMPL-001
+    type: sec-constraint
     title: Snapshot files SHOULD include a content hash
+    status: draft
     description: >
       Future: add a SHA-256 hash of the snapshot data to enable
       integrity verification. For now, git history provides
       tamper evidence (commits are signed).
     links:
-      - type: enforces
+      - type: prevents-sec-hazard
         target: SH-IMPL-001
 
   - id: SSC-IMPL-002
+    type: sec-constraint
     title: MCP server MUST only bind to localhost stdio
+    status: draft
     description: >
       The MCP server uses stdio transport (not HTTP) and does not
       listen on any network port. Access is limited to the local
       process that spawned it. Network transport requires explicit
       opt-in via --transport http.
     links:
-      - type: enforces
+      - type: prevents-sec-hazard
         target: SH-IMPL-002
 
   - id: SSC-IMPL-003
+    type: sec-constraint
     title: Embed parser MUST reject unknown embed names with visible error
+    status: draft
     description: >
       Unknown embed names produce an EmbedError with visible HTML
       rendering (SC-EMBED-3). No embed name can trigger file I/O,
       shell execution, or unbounded computation.
     links:
-      - type: enforces
+      - type: prevents-sec-hazard
         target: SH-IMPL-003
 
   - id: SSC-IMPL-004
+    type: sec-constraint
     title: Snapshot deserialization MUST use bounded parsing
+    status: draft
     description: >
       serde_json's default parsing is bounded by available memory.
       Snapshot files are project-sized (kilobytes to megabytes),
       not user-uploaded. The risk is low but should be monitored
       if snapshot loading is ever exposed to untrusted input.
     links:
-      - type: enforces
+      - type: prevents-sec-hazard
         target: SH-IMPL-004
 
   - id: SSC-IMPL-005
+    type: sec-constraint
     title: MCP tool results MUST NOT include file system paths outside project
+    status: draft
     description: >
       MCP tools return artifact data, diagnostics, and stats scoped
       to the project directory. No absolute paths or file contents
       outside the project root are exposed.
     links:
-      - type: enforces
+      - type: prevents-sec-hazard
         target: SH-IMPL-002
