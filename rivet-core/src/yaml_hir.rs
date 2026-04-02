@@ -9,8 +9,11 @@
 
 use std::collections::BTreeMap;
 
+use std::collections::HashMap;
+use std::path::Path;
+
 use crate::model::{Artifact, Link};
-use crate::schema::Severity;
+use crate::schema::{Schema, Severity};
 use crate::yaml_cst::{self, SyntaxKind, SyntaxNode};
 
 // ── Public types ───────────────────────────────────────────────────────
@@ -107,7 +110,293 @@ pub fn extract_generic_artifacts(source: &str) -> ParsedYamlFile {
     result
 }
 
-// ── Artifact extraction ────────────────────────────────────────────────
+// ── Schema-driven extraction ────────────────────────────────────────────
+
+/// Extract artifacts using schema metadata (`yaml-section`, `shorthand-links`).
+///
+/// This single function handles both formats:
+/// - `generic-yaml`: looks for `artifacts:` key (falls back to generic extraction)
+/// - `stpa-yaml` (and any schema-driven format): uses `yaml-section` metadata
+///   to find sections, auto-sets `artifact_type`, converts shorthand links
+///
+/// This replaces the hardcoded per-type parsers in `formats/stpa.rs`.
+pub fn extract_schema_driven(
+    source: &str,
+    schema: &Schema,
+    source_path: Option<&Path>,
+) -> ParsedYamlFile {
+    let (green, _parse_errors) = yaml_cst::parse(source);
+    let root = SyntaxNode::new_root(green);
+
+    let mut result = ParsedYamlFile {
+        artifacts: Vec::new(),
+        diagnostics: Vec::new(),
+    };
+
+    let Some(root_mapping) = child_of_kind(&root, SyntaxKind::Mapping) else {
+        return result;
+    };
+
+    // Build section map: yaml_section_name → (artifact_type_name, shorthand_links)
+    let section_map: HashMap<&str, (&str, &BTreeMap<String, String>)> = schema
+        .artifact_types
+        .values()
+        .filter_map(|t| {
+            t.yaml_section
+                .as_deref()
+                .map(|s| (s, (t.name.as_str(), &t.shorthand_links)))
+        })
+        .collect();
+
+    // Walk all top-level mapping entries
+    for entry in root_mapping.children() {
+        if node_kind(&entry) != SyntaxKind::MappingEntry {
+            continue;
+        }
+        let Some(key_node) = child_of_kind(&entry, SyntaxKind::Key) else {
+            continue;
+        };
+        let Some(key_text) = scalar_text(&key_node) else {
+            continue;
+        };
+
+        if key_text == "artifacts" {
+            // Generic format: fall through to standard extraction
+            let Some(value_node) = child_of_kind(&entry, SyntaxKind::Value) else {
+                continue;
+            };
+            let seq = child_of_kind(&value_node, SyntaxKind::Sequence);
+            if let Some(seq) = seq {
+                for item in seq.children() {
+                    if node_kind(&item) == SyntaxKind::SequenceItem {
+                        extract_artifact_from_item(&item, &mut result);
+                    }
+                }
+            }
+        } else if let Some(&(type_name, shorthand_links)) = section_map.get(key_text.as_str()) {
+            // Schema-driven section extraction
+            let Some(value_node) = child_of_kind(&entry, SyntaxKind::Value) else {
+                continue;
+            };
+            let seq = child_of_kind(&value_node, SyntaxKind::Sequence);
+            if let Some(seq) = seq {
+                for item in seq.children() {
+                    if node_kind(&item) == SyntaxKind::SequenceItem {
+                        extract_section_item(
+                            &item,
+                            type_name,
+                            shorthand_links,
+                            source_path,
+                            &mut result,
+                        );
+                    }
+                }
+            }
+        }
+        // Unknown keys are silently skipped (comments, metadata, etc.)
+    }
+
+    // Set source_file on all artifacts
+    if let Some(path) = source_path {
+        for sa in &mut result.artifacts {
+            sa.artifact.source_file = Some(path.to_path_buf());
+        }
+    }
+
+    result
+}
+
+/// Extract a single artifact from a section item (schema-driven).
+///
+/// Like `extract_artifact_from_item` but:
+/// - `artifact_type` is auto-set from the section, not from a `type:` key
+/// - `shorthand_links` fields are converted to Link objects
+fn extract_section_item(
+    item: &SyntaxNode,
+    type_name: &str,
+    shorthand_links: &BTreeMap<String, String>,
+    _source_path: Option<&Path>,
+    result: &mut ParsedYamlFile,
+) {
+    let block_span = Span::from_text_range(item.text_range());
+
+    let Some(mapping) = child_of_kind(item, SyntaxKind::Mapping) else {
+        result.diagnostics.push(ParseDiagnostic {
+            span: block_span,
+            message: "expected mapping inside sequence item".into(),
+            severity: Severity::Error,
+        });
+        return;
+    };
+
+    let mut id: Option<String> = None;
+    let mut id_span = Span { start: 0, end: 0 };
+    let mut title = String::new();
+    let mut description: Option<String> = None;
+    let mut status: Option<String> = None;
+    let mut tags: Vec<String> = Vec::new();
+    let mut links: Vec<Link> = Vec::new();
+    let mut fields: BTreeMap<String, serde_yaml::Value> = BTreeMap::new();
+    let mut field_spans: BTreeMap<String, Span> = BTreeMap::new();
+
+    for entry in mapping.children() {
+        if node_kind(&entry) != SyntaxKind::MappingEntry {
+            continue;
+        }
+        let Some(key_node) = child_of_kind(&entry, SyntaxKind::Key) else {
+            continue;
+        };
+        let Some(key_text) = scalar_text(&key_node) else {
+            continue;
+        };
+        let Some(value_node) = child_of_kind(&entry, SyntaxKind::Value) else {
+            continue;
+        };
+        let value_span = Span::from_text_range(value_node.text_range());
+
+        // Check if this key is a shorthand link field
+        if let Some(link_type) = shorthand_links.get(&key_text) {
+            // Convert shorthand: `hazards: [H-1, H-2]` → links
+            let targets = extract_string_list(&value_node);
+            for target in targets {
+                links.push(Link {
+                    link_type: link_type.clone(),
+                    target,
+                });
+            }
+            // Also handle single-value shorthand: `uca: UCA-1`
+            if targets_is_empty_but_scalar(&value_node) {
+                if let Some(target) = scalar_text(&value_node) {
+                    links.push(Link {
+                        link_type: link_type.clone(),
+                        target,
+                    });
+                }
+            }
+            continue;
+        }
+
+        match key_text.as_str() {
+            "id" => {
+                if let Some(text) = scalar_text(&value_node) {
+                    id = Some(text);
+                    id_span = value_span;
+                    field_spans.insert("id".into(), value_span);
+                }
+            }
+            "title" | "name" => {
+                // STPA uses both "title" and "name" for the display name
+                if let Some(text) = scalar_text(&value_node) {
+                    title = text;
+                    field_spans.insert(key_text.clone(), value_span);
+                }
+            }
+            "description" | "scenario" | "constraint" | "action" => {
+                // Various STPA types use different field names for the main text
+                let text = extract_text_value(&value_node);
+                if key_text == "description" || key_text == "scenario" {
+                    description = Some(text);
+                } else {
+                    fields.insert(key_text.clone(), serde_yaml::Value::String(text));
+                }
+                field_spans.insert(key_text.clone(), value_span);
+            }
+            "status" => {
+                if let Some(text) = scalar_text(&value_node) {
+                    status = Some(text);
+                    field_spans.insert("status".into(), value_span);
+                }
+            }
+            "tags" => {
+                tags = extract_string_list(&value_node);
+                field_spans.insert("tags".into(), value_span);
+            }
+            "links" => {
+                links.extend(extract_links(&value_node));
+                field_spans.insert("links".into(), value_span);
+            }
+            // Everything else goes to fields
+            _ => {
+                let val = extract_field_value(&value_node);
+                fields.insert(key_text.clone(), val);
+                field_spans.insert(key_text, value_span);
+            }
+        }
+    }
+
+    let Some(artifact_id) = id else {
+        result.diagnostics.push(ParseDiagnostic {
+            span: block_span,
+            message: format!("missing 'id' in {type_name} section item"),
+            severity: Severity::Error,
+        });
+        return;
+    };
+
+    result.artifacts.push(SpannedArtifact {
+        artifact: Artifact {
+            id: artifact_id,
+            artifact_type: type_name.to_string(),
+            title,
+            description,
+            status,
+            tags,
+            links,
+            fields,
+            source_file: None, // set by caller
+        },
+        id_span,
+        block_span,
+        field_spans,
+    });
+}
+
+/// Check if a value node has no list items but has a scalar.
+fn targets_is_empty_but_scalar(value_node: &SyntaxNode) -> bool {
+    child_of_kind(value_node, SyntaxKind::Sequence).is_none()
+        && child_of_kind(value_node, SyntaxKind::FlowSequence).is_none()
+        && scalar_text(value_node).is_some()
+}
+
+/// Extract text from a value node (handles block scalars and plain scalars).
+fn extract_text_value(value_node: &SyntaxNode) -> String {
+    if let Some(text) = block_scalar_text(value_node) {
+        return text;
+    }
+    scalar_text(value_node).unwrap_or_default()
+}
+
+/// Extract a serde_yaml::Value from a value node.
+fn extract_field_value(value_node: &SyntaxNode) -> serde_yaml::Value {
+    // Try block scalar
+    if let Some(text) = block_scalar_text(value_node) {
+        return serde_yaml::Value::String(text);
+    }
+    // Try list
+    let list = extract_string_list(value_node);
+    if !list.is_empty() {
+        return serde_yaml::Value::Sequence(
+            list.into_iter().map(serde_yaml::Value::String).collect(),
+        );
+    }
+    // Try scalar
+    for token in value_node.descendants_with_tokens() {
+        if let rowan::NodeOrToken::Token(t) = token {
+            let k = t.kind();
+            match k {
+                SyntaxKind::PlainScalar
+                | SyntaxKind::SingleQuotedScalar
+                | SyntaxKind::DoubleQuotedScalar => {
+                    return scalar_to_yaml_value(k, t.text());
+                }
+                _ => {}
+            }
+        }
+    }
+    serde_yaml::Value::Null
+}
+
+// ── Artifact extraction (generic) ──────────────────────────────────────
 
 fn extract_artifact_from_item(item: &SyntaxNode, result: &mut ParsedYamlFile) {
     let block_span = Span::from_text_range(item.text_range());
@@ -801,5 +1090,113 @@ artifacts:
         let fields = &hir.artifacts[0].artifact.fields;
         assert_eq!(fields.get("a"), Some(&serde_yaml::Value::Null));
         assert_eq!(fields.get("b"), Some(&serde_yaml::Value::Null));
+    }
+
+    // ── Schema-driven extraction tests ──────────────────────────────
+
+    fn test_schema() -> crate::schema::Schema {
+        // Minimal schema with yaml-section metadata
+        let yaml = "\
+schema:
+  name: test-stpa
+  version: \"0.1.0\"
+  extends: [common]
+
+artifact-types:
+  - name: loss
+    description: A loss
+    yaml-section: losses
+    link-fields: []
+  - name: hazard
+    description: A hazard
+    yaml-section: hazards
+    shorthand-links:
+      losses: leads-to-loss
+    link-fields:
+      - name: losses
+        link-type: leads-to-loss
+        target-types: [loss]
+        required: true
+        cardinality: one-or-many
+
+link-types:
+  - name: leads-to-loss
+    inverse: loss-leads-to
+    description: Hazard leads to loss
+
+traceability-rules: []
+";
+        let file: crate::schema::SchemaFile = serde_yaml::from_str(yaml).unwrap();
+        // Also load common schema for base fields
+        let common = crate::embedded::load_embedded_schema("common").unwrap();
+        crate::schema::Schema::merge(&[common, file])
+    }
+
+    #[test]
+    fn schema_driven_extracts_losses() {
+        let source = "\
+losses:
+  - id: L-001
+    title: Loss of control
+    description: Driver loses ability to control vehicle.
+";
+        let schema = test_schema();
+        let result = extract_schema_driven(source, &schema, None);
+        assert_eq!(result.artifacts.len(), 1);
+        assert_eq!(result.artifacts[0].artifact.id, "L-001");
+        assert_eq!(result.artifacts[0].artifact.artifact_type, "loss");
+        assert_eq!(result.artifacts[0].artifact.title, "Loss of control");
+    }
+
+    #[test]
+    fn schema_driven_extracts_hazards_with_shorthand_links() {
+        let source = "\
+hazards:
+  - id: H-001
+    title: Unintended acceleration
+    losses: [L-001, L-002]
+";
+        let schema = test_schema();
+        let result = extract_schema_driven(source, &schema, None);
+        assert_eq!(result.artifacts.len(), 1);
+        let art = &result.artifacts[0].artifact;
+        assert_eq!(art.artifact_type, "hazard");
+        assert_eq!(art.links.len(), 2);
+        assert_eq!(art.links[0].link_type, "leads-to-loss");
+        assert_eq!(art.links[0].target, "L-001");
+        assert_eq!(art.links[1].target, "L-002");
+    }
+
+    #[test]
+    fn schema_driven_mixed_sections() {
+        let source = "\
+losses:
+  - id: L-001
+    title: Loss one
+
+hazards:
+  - id: H-001
+    title: Hazard one
+    losses: [L-001]
+";
+        let schema = test_schema();
+        let result = extract_schema_driven(source, &schema, None);
+        assert_eq!(result.artifacts.len(), 2);
+        assert_eq!(result.artifacts[0].artifact.artifact_type, "loss");
+        assert_eq!(result.artifacts[1].artifact.artifact_type, "hazard");
+    }
+
+    #[test]
+    fn schema_driven_falls_back_to_generic() {
+        let source = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: First requirement
+";
+        let schema = test_schema();
+        let result = extract_schema_driven(source, &schema, None);
+        assert_eq!(result.artifacts.len(), 1);
+        assert_eq!(result.artifacts[0].artifact.artifact_type, "requirement");
     }
 }
