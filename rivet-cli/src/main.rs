@@ -646,6 +646,8 @@ enum SchemaAction {
         #[arg(short, long, default_value = "text")]
         format: String,
     },
+    /// Validate that loaded schemas are well-formed
+    Validate,
 }
 
 #[derive(Debug, Subcommand)]
@@ -4541,6 +4543,7 @@ fn cmd_schema(cli: &Cli, action: &SchemaAction) -> Result<bool> {
         SchemaAction::Show { name, format } => schema_cmd::cmd_show(&schema, name, format),
         SchemaAction::Links { format } => schema_cmd::cmd_links(&schema, format),
         SchemaAction::Rules { format } => schema_cmd::cmd_rules(&schema, format),
+        SchemaAction::Validate => schema_cmd::cmd_validate(&schema),
     };
     print!("{output}");
     Ok(true)
