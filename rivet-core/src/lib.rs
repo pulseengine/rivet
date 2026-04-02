@@ -1,3 +1,5 @@
+#![allow(clippy::cloned_ref_to_slice_refs)]
+
 pub mod adapter;
 pub mod bazel;
 pub mod commits;
@@ -32,6 +34,7 @@ pub mod test_scanner;
 pub mod validate;
 pub mod yaml_cst;
 pub mod yaml_edit;
+pub mod yaml_hir;
 
 #[cfg(test)]
 pub mod test_helpers;

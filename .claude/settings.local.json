@@ -35,7 +35,20 @@
       "Bash(grep -rn 'Diagnostic {$\\\\|Diagnostic{' /Users/r/git/pulseengine/rivet/rivet-core/src/validate.rs)",
       "Bash(sed:*)",
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); types=[t['name'] for t in d['artifact_types']]; print\\(f'{len\\(types\\)} types'\\); [print\\(f'  {t}'\\) for t in types if t.startswith\\('ai-'\\) or t.startswith\\('risk'\\) or t.startswith\\('data'\\)]\")",
-      "Bash(git -C /Users/r/git/pulseengine/rivet/.claude/worktrees/agent-a5e68f53 diff HEAD -- rivet-cli/src/main.rs)"
+      "Bash(git -C /Users/r/git/pulseengine/rivet/.claude/worktrees/agent-a5e68f53 diff HEAD -- rivet-cli/src/main.rs)",
+      "Bash(grep -n:*)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); ids=[a['id'] for a in d['artifacts']]; ids.sort\\(\\); print\\(f'Last FEAT: {ids[-1]}, count: {len\\(ids\\)}'\\)\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); feats=[a['id'] for a in d['artifacts'] if a['id'].startswith\\('FEAT-'\\)]; feats.sort\\(\\); print\\(feats[-5:]\\)\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); reqs=[a['id'] for a in d['artifacts'] if a['id'].startswith\\('REQ-'\\)]; reqs.sort\\(\\); print\\(reqs[-5:]\\)\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); dds=[a['id'] for a in d['artifacts'] if a['id'].startswith\\('DD-'\\)]; dds.sort\\(\\); print\\(dds[-5:]\\)\")",
+      "Bash(python3 -c ':*)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('Links:', d.get\\('links', []\\)\\)\")",
+      "Bash(ls:*)",
+      "Bash(grep:*)",
+      "Bash(python3:*)",
+      "Bash(cp:*)",
+      "Bash(chmod +x /Users/r/git/pulseengine/rivet/scripts/pre-commit)",
+      "Bash(cp /Users/r/git/pulseengine/rivet/scripts/pre-commit /Users/r/git/pulseengine/rivet/.git/hooks/pre-commit)"
     ]
   }
 }
