@@ -191,6 +191,11 @@ artifact-types:
     description: >
       A constraint on a controller's behavior derived by inverting a UCA.
       Specifies what the controller must or must not do.
+    yaml-section: controller-constraints
+    shorthand-links:
+      controller: constrains-controller
+      ucas: inverts-uca
+      hazards: prevents
     fields:
       - name: constraint
         type: text
@@ -218,6 +223,10 @@ artifact-types:
     description: >
       A causal pathway describing how a UCA could occur or how the control
       action could be improperly executed, leading to a hazard.
+    yaml-section: loss-scenarios
+    shorthand-links:
+      uca: caused-by-uca
+      hazards: leads-to-hazard
     fields:
       - name: scenario-type
         type: string
