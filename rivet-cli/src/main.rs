@@ -186,6 +186,10 @@ enum Command {
         /// Scope validation to a named baseline (cumulative)
         #[arg(long)]
         baseline: Option<String>,
+
+        /// Track failure convergence across runs to detect agent retry loops
+        #[arg(long)]
+        track_convergence: bool,
     },
 
     /// List artifacts, optionally filtered by type
@@ -740,12 +744,14 @@ fn run(cli: Cli) -> Result<bool> {
             direct,
             skip_external_validation,
             baseline,
+            track_convergence,
         } => cmd_validate(
             &cli,
             format,
             *direct,
             *skip_external_validation,
             baseline.as_deref(),
+            *track_convergence,
         ),
         Command::List {
             r#type,
@@ -1792,6 +1798,7 @@ fn cmd_validate(
     direct: bool,
     skip_external_validation: bool,
     baseline_name: Option<&str>,
+    track_convergence: bool,
 ) -> Result<bool> {
     check_for_updates();
 
@@ -2075,6 +2082,51 @@ fn cmd_validate(
             );
         } else {
             println!("Result: PASS ({} warnings)", warnings);
+        }
+    }
+
+    // ── Convergence tracking ────────────────────────────────────────────
+    if track_convergence {
+        let convergence_dir = cli.project.join(".rivet");
+        let convergence_path = convergence_dir.join("convergence.json");
+
+        let mut tracker = if convergence_path.exists() {
+            let json = std::fs::read_to_string(&convergence_path)
+                .context("failed to read convergence state")?;
+            rivet_core::convergence::ConvergenceTracker::from_json(&json)
+                .context("failed to parse convergence state")?
+        } else {
+            rivet_core::convergence::ConvergenceTracker::new()
+        };
+
+        let report = tracker.record_run(&diagnostics);
+
+        // Save updated state.
+        std::fs::create_dir_all(&convergence_dir).context("failed to create .rivet directory")?;
+        let json = tracker
+            .to_json()
+            .context("failed to serialize convergence state")?;
+        std::fs::write(&convergence_path, json).context("failed to write convergence state")?;
+
+        // Print convergence guidance.
+        if !report.repeated_failures.is_empty() || !report.resolved_failures.is_empty() {
+            println!();
+            println!("Convergence tracking (run #{}):", report.run_number);
+
+            if !report.resolved_failures.is_empty() {
+                println!(
+                    "  \u{2714} {} failure(s) resolved since last run",
+                    report.resolved_failures.len()
+                );
+            }
+
+            if !report.repeated_failures.is_empty() {
+                println!(
+                    "  \u{26a0} {} repeated failure(s) \u{2014} {}",
+                    report.repeated_failures.len(),
+                    report.strategy.guidance()
+                );
+            }
         }
     }
 
@@ -3026,6 +3078,7 @@ fn cmd_diff(
                         direct: false,
                         skip_external_validation: false,
                         baseline: None,
+                        track_convergence: false,
                     },
                 };
                 let head_cli = Cli {
@@ -3037,6 +3090,7 @@ fn cmd_diff(
                         direct: false,
                         skip_external_validation: false,
                         baseline: None,
+                        track_convergence: false,
                     },
                 };
                 let bc = ProjectContext::load(&base_cli)?;
