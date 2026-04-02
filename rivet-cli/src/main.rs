@@ -154,6 +154,7 @@ enum Command {
         name: Option<String>,
 
         /// Preset: dev (default), aspice, stpa, cybersecurity, aadl, do-178c, en-50128
+        /// Preset: dev (default), aspice, stpa, cybersecurity, aadl, iec-61508, iec-62304
         #[arg(long, default_value = "dev")]
         preset: String,
 
@@ -1023,8 +1024,16 @@ fn resolve_preset(preset: &str) -> Result<InitPreset> {
             schemas: vec!["common", "en-50128"],
             sample_files: vec![("railway-sw.yaml", EN_50128_SAMPLE)],
         }),
+        "iec-61508" => Ok(InitPreset {
+            schemas: vec!["common", "iec-61508"],
+            sample_files: vec![("safety.yaml", IEC_61508_SAMPLE)],
+        }),
+        "iec-62304" => Ok(InitPreset {
+            schemas: vec!["common", "iec-62304"],
+            sample_files: vec![("medical-sw.yaml", IEC_62304_SAMPLE)],
+        }),
         other => anyhow::bail!(
-            "unknown preset: '{other}' (valid: dev, aspice, stpa, stpa-ai, cybersecurity, aadl, eu-ai-act, safety-case, do-178c, en-50128)"
+            "unknown preset: '{other}' (valid: dev, aspice, stpa, stpa-ai, cybersecurity, aadl, eu-ai-act, safety-case, do-178c, en-50128, iec-61508, iec-62304)"
         ),
     }
 }
@@ -1710,6 +1719,84 @@ artifacts:
     links:
       - type: verifies
         target: COMP-001
+";
+
+const IEC_61508_SAMPLE: &str = "\
+artifacts:
+  - id: SC-001
+    type: safety-concept
+    title: Emergency shutdown safety concept
+    status: draft
+    description: >
+      Overall safety strategy for the emergency shutdown system
+      targeting SIL 3 integrity.
+    fields:
+      sil-target: SIL-3
+      scope: >
+        Covers all safety functions related to emergency shutdown
+        of the reactor coolant system.
+
+  - id: SR-001
+    type: safety-req
+    title: Emergency shutdown shall activate within 500ms
+    status: draft
+    description: >
+      The safety-related system shall initiate emergency shutdown
+      within 500ms of detecting an over-pressure condition.
+    fields:
+      sil: SIL-3
+      req-type: functional
+      allocation: ESD-Controller
+    links:
+      - type: derives-from
+        target: SC-001
+
+  - id: SF-001
+    type: safety-function
+    title: Over-pressure emergency shutdown
+    status: draft
+    description: >
+      Detects pressure exceeding 150 bar and actuates shutdown valves
+      to bring the system to a safe state.
+    fields:
+      sil: SIL-3
+      response-time: 500ms
+      diagnostic-coverage: high
+";
+
+const IEC_62304_SAMPLE: &str = "\
+artifacts:
+  - id: SDP-001
+    type: sw-dev-plan
+    title: Infusion pump software development plan
+    status: draft
+    description: >
+      Software development plan for the infusion pump control software,
+      classified as Class C per IEC 62304.
+
+  - id: SWREQ-001
+    type: sw-req
+    title: Flow rate accuracy within 5%
+    status: draft
+    description: >
+      The infusion pump software shall control the flow rate to within
+      +/- 5% of the set rate under all operating conditions.
+    fields:
+      sw-class: C
+      risk-control: Prevents over-infusion hazard
+    links:
+      - type: derives-from
+        target: SDP-001
+
+  - id: ARCH-001
+    type: sw-arch-item
+    title: Flow control module
+    status: draft
+    description: >
+      Software module responsible for closed-loop flow rate control,
+      fully segregated from non-safety user interface code.
+    fields:
+      segregation-level: full
 ";
 
 /// Initialize a new rivet project.
