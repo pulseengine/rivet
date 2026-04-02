@@ -101,7 +101,7 @@ system-constraints:
       what rivet validate/stats/coverage would produce at the
       same point in time. Use the same computation functions.
     links:
-      - type: enforces
+      - type: prevents
         target: H-IMPL-001
 
   - id: SC-IMPL-002
@@ -111,7 +111,7 @@ system-constraints:
       compliance report is generated. The compliance report uses
       the snapshot already in the repo (from the previous release).
     links:
-      - type: enforces
+      - type: prevents
         target: H-IMPL-002
 
   - id: SC-IMPL-003
@@ -121,7 +121,7 @@ system-constraints:
       No caching across calls. This ensures consistency at the
       cost of performance (acceptable for agent interaction).
     links:
-      - type: enforces
+      - type: prevents
         target: H-IMPL-003
 
   - id: SC-IMPL-004
@@ -131,7 +131,7 @@ system-constraints:
       In serve mode, this comes from the current AppState (which
       reloads on file changes). In export mode, it's computed fresh.
     links:
-      - type: enforces
+      - type: prevents
         target: H-IMPL-004
 
   - id: SC-IMPL-005
@@ -141,7 +141,7 @@ system-constraints:
       No artifact_types. This prevents type conflicts between
       independently-developed schemas.
     links:
-      - type: enforces
+      - type: prevents
         target: H-IMPL-005
 
   - id: SC-IMPL-006
@@ -152,5 +152,5 @@ system-constraints:
       minimize hash collisions. The 64-bit FNV-1a hash space
       makes collisions negligible for practical diagnostic counts.
     links:
-      - type: enforces
+      - type: prevents
         target: H-IMPL-006
