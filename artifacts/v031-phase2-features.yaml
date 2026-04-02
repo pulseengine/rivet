@@ -1,0 +1,157 @@
+# Features shipped in v0.3.1 second batch (2026-04-02)
+artifacts:
+  # ── Rowan parser phases ──────────────────────────────────────────────
+
+  - id: FEAT-093
+    type: feature
+    title: Rowan YAML CST parser (Phase 1)
+    status: approved
+    description: >
+      Lossless, span-preserving YAML parser using rowan. 28 SyntaxKind
+      variants, hand-written lexer and recursive-descent parser with
+      indent tracking. Round-trip guarantee for all project YAML files.
+    links:
+      - type: satisfies
+        target: REQ-002
+
+  - id: FEAT-094
+    type: feature
+    title: HIR extraction from rowan CST (Phase 2)
+    status: approved
+    description: >
+      Walks rowan CST to extract Vec<SpannedArtifact> with byte-accurate
+      spans for every field. Cross-validated against serde-based parser.
+    links:
+      - type: satisfies
+        target: REQ-002
+
+  - id: FEAT-095
+    type: feature
+    title: Schema-driven YAML extraction (Phase 3)
+    status: approved
+    description: >
+      Uses yaml-section and shorthand-links schema metadata to parse
+      section-based YAML formats. One function replaces the 861-line
+      hardcoded STPA adapter. Handles generic and section formats.
+    links:
+      - type: satisfies
+        target: REQ-002
+      - type: satisfies
+        target: REQ-010
+
+  # ── Domain schemas ─────────────────────────────────────────────────
+
+  - id: FEAT-096
+    type: feature
+    title: DO-178C airborne software schema
+    status: approved
+    description: >
+      14 artifact types covering PSAC through SAS with DAL-based
+      traceability rules for aviation software certification.
+    links:
+      - type: satisfies
+        target: REQ-010
+
+  - id: FEAT-097
+    type: feature
+    title: EN 50128 railway software safety schema
+    status: approved
+    description: >
+      14 artifact types with SIL-dependent rules, tool qualification,
+      independent assessment for railway software.
+    links:
+      - type: satisfies
+        target: REQ-010
+
+  - id: FEAT-098
+    type: feature
+    title: IEC 61508 functional safety schema
+    status: approved
+    description: >
+      15 artifact types covering the full IEC 61508 V-model with
+      SIL-based traceability and independent assessment rules.
+    links:
+      - type: satisfies
+        target: REQ-010
+
+  - id: FEAT-099
+    type: feature
+    title: IEC 62304 medical device software schema
+    status: approved
+    description: >
+      13 artifact types with class-conditional verification rules
+      for medical device software (Class A/B/C).
+    links:
+      - type: satisfies
+        target: REQ-010
+
+  - id: FEAT-100
+    type: feature
+    title: ISO/PAS 8800 AI safety lifecycle schema
+    status: approved
+    description: >
+      12 artifact types for AI element safety in road vehicles.
+      Bridges to STPA-AI for ML controller traceability.
+    links:
+      - type: satisfies
+        target: REQ-010
+
+  - id: FEAT-101
+    type: feature
+    title: ISO 21448 SOTIF schema
+    status: approved
+    description: >
+      8 artifact types covering functional insufficiency hazards,
+      triggering conditions, and known/unknown unsafe scenarios.
+    links:
+      - type: satisfies
+        target: REQ-010
+
+  # ── Other features ─────────────────────────────────────────────────
+
+  - id: FEAT-102
+    type: feature
+    title: MCP server expanded to 9 tools
+    status: approved
+    description: >
+      Added rivet_get, rivet_coverage, rivet_schema, rivet_embed,
+      rivet_snapshot_capture, rivet_add to the MCP server with
+      proper JSON Schema inputSchema definitions.
+    links:
+      - type: satisfies
+        target: REQ-001
+
+  - id: FEAT-103
+    type: feature
+    title: rivet schema validate command
+    status: approved
+    description: >
+      Validates loaded schemas are well-formed: checks link types
+      exist, target types exist, traceability rule references valid.
+      Found 3 real errors in AADL cross-schema references.
+    links:
+      - type: satisfies
+        target: REQ-010
+
+  - id: FEAT-104
+    type: feature
+    title: Documentation refresh with 7 new topics
+    status: approved
+    description: >
+      New docs: embed-syntax, schemas-overview, schema/eu-ai-act,
+      schema/safety-case, schema/stpa-ai, schema/stpa-sec,
+      schema/research. Updated CLI and YAML references.
+    links:
+      - type: satisfies
+        target: REQ-001
+
+  - id: FEAT-105
+    type: feature
+    title: Pre-commit hook for formatting and clippy
+    status: approved
+    description: >
+      scripts/pre-commit runs cargo fmt and clippy before every commit.
+      Prevents CI format failures.
+    links:
+      - type: satisfies
+        target: REQ-001
