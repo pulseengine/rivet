@@ -1,0 +1,141 @@
+# STPA analysis of LSP diagnostic accuracy
+#
+# Analyzes the hazards of the rivet LSP providing wrong, misleading,
+# or missing diagnostic feedback to users and AI agents.
+
+losses:
+  - id: L-LSP-001
+    title: User deploys artifacts with undetected compliance violations
+    description: >
+      The LSP fails to report a validation error, and the user commits
+      artifacts that violate schema rules. In safety-critical contexts
+      (ASPICE, EU AI Act), this means non-compliant deliverables.
+
+  - id: L-LSP-002
+    title: User wastes time fixing false positive diagnostics
+    description: >
+      The LSP reports an error that doesn't actually exist. The user
+      (or AI agent) spends effort fixing a non-issue, or worse, introduces
+      a real bug while "fixing" the false positive.
+
+  - id: L-LSP-003
+    title: AI agent enters infinite retry loop on wrong diagnostic
+    description: >
+      An AI coding agent receives a diagnostic from the LSP, attempts
+      a fix, but the diagnostic persists because it was either wrong or
+      the fix approach was incorrect. The agent retries indefinitely.
+
+hazards:
+  - id: H-LSP-001
+    title: LSP reports no errors when validation errors exist (false negative)
+    description: >
+      Validation errors are present in the artifact data but the LSP
+      does not surface them. Caused by: parse errors swallowed, validation
+      gaps, stale cache, or missing validation phases.
+    links:
+      - type: leads-to-loss
+        target: L-LSP-001
+
+  - id: H-LSP-002
+    title: LSP reports errors that don't exist (false positive)
+    description: >
+      The LSP reports diagnostics for problems that are not real.
+      Caused by: YAML type coercion misinterpretation, stale cached
+      diagnostics after schema changes, or overly strict validation.
+    links:
+      - type: leads-to-loss
+        target: L-LSP-002
+      - type: leads-to-loss
+        target: L-LSP-003
+
+  - id: H-LSP-003
+    title: LSP diagnostic points to wrong location or file
+    description: >
+      The diagnostic is real but points to the wrong line, wrong file,
+      or wrong artifact. User cannot find and fix the actual issue.
+    links:
+      - type: leads-to-loss
+        target: L-LSP-002
+
+  - id: H-LSP-004
+    title: LSP provides misleading fix suggestion
+    description: >
+      The diagnostic message suggests a fix that doesn't resolve the
+      issue or introduces a new problem. Particularly dangerous for
+      AI agents that follow fix suggestions literally.
+    links:
+      - type: leads-to-loss
+        target: L-LSP-003
+
+system-constraints:
+  - id: SC-LSP-001
+    title: Parse errors MUST produce diagnostics, not empty results
+    description: >
+      When a YAML file fails to parse, the LSP MUST surface a
+      yaml-parse-error diagnostic with file, line, and column.
+      It MUST NOT silently return empty results.
+    links:
+      - type: enforces
+        target: H-LSP-001
+
+  - id: SC-LSP-002
+    title: All validation phases in CLI MUST also run in LSP
+    description: >
+      The LSP validation pipeline must include every phase that
+      `rivet validate` runs: structural, conditional rules, document
+      references, and traceability rules. No phase may be skipped.
+    links:
+      - type: enforces
+        target: H-LSP-001
+
+  - id: SC-LSP-003
+    title: Schema changes MUST invalidate cached diagnostics
+    description: >
+      When schema files (rivet.yaml or schema YAML) change, all cached
+      salsa results must be invalidated and diagnostics recomputed.
+      Stale diagnostics from old schema rules are false positives.
+    links:
+      - type: enforces
+        target: H-LSP-002
+
+  - id: SC-LSP-004
+    title: YAML type coercion MUST be handled explicitly
+    description: >
+      The validator must handle YAML types (boolean, number, null)
+      in fields where the schema expects strings. Silent type coercion
+      that bypasses allowed-values checks is a false negative.
+    links:
+      - type: enforces
+        target: H-LSP-001
+
+  - id: SC-LSP-005
+    title: Diagnostic messages MUST include actionable fix guidance
+    description: >
+      Every diagnostic must explain what is wrong AND suggest how to
+      fix it (command, field to change, expected value). Vague messages
+      like "link validation failed" are not actionable.
+    links:
+      - type: enforces
+        target: H-LSP-004
+
+  - id: SC-LSP-006
+    title: LSP MUST NOT cascade errors from parse failures
+    description: >
+      When one file fails to parse, diagnostics for OTHER files must
+      not change. Broken-link errors caused by a parsed-out file
+      appearing to vanish are cascading false positives.
+    links:
+      - type: enforces
+        target: H-LSP-002
+
+  - id: SC-LSP-007
+    title: Incremental validation MUST produce identical results to full validation
+    description: >
+      The salsa incremental path and the direct validation path must
+      produce the same set of diagnostics for the same input. Any
+      divergence is a cache correctness bug.
+    links:
+      - type: enforces
+        target: H-LSP-001
+      - type: enforces
+        target: H-LSP-002

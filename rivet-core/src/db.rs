@@ -109,6 +109,80 @@ pub fn parse_artifacts(db: &dyn salsa::Database, source: SourceFile) -> Vec<Arti
     }
 }
 
+/// Collect parse errors from all source files as diagnostics.
+///
+/// Each file that fails to parse produces a `yaml-parse-error` diagnostic
+/// with the serde_yaml error details and line/column position.
+#[salsa::tracked]
+pub fn collect_parse_errors(
+    db: &dyn salsa::Database,
+    source_set: SourceFileSet,
+) -> Vec<Diagnostic> {
+    let mut errors = Vec::new();
+    for source in source_set.files(db) {
+        let content = source.content(db);
+        let path = source.path(db);
+        let source_path = std::path::Path::new(&path);
+
+        let filename = source_path
+            .file_name()
+            .and_then(|f| f.to_str())
+            .unwrap_or("");
+        let is_stpa = matches!(
+            filename,
+            "losses.yaml"
+                | "hazards.yaml"
+                | "system-constraints.yaml"
+                | "control-structure.yaml"
+                | "ucas.yaml"
+                | "controller-constraints.yaml"
+                | "loss-scenarios.yaml"
+        );
+
+        let result: Result<(), String> = if is_stpa {
+            stpa::import_stpa_file(source_path)
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        } else {
+            parse_generic_yaml(&content, Some(source_path))
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        };
+
+        if let Err(msg) = result {
+            // Try to extract line/column from the error message.
+            // serde_yaml errors look like: "... at line X column Y"
+            let (line, column) = parse_yaml_error_location(&msg);
+            let mut diag = Diagnostic::new(
+                crate::schema::Severity::Error,
+                None,
+                "yaml-parse-error",
+                format!("{}: {msg}", source_path.display()),
+            );
+            diag.source_file = Some(source_path.to_path_buf());
+            diag.line = line;
+            diag.column = column;
+            errors.push(diag);
+        }
+    }
+    errors
+}
+
+/// Extract line/column from a serde_yaml error message.
+fn parse_yaml_error_location(msg: &str) -> (Option<u32>, Option<u32>) {
+    // serde_yaml errors contain "at line X column Y"
+    if let Some(pos) = msg.find("at line ") {
+        let rest = &msg[pos + 8..];
+        let parts: Vec<&str> = rest.split_whitespace().collect();
+        if parts.len() >= 3 && parts[1] == "column" {
+            let line = parts[0].parse::<u32>().ok().map(|l| l.saturating_sub(1)); // 0-based
+            let col = parts[2].parse::<u32>().ok().map(|c| c.saturating_sub(1));
+            return (line, col);
+        }
+    }
+    (None, None)
+}
+
 /// Run full validation, returning all diagnostics.
 ///
 /// This is the top-level tracked query. It composes structural validation
@@ -129,10 +203,16 @@ pub fn validate_all(
     source_set: SourceFileSet,
     schema_set: SchemaInputSet,
 ) -> Vec<Diagnostic> {
+    // Parse errors come first — if a file can't be parsed, its artifacts
+    // are missing and will cause cascading broken-link errors.
+    let mut diagnostics = collect_parse_errors(db, source_set);
+
     let (store, schema, graph) = build_pipeline(db, source_set, schema_set);
 
     // Structural validation (phases 1-7)
-    let mut diagnostics = crate::validate::validate_structural(&store, &schema, &graph);
+    diagnostics.extend(crate::validate::validate_structural(
+        &store, &schema, &graph,
+    ));
 
     // Conditional rules (phase 8) — separate tracked query for finer
     // invalidation granularity.

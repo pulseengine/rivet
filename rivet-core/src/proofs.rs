@@ -73,6 +73,8 @@ mod proofs {
                 fields: vec![],
                 link_fields: vec![],
                 aspice_process: None,
+                common_mistakes: vec![],
+                example: None,
             }],
             link_types: vec![LinkTypeDef {
                 name: "satisfies".into(),
@@ -290,6 +292,8 @@ mod proofs {
                     cardinality,
                 }],
                 aspice_process: None,
+                common_mistakes: vec![],
+                example: None,
             }],
             link_types: vec![],
             traceability_rules: vec![],
@@ -397,6 +401,8 @@ mod proofs {
                 fields: vec![],
                 link_fields: vec![],
                 aspice_process: None,
+                common_mistakes: vec![],
+                example: None,
             }],
             link_types: vec![LinkTypeDef {
                 name: "satisfies".into(),

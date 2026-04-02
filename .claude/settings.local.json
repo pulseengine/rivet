@@ -18,7 +18,24 @@
       "Bash(cargo clippy:*)",
       "Bash(git branch:*)",
       "Bash(gh run:*)",
-      "Bash(cargo fmt:*)"
+      "Bash(cargo fmt:*)",
+      "Bash(git revert:*)",
+      "Bash(git stash:*)",
+      "Bash(gh repo:*)",
+      "Bash(gh api:*)",
+      "Bash(grep common-mistake:*)",
+      "Bash(cargo run:*)",
+      "Bash(git -C /Users/r/git/pulseengine/rivet/.claude/worktrees/agent-a67ac7e0 diff HEAD -- rivet-core/src/validate.rs)",
+      "Read(//Users/r/.claude/projects/-Users-r-git-pulseengine-rivet/e8d52dc9-2f0a-4563-8eea-6628709bf407/subagents/**)",
+      "Bash(git worktree:*)",
+      "Bash(git -C /Users/r/git/pulseengine/rivet/.claude/worktrees/agent-a1e2061b diff HEAD -- rivet-cli/src/main.rs)",
+      "Bash(grep -c 'test$')",
+      "Bash(cargo clean:*)",
+      "Bash(git -C /Users/r/git/pulseengine/rivet/.claude/worktrees/agent-ae21d534 diff HEAD -- rivet-core/src/validate.rs)",
+      "Bash(grep -rn 'Diagnostic {$\\\\|Diagnostic{' /Users/r/git/pulseengine/rivet/rivet-core/src/validate.rs)",
+      "Bash(sed:*)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); types=[t['name'] for t in d['artifact_types']]; print\\(f'{len\\(types\\)} types'\\); [print\\(f'  {t}'\\) for t in types if t.startswith\\('ai-'\\) or t.startswith\\('risk'\\) or t.startswith\\('data'\\)]\")",
+      "Bash(git -C /Users/r/git/pulseengine/rivet/.claude/worktrees/agent-a5e68f53 diff HEAD -- rivet-cli/src/main.rs)"
     ]
   }
 }

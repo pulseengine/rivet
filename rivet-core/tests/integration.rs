@@ -1059,12 +1059,18 @@ fn test_diff_modified_artifact() {
 fn test_diff_diagnostic_changes() {
     let base_diags = vec![
         validate::Diagnostic {
+            source_file: None,
+            line: None,
+            column: None,
             severity: Severity::Error,
             artifact_id: Some("X-1".into()),
             rule: "broken-link".into(),
             message: "link target missing".into(),
         },
         validate::Diagnostic {
+            source_file: None,
+            line: None,
+            column: None,
             severity: Severity::Warning,
             artifact_id: Some("X-2".into()),
             rule: "allowed-values".into(),
@@ -1076,6 +1082,9 @@ fn test_diff_diagnostic_changes() {
         // The error on X-1 is resolved (not present in head)
         // A new error appears on X-3
         validate::Diagnostic {
+            source_file: None,
+            line: None,
+            column: None,
             severity: Severity::Error,
             artifact_id: Some("X-3".into()),
             rule: "required-field".into(),
@@ -1083,6 +1092,9 @@ fn test_diff_diagnostic_changes() {
         },
         // The warning on X-2 persists
         validate::Diagnostic {
+            source_file: None,
+            line: None,
+            column: None,
             severity: Severity::Warning,
             artifact_id: Some("X-2".into()),
             rule: "allowed-values".into(),

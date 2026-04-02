@@ -1,0 +1,623 @@
+# EU AI Act compliance schema for high-risk AI systems
+#
+# Maps to EU AI Act Annex IV (Technical Documentation) and Articles 9-15
+# (obligations for high-risk AI systems).
+#
+# Applicable from August 2, 2026. Fines up to €35M or 7% global turnover.
+#
+# Usage:
+#   rivet init --schema eu-ai-act
+#   rivet init --schema eu-ai-act,stpa      # with STPA bridge
+#   rivet init --schema eu-ai-act,aspice    # with ASPICE bridge
+#
+# References:
+#   - Annex IV: https://artificialintelligenceact.eu/annex/4/
+#   - Article 9: https://artificialintelligenceact.eu/article/9/
+#   - Article 11: https://artificialintelligenceact.eu/article/11/
+
+schema:
+  name: eu-ai-act
+  version: "0.1.0"
+  extends: [common]
+  description: >
+    High-risk AI system documentation per EU AI Act Annex IV and
+    Articles 9-15. Covers risk management, data governance, monitoring,
+    human oversight, transparency, and conformity assessment.
+
+# ── Annex IV §1: General description ────────────────────────────────────
+
+artifact-types:
+  - name: ai-system-description
+    description: >
+      General description of the AI system (Annex IV §1). Central artifact
+      that all other compliance artifacts link to.
+    fields:
+      - name: intended-purpose
+        type: text
+        required: true
+        description: The specific purpose for which the AI system is intended
+      - name: provider
+        type: string
+        required: true
+        description: Name and contact of the provider
+      - name: ai-version
+        type: string
+        required: false
+        description: Version identifier of the AI system
+      - name: hardware-deps
+        type: text
+        required: false
+        description: Hardware the system is intended to run on
+      - name: software-deps
+        type: text
+        required: false
+        description: Software dependencies and versions
+      - name: deployment-forms
+        type: text
+        required: false
+        description: Forms in which the system is placed on the market or put into service
+      - name: risk-class
+        type: string
+        required: true
+        allowed-values: [high-risk, general-purpose, limited-risk]
+        description: Classification per Annex III
+    common-mistakes:
+      - problem: "Missing intended-purpose — this is the most referenced field in the entire Act"
+        fix-command: "rivet modify AI-SYS-001 --set-field intended-purpose='...'"
+      - problem: "risk-class not set — determines which obligations apply"
+        fix-command: "rivet modify AI-SYS-001 --set-field risk-class=high-risk"
+    example: |
+      - id: AI-SYS-001
+        type: ai-system-description
+        title: Autonomous Emergency Braking AI System
+        status: draft
+        intended-purpose: |
+          Real-time obstacle detection and emergency braking decision
+          for passenger vehicles at speeds up to 130 km/h.
+        provider: PulseEngine GmbH
+        risk-class: high-risk
+
+# ── Annex IV §2: Development & design ───────────────────────────────────
+
+  - name: design-specification
+    description: >
+      Detailed description of design and development methodology,
+      including algorithms, design choices, and optimization objectives
+      (Annex IV §2).
+    fields:
+      - name: algorithms
+        type: text
+        required: true
+        description: Description of algorithmic approaches used
+      - name: design-choices
+        type: text
+        required: true
+        description: Key design decisions and their rationale
+      - name: optimization-objectives
+        type: text
+        required: false
+        description: What the system is optimized for (accuracy, speed, fairness, etc.)
+      - name: training-methodology
+        type: text
+        required: false
+        description: How the model was trained (if applicable)
+    link-fields:
+      - name: system
+        link-type: satisfies
+        target-types: [ai-system-description]
+        required: true
+        cardinality: one-or-many
+
+  - name: data-governance-record
+    description: >
+      Data governance documentation (Art. 10). Covers training, validation,
+      and test datasets — provenance, quality, and bias assessment.
+    fields:
+      - name: data-sources
+        type: text
+        required: true
+        description: Origin and provenance of the data
+      - name: collection-method
+        type: text
+        required: true
+        description: How data was collected
+      - name: labeling-method
+        type: text
+        required: false
+        description: How data was labeled/annotated
+      - name: preparation-steps
+        type: text
+        required: false
+        description: Data cleaning, augmentation, preprocessing
+      - name: bias-assessment
+        type: text
+        required: true
+        description: Assessment of potential biases in the data
+      - name: data-size
+        type: string
+        required: false
+        description: Size of datasets (training, validation, test)
+    link-fields:
+      - name: design
+        link-type: governs
+        target-types: [design-specification]
+        required: true
+        cardinality: one-or-many
+    common-mistakes:
+      - problem: "Missing bias-assessment — Art. 10 explicitly requires bias examination"
+        fix-command: "rivet modify DGR-001 --set-field bias-assessment='...'"
+
+  - name: third-party-component
+    description: >
+      Pre-trained models or components from third parties (Annex IV §2).
+      Documents provenance, intended use, and known limitations.
+    fields:
+      - name: component-provider
+        type: string
+        required: true
+      - name: component-version
+        type: string
+        required: true
+      - name: license
+        type: string
+        required: false
+      - name: component-intended-use
+        type: text
+        required: true
+      - name: known-limitations
+        type: text
+        required: true
+    link-fields:
+      - name: used-in
+        link-type: used-by
+        target-types: [design-specification]
+        required: true
+        cardinality: one-or-many
+
+# ── Annex IV §3 + Art. 12: Monitoring & logging ────────────────────────
+
+  - name: monitoring-measure
+    description: >
+      Monitoring and control measures (Annex IV §3). Includes logging
+      specifications per Art. 12.
+    fields:
+      - name: mechanism-type
+        type: string
+        required: true
+        allowed-values: [logging, alerting, performance-monitoring, drift-detection, human-override]
+      - name: logging-scope
+        type: text
+        required: false
+        description: What events are logged, at what granularity
+      - name: alert-conditions
+        type: text
+        required: false
+        description: Conditions that trigger alerts to operators
+      - name: human-intervention-capability
+        type: text
+        required: false
+        description: How humans can intervene or override
+      - name: retention-period
+        type: string
+        required: false
+        description: How long logs are retained
+    link-fields:
+      - name: system
+        link-type: monitors
+        target-types: [ai-system-description]
+        required: true
+        cardinality: one-or-many
+
+# ── Annex IV §4 + Art. 15: Performance evaluation ──────────────────────
+
+  - name: performance-evaluation
+    description: >
+      Performance metrics and evaluation methodology (Annex IV §4).
+      Covers accuracy (Art. 15(1)), robustness (Art. 15(2)), and
+      general performance characteristics.
+    fields:
+      - name: metric-name
+        type: string
+        required: true
+      - name: metric-value
+        type: string
+        required: true
+      - name: methodology
+        type: text
+        required: true
+        description: How the metric was measured
+      - name: evaluation-scope
+        type: string
+        required: false
+        allowed-values: [accuracy, robustness, fairness, cybersecurity, general]
+      - name: population-subgroups
+        type: text
+        required: false
+        description: Performance broken down by demographic/population subgroups
+      - name: bias-results
+        type: text
+        required: false
+        description: Results of bias testing across subgroups
+    link-fields:
+      - name: design
+        link-type: evaluates
+        target-types: [design-specification]
+        required: true
+        cardinality: one-or-many
+
+# ── Annex IV §5 + Art. 9: Risk management ──────────────────────────────
+
+  - name: risk-management-process
+    description: >
+      The continuous, iterative risk management process (Art. 9). Documents
+      the overall approach to identifying, analyzing, and mitigating risks.
+    fields:
+      - name: scope
+        type: text
+        required: true
+      - name: methodology
+        type: text
+        required: true
+      - name: review-frequency
+        type: string
+        required: false
+        description: How often the risk management process is reviewed
+    link-fields:
+      - name: system
+        link-type: manages-risk-for
+        target-types: [ai-system-description]
+        required: true
+        cardinality: one-or-many
+
+  - name: risk-assessment
+    description: >
+      Individual risk entry (Art. 9(2a)). Identified risk with likelihood,
+      severity, and affected fundamental rights.
+    fields:
+      - name: risk-description
+        type: text
+        required: true
+      - name: likelihood
+        type: string
+        required: true
+        allowed-values: [rare, unlikely, possible, likely, almost-certain]
+      - name: severity
+        type: string
+        required: true
+        allowed-values: [negligible, minor, moderate, major, catastrophic]
+      - name: risk-level
+        type: string
+        required: true
+        allowed-values: [low, medium, high, critical]
+      - name: affected-rights
+        type: text
+        required: false
+        description: Fundamental rights potentially affected
+    link-fields:
+      - name: system
+        link-type: leads-to
+        target-types: [ai-system-description]
+        required: true
+        cardinality: one-or-many
+
+  - name: risk-mitigation
+    description: >
+      Targeted risk mitigation measure (Art. 9(4)). Every identified risk
+      must have at least one mitigation.
+    fields:
+      - name: measure-description
+        type: text
+        required: true
+      - name: residual-risk
+        type: text
+        required: true
+        description: Remaining risk after mitigation is applied
+      - name: effectiveness-evidence
+        type: text
+        required: false
+        description: Evidence that the mitigation is effective
+    link-fields:
+      - name: risk
+        link-type: mitigates
+        target-types: [risk-assessment]
+        required: true
+        cardinality: one-or-many
+
+  - name: misuse-risk
+    description: >
+      Risk from reasonably foreseeable misuse (Art. 9(2b)). Must be
+      identified as part of the risk management process.
+    fields:
+      - name: misuse-scenario
+        type: text
+        required: true
+      - name: likelihood
+        type: string
+        required: true
+        allowed-values: [rare, unlikely, possible, likely, almost-certain]
+      - name: harm-potential
+        type: text
+        required: true
+    link-fields:
+      - name: process
+        link-type: identified-by
+        target-types: [risk-management-process]
+        required: true
+        cardinality: one-or-many
+
+# ── Art. 13: Transparency ──────────────────────────────────────────────
+
+  - name: transparency-record
+    description: >
+      Transparency information for deployers (Art. 13). Documents what
+      information is provided to downstream users about the system's
+      capabilities and limitations.
+    fields:
+      - name: information-scope
+        type: text
+        required: true
+        description: What information is provided to deployers
+      - name: user-facing-docs
+        type: text
+        required: false
+        description: Documentation provided to end users
+      - name: limitations-disclosed
+        type: text
+        required: true
+        description: Known limitations communicated to deployers
+    link-fields:
+      - name: system
+        link-type: transparency-for
+        target-types: [ai-system-description]
+        required: true
+        cardinality: one-or-many
+
+# ── Art. 14: Human oversight ───────────────────────────────────────────
+
+  - name: human-oversight-measure
+    description: >
+      Human oversight capability (Art. 14). Documents how humans can
+      understand, monitor, and intervene in the AI system's operation.
+    fields:
+      - name: oversight-type
+        type: string
+        required: true
+        allowed-values: [understanding, monitoring, intervention, override, shutdown]
+      - name: capability-description
+        type: text
+        required: true
+      - name: training-required
+        type: text
+        required: false
+        description: Training needed for the human overseer
+    link-fields:
+      - name: system
+        link-type: overseen-by
+        target-types: [ai-system-description]
+        required: true
+        cardinality: one-or-many
+
+# ── Annex IV §7: Standards ─────────────────────────────────────────────
+
+  - name: standards-reference
+    description: >
+      Reference to applied harmonised standards (Annex IV §7).
+    fields:
+      - name: standard-id
+        type: string
+        required: true
+        description: "Standard identifier (e.g., ISO 42001, ISO/IEC 23894)"
+      - name: standard-title
+        type: string
+        required: true
+      - name: coverage-scope
+        type: text
+        required: false
+        description: Which aspects of the system the standard covers
+      - name: partial-application-rationale
+        type: text
+        required: false
+        description: If only partially applied, why
+    link-fields:
+      - name: system
+        link-type: applied-to
+        target-types: [ai-system-description]
+        required: true
+        cardinality: one-or-many
+
+# ── Annex IV §8: Conformity declaration ────────────────────────────────
+
+  - name: conformity-declaration
+    description: >
+      EU declaration of conformity (Annex IV §8, Art. 47).
+    fields:
+      - name: declaration-date
+        type: string
+        required: true
+      - name: notified-body
+        type: string
+        required: false
+        description: Notified body involved (if applicable)
+      - name: conformity-scope
+        type: text
+        required: true
+        description: Scope of the conformity assessment
+    link-fields:
+      - name: system
+        link-type: declares
+        target-types: [ai-system-description]
+        required: true
+        cardinality: exactly-one
+
+# ── Annex IV §9 + Art. 72: Post-market monitoring ──────────────────────
+
+  - name: post-market-plan
+    description: >
+      Post-market monitoring plan (Annex IV §9, Art. 72). Covers
+      ongoing monitoring after deployment.
+    fields:
+      - name: monitoring-scope
+        type: text
+        required: true
+      - name: drift-detection
+        type: text
+        required: false
+        description: How model/data drift is detected
+      - name: incident-reporting
+        type: text
+        required: true
+        description: Process for reporting serious incidents (Art. 73)
+      - name: review-frequency
+        type: string
+        required: true
+        description: How often the monitoring plan is reviewed
+    link-fields:
+      - name: system
+        link-type: monitors-post-market
+        target-types: [ai-system-description]
+        required: true
+        cardinality: one-or-many
+
+# ── Link types ──────────────────────────────────────────────────────────
+
+link-types:
+  - name: manages-risk-for
+    inverse: risk-managed-by
+    description: Risk management process covers this AI system
+
+  - name: governs
+    inverse: governed-by
+    description: Data governance record covers this design specification
+
+  - name: monitors
+    inverse: monitored-by
+    description: Monitoring measure covers this AI system
+
+  - name: evaluates
+    inverse: evaluated-by
+    description: Performance evaluation assesses this design specification
+
+  - name: leads-to
+    inverse: risk-for
+    description: Risk assessment identifies risk for this AI system
+
+  - name: mitigates
+    inverse: mitigated-by
+    description: Risk mitigation addresses this risk assessment
+
+  - name: used-by
+    inverse: uses
+    description: Third-party component is used in this design
+
+  - name: overseen-by
+    inverse: oversees
+    description: Human oversight measure covers this AI system
+
+  - name: applied-to
+    inverse: applies-standard
+    description: Standards reference applies to this AI system
+
+  - name: declares
+    inverse: declared-by
+    description: Conformity declaration covers this AI system
+
+  - name: monitors-post-market
+    inverse: post-market-monitored-by
+    description: Post-market monitoring plan covers this AI system
+
+  - name: transparency-for
+    inverse: transparent-to
+    description: Transparency record documents this AI system
+
+  - name: identified-by
+    inverse: identifies
+    description: Misuse risk identified by this risk management process
+
+# ── Traceability rules ──────────────────────────────────────────────────
+
+traceability-rules:
+  # Art. 9: Risk management
+  - name: system-has-risk-management
+    description: Every AI system must have a risk management process (Art. 9)
+    source-type: ai-system-description
+    required-backlink: manages-risk-for
+    from-types: [risk-management-process]
+    severity: error
+
+  - name: risk-has-mitigation
+    description: Every risk assessment must have a mitigation measure (Art. 9(4))
+    source-type: risk-assessment
+    required-backlink: mitigates
+    from-types: [risk-mitigation]
+    severity: error
+
+  - name: risk-covers-misuse
+    description: Risk management should identify foreseeable misuse risks (Art. 9(2b))
+    source-type: risk-management-process
+    required-backlink: identified-by
+    from-types: [misuse-risk]
+    severity: warning
+
+  # Art. 10: Data governance
+  - name: design-has-data-governance
+    description: Design must have data governance documentation (Art. 10)
+    source-type: design-specification
+    required-backlink: governs
+    from-types: [data-governance-record]
+    severity: error
+
+  # Art. 12: Monitoring & logging
+  - name: system-has-monitoring
+    description: AI system must have monitoring measures (Art. 12)
+    source-type: ai-system-description
+    required-backlink: monitors
+    from-types: [monitoring-measure]
+    severity: error
+
+  # Art. 13: Transparency
+  - name: system-has-transparency
+    description: Transparency information must be documented (Art. 13)
+    source-type: ai-system-description
+    required-backlink: transparency-for
+    from-types: [transparency-record]
+    severity: error
+
+  # Art. 14: Human oversight
+  - name: system-has-human-oversight
+    description: Human oversight measures must be documented (Art. 14)
+    source-type: ai-system-description
+    required-backlink: overseen-by
+    from-types: [human-oversight-measure]
+    severity: error
+
+  # Art. 15: Accuracy, robustness
+  - name: design-has-evaluation
+    description: Design must have performance evaluation (Art. 15)
+    source-type: design-specification
+    required-backlink: evaluates
+    from-types: [performance-evaluation]
+    severity: error
+
+  # Annex IV §7: Standards
+  - name: system-has-standards
+    description: Applicable standards must be referenced (Annex IV §7)
+    source-type: ai-system-description
+    required-backlink: applied-to
+    from-types: [standards-reference]
+    severity: warning
+
+  # Annex IV §8: Conformity
+  - name: system-has-declaration
+    description: EU conformity declaration required (Annex IV §8)
+    source-type: ai-system-description
+    required-backlink: declares
+    from-types: [conformity-declaration]
+    severity: error
+
+  # Annex IV §9: Post-market
+  - name: system-has-post-market
+    description: Post-market monitoring plan required (Art. 72, Annex IV §9)
+    source-type: ai-system-description
+    required-backlink: monitors-post-market
+    from-types: [post-market-plan]
+    severity: error

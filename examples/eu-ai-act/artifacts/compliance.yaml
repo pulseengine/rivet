@@ -1,0 +1,181 @@
+# Compliance artifacts — Art. 10, 12-15, Annex IV §3-4, §7-9
+artifacts:
+  - id: DGR-001
+    type: data-governance-record
+    title: Training and validation data governance
+    status: approved
+    fields:
+      data-sources: >
+        5 years of operational telemetry from 200 substations (Nordic Energy Grid).
+        2 years of maintenance logs from 3 partner utilities (anonymized).
+        Public weather data from ECMWF ERA5 reanalysis dataset.
+      collection-method: >
+        SCADA system automated export (15-minute intervals).
+        Manual maintenance log entry via field service app.
+        Weather data via API batch download.
+      labeling-method: >
+        Failure events labeled by maintenance engineers using root-cause
+        analysis reports. Inter-rater agreement: Cohen's κ = 0.87.
+      preparation-steps: >
+        Outlier removal (>5σ), gap filling (linear interpolation for <1h gaps),
+        feature engineering (rolling statistics, FFT components),
+        train/val/test split: 70/15/15 by installation (not by time).
+      bias-assessment: >
+        Geographic bias: 80% Nordic data, 20% Central European.
+        Equipment age bias: median 8 years, range 1-25.
+        Mitigation: stratified sampling + synthetic augmentation for
+        underrepresented regions and equipment ages.
+      data-size: >
+        Training: 2.1M samples, Validation: 450K, Test: 450K.
+    links:
+      - type: governs
+        target: DS-001
+
+  - id: MON-001
+    type: monitoring-measure
+    title: Production monitoring and drift detection
+    status: approved
+    fields:
+      mechanism-type: drift-detection
+      logging-scope: >
+        All predictions logged: input features, confidence score,
+        prediction result, and actual outcome (when known).
+        PSI (Population Stability Index) computed daily per feature group.
+      alert-conditions: >
+        PSI > 0.2 on any feature group → data team review.
+        Accuracy below 90% over 30-day rolling window → model retraining.
+        Confidence calibration error > 5% → recalibration triggered.
+      human-intervention-capability: >
+        Operators can disable AI recommendations per-substation
+        via dashboard toggle. Emergency global disable via API.
+      retention-period: 5 years (per GDPR Art. 17 + EU AI Act Art. 12)
+    links:
+      - type: monitors
+        target: AI-SYS-001
+
+  - id: PE-001
+    type: performance-evaluation
+    title: Failure prediction accuracy
+    status: approved
+    fields:
+      metric-name: Critical failure recall
+      metric-value: "98.7%"
+      methodology: >
+        Measured on held-out test set (450K samples from installations
+        not seen during training). Critical failures defined as ASAI
+        severity ≥ 3 (grid instability or customer outage).
+      evaluation-scope: accuracy
+      population-subgroups: >
+        Nordic installations: 99.1% recall.
+        Central European: 97.2% recall.
+        Equipment age >15y: 96.8% recall.
+      bias-results: >
+        2.3% recall gap between Nordic and CE installations.
+        Accepted as within tolerance; active data collection program
+        to close gap over next 2 release cycles.
+    links:
+      - type: evaluates
+        target: DS-001
+
+  - id: HO-001
+    type: human-oversight-measure
+    title: Operator review and override dashboard
+    status: approved
+    fields:
+      oversight-type: intervention
+      capability-description: >
+        Web dashboard showing all pending recommendations with
+        explainability view (SHAP feature importance per prediction).
+        Operators can approve, defer, escalate, or override each
+        recommendation. Audit log of all human decisions.
+      training-required: >
+        8-hour initial training on system capabilities and limitations.
+        Annual refresher (2 hours). Domain expertise in substation
+        maintenance required (minimum 3 years field experience).
+    links:
+      - type: overseen-by
+        target: AI-SYS-001
+
+  - id: TRANS-001
+    type: transparency-record
+    title: Deployer and user information
+    status: approved
+    fields:
+      information-scope: >
+        Model card (IEEE 1597.1 format). Training data summary.
+        Performance metrics by subgroup. Known limitations.
+        Integration guide for SCADA systems.
+      user-facing-docs: >
+        Operator manual with decision-making guidance.
+        FAQ on interpreting confidence scores.
+      limitations-disclosed: >
+        Not validated for tropical climate installations.
+        Degraded performance for equipment older than 20 years.
+        Requires minimum 6 months of historical data per installation.
+    links:
+      - type: transparency-for
+        target: AI-SYS-001
+
+  - id: STD-001
+    type: standards-reference
+    title: ISO/IEC 42001 AI Management System
+    status: approved
+    fields:
+      standard-id: ISO/IEC 42001:2023
+      standard-title: AI Management System
+      coverage-scope: >
+        Full scope — AI governance, risk management, performance
+        monitoring, continual improvement.
+    links:
+      - type: applied-to
+        target: AI-SYS-001
+
+  - id: STD-002
+    type: standards-reference
+    title: ISO/IEC 23894 AI Risk Management
+    status: approved
+    fields:
+      standard-id: ISO/IEC 23894:2023
+      standard-title: Guidance on AI Risk Management
+      coverage-scope: >
+        Risk identification and mitigation methodology.
+      partial-application-rationale: >
+        Applied to risk assessment process; incident response
+        procedures follow existing ISO 27001 framework instead.
+    links:
+      - type: applied-to
+        target: AI-SYS-001
+
+  - id: CONF-001
+    type: conformity-declaration
+    title: EU Declaration of Conformity
+    status: draft
+    fields:
+      declaration-date: "2026-07-15"
+      conformity-scope: >
+        Conformity with EU AI Act requirements for high-risk AI systems
+        as classified under Annex III, point 2(b) — management and
+        operation of critical infrastructure (energy).
+    links:
+      - type: declares
+        target: AI-SYS-001
+
+  - id: PMP-001
+    type: post-market-plan
+    title: Post-market monitoring plan
+    status: approved
+    fields:
+      monitoring-scope: >
+        Continuous monitoring of prediction accuracy, data drift,
+        incident rates, and operator feedback across all deployments.
+      drift-detection: >
+        Daily PSI computation. Monthly concept drift analysis.
+        Quarterly full model performance re-evaluation.
+      incident-reporting: >
+        Serious incidents reported to national market surveillance
+        authority within 15 days (Art. 73). Internal incident database
+        with automated severity classification.
+      review-frequency: Quarterly review of monitoring data + annual comprehensive review
+    links:
+      - type: monitors-post-market
+        target: AI-SYS-001

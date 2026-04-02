@@ -1,0 +1,39 @@
+# Bridge: EU AI Act ↔ ASPICE
+#
+# Maps ASPICE verification evidence to EU AI Act performance evaluation.
+# Use with: rivet init --schema eu-ai-act,aspice
+#
+# ASPICE provides the V-model verification chain;
+# EU AI Act requires performance evaluation evidence (Art. 15).
+# This bridge links them so ASPICE verification results automatically
+# contribute to the Act's accuracy/robustness documentation.
+
+schema:
+  name: eu-ai-act-aspice-bridge
+  version: "0.1.0"
+  extends: [eu-ai-act, aspice]
+  description: >
+    Links ASPICE verification evidence to EU AI Act performance
+    evaluation requirements. ASPICE verification verdicts feed
+    into Art. 15 accuracy and robustness documentation.
+
+link-types:
+  - name: evaluation-from-verification
+    inverse: verification-supports-evaluation
+    description: Performance evaluation uses ASPICE verification evidence
+    source-types: [performance-evaluation]
+    target-types: [sw-verification, sys-verification, verification-verdict]
+
+  - name: design-from-sw-arch
+    inverse: sw-arch-informs-design
+    description: AI system design specification draws from ASPICE software architecture
+    source-types: [design-specification]
+    target-types: [sw-arch-component, sys-arch-element]
+
+traceability-rules:
+  - name: evaluations-backed-by-verification
+    description: Performance evaluations should reference ASPICE verification evidence
+    source-type: performance-evaluation
+    required-link: evaluation-from-verification
+    target-types: [sw-verification, sys-verification, verification-verdict]
+    severity: warning

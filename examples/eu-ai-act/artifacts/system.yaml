@@ -1,0 +1,56 @@
+# AI System Description and Design — Annex IV §1-2
+artifacts:
+  - id: AI-SYS-001
+    type: ai-system-description
+    title: Predictive Maintenance AI for Critical Infrastructure
+    status: approved
+    description: >
+      High-risk AI system that analyzes infrastructure sensor telemetry
+      to predict component failures and recommend maintenance schedules.
+      Deployed in energy grid substations across the EU.
+    fields:
+      intended-purpose: >
+        Real-time analysis of infrastructure sensor data (vibration,
+        temperature, power quality) to predict equipment failures
+        24-72 hours in advance and recommend preventive maintenance.
+      provider: InfraAI GmbH, Berlin
+      ai-version: "2.1.0"
+      hardware-deps: >
+        Edge inference on NVIDIA Jetson Orin NX (8GB).
+        Cloud training on A100 GPU cluster.
+      software-deps: >
+        PyTorch 2.1, XGBoost 2.0, scikit-learn 1.3,
+        ONNX Runtime 1.16 for edge deployment.
+      deployment-forms: >
+        Cloud SaaS dashboard for fleet management.
+        Edge container for local inference at substations.
+      risk-class: high-risk
+
+  - id: DS-001
+    type: design-specification
+    title: Hybrid prediction model design
+    status: approved
+    description: >
+      Two-stage model: XGBoost for failure probability estimation,
+      LSTM for remaining useful life prediction.
+    fields:
+      algorithms: >
+        Stage 1: XGBoost gradient-boosted ensemble (500 trees, max depth 8)
+        for binary failure classification.
+        Stage 2: LSTM network (2 layers, 128 hidden units) for remaining
+        useful life regression on classified-at-risk components.
+      design-choices: >
+        Hybrid approach chosen over end-to-end deep learning for:
+        (a) interpretability of Stage 1 decisions (Art. 13),
+        (b) reliability of Stage 2 predictions under distribution shift,
+        (c) ability to deploy Stage 1 on edge with Stage 2 in cloud.
+      optimization-objectives: >
+        Minimize false negative rate (missed failures) at the cost of
+        higher false positive rate (unnecessary inspections).
+        Target: <1% missed critical failures, <15% false alarm rate.
+      training-methodology: >
+        Stage 1 trained on 5 years of labeled failure events.
+        Stage 2 trained on degradation curves from 200+ components.
+    links:
+      - type: satisfies
+        target: AI-SYS-001

@@ -474,6 +474,8 @@ mod tests {
                 }],
                 link_fields: vec![],
                 aspice_process: None,
+                common_mistakes: vec![],
+                example: None,
             },
             ArtifactTypeDef {
                 name: "feature".to_string(),
@@ -481,6 +483,8 @@ mod tests {
                 fields: vec![],
                 link_fields: vec![],
                 aspice_process: None,
+                common_mistakes: vec![],
+                example: None,
             },
         ];
         schema_file.link_types = vec![LinkTypeDef {
