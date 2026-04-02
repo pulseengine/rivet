@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1775084474873,
+  "lastUpdate": 1775090047536,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "99b853480464d8b4475a9f6cfdf3107f8db2507f",
-          "message": "test(playwright): 17 audit regression tests — security, perf, edge cases, consistency (#62)\n\nPrevents recurrence of all findings from the deep serve+export audit:\n- Security: mermaid strict mode, CSP no unsafe-eval, HTML-escaped IDs\n- Performance: page navigation under 5s (cached diagnostics)\n- Edge cases: pagination bounds (0, 99999, per_page=0/1), unknown sort,\n  special chars in search and Cmd+K\n- Consistency: nav href=hx-get, print footer, all routes return 200\n\nRefs: TEST-012\n\nCo-authored-by: Test <test@test.com>\nCo-authored-by: Claude Opus 4.6 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-03-21T18:13:25+01:00",
-          "tree_id": "f1b2c03d505094f5df6a65c77f8ca5f8cc50e7af",
-          "url": "https://github.com/pulseengine/rivet/commit/99b853480464d8b4475a9f6cfdf3107f8db2507f"
-        },
-        "date": 1774113604313,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 77860,
-            "range": "± 2521",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 812468,
-            "range": "± 9287",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 9942638,
-            "range": "± 328785",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2253,
-            "range": "± 21",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 25022,
-            "range": "± 324",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 347202,
-            "range": "± 1713",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 913794,
-            "range": "± 33922",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 163895,
-            "range": "± 765",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1878577,
-            "range": "± 15482",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 24390942,
-            "range": "± 1552258",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 33536,
-            "range": "± 98",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 459382,
-            "range": "± 2631",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 4736309,
-            "range": "± 43403",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4351,
-            "range": "± 33",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 60100,
-            "range": "± 432",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 761954,
-            "range": "± 3996",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 63565,
-            "range": "± 329",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 703116,
-            "range": "± 2576",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7641507,
-            "range": "± 103801",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 801,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 7453,
-            "range": "± 44",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 112070,
-            "range": "± 930",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 23225,
-            "range": "± 108",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 164680,
-            "range": "± 1263",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1459424,
-            "range": "± 19790",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1575525,
             "range": "± 19907",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2f54fabc1a82f81fd42851ca084c300829e79d1f",
+          "message": "feat: schema, LSP fixes, EU AI Act, salsa default, STPA analysis (#101)\n\n* feat(schema): add common-mistakes and example fields to artifact types\n\nExtends ArtifactTypeDef with two optional guidance fields:\n- common_mistakes: Vec<MistakeGuide> — problem/fix pairs for AI agents\n- example: Option<String> — YAML snippet shown in schema show output\n\nBoth fields default to empty, so existing schemas parse unchanged.\nThe rivet schema show command (text + JSON) surfaces these fields.\n\n* content(schema): add common-mistakes and examples to dev schema\n\nAdds guidance fields to requirement, design-decision, and feature\ntypes in the dev schema. Shown in 'rivet schema show' output and\navailable to AI agents via JSON format.\n\n* test: add LSP test suite and YAML edge case tests\n\nFirst-ever LSP tests (25 tests):\n- lsp_word_at_position: word extraction, edge cases, special chars\n- lsp_find_artifact_line: exact ID matching, format variants\n- lsp_uri_to_path roundtrip\n- Diagnostic-to-LSP mapping: severity, file grouping, line numbers\n\nYAML edge case tests (16 tests):\n- serde_yaml 0.9 uses YAML 1.2: yes/no are strings, only true/false\n  are booleans (no Norway problem)\n- Numeric coercion: bare 1.0 is float, quoted stays string\n- Duplicate keys: struct-level is error, map-level last wins\n- Error recovery: malformed YAML, missing fields, empty docs\n\n* fix(lsp): surface YAML parse errors as diagnostics with line/column\n\nParse errors are now shown as LSP diagnostics instead of silently\nreturning empty results. Extends Diagnostic with source_file, line,\ncolumn fields. The LSP diagnostic publisher checks source_file first\n(parse errors), then falls back to artifact-based file lookup.\n\nAlso adds collect_parse_errors() salsa tracked function that\ncomposes with structural and conditional-rule validation in\nvalidate_all().\n\n* feat(schema): add EU AI Act compliance schema for high-risk AI systems\n\nPhase 1 of #99: schemas/eu-ai-act.yaml with 15 artifact types mapping\nto EU AI Act Annex IV (9 mandatory sections) and Articles 9-15.\n\nArtifact types: ai-system-description, design-specification,\ndata-governance-record, third-party-component, monitoring-measure,\nperformance-evaluation, risk-management-process, risk-assessment,\nrisk-mitigation, misuse-risk, transparency-record,\nhuman-oversight-measure, standards-reference, conformity-declaration,\npost-market-plan.\n\n14 link types + 12 traceability rules enforcing mandatory obligations.\nRegistered as embedded schema (compiled into binary).\n\nEU AI Act high-risk provisions applicable from August 2, 2026.\n\n* feat(validate): detect unknown link types and unknown fields\n\nTwo new validation phases:\n- Phase 8: unknown-link-type — warns when an artifact uses a link\n  type not defined in the schema\n- Phase 9: unknown-field — info when an artifact has fields not\n  defined in its type's schema\n\nBoth are non-breaking (warning/info severity) but catch common\nmistakes that previously went undetected.\n\n* safety(stpa): STPA analysis of LSP diagnostic accuracy\n\nLosses: undetected compliance violations, wasted time on false\npositives, AI agent infinite retry loops.\n\nHazards: false negatives (H-LSP-001), false positives (H-LSP-002),\nwrong location (H-LSP-003), misleading fix suggestions (H-LSP-004).\n\n7 system constraints: SC-LSP-001 through SC-LSP-007 covering parse\nerror handling, validation completeness, schema change invalidation,\nYAML type coercion, actionable messages, cascade prevention, and\nincremental validation correctness.\n\nStatus of constraints:\n- SC-LSP-001: SATISFIED (PR #101 — parse errors surfaced)\n- SC-LSP-004: SATISFIED (PR #101 — type-aware validation)\n- SC-LSP-002: PARTIALLY (document refs not in LSP yet)\n- SC-LSP-003: NOT SATISFIED (schema changes not re-loaded)\n- SC-LSP-005: PARTIALLY (some messages still vague)\n- SC-LSP-006: PARTIALLY (parse errors no longer cascade to empty, but broken-link cascade still possible)\n- SC-LSP-007: PENDING (#22 — salsa becoming default)\n\n* feat(validate): make salsa incremental validation the default (#22)\n\nThe salsa incremental validation pipeline (db.rs) is now the default\npath for 'rivet validate'. The old direct path is available via\n--direct flag for fallback or when --baseline scoping is used.\n\nChanges:\n- Removed --incremental and --verify-incremental flags\n- Added --direct flag (opt-in to old non-incremental path)\n- Default: salsa tracked functions (parse_artifacts, validate_all,\n  evaluate_conditional_rules) with automatic cache invalidation\n- Baseline-scoped validation automatically uses direct path since\n  salsa doesn't support scoped stores\n\nThe salsa path produces identical diagnostics to the direct path,\nverified by the existing 22 salsa database tests and previous\n--verify-incremental infrastructure.\n\nRefs: #22\n\n* feat(eu-ai-act): init preset, bridge schemas, example project (#99)\n\nCompletes EU AI Act Phase 1 + Phase 2:\n\n- rivet init --preset eu-ai-act — starter artifacts covering\n  system description, design, risk management, monitoring, oversight\n- eu-ai-act-stpa.bridge.yaml — maps STPA hazards → risk assessments,\n  system constraints → risk mitigations\n- eu-ai-act-aspice.bridge.yaml — maps ASPICE verification evidence →\n  performance evaluations\n- examples/eu-ai-act/ — full 17-artifact example project demonstrating\n  Annex IV compliance for a predictive maintenance AI system\n  - Validates clean (0 warnings)\n  - Document with {{stats}}, {{coverage}}, {{diagnostics}} embeds\n  - Realistic content: XGBoost+LSTM hybrid model, bias assessment,\n    drift detection, human oversight dashboard\n\n* style: cargo fmt",
+          "timestamp": "2026-04-02T02:27:16+02:00",
+          "tree_id": "4f5fea0c50fd373e7f6407209d39875a7f3128a5",
+          "url": "https://github.com/pulseengine/rivet/commit/2f54fabc1a82f81fd42851ca084c300829e79d1f"
+        },
+        "date": 1775090047148,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 78925,
+            "range": "± 661",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 838586,
+            "range": "± 4825",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 12569532,
+            "range": "± 431354",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2231,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 26344,
+            "range": "± 205",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 364321,
+            "range": "± 1778",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 911922,
+            "range": "± 27466",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 149085,
+            "range": "± 1553",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1775548,
+            "range": "± 40589",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 30638680,
+            "range": "± 772538",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 81357,
+            "range": "± 618",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 884487,
+            "range": "± 2428",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 10894352,
+            "range": "± 343799",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4470,
+            "range": "± 37",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 61781,
+            "range": "± 1068",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 767093,
+            "range": "± 4240",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 60779,
+            "range": "± 177",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 686923,
+            "range": "± 3127",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8217505,
+            "range": "± 308322",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 808,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7403,
+            "range": "± 68",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 130638,
+            "range": "± 1316",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 22585,
+            "range": "± 161",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 155754,
+            "range": "± 744",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1454099,
+            "range": "± 12618",
             "unit": "ns/iter"
           }
         ]
