@@ -110,6 +110,22 @@ pub fn import_stpa_directory(dir: &Path) -> Result<Vec<Artifact>, Error> {
         }
     }
 
+    // Also try any other .yaml files via content-based dispatch.
+    let known: std::collections::HashSet<&str> = file_parsers.iter().map(|(n, _)| *n).collect();
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            if name_str.ends_with(".yaml") && !known.contains(name_str.as_ref()) {
+                let path = entry.path();
+                match import_stpa_by_content(&path) {
+                    Ok(arts) => artifacts.extend(arts),
+                    Err(e) => log::debug!("skipping {}: {}", path.display(), e),
+                }
+            }
+        }
+    }
+
     Ok(artifacts)
 }
 
@@ -126,10 +142,8 @@ pub fn import_stpa_file(path: &Path) -> Result<Vec<Artifact>, Error> {
         "controller-constraints.yaml" => parse_controller_constraints,
         "loss-scenarios.yaml" => parse_loss_scenarios,
         _ => {
-            return Err(Error::Adapter(format!(
-                "unknown STPA file type: {}",
-                filename
-            )));
+            // Content-based dispatch: detect top-level YAML keys.
+            return import_stpa_by_content(path);
         }
     };
 
@@ -138,6 +152,83 @@ pub fn import_stpa_file(path: &Path) -> Result<Vec<Artifact>, Error> {
         a.source_file = Some(path.to_path_buf());
     }
     Ok(arts)
+}
+
+/// Import an STPA file by detecting top-level YAML keys.
+///
+/// Handles files with non-standard names (e.g., `lsp-diagnostics.yaml`)
+/// by trying multiple parsers based on which keys are present.
+fn import_stpa_by_content(path: &Path) -> Result<Vec<Artifact>, Error> {
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| Error::Io(format!("{}: {}", path.display(), e)))?;
+
+    let mut all = Vec::new();
+
+    // A single file can contain multiple STPA sections (losses + hazards + constraints).
+    // Try each parser and collect results.
+    if content.contains("\nlosses:") || content.starts_with("losses:") {
+        if let Ok(arts) = parse_losses(path) {
+            all.extend(arts);
+        }
+    }
+    if content.contains("\nhazards:") || content.starts_with("hazards:") {
+        if let Ok(arts) = parse_hazards(path) {
+            all.extend(arts);
+        }
+    }
+    if content.contains("\nsystem-constraints:") || content.starts_with("system-constraints:") {
+        match parse_system_constraints(path) {
+            Ok(arts) => all.extend(arts),
+            Err(e) => log::debug!(
+                "system-constraints parse failed in {}: {}",
+                path.display(),
+                e
+            ),
+        }
+    }
+    if content.contains("\nucas:") || content.starts_with("ucas:") {
+        if let Ok(arts) = parse_ucas(path) {
+            all.extend(arts);
+        }
+    }
+    if content.contains("\ncontroller-constraints:")
+        || content.starts_with("controller-constraints:")
+    {
+        if let Ok(arts) = parse_controller_constraints(path) {
+            all.extend(arts);
+        }
+    }
+    if content.contains("\nloss-scenarios:") || content.starts_with("loss-scenarios:") {
+        if let Ok(arts) = parse_loss_scenarios(path) {
+            all.extend(arts);
+        }
+    }
+    if content.contains("\ncontrol-structure:") || content.starts_with("control-structure:") {
+        if let Ok(arts) = parse_control_structure(path) {
+            all.extend(arts);
+        }
+    }
+    // STPA-Sec keys
+    if content.contains("\nsec-constraints:") || content.starts_with("sec-constraints:") {
+        if let Ok(arts) = parse_system_constraints(path) {
+            // sec-constraints use the same structure but different key
+            // Try parsing as system-constraints won't work — need custom parser
+            // For now, skip and log
+            let _ = arts;
+        }
+    }
+
+    if all.is_empty() {
+        return Err(Error::Adapter(format!(
+            "no recognized STPA sections in {}",
+            path.display()
+        )));
+    }
+
+    for a in &mut all {
+        a.source_file = Some(path.to_path_buf());
+    }
+    Ok(all)
 }
 
 // ── Losses ───────────────────────────────────────────────────────────────
@@ -200,7 +291,10 @@ struct StpaHazard {
     id: String,
     title: String,
     description: String,
+    #[serde(default)]
     losses: Vec<String>,
+    #[serde(default)]
+    links: Vec<StpaLinkEntry>,
 }
 
 #[derive(Deserialize)]
@@ -218,23 +312,30 @@ fn parse_hazards(path: &Path) -> Result<Vec<Artifact>, Error> {
     let mut artifacts: Vec<Artifact> = file
         .hazards
         .into_iter()
-        .map(|h| Artifact {
-            id: h.id,
-            artifact_type: "hazard".into(),
-            title: h.title,
-            description: Some(h.description),
-            status: None,
-            tags: vec![],
-            links: h
+        .map(|h| {
+            let mut links: Vec<Link> = h
                 .losses
                 .into_iter()
                 .map(|target| Link {
                     link_type: "leads-to-loss".into(),
                     target,
                 })
-                .collect(),
-            fields: BTreeMap::new(),
-            source_file: None,
+                .collect();
+            links.extend(h.links.into_iter().map(|l| Link {
+                link_type: l.link_type,
+                target: l.target,
+            }));
+            Artifact {
+                id: h.id,
+                artifact_type: "hazard".into(),
+                title: h.title,
+                description: Some(h.description),
+                status: None,
+                tags: vec![],
+                links,
+                fields: BTreeMap::new(),
+                source_file: None,
+            }
         })
         .collect();
 
@@ -271,9 +372,20 @@ struct StpaSystemConstraint {
     id: String,
     title: String,
     description: String,
+    #[serde(default)]
     hazards: Vec<String>,
     #[serde(default, rename = "spec-baseline")]
     spec_baseline: Option<String>,
+    #[serde(default)]
+    links: Vec<StpaLinkEntry>,
+}
+
+/// Link entry for STPA YAML deserialization (uses `type:` in YAML).
+#[derive(Deserialize)]
+struct StpaLinkEntry {
+    #[serde(rename = "type")]
+    link_type: String,
+    target: String,
 }
 
 fn parse_system_constraints(path: &Path) -> Result<Vec<Artifact>, Error> {
@@ -288,6 +400,18 @@ fn parse_system_constraints(path: &Path) -> Result<Vec<Artifact>, Error> {
             if let Some(baseline) = sc.spec_baseline {
                 fields.insert("spec-baseline".into(), serde_yaml::Value::String(baseline));
             }
+            let mut links: Vec<Link> = sc
+                .hazards
+                .into_iter()
+                .map(|target| Link {
+                    link_type: "prevents".into(),
+                    target,
+                })
+                .collect();
+            links.extend(sc.links.into_iter().map(|l| Link {
+                link_type: l.link_type,
+                target: l.target,
+            }));
             Artifact {
                 id: sc.id,
                 artifact_type: "system-constraint".into(),
@@ -295,14 +419,7 @@ fn parse_system_constraints(path: &Path) -> Result<Vec<Artifact>, Error> {
                 description: Some(sc.description),
                 status: None,
                 tags: vec![],
-                links: sc
-                    .hazards
-                    .into_iter()
-                    .map(|target| Link {
-                        link_type: "prevents".into(),
-                        target,
-                    })
-                    .collect(),
+                links,
                 fields,
                 source_file: None,
             }

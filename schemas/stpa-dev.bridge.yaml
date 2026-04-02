@@ -1,0 +1,36 @@
+# Bridge: STPA ↔ Dev
+#
+# Connects STPA safety analysis to development tracking.
+# System constraints should be satisfied by requirements,
+# and requirements should trace back to hazards/constraints.
+
+schema:
+  name: stpa-dev-bridge
+  version: "0.1.0"
+  extends: [stpa, dev]
+  description: >
+    Links STPA system constraints to development requirements.
+    Ensures safety constraints are implemented as traceable
+    requirements with design decisions and features.
+
+link-types:
+  - name: constraint-satisfies
+    inverse: satisfied-by-constraint
+    description: Requirement satisfies (implements) a system constraint
+    source-types: [requirement]
+    target-types: [system-constraint, controller-constraint, sec-constraint]
+
+traceability-rules:
+  - name: constraint-has-requirement
+    description: Every system constraint should be satisfied by at least one requirement
+    source-type: system-constraint
+    required-backlink: constraint-satisfies
+    from-types: [requirement]
+    severity: warning
+
+  - name: controller-constraint-has-requirement
+    description: Every controller constraint should be satisfied by at least one requirement
+    source-type: controller-constraint
+    required-backlink: constraint-satisfies
+    from-types: [requirement]
+    severity: info

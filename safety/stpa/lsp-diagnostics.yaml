@@ -75,7 +75,7 @@ system-constraints:
       yaml-parse-error diagnostic with file, line, and column.
       It MUST NOT silently return empty results.
     links:
-      - type: enforces
+      - type: prevents
         target: H-LSP-001
 
   - id: SC-LSP-002
@@ -85,7 +85,7 @@ system-constraints:
       `rivet validate` runs: structural, conditional rules, document
       references, and traceability rules. No phase may be skipped.
     links:
-      - type: enforces
+      - type: prevents
         target: H-LSP-001
 
   - id: SC-LSP-003
@@ -95,7 +95,7 @@ system-constraints:
       salsa results must be invalidated and diagnostics recomputed.
       Stale diagnostics from old schema rules are false positives.
     links:
-      - type: enforces
+      - type: prevents
         target: H-LSP-002
 
   - id: SC-LSP-004
@@ -105,7 +105,7 @@ system-constraints:
       in fields where the schema expects strings. Silent type coercion
       that bypasses allowed-values checks is a false negative.
     links:
-      - type: enforces
+      - type: prevents
         target: H-LSP-001
 
   - id: SC-LSP-005
@@ -115,7 +115,7 @@ system-constraints:
       fix it (command, field to change, expected value). Vague messages
       like "link validation failed" are not actionable.
     links:
-      - type: enforces
+      - type: prevents
         target: H-LSP-004
 
   - id: SC-LSP-006
@@ -125,7 +125,7 @@ system-constraints:
       not change. Broken-link errors caused by a parsed-out file
       appearing to vanish are cascading false positives.
     links:
-      - type: enforces
+      - type: prevents
         target: H-LSP-002
 
   - id: SC-LSP-007
@@ -135,7 +135,7 @@ system-constraints:
       produce the same set of diagnostics for the same input. Any
       divergence is a cache correctness bug.
     links:
-      - type: enforces
+      - type: prevents
         target: H-LSP-001
-      - type: enforces
+      - type: prevents
         target: H-LSP-002
