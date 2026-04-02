@@ -33,7 +33,9 @@
       "Bash(cargo clean:*)",
       "Bash(git -C /Users/r/git/pulseengine/rivet/.claude/worktrees/agent-ae21d534 diff HEAD -- rivet-core/src/validate.rs)",
       "Bash(grep -rn 'Diagnostic {$\\\\|Diagnostic{' /Users/r/git/pulseengine/rivet/rivet-core/src/validate.rs)",
-      "Bash(sed:*)"
+      "Bash(sed:*)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); types=[t['name'] for t in d['artifact_types']]; print\\(f'{len\\(types\\)} types'\\); [print\\(f'  {t}'\\) for t in types if t.startswith\\('ai-'\\) or t.startswith\\('risk'\\) or t.startswith\\('data'\\)]\")",
+      "Bash(git -C /Users/r/git/pulseengine/rivet/.claude/worktrees/agent-a5e68f53 diff HEAD -- rivet-cli/src/main.rs)"
     ]
   }
 }

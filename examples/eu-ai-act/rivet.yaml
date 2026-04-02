@@ -1,0 +1,22 @@
+# EU AI Act Compliance Example — Predictive Maintenance AI System
+#
+# Demonstrates EU AI Act high-risk AI system documentation using
+# rivet's eu-ai-act schema. Covers Annex IV technical documentation
+# and Articles 9-15 obligations.
+#
+# Run: rivet --schemas ../../schemas validate
+# Dashboard: rivet --schemas ../../schemas serve
+
+project:
+  name: predictive-maintenance-ai
+  version: "0.1.0"
+  schemas:
+    - common
+    - eu-ai-act
+
+sources:
+  - path: artifacts
+    format: generic-yaml
+
+docs:
+  - docs

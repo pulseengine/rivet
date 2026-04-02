@@ -1,0 +1,46 @@
+# Bridge: EU AI Act ↔ STPA
+#
+# Maps STPA safety analysis artifacts to EU AI Act risk management.
+# Use with: rivet init --schema eu-ai-act,stpa
+#
+# STPA provides the systematic hazard analysis methodology;
+# EU AI Act requires the risk management documentation.
+# This bridge links them so STPA artifacts automatically satisfy
+# the Act's risk identification requirements.
+
+schema:
+  name: eu-ai-act-stpa-bridge
+  version: "0.1.0"
+  extends: [eu-ai-act, stpa]
+  description: >
+    Links STPA safety analysis to EU AI Act risk management.
+    STPA hazards map to risk assessments, system constraints
+    map to risk mitigations.
+
+link-types:
+  - name: risk-identified-by-stpa
+    inverse: stpa-identifies-risk
+    description: Risk assessment derived from STPA hazard/loss analysis
+    source-types: [risk-assessment]
+    target-types: [hazard, sub-hazard, loss]
+
+  - name: mitigation-from-constraint
+    inverse: constraint-provides-mitigation
+    description: Risk mitigation derived from STPA system constraint
+    source-types: [risk-mitigation]
+    target-types: [system-constraint, controller-constraint]
+
+traceability-rules:
+  - name: stpa-hazards-map-to-risks
+    description: STPA hazards should be linked to EU AI Act risk assessments
+    source-type: hazard
+    required-backlink: risk-identified-by-stpa
+    from-types: [risk-assessment]
+    severity: warning
+
+  - name: stpa-constraints-map-to-mitigations
+    description: STPA system constraints should be linked to risk mitigations
+    source-type: system-constraint
+    required-backlink: mitigation-from-constraint
+    from-types: [risk-mitigation]
+    severity: info

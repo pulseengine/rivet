@@ -978,8 +978,12 @@ fn resolve_preset(preset: &str) -> Result<InitPreset> {
             schemas: vec!["common", "dev", "aadl"],
             sample_files: vec![("architecture.yaml", AADL_SAMPLE)],
         }),
+        "eu-ai-act" => Ok(InitPreset {
+            schemas: vec!["common", "eu-ai-act"],
+            sample_files: vec![("ai-system.yaml", EU_AI_ACT_SAMPLE)],
+        }),
         other => anyhow::bail!(
-            "unknown preset: '{other}' (valid: dev, aspice, stpa, cybersecurity, aadl)"
+            "unknown preset: '{other}' (valid: dev, aspice, stpa, cybersecurity, aadl, eu-ai-act)"
         ),
     }
 }
@@ -1171,6 +1175,152 @@ artifacts:
     links:
       - type: allocated-from
         target: REQ-001
+";
+
+const EU_AI_ACT_SAMPLE: &str = "\
+artifacts:
+  - id: AI-SYS-001
+    type: ai-system-description
+    title: AI-Powered Decision Support System
+    status: draft
+    description: >
+      High-risk AI system providing automated recommendations
+      for resource allocation in critical infrastructure.
+    fields:
+      intended-purpose: >
+        Real-time analysis of infrastructure telemetry to recommend
+        maintenance schedules and resource allocation priorities.
+      provider: Example Corp
+      risk-class: high-risk
+
+  - id: DS-001
+    type: design-specification
+    title: Core prediction model design
+    status: draft
+    description: >
+      Gradient-boosted decision tree ensemble for predictive maintenance.
+    fields:
+      algorithms: >
+        XGBoost ensemble with 500 estimators, max depth 8.
+        Features: sensor readings, maintenance history, environmental data.
+      design-choices: >
+        Tree-based model chosen over neural network for interpretability
+        and compliance with Art. 13 transparency requirements.
+    links:
+      - type: satisfies
+        target: AI-SYS-001
+
+  - id: DGR-001
+    type: data-governance-record
+    title: Training data governance
+    status: draft
+    fields:
+      data-sources: >
+        3 years of operational telemetry from 200 installations.
+        Anonymized maintenance logs from partner organizations.
+      collection-method: Automated SCADA export + manual maintenance log entry
+      bias-assessment: >
+        Geographic bias identified: 80% of data from Northern Europe.
+        Mitigation: stratified sampling + synthetic augmentation for
+        underrepresented regions.
+    links:
+      - type: governs
+        target: DS-001
+
+  - id: RMP-001
+    type: risk-management-process
+    title: Continuous risk management
+    status: draft
+    fields:
+      scope: >
+        All risks related to the AI system's predictions affecting
+        critical infrastructure maintenance decisions.
+      methodology: >
+        Iterative risk identification using FMEA + STPA hybrid approach.
+        Quarterly review cycle with incident-driven ad-hoc reviews.
+    links:
+      - type: manages-risk-for
+        target: AI-SYS-001
+
+  - id: RA-001
+    type: risk-assessment
+    title: Incorrect maintenance deferral recommendation
+    status: draft
+    fields:
+      risk-description: >
+        System recommends deferring maintenance on critical component
+        that subsequently fails, causing infrastructure outage.
+      likelihood: possible
+      severity: major
+      risk-level: high
+      affected-rights: >
+        Right to safety (Art. 6 EU Charter).
+        Potential impact on public infrastructure availability.
+    links:
+      - type: leads-to
+        target: AI-SYS-001
+
+  - id: RM-001
+    type: risk-mitigation
+    title: Confidence threshold with mandatory human review
+    status: draft
+    fields:
+      measure-description: >
+        Recommendations below 85% confidence require mandatory human
+        engineer review before execution. All critical component
+        deferrals require dual sign-off regardless of confidence.
+      residual-risk: >
+        Human reviewer may rubber-stamp recommendation under time
+        pressure. Mitigated by mandatory cooling-off period.
+    links:
+      - type: mitigates
+        target: RA-001
+
+  - id: MON-001
+    type: monitoring-measure
+    title: Real-time prediction drift monitoring
+    status: draft
+    fields:
+      mechanism-type: drift-detection
+      logging-scope: >
+        All predictions logged with input features, confidence score,
+        and actual outcome (when known). PSI drift score computed daily.
+      alert-conditions: >
+        Alert when PSI > 0.2 on any feature group or when prediction
+        accuracy drops below 90% over rolling 30-day window.
+    links:
+      - type: monitors
+        target: AI-SYS-001
+
+  - id: HO-001
+    type: human-oversight-measure
+    title: Operator dashboard with override capability
+    status: draft
+    fields:
+      oversight-type: intervention
+      capability-description: >
+        Operators can view all pending recommendations, inspect the
+        reasoning (feature importance), and override or defer any
+        recommendation. Emergency shutdown available via dashboard.
+    links:
+      - type: overseen-by
+        target: AI-SYS-001
+
+  - id: TRANS-001
+    type: transparency-record
+    title: Deployer information package
+    status: draft
+    fields:
+      information-scope: >
+        Model card, training data summary, known limitations,
+        performance metrics by population subgroup.
+      limitations-disclosed: >
+        Model trained primarily on Northern European data.
+        Performance may degrade for tropical climate installations.
+        Not validated for installations older than 20 years.
+    links:
+      - type: transparency-for
+        target: AI-SYS-001
 ";
 
 /// Initialize a new rivet project.
@@ -1941,7 +2091,10 @@ fn cmd_validate(
 /// The salsa path produces identical core diagnostics (structural + conditional
 /// rules) to the direct `validate::validate()` call, but benefits from
 /// incremental caching when used in watch/LSP modes.
-fn run_salsa_validation(cli: &Cli, config: &ProjectConfig) -> Result<Vec<validate::Diagnostic>> {
+fn run_salsa_validation(
+    cli: &Cli,
+    config: &ProjectConfig,
+) -> Result<Vec<validate::Diagnostic>> {
     use rivet_core::db::RivetDatabase;
     use std::time::Instant;
 

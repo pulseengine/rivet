@@ -1,0 +1,100 @@
+# Risk Management — Art. 9 + Annex IV §5
+artifacts:
+  - id: RMP-001
+    type: risk-management-process
+    title: Continuous AI risk management
+    status: approved
+    fields:
+      scope: >
+        All risks arising from the AI system's predictions influencing
+        maintenance decisions for critical infrastructure components.
+      methodology: >
+        FMEA-based risk identification with STPA extensions for
+        control-theoretic hazards. ISO/IEC 23894 framework.
+        Quarterly review cycle. Incident-triggered ad-hoc reviews.
+      review-frequency: Quarterly + incident-driven
+    links:
+      - type: manages-risk-for
+        target: AI-SYS-001
+
+  - id: RA-001
+    type: risk-assessment
+    title: False negative — missed critical failure
+    status: approved
+    fields:
+      risk-description: >
+        System fails to predict an imminent component failure,
+        leading to unplanned outage of critical infrastructure.
+      likelihood: unlikely
+      severity: catastrophic
+      risk-level: critical
+      affected-rights: >
+        Public safety. Right to essential services (energy supply).
+    links:
+      - type: leads-to
+        target: AI-SYS-001
+
+  - id: RA-002
+    type: risk-assessment
+    title: False positive — unnecessary maintenance dispatch
+    status: approved
+    fields:
+      risk-description: >
+        System predicts failure that does not materialize, causing
+        unnecessary maintenance cost and resource allocation.
+      likelihood: possible
+      severity: minor
+      risk-level: medium
+    links:
+      - type: leads-to
+        target: AI-SYS-001
+
+  - id: RM-001
+    type: risk-mitigation
+    title: Dual-threshold alert system
+    status: approved
+    fields:
+      measure-description: >
+        Two-tier alert: "watch" (60-85% confidence) triggers monitoring
+        escalation, "act" (>85%) triggers maintenance dispatch.
+        All critical component alerts require human engineer sign-off.
+      residual-risk: >
+        Human reviewer may override alert under time pressure.
+        Mitigated by mandatory 4-hour cooling-off period.
+      effectiveness-evidence: >
+        6-month pilot reduced missed critical failures by 94%
+        while keeping false alarm rate below 12%.
+    links:
+      - type: mitigates
+        target: RA-001
+
+  - id: RM-002
+    type: risk-mitigation
+    title: Confidence calibration with rejection option
+    status: approved
+    fields:
+      measure-description: >
+        Model output calibrated using Platt scaling on held-out data.
+        Predictions with calibrated confidence below 50% are rejected
+        and flagged for manual assessment.
+      residual-risk: >
+        Calibration may drift as data distribution changes.
+        Mitigated by weekly recalibration check (MON-001).
+    links:
+      - type: mitigates
+        target: RA-002
+
+  - id: MR-001
+    type: misuse-risk
+    title: Override fatigue from excessive alerts
+    status: draft
+    fields:
+      misuse-scenario: >
+        Operators routinely dismiss alerts due to high false positive
+        rate, eventually ignoring a genuine critical failure prediction.
+      likelihood: possible
+      harm-potential: >
+        Same as RA-001 — missed critical failure leading to outage.
+    links:
+      - type: identified-by
+        target: RMP-001
