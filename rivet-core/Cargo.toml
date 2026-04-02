@@ -9,7 +9,8 @@ rust-version.workspace = true
 
 
 [features]
-default = ["aadl"]
+default = ["aadl", "rowan-yaml"]
+rowan-yaml = []
 oslc = ["dep:reqwest", "dep:urlencoding"]
 wasm = ["dep:wasmtime", "dep:wasmtime-wasi"]
 aadl = ["dep:spar-hir", "dep:spar-analysis"]

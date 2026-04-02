@@ -6540,7 +6540,7 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
     };
 
     // Build supplementary state for rendering
-    let store = db.store(source_set);
+    let store = db.store(source_set, schema_set);
     let render_schema = db.schema(schema_set);
     let mut render_graph = rivet_core::links::LinkGraph::build(&store, &render_schema);
 
@@ -6617,7 +6617,7 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                 match method {
                     "textDocument/hover" => {
                         let params: HoverParams = serde_json::from_value(req.params.clone())?;
-                        let store = db.store(source_set);
+                        let store = db.store(source_set, schema_set);
                         let result = lsp_hover(&params, &store);
                         connection.sender.send(Message::Response(Response {
                             id: req.id,
@@ -6628,7 +6628,7 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                     "textDocument/definition" => {
                         let params: GotoDefinitionParams =
                             serde_json::from_value(req.params.clone())?;
-                        let store = db.store(source_set);
+                        let store = db.store(source_set, schema_set);
                         let result = lsp_goto_definition(&params, &store);
                         connection.sender.send(Message::Response(Response {
                             id: req.id,
@@ -6638,7 +6638,7 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                     }
                     "textDocument/completion" => {
                         let params: CompletionParams = serde_json::from_value(req.params.clone())?;
-                        let store = db.store(source_set);
+                        let store = db.store(source_set, schema_set);
                         let schema = db.schema(schema_set);
                         let result = lsp_completion(&params, &store, &schema);
                         connection.sender.send(Message::Response(Response {
@@ -6923,7 +6923,7 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                                 // and append document [[ID]] reference validation so
                                 // broken wiki-links in markdown files are reported.
                                 let mut new_diagnostics = db.diagnostics(source_set, schema_set);
-                                let new_store = db.store(source_set);
+                                let new_store = db.store(source_set, schema_set);
                                 new_diagnostics
                                     .extend(validate::validate_documents(&doc_store, &new_store));
                                 lsp_publish_salsa_diagnostics(
@@ -6939,7 +6939,7 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                                 );
 
                                 // Rebuild render state
-                                render_store = db.store(source_set);
+                                render_store = db.store(source_set, schema_set);
                                 let render_schema = db.schema(schema_set);
                                 render_graph = rivet_core::links::LinkGraph::build(
                                     &render_store,
@@ -6986,7 +6986,7 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                                         // including document [[ID]] reference validation.
                                         let mut diagnostics =
                                             db.diagnostics(source_set, schema_set);
-                                        let store = db.store(source_set);
+                                        let store = db.store(source_set, schema_set);
                                         diagnostics.extend(validate::validate_documents(
                                             &doc_store, &store,
                                         ));

@@ -21,6 +21,8 @@ use crate::model::Artifact;
 use crate::schema::{Schema, SchemaFile};
 use crate::store::Store;
 use crate::validate::Diagnostic;
+#[cfg(feature = "rowan-yaml")]
+use crate::yaml_hir;
 
 // ── Salsa inputs ────────────────────────────────────────────────────────
 
@@ -107,6 +109,30 @@ pub fn parse_artifacts(db: &dyn salsa::Database, source: SourceFile) -> Vec<Arti
             }
         }
     }
+}
+
+/// Parse artifacts from a single source file using the schema-driven rowan parser.
+///
+/// Uses `yaml_hir::extract_schema_driven` which reads `yaml-section` metadata
+/// from the schema to discover sections and auto-convert shorthand links.
+///
+/// This is a salsa tracked function — results are memoized and only
+/// recomputed when the `SourceFile` content or `SchemaInputSet` changes.
+#[cfg(feature = "rowan-yaml")]
+#[salsa::tracked]
+pub fn parse_artifacts_v2(
+    db: &dyn salsa::Database,
+    source: SourceFile,
+    schema_set: SchemaInputSet,
+) -> Vec<Artifact> {
+    let content = source.content(db);
+    let path = source.path(db);
+    let source_path = std::path::Path::new(&path);
+
+    let schema = build_schema(db, schema_set);
+    let parsed = yaml_hir::extract_schema_driven(&content, &schema, Some(source_path));
+
+    parsed.artifacts.into_iter().map(|sa| sa.artifact).collect()
 }
 
 /// Collect parse errors from all source files as diagnostics.
@@ -234,9 +260,9 @@ pub fn validate_all(
 ///
 /// Both `validate_all` and this function call `build_pipeline`, which is a
 /// plain (non-tracked) helper. The tracked functions that `build_pipeline`
-/// delegates to (`parse_artifacts`) are individually cached by salsa, so
-/// the repeated calls do NOT re-parse source files — only the lightweight
-/// store/schema assembly runs twice.
+/// delegates to (`parse_artifacts` / `parse_artifacts_v2`) are individually
+/// cached by salsa, so the repeated calls do NOT re-parse source files —
+/// only the lightweight store/schema assembly runs twice.
 #[salsa::tracked]
 pub fn evaluate_conditional_rules(
     db: &dyn salsa::Database,
@@ -280,18 +306,53 @@ fn build_pipeline(
     source_set: SourceFileSet,
     schema_set: SchemaInputSet,
 ) -> (Store, Schema, LinkGraph) {
-    let store = build_store(db, source_set);
+    let store = build_store(db, source_set, schema_set);
     let schema = build_schema(db, schema_set);
     let graph = LinkGraph::build(&store, &schema);
     (store, schema, graph)
 }
 
 /// Build an artifact `Store` from all source file inputs.
-fn build_store(db: &dyn salsa::Database, source_set: SourceFileSet) -> Store {
+///
+/// When the `rowan-yaml` feature is enabled, uses the schema-driven rowan
+/// parser (`parse_artifacts_v2`) which reads `yaml-section` metadata from
+/// the schema. In debug builds, both parsers run and their output is
+/// compared as a cross-check.
+fn build_store(
+    db: &dyn salsa::Database,
+    source_set: SourceFileSet,
+    schema_set: SchemaInputSet,
+) -> Store {
+    #[cfg(not(feature = "rowan-yaml"))]
+    let _ = schema_set;
+
     let sources = source_set.files(db);
     let mut store = Store::new();
     for source in sources {
-        for artifact in parse_artifacts(db, source) {
+        #[cfg(feature = "rowan-yaml")]
+        let artifacts = {
+            let new_arts = parse_artifacts_v2(db, source, schema_set);
+
+            #[cfg(debug_assertions)]
+            {
+                let old_arts = parse_artifacts(db, source);
+                let new_ids: Vec<&str> = new_arts.iter().map(|a| a.id.as_str()).collect();
+                let old_ids: Vec<&str> = old_arts.iter().map(|a| a.id.as_str()).collect();
+                if old_ids != new_ids {
+                    log::warn!(
+                        "parser mismatch for {}: old={old_ids:?} new={new_ids:?}",
+                        source.path(db),
+                    );
+                }
+            }
+
+            new_arts
+        };
+
+        #[cfg(not(feature = "rowan-yaml"))]
+        let artifacts = parse_artifacts(db, source);
+
+        for artifact in artifacts {
             // Use upsert to avoid panics on duplicate IDs across files.
             store.upsert(artifact);
         }
@@ -378,9 +439,9 @@ impl RivetDatabase {
         false
     }
 
-    /// Get the current store (computed from source inputs).
-    pub fn store(&self, source_set: SourceFileSet) -> Store {
-        build_store(self, source_set)
+    /// Get the current store (computed from source and schema inputs).
+    pub fn store(&self, source_set: SourceFileSet, schema_set: SchemaInputSet) -> Store {
+        build_store(self, source_set, schema_set)
     }
 
     /// Get the current merged schema (computed from schema inputs).
@@ -618,9 +679,10 @@ artifacts:
     fn adding_artifact_appears_in_store() {
         let mut db = RivetDatabase::new();
         let sources = db.load_sources(&[("reqs.yaml", SOURCE_REQ)]);
+        let schemas = db.load_schemas(&[("test", TEST_SCHEMA)]);
 
         // Initially: 1 artifact (REQ-001).
-        let store = db.store(sources);
+        let store = db.store(sources, schemas);
         assert_eq!(store.len(), 1);
         assert!(store.contains("REQ-001"));
 
@@ -636,7 +698,7 @@ artifacts:
 "#;
         db.update_source(sources, "reqs.yaml", combined.to_string());
 
-        let store = db.store(sources);
+        let store = db.store(sources, schemas);
         assert_eq!(store.len(), 2);
         assert!(store.contains("REQ-001"));
         assert!(store.contains("REQ-002"));
