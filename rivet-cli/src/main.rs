@@ -1032,8 +1032,16 @@ fn resolve_preset(preset: &str) -> Result<InitPreset> {
             schemas: vec!["common", "iec-62304"],
             sample_files: vec![("medical-sw.yaml", IEC_62304_SAMPLE)],
         }),
+        "iso-pas-8800" => Ok(InitPreset {
+            schemas: vec!["common", "iso-pas-8800"],
+            sample_files: vec![("ai-safety.yaml", ISO_PAS_8800_SAMPLE)],
+        }),
+        "sotif" => Ok(InitPreset {
+            schemas: vec!["common", "sotif"],
+            sample_files: vec![("sotif-analysis.yaml", SOTIF_SAMPLE)],
+        }),
         other => anyhow::bail!(
-            "unknown preset: '{other}' (valid: dev, aspice, stpa, stpa-ai, cybersecurity, aadl, eu-ai-act, safety-case, do-178c, en-50128, iec-61508, iec-62304)"
+            "unknown preset: '{other}' (valid: dev, aspice, stpa, stpa-ai, cybersecurity, aadl, eu-ai-act, safety-case, do-178c, en-50128, iec-61508, iec-62304, iso-pas-8800, sotif)"
         ),
     }
 }
@@ -1797,6 +1805,307 @@ artifacts:
       fully segregated from non-safety user interface code.
     fields:
       segregation-level: full
+";
+
+const ISO_PAS_8800_SAMPLE: &str = "\
+artifacts:
+  - id: AIE-001
+    type: ai-element
+    title: Pedestrian detection model
+    status: draft
+    description: >
+      Deep learning model for detecting pedestrians from camera images,
+      used as the primary perception element for emergency braking.
+    fields:
+      ai-type: perception
+      safety-relevance: ASIL-D
+
+  - id: AISR-001
+    type: ai-safety-req
+    title: Pedestrian detection recall requirement
+    status: draft
+    description: >
+      The pedestrian detection model shall achieve a minimum recall of
+      99.5% on the operational design domain test dataset.
+    fields:
+      performance-criterion: >
+        Recall (true positive rate) for pedestrian detection across all
+        lighting and weather conditions in the operational design domain.
+      acceptance-threshold: '>= 0.995'
+    links:
+      - type: derives-from
+        target: AIE-001
+
+  - id: AIAM-001
+    type: ai-arch-measure
+    title: Lidar-camera redundancy for pedestrian detection
+    status: draft
+    description: >
+      Redundant perception channel using lidar point cloud processing
+      to cross-validate camera-based pedestrian detections.
+    fields:
+      measure-type: redundancy
+    links:
+      - type: satisfies
+        target: AISR-001
+
+  - id: AIDM-001
+    type: ai-dev-measure
+    title: Formal code review for inference pipeline
+    status: draft
+    description: >
+      All code in the inference pipeline undergoes formal review with
+      two independent reviewers per change, following MISRA-C guidelines.
+    links:
+      - type: satisfies
+        target: AISR-001
+
+  - id: AIDR-001
+    type: ai-data-req
+    title: Training data diversity requirement
+    status: draft
+    description: >
+      Training data must include representative samples from all
+      operational design domain conditions.
+    fields:
+      data-quality-metric: ODD coverage completeness
+      min-threshold: '>= 95% of defined ODD conditions represented'
+    links:
+      - type: governs
+        target: AIE-001
+
+  - id: AITR-001
+    type: ai-training-record
+    title: Pedestrian detector v2.3 training run
+    status: draft
+    description: >
+      Training run for pedestrian detection model version 2.3.
+    fields:
+      dataset-version: PedDataset-v4.1
+      hyperparameters: >
+        Learning rate: 1e-4, batch size: 64, epochs: 120,
+        optimizer: AdamW, weight decay: 0.01.
+      metric-results: >
+        Recall: 0.997, precision: 0.993, F1: 0.995,
+        mAP@0.5: 0.991, inference latency: 28ms.
+    links:
+      - type: trains
+        target: AIE-001
+
+  - id: AIVERIF-001
+    type: ai-verification
+    title: Pedestrian detector test suite verification
+    status: draft
+    description: >
+      Verification of the pedestrian detection model against the
+      safety requirement using the ODD holdout test set.
+    links:
+      - type: verifies
+        target: AIE-001
+
+  - id: AIVAL-001
+    type: ai-validation
+    title: Operational validation on test track
+    status: draft
+    description: >
+      Validation of the pedestrian detection system in real-world
+      test track scenarios covering all ODD conditions.
+    links:
+      - type: validates
+        target: AIE-001
+
+  - id: AIDEP-001
+    type: ai-deployment
+    title: ECU deployment configuration for v2.3
+    status: draft
+    description: >
+      Deployment configuration for pedestrian detector v2.3 on the
+      target ADAS ECU with TensorRT optimization.
+    links:
+      - type: deploys
+        target: AIE-001
+
+  - id: AIMON-001
+    type: ai-monitoring
+    title: Runtime detection confidence monitor
+    status: draft
+    description: >
+      Monitors average detection confidence scores and flags anomalies
+      indicating potential model degradation in the field.
+    links:
+      - type: monitors
+        target: AIE-001
+
+  - id: AITQ-001
+    type: ai-tool-qual
+    title: Training framework qualification
+    status: draft
+    description: >
+      Qualification of the PyTorch training framework and custom
+      data augmentation pipeline used for model development.
+    fields:
+      tool-class: TQL-2
+
+  - id: AIAA-001
+    type: ai-assurance-argument
+    title: Pedestrian detection safety argument
+    status: draft
+    description: >
+      Top-level assurance argument that the pedestrian detection AI
+      element meets all safety requirements throughout its lifecycle.
+    links:
+      - type: argues
+        target: AIE-001
+";
+
+const SOTIF_SAMPLE: &str = "\
+artifacts:
+  - id: SH-001
+    type: sotif-hazard
+    title: Phantom braking from sensor noise
+    status: draft
+    description: >
+      The vehicle performs unnecessary emergency braking due to radar
+      ghost targets caused by multi-path reflections from guardrails
+      or overhead structures.
+    fields:
+      insufficiency-type: sensor-limitation
+
+  - id: SH-002
+    type: sotif-hazard
+    title: Missed pedestrian in cluttered scene
+    status: draft
+    description: >
+      The perception system fails to detect a pedestrian when the
+      background is visually complex (e.g. crowded storefronts,
+      construction zones), leading to late or absent braking.
+    fields:
+      insufficiency-type: algorithm-limitation
+
+  - id: STC-001
+    type: sotif-triggering-condition
+    title: Guardrail multi-path radar reflection
+    status: draft
+    description: >
+      Driving alongside metal guardrails in curves where multi-path
+      radar reflections create persistent ghost targets at short range.
+    fields:
+      environment: >
+        Highway curve with metal guardrails, speed 80-120 km/h,
+        any weather condition.
+      probability: Moderate (estimated 1 in 500 guardrail passages)
+    links:
+      - type: triggers
+        target: SH-001
+
+  - id: STC-002
+    type: sotif-triggering-condition
+    title: Visually cluttered urban intersection
+    status: draft
+    description: >
+      Urban intersection with overlapping pedestrians, signage, and
+      construction equipment that degrades detection confidence.
+    fields:
+      environment: >
+        Urban intersection, daytime, cluttered background with
+        construction equipment and dense signage.
+      probability: Low (estimated 1 in 2000 urban intersections)
+    links:
+      - type: triggers
+        target: SH-002
+
+  - id: SSCEN-001
+    type: sotif-scenario
+    title: Curved guardrail ghost target scenario
+    status: draft
+    description: >
+      Test scenario: vehicle travels at 100 km/h through a left-hand
+      highway curve with continuous metal guardrail on the right side,
+      verifying that no false braking occurs.
+    fields:
+      scenario-type: known-unsafe
+    links:
+      - type: exercises
+        target: STC-001
+
+  - id: SSCEN-002
+    type: sotif-scenario
+    title: Cluttered intersection pedestrian detection
+    status: draft
+    description: >
+      Test scenario: pedestrian crosses at an intersection with
+      construction scaffolding and dense signage in the background,
+      verifying timely detection and braking.
+    fields:
+      scenario-type: known-unsafe
+    links:
+      - type: exercises
+        target: STC-002
+
+  - id: SAC-001
+    type: sotif-acceptance-criterion
+    title: False positive braking rate
+    status: draft
+    description: >
+      Acceptance criterion for the maximum allowable rate of false
+      positive emergency braking events per million kilometers.
+    fields:
+      metric: false-positive emergency braking events per million km
+      target-value: '< 0.1'
+
+  - id: SVERIF-001
+    type: sotif-verification
+    title: Radar ghost target analysis
+    status: draft
+    description: >
+      Verification that radar processing algorithms correctly filter
+      multi-path reflections in all tested guardrail geometries.
+    links:
+      - type: verifies
+        target: SH-001
+
+  - id: SVERIF-002
+    type: sotif-verification
+    title: Cluttered scene detection verification
+    status: draft
+    description: >
+      Verification that the perception pipeline maintains required
+      detection recall in visually cluttered environments.
+    links:
+      - type: verifies
+        target: SH-002
+
+  - id: SVAL-001
+    type: sotif-validation
+    title: Field driving residual risk validation
+    status: draft
+    description: >
+      Validation over 10 million km of field driving data confirming
+      that false positive braking rate meets the acceptance criterion.
+    links:
+      - type: validates
+        target: SAC-001
+
+  - id: SKU-001
+    type: sotif-known-unsafe
+    title: Guardrail ghost target mitigation
+    status: draft
+    description: >
+      Mitigation strategy: radar signal processing with guardrail
+      geometry model to suppress multi-path ghost targets.
+    links:
+      - type: mitigates
+        target: SH-001
+
+  - id: SUU-001
+    type: sotif-unknown-unsafe
+    title: Adversarial scene exploration
+    status: draft
+    description: >
+      Strategy for discovering unknown unsafe scenarios using
+      adversarial perturbation of sensor inputs in simulation.
+    fields:
+      exploration-method: adversarial-testing
 ";
 
 /// Initialize a new rivet project.
