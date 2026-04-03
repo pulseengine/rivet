@@ -452,7 +452,7 @@ pub fn validate_documents(doc_store: &DocumentStore, store: &Store) -> Vec<Diagn
                     // publish positioned diagnostics in the markdown file.
                     source_file: doc.source_file.clone(),
                     line: Some(reference.line.saturating_sub(1) as u32),
-                    column: None,
+                    column: Some(reference.col as u32),
                     severity: Severity::Warning,
                     artifact_id: Some(doc.id.clone()),
                     rule: "doc-broken-ref".into(),

@@ -103,6 +103,10 @@ pub struct Section {
     pub title: String,
     /// Artifact IDs referenced within this section (until the next heading).
     pub artifact_ids: Vec<String>,
+    /// 1-based line number of the heading in the document body.
+    pub heading_line: usize,
+    /// Absolute byte offset of the heading line in the document body.
+    pub heading_byte_offset: usize,
 }
 
 /// A single `[[ID]]` reference found in the document body.
@@ -112,6 +116,12 @@ pub struct DocReference {
     pub artifact_id: String,
     /// Line number (1-based) where the reference appears.
     pub line: usize,
+    /// 0-based byte offset of `[[` within its line.
+    pub col: usize,
+    /// Absolute byte offset of `[[` in the document body.
+    pub byte_offset: usize,
+    /// Length in bytes including the `[[` and `]]` delimiters.
+    pub len: usize,
 }
 
 // ---------------------------------------------------------------------------
@@ -237,24 +247,32 @@ fn split_frontmatter(content: &str) -> Result<(String, String), Error> {
 /// Extract all `[[ID]]` references from the markdown body.
 fn extract_references(body: &str) -> Vec<DocReference> {
     let mut refs = Vec::new();
+    let mut line_start_offset: usize = 0;
 
     for (line_idx, line) in body.lines().enumerate() {
-        let mut rest = line;
-        while let Some(start) = rest.find("[[") {
-            let after = &rest[start + 2..];
+        let mut search_offset: usize = 0;
+        while let Some(rel) = line[search_offset..].find("[[") {
+            let start = search_offset + rel;
+            let after = &line[start + 2..];
             if let Some(end) = after.find("]]") {
                 let id = after[..end].trim();
                 if !id.is_empty() {
+                    let len = 2 + end + 2; // [[ + content + ]]
                     refs.push(DocReference {
                         artifact_id: id.to_string(),
                         line: line_idx + 1,
+                        col: start,
+                        byte_offset: line_start_offset + start,
+                        len,
                     });
                 }
-                rest = &after[end + 2..];
+                search_offset = start + 2 + end + 2;
             } else {
                 break;
             }
         }
+        // +1 for the '\n' separator (or end of string)
+        line_start_offset += line.len() + 1;
     }
 
     refs
@@ -264,8 +282,9 @@ fn extract_references(body: &str) -> Vec<DocReference> {
 fn extract_sections(body: &str) -> Vec<Section> {
     let mut sections = Vec::new();
     let mut current_refs: Vec<String> = Vec::new();
+    let mut line_start_offset: usize = 0;
 
-    for line in body.lines() {
+    for (line_idx, line) in body.lines().enumerate() {
         let trimmed = line.trim_start();
 
         if let Some(level) = heading_level(trimmed) {
@@ -284,6 +303,8 @@ fn extract_sections(body: &str) -> Vec<Section> {
                 level,
                 title,
                 artifact_ids: Vec::new(),
+                heading_line: line_idx + 1,
+                heading_byte_offset: line_start_offset,
             });
             current_refs.clear();
         } else {
@@ -302,6 +323,8 @@ fn extract_sections(body: &str) -> Vec<Section> {
                 }
             }
         }
+
+        line_start_offset += line.len() + 1;
     }
 
     // Finalize last section.
@@ -1512,6 +1535,108 @@ See frontmatter.
         assert_eq!(doc.references.len(), 2);
         assert_eq!(doc.references[0].artifact_id, "A-1");
         assert_eq!(doc.references[1].artifact_id, "B-2");
+    }
+
+    // rivet: verifies REQ-033
+    #[test]
+    fn reference_byte_offset_roundtrip() {
+        let content = "---\nid: D-1\ntitle: T\n---\n[[REQ-001]] is first.\n";
+        let doc = parse_document(content, None).unwrap();
+        assert_eq!(doc.references.len(), 1);
+        let r = &doc.references[0];
+        assert_eq!(r.artifact_id, "REQ-001");
+        assert_eq!(r.line, 1);
+        assert_eq!(r.col, 0);
+        assert_eq!(r.len, 11); // [[REQ-001]]
+        assert_eq!(
+            &doc.body[r.byte_offset..r.byte_offset + r.len],
+            "[[REQ-001]]"
+        );
+    }
+
+    // rivet: verifies REQ-033
+    #[test]
+    fn reference_col_not_at_start() {
+        let content = "---\nid: D-1\ntitle: T\n---\nSee [[REQ-002]] here.\n";
+        let doc = parse_document(content, None).unwrap();
+        assert_eq!(doc.references.len(), 1);
+        let r = &doc.references[0];
+        assert_eq!(r.col, 4); // "See " is 4 bytes
+        assert_eq!(r.line, 1);
+        assert_eq!(
+            &doc.body[r.byte_offset..r.byte_offset + r.len],
+            "[[REQ-002]]"
+        );
+    }
+
+    // rivet: verifies REQ-033
+    #[test]
+    fn multiple_refs_one_line_byte_offsets() {
+        let content = "---\nid: D-1\ntitle: T\n---\n[[A-1]] and [[B-2]] here\n";
+        let doc = parse_document(content, None).unwrap();
+        assert_eq!(doc.references.len(), 2);
+
+        let r0 = &doc.references[0];
+        assert_eq!(r0.artifact_id, "A-1");
+        assert_eq!(r0.col, 0);
+        assert_eq!(r0.len, 7); // [[A-1]]
+        assert_eq!(
+            &doc.body[r0.byte_offset..r0.byte_offset + r0.len],
+            "[[A-1]]"
+        );
+
+        let r1 = &doc.references[1];
+        assert_eq!(r1.artifact_id, "B-2");
+        assert_eq!(r1.col, 12); // "[[A-1]] and " is 12 bytes
+        assert_eq!(r1.len, 7); // [[B-2]]
+        assert_eq!(
+            &doc.body[r1.byte_offset..r1.byte_offset + r1.len],
+            "[[B-2]]"
+        );
+    }
+
+    // rivet: verifies REQ-033
+    #[test]
+    fn reference_byte_offsets_multiline() {
+        let content = "---\nid: D-1\ntitle: T\n---\nLine one.\n[[REQ-X]] on line two.\n";
+        let doc = parse_document(content, None).unwrap();
+        assert_eq!(doc.references.len(), 1);
+        let r = &doc.references[0];
+        assert_eq!(r.line, 2);
+        assert_eq!(r.col, 0);
+        // "Line one.\n" = 10 bytes, so byte_offset = 10
+        assert_eq!(r.byte_offset, 10);
+        assert_eq!(&doc.body[r.byte_offset..r.byte_offset + r.len], "[[REQ-X]]");
+    }
+
+    // rivet: verifies REQ-033
+    #[test]
+    fn section_heading_line_and_byte_offset() {
+        let content =
+            "---\nid: D-1\ntitle: T\n---\n# Heading One\n\nSome text.\n\n## Heading Two\n";
+        let doc = parse_document(content, None).unwrap();
+        assert_eq!(doc.sections.len(), 2);
+
+        assert_eq!(doc.sections[0].heading_line, 1);
+        assert_eq!(doc.sections[0].heading_byte_offset, 0);
+        assert_eq!(
+            doc.body[doc.sections[0].heading_byte_offset..]
+                .lines()
+                .next()
+                .unwrap(),
+            "# Heading One"
+        );
+
+        // "# Heading One\n" (14) + "\n" (1) + "Some text.\n" (11) + "\n" (1) = 27
+        assert_eq!(doc.sections[1].heading_line, 5);
+        assert_eq!(doc.sections[1].heading_byte_offset, 27);
+        assert_eq!(
+            doc.body[doc.sections[1].heading_byte_offset..]
+                .lines()
+                .next()
+                .unwrap(),
+            "## Heading Two"
+        );
     }
 
     // rivet: verifies REQ-033
