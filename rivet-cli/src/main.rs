@@ -2623,12 +2623,26 @@ fn cmd_validate(
     let doc_store = doc_store.unwrap_or_default();
 
     // Core validation: use salsa incremental by default, --direct for legacy path.
-    // Fall back to the direct path when baseline scoping is active, since the
-    // salsa database validates all source files and does not support scoped stores.
-    let mut diagnostics = if direct || baseline_name.is_some() {
+    // When baseline scoping is active, salsa validates ALL files and we filter
+    // the resulting diagnostics to only include artifacts in the scoped store.
+    let mut diagnostics = if direct {
         validate::validate(&store, &schema, &graph)
     } else {
-        run_salsa_validation(cli, &config)?
+        let all_diags = run_salsa_validation(cli, &config)?;
+        if baseline_name.is_some() {
+            // Filter diagnostics to only those relevant to the scoped store.
+            all_diags
+                .into_iter()
+                .filter(|d| {
+                    d.artifact_id
+                        .as_ref()
+                        .map(|id| store.contains(id))
+                        .unwrap_or(true)
+                })
+                .collect()
+        } else {
+            all_diags
+        }
     };
     diagnostics.extend(validate::validate_documents(&doc_store, &store));
 
@@ -2961,17 +2975,21 @@ fn run_salsa_validation(cli: &Cli, config: &ProjectConfig) -> Result<Vec<validat
     let mut source_contents: Vec<(String, String)> = Vec::new();
     for source in &config.sources {
         let source_path = cli.project.join(&source.path);
-        // The salsa db only handles generic YAML parsing; skip other formats.
-        if source.format != "generic" && source.format != "generic-yaml" {
-            log::info!(
-                "salsa: skipping source '{}' (format '{}' not yet supported, using adapter fallback)",
-                source.path,
-                source.format,
-            );
-            continue;
+        // All YAML-based formats are handled by parse_artifacts_v2 via schema-driven extraction.
+        match source.format.as_str() {
+            "generic" | "generic-yaml" | "stpa-yaml" => {
+                collect_yaml_files(&source_path, &mut source_contents)
+                    .with_context(|| format!("reading source '{}'", source.path))?;
+            }
+            _ => {
+                // Non-YAML formats (reqif, aadl, needs-json) still need their own adapters.
+                log::debug!(
+                    "salsa: skipping non-YAML source '{}' (format: {})",
+                    source.path,
+                    source.format,
+                );
+            }
         }
-        collect_yaml_files(&source_path, &mut source_contents)
-            .with_context(|| format!("reading source '{}'", source.path))?;
     }
 
     // ── Build salsa database and run validation ─────────────────────────
