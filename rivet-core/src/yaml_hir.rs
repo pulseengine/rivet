@@ -990,9 +990,99 @@ fn scalar_text(node: &SyntaxNode) -> Option<String> {
 fn unquote_scalar(kind: SyntaxKind, raw: &str) -> String {
     match kind {
         SyntaxKind::SingleQuotedScalar => raw[1..raw.len() - 1].replace("''", "'"),
-        SyntaxKind::DoubleQuotedScalar => raw[1..raw.len() - 1].to_string(),
+        SyntaxKind::DoubleQuotedScalar => unescape_double_quoted(&raw[1..raw.len() - 1]),
         _ => raw.to_string(),
     }
+}
+
+/// Process YAML double-quoted escape sequences.
+///
+/// Handles: `\\`, `\"`, `\n`, `\t`, `\r`, `\/`, `\0`, and `\uXXXX`.
+fn unescape_double_quoted(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some('\\') => result.push('\\'),
+                Some('"') => result.push('"'),
+                Some('n') => result.push('\n'),
+                Some('t') => result.push('\t'),
+                Some('r') => result.push('\r'),
+                Some('/') => result.push('/'),
+                Some('0') => result.push('\0'),
+                Some('a') => result.push('\u{07}'), // bell
+                Some('b') => result.push('\u{08}'), // backspace
+                Some('e') => result.push('\u{1B}'), // escape
+                Some('v') => result.push('\u{0B}'), // vertical tab
+                Some(' ') => result.push(' '),
+                Some('N') => result.push('\u{85}'), // next line
+                Some('_') => result.push('\u{A0}'), // non-breaking space
+                Some('L') => result.push('\u{2028}'), // line separator
+                Some('P') => result.push('\u{2029}'), // paragraph separator
+                Some('x') => {
+                    // \xXX — 2-digit hex
+                    let hex: String = chars.by_ref().take(2).collect();
+                    if hex.len() == 2 {
+                        if let Ok(cp) = u32::from_str_radix(&hex, 16) {
+                            if let Some(ch) = char::from_u32(cp) {
+                                result.push(ch);
+                                continue;
+                            }
+                        }
+                    }
+                    // Malformed — emit literally
+                    result.push('\\');
+                    result.push('x');
+                    result.push_str(&hex);
+                }
+                Some('u') => {
+                    // \uXXXX — 4-digit hex
+                    let hex: String = chars.by_ref().take(4).collect();
+                    if hex.len() == 4 {
+                        if let Ok(cp) = u32::from_str_radix(&hex, 16) {
+                            if let Some(ch) = char::from_u32(cp) {
+                                result.push(ch);
+                                continue;
+                            }
+                        }
+                    }
+                    // Malformed — emit literally
+                    result.push('\\');
+                    result.push('u');
+                    result.push_str(&hex);
+                }
+                Some('U') => {
+                    // \UXXXXXXXX — 8-digit hex
+                    let hex: String = chars.by_ref().take(8).collect();
+                    if hex.len() == 8 {
+                        if let Ok(cp) = u32::from_str_radix(&hex, 16) {
+                            if let Some(ch) = char::from_u32(cp) {
+                                result.push(ch);
+                                continue;
+                            }
+                        }
+                    }
+                    // Malformed — emit literally
+                    result.push('\\');
+                    result.push('U');
+                    result.push_str(&hex);
+                }
+                Some(other) => {
+                    // Unknown escape — preserve literally
+                    result.push('\\');
+                    result.push(other);
+                }
+                None => {
+                    // Trailing backslash — preserve literally
+                    result.push('\\');
+                }
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
 }
 
 /// Extract block-scalar text from a Value node.
@@ -1029,7 +1119,14 @@ fn block_scalar_text(value_node: &SyntaxNode) -> Option<String> {
         if line.trim().is_empty() {
             result.push('\n');
         } else if line.len() > min_indent {
-            result.push_str(&line[min_indent..]);
+            // Safety: min_indent counts only leading whitespace bytes,
+            // which are always valid UTF-8 boundaries. The char_boundary
+            // check is a defensive fallback for malformed input.
+            if line.is_char_boundary(min_indent) {
+                result.push_str(&line[min_indent..]);
+            } else {
+                result.push_str(line); // fallback: don't strip
+            }
         } else {
             result.push_str(line);
         }
@@ -1515,5 +1612,83 @@ artifacts:
         assert_eq!(hir_prov.created_by, serde_prov.created_by);
         assert_eq!(hir_prov.model, serde_prov.model);
         assert_eq!(hir_prov.reviewed_by, serde_prov.reviewed_by);
+    }
+
+    // ── Double-quoted escape tests ─────────────────────────────────
+
+    #[test]
+    fn double_quoted_escapes() {
+        assert_eq!(unescape_double_quoted("hello\\nworld"), "hello\nworld");
+        assert_eq!(unescape_double_quoted("tab\\there"), "tab\there");
+        assert_eq!(unescape_double_quoted("quote\\\"inside"), "quote\"inside");
+        assert_eq!(unescape_double_quoted("no escapes"), "no escapes");
+    }
+
+    #[test]
+    fn double_quoted_escape_backslash_and_null() {
+        assert_eq!(unescape_double_quoted("a\\\\b"), "a\\b");
+        assert_eq!(unescape_double_quoted("nul\\0char"), "nul\0char");
+        assert_eq!(unescape_double_quoted("slash\\/ok"), "slash/ok");
+        assert_eq!(unescape_double_quoted("cr\\rhere"), "cr\rhere");
+    }
+
+    #[test]
+    fn double_quoted_unicode_escape() {
+        // \u0041 == 'A'
+        assert_eq!(unescape_double_quoted("\\u0041BC"), "ABC");
+        // \u00e9 == 'e' with acute accent
+        assert_eq!(unescape_double_quoted("caf\\u00e9"), "caf\u{00e9}");
+    }
+
+    #[test]
+    fn double_quoted_trailing_backslash() {
+        // Trailing backslash preserved literally
+        assert_eq!(unescape_double_quoted("end\\"), "end\\");
+    }
+
+    #[test]
+    fn double_quoted_unknown_escape() {
+        // Unknown escape sequence preserved literally
+        assert_eq!(unescape_double_quoted("\\qfoo"), "\\qfoo");
+    }
+
+    #[test]
+    fn unquote_scalar_double_quoted_integration() {
+        let result = unquote_scalar(SyntaxKind::DoubleQuotedScalar, "\"line1\\nline2\"");
+        assert_eq!(result, "line1\nline2");
+    }
+
+    // ── Block scalar Unicode safety tests ──────────────────────────
+
+    #[test]
+    fn block_scalar_with_unicode_content() {
+        // Block scalar whose content lines contain multi-byte UTF-8.
+        // The indent stripping must not split multi-byte characters.
+        let source = "\
+artifacts:
+  - id: A-1
+    type: req
+    title: Unicode block test
+    description: |
+      Stra\u{00df}e and caf\u{00e9}
+      \u{65e5}\u{672c}\u{8a9e} text
+";
+        let hir = extract_generic_artifacts(source);
+        assert_eq!(hir.artifacts.len(), 1);
+        let desc_str = hir.artifacts[0]
+            .artifact
+            .description
+            .as_deref()
+            .expect("description field missing");
+        assert!(
+            desc_str.contains("Stra\u{00df}e"),
+            "expected Strasse with eszett, got: {:?}",
+            desc_str
+        );
+        assert!(
+            desc_str.contains("\u{65e5}\u{672c}\u{8a9e}"),
+            "expected Japanese chars, got: {:?}",
+            desc_str
+        );
     }
 }
