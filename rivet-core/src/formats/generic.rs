@@ -29,7 +29,7 @@ use serde::Deserialize;
 
 use crate::adapter::{Adapter, AdapterConfig, AdapterSource};
 use crate::error::Error;
-use crate::model::{Artifact, Link};
+use crate::model::{Artifact, Link, Provenance};
 
 pub struct GenericYamlAdapter {
     supported: Vec<String>,
@@ -94,6 +94,7 @@ impl Adapter for GenericYamlAdapter {
                         })
                         .collect(),
                     fields: a.fields.clone(),
+                    provenance: a.provenance.clone(),
                 })
                 .collect(),
         };
@@ -123,6 +124,8 @@ struct GenericArtifact {
     links: Vec<GenericLink>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     fields: BTreeMap<String, serde_yaml::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    provenance: Option<Provenance>,
 }
 
 #[derive(Deserialize, serde::Serialize)]
@@ -154,6 +157,7 @@ pub fn parse_generic_yaml(content: &str, source: Option<&Path>) -> Result<Vec<Ar
                 })
                 .collect(),
             fields: a.fields,
+            provenance: a.provenance,
             source_file: source.map(|p| p.to_path_buf()),
         })
         .collect())

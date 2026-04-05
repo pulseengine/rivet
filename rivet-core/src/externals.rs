@@ -1191,6 +1191,7 @@ mod tests {
                 },
             ],
             fields: std::collections::BTreeMap::new(),
+            provenance: None,
             source_file: None,
         };
 
@@ -1226,6 +1227,7 @@ mod tests {
                 target: "other:REQ-001".to_string(), // cross-external ref
             }],
             fields: std::collections::BTreeMap::new(),
+            provenance: None,
             source_file: None,
         };
 
@@ -1258,6 +1260,7 @@ mod tests {
             tags: vec![],
             links: vec![], // no links at all
             fields: std::collections::BTreeMap::new(),
+            provenance: None,
             source_file: None,
         };
 

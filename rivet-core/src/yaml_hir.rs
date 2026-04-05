@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::model::{Artifact, Link};
+use crate::model::{Artifact, Link, Provenance};
 use crate::schema::{Schema, Severity};
 use crate::yaml_cst::{self, SyntaxKind, SyntaxNode};
 
@@ -347,6 +347,7 @@ fn extract_section_item(
     let mut links: Vec<Link> = Vec::new();
     let mut fields: BTreeMap<String, serde_yaml::Value> = BTreeMap::new();
     let mut field_spans: BTreeMap<String, Span> = BTreeMap::new();
+    let mut provenance: Option<Provenance> = None;
 
     for entry in mapping.children() {
         if node_kind(&entry) != SyntaxKind::MappingEntry {
@@ -424,6 +425,10 @@ fn extract_section_item(
                 links.extend(extract_links(&value_node));
                 field_spans.insert("links".into(), value_span);
             }
+            "provenance" => {
+                provenance = extract_provenance(&value_node);
+                field_spans.insert("provenance".into(), value_span);
+            }
             // Everything else goes to fields
             _ => {
                 let val = extract_field_value(&value_node);
@@ -452,6 +457,7 @@ fn extract_section_item(
             tags,
             links,
             fields,
+            provenance,
             source_file: None, // set by caller
         },
         id_span,
@@ -530,6 +536,7 @@ fn extract_artifact_from_item(item: &SyntaxNode, result: &mut ParsedYamlFile) {
     let mut links: Vec<Link> = Vec::new();
     let mut fields: BTreeMap<String, serde_yaml::Value> = BTreeMap::new();
     let mut field_spans: BTreeMap<String, Span> = BTreeMap::new();
+    let mut provenance: Option<Provenance> = None;
 
     // Walk all MappingEntry children
     for entry in mapping.children() {
@@ -588,6 +595,10 @@ fn extract_artifact_from_item(item: &SyntaxNode, result: &mut ParsedYamlFile) {
                 links = extract_links(&value_node);
                 field_spans.insert("links".into(), value_span);
             }
+            "provenance" => {
+                provenance = extract_provenance(&value_node);
+                field_spans.insert("provenance".into(), value_span);
+            }
             "fields" => {
                 // Nested mapping of custom fields
                 if let Some(nested_map) = child_of_kind(&value_node, SyntaxKind::Mapping) {
@@ -639,6 +650,7 @@ fn extract_artifact_from_item(item: &SyntaxNode, result: &mut ParsedYamlFile) {
         tags,
         links,
         fields,
+        provenance,
         source_file: None,
     };
 
@@ -705,6 +717,53 @@ fn extract_links(value_node: &SyntaxNode) -> Vec<Link> {
     }
 
     links
+}
+
+// ── Provenance extraction ─────────────────────────────────────────────
+
+/// Extract a `Provenance` struct from a `provenance:` mapping value node.
+fn extract_provenance(value_node: &SyntaxNode) -> Option<Provenance> {
+    let map = child_of_kind(value_node, SyntaxKind::Mapping)?;
+
+    let mut created_by: Option<String> = None;
+    let mut model: Option<String> = None;
+    let mut session_id: Option<String> = None;
+    let mut timestamp: Option<String> = None;
+    let mut reviewed_by: Option<String> = None;
+
+    for entry in map.children() {
+        if node_kind(&entry) != SyntaxKind::MappingEntry {
+            continue;
+        }
+        let Some(k) = child_of_kind(&entry, SyntaxKind::Key) else {
+            continue;
+        };
+        let Some(k_text) = scalar_text(&k) else {
+            continue;
+        };
+        let Some(v) = child_of_kind(&entry, SyntaxKind::Value) else {
+            continue;
+        };
+        match k_text.as_str() {
+            "created-by" => created_by = scalar_text(&v),
+            "model" => model = scalar_text(&v),
+            "session-id" => session_id = scalar_text(&v),
+            "timestamp" => timestamp = scalar_text(&v),
+            "reviewed-by" => reviewed_by = scalar_text(&v),
+            _ => {} // ignore unknown provenance fields
+        }
+    }
+
+    // `created-by` is the only required field
+    let created_by = created_by?;
+
+    Some(Provenance {
+        created_by,
+        model,
+        session_id,
+        timestamp,
+        reviewed_by,
+    })
 }
 
 // ── String list extraction (tags, etc.) ────────────────────────────────
@@ -1325,5 +1384,128 @@ artifacts:
         let result = extract_schema_driven(source, &schema, None);
         assert_eq!(result.artifacts.len(), 1);
         assert_eq!(result.artifacts[0].artifact.artifact_type, "requirement");
+    }
+
+    // ── Provenance tests ──────────────────────────────────────────────────
+
+    /// Provenance mapping is extracted correctly from generic artifacts.
+    #[test]
+    fn provenance_extracted_from_generic_artifact() {
+        let source = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: AI-generated requirement
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      session-id: sess-abc123
+      timestamp: '2026-04-05T10:00:00Z'
+      reviewed-by: jane.doe
+";
+        let hir = extract_generic_artifacts(source);
+        assert_eq!(hir.artifacts.len(), 1);
+        let prov = hir.artifacts[0]
+            .artifact
+            .provenance
+            .as_ref()
+            .expect("provenance should be present");
+        assert_eq!(prov.created_by, "ai-assisted");
+        assert_eq!(prov.model.as_deref(), Some("claude-opus-4-6"));
+        assert_eq!(prov.session_id.as_deref(), Some("sess-abc123"));
+        assert_eq!(prov.timestamp.as_deref(), Some("2026-04-05T10:00:00Z"));
+        assert_eq!(prov.reviewed_by.as_deref(), Some("jane.doe"));
+    }
+
+    /// Provenance is extracted in schema-driven mode (STPA sections).
+    #[test]
+    fn provenance_extracted_from_schema_driven_section() {
+        let source = "\
+losses:
+  - id: L-001
+    title: Loss of life
+    provenance:
+      created-by: ai
+      model: claude-opus-4-6
+";
+        let schema = test_schema();
+        let result = extract_schema_driven(source, &schema, None);
+        assert_eq!(result.artifacts.len(), 1);
+        let prov = result.artifacts[0]
+            .artifact
+            .provenance
+            .as_ref()
+            .expect("provenance should be present");
+        assert_eq!(prov.created_by, "ai");
+        assert_eq!(prov.model.as_deref(), Some("claude-opus-4-6"));
+    }
+
+    /// Artifacts without provenance still parse correctly (backward compatible).
+    #[test]
+    fn artifact_without_provenance_parses() {
+        let source = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: No provenance here
+";
+        let hir = extract_generic_artifacts(source);
+        assert_eq!(hir.artifacts.len(), 1);
+        assert!(
+            hir.artifacts[0].artifact.provenance.is_none(),
+            "provenance should be None when absent"
+        );
+    }
+
+    /// Provenance with only the required `created-by` field works.
+    #[test]
+    fn provenance_minimal_created_by_only() {
+        let source = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: Minimal provenance
+    provenance:
+      created-by: human
+";
+        let hir = extract_generic_artifacts(source);
+        assert_eq!(hir.artifacts.len(), 1);
+        let prov = hir.artifacts[0]
+            .artifact
+            .provenance
+            .as_ref()
+            .expect("provenance should be present");
+        assert_eq!(prov.created_by, "human");
+        assert!(prov.model.is_none());
+        assert!(prov.session_id.is_none());
+        assert!(prov.timestamp.is_none());
+        assert!(prov.reviewed_by.is_none());
+    }
+
+    /// Provenance round-trips through the serde-based generic parser too.
+    #[test]
+    fn provenance_cross_validates_with_serde_parser() {
+        let source = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: Cross-validate provenance
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      reviewed-by: jane.doe
+";
+        let hir = extract_generic_artifacts(source);
+        let serde_arts = parse_generic_yaml(source, None).unwrap();
+
+        assert_eq!(hir.artifacts.len(), 1);
+        assert_eq!(serde_arts.len(), 1);
+
+        let hir_prov = hir.artifacts[0].artifact.provenance.as_ref().unwrap();
+        let serde_prov = serde_arts[0].provenance.as_ref().unwrap();
+
+        assert_eq!(hir_prov.created_by, serde_prov.created_by);
+        assert_eq!(hir_prov.model, serde_prov.model);
+        assert_eq!(hir_prov.reviewed_by, serde_prov.reviewed_by);
     }
 }

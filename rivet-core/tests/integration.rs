@@ -44,6 +44,7 @@ fn make_artifact(id: &str, art_type: &str, title: &str) -> Artifact {
         tags: vec![],
         links: vec![],
         fields: BTreeMap::new(),
+        provenance: None,
         source_file: None,
     }
 }
@@ -66,6 +67,7 @@ fn make_artifact_full(
         tags: tags.iter().map(|t| t.to_string()).collect(),
         links,
         fields,
+        provenance: None,
         source_file: None,
     }
 }

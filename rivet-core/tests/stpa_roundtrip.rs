@@ -56,6 +56,7 @@ fn test_store_insert_and_lookup() {
         tags: vec![],
         links: vec![],
         fields: Default::default(),
+        provenance: None,
         source_file: None,
     };
     store.insert(artifact).unwrap();
@@ -77,6 +78,7 @@ fn test_duplicate_id_rejected() {
         tags: vec![],
         links: vec![],
         fields: Default::default(),
+        provenance: None,
         source_file: None,
     };
     store.insert(artifact).unwrap();
@@ -90,6 +92,7 @@ fn test_duplicate_id_rejected() {
         tags: vec![],
         links: vec![],
         fields: Default::default(),
+        provenance: None,
         source_file: None,
     };
     assert!(store.insert(dup).is_err());
@@ -113,6 +116,7 @@ fn test_broken_link_detected() {
             target: "L-NONEXISTENT".into(),
         }],
         fields: Default::default(),
+        provenance: None,
         source_file: None,
     };
     store.insert(artifact).unwrap();
@@ -137,6 +141,7 @@ fn test_validation_catches_unknown_type() {
         tags: vec![],
         links: vec![],
         fields: Default::default(),
+        provenance: None,
         source_file: None,
     };
     store.insert(artifact).unwrap();

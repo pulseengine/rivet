@@ -4470,6 +4470,7 @@ fn parse_yaml_content(
                         })
                         .collect(),
                     fields: raw.fields,
+                    provenance: None,
                     source_file: Some(std::path::PathBuf::from(file_path)),
                 })
                 .collect();
@@ -4498,6 +4499,7 @@ fn parse_yaml_content(
                         })
                         .collect(),
                     fields: raw.fields,
+                    provenance: None,
                     source_file: Some(std::path::PathBuf::from(file_path)),
                 })
                 .collect();
@@ -5992,6 +5994,7 @@ fn cmd_add(
         tags: tags.to_vec(),
         links: link_vec,
         fields: fields_map,
+        provenance: None,
         source_file: None,
     };
 
@@ -6248,6 +6251,7 @@ fn cmd_batch(cli: &Cli, file: &std::path::Path) -> Result<bool> {
                     tags: tags.clone(),
                     links: link_vec,
                     fields: fields.clone(),
+                    provenance: None,
                     source_file: None,
                 };
 
@@ -6336,6 +6340,7 @@ fn cmd_batch(cli: &Cli, file: &std::path::Path) -> Result<bool> {
                     tags: tags.clone(),
                     links: link_vec,
                     fields: fields.clone(),
+                    provenance: None,
                     source_file: None,
                 };
 
@@ -7592,6 +7597,7 @@ mod lsp_tests {
                 tags: vec![],
                 links: vec![],
                 fields: std::collections::BTreeMap::new(),
+                provenance: None,
                 source_file: Some(path.clone()),
             })
             .unwrap();
@@ -7635,6 +7641,7 @@ mod lsp_tests {
                 tags: vec![],
                 links: vec![],
                 fields: std::collections::BTreeMap::new(),
+                provenance: None,
                 source_file: Some(path.clone()),
             })
             .unwrap();
@@ -7675,6 +7682,7 @@ mod lsp_tests {
                 tags: vec![],
                 links: vec![],
                 fields: std::collections::BTreeMap::new(),
+                provenance: None,
                 source_file: Some(path.clone()),
             })
             .unwrap();
@@ -7760,6 +7768,7 @@ mod lsp_tests {
                 tags: vec![],
                 links: vec![],
                 fields: std::collections::BTreeMap::new(),
+                provenance: None,
                 source_file: Some(path_a.clone()),
             })
             .unwrap();
@@ -7773,6 +7782,7 @@ mod lsp_tests {
                 tags: vec![],
                 links: vec![],
                 fields: std::collections::BTreeMap::new(),
+                provenance: None,
                 source_file: Some(path_b.clone()),
             })
             .unwrap();
@@ -7786,6 +7796,7 @@ mod lsp_tests {
                 tags: vec![],
                 links: vec![],
                 fields: std::collections::BTreeMap::new(),
+                provenance: None,
                 source_file: Some(path_b.clone()),
             })
             .unwrap();
@@ -7856,6 +7867,7 @@ artifacts:
                 tags: vec![],
                 links: vec![],
                 fields: std::collections::BTreeMap::new(),
+                provenance: None,
                 source_file: Some(path.clone()),
             })
             .unwrap();

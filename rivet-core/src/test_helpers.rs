@@ -50,6 +50,7 @@ pub fn minimal_artifact(id: &str, art_type: &str) -> Artifact {
         tags: vec![],
         links: vec![],
         fields: BTreeMap::new(),
+        provenance: None,
         source_file: None,
     }
 }

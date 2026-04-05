@@ -46,6 +46,11 @@ base-fields:
     required: false
     description: Arbitrary tags for categorization
 
+  - name: provenance
+    type: mapping
+    required: false
+    description: AI provenance metadata (created-by, model, session-id, timestamp, reviewed-by)
+
 # ──────────────────────────────────────────────────────────────────────────
 # Common link types — reusable across all domains.
 #

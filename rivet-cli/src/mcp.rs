@@ -720,6 +720,7 @@ fn tool_add(project_dir: &Path, arguments: &Value) -> Result<Value> {
         tags,
         links,
         fields,
+        provenance: None,
         source_file: None,
     };
 

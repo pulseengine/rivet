@@ -712,6 +712,7 @@ fn convert_wit_artifact_to_host(
         tags: wit.tags,
         links,
         fields,
+        provenance: None,
         source_file: None,
     }
 }
@@ -1030,6 +1031,7 @@ mod tests {
             tags: vec![],
             links: vec![],
             fields: std::collections::BTreeMap::new(),
+            provenance: None,
             source_file: None,
         }];
         let result = validate_wasm_artifacts(artifacts);
@@ -1052,6 +1054,7 @@ mod tests {
             tags: vec![],
             links: vec![],
             fields: std::collections::BTreeMap::new(),
+            provenance: None,
             source_file: None,
         }];
         let result = validate_wasm_artifacts(artifacts);
@@ -1074,6 +1077,7 @@ mod tests {
             tags: vec![],
             links: vec![],
             fields: std::collections::BTreeMap::new(),
+            provenance: None,
             source_file: None,
         }];
         let result = validate_wasm_artifacts(artifacts).unwrap();

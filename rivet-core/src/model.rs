@@ -18,6 +18,30 @@ pub struct Link {
     pub target: ArtifactId,
 }
 
+/// AI provenance metadata for an artifact.
+///
+/// Tracks whether an artifact was created by a human, AI, or AI-assisted
+/// workflow, along with optional details about the model, session, and
+/// human reviewer.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Provenance {
+    /// Origin of the artifact: "human", "ai", or "ai-assisted".
+    #[serde(rename = "created-by")]
+    pub created_by: String,
+    /// AI model identifier (e.g., "claude-opus-4-6").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// Session identifier for the AI interaction.
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "session-id")]
+    pub session_id: Option<String>,
+    /// ISO 8601 timestamp of creation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timestamp: Option<String>,
+    /// Human reviewer who approved this artifact.
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "reviewed-by")]
+    pub reviewed_by: Option<String>,
+}
+
 /// An artifact — the fundamental unit of the data model.
 ///
 /// Artifacts represent any lifecycle element: requirements, architecture
@@ -57,6 +81,10 @@ pub struct Artifact {
     /// Domain-specific fields (validated against schema).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub fields: BTreeMap<String, serde_yaml::Value>,
+
+    /// AI provenance metadata.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<Provenance>,
 
     /// Source file this artifact was loaded from.
     #[serde(skip)]

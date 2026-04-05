@@ -713,6 +713,7 @@ pub fn oslc_to_artifact(resource: &OslcResource) -> Result<Artifact, Error> {
         tags: Vec::new(),
         links,
         fields,
+        provenance: None,
         source_file: None,
     })
 }
@@ -1503,6 +1504,7 @@ mod tests {
                 target: "IMPL-001".to_string(),
             }],
             fields: BTreeMap::new(),
+            provenance: None,
             source_file: None,
         };
 
@@ -1534,6 +1536,7 @@ mod tests {
                 target: "REQ-001".to_string(),
             }],
             fields: BTreeMap::new(),
+            provenance: None,
             source_file: None,
         };
 
@@ -1563,6 +1566,7 @@ mod tests {
                 target: "TC-001".to_string(),
             }],
             fields: BTreeMap::new(),
+            provenance: None,
             source_file: None,
         };
 
@@ -1601,6 +1605,7 @@ mod tests {
                 },
             ],
             fields: BTreeMap::new(),
+            provenance: None,
             source_file: None,
         };
 
@@ -1628,6 +1633,7 @@ mod tests {
             tags: Vec::new(),
             links: Vec::new(),
             fields: BTreeMap::new(),
+            provenance: None,
             source_file: None,
         };
 
@@ -1655,6 +1661,7 @@ mod tests {
             tags: Vec::new(),
             links: Vec::new(),
             fields: BTreeMap::new(),
+            provenance: None,
             source_file: None,
         }];
 
@@ -1676,6 +1683,7 @@ mod tests {
             tags: Vec::new(),
             links: Vec::new(),
             fields: BTreeMap::new(),
+            provenance: None,
             source_file: None,
         }];
 
@@ -1696,6 +1704,7 @@ mod tests {
             tags: Vec::new(),
             links: Vec::new(),
             fields: BTreeMap::new(),
+            provenance: None,
             source_file: None,
         }];
 
@@ -1708,6 +1717,7 @@ mod tests {
             tags: Vec::new(),
             links: Vec::new(),
             fields: BTreeMap::new(),
+            provenance: None,
             source_file: None,
         }];
 
@@ -1729,6 +1739,7 @@ mod tests {
             tags: Vec::new(),
             links: Vec::new(),
             fields: BTreeMap::new(),
+            provenance: None,
             source_file: None,
         }];
 
@@ -1741,6 +1752,7 @@ mod tests {
             tags: Vec::new(),
             links: Vec::new(),
             fields: BTreeMap::new(),
+            provenance: None,
             source_file: None,
         }];
 

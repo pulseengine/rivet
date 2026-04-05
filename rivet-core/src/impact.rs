@@ -290,6 +290,7 @@ mod tests {
             tags: vec![],
             links: vec![],
             fields: BTreeMap::new(),
+            provenance: None,
             source_file: None,
         }
     }
@@ -315,6 +316,7 @@ mod tests {
                 })
                 .collect(),
             fields: BTreeMap::new(),
+            provenance: None,
             source_file: None,
         }
     }

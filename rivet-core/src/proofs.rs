@@ -34,6 +34,7 @@ mod proofs {
             tags: vec![],
             links,
             fields: BTreeMap::new(),
+            provenance: None,
             source_file: None,
         }
     }
