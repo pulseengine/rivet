@@ -1174,45 +1174,15 @@ artifacts:
         let root = SyntaxNode::new_root(green);
         assert_eq!(root.text().to_string(), source, "round-trip broken");
 
-        // Count Error nodes
-        fn count_errors(node: &SyntaxNode) -> usize {
-            let mut n = if node.kind() == SyntaxKind::Error { 1 } else { 0 };
-            for c in node.children() { n += count_errors(&c); }
+        fn count_kind(node: &SyntaxNode, kind: SyntaxKind) -> usize {
+            let mut n = if node.kind() == kind { 1 } else { 0 };
+            for c in node.children() { n += count_kind(&c, kind); }
             n
         }
-        let err_count = count_errors(&root);
-
-        // Count SequenceItem nodes
-        fn count_items(node: &SyntaxNode) -> usize {
-            let mut n = if node.kind() == SyntaxKind::SequenceItem { 1 } else { 0 };
-            for c in node.children() { n += count_items(&c); }
-            n
-        }
-        let item_count = count_items(&root);
-
-        eprintln!("hazards.yaml: {item_count} sequence items, {err_count} errors, {} parse errors", errors.len());
-
-        // Print top-level structure to find where items are lost
-        fn dump_tree(node: &SyntaxNode, depth: usize) {
-            let indent = "  ".repeat(depth);
-            let text_len: usize = node.text().len().into();
-            let preview = {
-                let t = node.text().to_string();
-                let first_line = t.lines().next().unwrap_or("");
-                if first_line.len() > 60 { format!("{}...", &first_line[..60]) } else { first_line.to_string() }
-            };
-            if depth <= 3 || node.kind() == SyntaxKind::SequenceItem {
-                eprintln!("{indent}{:?} ({text_len} bytes): {preview:?}", node.kind());
-            }
-            for c in node.children() {
-                dump_tree(&c, depth + 1);
-            }
-        }
-        dump_tree(&root, 0);
-
-        assert_eq!(err_count, 0, "should have no Error nodes");
+        assert_eq!(count_kind(&root, SyntaxKind::Error), 0, "should have no Error nodes");
         assert!(errors.is_empty(), "should have no parse errors: {errors:?}");
-        assert_eq!(item_count, 32, "should have 32 sequence items (20 hazards + 12 sub-hazards)");
+        assert_eq!(count_kind(&root, SyntaxKind::SequenceItem), 32,
+            "should have 32 sequence items (20 hazards + 12 sub-hazards)");
     }
 
     #[test]
