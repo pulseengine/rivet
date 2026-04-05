@@ -122,14 +122,25 @@ fn mcp_call(project_dir: &std::path::Path, method: &str, params: Value) -> Value
 
     let stdin = child.stdin.as_mut().expect("open stdin");
 
-    // Send initialize request
+    // Send initialize request (rmcp requires proper InitializeRequestParams)
     let init_req = json!({
         "jsonrpc": "2.0",
         "id": 1,
         "method": "initialize",
-        "params": {}
+        "params": {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": { "name": "test-client", "version": "0.1.0" }
+        }
     });
     writeln!(stdin, "{}", serde_json::to_string(&init_req).unwrap()).expect("write init");
+
+    // Send initialized notification (rmcp expects this after init response)
+    let initialized_notif = json!({
+        "jsonrpc": "2.0",
+        "method": "notifications/initialized"
+    });
+    writeln!(stdin, "{}", serde_json::to_string(&initialized_notif).unwrap()).expect("write initialized");
 
     // Send the actual tool call
     let tool_req = json!({
