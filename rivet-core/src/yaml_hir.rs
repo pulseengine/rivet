@@ -179,17 +179,56 @@ pub fn extract_schema_driven(
             let Some(value_node) = child_of_kind(&entry, SyntaxKind::Value) else {
                 continue;
             };
-            let seq = child_of_kind(&value_node, SyntaxKind::Sequence);
-            if let Some(seq) = seq {
-                for item in seq.children() {
-                    if node_kind(&item) == SyntaxKind::SequenceItem {
-                        extract_section_item(
-                            &item,
-                            type_name,
-                            shorthand_links,
-                            source_path,
-                            &mut result,
-                        );
+            if let Some(seq) = child_of_kind(&value_node, SyntaxKind::Sequence) {
+                // Direct sequence: section → [items]
+                extract_sequence_items(
+                    &seq, type_name, shorthand_links, source_path, &mut result,
+                );
+            } else if let Some(mapping) = child_of_kind(&value_node, SyntaxKind::Mapping) {
+                // Nested mapping: section → {group → [items], ...}
+                // Handles UCAs grouped by type (not-providing, providing, etc.)
+                //
+                // First pass: collect parent-level scalar fields as inherited
+                // metadata (e.g., controller: CTRL-CORE propagated to all items).
+                let mut inherited = BTreeMap::<String, String>::new();
+                for me in mapping.children() {
+                    if node_kind(&me) != SyntaxKind::MappingEntry {
+                        continue;
+                    }
+                    let Some(k) = child_of_kind(&me, SyntaxKind::Key) else { continue };
+                    let Some(k_text) = scalar_text(&k) else { continue };
+                    let Some(v) = child_of_kind(&me, SyntaxKind::Value) else { continue };
+                    // Only collect entries whose value is a scalar (not a sequence)
+                    if child_of_kind(&v, SyntaxKind::Sequence).is_none()
+                        && child_of_kind(&v, SyntaxKind::Mapping).is_none()
+                    {
+                        if let Some(v_text) = scalar_text(&v) {
+                            inherited.insert(k_text, v_text);
+                        }
+                    }
+                }
+
+                // Second pass: extract items from nested sequences
+                for nested_entry in mapping.children() {
+                    if node_kind(&nested_entry) != SyntaxKind::MappingEntry {
+                        continue;
+                    }
+                    let group_key = child_of_kind(&nested_entry, SyntaxKind::Key)
+                        .and_then(|k| scalar_text(&k));
+                    if let Some(nested_value) = child_of_kind(&nested_entry, SyntaxKind::Value) {
+                        if let Some(nested_seq) =
+                            child_of_kind(&nested_value, SyntaxKind::Sequence)
+                        {
+                            extract_sequence_items_with_inherited(
+                                &nested_seq,
+                                type_name,
+                                shorthand_links,
+                                source_path,
+                                &inherited,
+                                group_key.as_deref(),
+                                &mut result,
+                            );
+                        }
                     }
                 }
             }
@@ -205,6 +244,75 @@ pub fn extract_schema_driven(
     }
 
     result
+}
+
+/// Extract all artifacts from a Sequence node's SequenceItem children.
+fn extract_sequence_items(
+    seq: &SyntaxNode,
+    type_name: &str,
+    shorthand_links: &BTreeMap<String, String>,
+    source_path: Option<&Path>,
+    result: &mut ParsedYamlFile,
+) {
+    for item in seq.children() {
+        if node_kind(&item) == SyntaxKind::SequenceItem {
+            extract_section_item(&item, type_name, shorthand_links, source_path, result);
+        }
+    }
+}
+
+/// Extract items with inherited parent metadata (for nested STPA structures).
+///
+/// `inherited` contains parent-level scalar fields (e.g., `controller: CTRL-CORE`).
+/// `group_key` is the sub-key name (e.g., `not-providing`) used to set the
+/// `uca-type` field on each extracted artifact.
+fn extract_sequence_items_with_inherited(
+    seq: &SyntaxNode,
+    type_name: &str,
+    shorthand_links: &BTreeMap<String, String>,
+    source_path: Option<&Path>,
+    inherited: &BTreeMap<String, String>,
+    group_key: Option<&str>,
+    result: &mut ParsedYamlFile,
+) {
+    for item in seq.children() {
+        if node_kind(&item) == SyntaxKind::SequenceItem {
+            extract_section_item(&item, type_name, shorthand_links, source_path, result);
+
+            // Apply inherited fields and group key to the just-extracted artifact
+            if let Some(sa) = result.artifacts.last_mut() {
+                // Propagate parent fields as shorthand links
+                for (field, value) in inherited {
+                    if let Some(link_type) = shorthand_links.get(field) {
+                        // Only add if the artifact doesn't already have this link
+                        let has_link = sa.artifact.links.iter().any(|l| l.link_type == *link_type);
+                        if !has_link {
+                            sa.artifact.links.push(Link {
+                                link_type: link_type.clone(),
+                                target: value.clone(),
+                            });
+                        }
+                    } else if !sa.artifact.fields.contains_key(field) {
+                        // Non-link inherited field
+                        sa.artifact.fields.insert(
+                            field.clone(),
+                            serde_yaml::Value::String(value.clone()),
+                        );
+                    }
+                }
+
+                // Set uca-type from the group sub-key name
+                if let Some(gk) = group_key {
+                    if !sa.artifact.fields.contains_key("uca-type") {
+                        sa.artifact.fields.insert(
+                            "uca-type".into(),
+                            serde_yaml::Value::String(gk.into()),
+                        );
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Extract a single artifact from a section item (schema-driven).

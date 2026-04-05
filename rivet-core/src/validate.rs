@@ -513,6 +513,7 @@ mod tests {
             common_mistakes: vec![],
             example: None,
             yaml_section: None,
+            yaml_sections: vec![],
             shorthand_links: std::collections::BTreeMap::new(),
         }];
         file.conditional_rules = conditional_rules;
@@ -865,6 +866,7 @@ then:
             common_mistakes: vec![],
             example: None,
             yaml_section: None,
+            yaml_sections: vec![],
             shorthand_links: std::collections::BTreeMap::new(),
         }];
         file.traceability_rules = vec![TraceabilityRule {
@@ -1008,6 +1010,7 @@ then:
             common_mistakes: vec![],
             example: None,
             yaml_section: None,
+            yaml_sections: vec![],
             shorthand_links: std::collections::BTreeMap::new(),
         }];
         Schema::merge(&[file])
