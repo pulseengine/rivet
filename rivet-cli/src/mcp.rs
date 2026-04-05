@@ -280,7 +280,7 @@ fn load_project(project_dir: &Path) -> Result<McpProject> {
 
     let mut store = Store::new();
     for source in &config.sources {
-        let artifacts = rivet_core::load_artifacts(source, project_dir)
+        let artifacts = rivet_core::load_artifacts(source, project_dir, &schema)
             .with_context(|| format!("loading source '{}'", source.path))?;
         for artifact in artifacts {
             store.upsert(artifact);

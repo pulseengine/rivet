@@ -359,7 +359,7 @@ pub fn load_external_project(
             );
             continue;
         }
-        let loaded = crate::load_artifacts(source, project_dir)?;
+        let loaded = crate::load_artifacts(source, project_dir, &crate::schema::Schema::merge(&[]))?;
         artifacts.extend(loaded);
     }
 

@@ -15,7 +15,6 @@
 use salsa::Setter;
 
 use crate::formats::generic::parse_generic_yaml;
-use crate::formats::stpa;
 use crate::links::LinkGraph;
 use crate::model::Artifact;
 use crate::schema::{Schema, SchemaFile};
@@ -66,7 +65,11 @@ pub struct SchemaInputSet {
 /// Parse artifacts from a single source file.
 ///
 /// Detects STPA files by filename and uses the stpa-yaml adapter;
-/// all other files use the generic YAML adapter.
+/// Fallback parser using the generic YAML adapter (serde_yaml).
+///
+/// For files with `artifacts:` top-level key. Files using non-generic
+/// formats (STPA sections like `losses:`, `hazards:`) return empty here;
+/// they are handled by `parse_artifacts_v2` via schema-driven extraction.
 ///
 /// This is a salsa tracked function — results are memoized and only
 /// recomputed when the `SourceFile` content changes.
@@ -76,37 +79,11 @@ pub fn parse_artifacts(db: &dyn salsa::Database, source: SourceFile) -> Vec<Arti
     let path = source.path(db);
     let source_path = std::path::Path::new(&path);
 
-    // STPA files use a different YAML format (losses:, hazards:, etc.)
-    let filename = source_path
-        .file_name()
-        .and_then(|f| f.to_str())
-        .unwrap_or("");
-    let is_stpa = matches!(
-        filename,
-        "losses.yaml"
-            | "hazards.yaml"
-            | "system-constraints.yaml"
-            | "control-structure.yaml"
-            | "ucas.yaml"
-            | "controller-constraints.yaml"
-            | "loss-scenarios.yaml"
-    );
-
-    if is_stpa {
-        match stpa::import_stpa_file(source_path) {
-            Ok(artifacts) => artifacts,
-            Err(e) => {
-                log::warn!("Failed to parse STPA file {}: {}", path, e);
-                vec![]
-            }
-        }
-    } else {
-        match parse_generic_yaml(&content, Some(source_path)) {
-            Ok(artifacts) => artifacts,
-            Err(e) => {
-                log::warn!("Failed to parse {}: {}", path, e);
-                vec![]
-            }
+    match parse_generic_yaml(&content, Some(source_path)) {
+        Ok(artifacts) => artifacts,
+        Err(e) => {
+            log::debug!("generic parse skipped for {}: {}", path, e);
+            vec![]
         }
     }
 }
@@ -150,30 +127,9 @@ pub fn collect_parse_errors(
         let path = source.path(db);
         let source_path = std::path::Path::new(&path);
 
-        let filename = source_path
-            .file_name()
-            .and_then(|f| f.to_str())
-            .unwrap_or("");
-        let is_stpa = matches!(
-            filename,
-            "losses.yaml"
-                | "hazards.yaml"
-                | "system-constraints.yaml"
-                | "control-structure.yaml"
-                | "ucas.yaml"
-                | "controller-constraints.yaml"
-                | "loss-scenarios.yaml"
-        );
-
-        let result: Result<(), String> = if is_stpa {
-            stpa::import_stpa_file(source_path)
-                .map(|_| ())
-                .map_err(|e| e.to_string())
-        } else {
-            parse_generic_yaml(&content, Some(source_path))
-                .map(|_| ())
-                .map_err(|e| e.to_string())
-        };
+        let result = parse_generic_yaml(&content, Some(source_path))
+            .map(|_| ())
+            .map_err(|e| e.to_string());
 
         if let Err(msg) = result {
             // Try to extract line/column from the error message.
@@ -317,7 +273,6 @@ fn build_pipeline(
 /// When the `rowan-yaml` feature is enabled, uses the schema-driven rowan
 /// parser (`parse_artifacts_v2`) which reads `yaml-section` metadata from
 /// the schema. In debug builds, both parsers run and their output is
-/// compared as a cross-check.
 fn build_store(
     db: &dyn salsa::Database,
     source_set: SourceFileSet,
@@ -330,30 +285,12 @@ fn build_store(
     let mut store = Store::new();
     for source in sources {
         #[cfg(feature = "rowan-yaml")]
-        let artifacts = {
-            let new_arts = parse_artifacts_v2(db, source, schema_set);
-
-            #[cfg(debug_assertions)]
-            {
-                let old_arts = parse_artifacts(db, source);
-                let new_ids: Vec<&str> = new_arts.iter().map(|a| a.id.as_str()).collect();
-                let old_ids: Vec<&str> = old_arts.iter().map(|a| a.id.as_str()).collect();
-                if old_ids != new_ids {
-                    log::warn!(
-                        "parser mismatch for {}: old={old_ids:?} new={new_ids:?}",
-                        source.path(db),
-                    );
-                }
-            }
-
-            new_arts
-        };
+        let artifacts = parse_artifacts_v2(db, source, schema_set);
 
         #[cfg(not(feature = "rowan-yaml"))]
         let artifacts = parse_artifacts(db, source);
 
         for artifact in artifacts {
-            // Use upsert to avoid panics on duplicate IDs across files.
             store.upsert(artifact);
         }
     }

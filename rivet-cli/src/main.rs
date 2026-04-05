@@ -2262,7 +2262,7 @@ fn cmd_init_agents(cli: &Cli) -> Result<bool> {
     // Load artifacts
     let mut store = Store::new();
     for source in &config.sources {
-        match rivet_core::load_artifacts(source, &cli.project) {
+        match rivet_core::load_artifacts(source, &cli.project, &schema) {
             Ok(artifacts) => {
                 for artifact in artifacts {
                     store.upsert(artifact);
@@ -2525,9 +2525,28 @@ fn cmd_stpa(
         rivet_core::schema::Schema::merge(&files)
     };
 
-    // Load STPA artifacts
-    let artifacts =
-        rivet_core::formats::stpa::import_stpa_directory(stpa_dir).context("loading STPA files")?;
+    // Load STPA artifacts via schema-driven extraction
+    let artifacts = {
+        let mut arts = Vec::new();
+        for entry in std::fs::read_dir(stpa_dir)
+            .with_context(|| format!("reading {}", stpa_dir.display()))?
+            .filter_map(|e| e.ok())
+        {
+            let path = entry.path();
+            if path.extension().is_some_and(|ext| ext == "yaml") {
+                let content = std::fs::read_to_string(&path)
+                    .with_context(|| format!("reading {}", path.display()))?;
+                let parsed =
+                    rivet_core::yaml_hir::extract_schema_driven(&content, &schema, Some(&path));
+                for sa in parsed.artifacts {
+                    let mut a = sa.artifact;
+                    a.source_file = Some(path.clone());
+                    arts.push(a);
+                }
+            }
+        }
+        arts
+    };
 
     println!(
         "Loaded {} artifacts from {}",
@@ -4830,11 +4849,9 @@ fn cmd_commit_msg_check(cli: &Cli, file: &std::path::Path) -> Result<bool> {
             return Ok(true);
         }
     };
-    let _ = schema; // we only need the store, not schema validation
-
     let mut store = Store::new();
     for source in &config.sources {
-        match rivet_core::load_artifacts(source, &cli.project) {
+        match rivet_core::load_artifacts(source, &cli.project, &schema) {
             Ok(artifacts) => {
                 for a in artifacts {
                     store.upsert(a);
@@ -4915,7 +4932,7 @@ fn cmd_commits(
 
     let mut store = Store::new();
     for source in &config.sources {
-        let artifacts = rivet_core::load_artifacts(source, &cli.project)
+        let artifacts = rivet_core::load_artifacts(source, &cli.project, &_schema)
             .with_context(|| format!("loading source '{}'", source.path))?;
         for a in artifacts {
             store.upsert(a);
@@ -5650,7 +5667,7 @@ impl ProjectContext {
 
         let mut store = Store::new();
         for source in &config.sources {
-            let artifacts = rivet_core::load_artifacts(source, &cli.project)
+            let artifacts = rivet_core::load_artifacts(source, &cli.project, &schema)
                 .with_context(|| format!("loading source '{}'", source.path))?;
             for artifact in artifacts {
                 store.upsert(artifact);

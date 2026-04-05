@@ -138,15 +138,16 @@ pub fn extract_schema_driven(
     };
 
     // Build section map: yaml_section_name → (artifact_type_name, shorthand_links)
-    let section_map: HashMap<&str, (&str, &BTreeMap<String, String>)> = schema
-        .artifact_types
-        .values()
-        .filter_map(|t| {
-            t.yaml_section
-                .as_deref()
-                .map(|s| (s, (t.name.as_str(), &t.shorthand_links)))
-        })
-        .collect();
+    let mut section_map: HashMap<&str, (&str, &BTreeMap<String, String>)> = HashMap::new();
+    for t in schema.artifact_types.values() {
+        let entry = (t.name.as_str(), &t.shorthand_links);
+        if let Some(s) = t.yaml_section.as_deref() {
+            section_map.insert(s, entry);
+        }
+        for s in &t.yaml_sections {
+            section_map.insert(s.as_str(), entry);
+        }
+    }
 
     // Walk all top-level mapping entries
     for entry in root_mapping.children() {
@@ -780,10 +781,28 @@ fn scalar_text(node: &SyntaxNode) -> Option<String> {
         if let rowan::NodeOrToken::Token(t) = token {
             let k = t.kind();
             match k {
-                SyntaxKind::PlainScalar
-                | SyntaxKind::SingleQuotedScalar
-                | SyntaxKind::DoubleQuotedScalar => {
+                SyntaxKind::SingleQuotedScalar | SyntaxKind::DoubleQuotedScalar => {
                     return Some(unquote_scalar(k, &t.text().to_string()));
+                }
+                SyntaxKind::PlainScalar => {
+                    // The lexer splits plain scalars at commas and brackets.
+                    // Collect all sibling tokens to reconstruct the full value.
+                    let mut text = t.text().to_string();
+                    let mut next = t.next_sibling_or_token();
+                    while let Some(sibling) = next {
+                        match sibling {
+                            rowan::NodeOrToken::Token(ref st) => match st.kind() {
+                                SyntaxKind::Newline | SyntaxKind::Comment => break,
+                                _ => {
+                                    text.push_str(st.text());
+                                    next = sibling.next_sibling_or_token();
+                                }
+                            },
+                            rowan::NodeOrToken::Node(_) => break,
+                        }
+                    }
+                    let trimmed = text.trim_end().to_string();
+                    return Some(trimmed);
                 }
                 _ => {}
             }

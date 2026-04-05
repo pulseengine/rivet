@@ -70,9 +70,14 @@ pub fn load_schemas(schema_names: &[String], schemas_dir: &Path) -> Result<schem
 }
 
 /// Load artifacts from a source using the appropriate adapter.
+///
+/// The `schema` parameter enables schema-driven extraction for formats
+/// like `stpa-yaml` that use non-standard top-level YAML keys. Pass
+/// `&Schema::default()` if no schema is available.
 pub fn load_artifacts(
     source: &model::SourceConfig,
     base_dir: &Path,
+    schema: &schema::Schema,
 ) -> Result<Vec<model::Artifact>, Error> {
     let path = base_dir.join(&source.path);
 
@@ -88,8 +93,8 @@ pub fn load_artifacts(
 
     match source.format.as_str() {
         "stpa-yaml" => {
-            let adapter = formats::stpa::StpaYamlAdapter::new();
-            adapter::Adapter::import(&adapter, &source_input, &adapter_config)
+            // STPA files use schema-driven extraction with yaml-section metadata.
+            import_with_schema(&source_input, schema)
         }
         "generic" | "generic-yaml" => {
             let adapter = formats::generic::GenericYamlAdapter::new();
@@ -130,4 +135,47 @@ pub fn load_artifacts(
         other => Err(Error::Adapter(format!("unknown format: {}", other))),
     }
 }
+
+/// Import artifacts from a source using schema-driven rowan extraction.
+fn import_with_schema(
+    source: &adapter::AdapterSource,
+    schema: &schema::Schema,
+) -> Result<Vec<model::Artifact>, Error> {
+    let dir = match source {
+        adapter::AdapterSource::Directory(d) => d.as_path(),
+        adapter::AdapterSource::Path(p) => {
+            let content = std::fs::read_to_string(p)
+                .map_err(|e| Error::Adapter(format!("read {}: {e}", p.display())))?;
+            let parsed = yaml_hir::extract_schema_driven(&content, schema, Some(p));
+            return Ok(parsed
+                .artifacts
+                .into_iter()
+                .map(|sa| {
+                    let mut a = sa.artifact;
+                    a.source_file = Some(p.to_path_buf());
+                    a
+                })
+                .collect());
+        }
+        _ => return Err(Error::Adapter("unsupported source type for stpa-yaml".into())),
+    };
+    let mut artifacts = Vec::new();
+    let entries = std::fs::read_dir(dir)
+        .map_err(|e| Error::Adapter(format!("read dir {}: {e}", dir.display())))?;
+    for entry in entries.filter_map(|e| e.ok()) {
+        let path = entry.path();
+        if path.extension().is_some_and(|ext| ext == "yaml" || ext == "yml") {
+            let content = std::fs::read_to_string(&path)
+                .map_err(|e| Error::Adapter(format!("read {}: {e}", path.display())))?;
+            let parsed = yaml_hir::extract_schema_driven(&content, schema, Some(&path));
+            for sa in parsed.artifacts {
+                let mut a = sa.artifact;
+                a.source_file = Some(path.clone());
+                artifacts.push(a);
+            }
+        }
+    }
+    Ok(artifacts)
+}
+
 pub mod providers;

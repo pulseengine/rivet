@@ -231,7 +231,7 @@ pub(crate) fn reload_state(
 
     let mut store = Store::new();
     for source in &config.sources {
-        let artifacts = rivet_core::load_artifacts(source, project_path)
+        let artifacts = rivet_core::load_artifacts(source, project_path, &schema)
             .with_context(|| format!("loading source '{}'", source.path))?;
         for artifact in artifacts {
             store.upsert(artifact);

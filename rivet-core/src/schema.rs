@@ -64,6 +64,12 @@ pub struct ArtifactTypeDef {
     /// are auto-converted to links using `shorthand-links` mapping.
     #[serde(default, rename = "yaml-section")]
     pub yaml_section: Option<String>,
+    /// Additional YAML section keys (for types with multiple sections in one file).
+    ///
+    /// Example: UCAs split across `core-ucas`, `oslc-ucas`, etc. Each section
+    /// maps to the same artifact type with the same shorthand-link conversions.
+    #[serde(default, rename = "yaml-sections")]
+    pub yaml_sections: Vec<String>,
     /// Maps shorthand array fields to link types for format-specific parsing.
     ///
     /// Example: `{losses: leads-to-loss}` means `losses: [L-1]` in YAML becomes

@@ -88,7 +88,7 @@ fn test_dogfood_validate() {
 
     let mut store = Store::new();
     for source in &config.sources {
-        let artifacts = rivet_core::load_artifacts(source, &root).expect("load artifacts");
+        let artifacts = rivet_core::load_artifacts(source, &root, &schema).expect("load artifacts");
         for a in artifacts {
             store.upsert(a);
         }

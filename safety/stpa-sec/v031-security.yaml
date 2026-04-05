@@ -18,6 +18,8 @@ artifacts:
       An attacker modifies snapshot files or YAML artifacts to
       change validation results, making non-compliant deliverables
       appear compliant.
+    fields:
+      cia-impact: [integrity]
 
   - id: SL-IMPL-002
     type: sec-loss
@@ -26,6 +28,8 @@ artifacts:
     description: >
       The MCP server exposes artifact data, validation diagnostics,
       and project structure to unauthorized agents.
+    fields:
+      cia-impact: [confidentiality]
 
   - id: SL-IMPL-003
     type: sec-loss
@@ -35,6 +39,8 @@ artifacts:
       Malicious {{embed}} syntax in a document causes unexpected
       behavior during rendering — HTML injection, path traversal,
       or resource exhaustion.
+    fields:
+      cia-impact: [integrity, availability]
 
   # ── Hazards ─────────────────────────────────────────────────────────────
 
@@ -47,8 +53,10 @@ artifacts:
       integrity verification. A tampered snapshot could show
       false delta values in the compliance report.
     links:
-      - type: leads-to-loss
+      - type: leads-to-sec-loss
         target: SL-IMPL-001
+    fields:
+      cia-impact: [integrity]
 
   - id: SH-IMPL-002
     type: sec-hazard
@@ -59,8 +67,10 @@ artifacts:
       Any process that can connect to stdin/stdout can invoke
       rivet tools. On shared systems, this could be exploited.
     links:
-      - type: leads-to-loss
+      - type: leads-to-sec-loss
         target: SL-IMPL-002
+    fields:
+      cia-impact: [confidentiality, integrity]
 
   - id: SH-IMPL-003
     type: sec-hazard
@@ -71,8 +81,10 @@ artifacts:
       documents. Malformed or adversarial embed syntax could
       trigger unexpected behavior in the resolver.
     links:
-      - type: leads-to-loss
+      - type: leads-to-sec-loss
         target: SL-IMPL-003
+    fields:
+      cia-impact: [integrity]
 
   - id: SH-IMPL-004
     type: sec-hazard
@@ -83,8 +95,10 @@ artifacts:
       JSON is safer than YAML (no code execution), a maliciously
       large file could cause memory exhaustion.
     links:
-      - type: leads-to-loss
+      - type: leads-to-sec-loss
         target: SL-IMPL-001
+    fields:
+      cia-impact: [availability]
 
   # ── Security Constraints ────────────────────────────────────────────────
 

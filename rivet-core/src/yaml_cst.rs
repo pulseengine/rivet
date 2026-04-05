@@ -265,10 +265,12 @@ pub fn lex(source: &str) -> Vec<Token<'_>> {
                     text: &source[start..pos],
                 });
             }
-            // Single-quoted scalar
+            // Single-quoted scalar — must close on the same line.
+            // If no closing quote before newline, treat as plain scalar.
             b'\'' => {
                 pos += 1;
-                while pos < bytes.len() {
+                let mut closed = false;
+                while pos < bytes.len() && bytes[pos] != b'\n' && bytes[pos] != b'\r' {
                     if bytes[pos] == b'\'' {
                         pos += 1;
                         // Escaped quote '' inside single-quoted string
@@ -276,31 +278,56 @@ pub fn lex(source: &str) -> Vec<Token<'_>> {
                             pos += 1;
                             continue;
                         }
+                        closed = true;
                         break;
                     }
                     pos += 1;
                 }
-                tokens.push(Token {
-                    kind: SyntaxKind::SingleQuotedScalar,
-                    text: &source[start..pos],
-                });
+                if closed {
+                    tokens.push(Token {
+                        kind: SyntaxKind::SingleQuotedScalar,
+                        text: &source[start..pos],
+                    });
+                } else {
+                    // No closing quote on this line — treat as plain scalar
+                    // (common in block scalar content like: Rivet's, don't)
+                    pos = lex_plain_scalar(source, bytes, start);
+                    tokens.push(Token {
+                        kind: SyntaxKind::PlainScalar,
+                        text: &source[start..pos],
+                    });
+                }
             }
-            // Double-quoted scalar
+            // Double-quoted scalar — must close on the same line.
             b'"' => {
                 pos += 1;
+                let mut closed = false;
                 while pos < bytes.len() && bytes[pos] != b'"' {
+                    if bytes[pos] == b'\n' || bytes[pos] == b'\r' {
+                        break;
+                    }
                     if bytes[pos] == b'\\' {
                         pos += 1; // skip escaped char
                     }
                     pos += 1;
                 }
-                if pos < bytes.len() {
+                if pos < bytes.len() && bytes[pos] == b'"' {
                     pos += 1; // closing quote
+                    closed = true;
                 }
-                tokens.push(Token {
-                    kind: SyntaxKind::DoubleQuotedScalar,
-                    text: &source[start..pos],
-                });
+                if closed {
+                    tokens.push(Token {
+                        kind: SyntaxKind::DoubleQuotedScalar,
+                        text: &source[start..pos],
+                    });
+                } else {
+                    // No closing quote on this line — treat as plain scalar
+                    pos = lex_plain_scalar(source, bytes, start);
+                    tokens.push(Token {
+                        kind: SyntaxKind::PlainScalar,
+                        text: &source[start..pos],
+                    });
+                }
             }
             // Plain scalar (anything else)
             _ => {
@@ -606,6 +633,24 @@ impl<'src> Parser<'src> {
                 if self.at(SyntaxKind::Comment) {
                     self.bump();
                 }
+                // Multi-line plain scalars: consume continuation lines that
+                // are indented deeper than the entry and don't start a new
+                // mapping entry or sequence item.
+                while self.at(SyntaxKind::Newline) {
+                    if !self.is_plain_scalar_continuation(entry_indent) {
+                        break;
+                    }
+                    self.bump(); // newline
+                    while !self.at_eof()
+                        && !self.at(SyntaxKind::Newline)
+                        && !self.at(SyntaxKind::Comment)
+                    {
+                        self.bump();
+                    }
+                    if self.at(SyntaxKind::Comment) {
+                        self.bump();
+                    }
+                }
             }
             // Newline: value is on the next line (nested mapping or sequence)
             Some(SyntaxKind::Newline) | Some(SyntaxKind::Comment) => {
@@ -642,6 +687,11 @@ impl<'src> Parser<'src> {
             self.eat_trivia();
             if self.at(SyntaxKind::Whitespace) {
                 self.bump();
+            }
+            // Comments at/above sequence indent are trivia — consume and retry
+            if self.at(SyntaxKind::Comment) {
+                self.bump();
+                continue;
             }
             if self.at_eof() {
                 break;
@@ -680,7 +730,16 @@ impl<'src> Parser<'src> {
                         self.parse_block_mapping(self.current_indent());
                         let _ = item_indent;
                     } else {
-                        self.bump(); // just a scalar value
+                        // Consume all tokens on this line (handles commas in values)
+                        while !self.at_eof()
+                            && !self.at(SyntaxKind::Newline)
+                            && !self.at(SyntaxKind::Comment)
+                        {
+                            self.bump();
+                        }
+                        if self.at(SyntaxKind::Comment) {
+                            self.bump();
+                        }
                     }
                 }
                 Some(SyntaxKind::Newline | SyntaxKind::Comment) => {
@@ -831,6 +890,54 @@ impl<'src> Parser<'src> {
     }
 
     // ── Helpers ─────────────────────────────────────────────────────
+
+    /// Check if the line after the current Newline is a plain scalar
+    /// continuation (indented deeper than `entry_indent`, not a new
+    /// mapping entry or sequence item, and not blank).
+    fn is_plain_scalar_continuation(&self, entry_indent: usize) -> bool {
+        // self.pos should be at a Newline token
+        let mut la = self.pos + 1;
+        let mut line_indent = 0;
+
+        // Measure indent
+        if la < self.tokens.len() && self.tokens[la].kind == SyntaxKind::Whitespace {
+            line_indent = self.tokens[la].text.len();
+            la += 1;
+        }
+
+        // Must be indented deeper than the mapping entry
+        if line_indent <= entry_indent {
+            return false;
+        }
+
+        // Must have content (not blank)
+        if la >= self.tokens.len() {
+            return false;
+        }
+        match self.tokens[la].kind {
+            SyntaxKind::Newline => return false, // blank line
+            SyntaxKind::Dash => return false,    // sequence indicator
+            SyntaxKind::Comment => return false,  // comment-only line
+            SyntaxKind::PlainScalar
+            | SyntaxKind::SingleQuotedScalar
+            | SyntaxKind::DoubleQuotedScalar => {
+                // Check if it looks like a mapping entry (key followed by colon)
+                let mut peek = la + 1;
+                while peek < self.tokens.len()
+                    && self.tokens[peek].kind == SyntaxKind::Whitespace
+                {
+                    peek += 1;
+                }
+                if peek < self.tokens.len()
+                    && self.tokens[peek].kind == SyntaxKind::Colon
+                {
+                    return false; // it's a mapping entry, not a continuation
+                }
+                true
+            }
+            _ => true, // other content tokens are continuations
+        }
+    }
 
     /// Look ahead to see if there's a colon after the current scalar.
     fn peek_colon_after_scalar(&self) -> bool {
@@ -1025,6 +1132,105 @@ artifacts:
     #[test]
     fn colon_in_value() {
         parse_and_check("title: This is a title: with colon\n");
+    }
+
+    #[test]
+    fn comma_in_sequence_item() {
+        parse_and_check("process-model:\n  - Current state of local files\n  - Pending changes, unresolved conflicts\n  - Coverage completeness\n");
+    }
+
+    #[test]
+    fn comment_between_sequence_items() {
+        parse_and_check("items:\n  - one\n  # comment\n  - two\n");
+    }
+
+    #[test]
+    fn comment_between_mapping_items_in_sequence() {
+        parse_and_check("controllers:\n  # first\n  - id: CTRL-1\n    name: First\n  # second\n  - id: CTRL-2\n    name: Second\n");
+    }
+
+    #[test]
+    fn multiline_plain_scalar() {
+        parse_and_check("fields:\n  alt: Rejected because it\n    requires separate deploy.\n");
+    }
+
+    #[test]
+    fn multiline_plain_scalar_nested() {
+        parse_and_check("items:\n  - id: X\n    fields:\n      alt: Rejected because it\n        requires separate deploy.\n\n  - id: Y\n    title: Next\n");
+    }
+
+    #[test]
+    fn mermaid_in_block_scalar() {
+        parse_and_check("diagram: |\n  graph LR\n    A[Rivet] -->|OSLC| B[Polar]\n    style A fill:#e8f4fd\n");
+    }
+
+    #[test]
+    fn parse_actual_hazards_file() {
+        let source = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../safety/stpa/hazards.yaml"),
+        )
+        .unwrap();
+        let (green, errors) = parse(&source);
+        let root = SyntaxNode::new_root(green);
+        assert_eq!(root.text().to_string(), source, "round-trip broken");
+
+        // Count Error nodes
+        fn count_errors(node: &SyntaxNode) -> usize {
+            let mut n = if node.kind() == SyntaxKind::Error { 1 } else { 0 };
+            for c in node.children() { n += count_errors(&c); }
+            n
+        }
+        let err_count = count_errors(&root);
+
+        // Count SequenceItem nodes
+        fn count_items(node: &SyntaxNode) -> usize {
+            let mut n = if node.kind() == SyntaxKind::SequenceItem { 1 } else { 0 };
+            for c in node.children() { n += count_items(&c); }
+            n
+        }
+        let item_count = count_items(&root);
+
+        eprintln!("hazards.yaml: {item_count} sequence items, {err_count} errors, {} parse errors", errors.len());
+
+        // Print top-level structure to find where items are lost
+        fn dump_tree(node: &SyntaxNode, depth: usize) {
+            let indent = "  ".repeat(depth);
+            let text_len: usize = node.text().len().into();
+            let preview = {
+                let t = node.text().to_string();
+                let first_line = t.lines().next().unwrap_or("");
+                if first_line.len() > 60 { format!("{}...", &first_line[..60]) } else { first_line.to_string() }
+            };
+            if depth <= 3 || node.kind() == SyntaxKind::SequenceItem {
+                eprintln!("{indent}{:?} ({text_len} bytes): {preview:?}", node.kind());
+            }
+            for c in node.children() {
+                dump_tree(&c, depth + 1);
+            }
+        }
+        dump_tree(&root, 0);
+
+        assert_eq!(err_count, 0, "should have no Error nodes");
+        assert!(errors.is_empty(), "should have no parse errors: {errors:?}");
+        assert_eq!(item_count, 32, "should have 32 sequence items (20 hazards + 12 sub-hazards)");
+    }
+
+    #[test]
+    fn stpa_hazard_sequence() {
+        // Exact pattern from hazards.yaml: folded block scalar + flow seq value
+        parse_and_check(
+            "hazards:\n\
+             \x20\x20- id: H-4\n\
+             \x20\x20\x20\x20title: Rivet imports mismatched data\n\
+             \x20\x20\x20\x20description: >\n\
+             \x20\x20\x20\x20\x20\x20Artifact types from external tools are\n\
+             \x20\x20\x20\x20\x20\x20mapped incorrectly to Rivet's schema.\n\
+             \x20\x20\x20\x20losses: [L-1, L-3]\n\
+             \n\
+             \x20\x20- id: H-5\n\
+             \x20\x20\x20\x20title: Concurrent modification\n\
+             \x20\x20\x20\x20losses: [L-1, L-3, L-6]\n",
+        );
     }
 
     #[test]
