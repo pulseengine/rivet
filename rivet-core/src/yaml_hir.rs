@@ -236,10 +236,18 @@ pub fn extract_schema_driven(
         // Unknown keys are silently skipped (comments, metadata, etc.)
     }
 
-    // Set source_file on all artifacts
-    if let Some(path) = source_path {
-        for sa in &mut result.artifacts {
+    // Set source_file on all artifacts and detect duplicates
+    let mut seen_ids = std::collections::HashSet::new();
+    for sa in &mut result.artifacts {
+        if let Some(path) = source_path {
             sa.artifact.source_file = Some(path.to_path_buf());
+        }
+        if !seen_ids.insert(sa.artifact.id.clone()) {
+            result.diagnostics.push(ParseDiagnostic {
+                span: sa.id_span,
+                message: format!("duplicate artifact id '{}'", sa.artifact.id),
+                severity: Severity::Error,
+            });
         }
     }
 

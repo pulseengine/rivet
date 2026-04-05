@@ -939,13 +939,14 @@ impl<'src> Parser<'src> {
         }
     }
 
-    /// Look ahead to see if there's a colon after the current scalar.
+    /// Look ahead to see if there's a colon after the current scalar on the same line.
     fn peek_colon_after_scalar(&self) -> bool {
         let mut i = self.pos + 1;
         while i < self.tokens.len() {
             match self.tokens[i].kind {
                 SyntaxKind::Whitespace => i += 1,
                 SyntaxKind::Colon => return true,
+                SyntaxKind::Newline | SyntaxKind::Comment => return false,
                 _ => return false,
             }
         }
