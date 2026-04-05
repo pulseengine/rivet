@@ -51,14 +51,10 @@ fn load_project(project_dir: &Path) -> Result<McpProject> {
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct ValidateParams {
-    #[schemars(description = "Path to the project directory containing rivet.yaml. Defaults to current directory.")]
-    pub project_dir: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct ListParams {
-    #[schemars(description = "Path to the project directory")]
-    pub project_dir: Option<String>,
     #[schemars(description = "Filter by artifact type (e.g., 'requirement', 'hazard')")]
     pub type_filter: Option<String>,
     #[schemars(description = "Filter by status (e.g., 'draft', 'approved')")]
@@ -67,54 +63,40 @@ pub struct ListParams {
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct StatsParams {
-    #[schemars(description = "Path to the project directory")]
-    pub project_dir: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct GetParams {
-    #[schemars(description = "Path to the project directory")]
-    pub project_dir: Option<String>,
     #[schemars(description = "Artifact ID to retrieve")]
     pub id: String,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct CoverageParams {
-    #[schemars(description = "Path to the project directory")]
-    pub project_dir: Option<String>,
     #[schemars(description = "Filter by traceability rule name")]
     pub rule: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct SchemaParams {
-    #[schemars(description = "Path to the project directory")]
-    pub project_dir: Option<String>,
     #[schemars(description = "Filter by artifact type name")]
     pub r#type: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct EmbedParams {
-    #[schemars(description = "Path to the project directory")]
-    pub project_dir: Option<String>,
     #[schemars(description = "Embed query string (e.g., 'coverage:matrix', 'artifact:REQ-001')")]
     pub query: String,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct SnapshotCaptureParams {
-    #[schemars(description = "Path to the project directory")]
-    pub project_dir: Option<String>,
     #[schemars(description = "Snapshot name (defaults to git commit short hash)")]
     pub name: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct AddParams {
-    #[schemars(description = "Path to the project directory")]
-    pub project_dir: Option<String>,
     #[schemars(description = "Artifact type (e.g., 'requirement', 'feature')")]
     pub r#type: String,
     #[schemars(description = "Artifact title")]

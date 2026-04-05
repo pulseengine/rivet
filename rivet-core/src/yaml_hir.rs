@@ -65,12 +65,19 @@ pub struct ParsedYamlFile {
 /// Parse `source` with the rowan-based YAML parser and extract generic
 /// artifacts with spans.
 pub fn extract_generic_artifacts(source: &str) -> ParsedYamlFile {
-    let (green, _parse_errors) = yaml_cst::parse(source);
+    let (green, parse_errors) = yaml_cst::parse(source);
     let root = SyntaxNode::new_root(green);
 
     let mut result = ParsedYamlFile {
         artifacts: Vec::new(),
-        diagnostics: Vec::new(),
+        diagnostics: parse_errors
+            .iter()
+            .map(|e| ParseDiagnostic {
+                span: Span { start: e.offset as u32, end: e.offset as u32 },
+                message: e.message.clone(),
+                severity: Severity::Error,
+            })
+            .collect(),
     };
 
     // Walk root → Mapping → find "artifacts" key → Sequence
@@ -125,12 +132,19 @@ pub fn extract_schema_driven(
     schema: &Schema,
     source_path: Option<&Path>,
 ) -> ParsedYamlFile {
-    let (green, _parse_errors) = yaml_cst::parse(source);
+    let (green, parse_errors) = yaml_cst::parse(source);
     let root = SyntaxNode::new_root(green);
 
     let mut result = ParsedYamlFile {
         artifacts: Vec::new(),
-        diagnostics: Vec::new(),
+        diagnostics: parse_errors
+            .iter()
+            .map(|e| ParseDiagnostic {
+                span: Span { start: e.offset as u32, end: e.offset as u32 },
+                message: e.message.clone(),
+                severity: Severity::Error,
+            })
+            .collect(),
     };
 
     let Some(root_mapping) = child_of_kind(&root, SyntaxKind::Mapping) else {
@@ -823,7 +837,7 @@ fn scalar_to_yaml_value(kind: SyntaxKind, raw: &str) -> serde_yaml::Value {
         }
         SyntaxKind::DoubleQuotedScalar => {
             let inner = &raw[1..raw.len() - 1];
-            serde_yaml::Value::String(inner.to_string())
+            serde_yaml::Value::String(unescape_double_quoted(inner))
         }
         SyntaxKind::PlainScalar => plain_scalar_to_value(raw),
         _ => serde_yaml::Value::String(raw.to_string()),
