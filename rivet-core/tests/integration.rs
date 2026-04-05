@@ -1408,3 +1408,139 @@ fn test_schema_info_counts() {
         stpa.traceability_rules.len()
     );
 }
+
+// ── Cross-file link resolution ──────────────────────────────────────────
+
+/// Create two temporary YAML files in different paths: file_a has REQ-001
+/// linking to FEAT-001, file_b has FEAT-001. Load both via the generic
+/// adapter, build the store and link graph, and verify the link resolves
+/// correctly (no broken links, backlink exists on FEAT-001).
+// rivet: verifies REQ-004
+#[test]
+fn cross_file_link_resolution() {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let dir = tmp.path();
+
+    // file_a.yaml: a requirement that links to a feature
+    let file_a_content = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: Cross-file requirement
+    status: approved
+    links:
+      - type: satisfies
+        target: FEAT-001
+";
+    std::fs::write(dir.join("file_a.yaml"), file_a_content).expect("write file_a");
+
+    // file_b.yaml: the feature that REQ-001 links to
+    let file_b_content = "\
+artifacts:
+  - id: FEAT-001
+    type: feature
+    title: Cross-file feature
+    status: active
+    links:
+      - type: implements
+        target: REQ-001
+";
+    std::fs::write(dir.join("file_b.yaml"), file_b_content).expect("write file_b");
+
+    // Load both files through the generic adapter
+    let adapter = GenericYamlAdapter::new();
+    let config = AdapterConfig::default();
+
+    let arts_a = adapter
+        .import(
+            &AdapterSource::Path(dir.join("file_a.yaml")),
+            &config,
+        )
+        .expect("import file_a");
+    let arts_b = adapter
+        .import(
+            &AdapterSource::Path(dir.join("file_b.yaml")),
+            &config,
+        )
+        .expect("import file_b");
+
+    assert_eq!(arts_a.len(), 1, "file_a should contain 1 artifact");
+    assert_eq!(arts_b.len(), 1, "file_b should contain 1 artifact");
+
+    // Build the store from both files
+    let mut store = Store::new();
+    for a in arts_a {
+        store.insert(a).unwrap();
+    }
+    for a in arts_b {
+        store.insert(a).unwrap();
+    }
+
+    assert_eq!(store.len(), 2, "store should have 2 artifacts");
+    assert!(store.contains("REQ-001"));
+    assert!(store.contains("FEAT-001"));
+
+    // Build link graph with common schema
+    let schema = load_schema_files(&["common", "dev"]);
+    let graph = LinkGraph::build(&store, &schema);
+
+    // Verify no broken links -- both targets exist
+    assert!(
+        graph.broken.is_empty(),
+        "cross-file links should resolve (no broken links), got: {:?}",
+        graph.broken
+    );
+
+    // Forward link: REQ-001 -> FEAT-001 via "satisfies"
+    let req_links = graph.links_from("REQ-001");
+    assert!(
+        req_links.iter().any(|l| l.target == "FEAT-001" && l.link_type == "satisfies"),
+        "REQ-001 should have a forward 'satisfies' link to FEAT-001"
+    );
+
+    // Forward link: FEAT-001 -> REQ-001 via "implements"
+    let feat_links = graph.links_from("FEAT-001");
+    assert!(
+        feat_links.iter().any(|l| l.target == "REQ-001" && l.link_type == "implements"),
+        "FEAT-001 should have a forward 'implements' link to REQ-001"
+    );
+
+    // Backlinks: FEAT-001 should have a backlink from REQ-001
+    let feat_backlinks = graph.backlinks_to("FEAT-001");
+    assert!(
+        feat_backlinks.iter().any(|bl| bl.source == "REQ-001" && bl.link_type == "satisfies"),
+        "FEAT-001 should have a backlink from REQ-001 via 'satisfies'"
+    );
+
+    // Backlinks: REQ-001 should have a backlink from FEAT-001
+    let req_backlinks = graph.backlinks_to("REQ-001");
+    assert!(
+        req_backlinks.iter().any(|bl| bl.source == "FEAT-001" && bl.link_type == "implements"),
+        "REQ-001 should have a backlink from FEAT-001 via 'implements'"
+    );
+
+    // No orphans -- both artifacts have links
+    let orphans = graph.orphans(&store);
+    assert!(
+        orphans.is_empty(),
+        "no orphans expected, but found: {orphans:?}"
+    );
+
+    // Validation should pass
+    let diagnostics = validate::validate(&store, &schema, &graph);
+    let errors: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Error)
+        .collect();
+
+    // We only care about broken-link errors here; type-specific rule errors
+    // (e.g., design-decision requires 'satisfies') are not relevant
+    let broken_link_errors: Vec<_> = errors
+        .iter()
+        .filter(|d| d.rule == "broken-link")
+        .collect();
+    assert!(
+        broken_link_errors.is_empty(),
+        "should have no broken-link errors, got: {broken_link_errors:?}"
+    );
+}
