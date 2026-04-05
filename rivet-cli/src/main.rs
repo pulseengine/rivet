@@ -757,7 +757,7 @@ fn run(cli: Cli) -> Result<bool> {
         return cmd_lsp(&cli);
     }
     if let Command::Mcp = &cli.command {
-        return cmd_mcp();
+        return cmd_mcp(&cli);
     }
 
     match &cli.command {
@@ -6499,8 +6499,9 @@ fn strip_html_tags(html: &str) -> String {
         .replace("&quot;", "\"")
 }
 
-fn cmd_mcp() -> Result<bool> {
-    mcp::run()?;
+fn cmd_mcp(cli: &Cli) -> Result<bool> {
+    let rt = tokio::runtime::Runtime::new().context("creating tokio runtime")?;
+    rt.block_on(mcp::run(cli.project.clone()))?;
     Ok(true)
 }
 

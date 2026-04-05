@@ -1,13 +1,13 @@
 //! MCP (Model Context Protocol) server for Rivet.
 //!
-//! Implements the MCP protocol over stdio using JSON-RPC 2.0.
+//! Uses the official `rmcp` crate for protocol handling over stdio.
 //! This allows AI coding assistants (Claude Code, Cursor, etc.) to interact
 //! with Rivet projects programmatically — validating artifacts, listing them,
 //! and querying project statistics.
 
 use std::collections::BTreeMap;
-use std::io::{self, BufRead, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use serde_json::{Value, json};
@@ -22,226 +22,14 @@ use rivet_core::snapshot;
 use rivet_core::store::Store;
 use rivet_core::validate;
 
-// ── JSON-RPC helpers ────────────────────────────────────────────────────
+use rmcp::handler::server::router::tool::ToolRouter;
+use rmcp::handler::server::wrapper::Parameters;
+use rmcp::model::*;
+use rmcp::{
+    schemars, tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler, ServiceExt,
+};
 
-fn jsonrpc_result(id: Value, result: Value) -> Value {
-    json!({
-        "jsonrpc": "2.0",
-        "id": id,
-        "result": result,
-    })
-}
-
-fn jsonrpc_error(id: Value, code: i64, message: &str) -> Value {
-    json!({
-        "jsonrpc": "2.0",
-        "id": id,
-        "error": {
-            "code": code,
-            "message": message,
-        },
-    })
-}
-
-// ── Tool definitions ────────────────────────────────────────────────────
-
-fn tool_definitions() -> Vec<Value> {
-    vec![
-        json!({
-            "name": "rivet_validate",
-            "description": "Validate artifacts against schemas and return diagnostics. Returns errors, warnings, and informational messages about the project's artifact consistency.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "project_dir": {
-                        "type": "string",
-                        "description": "Path to the project directory containing rivet.yaml. Defaults to the current working directory."
-                    }
-                },
-                "required": []
-            }
-        }),
-        json!({
-            "name": "rivet_list",
-            "description": "List artifacts in the project, optionally filtered by type. Returns artifact IDs, types, titles, statuses, and link counts.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "project_dir": {
-                        "type": "string",
-                        "description": "Path to the project directory containing rivet.yaml. Defaults to the current working directory."
-                    },
-                    "type_filter": {
-                        "type": "string",
-                        "description": "Filter by artifact type (e.g., 'requirement', 'design-decision')"
-                    },
-                    "status_filter": {
-                        "type": "string",
-                        "description": "Filter by lifecycle status (e.g., 'draft', 'active', 'approved')"
-                    }
-                },
-                "required": []
-            }
-        }),
-        json!({
-            "name": "rivet_stats",
-            "description": "Return project statistics: artifact counts by type, total count, orphan artifacts (no links), and broken link count.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "project_dir": {
-                        "type": "string",
-                        "description": "Path to the project directory containing rivet.yaml. Defaults to the current working directory."
-                    }
-                },
-                "required": []
-            }
-        }),
-        json!({
-            "name": "rivet_get",
-            "description": "Look up a single artifact by ID and return its full details: type, title, status, description, tags, links, and domain-specific fields.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "project_dir": {
-                        "type": "string",
-                        "description": "Path to the project directory containing rivet.yaml. Defaults to the current working directory."
-                    },
-                    "id": {
-                        "type": "string",
-                        "description": "Artifact ID (e.g., 'REQ-001', 'DD-003')"
-                    }
-                },
-                "required": ["id"]
-            }
-        }),
-        json!({
-            "name": "rivet_coverage",
-            "description": "Compute traceability coverage for all rules (or a specific rule). Returns overall percentage and per-rule breakdown with uncovered artifact IDs.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "project_dir": {
-                        "type": "string",
-                        "description": "Path to the project directory containing rivet.yaml. Defaults to the current working directory."
-                    },
-                    "rule": {
-                        "type": "string",
-                        "description": "Optional rule name filter — return only the matching rule"
-                    }
-                },
-                "required": []
-            }
-        }),
-        json!({
-            "name": "rivet_schema",
-            "description": "Introspect the project schema: artifact types (with fields and link-fields), link types, and traceability rules. Optionally filter to a single artifact type.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "project_dir": {
-                        "type": "string",
-                        "description": "Path to the project directory containing rivet.yaml. Defaults to the current working directory."
-                    },
-                    "type": {
-                        "type": "string",
-                        "description": "Optional artifact type to inspect (e.g., 'requirement'). Omit to list all types."
-                    }
-                },
-                "required": []
-            }
-        }),
-        json!({
-            "name": "rivet_embed",
-            "description": "Resolve a computed embed query and return rendered HTML. Embeds provide dynamic views of project data (stats, coverage, diagnostics, matrix).",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "project_dir": {
-                        "type": "string",
-                        "description": "Path to the project directory containing rivet.yaml. Defaults to the current working directory."
-                    },
-                    "query": {
-                        "type": "string",
-                        "description": "Embed query string, e.g. 'stats:types', 'coverage', 'diagnostics'"
-                    }
-                },
-                "required": ["query"]
-            }
-        }),
-        json!({
-            "name": "rivet_snapshot_capture",
-            "description": "Capture a project snapshot (stats, coverage, diagnostics) tagged with git commit info. Writes a JSON file to the snapshots/ directory.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "project_dir": {
-                        "type": "string",
-                        "description": "Path to the project directory containing rivet.yaml. Defaults to the current working directory."
-                    },
-                    "name": {
-                        "type": "string",
-                        "description": "Snapshot name (used as filename). Defaults to the short git commit hash."
-                    }
-                },
-                "required": []
-            }
-        }),
-        json!({
-            "name": "rivet_add",
-            "description": "Create a new artifact in the project. Validates against the schema before writing. Appends to the appropriate YAML source file.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "project_dir": {
-                        "type": "string",
-                        "description": "Path to the project directory containing rivet.yaml. Defaults to the current working directory."
-                    },
-                    "type": {
-                        "type": "string",
-                        "description": "Artifact type (must match a type defined in the schema)"
-                    },
-                    "title": {
-                        "type": "string",
-                        "description": "Human-readable title for the artifact"
-                    },
-                    "status": {
-                        "type": "string",
-                        "description": "Lifecycle status (e.g., 'draft', 'approved')"
-                    },
-                    "description": {
-                        "type": "string",
-                        "description": "Detailed description (supports markdown)"
-                    },
-                    "tags": {
-                        "type": "array",
-                        "items": { "type": "string" },
-                        "description": "Tags for categorization"
-                    },
-                    "links": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "type": { "type": "string" },
-                                "target": { "type": "string" }
-                            },
-                            "required": ["type", "target"]
-                        },
-                        "description": "Typed links to other artifacts"
-                    },
-                    "fields": {
-                        "type": "object",
-                        "description": "Domain-specific fields (validated against schema)"
-                    }
-                },
-                "required": ["type", "title"]
-            }
-        }),
-    ]
-}
-
-// ── Project loading (simplified from main.rs) ───────────────────────────
+// ── Project loading ────────────────────────────────────────────────────
 
 struct McpProject {
     store: Store,
@@ -254,7 +42,6 @@ fn load_project(project_dir: &Path) -> Result<McpProject> {
     let config = rivet_core::load_project_config(&config_path)
         .with_context(|| format!("loading {}", config_path.display()))?;
 
-    // Resolve schemas directory
     let schemas_dir = {
         let project_schemas = project_dir.join("schemas");
         if project_schemas.exists() {
@@ -293,6 +80,341 @@ fn load_project(project_dir: &Path) -> Result<McpProject> {
         schema,
         graph,
     })
+}
+
+// ── Parameter structs ──────────────────────────────────────────────────
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct ValidateParams {
+    #[schemars(description = "Path to the project directory containing rivet.yaml. Defaults to current directory.")]
+    pub project_dir: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct ListParams {
+    #[schemars(description = "Path to the project directory")]
+    pub project_dir: Option<String>,
+    #[schemars(description = "Filter by artifact type (e.g., 'requirement', 'hazard')")]
+    pub type_filter: Option<String>,
+    #[schemars(description = "Filter by status (e.g., 'draft', 'approved')")]
+    pub status_filter: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct StatsParams {
+    #[schemars(description = "Path to the project directory")]
+    pub project_dir: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct GetParams {
+    #[schemars(description = "Path to the project directory")]
+    pub project_dir: Option<String>,
+    #[schemars(description = "Artifact ID to retrieve")]
+    pub id: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct CoverageParams {
+    #[schemars(description = "Path to the project directory")]
+    pub project_dir: Option<String>,
+    #[schemars(description = "Filter by traceability rule name")]
+    pub rule: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct SchemaParams {
+    #[schemars(description = "Path to the project directory")]
+    pub project_dir: Option<String>,
+    #[schemars(description = "Filter by artifact type name")]
+    pub r#type: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct EmbedParams {
+    #[schemars(description = "Path to the project directory")]
+    pub project_dir: Option<String>,
+    #[schemars(description = "Embed query string (e.g., 'coverage:matrix', 'artifact:REQ-001')")]
+    pub query: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct SnapshotCaptureParams {
+    #[schemars(description = "Path to the project directory")]
+    pub project_dir: Option<String>,
+    #[schemars(description = "Snapshot name (defaults to git commit short hash)")]
+    pub name: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct AddParams {
+    #[schemars(description = "Path to the project directory")]
+    pub project_dir: Option<String>,
+    #[schemars(description = "Artifact type (e.g., 'requirement', 'feature')")]
+    pub r#type: String,
+    #[schemars(description = "Artifact title")]
+    pub title: String,
+    #[schemars(description = "Artifact status (e.g., 'draft')")]
+    pub status: Option<String>,
+    #[schemars(description = "Artifact description")]
+    pub description: Option<String>,
+    #[schemars(description = "Tags for the artifact")]
+    pub tags: Option<Vec<String>>,
+    #[schemars(description = "Typed links to other artifacts")]
+    pub links: Option<Vec<LinkParam>>,
+    #[schemars(description = "Domain-specific fields")]
+    pub fields: Option<serde_json::Map<String, Value>>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct LinkParam {
+    pub r#type: String,
+    pub target: String,
+}
+
+// ── RivetServer ────────────────────────────────────────────────────────
+
+#[derive(Clone)]
+pub struct RivetServer {
+    tool_router: ToolRouter<Self>,
+    project_dir: Arc<PathBuf>,
+}
+
+impl RivetServer {
+    fn dir(&self) -> &Path {
+        &self.project_dir
+    }
+
+    fn err(msg: impl std::fmt::Display) -> McpError {
+        McpError::new(rmcp::model::ErrorCode::INTERNAL_ERROR, msg.to_string(), None)
+    }
+}
+
+#[tool_router]
+impl RivetServer {
+    pub fn new(project_dir: PathBuf) -> Self {
+        Self {
+            tool_router: Self::tool_router(),
+            project_dir: Arc::new(project_dir),
+        }
+    }
+
+    #[tool(description = "Validate artifacts against schemas and return diagnostics")]
+    fn rivet_validate(
+        &self,
+        Parameters(p): Parameters<ValidateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let dir = p
+            .project_dir
+            .map(PathBuf::from)
+            .unwrap_or_else(|| self.dir().to_path_buf());
+        let result = tool_validate(&dir).map_err(Self::err)?;
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&result).unwrap_or_default(),
+        )]))
+    }
+
+    #[tool(description = "List artifacts with optional type/status filters")]
+    fn rivet_list(
+        &self,
+        Parameters(p): Parameters<ListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let dir = p
+            .project_dir
+            .map(PathBuf::from)
+            .unwrap_or_else(|| self.dir().to_path_buf());
+        let result =
+            tool_list(&dir, p.type_filter.as_deref(), p.status_filter.as_deref())
+                .map_err(Self::err)?;
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&result).unwrap_or_default(),
+        )]))
+    }
+
+    #[tool(description = "Get artifact counts by type, orphan count, and broken links")]
+    fn rivet_stats(
+        &self,
+        Parameters(p): Parameters<StatsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let dir = p
+            .project_dir
+            .map(PathBuf::from)
+            .unwrap_or_else(|| self.dir().to_path_buf());
+        let result = tool_stats(&dir).map_err(Self::err)?;
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&result).unwrap_or_default(),
+        )]))
+    }
+
+    #[tool(description = "Get a single artifact by ID with all fields, links, and metadata")]
+    fn rivet_get(
+        &self,
+        Parameters(p): Parameters<GetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let dir = p
+            .project_dir
+            .map(PathBuf::from)
+            .unwrap_or_else(|| self.dir().to_path_buf());
+        let result = tool_get(&dir, &p.id).map_err(Self::err)?;
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&result).unwrap_or_default(),
+        )]))
+    }
+
+    #[tool(description = "Compute traceability coverage per rule")]
+    fn rivet_coverage(
+        &self,
+        Parameters(p): Parameters<CoverageParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let dir = p
+            .project_dir
+            .map(PathBuf::from)
+            .unwrap_or_else(|| self.dir().to_path_buf());
+        let result = tool_coverage(&dir, p.rule.as_deref()).map_err(Self::err)?;
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&result).unwrap_or_default(),
+        )]))
+    }
+
+    #[tool(description = "Query schema: artifact types, link types, traceability rules")]
+    fn rivet_schema(
+        &self,
+        Parameters(p): Parameters<SchemaParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let dir = p
+            .project_dir
+            .map(PathBuf::from)
+            .unwrap_or_else(|| self.dir().to_path_buf());
+        let result = tool_schema(&dir, p.r#type.as_deref()).map_err(Self::err)?;
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&result).unwrap_or_default(),
+        )]))
+    }
+
+    #[tool(description = "Resolve an embed query (coverage matrix, artifact details, etc.)")]
+    fn rivet_embed(
+        &self,
+        Parameters(p): Parameters<EmbedParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let dir = p
+            .project_dir
+            .map(PathBuf::from)
+            .unwrap_or_else(|| self.dir().to_path_buf());
+        let result = tool_embed(&dir, &p.query).map_err(Self::err)?;
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&result).unwrap_or_default(),
+        )]))
+    }
+
+    #[tool(description = "Capture a validation snapshot for delta tracking")]
+    fn rivet_snapshot_capture(
+        &self,
+        Parameters(p): Parameters<SnapshotCaptureParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let dir = p
+            .project_dir
+            .map(PathBuf::from)
+            .unwrap_or_else(|| self.dir().to_path_buf());
+        let result = tool_snapshot_capture(&dir, p.name.as_deref()).map_err(Self::err)?;
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&result).unwrap_or_default(),
+        )]))
+    }
+
+    #[tool(description = "Add a new artifact to the project via CST mutation")]
+    fn rivet_add(
+        &self,
+        Parameters(p): Parameters<AddParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let dir = p
+            .project_dir
+            .map(PathBuf::from)
+            .unwrap_or_else(|| self.dir().to_path_buf());
+        // Convert to the Value-based interface the existing tool_add expects
+        let args = json!({
+            "type": p.r#type,
+            "title": p.title,
+            "status": p.status,
+            "description": p.description,
+            "tags": p.tags.unwrap_or_default(),
+            "links": p.links.unwrap_or_default().into_iter().map(|l| json!({"type": l.r#type, "target": l.target})).collect::<Vec<_>>(),
+            "fields": p.fields.unwrap_or_default(),
+        });
+        let result = tool_add(&dir, &args).map_err(Self::err)?;
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&result).unwrap_or_default(),
+        )]))
+    }
+}
+
+#[tool_handler]
+impl ServerHandler for RivetServer {
+    fn get_info(&self) -> ServerInfo {
+        ServerInfo::new(
+            ServerCapabilities::builder()
+                .enable_tools()
+                .enable_resources()
+                .build(),
+        )
+    }
+
+    async fn list_resources(
+        &self,
+        _: Option<PaginatedRequestParams>,
+        _: rmcp::service::RequestContext<rmcp::service::RoleServer>,
+    ) -> std::result::Result<ListResourcesResult, McpError> {
+        Ok(ListResourcesResult {
+            resources: vec![
+                RawResource::new("rivet://diagnostics", "diagnostics")
+                    .with_description("Validation diagnostics as JSON")
+                    .with_mime_type("application/json")
+                    .no_annotation(),
+                RawResource::new("rivet://coverage", "coverage")
+                    .with_description("Traceability coverage report as JSON")
+                    .with_mime_type("application/json")
+                    .no_annotation(),
+            ],
+            next_cursor: None,
+            meta: None,
+        })
+    }
+
+    async fn read_resource(
+        &self,
+        request: ReadResourceRequestParams,
+        _: rmcp::service::RequestContext<rmcp::service::RoleServer>,
+    ) -> std::result::Result<ReadResourceResult, McpError> {
+        let uri = request.uri.as_str();
+        match uri {
+            "rivet://diagnostics" => {
+                let result = tool_validate(self.dir()).map_err(Self::err)?;
+                Ok(ReadResourceResult::new(vec![ResourceContents::text(
+                    serde_json::to_string_pretty(&result).unwrap_or_default(),
+                    request.uri.clone(),
+                )]))
+            }
+            "rivet://coverage" => {
+                let result = tool_coverage(self.dir(), None).map_err(Self::err)?;
+                Ok(ReadResourceResult::new(vec![ResourceContents::text(
+                    serde_json::to_string_pretty(&result).unwrap_or_default(),
+                    request.uri.clone(),
+                )]))
+            }
+            _ if uri.starts_with("rivet://artifacts/") => {
+                let id = &uri["rivet://artifacts/".len()..];
+                let result = tool_get(self.dir(), id).map_err(Self::err)?;
+                Ok(ReadResourceResult::new(vec![ResourceContents::text(
+                    serde_json::to_string_pretty(&result).unwrap_or_default(),
+                    request.uri.clone(),
+                )]))
+            }
+            _ => Err(McpError::new(
+                rmcp::model::ErrorCode::INVALID_PARAMS,
+                format!("unknown resource: {uri}"),
+                None,
+            )),
+        }
+    }
 }
 
 // ── Tool implementations ────────────────────────────────────────────────
@@ -474,7 +596,6 @@ fn tool_coverage(project_dir: &Path, rule_filter: Option<&str>) -> Result<Value>
 fn tool_schema(project_dir: &Path, type_filter: Option<&str>) -> Result<Value> {
     let proj = load_project(project_dir)?;
 
-    // Artifact types
     let artifact_types_json: Vec<Value> = proj
         .schema
         .artifact_types
@@ -517,7 +638,6 @@ fn tool_schema(project_dir: &Path, type_filter: Option<&str>) -> Result<Value> {
         })
         .collect();
 
-    // Link types
     let link_types_json: Vec<Value> = proj
         .schema
         .link_types
@@ -533,7 +653,6 @@ fn tool_schema(project_dir: &Path, type_filter: Option<&str>) -> Result<Value> {
         })
         .collect();
 
-    // Traceability rules
     let rules_json: Vec<Value> = proj
         .schema
         .traceability_rules
@@ -584,7 +703,6 @@ fn tool_embed(project_dir: &Path, query: &str) -> Result<Value> {
 fn tool_snapshot_capture(project_dir: &Path, name: Option<&str>) -> Result<Value> {
     let proj = load_project(project_dir)?;
 
-    // Detect git info
     let git_commit = std::process::Command::new("git")
         .args(["rev-parse", "HEAD"])
         .current_dir(project_dir)
@@ -663,7 +781,6 @@ fn tool_add(project_dir: &Path, arguments: &Value) -> Result<Value> {
     let status = arguments.get("status").and_then(Value::as_str);
     let description = arguments.get("description").and_then(Value::as_str);
 
-    // Parse tags
     let tags: Vec<String> = arguments
         .get("tags")
         .and_then(Value::as_array)
@@ -675,7 +792,6 @@ fn tool_add(project_dir: &Path, arguments: &Value) -> Result<Value> {
         })
         .unwrap_or_default();
 
-    // Parse links
     let links: Vec<Link> = arguments
         .get("links")
         .and_then(Value::as_array)
@@ -693,7 +809,6 @@ fn tool_add(project_dir: &Path, arguments: &Value) -> Result<Value> {
         })
         .unwrap_or_default();
 
-    // Parse domain-specific fields
     let fields: BTreeMap<String, serde_yaml::Value> = arguments
         .get("fields")
         .and_then(Value::as_object)
@@ -707,7 +822,6 @@ fn tool_add(project_dir: &Path, arguments: &Value) -> Result<Value> {
         })
         .unwrap_or_default();
 
-    // Generate next ID
     let prefix = mutate::prefix_for_type(artifact_type, &proj.store);
     let id = mutate::next_id(&proj.store, &prefix);
 
@@ -724,11 +838,9 @@ fn tool_add(project_dir: &Path, arguments: &Value) -> Result<Value> {
         source_file: None,
     };
 
-    // Validate before writing
     mutate::validate_add(&artifact, &proj.store, &proj.schema)
         .map_err(|e| anyhow::anyhow!("validation failed: {e}"))?;
 
-    // Find destination file
     let file_path = mutate::find_file_for_type(artifact_type, &proj.store).ok_or_else(|| {
         anyhow::anyhow!(
             "no existing source file found for type '{}'; create one manually first",
@@ -736,7 +848,6 @@ fn tool_add(project_dir: &Path, arguments: &Value) -> Result<Value> {
         )
     })?;
 
-    // Make file_path absolute relative to project_dir
     let abs_path = if file_path.is_relative() {
         project_dir.join(&file_path)
     } else {
@@ -746,7 +857,6 @@ fn tool_add(project_dir: &Path, arguments: &Value) -> Result<Value> {
     mutate::append_artifact_to_file(&artifact, &abs_path)
         .map_err(|e| anyhow::anyhow!("failed to write artifact: {e}"))?;
 
-    // Return the created artifact
     let links_json: Vec<Value> = artifact
         .links
         .iter()
@@ -765,7 +875,6 @@ fn tool_add(project_dir: &Path, arguments: &Value) -> Result<Value> {
     }))
 }
 
-/// Convert a serde_json::Value to serde_yaml::Value.
 fn json_to_yaml_value(v: &Value) -> serde_yaml::Value {
     match v {
         Value::Null => serde_yaml::Value::Null,
@@ -793,163 +902,20 @@ fn json_to_yaml_value(v: &Value) -> serde_yaml::Value {
     }
 }
 
-// ── Tool dispatch ───────────────────────────────────────────────────────
+// ── Entry point ────────────────────────────────────────────────────────
 
-fn dispatch_tool(name: &str, arguments: &Value) -> Value {
-    let project_dir_str = arguments
-        .get("project_dir")
-        .and_then(Value::as_str)
-        .unwrap_or(".");
-    let project_dir = std::path::PathBuf::from(project_dir_str);
+/// Run the MCP server using rmcp over stdio transport.
+pub async fn run(project_dir: PathBuf) -> Result<()> {
+    eprintln!("rivet mcp: starting MCP server (rmcp stdio transport)...");
 
-    let result = match name {
-        "rivet_validate" => tool_validate(&project_dir),
-        "rivet_list" => {
-            let type_filter = arguments.get("type_filter").and_then(Value::as_str);
-            let status_filter = arguments.get("status_filter").and_then(Value::as_str);
-            tool_list(&project_dir, type_filter, status_filter)
-        }
-        "rivet_stats" => tool_stats(&project_dir),
-        "rivet_get" => {
-            let id = arguments.get("id").and_then(Value::as_str).unwrap_or("");
-            tool_get(&project_dir, id)
-        }
-        "rivet_coverage" => {
-            let rule = arguments.get("rule").and_then(Value::as_str);
-            tool_coverage(&project_dir, rule)
-        }
-        "rivet_schema" => {
-            let type_filter = arguments.get("type").and_then(Value::as_str);
-            tool_schema(&project_dir, type_filter)
-        }
-        "rivet_embed" => {
-            let query = arguments.get("query").and_then(Value::as_str).unwrap_or("");
-            tool_embed(&project_dir, query)
-        }
-        "rivet_snapshot_capture" => {
-            let name = arguments.get("name").and_then(Value::as_str);
-            tool_snapshot_capture(&project_dir, name)
-        }
-        "rivet_add" => tool_add(&project_dir, arguments),
-        _ => {
-            return json!({
-                "content": [{
-                    "type": "text",
-                    "text": format!("Unknown tool: {name}"),
-                }],
-                "isError": true,
-            });
-        }
-    };
+    let server = RivetServer::new(project_dir);
+    let service = server
+        .serve(rmcp::transport::stdio())
+        .await
+        .context("starting MCP stdio transport")?;
 
-    match result {
-        Ok(value) => json!({
-            "content": [{
-                "type": "text",
-                "text": serde_json::to_string_pretty(&value).unwrap_or_default(),
-            }],
-        }),
-        Err(e) => json!({
-            "content": [{
-                "type": "text",
-                "text": format!("Error: {e:#}"),
-            }],
-            "isError": true,
-        }),
-    }
-}
+    service.waiting().await?;
 
-// ── Request handler ─────────────────────────────────────────────────────
-
-fn handle_request(method: &str, params: &Value, id: Value) -> Option<Value> {
-    match method {
-        "initialize" => Some(jsonrpc_result(
-            id,
-            json!({
-                "protocolVersion": "2024-11-05",
-                "capabilities": {
-                    "tools": {}
-                },
-                "serverInfo": {
-                    "name": "rivet-mcp",
-                    "version": env!("CARGO_PKG_VERSION"),
-                }
-            }),
-        )),
-        "notifications/initialized" => {
-            // Client acknowledges initialization — no response needed.
-            None
-        }
-        "tools/list" => Some(jsonrpc_result(
-            id,
-            json!({
-                "tools": tool_definitions(),
-            }),
-        )),
-        "tools/call" => {
-            let name = params.get("name").and_then(Value::as_str).unwrap_or("");
-            let arguments = params.get("arguments").cloned().unwrap_or(json!({}));
-
-            let result = dispatch_tool(name, &arguments);
-            Some(jsonrpc_result(id, result))
-        }
-        "ping" => Some(jsonrpc_result(id, json!({}))),
-        _ => Some(jsonrpc_error(
-            id,
-            -32601,
-            &format!("Method not found: {method}"),
-        )),
-    }
-}
-
-// ── Main server loop ────────────────────────────────────────────────────
-
-/// Run the MCP server, reading JSON-RPC messages from stdin and writing
-/// responses to stdout.  Diagnostics go to stderr.
-pub fn run() -> Result<()> {
-    eprintln!("rivet mcp: starting MCP server (stdio transport)...");
-
-    let stdin = io::stdin();
-    let mut stdout = io::stdout();
-
-    for line in stdin.lock().lines() {
-        let line = line.context("reading stdin")?;
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-
-        let msg: Value = match serde_json::from_str(line) {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!("rivet mcp: invalid JSON: {e}");
-                let err = jsonrpc_error(Value::Null, -32700, &format!("Parse error: {e}"));
-                writeln!(stdout, "{}", serde_json::to_string(&err).unwrap())?;
-                stdout.flush()?;
-                continue;
-            }
-        };
-
-        let method = msg.get("method").and_then(Value::as_str).unwrap_or("");
-        let params = msg.get("params").cloned().unwrap_or(json!({}));
-        let id = msg.get("id").cloned().unwrap_or(Value::Null);
-
-        // Notifications have no id — we still process them but don't respond.
-        let is_notification = !msg.as_object().is_some_and(|o| o.contains_key("id"));
-
-        if is_notification {
-            // Process the notification (side effects only).
-            let _ = handle_request(method, &params, Value::Null);
-            continue;
-        }
-
-        if let Some(response) = handle_request(method, &params, id.clone()) {
-            let response_str = serde_json::to_string(&response).context("serializing response")?;
-            writeln!(stdout, "{response_str}")?;
-            stdout.flush()?;
-        }
-    }
-
-    eprintln!("rivet mcp: stdin closed, shutting down.");
+    eprintln!("rivet mcp: shutting down.");
     Ok(())
 }
