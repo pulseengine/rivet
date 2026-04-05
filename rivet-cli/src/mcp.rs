@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use anyhow::{Context, Result};
 use serde_json::{Value, json};
@@ -178,6 +178,8 @@ pub struct LinkParam {
 pub struct RivetServer {
     tool_router: ToolRouter<Self>,
     project_dir: Arc<PathBuf>,
+    /// Cached project state — loaded once at startup, refreshed via rivet_reload.
+    project: Arc<RwLock<McpProject>>,
 }
 
 impl RivetServer {
@@ -188,27 +190,29 @@ impl RivetServer {
     fn err(msg: impl std::fmt::Display) -> McpError {
         McpError::new(rmcp::model::ErrorCode::INTERNAL_ERROR, msg.to_string(), None)
     }
+
+    /// Execute a closure with read access to the cached project.
+    fn with_project<T>(&self, f: impl FnOnce(&McpProject) -> Result<T>) -> Result<T, McpError> {
+        let guard = self.project.read().map_err(|e| Self::err(format!("lock: {e}")))?;
+        f(&guard).map_err(Self::err)
+    }
 }
 
 #[tool_router]
 impl RivetServer {
-    pub fn new(project_dir: PathBuf) -> Self {
-        Self {
+    pub fn new(project_dir: PathBuf) -> Result<Self> {
+        let project = load_project(&project_dir)
+            .map_err(|e| anyhow::anyhow!("failed to load project: {e}"))?;
+        Ok(Self {
             tool_router: Self::tool_router(),
             project_dir: Arc::new(project_dir),
-        }
+            project: Arc::new(RwLock::new(project)),
+        })
     }
 
     #[tool(description = "Validate artifacts against schemas and return diagnostics")]
-    fn rivet_validate(
-        &self,
-        Parameters(p): Parameters<ValidateParams>,
-    ) -> Result<CallToolResult, McpError> {
-        let dir = p
-            .project_dir
-            .map(PathBuf::from)
-            .unwrap_or_else(|| self.dir().to_path_buf());
-        let result = tool_validate(&dir).map_err(Self::err)?;
+    fn rivet_validate(&self) -> Result<CallToolResult, McpError> {
+        let result = self.with_project(|proj| Ok(tool_validate_cached(proj)))?;
         Ok(CallToolResult::success(vec![Content::text(
             serde_json::to_string_pretty(&result).unwrap_or_default(),
         )]))
@@ -219,28 +223,17 @@ impl RivetServer {
         &self,
         Parameters(p): Parameters<ListParams>,
     ) -> Result<CallToolResult, McpError> {
-        let dir = p
-            .project_dir
-            .map(PathBuf::from)
-            .unwrap_or_else(|| self.dir().to_path_buf());
-        let result =
-            tool_list(&dir, p.type_filter.as_deref(), p.status_filter.as_deref())
-                .map_err(Self::err)?;
+        let result = self.with_project(|proj| {
+            Ok(tool_list_cached(proj, p.type_filter.as_deref(), p.status_filter.as_deref()))
+        })?;
         Ok(CallToolResult::success(vec![Content::text(
             serde_json::to_string_pretty(&result).unwrap_or_default(),
         )]))
     }
 
     #[tool(description = "Get artifact counts by type, orphan count, and broken links")]
-    fn rivet_stats(
-        &self,
-        Parameters(p): Parameters<StatsParams>,
-    ) -> Result<CallToolResult, McpError> {
-        let dir = p
-            .project_dir
-            .map(PathBuf::from)
-            .unwrap_or_else(|| self.dir().to_path_buf());
-        let result = tool_stats(&dir).map_err(Self::err)?;
+    fn rivet_stats(&self) -> Result<CallToolResult, McpError> {
+        let result = self.with_project(|proj| Ok(tool_stats_cached(proj)))?;
         Ok(CallToolResult::success(vec![Content::text(
             serde_json::to_string_pretty(&result).unwrap_or_default(),
         )]))
@@ -251,11 +244,7 @@ impl RivetServer {
         &self,
         Parameters(p): Parameters<GetParams>,
     ) -> Result<CallToolResult, McpError> {
-        let dir = p
-            .project_dir
-            .map(PathBuf::from)
-            .unwrap_or_else(|| self.dir().to_path_buf());
-        let result = tool_get(&dir, &p.id).map_err(Self::err)?;
+        let result = self.with_project(|proj| tool_get_cached(proj, &p.id))?;
         Ok(CallToolResult::success(vec![Content::text(
             serde_json::to_string_pretty(&result).unwrap_or_default(),
         )]))
@@ -266,11 +255,7 @@ impl RivetServer {
         &self,
         Parameters(p): Parameters<CoverageParams>,
     ) -> Result<CallToolResult, McpError> {
-        let dir = p
-            .project_dir
-            .map(PathBuf::from)
-            .unwrap_or_else(|| self.dir().to_path_buf());
-        let result = tool_coverage(&dir, p.rule.as_deref()).map_err(Self::err)?;
+        let result = self.with_project(|proj| Ok(tool_coverage_cached(proj, p.rule.as_deref())))?;
         Ok(CallToolResult::success(vec![Content::text(
             serde_json::to_string_pretty(&result).unwrap_or_default(),
         )]))
@@ -281,11 +266,7 @@ impl RivetServer {
         &self,
         Parameters(p): Parameters<SchemaParams>,
     ) -> Result<CallToolResult, McpError> {
-        let dir = p
-            .project_dir
-            .map(PathBuf::from)
-            .unwrap_or_else(|| self.dir().to_path_buf());
-        let result = tool_schema(&dir, p.r#type.as_deref()).map_err(Self::err)?;
+        let result = self.with_project(|proj| Ok(tool_schema_cached(proj, p.r#type.as_deref())))?;
         Ok(CallToolResult::success(vec![Content::text(
             serde_json::to_string_pretty(&result).unwrap_or_default(),
         )]))
@@ -296,11 +277,7 @@ impl RivetServer {
         &self,
         Parameters(p): Parameters<EmbedParams>,
     ) -> Result<CallToolResult, McpError> {
-        let dir = p
-            .project_dir
-            .map(PathBuf::from)
-            .unwrap_or_else(|| self.dir().to_path_buf());
-        let result = tool_embed(&dir, &p.query).map_err(Self::err)?;
+        let result = self.with_project(|proj| tool_embed_cached(proj, &p.query))?;
         Ok(CallToolResult::success(vec![Content::text(
             serde_json::to_string_pretty(&result).unwrap_or_default(),
         )]))
@@ -311,26 +288,17 @@ impl RivetServer {
         &self,
         Parameters(p): Parameters<SnapshotCaptureParams>,
     ) -> Result<CallToolResult, McpError> {
-        let dir = p
-            .project_dir
-            .map(PathBuf::from)
-            .unwrap_or_else(|| self.dir().to_path_buf());
-        let result = tool_snapshot_capture(&dir, p.name.as_deref()).map_err(Self::err)?;
+        let result = tool_snapshot_capture(self.dir(), p.name.as_deref()).map_err(Self::err)?;
         Ok(CallToolResult::success(vec![Content::text(
             serde_json::to_string_pretty(&result).unwrap_or_default(),
         )]))
     }
 
-    #[tool(description = "Add a new artifact to the project via CST mutation")]
+    #[tool(description = "Add a new artifact to the project via CST mutation. Call rivet_reload after.")]
     fn rivet_add(
         &self,
         Parameters(p): Parameters<AddParams>,
     ) -> Result<CallToolResult, McpError> {
-        let dir = p
-            .project_dir
-            .map(PathBuf::from)
-            .unwrap_or_else(|| self.dir().to_path_buf());
-        // Convert to the Value-based interface the existing tool_add expects
         let args = json!({
             "type": p.r#type,
             "title": p.title,
@@ -340,9 +308,19 @@ impl RivetServer {
             "links": p.links.unwrap_or_default().into_iter().map(|l| json!({"type": l.r#type, "target": l.target})).collect::<Vec<_>>(),
             "fields": p.fields.unwrap_or_default(),
         });
-        let result = tool_add(&dir, &args).map_err(Self::err)?;
+        let result = tool_add(self.dir(), &args).map_err(Self::err)?;
         Ok(CallToolResult::success(vec![Content::text(
             serde_json::to_string_pretty(&result).unwrap_or_default(),
+        )]))
+    }
+
+    #[tool(description = "Reload project from disk after file changes")]
+    fn rivet_reload(&self) -> Result<CallToolResult, McpError> {
+        let new_proj = load_project(self.dir()).map_err(Self::err)?;
+        let mut guard = self.project.write().map_err(|e| Self::err(format!("lock: {e}")))?;
+        *guard = new_proj;
+        Ok(CallToolResult::success(vec![Content::text(
+            json!({"reloaded": true}).to_string(),
         )]))
     }
 }
@@ -387,14 +365,14 @@ impl ServerHandler for RivetServer {
         let uri = request.uri.as_str();
         match uri {
             "rivet://diagnostics" => {
-                let result = tool_validate(self.dir()).map_err(Self::err)?;
+                let result = self.with_project(|p| Ok(tool_validate_cached(p)))?;
                 Ok(ReadResourceResult::new(vec![ResourceContents::text(
                     serde_json::to_string_pretty(&result).unwrap_or_default(),
                     request.uri.clone(),
                 )]))
             }
             "rivet://coverage" => {
-                let result = tool_coverage(self.dir(), None).map_err(Self::err)?;
+                let result = self.with_project(|p| Ok(tool_coverage_cached(p, None)))?;
                 Ok(ReadResourceResult::new(vec![ResourceContents::text(
                     serde_json::to_string_pretty(&result).unwrap_or_default(),
                     request.uri.clone(),
@@ -402,7 +380,7 @@ impl ServerHandler for RivetServer {
             }
             _ if uri.starts_with("rivet://artifacts/") => {
                 let id = &uri["rivet://artifacts/".len()..];
-                let result = tool_get(self.dir(), id).map_err(Self::err)?;
+                let result = self.with_project(|p| tool_get_cached(p, id))?;
                 Ok(ReadResourceResult::new(vec![ResourceContents::text(
                     serde_json::to_string_pretty(&result).unwrap_or_default(),
                     request.uri.clone(),
@@ -417,53 +395,29 @@ impl ServerHandler for RivetServer {
     }
 }
 
-// ── Tool implementations ────────────────────────────────────────────────
+// ── Cached tool implementations (use pre-loaded McpProject) ─────────────
 
-fn tool_validate(project_dir: &Path) -> Result<Value> {
-    let proj = load_project(project_dir)?;
+fn tool_validate_cached(proj: &McpProject) -> Value {
     let diagnostics = validate::validate(&proj.store, &proj.schema, &proj.graph);
 
-    let errors = diagnostics
-        .iter()
-        .filter(|d| d.severity == Severity::Error)
-        .count();
-    let warnings = diagnostics
-        .iter()
-        .filter(|d| d.severity == Severity::Warning)
-        .count();
-    let infos = diagnostics
-        .iter()
-        .filter(|d| d.severity == Severity::Info)
-        .count();
+    let errors = diagnostics.iter().filter(|d| d.severity == Severity::Error).count();
+    let warnings = diagnostics.iter().filter(|d| d.severity == Severity::Warning).count();
+    let infos = diagnostics.iter().filter(|d| d.severity == Severity::Info).count();
 
     let diag_json: Vec<Value> = diagnostics
         .iter()
-        .map(|d| {
-            json!({
-                "severity": format!("{:?}", d.severity).to_lowercase(),
-                "artifact_id": d.artifact_id,
-                "message": d.message,
-            })
-        })
+        .map(|d| json!({"severity": format!("{:?}", d.severity).to_lowercase(), "artifact_id": d.artifact_id, "message": d.message}))
         .collect();
 
     let result_str = if errors > 0 { "FAIL" } else { "PASS" };
-    Ok(json!({
-        "result": result_str,
-        "errors": errors,
-        "warnings": warnings,
-        "infos": infos,
-        "diagnostics": diag_json,
-    }))
+    json!({"result": result_str, "errors": errors, "warnings": warnings, "infos": infos, "diagnostics": diag_json})
 }
 
-fn tool_list(
-    project_dir: &Path,
+fn tool_list_cached(
+    proj: &McpProject,
     type_filter: Option<&str>,
     status_filter: Option<&str>,
-) -> Result<Value> {
-    let proj = load_project(project_dir)?;
-
+) -> Value {
     let query = rivet_core::query::Query {
         artifact_type: type_filter.map(|s| s.to_string()),
         status: status_filter.map(|s| s.to_string()),
@@ -484,14 +438,10 @@ fn tool_list(
         })
         .collect();
 
-    Ok(json!({
-        "count": results.len(),
-        "artifacts": artifacts_json,
-    }))
+    json!({"count": results.len(), "artifacts": artifacts_json})
 }
 
-fn tool_stats(project_dir: &Path) -> Result<Value> {
-    let proj = load_project(project_dir)?;
+fn tool_stats_cached(proj: &McpProject) -> Value {
     let orphans = proj.graph.orphans(&proj.store);
 
     let mut types = serde_json::Map::new();
@@ -501,16 +451,10 @@ fn tool_stats(project_dir: &Path) -> Result<Value> {
         types.insert(t.to_string(), json!(proj.store.count_by_type(t)));
     }
 
-    Ok(json!({
-        "total": proj.store.len(),
-        "types": types,
-        "orphans": orphans,
-        "broken_links": proj.graph.broken.len(),
-    }))
+    json!({"total": proj.store.len(), "types": types, "orphans": orphans, "broken_links": proj.graph.broken.len()})
 }
 
-fn tool_get(project_dir: &Path, id: &str) -> Result<Value> {
-    let proj = load_project(project_dir)?;
+fn tool_get_cached(proj: &McpProject, id: &str) -> Result<Value> {
     let artifact = proj
         .store
         .get(id)
@@ -567,8 +511,7 @@ fn tool_get(project_dir: &Path, id: &str) -> Result<Value> {
     }))
 }
 
-fn tool_coverage(project_dir: &Path, rule_filter: Option<&str>) -> Result<Value> {
-    let proj = load_project(project_dir)?;
+fn tool_coverage_cached(proj: &McpProject, rule_filter: Option<&str>) -> Value {
     let report = coverage::compute_coverage(&proj.store, &proj.schema, &proj.graph);
 
     let rules_json: Vec<Value> = report
@@ -587,14 +530,10 @@ fn tool_coverage(project_dir: &Path, rule_filter: Option<&str>) -> Result<Value>
         })
         .collect();
 
-    Ok(json!({
-        "overall_percentage": (report.overall_coverage() * 100.0).round() / 100.0,
-        "rules": rules_json,
-    }))
+    json!({"overall_percentage": (report.overall_coverage() * 100.0).round() / 100.0, "rules": rules_json})
 }
 
-fn tool_schema(project_dir: &Path, type_filter: Option<&str>) -> Result<Value> {
-    let proj = load_project(project_dir)?;
+fn tool_schema_cached(proj: &McpProject, type_filter: Option<&str>) -> Value {
 
     let artifact_types_json: Vec<Value> = proj
         .schema
@@ -670,15 +609,10 @@ fn tool_schema(project_dir: &Path, type_filter: Option<&str>) -> Result<Value> {
         })
         .collect();
 
-    Ok(json!({
-        "artifact_types": artifact_types_json,
-        "link_types": link_types_json,
-        "traceability_rules": rules_json,
-    }))
+    json!({"artifact_types": artifact_types_json, "link_types": link_types_json, "traceability_rules": rules_json})
 }
 
-fn tool_embed(project_dir: &Path, query: &str) -> Result<Value> {
-    let proj = load_project(project_dir)?;
+fn tool_embed_cached(proj: &McpProject, query: &str) -> Result<Value> {
     let diagnostics = validate::validate(&proj.store, &proj.schema, &proj.graph);
 
     let request =
@@ -701,7 +635,7 @@ fn tool_embed(project_dir: &Path, query: &str) -> Result<Value> {
 }
 
 fn tool_snapshot_capture(project_dir: &Path, name: Option<&str>) -> Result<Value> {
-    let proj = load_project(project_dir)?;
+    let proj = load_project(project_dir)?; // disk-based (snapshot/add only)
 
     let git_commit = std::process::Command::new("git")
         .args(["rev-parse", "HEAD"])
@@ -768,7 +702,7 @@ fn tool_snapshot_capture(project_dir: &Path, name: Option<&str>) -> Result<Value
 }
 
 fn tool_add(project_dir: &Path, arguments: &Value) -> Result<Value> {
-    let proj = load_project(project_dir)?;
+    let proj = load_project(project_dir)?; // disk-based (snapshot/add only)
 
     let artifact_type = arguments
         .get("type")
@@ -908,7 +842,7 @@ fn json_to_yaml_value(v: &Value) -> serde_yaml::Value {
 pub async fn run(project_dir: PathBuf) -> Result<()> {
     eprintln!("rivet mcp: starting MCP server (rmcp stdio transport)...");
 
-    let server = RivetServer::new(project_dir);
+    let server = RivetServer::new(project_dir)?;
     let service = server
         .serve(rmcp::transport::stdio())
         .await
