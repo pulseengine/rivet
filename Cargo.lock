@@ -2670,7 +2670,7 @@ dependencies = [
  "petgraph 0.7.1",
  "rivet-core",
  "rmcp",
- "rowan",
+ "rowan 0.16.2",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -2694,7 +2694,7 @@ dependencies = [
  "quick-xml",
  "regex",
  "reqwest",
- "rowan",
+ "rowan 0.16.2",
  "salsa",
  "serde",
  "serde_json",
@@ -2755,6 +2755,17 @@ dependencies = [
  "countme",
  "hashbrown 0.14.5",
  "rustc-hash 1.1.0",
+ "text-size",
+]
+
+[[package]]
+name = "rowan"
+version = "0.16.2"
+source = "git+https://github.com/pulseengine/rowan.git?branch=fix%2Fmiri-soundness#e3690cf786ab120ef1d918c15d43b8676065227b"
+dependencies = [
+ "countme",
+ "hashbrown 0.15.5",
+ "rustc-hash 2.1.1",
  "text-size",
 ]
 
@@ -3234,7 +3245,7 @@ name = "spar-annex"
 version = "0.1.0"
 source = "git+https://github.com/pulseengine/spar.git?rev=84a7363#84a73630986d194f548541fc86f6c98ef6d79de1"
 dependencies = [
- "rowan",
+ "rowan 0.16.1",
  "spar-syntax",
 ]
 
@@ -3243,7 +3254,7 @@ name = "spar-base-db"
 version = "0.1.0"
 source = "git+https://github.com/pulseengine/spar.git?rev=84a7363#84a73630986d194f548541fc86f6c98ef6d79de1"
 dependencies = [
- "rowan",
+ "rowan 0.16.1",
  "salsa",
  "spar-annex",
  "spar-syntax",
@@ -3268,7 +3279,7 @@ version = "0.1.0"
 source = "git+https://github.com/pulseengine/spar.git?rev=84a7363#84a73630986d194f548541fc86f6c98ef6d79de1"
 dependencies = [
  "la-arena",
- "rowan",
+ "rowan 0.16.1",
  "rustc-hash 2.1.1",
  "salsa",
  "serde",
@@ -3282,7 +3293,7 @@ name = "spar-parser"
 version = "0.1.0"
 source = "git+https://github.com/pulseengine/spar.git?rev=84a7363#84a73630986d194f548541fc86f6c98ef6d79de1"
 dependencies = [
- "rowan",
+ "rowan 0.16.1",
 ]
 
 [[package]]
@@ -3290,7 +3301,7 @@ name = "spar-syntax"
 version = "0.1.0"
 source = "git+https://github.com/pulseengine/spar.git?rev=84a7363#84a73630986d194f548541fc86f6c98ef6d79de1"
 dependencies = [
- "rowan",
+ "rowan 0.16.1",
  "spar-parser",
 ]
 
