@@ -56,6 +56,23 @@ pub(crate) fn page_layout(content: &str, state: &AppState) -> Html<String> {
     } else {
         String::new()
     };
+    let eu_ai_act_loaded = rivet_core::compliance::is_eu_ai_act_loaded(&state.schema);
+    let eu_ai_act_count: usize = rivet_core::compliance::EU_AI_ACT_TYPES
+        .iter()
+        .map(|t| state.store.count_by_type(t))
+        .sum();
+    let eu_ai_act_nav = if eu_ai_act_loaded {
+        let badge = if eu_ai_act_count > 0 {
+            format!("<span class=\"nav-badge\">{eu_ai_act_count}</span>")
+        } else {
+            "<span class=\"nav-badge\">0</span>".to_string()
+        };
+        format!(
+            "<li><a hx-get=\"/eu-ai-act\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/eu-ai-act\"><span class=\"nav-label\"><span class=\"nav-icon\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"8\" cy=\"8\" r=\"6.5\"/><path d=\"M3.5 6h9M3.5 10h9\"/><ellipse cx=\"8\" cy=\"8\" rx=\"3\" ry=\"6.5\"/></svg></span> EU AI Act</span>{badge}</a></li>"
+        )
+    } else {
+        String::new()
+    };
     let ext_total: usize = state.externals.iter().map(|e| e.store.len()).sum();
     let externals_nav = if !state.externals.is_empty() {
         let badge = if ext_total > 0 {
@@ -182,6 +199,7 @@ document.addEventListener('DOMContentLoaded',renderMermaid);
     <li class="nav-divider"></li>
     <li><a hx-get="/verification" hx-target="#content" hx-push-url="true" href="/verification"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5l5.5 2.5v4c0 3.5-2.5 5.5-5.5 7-3-1.5-5.5-3.5-5.5-7V4z"/><path d="M5.5 8l2 2 3.5-3.5"/></svg></span> Verification</span></a></li>
     {stpa_nav}
+    {eu_ai_act_nav}
     <li><a hx-get="/results" hx-target="#content" hx-push-url="true" href="/results"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12.5h12M3 9.5h2v3H3zM7 6.5h2v6H7zM11 3.5h2v9h-2z"/></svg></span> Results</span>{result_badge}</a></li>
     <li class="nav-divider"></li>
     <li><a hx-get="/diff" hx-target="#content" hx-push-url="true" href="/diff"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v10M10 3v10"/><path d="M2 8h3M11 8h3"/><circle cx="6" cy="5" r="1.5"/><circle cx="10" cy="11" r="1.5"/></svg></span> Diff</span></a></li>

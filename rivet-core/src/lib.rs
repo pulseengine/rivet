@@ -3,6 +3,7 @@
 pub mod adapter;
 pub mod bazel;
 pub mod commits;
+pub mod compliance;
 pub mod convergence;
 pub mod coverage;
 pub mod db;

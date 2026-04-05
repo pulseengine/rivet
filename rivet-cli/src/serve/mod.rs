@@ -541,6 +541,7 @@ pub async fn run(
         .route("/search", get(views::search_view))
         .route("/verification", get(views::verification_view))
         .route("/stpa", get(views::stpa_view))
+        .route("/eu-ai-act", get(views::eu_ai_act_view))
         .route("/results", get(views::results_view))
         .route("/results/{run_id}", get(views::result_detail))
         .route("/source", get(views::source_tree_view))

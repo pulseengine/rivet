@@ -13,6 +13,7 @@ pub(crate) mod artifacts;
 pub(crate) mod components;
 pub(crate) mod coverage;
 pub(crate) mod diff;
+pub(crate) mod eu_ai_act;
 pub(crate) mod doc_linkage;
 pub(crate) mod documents;
 pub(crate) mod externals;
@@ -278,6 +279,12 @@ pub(crate) fn render_page(
         "/doc-linkage" => RenderResult {
             html: doc_linkage::render_doc_linkage_view(ctx),
             title: "Document Linkage".to_string(),
+            source_file: None,
+            source_line: None,
+        },
+        "/eu-ai-act" => RenderResult {
+            html: eu_ai_act::render_eu_ai_act(ctx),
+            title: "EU AI Act".to_string(),
             source_file: None,
             source_line: None,
         },
