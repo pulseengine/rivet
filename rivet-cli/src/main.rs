@@ -2978,7 +2978,7 @@ fn run_salsa_validation(cli: &Cli, config: &ProjectConfig) -> Result<Vec<validat
         // All YAML-based formats are handled by parse_artifacts_v2 via schema-driven extraction.
         match source.format.as_str() {
             "generic" | "generic-yaml" | "stpa-yaml" => {
-                collect_yaml_files(&source_path, &mut source_contents)
+                rivet_core::collect_yaml_files(&source_path, &mut source_contents)
                     .with_context(|| format!("reading source '{}'", source.path))?;
             }
             _ => {
@@ -2990,6 +2990,8 @@ fn run_salsa_validation(cli: &Cli, config: &ProjectConfig) -> Result<Vec<validat
                 );
             }
         }
+        rivet_core::collect_yaml_files(&source_path, &mut source_contents)
+            .with_context(|| format!("reading source '{}'", source.path))?;
     }
 
     // ── Build salsa database and run validation ─────────────────────────
@@ -3021,33 +3023,6 @@ fn run_salsa_validation(cli: &Cli, config: &ProjectConfig) -> Result<Vec<validat
     }
 
     Ok(diagnostics)
-}
-
-/// Recursively collect YAML files from a path into (path_string, content) pairs.
-fn collect_yaml_files(path: &std::path::Path, out: &mut Vec<(String, String)>) -> Result<()> {
-    if path.is_file() {
-        let content =
-            std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-        out.push((path.display().to_string(), content));
-    } else if path.is_dir() {
-        let entries = std::fs::read_dir(path)
-            .with_context(|| format!("reading directory {}", path.display()))?;
-        for entry in entries {
-            let entry = entry?;
-            let p = entry.path();
-            if p.is_dir() {
-                collect_yaml_files(&p, out)?;
-            } else if p
-                .extension()
-                .is_some_and(|ext| ext == "yaml" || ext == "yml")
-            {
-                let content = std::fs::read_to_string(&p)
-                    .with_context(|| format!("reading {}", p.display()))?;
-                out.push((p.display().to_string(), content));
-            }
-        }
-    }
-    Ok(())
 }
 
 /// Show a single artifact by ID.
@@ -6666,7 +6641,7 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
         let mut source_pairs: Vec<(String, String)> = Vec::new();
         for source in &config.sources {
             let source_path = project_dir.join(&source.path);
-            let _ = collect_yaml_files(&source_path, &mut source_pairs);
+            let _ = rivet_core::collect_yaml_files(&source_path, &mut source_pairs);
         }
         let source_refs: Vec<(&str, &str)> = source_pairs
             .iter()

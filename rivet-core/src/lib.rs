@@ -49,10 +49,101 @@ pub mod wasm_runtime;
 #[cfg(verus)]
 pub mod verus_specs;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use error::Error;
 use model::ProjectConfig;
+
+/// Recursively collect YAML files from a path into (path_string, content) pairs.
+///
+/// If `path` points to a single file it is read directly.  If it points to a
+/// directory the tree is walked recursively and every `.yaml` / `.yml` file is
+/// collected.
+pub fn collect_yaml_files(path: &Path, out: &mut Vec<(String, String)>) -> Result<(), Error> {
+    if path.is_file() {
+        let content = std::fs::read_to_string(path)
+            .map_err(|e| Error::Io(format!("reading {}: {e}", path.display())))?;
+        out.push((path.display().to_string(), content));
+    } else if path.is_dir() {
+        let entries = std::fs::read_dir(path)
+            .map_err(|e| Error::Io(format!("reading directory {}: {e}", path.display())))?;
+        for entry in entries {
+            let entry = entry.map_err(|e| Error::Io(format!("{e}")))?;
+            let p = entry.path();
+            if p.is_dir() {
+                collect_yaml_files(&p, out)?;
+            } else if p
+                .extension()
+                .is_some_and(|ext| ext == "yaml" || ext == "yml")
+            {
+                let content = std::fs::read_to_string(&p)
+                    .map_err(|e| Error::Io(format!("reading {}: {e}", p.display())))?;
+                out.push((p.display().to_string(), content));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// A fully-loaded project: config, store, schema, and link graph.
+///
+/// This is the common "load everything" pattern shared by the CLI, MCP server,
+/// and web dashboard.  Callers that need documents, test results, or external
+/// projects can layer those on top.
+pub struct LoadedProject {
+    pub config: ProjectConfig,
+    pub store: store::Store,
+    pub schema: schema::Schema,
+    pub graph: links::LinkGraph,
+}
+
+/// Resolve the schemas directory for a project, falling back to the binary
+/// location or the embedded schemas.
+fn resolve_schemas_dir_for(project_dir: &Path) -> PathBuf {
+    let project_schemas = project_dir.join("schemas");
+    if project_schemas.exists() {
+        return project_schemas;
+    }
+
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            let bin_schemas = parent.join("../schemas");
+            if bin_schemas.exists() {
+                return bin_schemas;
+            }
+        }
+    }
+
+    project_schemas
+}
+
+/// Load a project from disk: config, schemas, artifacts, and link graph.
+///
+/// This is equivalent to the shared core of `ProjectContext::load`,
+/// `reload_state`, and the MCP `load_project` helper.
+pub fn load_project_full(project_dir: &Path) -> Result<LoadedProject, Error> {
+    let config_path = project_dir.join("rivet.yaml");
+    let config = load_project_config(&config_path)?;
+
+    let schemas_dir = resolve_schemas_dir_for(project_dir);
+    let schema = load_schemas(&config.project.schemas, &schemas_dir)?;
+
+    let mut store = store::Store::new();
+    for source in &config.sources {
+        let artifacts = load_artifacts(source, project_dir, &schema)?;
+        for a in artifacts {
+            store.upsert(a);
+        }
+    }
+
+    let graph = links::LinkGraph::build(&store, &schema);
+    Ok(LoadedProject {
+        config,
+        store,
+        schema,
+        graph,
+    })
+}
 
 /// Load a project configuration from a `rivet.yaml` file.
 pub fn load_project_config(path: &Path) -> Result<ProjectConfig, Error> {

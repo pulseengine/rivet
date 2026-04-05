@@ -38,47 +38,12 @@ struct McpProject {
 }
 
 fn load_project(project_dir: &Path) -> Result<McpProject> {
-    let config_path = project_dir.join("rivet.yaml");
-    let config = rivet_core::load_project_config(&config_path)
-        .with_context(|| format!("loading {}", config_path.display()))?;
-
-    let schemas_dir = {
-        let project_schemas = project_dir.join("schemas");
-        if project_schemas.exists() {
-            project_schemas
-        } else if let Ok(exe) = std::env::current_exe() {
-            if let Some(parent) = exe.parent() {
-                let bin_schemas = parent.join("../schemas");
-                if bin_schemas.exists() {
-                    bin_schemas
-                } else {
-                    project_schemas
-                }
-            } else {
-                project_schemas
-            }
-        } else {
-            project_schemas
-        }
-    };
-
-    let schema = rivet_core::load_schemas(&config.project.schemas, &schemas_dir)
-        .context("loading schemas")?;
-
-    let mut store = Store::new();
-    for source in &config.sources {
-        let artifacts = rivet_core::load_artifacts(source, project_dir, &schema)
-            .with_context(|| format!("loading source '{}'", source.path))?;
-        for artifact in artifacts {
-            store.upsert(artifact);
-        }
-    }
-
-    let graph = LinkGraph::build(&store, &schema);
+    let loaded = rivet_core::load_project_full(project_dir)
+        .with_context(|| format!("loading project from {}", project_dir.display()))?;
     Ok(McpProject {
-        store,
-        schema,
-        graph,
+        store: loaded.store,
+        schema: loaded.schema,
+        graph: loaded.graph,
     })
 }
 
