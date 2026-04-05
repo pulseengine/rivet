@@ -648,6 +648,14 @@ enum SchemaAction {
     },
     /// Validate that loaded schemas are well-formed
     Validate,
+    /// Show schema-level metadata and summary
+    Info {
+        /// Schema name (e.g., "stpa", "dev", "common")
+        name: String,
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -4563,6 +4571,17 @@ fn cmd_schema(cli: &Cli, action: &SchemaAction) -> Result<bool> {
         SchemaAction::Links { format } => schema_cmd::cmd_links(&schema, format),
         SchemaAction::Rules { format } => schema_cmd::cmd_rules(&schema, format),
         SchemaAction::Validate => schema_cmd::cmd_validate(&schema),
+        SchemaAction::Info { name, format } => {
+            let path = schemas_dir.join(format!("{name}.yaml"));
+            let schema_file = if path.exists() {
+                rivet_core::schema::Schema::load_file(&path)
+                    .with_context(|| format!("loading schema {}", path.display()))?
+            } else {
+                rivet_core::embedded::load_embedded_schema(name)
+                    .map_err(|e| anyhow::anyhow!("{e}"))?
+            };
+            schema_cmd::cmd_info(&schema_file, format)
+        }
     };
     print!("{output}");
     Ok(true)

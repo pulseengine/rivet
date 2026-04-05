@@ -24,6 +24,8 @@ pub fn minimal_schema(name: &str) -> SchemaFile {
             namespace: None,
             description: None,
             extends: vec![],
+            min_rivet_version: None,
+            license: None,
         },
         base_fields: vec![],
         artifact_types: vec![],

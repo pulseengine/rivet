@@ -1262,3 +1262,147 @@ fn strictdoc_reqif_import() {
         reqs.len()
     );
 }
+
+// ── Schema metadata tests ──────────────────────────────────────────────
+
+/// Verify that schema metadata fields (including new optional fields) are
+/// correctly loaded from YAML schema files.
+#[test]
+fn test_schema_metadata_loading() {
+    let schemas_dir = project_root().join("schemas");
+
+    // Load and check the STPA schema (has namespace, extends, description)
+    let stpa_path = schemas_dir.join("stpa.yaml");
+    let stpa = Schema::load_file(&stpa_path).expect("load stpa schema");
+    assert_eq!(stpa.schema.name, "stpa");
+    assert_eq!(stpa.schema.version, "0.1.0");
+    assert!(
+        stpa.schema.description.is_some(),
+        "stpa schema should have a description"
+    );
+    assert_eq!(stpa.schema.extends, vec!["common"]);
+    assert!(
+        stpa.schema.namespace.is_some(),
+        "stpa schema should have a namespace"
+    );
+    assert!(!stpa.artifact_types.is_empty(), "stpa should define artifact types");
+    assert!(!stpa.link_types.is_empty(), "stpa should define link types");
+
+    // Load and check the common schema (no extends, no namespace)
+    let common_path = schemas_dir.join("common.yaml");
+    let common = Schema::load_file(&common_path).expect("load common schema");
+    assert_eq!(common.schema.name, "common");
+    assert_eq!(common.schema.version, "0.1.0");
+    assert!(
+        common.schema.description.is_some(),
+        "common schema should have a description"
+    );
+    assert!(
+        common.schema.extends.is_empty(),
+        "common schema should not extend anything"
+    );
+    assert!(
+        !common.base_fields.is_empty(),
+        "common schema should define base fields"
+    );
+
+    // Load and check the dev schema
+    let dev_path = schemas_dir.join("dev.yaml");
+    let dev = Schema::load_file(&dev_path).expect("load dev schema");
+    assert_eq!(dev.schema.name, "dev");
+    assert_eq!(dev.schema.version, "0.1.0");
+    assert!(
+        dev.schema.description.is_some(),
+        "dev schema should have a description"
+    );
+    assert_eq!(dev.schema.extends, vec!["common"]);
+
+    // New optional metadata fields default to None when not present
+    assert!(
+        common.schema.min_rivet_version.is_none(),
+        "min_rivet_version should default to None"
+    );
+    assert!(
+        common.schema.license.is_none(),
+        "license should default to None"
+    );
+}
+
+/// Verify that new optional metadata fields can be parsed from YAML.
+#[test]
+fn test_schema_metadata_optional_fields() {
+    let yaml = r#"
+schema:
+  name: test-schema
+  version: "1.0.0"
+  description: A test schema
+  min-rivet-version: "0.5.0"
+  license: Apache-2.0
+"#;
+    let schema_file: rivet_core::schema::SchemaFile =
+        serde_yaml::from_str(yaml).expect("parse schema with optional fields");
+    assert_eq!(schema_file.schema.name, "test-schema");
+    assert_eq!(schema_file.schema.version, "1.0.0");
+    assert_eq!(
+        schema_file.schema.min_rivet_version.as_deref(),
+        Some("0.5.0")
+    );
+    assert_eq!(schema_file.schema.license.as_deref(), Some("Apache-2.0"));
+}
+
+/// Verify that artifact type guidance fields (description, example, common_mistakes)
+/// are present and parseable in the dev schema.
+#[test]
+fn test_artifact_type_guidance_fields() {
+    let schemas_dir = project_root().join("schemas");
+    let dev_path = schemas_dir.join("dev.yaml");
+    let dev = Schema::load_file(&dev_path).expect("load dev schema");
+
+    // The requirement type should have example and common_mistakes
+    let req_type = dev
+        .artifact_types
+        .iter()
+        .find(|t| t.name == "requirement")
+        .expect("dev schema must have requirement type");
+
+    assert!(
+        req_type.example.is_some(),
+        "requirement type should have an example"
+    );
+    assert!(
+        !req_type.common_mistakes.is_empty(),
+        "requirement type should have common mistakes"
+    );
+
+    // Verify common_mistakes structure
+    let first_mistake = &req_type.common_mistakes[0];
+    assert!(
+        !first_mistake.problem.is_empty(),
+        "mistake should have a problem description"
+    );
+}
+
+/// Verify schema metadata counts match expected values.
+#[test]
+fn test_schema_info_counts() {
+    let schemas_dir = project_root().join("schemas");
+    let stpa_path = schemas_dir.join("stpa.yaml");
+    let stpa = Schema::load_file(&stpa_path).expect("load stpa schema");
+
+    // STPA should have a good number of artifact types, link types, and rules
+    assert!(
+        stpa.artifact_types.len() >= 5,
+        "STPA should define at least 5 artifact types, got {}",
+        stpa.artifact_types.len()
+    );
+    assert!(
+        stpa.link_types.len() >= 3,
+        "STPA should define at least 3 link types, got {}",
+        stpa.link_types.len()
+    );
+    assert!(
+        stpa.traceability_rules.len() >= 3,
+        "STPA should define at least 3 traceability rules, got {}",
+        stpa.traceability_rules.len()
+    );
+}

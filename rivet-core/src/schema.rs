@@ -37,6 +37,10 @@ pub struct SchemaMetadata {
     pub description: Option<String>,
     #[serde(default)]
     pub extends: Vec<String>,
+    #[serde(default, rename = "min-rivet-version")]
+    pub min_rivet_version: Option<String>,
+    #[serde(default)]
+    pub license: Option<String>,
 }
 
 // ── Artifact type definition ─────────────────────────────────────────────

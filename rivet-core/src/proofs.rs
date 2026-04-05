@@ -47,6 +47,8 @@ mod proofs {
                 namespace: None,
                 description: None,
                 extends: vec![],
+                min_rivet_version: None,
+                license: None,
             },
             base_fields: vec![],
             artifact_types: vec![],
@@ -65,6 +67,8 @@ mod proofs {
                 namespace: None,
                 description: None,
                 extends: vec![],
+                min_rivet_version: None,
+                license: None,
             },
             base_fields: vec![],
             artifact_types: vec![ArtifactTypeDef {
@@ -281,6 +285,8 @@ mod proofs {
                 namespace: None,
                 description: None,
                 extends: vec![],
+                min_rivet_version: None,
+                license: None,
             },
             base_fields: vec![],
             artifact_types: vec![ArtifactTypeDef {
@@ -399,6 +405,8 @@ mod proofs {
                 namespace: None,
                 description: None,
                 extends: vec![],
+                min_rivet_version: None,
+                license: None,
             },
             base_fields: vec![],
             artifact_types: vec![ArtifactTypeDef {
