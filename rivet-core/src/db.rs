@@ -14,6 +14,7 @@
 
 use salsa::Setter;
 
+use crate::coverage::{self, CoverageReport};
 use crate::formats::generic::parse_generic_yaml;
 use crate::links::LinkGraph;
 use crate::model::Artifact;
@@ -174,11 +175,11 @@ fn parse_yaml_error_location(msg: &str) -> (Option<u32>, Option<u32>) {
 /// input fields actually changed, and structural validation is unaffected
 /// by schema-only changes to conditional rules.
 ///
-/// The store and link graph construction is folded in here rather than
-/// being separate tracked functions because `Store` and `LinkGraph` do not
-/// (yet) implement the `PartialEq` trait that salsa requires for tracked
-/// return types. A future phase may lift them into their own tracked
-/// functions once those traits are derived.
+/// The store construction is folded in here rather than being a separate
+/// tracked function because `Store` does not (yet) implement the
+/// `PartialEq` trait that salsa requires for tracked return types.
+/// The link graph, however, is built via the tracked `build_link_graph`
+/// function and shared across callers.
 #[salsa::tracked]
 pub fn validate_all(
     db: &dyn salsa::Database,
@@ -250,13 +251,51 @@ pub fn evaluate_conditional_rules(
     diagnostics
 }
 
+/// Build the link graph as a tracked function.
+///
+/// This is memoized by salsa — when `build_link_graph` is called from
+/// multiple tracked functions (`validate_all`, `evaluate_conditional_rules`,
+/// `compute_coverage_tracked`), the graph is built only once per revision.
+///
+/// `LinkGraph` implements `PartialEq`/`Eq` (comparing forward, backward,
+/// and broken link maps) so that salsa can detect when the graph has not
+/// semantically changed, enabling further downstream memoization.
+#[salsa::tracked]
+pub fn build_link_graph(
+    db: &dyn salsa::Database,
+    source_set: SourceFileSet,
+    schema_set: SchemaInputSet,
+) -> LinkGraph {
+    let store = build_store(db, source_set, schema_set);
+    let schema = build_schema(db, schema_set);
+    LinkGraph::build(&store, &schema)
+}
+
+/// Compute traceability coverage as a tracked function.
+///
+/// Results are memoized by salsa and only recomputed when source files
+/// or schema inputs change. Multiple callers within the same revision
+/// get the cached result for free.
+#[salsa::tracked]
+pub fn compute_coverage_tracked(
+    db: &dyn salsa::Database,
+    source_set: SourceFileSet,
+    schema_set: SchemaInputSet,
+) -> CoverageReport {
+    let store = build_store(db, source_set, schema_set);
+    let schema = build_schema(db, schema_set);
+    let graph = build_link_graph(db, source_set, schema_set);
+    coverage::compute_coverage(&store, &schema, &graph)
+}
+
 // ── Internal helpers (non-tracked) ──────────────────────────────────────
 
 /// Build the full Store + Schema + LinkGraph pipeline from salsa inputs.
 ///
 /// This is NOT a tracked function — it is called from tracked functions
-/// that need the intermediate results. Salsa still caches the outer
-/// tracked call, so this pipeline is only re-executed when inputs change.
+/// that need the intermediate results. The link graph is obtained from
+/// the tracked `build_link_graph` function, so it is memoized across
+/// callers.
 fn build_pipeline(
     db: &dyn salsa::Database,
     source_set: SourceFileSet,
@@ -264,7 +303,7 @@ fn build_pipeline(
 ) -> (Store, Schema, LinkGraph) {
     let store = build_store(db, source_set, schema_set);
     let schema = build_schema(db, schema_set);
-    let graph = LinkGraph::build(&store, &schema);
+    let graph = build_link_graph(db, source_set, schema_set);
     (store, schema, graph)
 }
 
@@ -405,6 +444,24 @@ impl RivetDatabase {
         schema_set: SchemaInputSet,
     ) -> Vec<Diagnostic> {
         evaluate_conditional_rules(self, source_set, schema_set)
+    }
+
+    /// Get the link graph (incrementally computed, salsa-tracked).
+    pub fn link_graph(
+        &self,
+        source_set: SourceFileSet,
+        schema_set: SchemaInputSet,
+    ) -> LinkGraph {
+        build_link_graph(self, source_set, schema_set)
+    }
+
+    /// Get traceability coverage (incrementally computed, salsa-tracked).
+    pub fn coverage(
+        &self,
+        source_set: SourceFileSet,
+        schema_set: SchemaInputSet,
+    ) -> CoverageReport {
+        compute_coverage_tracked(self, source_set, schema_set)
     }
 
     /// Add a new source file to an existing source file set.
@@ -979,6 +1036,113 @@ artifacts:
         assert!(
             cond_diags.is_empty(),
             "approved artifact with description should pass, got: {cond_diags:?}"
+        );
+    }
+
+    // ── Test 17: build_link_graph tracked function ─────────────────────────
+
+    // rivet: verifies REQ-029
+    #[test]
+    fn build_link_graph_tracked() {
+        let db = RivetDatabase::new();
+        let sources =
+            db.load_sources(&[("reqs.yaml", SOURCE_REQ), ("design.yaml", SOURCE_DD_LINKED)]);
+        let schemas = db.load_schemas(&[("test", TEST_SCHEMA)]);
+
+        let graph = db.link_graph(sources, schemas);
+
+        // DD-001 has a forward link to REQ-001
+        let fwd = graph.links_from("DD-001");
+        assert_eq!(fwd.len(), 1);
+        assert_eq!(fwd[0].target, "REQ-001");
+        assert_eq!(fwd[0].link_type, "satisfies");
+
+        // REQ-001 has a backlink from DD-001
+        let bwd = graph.backlinks_to("REQ-001");
+        assert_eq!(bwd.len(), 1);
+        assert_eq!(bwd[0].source, "DD-001");
+
+        // No broken links
+        assert!(graph.broken.is_empty());
+    }
+
+    // ── Test 18: build_link_graph returns same result on repeated call ──────
+
+    // rivet: verifies REQ-029
+    #[test]
+    fn link_graph_deterministic() {
+        let db = RivetDatabase::new();
+        let sources =
+            db.load_sources(&[("reqs.yaml", SOURCE_REQ), ("design.yaml", SOURCE_DD_LINKED)]);
+        let schemas = db.load_schemas(&[("test", TEST_SCHEMA)]);
+
+        let graph_a = db.link_graph(sources, schemas);
+        let graph_b = db.link_graph(sources, schemas);
+        assert_eq!(graph_a, graph_b, "repeated calls must produce identical link graphs");
+    }
+
+    // ── Test 19: compute_coverage_tracked function ─────────────────────────
+
+    // rivet: verifies REQ-029
+    #[test]
+    fn coverage_tracked_basic() {
+        let db = RivetDatabase::new();
+        let sources =
+            db.load_sources(&[("reqs.yaml", SOURCE_REQ), ("design.yaml", SOURCE_DD_LINKED)]);
+        let schemas = db.load_schemas(&[("test", TEST_SCHEMA)]);
+
+        let report = db.coverage(sources, schemas);
+
+        // The schema has one traceability rule: dd-must-satisfy
+        assert_eq!(report.entries.len(), 1);
+        let entry = &report.entries[0];
+        assert_eq!(entry.rule_name, "dd-must-satisfy");
+        // DD-001 links to REQ-001 via satisfies -> 100% coverage
+        assert_eq!(entry.covered, 1);
+        assert_eq!(entry.total, 1);
+        assert!(entry.uncovered_ids.is_empty());
+    }
+
+    // ── Test 20: coverage updates when source changes ──────────────────────
+
+    // rivet: verifies REQ-029
+    #[test]
+    fn coverage_updates_on_source_change() {
+        let mut db = RivetDatabase::new();
+        let sources = db.load_sources(&[
+            ("reqs.yaml", SOURCE_REQ),
+            ("design.yaml", SOURCE_DD_LINKED),
+        ]);
+        let schemas = db.load_schemas(&[("test", TEST_SCHEMA)]);
+
+        // Before: DD-001 links to REQ-001 -> full coverage
+        let report_before = db.coverage(sources, schemas);
+        assert_eq!(report_before.entries[0].covered, 1);
+
+        // Remove the link
+        db.update_source(sources, "design.yaml", SOURCE_DD_UNLINKED.to_string());
+
+        // After: DD-001 has no link -> zero coverage
+        let report_after = db.coverage(sources, schemas);
+        assert_eq!(report_after.entries[0].covered, 0);
+        assert_eq!(report_after.entries[0].uncovered_ids, vec!["DD-001"]);
+    }
+
+    // ── Test 21: coverage deterministic ────────────────────────────────────
+
+    // rivet: verifies REQ-029
+    #[test]
+    fn coverage_deterministic() {
+        let db = RivetDatabase::new();
+        let sources =
+            db.load_sources(&[("reqs.yaml", SOURCE_REQ), ("design.yaml", SOURCE_DD_LINKED)]);
+        let schemas = db.load_schemas(&[("test", TEST_SCHEMA)]);
+
+        let report_a = db.coverage(sources, schemas);
+        let report_b = db.coverage(sources, schemas);
+        assert_eq!(
+            report_a, report_b,
+            "repeated coverage calls must produce identical reports"
         );
     }
 }

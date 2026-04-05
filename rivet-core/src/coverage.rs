@@ -11,7 +11,7 @@ use crate::schema::Schema;
 use crate::store::Store;
 
 /// Coverage result for a single traceability rule.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CoverageEntry {
     /// Rule name from the schema.
     pub rule_name: String,
@@ -52,7 +52,7 @@ impl CoverageEntry {
 }
 
 /// Full coverage report across all traceability rules.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CoverageReport {
     pub entries: Vec<CoverageEntry>,
 }
