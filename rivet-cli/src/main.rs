@@ -23,6 +23,19 @@ mod render;
 mod schema_cmd;
 mod serve;
 
+/// Validate that a `--format` value is one of the accepted options.
+fn validate_format(format: &str, valid: &[&str]) -> Result<()> {
+    if valid.contains(&format) {
+        Ok(())
+    } else {
+        anyhow::bail!(
+            "invalid format '{}' — valid options: {}",
+            format,
+            valid.join(", ")
+        );
+    }
+}
+
 fn build_version() -> &'static str {
     use std::sync::LazyLock;
     static VERSION: LazyLock<String> = LazyLock::new(|| {
@@ -2608,6 +2621,7 @@ fn cmd_validate(
     baseline_name: Option<&str>,
     track_convergence: bool,
 ) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
     check_for_updates();
 
     let ctx = ProjectContext::load_with_docs(cli)?;
@@ -3049,6 +3063,7 @@ fn collect_yaml_files(path: &std::path::Path, out: &mut Vec<(String, String)>) -
 
 /// Show a single artifact by ID.
 fn cmd_get(cli: &Cli, id: &str, format: &str) -> Result<bool> {
+    validate_format(format, &["text", "json", "yaml"])?;
     let ctx = ProjectContext::load(cli)?;
 
     let Some(artifact) = ctx.store.get(id) else {
@@ -3141,6 +3156,7 @@ fn cmd_list(
     format: &str,
     baseline_name: Option<&str>,
 ) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
     let ctx = ProjectContext::load(cli)?;
     let store = apply_baseline_scope(ctx.store, baseline_name, &ctx.config);
 
@@ -3188,6 +3204,7 @@ fn cmd_list(
 
 /// Print summary statistics.
 fn cmd_stats(cli: &Cli, format: &str, baseline_name: Option<&str>) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
     let ctx = ProjectContext::load(cli)?;
     let store = apply_baseline_scope(ctx.store, baseline_name, &ctx.config);
     let graph = if baseline_name.is_some() {
@@ -3238,6 +3255,7 @@ fn cmd_coverage(
     fail_under: Option<&f64>,
     baseline_name: Option<&str>,
 ) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
     let ctx = ProjectContext::load(cli)?;
     let store = apply_baseline_scope(ctx.store, baseline_name, &ctx.config);
     let schema = ctx.schema;
@@ -3332,6 +3350,7 @@ fn cmd_coverage(
 
 /// Test-to-requirement coverage via source markers.
 fn cmd_coverage_tests(cli: &Cli, format: &str, scan_paths: &[PathBuf]) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
     use rivet_core::test_scanner;
 
     let ctx = ProjectContext::load(cli)?;
@@ -3450,6 +3469,7 @@ fn cmd_matrix(
     direction: &str,
     format: &str,
 ) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
     let ctx = ProjectContext::load(cli)?;
     let (store, graph) = (ctx.store, ctx.graph);
 
@@ -3529,6 +3549,7 @@ fn cmd_export(
     versions_json: Option<&str>,
     baseline_name: Option<&str>,
 ) -> Result<bool> {
+    validate_format(format, &["reqif", "generic-yaml", "generic", "html", "gherkin"])?;
     if format == "html" {
         return cmd_export_html(
             cli,
@@ -3958,6 +3979,7 @@ fn cmd_diff(
     head_path: Option<&std::path::Path>,
     format: &str,
 ) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
     let (base_store, base_schema, base_graph, head_store, head_schema, head_graph) =
         match (base_path, head_path) {
             (Some(bp), Some(hp)) => {
@@ -4176,6 +4198,7 @@ fn cmd_impact(
     depth: usize,
     format: &str,
 ) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
     let ctx = ProjectContext::load(cli)?;
     let (current_store, graph) = (ctx.store, ctx.graph);
 
@@ -4543,6 +4566,7 @@ struct RawLink {
 
 /// Show built-in docs (no project load needed).
 fn cmd_docs(topic: Option<&str>, grep: Option<&str>, format: &str, context: usize) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
     if let Some(pattern) = grep {
         print!("{}", docs::grep_docs(pattern, format, context));
     } else if let Some(slug) = topic {
@@ -4568,10 +4592,22 @@ fn cmd_schema(cli: &Cli, action: &SchemaAction) -> Result<bool> {
         rivet_core::load_schemas(&schema_names, &schemas_dir).context("loading schemas")?;
 
     let output = match action {
-        SchemaAction::List { format } => schema_cmd::cmd_list(&schema, format),
-        SchemaAction::Show { name, format } => schema_cmd::cmd_show(&schema, name, format),
-        SchemaAction::Links { format } => schema_cmd::cmd_links(&schema, format),
-        SchemaAction::Rules { format } => schema_cmd::cmd_rules(&schema, format),
+        SchemaAction::List { format } => {
+            validate_format(format, &["text", "json"])?;
+            schema_cmd::cmd_list(&schema, format)
+        }
+        SchemaAction::Show { name, format } => {
+            validate_format(format, &["text", "json"])?;
+            schema_cmd::cmd_show(&schema, name, format)
+        }
+        SchemaAction::Links { format } => {
+            validate_format(format, &["text", "json"])?;
+            schema_cmd::cmd_links(&schema, format)
+        }
+        SchemaAction::Rules { format } => {
+            validate_format(format, &["text", "json"])?;
+            schema_cmd::cmd_rules(&schema, format)
+        }
         SchemaAction::Validate => schema_cmd::cmd_validate(&schema),
         SchemaAction::Info { name, format } => {
             let path = schemas_dir.join(format!("{name}.yaml"));
@@ -4934,10 +4970,19 @@ fn cmd_commits(
     format: &str,
     strict: bool,
 ) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
     use std::collections::BTreeMap;
 
     // Load project config
     let config_path = cli.project.join("rivet.yaml");
+    if !config_path.exists() {
+        let project_dir = std::fs::canonicalize(&cli.project)
+            .unwrap_or_else(|_| cli.project.clone());
+        anyhow::bail!(
+            "no rivet.yaml found in {}\n\nTo initialize a new project, run: rivet init",
+            project_dir.display()
+        );
+    }
     let config = rivet_core::load_project_config(&config_path)
         .with_context(|| format!("loading {}", config_path.display()))?;
 
@@ -5165,8 +5210,17 @@ fn resolve_schemas_dir(cli: &Cli) -> PathBuf {
 }
 
 fn cmd_sync(cli: &Cli, local_only: bool) -> Result<bool> {
-    let config = rivet_core::load_project_config(&cli.project.join("rivet.yaml"))
-        .with_context(|| format!("loading {}", cli.project.join("rivet.yaml").display()))?;
+    let config_path = cli.project.join("rivet.yaml");
+    if !config_path.exists() {
+        let project_dir = std::fs::canonicalize(&cli.project)
+            .unwrap_or_else(|_| cli.project.clone());
+        anyhow::bail!(
+            "no rivet.yaml found in {}\n\nTo initialize a new project, run: rivet init",
+            project_dir.display()
+        );
+    }
+    let config = rivet_core::load_project_config(&config_path)
+        .with_context(|| format!("loading {}", config_path.display()))?;
     let externals = config.externals.as_ref();
     if externals.is_none() || externals.unwrap().is_empty() {
         eprintln!("No externals declared in rivet.yaml");
@@ -5220,8 +5274,17 @@ fn cmd_lock(cli: &Cli, update: bool) -> Result<bool> {
     if update {
         eprintln!("Note: --update refreshes all pins to latest refs");
     }
-    let config = rivet_core::load_project_config(&cli.project.join("rivet.yaml"))
-        .with_context(|| format!("loading {}", cli.project.join("rivet.yaml").display()))?;
+    let config_path = cli.project.join("rivet.yaml");
+    if !config_path.exists() {
+        let project_dir = std::fs::canonicalize(&cli.project)
+            .unwrap_or_else(|_| cli.project.clone());
+        anyhow::bail!(
+            "no rivet.yaml found in {}\n\nTo initialize a new project, run: rivet init",
+            project_dir.display()
+        );
+    }
+    let config = rivet_core::load_project_config(&config_path)
+        .with_context(|| format!("loading {}", config_path.display()))?;
     let externals = config.externals.as_ref();
     if externals.is_none() || externals.unwrap().is_empty() {
         eprintln!("No externals declared in rivet.yaml");
@@ -5239,7 +5302,16 @@ fn cmd_lock(cli: &Cli, update: bool) -> Result<bool> {
 }
 
 fn cmd_baseline_verify(cli: &Cli, name: &str, strict: bool) -> Result<bool> {
-    let config = rivet_core::load_project_config(&cli.project.join("rivet.yaml"))
+    let config_path = cli.project.join("rivet.yaml");
+    if !config_path.exists() {
+        let project_dir = std::fs::canonicalize(&cli.project)
+            .unwrap_or_else(|_| cli.project.clone());
+        anyhow::bail!(
+            "no rivet.yaml found in {}\n\nTo initialize a new project, run: rivet init",
+            project_dir.display()
+        );
+    }
+    let config = rivet_core::load_project_config(&config_path)
         .with_context(|| "Failed to load rivet.yaml")?;
 
     let externals = match config.externals.as_ref() {
@@ -5303,7 +5375,16 @@ fn cmd_baseline_verify(cli: &Cli, name: &str, strict: bool) -> Result<bool> {
 }
 
 fn cmd_baseline_list(cli: &Cli) -> Result<bool> {
-    let config = rivet_core::load_project_config(&cli.project.join("rivet.yaml"))
+    let config_path = cli.project.join("rivet.yaml");
+    if !config_path.exists() {
+        let project_dir = std::fs::canonicalize(&cli.project)
+            .unwrap_or_else(|_| cli.project.clone());
+        anyhow::bail!(
+            "no rivet.yaml found in {}\n\nTo initialize a new project, run: rivet init",
+            project_dir.display()
+        );
+    }
+    let config = rivet_core::load_project_config(&config_path)
         .with_context(|| "Failed to load rivet.yaml")?;
 
     // List local baselines
@@ -5405,6 +5486,7 @@ fn cmd_snapshot_diff(
     baseline_path: Option<&std::path::Path>,
     format: &str,
 ) -> Result<bool> {
+    validate_format(format, &["text", "json", "markdown"])?;
     let schemas_dir = resolve_schemas_dir(cli);
     let project_path = cli
         .project
@@ -5679,6 +5761,14 @@ impl ProjectContext {
     /// Load project with artifacts, schema, and link graph.
     fn load(cli: &Cli) -> Result<Self> {
         let config_path = cli.project.join("rivet.yaml");
+        if !config_path.exists() {
+            let project_dir = std::fs::canonicalize(&cli.project)
+                .unwrap_or_else(|_| cli.project.clone());
+            anyhow::bail!(
+                "no rivet.yaml found in {}\n\nTo initialize a new project, run: rivet init",
+                project_dir.display()
+            );
+        }
         let config = rivet_core::load_project_config(&config_path)
             .with_context(|| format!("loading {}", config_path.display()))?;
 
@@ -5918,6 +6008,7 @@ fn cmd_next_id(
     prefix: Option<&str>,
     format: &str,
 ) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
     use rivet_core::mutate;
 
     let ctx = ProjectContext::load(cli)?;
@@ -6430,6 +6521,7 @@ fn cmd_batch(cli: &Cli, file: &std::path::Path) -> Result<bool> {
 }
 
 fn cmd_embed(cli: &Cli, query: &str, format: &str) -> Result<bool> {
+    validate_format(format, &["text", "html"])?;
     let schemas_dir = resolve_schemas_dir(cli);
     let project_path = cli
         .project
