@@ -6515,7 +6515,14 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
     let (connection, io_threads) = Connection::stdio();
 
     let server_capabilities = ServerCapabilities {
-        text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
+        text_document_sync: Some(TextDocumentSyncCapability::Options(TextDocumentSyncOptions {
+            open_close: Some(true),
+            change: Some(TextDocumentSyncKind::FULL),
+            save: Some(TextDocumentSyncSaveOptions::SaveOptions(SaveOptions {
+                include_text: Some(false),
+            })),
+            ..Default::default()
+        })),
         hover_provider: Some(HoverProviderCapability::Simple(true)),
         definition_provider: Some(OneOf::Left(true)),
         completion_provider: Some(CompletionOptions {
@@ -6954,6 +6961,42 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
             }
             Message::Notification(notif) => {
                 match notif.method.as_str() {
+                    "textDocument/didOpen" => {
+                        if let Ok(params) = serde_json::from_value::<DidOpenTextDocumentParams>(
+                            notif.params.clone(),
+                        ) {
+                            let path = lsp_uri_to_path(&params.text_document.uri);
+                            if let Some(path) = path {
+                                let path_str = path.to_string_lossy().to_string();
+                                let content = params.text_document.text;
+                                let updated =
+                                    db.update_source(source_set, &path_str, content.clone());
+                                if !updated {
+                                    // New file not yet tracked — add it to the source set
+                                    if path_str.ends_with(".yaml") || path_str.ends_with(".yml") {
+                                        db.add_source(source_set, &path_str, content);
+                                        eprintln!("rivet lsp: added new source file on open: {}", path_str);
+                                    }
+                                }
+                                // Publish diagnostics for the opened file
+                                let mut new_diagnostics = db.diagnostics(source_set, schema_set);
+                                let new_store = db.store(source_set, schema_set);
+                                new_diagnostics
+                                    .extend(validate::validate_documents(&doc_store, &new_store));
+                                lsp_publish_salsa_diagnostics(
+                                    &connection,
+                                    &new_diagnostics,
+                                    &new_store,
+                                    &mut prev_diagnostic_files,
+                                );
+                                eprintln!(
+                                    "rivet lsp: didOpen diagnostics for {} ({} diagnostics)",
+                                    path_str,
+                                    new_diagnostics.len()
+                                );
+                            }
+                        }
+                    }
                     "textDocument/didSave" => {
                         if let Ok(params) = serde_json::from_value::<DidSaveTextDocumentParams>(
                             notif.params.clone(),
@@ -7077,11 +7120,31 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
 
 fn lsp_uri_to_path(uri: &lsp_types::Uri) -> Option<std::path::PathBuf> {
     let s = uri.as_str();
-    s.strip_prefix("file://").map(std::path::PathBuf::from)
+    // Handle both file:///path (Unix) and file:///C:/path (Windows)
+    if let Some(rest) = s.strip_prefix("file://") {
+        // On Unix: file:///foo → /foo (rest = "/foo")
+        // On Windows: file:///C:/foo → C:/foo (rest = "/C:/foo", strip leading /)
+        let path_str = if rest.len() > 2 && rest.starts_with('/') && rest.as_bytes()[2] == b':' {
+            &rest[1..] // Windows: strip leading / before drive letter
+        } else {
+            rest
+        };
+        Some(std::path::PathBuf::from(
+            urlencoding::decode(path_str).ok()?.into_owned(),
+        ))
+    } else {
+        None
+    }
 }
 
 fn lsp_path_to_uri(path: &std::path::Path) -> Option<lsp_types::Uri> {
-    let s = format!("file://{}", path.display());
+    let path_str = path.to_string_lossy();
+    // On Windows, paths like C:\foo need file:///C:/foo (three slashes)
+    let s = if path_str.len() >= 2 && path_str.as_bytes()[1] == b':' {
+        format!("file:///{}", path_str.replace('\\', "/"))
+    } else {
+        format!("file://{}", path_str)
+    };
     s.parse().ok()
 }
 
@@ -7170,6 +7233,11 @@ fn lsp_publish_salsa_diagnostics(
             continue;
         };
         let col = diag.column.unwrap_or(0);
+        let end_col = if let Some(ref id) = diag.artifact_id {
+            col + id.len() as u32 + 6 // "id: " + ID + some padding
+        } else {
+            col + 20 // reasonable default
+        };
         file_diags
             .entry(path)
             .or_default()
@@ -7181,7 +7249,7 @@ fn lsp_publish_salsa_diagnostics(
                     },
                     end: Position {
                         line,
-                        character: col + 100,
+                        character: end_col,
                     },
                 },
                 severity: Some(match diag.severity {
@@ -7573,6 +7641,7 @@ mod lsp_tests {
             let source_file = art.and_then(|a| a.source_file.as_ref());
             if let Some(path) = source_file {
                 let line = lsp_find_artifact_line(path, art_id);
+                let end_col = art_id.len() as u32 + 6; // "id: " + ID + some padding
                 file_diags
                     .entry(path.clone())
                     .or_default()
@@ -7581,7 +7650,7 @@ mod lsp_tests {
                             start: lsp_types::Position { line, character: 0 },
                             end: lsp_types::Position {
                                 line,
-                                character: 100,
+                                character: end_col,
                             },
                         },
                         severity: Some(match diag.severity {
@@ -7906,6 +7975,6 @@ artifacts:
         // "  - id: X-003" is on line 5 (0-indexed)
         assert_eq!(lsp_diags[0].range.start.line, 5);
         assert_eq!(lsp_diags[0].range.start.character, 0);
-        assert_eq!(lsp_diags[0].range.end.character, 100);
+        assert_eq!(lsp_diags[0].range.end.character, 11); // "X-003".len() + 6
     }
 }
