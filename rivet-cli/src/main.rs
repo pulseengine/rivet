@@ -6546,11 +6546,23 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
     let config_path = project_dir.join("rivet.yaml");
     let schemas_dir = resolve_schemas_dir(cli);
 
-    let (source_set, schema_set) = if config_path.exists() {
-        let config = rivet_core::load_project_config(&config_path).unwrap_or_else(|e| {
-            eprintln!("rivet lsp: failed to load config: {e}");
-            std::process::exit(1);
-        });
+    let config_opt = if config_path.exists() {
+        match rivet_core::load_project_config(&config_path) {
+            Ok(c) => Some(c),
+            Err(e) => {
+                eprintln!(
+                    "rivet lsp: failed to load {}: {e} — running with empty state",
+                    config_path.display()
+                );
+                None
+            }
+        }
+    } else {
+        eprintln!("rivet lsp: no rivet.yaml found, running with empty store");
+        None
+    };
+
+    let (source_set, schema_set) = if let Some(config) = &config_opt {
 
         // Load schema contents into salsa inputs
         let schema_contents =
@@ -6575,7 +6587,6 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
 
         (source_set, schema_set)
     } else {
-        eprintln!("rivet lsp: no rivet.yaml found, running with empty store");
         let schema_set = db.load_schemas(&[]);
         let source_set = db.load_sources(&[]);
         (source_set, schema_set)
@@ -7024,19 +7035,26 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                                         change.text.clone(),
                                     );
                                     if updated {
-                                        // Re-query diagnostics incrementally,
-                                        // including document [[ID]] reference validation.
+                                        // Re-query diagnostics incrementally
                                         let mut diagnostics =
                                             db.diagnostics(source_set, schema_set);
-                                        let store = db.store(source_set, schema_set);
+                                        let fresh_store = db.store(source_set, schema_set);
                                         diagnostics.extend(validate::validate_documents(
-                                            &doc_store, &store,
+                                            &doc_store, &fresh_store,
                                         ));
                                         lsp_publish_salsa_diagnostics(
                                             &connection,
                                             &diagnostics,
-                                            &store,
+                                            &fresh_store,
                                             &mut prev_diagnostic_files,
+                                        );
+
+                                        // Update render state so custom requests
+                                        // (rivet/render, treeData, search) reflect edits
+                                        render_store = fresh_store;
+                                        render_graph = rivet_core::links::LinkGraph::build(
+                                            &render_store,
+                                            &render_schema,
                                         );
                                     }
                                 }

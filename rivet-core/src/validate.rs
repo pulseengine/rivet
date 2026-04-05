@@ -45,9 +45,20 @@ impl std::fmt::Display for Diagnostic {
             Severity::Warning => "WARN",
             Severity::Info => "INFO",
         };
+        // Include file location when available
+        if let Some(ref path) = self.source_file {
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
+            if let Some(line) = self.line {
+                write!(f, "  {name}:{}: ", line + 1)?;
+            } else {
+                write!(f, "  {name}: ")?;
+            }
+        } else {
+            write!(f, "  ")?;
+        }
         match &self.artifact_id {
-            Some(id) => write!(f, "  {level}: [{id}] {}", self.message),
-            None => write!(f, "  {level}: {}", self.message),
+            Some(id) => write!(f, "{level}: [{id}] {}", self.message),
+            None => write!(f, "{level}: {}", self.message),
         }
     }
 }

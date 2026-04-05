@@ -112,7 +112,10 @@ pub fn load_schemas_with_fallback(
                 .map_err(|e| Error::Schema(format!("embedded '{name}': {e}")))?;
             files.push(file);
         } else {
-            log::warn!("schema '{name}' not found on disk or embedded");
+            return Err(Error::Schema(format!(
+                "schema '{name}' not found on disk ({}) or as embedded schema",
+                schemas_dir.join(format!("{name}.yaml")).display()
+            )));
         }
     }
 
