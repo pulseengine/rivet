@@ -110,9 +110,10 @@ artifacts:
 ///
 /// Sends the `initialize` handshake first, then the actual request.
 /// Returns the parsed JSON-RPC response for the actual request.
-fn mcp_call(_project_dir: &std::path::Path, method: &str, params: Value) -> Value {
+fn mcp_call(project_dir: &std::path::Path, method: &str, params: Value) -> Value {
     let mut child = Command::new(rivet_bin())
         .args(["mcp"])
+        .current_dir(project_dir)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
