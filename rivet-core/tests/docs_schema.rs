@@ -130,7 +130,10 @@ fn schema_fallback_unknown_name_errors() {
 
     let names: Vec<String> = vec!["common".into(), "totally-unknown-name".into()];
     let result = rivet_core::embedded::load_schemas_with_fallback(&names, &fake_dir);
-    assert!(result.is_err(), "unknown schema name should produce an error");
+    assert!(
+        result.is_err(),
+        "unknown schema name should produce an error"
+    );
     let msg = result.unwrap_err().to_string();
     assert!(
         msg.contains("totally-unknown-name"),
