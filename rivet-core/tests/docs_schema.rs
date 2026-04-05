@@ -122,18 +122,20 @@ fn schema_fallback_stpa() {
 }
 
 /// Fallback ignores completely unknown schema names (logs a warning but
-/// does not error). The resulting merged schema is still valid.
+/// returns an error for unknown schema names so users notice typos.
 // rivet: verifies REQ-010
 #[test]
-fn schema_fallback_unknown_name_ignored() {
+fn schema_fallback_unknown_name_errors() {
     let fake_dir = PathBuf::from("/tmp/rivet-test-nonexistent-dir");
 
     let names: Vec<String> = vec!["common".into(), "totally-unknown-name".into()];
-    let schema = rivet_core::embedded::load_schemas_with_fallback(&names, &fake_dir)
-        .expect("fallback must not error on unknown names");
-
-    // Common link types should still be present from the "common" schema.
-    assert!(schema.link_type("satisfies").is_some());
+    let result = rivet_core::embedded::load_schemas_with_fallback(&names, &fake_dir);
+    assert!(result.is_err(), "unknown schema name should produce an error");
+    let msg = result.unwrap_err().to_string();
+    assert!(
+        msg.contains("totally-unknown-name"),
+        "error should mention the unknown schema name, got: {msg}"
+    );
 }
 
 // ── Embedded schema content ──────────────────────────────────────────────
