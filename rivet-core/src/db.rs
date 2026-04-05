@@ -447,11 +447,7 @@ impl RivetDatabase {
     }
 
     /// Get the link graph (incrementally computed, salsa-tracked).
-    pub fn link_graph(
-        &self,
-        source_set: SourceFileSet,
-        schema_set: SchemaInputSet,
-    ) -> LinkGraph {
+    pub fn link_graph(&self, source_set: SourceFileSet, schema_set: SchemaInputSet) -> LinkGraph {
         build_link_graph(self, source_set, schema_set)
     }
 
@@ -1078,7 +1074,10 @@ artifacts:
 
         let graph_a = db.link_graph(sources, schemas);
         let graph_b = db.link_graph(sources, schemas);
-        assert_eq!(graph_a, graph_b, "repeated calls must produce identical link graphs");
+        assert_eq!(
+            graph_a, graph_b,
+            "repeated calls must produce identical link graphs"
+        );
     }
 
     // ── Test 19: compute_coverage_tracked function ─────────────────────────
@@ -1109,10 +1108,8 @@ artifacts:
     #[test]
     fn coverage_updates_on_source_change() {
         let mut db = RivetDatabase::new();
-        let sources = db.load_sources(&[
-            ("reqs.yaml", SOURCE_REQ),
-            ("design.yaml", SOURCE_DD_LINKED),
-        ]);
+        let sources =
+            db.load_sources(&[("reqs.yaml", SOURCE_REQ), ("design.yaml", SOURCE_DD_LINKED)]);
         let schemas = db.load_schemas(&[("test", TEST_SCHEMA)]);
 
         // Before: DD-001 links to REQ-001 -> full coverage

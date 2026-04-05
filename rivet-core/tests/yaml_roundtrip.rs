@@ -380,10 +380,7 @@ fn schema_driven_extracts_stpa_files() {
         let result = extract_schema_driven(&source, &schema, Some(&path));
 
         if result.artifacts.is_empty() {
-            failures.push(format!(
-                "{}: rowan extracted 0 artifacts",
-                path.display()
-            ));
+            failures.push(format!("{}: rowan extracted 0 artifacts", path.display()));
             continue;
         }
 

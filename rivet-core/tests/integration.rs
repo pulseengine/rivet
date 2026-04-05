@@ -1287,7 +1287,10 @@ fn test_schema_metadata_loading() {
         stpa.schema.namespace.is_some(),
         "stpa schema should have a namespace"
     );
-    assert!(!stpa.artifact_types.is_empty(), "stpa should define artifact types");
+    assert!(
+        !stpa.artifact_types.is_empty(),
+        "stpa should define artifact types"
+    );
     assert!(!stpa.link_types.is_empty(), "stpa should define link types");
 
     // Load and check the common schema (no extends, no namespace)
@@ -1452,16 +1455,10 @@ artifacts:
     let config = AdapterConfig::default();
 
     let arts_a = adapter
-        .import(
-            &AdapterSource::Path(dir.join("file_a.yaml")),
-            &config,
-        )
+        .import(&AdapterSource::Path(dir.join("file_a.yaml")), &config)
         .expect("import file_a");
     let arts_b = adapter
-        .import(
-            &AdapterSource::Path(dir.join("file_b.yaml")),
-            &config,
-        )
+        .import(&AdapterSource::Path(dir.join("file_b.yaml")), &config)
         .expect("import file_b");
 
     assert_eq!(arts_a.len(), 1, "file_a should contain 1 artifact");
@@ -1494,28 +1491,36 @@ artifacts:
     // Forward link: REQ-001 -> FEAT-001 via "satisfies"
     let req_links = graph.links_from("REQ-001");
     assert!(
-        req_links.iter().any(|l| l.target == "FEAT-001" && l.link_type == "satisfies"),
+        req_links
+            .iter()
+            .any(|l| l.target == "FEAT-001" && l.link_type == "satisfies"),
         "REQ-001 should have a forward 'satisfies' link to FEAT-001"
     );
 
     // Forward link: FEAT-001 -> REQ-001 via "implements"
     let feat_links = graph.links_from("FEAT-001");
     assert!(
-        feat_links.iter().any(|l| l.target == "REQ-001" && l.link_type == "implements"),
+        feat_links
+            .iter()
+            .any(|l| l.target == "REQ-001" && l.link_type == "implements"),
         "FEAT-001 should have a forward 'implements' link to REQ-001"
     );
 
     // Backlinks: FEAT-001 should have a backlink from REQ-001
     let feat_backlinks = graph.backlinks_to("FEAT-001");
     assert!(
-        feat_backlinks.iter().any(|bl| bl.source == "REQ-001" && bl.link_type == "satisfies"),
+        feat_backlinks
+            .iter()
+            .any(|bl| bl.source == "REQ-001" && bl.link_type == "satisfies"),
         "FEAT-001 should have a backlink from REQ-001 via 'satisfies'"
     );
 
     // Backlinks: REQ-001 should have a backlink from FEAT-001
     let req_backlinks = graph.backlinks_to("REQ-001");
     assert!(
-        req_backlinks.iter().any(|bl| bl.source == "FEAT-001" && bl.link_type == "implements"),
+        req_backlinks
+            .iter()
+            .any(|bl| bl.source == "FEAT-001" && bl.link_type == "implements"),
         "REQ-001 should have a backlink from FEAT-001 via 'implements'"
     );
 
@@ -1535,10 +1540,7 @@ artifacts:
 
     // We only care about broken-link errors here; type-specific rule errors
     // (e.g., design-decision requires 'satisfies') are not relevant
-    let broken_link_errors: Vec<_> = errors
-        .iter()
-        .filter(|d| d.rule == "broken-link")
-        .collect();
+    let broken_link_errors: Vec<_> = errors.iter().filter(|d| d.rule == "broken-link").collect();
     assert!(
         broken_link_errors.is_empty(),
         "should have no broken-link errors, got: {broken_link_errors:?}"

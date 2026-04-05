@@ -78,6 +78,7 @@ fn generate_artifacts(n: usize, links_per: usize) -> Vec<Artifact> {
                     f.insert("priority".into(), serde_yaml::Value::String("must".into()));
                     f
                 },
+                provenance: None,
                 source_file: None,
             }
         })
@@ -257,6 +258,7 @@ fn build_diff_stores(n: usize) -> (Store, Store) {
             tags: vec!["common".into()],
             links: vec![],
             fields: BTreeMap::new(),
+            provenance: None,
             source_file: None,
         };
         base.upsert(base_art.clone());
@@ -284,6 +286,7 @@ fn build_diff_stores(n: usize) -> (Store, Store) {
             tags: vec![],
             links: vec![],
             fields: BTreeMap::new(),
+            provenance: None,
             source_file: None,
         };
         base.upsert(art);
@@ -301,6 +304,7 @@ fn build_diff_stores(n: usize) -> (Store, Store) {
             tags: vec!["new".into()],
             links: vec![],
             fields: BTreeMap::new(),
+            provenance: None,
             source_file: None,
         };
         head.upsert(art);

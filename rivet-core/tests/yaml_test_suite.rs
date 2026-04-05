@@ -1026,7 +1026,9 @@ fn yts_qb6e_multiline_quoted_scalar() {
 fn yts_stress_many_items() {
     let mut doc = String::from("items:\n");
     for i in 0..100 {
-        doc.push_str(&format!("  - id: ITEM-{i:03}\n    title: Item number {i}\n"));
+        doc.push_str(&format!(
+            "  - id: ITEM-{i:03}\n    title: Item number {i}\n"
+        ));
     }
     parse_ok(&doc);
 }

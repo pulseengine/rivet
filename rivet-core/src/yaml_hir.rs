@@ -73,7 +73,10 @@ pub fn extract_generic_artifacts(source: &str) -> ParsedYamlFile {
         diagnostics: parse_errors
             .iter()
             .map(|e| ParseDiagnostic {
-                span: Span { start: e.offset as u32, end: e.offset as u32 },
+                span: Span {
+                    start: e.offset as u32,
+                    end: e.offset as u32,
+                },
                 message: e.message.clone(),
                 severity: Severity::Error,
             })
@@ -140,7 +143,10 @@ pub fn extract_schema_driven(
         diagnostics: parse_errors
             .iter()
             .map(|e| ParseDiagnostic {
-                span: Span { start: e.offset as u32, end: e.offset as u32 },
+                span: Span {
+                    start: e.offset as u32,
+                    end: e.offset as u32,
+                },
                 message: e.message.clone(),
                 severity: Severity::Error,
             })
@@ -195,9 +201,7 @@ pub fn extract_schema_driven(
             };
             if let Some(seq) = child_of_kind(&value_node, SyntaxKind::Sequence) {
                 // Direct sequence: section → [items]
-                extract_sequence_items(
-                    &seq, type_name, shorthand_links, source_path, &mut result,
-                );
+                extract_sequence_items(&seq, type_name, shorthand_links, source_path, &mut result);
             } else if let Some(mapping) = child_of_kind(&value_node, SyntaxKind::Mapping) {
                 // Nested mapping: section → {group → [items], ...}
                 // Handles UCAs grouped by type (not-providing, providing, etc.)
@@ -209,9 +213,15 @@ pub fn extract_schema_driven(
                     if node_kind(&me) != SyntaxKind::MappingEntry {
                         continue;
                     }
-                    let Some(k) = child_of_kind(&me, SyntaxKind::Key) else { continue };
-                    let Some(k_text) = scalar_text(&k) else { continue };
-                    let Some(v) = child_of_kind(&me, SyntaxKind::Value) else { continue };
+                    let Some(k) = child_of_kind(&me, SyntaxKind::Key) else {
+                        continue;
+                    };
+                    let Some(k_text) = scalar_text(&k) else {
+                        continue;
+                    };
+                    let Some(v) = child_of_kind(&me, SyntaxKind::Value) else {
+                        continue;
+                    };
                     // Only collect entries whose value is a scalar (not a sequence)
                     if child_of_kind(&v, SyntaxKind::Sequence).is_none()
                         && child_of_kind(&v, SyntaxKind::Mapping).is_none()
@@ -227,11 +237,10 @@ pub fn extract_schema_driven(
                     if node_kind(&nested_entry) != SyntaxKind::MappingEntry {
                         continue;
                     }
-                    let group_key = child_of_kind(&nested_entry, SyntaxKind::Key)
-                        .and_then(|k| scalar_text(&k));
+                    let group_key =
+                        child_of_kind(&nested_entry, SyntaxKind::Key).and_then(|k| scalar_text(&k));
                     if let Some(nested_value) = child_of_kind(&nested_entry, SyntaxKind::Value) {
-                        if let Some(nested_seq) =
-                            child_of_kind(&nested_value, SyntaxKind::Sequence)
+                        if let Some(nested_seq) = child_of_kind(&nested_value, SyntaxKind::Sequence)
                         {
                             extract_sequence_items_with_inherited(
                                 &nested_seq,
@@ -316,20 +325,18 @@ fn extract_sequence_items_with_inherited(
                         }
                     } else if !sa.artifact.fields.contains_key(field) {
                         // Non-link inherited field
-                        sa.artifact.fields.insert(
-                            field.clone(),
-                            serde_yaml::Value::String(value.clone()),
-                        );
+                        sa.artifact
+                            .fields
+                            .insert(field.clone(), serde_yaml::Value::String(value.clone()));
                     }
                 }
 
                 // Set uca-type from the group sub-key name
                 if let Some(gk) = group_key {
                     if !sa.artifact.fields.contains_key("uca-type") {
-                        sa.artifact.fields.insert(
-                            "uca-type".into(),
-                            serde_yaml::Value::String(gk.into()),
-                        );
+                        sa.artifact
+                            .fields
+                            .insert("uca-type".into(), serde_yaml::Value::String(gk.into()));
                     }
                 }
             }
@@ -802,7 +809,7 @@ fn extract_string_list(value_node: &SyntaxNode) -> Vec<String> {
                     SyntaxKind::PlainScalar
                     | SyntaxKind::SingleQuotedScalar
                     | SyntaxKind::DoubleQuotedScalar => {
-                        items.push(unquote_scalar(k, &t.text().to_string()));
+                        items.push(unquote_scalar(k, t.text()));
                     }
                     _ => {}
                 }
@@ -971,7 +978,7 @@ fn scalar_text(node: &SyntaxNode) -> Option<String> {
             let k = t.kind();
             match k {
                 SyntaxKind::SingleQuotedScalar | SyntaxKind::DoubleQuotedScalar => {
-                    return Some(unquote_scalar(k, &t.text().to_string()));
+                    return Some(unquote_scalar(k, t.text()));
                 }
                 SyntaxKind::PlainScalar => {
                     // The lexer splits plain scalars at commas and brackets.
@@ -1030,8 +1037,8 @@ fn unescape_double_quoted(s: &str) -> String {
                 Some('e') => result.push('\u{1B}'), // escape
                 Some('v') => result.push('\u{0B}'), // vertical tab
                 Some(' ') => result.push(' '),
-                Some('N') => result.push('\u{85}'), // next line
-                Some('_') => result.push('\u{A0}'), // non-breaking space
+                Some('N') => result.push('\u{85}'),   // next line
+                Some('_') => result.push('\u{A0}'),   // non-breaking space
                 Some('L') => result.push('\u{2028}'), // line separator
                 Some('P') => result.push('\u{2029}'), // paragraph separator
                 Some('x') => {
@@ -1258,7 +1265,7 @@ artifacts:
       priority: must
       count: 42
       enabled: true
-      ratio: 3.14
+      ratio: 1.23
 ";
         let hir = extract_generic_artifacts(source);
         assert_eq!(hir.artifacts.len(), 1);
@@ -1278,7 +1285,7 @@ artifacts:
         match ratio {
             serde_yaml::Value::Number(n) => {
                 let f = n.as_f64().unwrap();
-                assert!((f - 3.14).abs() < 1e-10, "expected 3.14, got {}", f);
+                assert!((f - 1.23_f64).abs() < 1e-10, "expected 1.23, got {}", f);
             }
             other => panic!("expected Number, got {:?}", other),
         }

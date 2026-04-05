@@ -3513,7 +3513,10 @@ fn cmd_export(
     versions_json: Option<&str>,
     baseline_name: Option<&str>,
 ) -> Result<bool> {
-    validate_format(format, &["reqif", "generic-yaml", "generic", "html", "gherkin"])?;
+    validate_format(
+        format,
+        &["reqif", "generic-yaml", "generic", "html", "gherkin"],
+    )?;
     if format == "html" {
         return cmd_export_html(
             cli,
@@ -4940,8 +4943,8 @@ fn cmd_commits(
     // Load project config
     let config_path = cli.project.join("rivet.yaml");
     if !config_path.exists() {
-        let project_dir = std::fs::canonicalize(&cli.project)
-            .unwrap_or_else(|_| cli.project.clone());
+        let project_dir =
+            std::fs::canonicalize(&cli.project).unwrap_or_else(|_| cli.project.clone());
         anyhow::bail!(
             "no rivet.yaml found in {}\n\nTo initialize a new project, run: rivet init",
             project_dir.display()
@@ -5176,8 +5179,8 @@ fn resolve_schemas_dir(cli: &Cli) -> PathBuf {
 fn cmd_sync(cli: &Cli, local_only: bool) -> Result<bool> {
     let config_path = cli.project.join("rivet.yaml");
     if !config_path.exists() {
-        let project_dir = std::fs::canonicalize(&cli.project)
-            .unwrap_or_else(|_| cli.project.clone());
+        let project_dir =
+            std::fs::canonicalize(&cli.project).unwrap_or_else(|_| cli.project.clone());
         anyhow::bail!(
             "no rivet.yaml found in {}\n\nTo initialize a new project, run: rivet init",
             project_dir.display()
@@ -5240,8 +5243,8 @@ fn cmd_lock(cli: &Cli, update: bool) -> Result<bool> {
     }
     let config_path = cli.project.join("rivet.yaml");
     if !config_path.exists() {
-        let project_dir = std::fs::canonicalize(&cli.project)
-            .unwrap_or_else(|_| cli.project.clone());
+        let project_dir =
+            std::fs::canonicalize(&cli.project).unwrap_or_else(|_| cli.project.clone());
         anyhow::bail!(
             "no rivet.yaml found in {}\n\nTo initialize a new project, run: rivet init",
             project_dir.display()
@@ -5268,8 +5271,8 @@ fn cmd_lock(cli: &Cli, update: bool) -> Result<bool> {
 fn cmd_baseline_verify(cli: &Cli, name: &str, strict: bool) -> Result<bool> {
     let config_path = cli.project.join("rivet.yaml");
     if !config_path.exists() {
-        let project_dir = std::fs::canonicalize(&cli.project)
-            .unwrap_or_else(|_| cli.project.clone());
+        let project_dir =
+            std::fs::canonicalize(&cli.project).unwrap_or_else(|_| cli.project.clone());
         anyhow::bail!(
             "no rivet.yaml found in {}\n\nTo initialize a new project, run: rivet init",
             project_dir.display()
@@ -5341,8 +5344,8 @@ fn cmd_baseline_verify(cli: &Cli, name: &str, strict: bool) -> Result<bool> {
 fn cmd_baseline_list(cli: &Cli) -> Result<bool> {
     let config_path = cli.project.join("rivet.yaml");
     if !config_path.exists() {
-        let project_dir = std::fs::canonicalize(&cli.project)
-            .unwrap_or_else(|_| cli.project.clone());
+        let project_dir =
+            std::fs::canonicalize(&cli.project).unwrap_or_else(|_| cli.project.clone());
         anyhow::bail!(
             "no rivet.yaml found in {}\n\nTo initialize a new project, run: rivet init",
             project_dir.display()
@@ -5726,8 +5729,8 @@ impl ProjectContext {
     fn load(cli: &Cli) -> Result<Self> {
         let config_path = cli.project.join("rivet.yaml");
         if !config_path.exists() {
-            let project_dir = std::fs::canonicalize(&cli.project)
-                .unwrap_or_else(|_| cli.project.clone());
+            let project_dir =
+                std::fs::canonicalize(&cli.project).unwrap_or_else(|_| cli.project.clone());
             anyhow::bail!(
                 "no rivet.yaml found in {}\n\nTo initialize a new project, run: rivet init",
                 project_dir.display()
@@ -5798,6 +5801,7 @@ impl ProjectContext {
     }
 
     /// Load project with artifacts, schema, link graph, documents, and test results.
+    #[allow(dead_code)]
     fn load_full(cli: &Cli) -> Result<Self> {
         let mut ctx = Self::load_with_docs(cli)?;
 
@@ -6571,14 +6575,16 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
     let (connection, io_threads) = Connection::stdio();
 
     let server_capabilities = ServerCapabilities {
-        text_document_sync: Some(TextDocumentSyncCapability::Options(TextDocumentSyncOptions {
-            open_close: Some(true),
-            change: Some(TextDocumentSyncKind::FULL),
-            save: Some(TextDocumentSyncSaveOptions::SaveOptions(SaveOptions {
-                include_text: Some(false),
-            })),
-            ..Default::default()
-        })),
+        text_document_sync: Some(TextDocumentSyncCapability::Options(
+            TextDocumentSyncOptions {
+                open_close: Some(true),
+                change: Some(TextDocumentSyncKind::FULL),
+                save: Some(TextDocumentSyncSaveOptions::SaveOptions(SaveOptions {
+                    include_text: Some(false),
+                })),
+                ..Default::default()
+            },
+        )),
         hover_provider: Some(HoverProviderCapability::Simple(true)),
         definition_provider: Some(OneOf::Left(true)),
         document_symbol_provider: Some(OneOf::Left(true)),
@@ -6627,7 +6633,6 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
     };
 
     let (source_set, schema_set) = if let Some(config) = &config_opt {
-
         // Load schema contents into salsa inputs
         let schema_contents =
             rivet_core::embedded::load_schema_contents(&config.project.schemas, &schemas_dir);
@@ -7049,7 +7054,10 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                                     // New file not yet tracked — add it to the source set
                                     if path_str.ends_with(".yaml") || path_str.ends_with(".yml") {
                                         db.add_source(source_set, &path_str, content);
-                                        eprintln!("rivet lsp: added new source file on open: {}", path_str);
+                                        eprintln!(
+                                            "rivet lsp: added new source file on open: {}",
+                                            path_str
+                                        );
                                     }
                                 }
                                 // Publish diagnostics for the opened file
@@ -7157,7 +7165,8 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                                             db.diagnostics(source_set, schema_set);
                                         let fresh_store = db.store(source_set, schema_set);
                                         diagnostics.extend(validate::validate_documents(
-                                            &doc_store, &fresh_store,
+                                            &doc_store,
+                                            &fresh_store,
                                         ));
                                         lsp_publish_salsa_diagnostics(
                                             &connection,

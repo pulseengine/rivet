@@ -249,14 +249,21 @@ fn import_with_schema(
                 })
                 .collect());
         }
-        _ => return Err(Error::Adapter("unsupported source type for stpa-yaml".into())),
+        _ => {
+            return Err(Error::Adapter(
+                "unsupported source type for stpa-yaml".into(),
+            ));
+        }
     };
     let mut artifacts = Vec::new();
     let entries = std::fs::read_dir(dir)
         .map_err(|e| Error::Adapter(format!("read dir {}: {e}", dir.display())))?;
     for entry in entries.filter_map(|e| e.ok()) {
         let path = entry.path();
-        if path.extension().is_some_and(|ext| ext == "yaml" || ext == "yml") {
+        if path
+            .extension()
+            .is_some_and(|ext| ext == "yaml" || ext == "yml")
+        {
             let content = std::fs::read_to_string(&path)
                 .map_err(|e| Error::Adapter(format!("read {}: {e}", path.display())))?;
             let parsed = yaml_hir::extract_schema_driven(&content, schema, Some(&path));

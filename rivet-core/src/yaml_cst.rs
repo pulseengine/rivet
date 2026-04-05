@@ -915,22 +915,18 @@ impl<'src> Parser<'src> {
             return false;
         }
         match self.tokens[la].kind {
-            SyntaxKind::Newline => return false, // blank line
-            SyntaxKind::Dash => return false,    // sequence indicator
-            SyntaxKind::Comment => return false,  // comment-only line
+            SyntaxKind::Newline => false, // blank line
+            SyntaxKind::Dash => false,    // sequence indicator
+            SyntaxKind::Comment => false, // comment-only line
             SyntaxKind::PlainScalar
             | SyntaxKind::SingleQuotedScalar
             | SyntaxKind::DoubleQuotedScalar => {
                 // Check if it looks like a mapping entry (key followed by colon)
                 let mut peek = la + 1;
-                while peek < self.tokens.len()
-                    && self.tokens[peek].kind == SyntaxKind::Whitespace
-                {
+                while peek < self.tokens.len() && self.tokens[peek].kind == SyntaxKind::Whitespace {
                     peek += 1;
                 }
-                if peek < self.tokens.len()
-                    && self.tokens[peek].kind == SyntaxKind::Colon
-                {
+                if peek < self.tokens.len() && self.tokens[peek].kind == SyntaxKind::Colon {
                     return false; // it's a mapping entry, not a continuation
                 }
                 true
@@ -1137,7 +1133,9 @@ artifacts:
 
     #[test]
     fn comma_in_sequence_item() {
-        parse_and_check("process-model:\n  - Current state of local files\n  - Pending changes, unresolved conflicts\n  - Coverage completeness\n");
+        parse_and_check(
+            "process-model:\n  - Current state of local files\n  - Pending changes, unresolved conflicts\n  - Coverage completeness\n",
+        );
     }
 
     #[test]
@@ -1147,7 +1145,9 @@ artifacts:
 
     #[test]
     fn comment_between_mapping_items_in_sequence() {
-        parse_and_check("controllers:\n  # first\n  - id: CTRL-1\n    name: First\n  # second\n  - id: CTRL-2\n    name: Second\n");
+        parse_and_check(
+            "controllers:\n  # first\n  - id: CTRL-1\n    name: First\n  # second\n  - id: CTRL-2\n    name: Second\n",
+        );
     }
 
     #[test]
@@ -1157,12 +1157,16 @@ artifacts:
 
     #[test]
     fn multiline_plain_scalar_nested() {
-        parse_and_check("items:\n  - id: X\n    fields:\n      alt: Rejected because it\n        requires separate deploy.\n\n  - id: Y\n    title: Next\n");
+        parse_and_check(
+            "items:\n  - id: X\n    fields:\n      alt: Rejected because it\n        requires separate deploy.\n\n  - id: Y\n    title: Next\n",
+        );
     }
 
     #[test]
     fn mermaid_in_block_scalar() {
-        parse_and_check("diagram: |\n  graph LR\n    A[Rivet] -->|OSLC| B[Polar]\n    style A fill:#e8f4fd\n");
+        parse_and_check(
+            "diagram: |\n  graph LR\n    A[Rivet] -->|OSLC| B[Polar]\n    style A fill:#e8f4fd\n",
+        );
     }
 
     #[test]
@@ -1177,13 +1181,22 @@ artifacts:
 
         fn count_kind(node: &SyntaxNode, kind: SyntaxKind) -> usize {
             let mut n = if node.kind() == kind { 1 } else { 0 };
-            for c in node.children() { n += count_kind(&c, kind); }
+            for c in node.children() {
+                n += count_kind(&c, kind);
+            }
             n
         }
-        assert_eq!(count_kind(&root, SyntaxKind::Error), 0, "should have no Error nodes");
+        assert_eq!(
+            count_kind(&root, SyntaxKind::Error),
+            0,
+            "should have no Error nodes"
+        );
         assert!(errors.is_empty(), "should have no parse errors: {errors:?}");
-        assert_eq!(count_kind(&root, SyntaxKind::SequenceItem), 32,
-            "should have 32 sequence items (20 hazards + 12 sub-hazards)");
+        assert_eq!(
+            count_kind(&root, SyntaxKind::SequenceItem),
+            32,
+            "should have 32 sequence items (20 hazards + 12 sub-hazards)"
+        );
     }
 
     #[test]

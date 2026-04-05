@@ -182,9 +182,8 @@ fn extract_tool_result(response: &Value) -> Value {
                 serde_json::to_string_pretty(response).unwrap()
             )
         });
-    serde_json::from_str(text).unwrap_or_else(|e| {
-        panic!("tool result text is not valid JSON: {e}\ntext: {text}")
-    })
+    serde_json::from_str(text)
+        .unwrap_or_else(|e| panic!("tool result text is not valid JSON: {e}\ntext: {text}"))
 }
 
 /// Check if the MCP response indicates an error.
@@ -388,9 +387,7 @@ fn mcp_schema_returns_type_definitions() {
     );
 
     // Verify requirement type is present
-    let req_type = artifact_types
-        .iter()
-        .find(|at| at["name"] == "requirement");
+    let req_type = artifact_types.iter().find(|at| at["name"] == "requirement");
     assert!(req_type.is_some(), "should include 'requirement' type");
 }
 
@@ -480,10 +477,7 @@ fn mcp_tools_list_returns_all_tools() {
         .expect("should have tools array in response");
 
     // Verify expected tool names are present
-    let tool_names: Vec<&str> = tools
-        .iter()
-        .filter_map(|t| t["name"].as_str())
-        .collect();
+    let tool_names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
 
     for expected in &[
         "rivet_validate",

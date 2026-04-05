@@ -141,9 +141,7 @@ pub const EU_AI_ACT_TYPES: &[&str] = &[
 pub fn is_eu_ai_act_loaded(schema: &Schema) -> bool {
     // If at least the core type exists, consider the schema loaded
     schema.artifact_types.contains_key("ai-system-description")
-        && schema
-            .artifact_types
-            .contains_key("conformity-declaration")
+        && schema.artifact_types.contains_key("conformity-declaration")
 }
 
 /// Compute EU AI Act compliance for the given store and schema.

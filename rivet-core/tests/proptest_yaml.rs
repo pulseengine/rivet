@@ -22,12 +22,10 @@ fn yaml_key() -> impl Strategy<Value = String> {
 /// no commas, no brackets, no newlines, no dashes or quotes which are
 /// YAML syntax characters).
 fn yaml_plain_value() -> impl Strategy<Value = String> {
-    "[a-zA-Z0-9 _.!?]{1,50}".prop_filter("no trailing/leading spaces or problematic sequences", |s| {
-        !s.ends_with(' ')
-            && !s.starts_with(' ')
-            && !s.contains("  #")
-            && !s.contains(": ")
-    })
+    "[a-zA-Z0-9 _.!?]{1,50}"
+        .prop_filter("no trailing/leading spaces or problematic sequences", |s| {
+            !s.ends_with(' ') && !s.starts_with(' ') && !s.contains("  #") && !s.contains(": ")
+        })
 }
 
 /// Generate a single YAML mapping entry: `key: value\n`.
@@ -69,10 +67,7 @@ fn yaml_flow_sequence_entry() -> impl Strategy<Value = String> {
 fn yaml_nested_mapping() -> impl Strategy<Value = String> {
     (
         yaml_key(),
-        prop::collection::vec(
-            (yaml_key(), yaml_plain_value()),
-            1..5,
-        ),
+        prop::collection::vec((yaml_key(), yaml_plain_value()), 1..5),
     )
         .prop_map(|(parent, children)| {
             let mut result = format!("{parent}:\n");
@@ -95,10 +90,7 @@ fn yaml_sequence_of_mappings() -> impl Strategy<Value = String> {
     (
         yaml_key(),
         prop::collection::vec(
-            prop::collection::vec(
-                (yaml_key(), yaml_plain_value()),
-                1..4,
-            ),
+            prop::collection::vec((yaml_key(), yaml_plain_value()), 1..4),
             1..5,
         ),
     )
@@ -272,9 +264,7 @@ fn yaml_mixed_document() -> impl Strategy<Value = String> {
         yaml_block_scalar_entry(),
         yaml_sequence_of_mappings(),
     )
-        .prop_map(|(flat, nested, flow, block, seq)| {
-            format!("{flat}{nested}{flow}{block}{seq}")
-        })
+        .prop_map(|(flat, nested, flow, block, seq)| format!("{flat}{nested}{flow}{block}{seq}"))
 }
 
 proptest! {

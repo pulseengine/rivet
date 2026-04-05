@@ -26,7 +26,7 @@ use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::*;
 use rmcp::{
-    schemars, tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler, ServiceExt,
+    ErrorData as McpError, ServerHandler, ServiceExt, schemars, tool, tool_handler, tool_router,
 };
 
 // ── Project loading ────────────────────────────────────────────────────
@@ -50,8 +50,8 @@ fn load_project(project_dir: &Path) -> Result<McpProject> {
 // ── Parameter structs ──────────────────────────────────────────────────
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
-pub struct ValidateParams {
-}
+#[allow(dead_code)] // constructed by rmcp via deserialization
+pub struct ValidateParams {}
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct ListParams {
@@ -62,8 +62,8 @@ pub struct ListParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
-pub struct StatsParams {
-}
+#[allow(dead_code)] // constructed by rmcp via deserialization
+pub struct StatsParams {}
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct GetParams {
@@ -135,12 +135,19 @@ impl RivetServer {
     }
 
     fn err(msg: impl std::fmt::Display) -> McpError {
-        McpError::new(rmcp::model::ErrorCode::INTERNAL_ERROR, msg.to_string(), None)
+        McpError::new(
+            rmcp::model::ErrorCode::INTERNAL_ERROR,
+            msg.to_string(),
+            None,
+        )
     }
 
     /// Execute a closure with read access to the cached project.
     fn with_project<T>(&self, f: impl FnOnce(&McpProject) -> Result<T>) -> Result<T, McpError> {
-        let guard = self.project.read().map_err(|e| Self::err(format!("lock: {e}")))?;
+        let guard = self
+            .project
+            .read()
+            .map_err(|e| Self::err(format!("lock: {e}")))?;
         f(&guard).map_err(Self::err)
     }
 }
@@ -171,7 +178,11 @@ impl RivetServer {
         Parameters(p): Parameters<ListParams>,
     ) -> Result<CallToolResult, McpError> {
         let result = self.with_project(|proj| {
-            Ok(tool_list_cached(proj, p.type_filter.as_deref(), p.status_filter.as_deref()))
+            Ok(tool_list_cached(
+                proj,
+                p.type_filter.as_deref(),
+                p.status_filter.as_deref(),
+            ))
         })?;
         Ok(CallToolResult::success(vec![Content::text(
             serde_json::to_string_pretty(&result).unwrap_or_default(),
@@ -187,10 +198,7 @@ impl RivetServer {
     }
 
     #[tool(description = "Get a single artifact by ID with all fields, links, and metadata")]
-    fn rivet_get(
-        &self,
-        Parameters(p): Parameters<GetParams>,
-    ) -> Result<CallToolResult, McpError> {
+    fn rivet_get(&self, Parameters(p): Parameters<GetParams>) -> Result<CallToolResult, McpError> {
         let result = self.with_project(|proj| tool_get_cached(proj, &p.id))?;
         Ok(CallToolResult::success(vec![Content::text(
             serde_json::to_string_pretty(&result).unwrap_or_default(),
@@ -241,11 +249,10 @@ impl RivetServer {
         )]))
     }
 
-    #[tool(description = "Add a new artifact to the project via CST mutation. Call rivet_reload after.")]
-    fn rivet_add(
-        &self,
-        Parameters(p): Parameters<AddParams>,
-    ) -> Result<CallToolResult, McpError> {
+    #[tool(
+        description = "Add a new artifact to the project via CST mutation. Call rivet_reload after."
+    )]
+    fn rivet_add(&self, Parameters(p): Parameters<AddParams>) -> Result<CallToolResult, McpError> {
         let args = json!({
             "type": p.r#type,
             "title": p.title,
@@ -264,7 +271,10 @@ impl RivetServer {
     #[tool(description = "Reload project from disk after file changes")]
     fn rivet_reload(&self) -> Result<CallToolResult, McpError> {
         let new_proj = load_project(self.dir()).map_err(Self::err)?;
-        let mut guard = self.project.write().map_err(|e| Self::err(format!("lock: {e}")))?;
+        let mut guard = self
+            .project
+            .write()
+            .map_err(|e| Self::err(format!("lock: {e}")))?;
         *guard = new_proj;
         Ok(CallToolResult::success(vec![Content::text(
             json!({"reloaded": true}).to_string(),
@@ -347,9 +357,18 @@ impl ServerHandler for RivetServer {
 fn tool_validate_cached(proj: &McpProject) -> Value {
     let diagnostics = validate::validate(&proj.store, &proj.schema, &proj.graph);
 
-    let errors = diagnostics.iter().filter(|d| d.severity == Severity::Error).count();
-    let warnings = diagnostics.iter().filter(|d| d.severity == Severity::Warning).count();
-    let infos = diagnostics.iter().filter(|d| d.severity == Severity::Info).count();
+    let errors = diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Error)
+        .count();
+    let warnings = diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Warning)
+        .count();
+    let infos = diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Info)
+        .count();
 
     let diag_json: Vec<Value> = diagnostics
         .iter()
@@ -481,7 +500,6 @@ fn tool_coverage_cached(proj: &McpProject, rule_filter: Option<&str>) -> Value {
 }
 
 fn tool_schema_cached(proj: &McpProject, type_filter: Option<&str>) -> Value {
-
     let artifact_types_json: Vec<Value> = proj
         .schema
         .artifact_types

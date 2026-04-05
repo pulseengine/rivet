@@ -32,13 +32,21 @@ pub struct Provenance {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     /// Session identifier for the AI interaction.
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "session-id")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "session-id"
+    )]
     pub session_id: Option<String>,
     /// ISO 8601 timestamp of creation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timestamp: Option<String>,
     /// Human reviewer who approved this artifact.
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "reviewed-by")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "reviewed-by"
+    )]
     pub reviewed_by: Option<String>,
 }
 

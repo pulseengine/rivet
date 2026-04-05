@@ -269,10 +269,7 @@ fn collect_schema_contents(
 }
 
 /// Load external projects.
-fn load_externals(
-    config: &ProjectConfig,
-    project_path: &std::path::Path,
-) -> Vec<ExternalInfo> {
+fn load_externals(config: &ProjectConfig, project_path: &std::path::Path) -> Vec<ExternalInfo> {
     let mut externals = Vec::new();
     if let Some(ref ext_map) = config.externals {
         let cache_dir = project_path.join(".rivet/repos");
@@ -449,10 +446,7 @@ fn reload_state_incremental(state: &mut AppState) -> Result<()> {
         .with_context(|| format!("loading {}", config_path.display()))?;
 
     // Lock the salsa state for incremental updates
-    let mut salsa = state
-        .salsa
-        .lock()
-        .expect("salsa mutex poisoned");
+    let mut salsa = state.salsa.lock().expect("salsa mutex poisoned");
 
     // ── Update schema inputs ─────────────────────────────────────────
     // Re-read schema content; salsa will detect if anything actually changed.
@@ -677,11 +671,7 @@ fn spawn_file_watcher(
 ///
 /// Accepts a pre-built `AppState` (with salsa database) and a bind address.
 /// File watching is enabled when `watch` is true.
-pub async fn run(
-    app_state: AppState,
-    bind: String,
-    watch: bool,
-) -> Result<()> {
+pub async fn run(app_state: AppState, bind: String, watch: bool) -> Result<()> {
     let port = app_state.context.port;
 
     // Clone paths before moving into AppState so they remain available for the watcher.
