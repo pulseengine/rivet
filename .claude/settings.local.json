@@ -48,7 +48,8 @@
       "Bash(python3:*)",
       "Bash(cp:*)",
       "Bash(chmod +x /Users/r/git/pulseengine/rivet/scripts/pre-commit)",
-      "Bash(cp /Users/r/git/pulseengine/rivet/scripts/pre-commit /Users/r/git/pulseengine/rivet/.git/hooks/pre-commit)"
+      "Bash(cp /Users/r/git/pulseengine/rivet/scripts/pre-commit /Users/r/git/pulseengine/rivet/.git/hooks/pre-commit)",
+      "Bash(cargo build:*)"
     ]
   }
 }

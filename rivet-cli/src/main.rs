@@ -878,41 +878,12 @@ fn run(cli: Cli) -> Result<bool> {
                     bind
                 );
             }
-            let ctx = ProjectContext::load_full(&cli)?;
             let schemas_dir = resolve_schemas_dir(&cli);
-            let mut doc_dirs = Vec::new();
-            for docs_path in &ctx.config.docs {
-                let dir = cli.project.join(docs_path);
-                if dir.is_dir() {
-                    doc_dirs.push(dir);
-                }
-            }
-            // Collect source dirs for file watcher
-            let source_paths: Vec<PathBuf> = ctx
-                .config
-                .sources
-                .iter()
-                .map(|s| cli.project.join(&s.path))
-                .collect();
-            let project_name = ctx.config.project.name.clone();
             let project_path =
                 std::fs::canonicalize(&cli.project).unwrap_or_else(|_| cli.project.clone());
+            let app_state = serve::reload_state(&project_path, &schemas_dir, port)?;
             let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
-            rt.block_on(serve::run(
-                ctx.store,
-                ctx.schema,
-                ctx.graph,
-                ctx.doc_store.unwrap_or_default(),
-                ctx.result_store.unwrap_or_default(),
-                project_name,
-                project_path.clone(),
-                schemas_dir.clone(),
-                doc_dirs.clone(),
-                port,
-                bind,
-                watch,
-                source_paths,
-            ))?;
+            rt.block_on(serve::run(app_state, bind, watch))?;
             Ok(true)
         }
         Command::Sync { local } => cmd_sync(&cli, *local),
