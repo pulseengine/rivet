@@ -6606,6 +6606,7 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
         })),
         hover_provider: Some(HoverProviderCapability::Simple(true)),
         definition_provider: Some(OneOf::Left(true)),
+        document_symbol_provider: Some(OneOf::Left(true)),
         completion_provider: Some(CompletionOptions {
             trigger_characters: Some(vec!["[".to_string(), ":".to_string()]),
             ..Default::default()
@@ -6785,6 +6786,23 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                         connection.sender.send(Message::Response(Response {
                             id: req.id,
                             result: Some(serde_json::to_value(result)?),
+                            error: None,
+                        }))?;
+                    }
+                    "textDocument/documentSymbol" => {
+                        let params: DocumentSymbolParams =
+                            serde_json::from_value(req.params.clone())?;
+                        let path = lsp_uri_to_path(&params.text_document.uri);
+                        let symbols = if let Some(path) = path {
+                            let content = std::fs::read_to_string(&path).unwrap_or_default();
+                            lsp_document_symbols(&content)
+                        } else {
+                            Vec::new()
+                        };
+                        let response = DocumentSymbolResponse::Nested(symbols);
+                        connection.sender.send(Message::Response(Response {
+                            id: req.id,
+                            result: Some(serde_json::to_value(response)?),
                             error: None,
                         }))?;
                     }
@@ -7502,6 +7520,180 @@ fn lsp_completion(
     })
 }
 
+/// Extract document symbols (artifact IDs) from a YAML source string.
+///
+/// Walks the CST to find all SequenceItem nodes that contain a mapping with
+/// an "id" key. Returns a flat list of `DocumentSymbol` values suitable for
+/// the `textDocument/documentSymbol` LSP response.
+#[allow(deprecated)] // DocumentSymbol.deprecated field is itself deprecated in lsp_types
+fn lsp_document_symbols(source: &str) -> Vec<lsp_types::DocumentSymbol> {
+    use rivet_core::yaml_cst;
+
+    let (green, _errors) = yaml_cst::parse(source);
+    let root = yaml_cst::SyntaxNode::new_root(green);
+    let line_starts = yaml_cst::line_starts(source);
+
+    let mut symbols = Vec::new();
+    walk_for_symbols(&root, &mut symbols, &line_starts);
+    symbols
+}
+
+/// Recursively walk the CST looking for SequenceItem nodes that represent artifacts.
+#[allow(deprecated)]
+fn walk_for_symbols(
+    node: &rivet_core::yaml_cst::SyntaxNode,
+    symbols: &mut Vec<lsp_types::DocumentSymbol>,
+    line_starts: &[u32],
+) {
+    use rivet_core::yaml_cst::SyntaxKind;
+
+    if node.kind() == SyntaxKind::SequenceItem {
+        if let Some(sym) = extract_symbol_from_item(node, line_starts) {
+            symbols.push(sym);
+            return; // don't recurse into children of matched items
+        }
+    }
+
+    for child in node.children() {
+        walk_for_symbols(&child, symbols, line_starts);
+    }
+}
+
+/// Try to extract a `DocumentSymbol` from a SequenceItem node.
+///
+/// Returns `Some` if the item contains a mapping with an "id" key.
+#[allow(deprecated)]
+fn extract_symbol_from_item(
+    item: &rivet_core::yaml_cst::SyntaxNode,
+    line_starts: &[u32],
+) -> Option<lsp_types::DocumentSymbol> {
+    use rivet_core::yaml_cst::SyntaxKind;
+
+    // The SequenceItem should contain a Mapping
+    let mapping = item.children().find(|c| c.kind() == SyntaxKind::Mapping)?;
+
+    let mut id: Option<String> = None;
+    let mut id_range: Option<rowan::TextRange> = None;
+    let mut title: Option<String> = None;
+    let mut art_type: Option<String> = None;
+
+    for entry in mapping.children() {
+        if entry.kind() != SyntaxKind::MappingEntry {
+            continue;
+        }
+        let key_node = entry.children().find(|c| c.kind() == SyntaxKind::Key)?;
+        let key_text = cst_scalar_text(&key_node)?;
+        let value_node = entry.children().find(|c| c.kind() == SyntaxKind::Value);
+
+        match key_text.as_str() {
+            "id" => {
+                if let Some(ref vn) = value_node {
+                    id = cst_scalar_text(vn);
+                    id_range = Some(vn.text_range());
+                }
+            }
+            "title" => {
+                if let Some(ref vn) = value_node {
+                    title = cst_scalar_text(vn);
+                }
+            }
+            "type" => {
+                if let Some(ref vn) = value_node {
+                    art_type = cst_scalar_text(vn);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let id = id?;
+
+    // Build detail string: "type — title" or just title or just type
+    let detail = match (art_type, title) {
+        (Some(t), Some(ti)) => Some(format!("{t} \u{2014} {ti}")),
+        (Some(t), None) => Some(t),
+        (None, Some(ti)) => Some(ti),
+        (None, None) => None,
+    };
+
+    let item_range = item.text_range();
+    let sel_range = id_range.unwrap_or(item_range);
+
+    let range = text_range_to_lsp(item_range, line_starts);
+    let selection_range = text_range_to_lsp(sel_range, line_starts);
+
+    Some(lsp_types::DocumentSymbol {
+        name: id,
+        detail,
+        kind: lsp_types::SymbolKind::OBJECT,
+        tags: None,
+        deprecated: None,
+        range,
+        selection_range,
+        children: None,
+    })
+}
+
+/// Extract the text of the first scalar token descended from a CST node.
+///
+/// Standalone version for the LSP helpers (mirrors `yaml_hir::scalar_text`).
+fn cst_scalar_text(node: &rivet_core::yaml_cst::SyntaxNode) -> Option<String> {
+    use rivet_core::yaml_cst::SyntaxKind;
+
+    for token in node.descendants_with_tokens() {
+        if let rowan::NodeOrToken::Token(t) = token {
+            match t.kind() {
+                SyntaxKind::SingleQuotedScalar => {
+                    let raw = t.text().to_string();
+                    return Some(raw[1..raw.len() - 1].replace("''", "'"));
+                }
+                SyntaxKind::DoubleQuotedScalar => {
+                    let raw = t.text().to_string();
+                    return Some(raw[1..raw.len() - 1].to_string());
+                }
+                SyntaxKind::PlainScalar => {
+                    let mut text = t.text().to_string();
+                    let mut next = t.next_sibling_or_token();
+                    while let Some(sibling) = next {
+                        match sibling {
+                            rowan::NodeOrToken::Token(ref st) => match st.kind() {
+                                SyntaxKind::Newline | SyntaxKind::Comment => break,
+                                _ => {
+                                    text.push_str(st.text());
+                                    next = sibling.next_sibling_or_token();
+                                }
+                            },
+                            rowan::NodeOrToken::Node(_) => break,
+                        }
+                    }
+                    return Some(text.trim_end().to_string());
+                }
+                _ => {}
+            }
+        }
+    }
+    None
+}
+
+/// Convert a rowan `TextRange` to an LSP `Range` using a line-starts table.
+fn text_range_to_lsp(tr: rowan::TextRange, line_starts: &[u32]) -> lsp_types::Range {
+    use rivet_core::yaml_cst;
+
+    let (start_line, start_col) = yaml_cst::offset_to_line_col(line_starts, u32::from(tr.start()));
+    let (end_line, end_col) = yaml_cst::offset_to_line_col(line_starts, u32::from(tr.end()));
+
+    lsp_types::Range {
+        start: lsp_types::Position {
+            line: start_line,
+            character: start_col,
+        },
+        end: lsp_types::Position {
+            line: end_line,
+            character: end_col,
+        },
+    }
+}
+
 /// Substitute `$prev` in a string with the most recently generated ID.
 fn substitute_prev(s: &str, prev: &Option<String>) -> String {
     if s == "$prev" {
@@ -8057,5 +8249,80 @@ artifacts:
         assert_eq!(lsp_diags[0].range.start.line, 5);
         assert_eq!(lsp_diags[0].range.start.character, 0);
         assert_eq!(lsp_diags[0].range.end.character, 11); // "X-003".len() + 6
+    }
+
+    // ── documentSymbol ────────────────────────────────────────────────
+
+    #[test]
+    fn document_symbols_extracts_artifact_ids() {
+        let yaml = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: First requirement
+  - id: REQ-002
+    title: Second requirement
+";
+        let symbols = lsp_document_symbols(yaml);
+        assert_eq!(symbols.len(), 2);
+        assert_eq!(symbols[0].name, "REQ-001");
+        assert_eq!(
+            symbols[0].detail.as_deref(),
+            Some("requirement \u{2014} First requirement")
+        );
+        assert_eq!(symbols[0].kind, lsp_types::SymbolKind::OBJECT);
+        assert_eq!(symbols[1].name, "REQ-002");
+        assert_eq!(symbols[1].detail.as_deref(), Some("Second requirement"));
+    }
+
+    #[test]
+    fn document_symbols_empty_file() {
+        let symbols = lsp_document_symbols("");
+        assert!(symbols.is_empty());
+    }
+
+    #[test]
+    fn document_symbols_no_id_key() {
+        let yaml = "\
+artifacts:
+  - title: No ID here
+    type: note
+";
+        let symbols = lsp_document_symbols(yaml);
+        assert!(symbols.is_empty(), "items without id should be skipped");
+    }
+
+    #[test]
+    fn document_symbols_ranges_are_valid() {
+        let yaml = "\
+artifacts:
+  - id: A-001
+    title: Alpha
+  - id: A-002
+    title: Beta
+";
+        let symbols = lsp_document_symbols(yaml);
+        assert_eq!(symbols.len(), 2);
+
+        // First symbol starts at line 1 (the "- id:" line)
+        assert_eq!(symbols[0].range.start.line, 1);
+        // Second symbol starts at line 3
+        assert_eq!(symbols[1].range.start.line, 3);
+
+        // Selection range should be within the full range
+        assert!(symbols[0].selection_range.start.line >= symbols[0].range.start.line);
+        assert!(symbols[0].selection_range.end.line <= symbols[0].range.end.line);
+    }
+
+    #[test]
+    fn document_symbols_quoted_id() {
+        let yaml = "\
+artifacts:
+  - id: 'REQ-Q01'
+    title: Quoted ID
+";
+        let symbols = lsp_document_symbols(yaml);
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(symbols[0].name, "REQ-Q01");
     }
 }

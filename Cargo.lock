@@ -2670,6 +2670,7 @@ dependencies = [
  "petgraph 0.7.1",
  "rivet-core",
  "rmcp",
+ "rowan",
  "serde",
  "serde_json",
  "serde_yaml",
