@@ -1,9 +1,21 @@
 {
   "hooks": {
-    "pre-commit": [
+    "PreCommit": [
       {
-        "command": "rivet validate",
-        "description": "Validate rivet artifacts before committing"
+        "type": "command",
+        "command": "rivet validate"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "if": "Edit(artifacts/**|safety/**)|Write(artifacts/**|safety/**)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'FILE=$(cat - | jq -r \".tool_input.file_path // empty\"); [ -n \"$FILE\" ] && rivet stamp all --created-by ai-assisted 2>/dev/null || true'"
+          }
+        ]
       }
     ]
   }
