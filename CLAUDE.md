@@ -8,5 +8,6 @@ Additional Claude Code settings:
 - Commit messages require artifact trailers (Implements/Fixes/Verifies/Satisfies/Refs)
 - A Claude Code pre-commit hook runs `rivet validate` before each commit
   (configured in `.claude/settings.json`)
-- AI provenance is auto-stamped via PostToolUse hook when artifact files are edited
-- When manually stamping, include model: `rivet stamp <ID> --created-by ai-assisted --model claude-opus-4-6`
+- AI provenance is auto-stamped via PostToolUse hook when artifact files are edited (main process only)
+- Subagents must run `rivet stamp all --created-by ai-assisted` before committing artifact changes
+- PreCommit hook runs `rivet provenance apply` then `rivet validate`

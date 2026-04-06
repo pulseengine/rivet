@@ -15,3 +15,6 @@ vscode-rivet/node_modules/
 vscode-rivet/bin/rivet
 vscode-rivet/out/
 vscode-rivet/*.vsix
+
+# Rivet local state
+.rivet/

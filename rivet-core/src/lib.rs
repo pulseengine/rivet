@@ -25,6 +25,7 @@ pub mod model;
 pub mod mutate;
 #[cfg(feature = "oslc")]
 pub mod oslc;
+pub mod provenance_track;
 pub mod query;
 pub mod reqif;
 pub mod results;

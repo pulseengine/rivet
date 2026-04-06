@@ -642,6 +642,10 @@ enum Command {
         reviewed_by: Option<String>,
     },
 
+    /// Manage AI provenance tracking
+    #[command(subcommand)]
+    Provenance(ProvenanceAction),
+
     /// Start the language server (LSP over stdio)
     Lsp,
 
@@ -725,6 +729,24 @@ enum SnapshotAction {
     },
     /// List available snapshots
     List,
+}
+
+#[derive(Debug, Subcommand)]
+enum ProvenanceAction {
+    /// Mark a file as AI-touched (called by PostToolUse hook)
+    Mark {
+        /// Path to the file that was modified
+        file: String,
+        /// Tool that made the modification
+        #[arg(long, default_value = "Edit")]
+        tool: String,
+    },
+    /// Apply provenance stamps to AI-touched artifacts
+    Apply,
+    /// Clear all pending provenance marks
+    Clear,
+    /// Show pending provenance marks
+    Status,
 }
 
 fn main() -> ExitCode {
@@ -998,6 +1020,7 @@ fn run(cli: Cli) -> Result<bool> {
             session_id.as_deref(),
             reviewed_by.as_deref(),
         ),
+        Command::Provenance(action) => cmd_provenance(&cli, action),
     }
 }
 
@@ -6703,6 +6726,129 @@ fn strip_html_tags(html: &str) -> String {
         .replace("&lt;", "<")
         .replace("&gt;", ">")
         .replace("&quot;", "\"")
+}
+
+fn cmd_provenance(cli: &Cli, action: &ProvenanceAction) -> Result<bool> {
+    use rivet_core::provenance_track::PendingProvenance;
+
+    let project_dir = &cli.project;
+
+    match action {
+        ProvenanceAction::Mark { file, tool } => {
+            let mut pending = PendingProvenance::load(project_dir);
+            pending.mark(file, tool);
+            pending
+                .save(project_dir)
+                .context("saving provenance state")?;
+            Ok(true)
+        }
+        ProvenanceAction::Apply => {
+            let mut pending = PendingProvenance::load(project_dir);
+            if pending.is_empty() {
+                return Ok(true);
+            }
+
+            let config_path = project_dir.join("rivet.yaml");
+            if !config_path.exists() {
+                return Ok(true);
+            }
+
+            let config = rivet_core::load_project_config(&config_path)?;
+            let schemas_dir = resolve_schemas_dir(cli);
+            let schema = rivet_core::load_schemas(&config.project.schemas, &schemas_dir)?;
+            let mut store = Store::new();
+            for source in &config.sources {
+                if let Ok(arts) = rivet_core::load_artifacts(source, project_dir, &schema) {
+                    for a in arts {
+                        store.upsert(a);
+                    }
+                }
+            }
+
+            let timestamp = {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default();
+                let secs = now.as_secs();
+                let days = secs / 86400;
+                let day_secs = secs % 86400;
+                let hours = day_secs / 3600;
+                let minutes = (day_secs % 3600) / 60;
+                let seconds = day_secs % 60;
+                let z = days as i64 + 719468;
+                let era = if z >= 0 { z } else { z - 146096 } / 146097;
+                let doe = (z - era * 146097) as u64;
+                let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+                let y = yoe as i64 + era * 400;
+                let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+                let mp = (5 * doy + 2) / 153;
+                let d = doy - (153 * mp + 2) / 5 + 1;
+                let m = if mp < 10 { mp + 3 } else { mp - 9 };
+                let y = if m <= 2 { y + 1 } else { y };
+                format!("{y:04}-{m:02}-{d:02}T{hours:02}:{minutes:02}:{seconds:02}Z")
+            };
+
+            let mut total_stamped = 0;
+            for mark in &pending.marks {
+                let file_path = project_dir.join(&mark.file);
+                if !file_path.exists() {
+                    continue;
+                }
+                let content = std::fs::read_to_string(&file_path)?;
+                let mut editor = rivet_core::yaml_edit::YamlEditor::parse(&content);
+
+                // Find artifacts in this file that don't have provenance
+                for artifact in store.iter() {
+                    if artifact.source_file.as_deref() == Some(&file_path)
+                        && artifact.provenance.is_none()
+                    {
+                        let _ = editor.set_provenance(
+                            &artifact.id,
+                            "ai-assisted",
+                            None,
+                            None,
+                            Some(&timestamp),
+                            None,
+                        );
+                        total_stamped += 1;
+                    }
+                }
+
+                std::fs::write(&file_path, editor.to_string())?;
+            }
+
+            pending.clear();
+            pending
+                .save(project_dir)
+                .context("clearing provenance state")?;
+
+            if total_stamped > 0 {
+                eprintln!("stamped {total_stamped} artifact(s) with AI provenance");
+            }
+            Ok(true)
+        }
+        ProvenanceAction::Clear => {
+            let mut pending = PendingProvenance::load(project_dir);
+            pending.clear();
+            pending
+                .save(project_dir)
+                .context("clearing provenance state")?;
+            println!("provenance marks cleared");
+            Ok(true)
+        }
+        ProvenanceAction::Status => {
+            let pending = PendingProvenance::load(project_dir);
+            if pending.is_empty() {
+                println!("no pending provenance marks");
+            } else {
+                println!("{} pending mark(s):", pending.marks.len());
+                for m in &pending.marks {
+                    println!("  {} (tool: {}, at: {})", m.file, m.tool, m.timestamp);
+                }
+            }
+            Ok(true)
+        }
+    }
 }
 
 fn cmd_mcp(cli: &Cli) -> Result<bool> {

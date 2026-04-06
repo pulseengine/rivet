@@ -3,7 +3,7 @@
     "PreCommit": [
       {
         "type": "command",
-        "command": "rivet validate"
+        "command": "bash -c 'rivet provenance apply 2>/dev/null; rivet validate'"
       }
     ],
     "PostToolUse": [
@@ -13,7 +13,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'FILE=$(cat - | jq -r \".tool_input.file_path // empty\"); [ -n \"$FILE\" ] && rivet stamp all --created-by ai-assisted 2>/dev/null || true'"
+            "command": "bash -c 'INPUT=$(cat -); FILE=$(echo \"$INPUT\" | jq -r \".tool_input.file_path // empty\"); TOOL=$(echo \"$INPUT\" | jq -r \".tool_name // \\\"Edit\\\"\"); [ -n \"$FILE\" ] && rivet provenance mark \"$FILE\" --tool \"$TOOL\" 2>/dev/null || true'"
           }
         ]
       }
