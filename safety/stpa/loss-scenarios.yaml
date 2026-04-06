@@ -747,7 +747,6 @@ loss-scenarios:
   # =========================================================================
   - id: LS-M-1
     title: MCP agent commits based on stale validation results
-    uca: UCA-M-1
     type: inadequate-process-model
     hazards: [H-21]
     scenario: >

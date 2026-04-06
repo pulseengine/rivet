@@ -1194,8 +1194,8 @@ artifacts:
         assert!(errors.is_empty(), "should have no parse errors: {errors:?}");
         assert_eq!(
             count_kind(&root, SyntaxKind::SequenceItem),
-            32,
-            "should have 32 sequence items (20 hazards + 12 sub-hazards)"
+            34,
+            "should have 34 sequence items (22 hazards + 12 sub-hazards)"
         );
     }
 
