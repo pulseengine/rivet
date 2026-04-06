@@ -249,8 +249,8 @@ enum Command {
 
     /// Show traceability coverage report
     Coverage {
-        /// Output format: "table" (default) or "json"
-        #[arg(short, long, default_value = "table")]
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
         format: String,
 
         /// Exit with failure if overall coverage is below this percentage
