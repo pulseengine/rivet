@@ -217,6 +217,33 @@ controllers:
       - Last refresh timestamp
       - Active filters and view state
 
+  # --- MCP Server controller ---
+  - id: CTRL-MCP
+    name: MCP Server
+    type: automated
+    description: >
+      Model Context Protocol server that exposes Rivet operations as
+      tools callable by AI coding agents. Accepts tool invocations via
+      stdio transport, delegates to Core for computation, and returns
+      structured JSON results.
+    source-file: rivet-cli/src/mcp.rs
+    control-actions:
+      - ca: CA-MCP-1
+        target: CTRL-CORE
+        action: Invoke validation, list artifacts, compute stats, read schema
+      - ca: CA-MCP-2
+        target: PROC-ARTIFACTS
+        action: Add new artifact via CST mutation (rivet_add tool)
+    feedback:
+      - from: CTRL-CORE
+        info: Validation diagnostics, artifact data, coverage metrics
+      - from: CTRL-DEV
+        info: Tool invocation requests via stdio JSON-RPC
+    process-model:
+      - Set of registered tools and their parameter schemas
+      - Cached project state (store, schema, link graph)
+      - Whether cached state reflects current disk state
+
 controlled-processes:
   - id: PROC-ARTIFACTS
     name: Local Artifact Store

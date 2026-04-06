@@ -218,3 +218,21 @@ system-constraints:
       postMessage commands from the extension host and must not
       relay artifact data to untrusted iframe origins.
     hazards: [H-20]
+
+  - id: SC-23
+    title: Rivet MCP server must not return stale data after disk changes
+    description: >
+      The MCP server must detect when artifact files have changed on disk
+      since the last tool invocation and reload project state before
+      returning results. Alternatively, the server must provide an explicit
+      reload mechanism and document that results may be stale.
+    hazards: [H-21]
+
+  - id: SC-24
+    title: Rivet must preserve YAML content byte-for-byte during round-trip operations
+    description: >
+      Any read-modify-write operation (rivet add, rivet mutate) must
+      preserve all existing content, comments, and formatting. Only the
+      specific insertion or modification should differ. Verified by the
+      rowan round-trip test suite (66 files, 83 edge cases).
+    hazards: [H-24]
