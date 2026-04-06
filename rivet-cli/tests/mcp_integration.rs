@@ -6,9 +6,9 @@
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
+use rmcp::ServiceExt;
 use rmcp::model::*;
 use rmcp::transport::{ConfigureCommandExt, TokioChildProcess};
-use rmcp::ServiceExt;
 use serde_json::Value;
 
 // ── Helpers ─────────────────────────────────────────────────────────────
@@ -40,8 +40,7 @@ fn create_test_project(dir: &Path) {
     // rivet.yaml pointing at local schema copies
     std::fs::write(
         dir.join("rivet.yaml"),
-        format!(
-            r#"project:
+        r#"project:
   name: mcp-test
   version: "0.1.0"
   schemas:
@@ -51,8 +50,7 @@ fn create_test_project(dir: &Path) {
 sources:
   - path: artifacts
     format: generic-yaml
-"#
-        ),
+"#,
     )
     .unwrap();
 
@@ -118,17 +116,16 @@ async fn spawn_mcp_client(
 ) -> rmcp::service::RunningService<rmcp::RoleClient, ()> {
     let bin = rivet_bin();
 
-    let (transport, _stderr) = TokioChildProcess::builder(
-        tokio::process::Command::new(&bin).configure(|cmd| {
+    let (transport, _stderr) =
+        TokioChildProcess::builder(tokio::process::Command::new(&bin).configure(|cmd| {
             cmd.arg("--project")
                 .arg(project_dir)
                 .arg("mcp")
                 .stderr(Stdio::piped());
-        }),
-    )
-    .stderr(Stdio::piped())
-    .spawn()
-    .expect("failed to spawn rivet mcp");
+        }))
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to spawn rivet mcp");
 
     ().serve(transport)
         .await
@@ -233,10 +230,7 @@ async fn test_rivet_list_returns_artifacts() {
     assert_eq!(count, 3, "expected 3 artifacts (REQ-001, REQ-002, DD-001)");
 
     let artifacts = json["artifacts"].as_array().expect("artifacts array");
-    let ids: Vec<&str> = artifacts
-        .iter()
-        .filter_map(|a| a["id"].as_str())
-        .collect();
+    let ids: Vec<&str> = artifacts.iter().filter_map(|a| a["id"].as_str()).collect();
     assert!(ids.contains(&"REQ-001"), "missing REQ-001");
     assert!(ids.contains(&"REQ-002"), "missing REQ-002");
     assert!(ids.contains(&"DD-001"), "missing DD-001");
@@ -409,10 +403,7 @@ async fn test_rivet_schema_with_type_filter() {
     let client = spawn_mcp_client(tmp.path()).await;
 
     let mut args = serde_json::Map::new();
-    args.insert(
-        "type".to_string(),
-        Value::String("requirement".to_string()),
-    );
+    args.insert("type".to_string(), Value::String("requirement".to_string()));
 
     let result = client
         .call_tool(CallToolRequestParams::new("rivet_schema").with_arguments(args))
@@ -456,16 +447,16 @@ async fn test_rivet_coverage() {
     // rules should be an array
     let rules = json["rules"].as_array().expect("rules array");
     // The dev schema may or may not have traceability rules, but the field should exist
-    assert!(
-        json["rules"].is_array(),
-        "expected rules to be an array"
-    );
+    assert!(json["rules"].is_array(), "expected rules to be an array");
 
     // If there are rules, each should have standard fields
     for rule in rules {
         assert!(rule["name"].is_string(), "rule should have a name");
         assert!(rule["total"].is_number(), "rule should have a total");
-        assert!(rule["covered"].is_number(), "rule should have a covered count");
+        assert!(
+            rule["covered"].is_number(),
+            "rule should have a covered count"
+        );
     }
 
     client.cancel().await.expect("cancel");
