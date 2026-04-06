@@ -29,6 +29,7 @@ pub const SCHEMA_STPA_SEC: &str = include_str!("../../schemas/stpa-sec.yaml");
 pub const SCHEMA_RESEARCH: &str = include_str!("../../schemas/research.yaml");
 pub const SCHEMA_ISO_PAS_8800: &str = include_str!("../../schemas/iso-pas-8800.yaml");
 pub const SCHEMA_SOTIF: &str = include_str!("../../schemas/sotif.yaml");
+pub const SCHEMA_SUPPLY_CHAIN: &str = include_str!("../../schemas/supply-chain.yaml");
 
 // ── Embedded bridge schema content ──────────────────────────────────────
 
@@ -59,6 +60,7 @@ pub const SCHEMA_NAMES: &[&str] = &[
     "research",
     "iso-pas-8800",
     "sotif",
+    "supply-chain",
 ];
 
 /// Metadata for a built-in bridge schema.
@@ -127,6 +129,7 @@ pub fn embedded_schema(name: &str) -> Option<&'static str> {
         "research" => Some(SCHEMA_RESEARCH),
         "iso-pas-8800" => Some(SCHEMA_ISO_PAS_8800),
         "sotif" => Some(SCHEMA_SOTIF),
+        "supply-chain" => Some(SCHEMA_SUPPLY_CHAIN),
         _ => None,
     }
 }

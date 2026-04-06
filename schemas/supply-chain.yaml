@@ -1,0 +1,204 @@
+# Software Supply Chain schema
+#
+# Tracks supply chain artifacts for regulatory compliance (CRA, SBOM,
+# build attestations). Covers:
+#   - SBOM components (name, version, license, purl)
+#   - Build provenance attestations (builder, source, digest)
+#   - Known vulnerabilities (CVE, severity, status)
+#   - Release artifacts (binaries/packages with signing status)
+#
+# References:
+#   - EU Cyber Resilience Act (CRA)
+#   - NTIA SBOM Minimum Elements
+#   - SLSA (Supply-chain Levels for Software Artifacts)
+#   - in-toto attestation framework
+
+schema:
+  name: supply-chain
+  version: "0.1.0"
+  extends: [common]
+  description: >
+    Software supply chain artifact types for SBOM tracking, build
+    provenance, vulnerability management, and release integrity.
+
+# ──────────────────────────────────────────────────────────────────────────
+# Artifact types
+# ──────────────────────────────────────────────────────────────────────────
+artifact-types:
+
+  # ── SBOM components ─────────────────────────────────────────────────────
+  - name: sbom-component
+    description: >
+      A software component from a Software Bill of Materials (SBOM).
+      Captures identity, version, license, and package URL per NTIA
+      minimum elements.
+    fields:
+      - name: component-name
+        type: string
+        required: true
+        description: Name of the software component
+      - name: version
+        type: string
+        required: true
+        description: Version string of the component
+      - name: license
+        type: string
+        required: false
+        description: SPDX license identifier (e.g., MIT, Apache-2.0)
+      - name: purl
+        type: string
+        required: false
+        description: Package URL per purl spec (e.g., pkg:cargo/serde@1.0.200)
+      - name: supplier
+        type: string
+        required: false
+        description: Supplier or author of the component
+    link-fields: []
+
+  # ── Build attestations ──────────────────────────────────────────────────
+  - name: build-attestation
+    description: >
+      A build provenance attestation linking a release artifact to its
+      source and build process. Follows SLSA provenance model.
+    fields:
+      - name: builder
+        type: string
+        required: true
+        description: Build system or CI pipeline that produced the artifact
+      - name: source-repo
+        type: string
+        required: true
+        description: Source repository URL (e.g., https://github.com/org/repo)
+      - name: source-ref
+        type: string
+        required: false
+        description: Git ref (commit SHA, tag) of the source used for the build
+      - name: digest
+        type: string
+        required: true
+        description: Cryptographic digest of the built artifact (e.g., sha256:abc123)
+      - name: build-timestamp
+        type: string
+        required: false
+        description: ISO 8601 timestamp of when the build completed
+      - name: slsa-level
+        type: string
+        required: false
+        allowed-values: ["1", "2", "3", "4"]
+        description: SLSA build level achieved
+    link-fields:
+      - name: attests
+        link-type: attests-build-of
+        target-types: [release-artifact]
+        required: true
+        cardinality: exactly-one
+
+  # ── Vulnerabilities ─────────────────────────────────────────────────────
+  - name: vulnerability
+    description: >
+      A known vulnerability affecting a software component. Tracks CVE
+      identity, severity, and remediation status.
+    fields:
+      - name: cve-id
+        type: string
+        required: true
+        description: CVE identifier (e.g., CVE-2024-12345)
+      - name: severity
+        type: string
+        required: true
+        allowed-values: [critical, high, medium, low, none]
+        description: CVSS-based severity rating
+      - name: cvss-score
+        type: string
+        required: false
+        description: Numeric CVSS score (e.g., 9.8)
+      - name: vuln-status
+        type: string
+        required: true
+        allowed-values: [unresolved, investigating, mitigated, patched, not-affected]
+        description: Current remediation status
+      - name: remediation
+        type: text
+        required: false
+        description: Description of remediation action taken or planned
+    link-fields:
+      - name: affected-component
+        link-type: affects
+        target-types: [sbom-component]
+        required: true
+        cardinality: one-or-many
+
+  # ── Release artifacts ───────────────────────────────────────────────────
+  - name: release-artifact
+    description: >
+      A released binary, package, or container image. Tracks identity,
+      digest, and signing status for integrity verification.
+    fields:
+      - name: artifact-name
+        type: string
+        required: true
+        description: Name of the released artifact (e.g., myapp-v1.2.3.tar.gz)
+      - name: version
+        type: string
+        required: true
+        description: Release version string
+      - name: digest
+        type: string
+        required: true
+        description: Cryptographic digest of the artifact (e.g., sha256:abc123)
+      - name: signing-status
+        type: string
+        required: true
+        allowed-values: [signed, unsigned, verified]
+        description: Whether the artifact has been cryptographically signed
+      - name: artifact-type
+        type: string
+        required: false
+        allowed-values: [binary, container-image, package, archive, installer]
+        description: Kind of release artifact
+    link-fields:
+      - name: contains
+        link-type: contains
+        target-types: [sbom-component]
+        required: false
+        cardinality: zero-or-many
+
+# ──────────────────────────────────────────────────────────────────────────
+# Supply chain link types
+# ──────────────────────────────────────────────────────────────────────────
+link-types:
+  - name: attests-build-of
+    inverse: build-attested-by
+    description: Build attestation certifies provenance of a release artifact
+    source-types: [build-attestation]
+    target-types: [release-artifact]
+
+  - name: affects
+    inverse: affected-by
+    description: Vulnerability affects a software component
+    source-types: [vulnerability]
+    target-types: [sbom-component]
+
+  - name: contains
+    inverse: contained-in
+    description: Release artifact contains a software component
+    source-types: [release-artifact]
+    target-types: [sbom-component]
+
+# ──────────────────────────────────────────────────────────────────────────
+# Traceability rules
+# ──────────────────────────────────────────────────────────────────────────
+traceability-rules:
+  - name: release-has-attestation
+    description: Every release artifact should have a build attestation for provenance
+    source-type: release-artifact
+    required-backlink: attests-build-of
+    from-types: [build-attestation]
+    severity: warning
+
+  - name: vulnerability-has-affected-component
+    description: Every vulnerability must link to at least one affected component
+    source-type: vulnerability
+    required-link: affects
+    target-types: [sbom-component]
+    severity: error

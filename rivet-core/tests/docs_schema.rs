@@ -214,6 +214,7 @@ fn all_embedded_constants_parse_as_yaml() {
         ("aspice", rivet_core::embedded::SCHEMA_ASPICE),
         ("cybersecurity", rivet_core::embedded::SCHEMA_CYBERSECURITY),
         ("aadl", rivet_core::embedded::SCHEMA_AADL),
+        ("supply-chain", rivet_core::embedded::SCHEMA_SUPPLY_CHAIN),
     ];
 
     for (name, content) in all {
