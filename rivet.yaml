@@ -81,9 +81,11 @@ commits:
      UCA-Q-7,
      # Phase 3 STPA and draft artifacts (no code implementation yet)
      CC-C-10, CC-C-11, CC-C-12, CC-C-13, CC-C-14, CC-C-15, CC-C-16, CC-C-17,
+     CC-M-1, CC-M-2, CC-M-3,
      H-9, H-9.1, H-9.2, H-10, H-11, H-11.1, H-11.2, H-12, H-18,
      SC-11, SC-12, SC-13, SC-14, SC-20,
      UCA-C-10, UCA-C-11, UCA-C-12, UCA-C-13, UCA-C-14, UCA-C-15, UCA-C-16, UCA-C-17,
+     UCA-M-1, UCA-M-2, UCA-M-3,
      # Phase 3 planned features (draft, not yet implemented in code)
      FEAT-043, FEAT-044, FEAT-045, FEAT-047, FEAT-048, FEAT-049, FEAT-050, FEAT-051,
      FEAT-052, FEAT-053, FEAT-054, FEAT-055, FEAT-056, FEAT-057,
@@ -106,4 +108,12 @@ commits:
      SH-1, SH-2, SH-3, SH-4, SH-5, SH-6, SH-7,
      SSC-1, SSC-2, SSC-3, SSC-4, SSC-5, SSC-6, SSC-7,
      SUCA-CLI-1, SUCA-CLI-2, SUCA-DASH-1, SUCA-DASH-2, SUCA-CORE-1, SUCA-OSLC-1, SUCA-OSLC-2,
-     SLS-1, SLS-2, SLS-3, SLS-4, SLS-5, SLS-6, SLS-7]
+     SLS-1, SLS-2, SLS-3, SLS-4, SLS-5, SLS-6, SLS-7,
+     # v0.3.1 implementation STPA artifacts
+     H-IMPL-001, H-IMPL-002, H-IMPL-003, H-IMPL-004, H-IMPL-005, H-IMPL-006,
+     L-IMPL-001, L-IMPL-002, L-IMPL-003, L-IMPL-004,
+     SC-IMPL-001, SC-IMPL-002, SC-IMPL-003, SC-IMPL-004, SC-IMPL-005, SC-IMPL-006,
+     # LSP diagnostic STPA artifacts
+     H-LSP-001, H-LSP-002, H-LSP-003, H-LSP-004,
+     L-LSP-001, L-LSP-002, L-LSP-003,
+     SC-LSP-001, SC-LSP-002, SC-LSP-003, SC-LSP-004, SC-LSP-005, SC-LSP-006, SC-LSP-007]

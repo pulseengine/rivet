@@ -167,6 +167,7 @@ artifact-types:
       - document-validation-ucas
       - external-sync-ucas
       - lsp-ucas
+      - mcp-ucas
     shorthand-links:
       hazards: leads-to-hazard
       controller: issued-by

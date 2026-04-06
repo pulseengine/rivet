@@ -537,3 +537,33 @@ controller-constraints:
       artifact data.
     ucas: [UCA-C-27]
     hazards: [H-20]
+
+  # =========================================================================
+  # MCP server constraints
+  # =========================================================================
+  - id: CC-M-1
+    controller: CTRL-CLI
+    constraint: >
+      MCP server must reload project state from disk on every tool call.
+      No caching of validation results, artifact lists, or coverage
+      metrics across tool calls.
+    ucas: [UCA-M-1]
+    hazards: [H-IMPL-003]
+
+  - id: CC-M-2
+    controller: CTRL-CLI
+    constraint: >
+      MCP server must report source directory loading failures as
+      explicit error diagnostics in tool responses. Partial loads must
+      be clearly indicated, not silently accepted.
+    ucas: [UCA-M-2]
+    hazards: [H-1, H-3]
+
+  - id: CC-M-3
+    controller: CTRL-CLI
+    constraint: >
+      MCP server must run validation before returning coverage metrics.
+      Coverage must be computed from the current file state, not from
+      a previous validation pass.
+    ucas: [UCA-M-3]
+    hazards: [H-3, H-IMPL-003]

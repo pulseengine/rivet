@@ -948,3 +948,57 @@ lsp-ucas:
 
   too-early-too-late: []
   stopped-too-soon: []
+
+# =============================================================================
+# MCP Server UCAs — CA-MCP-1: Return validation results
+#                    CA-MCP-2: Return artifact data and coverage metrics
+# =============================================================================
+mcp-ucas:
+  control-action: Return validation results, artifact data, coverage metrics
+  controller: CTRL-CLI
+
+  not-providing:
+    - id: UCA-M-1
+      description: >
+        MCP server does not reload project state between tool calls,
+        returning stale validation results after files change.
+      context: >
+        An AI agent modifies an artifact YAML file via a tool call,
+        then immediately queries validation status. The MCP server
+        returns cached results from before the modification.
+      hazards: [H-IMPL-003]
+      rationale: >
+        Stale validation results cause the agent to believe its changes
+        are valid when they may have introduced errors, or to continue
+        fixing issues that no longer exist.
+
+  providing:
+    - id: UCA-M-2
+      description: >
+        MCP server returns partial artifact list when loading fails
+        for one source directory, without indicating the failure.
+      context: >
+        One of the configured source directories contains a YAML file
+        with a parse error. The MCP server loads artifacts from other
+        directories successfully but silently omits the failing directory.
+      hazards: [H-1, H-3]
+      rationale: >
+        An incomplete artifact list produces incorrect coverage metrics
+        and missing link targets. The agent cannot detect the omission
+        because no error is reported.
+
+  too-early-too-late:
+    - id: UCA-M-3
+      description: >
+        MCP server returns coverage metrics before validation completes
+        on modified files.
+      context: >
+        An agent requests coverage immediately after modifying artifacts.
+        The MCP server computes coverage from the pre-modification
+        validation state because re-validation has not yet run.
+      hazards: [H-3, H-IMPL-003]
+      rationale: >
+        Coverage metrics reflect the old artifact state, misleading the
+        agent about the impact of its changes.
+
+  stopped-too-soon: []

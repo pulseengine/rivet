@@ -61,6 +61,46 @@ artifacts:
         target: SC-3
       - type: satisfies
         target: SC-15
+      - type: constraint-satisfies
+        target: SC-1
+      - type: constraint-satisfies
+        target: SC-3
+      - type: constraint-satisfies
+        target: SC-15
+      - type: constraint-satisfies
+        target: SC-LSP-002
+      - type: constraint-satisfies
+        target: SC-LSP-004
+      - type: constraint-satisfies
+        target: SC-IMPL-001
+      - type: constraint-satisfies
+        target: SC-IMPL-004
+      - type: constraint-satisfies
+        target: SC-IMPL-006
+      - type: constraint-satisfies
+        target: CC-C-1
+      - type: constraint-satisfies
+        target: CC-C-2
+      - type: constraint-satisfies
+        target: CC-C-3
+      - type: constraint-satisfies
+        target: CC-C-4
+      - type: constraint-satisfies
+        target: CC-C-5
+      - type: constraint-satisfies
+        target: CC-C-6
+      - type: constraint-satisfies
+        target: CC-C-7
+      - type: constraint-satisfies
+        target: CC-C-8
+      - type: constraint-satisfies
+        target: CC-C-9
+      - type: constraint-satisfies
+        target: CC-C-24
+      - type: constraint-satisfies
+        target: CC-C-25
+      - type: constraint-satisfies
+        target: CC-D-3
   - id: REQ-005
     type: requirement
     title: ReqIF 1.2 import/export
@@ -80,6 +120,24 @@ artifacts:
         target: SC-4
       - type: satisfies
         target: SC-9
+      - type: constraint-satisfies
+        target: SC-4
+      - type: constraint-satisfies
+        target: SC-9
+      - type: constraint-satisfies
+        target: CC-Q-1
+      - type: constraint-satisfies
+        target: CC-Q-2
+      - type: constraint-satisfies
+        target: CC-Q-3
+      - type: constraint-satisfies
+        target: CC-Q-4
+      - type: constraint-satisfies
+        target: CC-Q-5
+      - type: constraint-satisfies
+        target: CC-Q-6
+      - type: constraint-satisfies
+        target: CC-Q-7
   - id: REQ-006
     type: requirement
     title: OSLC-based tool synchronization
@@ -99,6 +157,30 @@ artifacts:
         target: SC-5
       - type: satisfies
         target: SC-8
+      - type: constraint-satisfies
+        target: SC-5
+      - type: constraint-satisfies
+        target: SC-8
+      - type: constraint-satisfies
+        target: CC-O-1
+      - type: constraint-satisfies
+        target: CC-O-2
+      - type: constraint-satisfies
+        target: CC-O-3
+      - type: constraint-satisfies
+        target: CC-O-4
+      - type: constraint-satisfies
+        target: CC-O-5
+      - type: constraint-satisfies
+        target: CC-O-6
+      - type: constraint-satisfies
+        target: CC-O-7
+      - type: constraint-satisfies
+        target: CC-O-8
+      - type: constraint-satisfies
+        target: CC-O-9
+      - type: constraint-satisfies
+        target: CC-O-10
   - id: REQ-007
     type: requirement
     title: CLI and serve pattern
@@ -115,6 +197,36 @@ artifacts:
     links:
       - type: satisfies
         target: SC-18
+      - type: constraint-satisfies
+        target: SC-18
+      - type: constraint-satisfies
+        target: SC-22
+      - type: constraint-satisfies
+        target: SC-IMPL-003
+      - type: constraint-satisfies
+        target: CC-L-1
+      - type: constraint-satisfies
+        target: CC-L-2
+      - type: constraint-satisfies
+        target: CC-L-3
+      - type: constraint-satisfies
+        target: CC-L-4
+      - type: constraint-satisfies
+        target: CC-L-5
+      - type: constraint-satisfies
+        target: CC-D-1
+      - type: constraint-satisfies
+        target: CC-D-2
+      - type: constraint-satisfies
+        target: CC-D-4
+      - type: constraint-satisfies
+        target: CC-C-27
+      - type: constraint-satisfies
+        target: CC-M-1
+      - type: constraint-satisfies
+        target: CC-M-2
+      - type: constraint-satisfies
+        target: CC-M-3
 
   - id: REQ-008
     type: requirement
@@ -131,6 +243,14 @@ artifacts:
     links:
       - type: satisfies
         target: SC-16
+      - type: constraint-satisfies
+        target: SC-16
+      - type: constraint-satisfies
+        target: CC-C-21
+      - type: constraint-satisfies
+        target: CC-C-22
+      - type: constraint-satisfies
+        target: CC-C-23
 
   - id: REQ-009
     type: requirement
@@ -149,6 +269,8 @@ artifacts:
     links:
       - type: satisfies
         target: SC-6
+      - type: constraint-satisfies
+        target: SC-6
   - id: REQ-010
     type: requirement
     title: Schema-driven validation
@@ -166,6 +288,8 @@ artifacts:
     links:
       - type: satisfies
         target: SC-1
+      - type: constraint-satisfies
+        target: SC-IMPL-005
   - id: REQ-011
     type: requirement
     title: Rust edition 2024 with MSRV 1.85
@@ -191,6 +315,15 @@ artifacts:
       priority: must
       category: non-functional
       baseline: v0.1.0
+    links:
+      - type: constraint-satisfies
+        target: CC-I-1
+      - type: constraint-satisfies
+        target: CC-I-2
+      - type: constraint-satisfies
+        target: CC-I-3
+      - type: constraint-satisfies
+        target: CC-I-4
 
   - id: REQ-013
     type: requirement
@@ -242,6 +375,8 @@ artifacts:
     links:
       - type: satisfies
         target: SC-4
+      - type: constraint-satisfies
+        target: SC-4
   - id: REQ-016
     type: requirement
     title: Cybersecurity schema (ISO 21434 / ASPICE SEC.1-4)
@@ -261,6 +396,7 @@ artifacts:
       - type: satisfies
         target: SC-4
   - id: REQ-017
+
     type: requirement
     title: Commit-to-artifact traceability
     status: approved
@@ -281,6 +417,14 @@ artifacts:
         target: SC-7
       - type: satisfies
         target: SC-17
+      - type: constraint-satisfies
+        target: SC-7
+      - type: constraint-satisfies
+        target: SC-17
+      - type: constraint-satisfies
+        target: CC-C-18
+      - type: constraint-satisfies
+        target: CC-C-19
   - id: REQ-018
     type: requirement
     title: Commit message validation at commit time
@@ -335,6 +479,16 @@ artifacts:
         target: SC-10
       - type: satisfies
         target: SC-19
+      - type: constraint-satisfies
+        target: SC-10
+      - type: constraint-satisfies
+        target: SC-19
+      - type: constraint-satisfies
+        target: CC-C-20
+      - type: constraint-satisfies
+        target: CC-L-6
+      - type: constraint-satisfies
+        target: CC-L-7
   - id: REQ-021
     type: requirement
     title: Distributed baselining via convention tags
@@ -380,6 +534,10 @@ artifacts:
     links:
       - type: satisfies
         target: SC-12
+      - type: constraint-satisfies
+        target: SC-12
+      - type: constraint-satisfies
+        target: CC-C-12
     fields:
       priority: should
       category: functional
@@ -405,6 +563,8 @@ artifacts:
     links:
       - type: satisfies
         target: SC-3
+      - type: constraint-satisfies
+        target: SC-IMPL-002
   - id: REQ-025
     type: requirement
     title: sphinx-needs JSON import
@@ -445,6 +605,7 @@ artifacts:
       - type: satisfies
         target: SC-7
   - id: REQ-027
+
     type: requirement
     title: Build-system-aware cross-repo discovery
     status: approved
@@ -465,6 +626,14 @@ artifacts:
     links:
       - type: satisfies
         target: SC-10
+      - type: constraint-satisfies
+        target: SC-20
+      - type: constraint-satisfies
+        target: CC-C-15
+      - type: constraint-satisfies
+        target: CC-C-16
+      - type: constraint-satisfies
+        target: CC-C-17
   - id: REQ-028
     type: requirement
     title: Diagnostic-quality parsing with lossless syntax trees
@@ -479,6 +648,12 @@ artifacts:
     links:
       - type: satisfies
         target: SC-13
+      - type: constraint-satisfies
+        target: SC-13
+      - type: constraint-satisfies
+        target: SC-LSP-001
+      - type: constraint-satisfies
+        target: SC-LSP-005
     fields:
       priority: must
       category: non-functional
@@ -500,6 +675,26 @@ artifacts:
     links:
       - type: satisfies
         target: SC-11
+      - type: constraint-satisfies
+        target: SC-11
+      - type: constraint-satisfies
+        target: SC-21
+      - type: constraint-satisfies
+        target: SC-LSP-003
+      - type: constraint-satisfies
+        target: SC-LSP-006
+      - type: constraint-satisfies
+        target: SC-LSP-007
+      - type: constraint-satisfies
+        target: CC-C-10
+      - type: constraint-satisfies
+        target: CC-C-11
+      - type: constraint-satisfies
+        target: CC-C-13
+      - type: constraint-satisfies
+        target: CC-C-14
+      - type: constraint-satisfies
+        target: CC-C-26
     fields:
       priority: must
       category: non-functional
@@ -525,6 +720,8 @@ artifacts:
         target: SC-1
       - type: satisfies
         target: SC-2
+      - type: constraint-satisfies
+        target: SC-2
     fields:
       priority: must
       category: functional
@@ -545,6 +742,8 @@ artifacts:
     tags: [formal-verification, safety, tool-qualification]
     links:
       - type: satisfies
+        target: SC-14
+      - type: constraint-satisfies
         target: SC-14
     fields:
       priority: should
