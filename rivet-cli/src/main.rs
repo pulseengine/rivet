@@ -2170,6 +2170,15 @@ sources:
         .with_context(|| format!("writing {}", config_path.display()))?;
     println!("  created {}", config_path.display());
 
+    // Report auto-discovered bridge schemas
+    let bridges = rivet_core::embedded::discover_bridges(&schemas);
+    if !bridges.is_empty() {
+        println!("\n  bridge schemas (auto-loaded at runtime):");
+        for bridge in &bridges {
+            println!("    + {bridge}");
+        }
+    }
+
     // Create artifacts/ directory with preset-specific sample files
     let artifacts_dir = dir.join("artifacts");
     std::fs::create_dir_all(&artifacts_dir)
