@@ -23,6 +23,14 @@ artifact-types:
         type: string
         required: false
         allowed-values: [functional, non-functional, constraint, interface]
+      - name: baseline
+        type: string
+        required: false
+        description: Version baseline this requirement belongs to
+      - name: upstream-ref
+        type: string
+        required: false
+        description: Reference to an upstream issue or external tracking item
     link-fields:
       - name: satisfies
         link-type: satisfies
@@ -54,6 +62,18 @@ artifact-types:
       - name: alternatives
         type: text
         required: false
+      - name: baseline
+        type: string
+        required: false
+        description: Version baseline this decision belongs to
+      - name: diagram
+        type: text
+        required: false
+        description: Mermaid or other diagram describing the decision
+      - name: source-ref
+        type: string
+        required: false
+        description: Source file reference for the implementation
     link-fields:
       - name: satisfies
         link-type: satisfies
@@ -102,6 +122,10 @@ artifact-types:
           Structured acceptance criteria in given/when/then format.
           Each entry is a string like "Given X, When Y, Then Z".
           Use `rivet export --gherkin` to generate .feature files.
+      - name: baseline
+        type: string
+        required: false
+        description: Version baseline this feature belongs to
     link-fields:
       - name: satisfies
         link-type: satisfies
