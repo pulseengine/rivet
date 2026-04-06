@@ -347,7 +347,7 @@ fn get_field_value<'a>(artifact: &'a Artifact, field: &str) -> Option<Cow<'a, st
                 }
             } else {
                 // Check fields map
-                artifact.fields.get(field).and_then(|v| yaml_value_to_cow(v))
+                artifact.fields.get(field).and_then(yaml_value_to_cow)
             }
         }
     }
@@ -378,10 +378,10 @@ fn resolve_dotted_path<'a>(value: &'a serde_yaml::Value, rest: &str) -> Option<C
     if let Some(dot_pos) = rest.find('.') {
         let key = &rest[..dot_pos];
         let remainder = &rest[dot_pos + 1..];
-        let child = mapping.get(&serde_yaml::Value::String(key.to_string()))?;
+        let child = mapping.get(key)?;
         resolve_dotted_path(child, remainder)
     } else {
-        let child = mapping.get(&serde_yaml::Value::String(rest.to_string()))?;
+        let child = mapping.get(rest)?;
         yaml_value_to_cow(child)
     }
 }
@@ -987,10 +987,7 @@ mod tests {
         };
         let a = artifact_with_fields(
             "X-1",
-            vec![(
-                "provenance",
-                provenance_mapping(&[("created-by", "human")]),
-            )],
+            vec![("provenance", provenance_mapping(&[("created-by", "human")]))],
         );
         assert!(!cond.matches_artifact(&a));
     }
@@ -1026,8 +1023,8 @@ mod tests {
 
     #[test]
     fn ai_generated_active_without_reviewer_gets_warning() {
-        use crate::test_helpers::{pipeline, minimal_schema};
-        use crate::schema::{ArtifactTypeDef, ConditionalRule, Condition, Requirement, Severity};
+        use crate::schema::{ArtifactTypeDef, Condition, ConditionalRule, Requirement, Severity};
+        use crate::test_helpers::{minimal_schema, pipeline};
 
         let mut schema_file = minimal_schema("test");
         schema_file.artifact_types.push(ArtifactTypeDef {
@@ -1044,7 +1041,9 @@ mod tests {
         });
         schema_file.conditional_rules.push(ConditionalRule {
             name: "ai-generated-needs-review".into(),
-            description: Some("AI-generated artifacts with active status must have a reviewer".into()),
+            description: Some(
+                "AI-generated artifacts with active status must have a reviewer".into(),
+            ),
             condition: Some(Condition::Matches {
                 field: "provenance.created-by".into(),
                 pattern: "^(ai|ai-assisted)$".into(),
@@ -1081,8 +1080,8 @@ mod tests {
 
     #[test]
     fn ai_generated_active_with_reviewer_passes() {
-        use crate::test_helpers::{pipeline, minimal_schema};
-        use crate::schema::{ArtifactTypeDef, ConditionalRule, Condition, Requirement, Severity};
+        use crate::schema::{ArtifactTypeDef, Condition, ConditionalRule, Requirement, Severity};
+        use crate::test_helpers::{minimal_schema, pipeline};
 
         let mut schema_file = minimal_schema("test");
         schema_file.artifact_types.push(ArtifactTypeDef {
@@ -1099,7 +1098,9 @@ mod tests {
         });
         schema_file.conditional_rules.push(ConditionalRule {
             name: "ai-generated-needs-review".into(),
-            description: Some("AI-generated artifacts with active status must have a reviewer".into()),
+            description: Some(
+                "AI-generated artifacts with active status must have a reviewer".into(),
+            ),
             condition: Some(Condition::Matches {
                 field: "provenance.created-by".into(),
                 pattern: "^(ai|ai-assisted)$".into(),
@@ -1134,8 +1135,8 @@ mod tests {
 
     #[test]
     fn human_authored_active_not_affected_by_ai_rule() {
-        use crate::test_helpers::{pipeline, minimal_schema};
-        use crate::schema::{ArtifactTypeDef, ConditionalRule, Condition, Requirement, Severity};
+        use crate::schema::{ArtifactTypeDef, Condition, ConditionalRule, Requirement, Severity};
+        use crate::test_helpers::{minimal_schema, pipeline};
 
         let mut schema_file = minimal_schema("test");
         schema_file.artifact_types.push(ArtifactTypeDef {
@@ -1152,7 +1153,9 @@ mod tests {
         });
         schema_file.conditional_rules.push(ConditionalRule {
             name: "ai-generated-needs-review".into(),
-            description: Some("AI-generated artifacts with active status must have a reviewer".into()),
+            description: Some(
+                "AI-generated artifacts with active status must have a reviewer".into(),
+            ),
             condition: Some(Condition::Matches {
                 field: "provenance.created-by".into(),
                 pattern: "^(ai|ai-assisted)$".into(),
@@ -1182,13 +1185,17 @@ mod tests {
             .iter()
             .filter(|d| d.rule == "ai-generated-needs-review")
             .collect();
-        assert_eq!(rule_diags.len(), 0, "human-authored artifact should not trigger AI review rule");
+        assert_eq!(
+            rule_diags.len(),
+            0,
+            "human-authored artifact should not trigger AI review rule"
+        );
     }
 
     #[test]
     fn ai_generated_draft_not_affected_by_active_rule() {
-        use crate::test_helpers::{pipeline, minimal_schema};
-        use crate::schema::{ArtifactTypeDef, ConditionalRule, Condition, Requirement, Severity};
+        use crate::schema::{ArtifactTypeDef, Condition, ConditionalRule, Requirement, Severity};
+        use crate::test_helpers::{minimal_schema, pipeline};
 
         let mut schema_file = minimal_schema("test");
         schema_file.artifact_types.push(ArtifactTypeDef {
@@ -1205,7 +1212,9 @@ mod tests {
         });
         schema_file.conditional_rules.push(ConditionalRule {
             name: "ai-generated-needs-review".into(),
-            description: Some("AI-generated artifacts with active status must have a reviewer".into()),
+            description: Some(
+                "AI-generated artifacts with active status must have a reviewer".into(),
+            ),
             condition: Some(Condition::Matches {
                 field: "provenance.created-by".into(),
                 pattern: "^(ai|ai-assisted)$".into(),
@@ -1235,6 +1244,10 @@ mod tests {
             .iter()
             .filter(|d| d.rule == "ai-generated-needs-review")
             .collect();
-        assert_eq!(rule_diags.len(), 0, "draft AI artifact should not trigger review rule");
+        assert_eq!(
+            rule_diags.len(),
+            0,
+            "draft AI artifact should not trigger review rule"
+        );
     }
 }
