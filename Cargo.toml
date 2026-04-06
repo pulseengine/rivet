@@ -56,8 +56,10 @@ quick-xml = { version = "0.37", features = ["serialize", "overlapped-lists"] }
 wasmtime = { version = "42", features = ["component-model"] }
 wasmtime-wasi = "42"
 
-# Lossless syntax trees (fork with Miri UB fixes — PR upstream pending)
-rowan = { git = "https://github.com/pulseengine/rowan.git", branch = "fix/miri-soundness" }
+# Lossless syntax trees
+# Note: rowan 0.16.1 has known Miri UB (rust-analyzer/rowan#192).
+# Our draft PR: rust-analyzer/rowan#210. Miri CI skips yaml_cst tests.
+rowan = "0.16"
 
 # Markdown rendering
 pulldown-cmark = { version = "0.12", default-features = false, features = ["html"] }
