@@ -6310,7 +6310,14 @@ fn cmd_stamp(
 
         for aid in artifact_ids {
             editor
-                .set_provenance(aid, created_by, model, session_id, Some(&timestamp), reviewed_by)
+                .set_provenance(
+                    aid,
+                    created_by,
+                    model,
+                    session_id,
+                    Some(&timestamp),
+                    reviewed_by,
+                )
                 .map_err(|e| anyhow::anyhow!("{e}"))?;
             stamped += 1;
         }

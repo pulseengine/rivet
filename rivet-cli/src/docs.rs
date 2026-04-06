@@ -185,6 +185,12 @@ const TOPICS: &[DocTopic] = &[
         category: "Schemas",
         content: embedded::SCHEMA_RESEARCH,
     },
+    DocTopic {
+        slug: "supply-chain",
+        title: "Supply chain schema (SBOM, build attestation, vulnerability, release)",
+        category: "Schemas",
+        content: SUPPLY_CHAIN_DOC,
+    },
 ];
 
 // ── Embedded documentation ──────────────────────────────────────────────
@@ -1712,9 +1718,9 @@ HTMX dashboard).
 
 const SCHEMAS_OVERVIEW_DOC: &str = r#"# Schemas Overview
 
-Rivet ships 12 built-in schemas covering safety, automotive, AI compliance,
-cybersecurity, and general development. Schemas are loaded by name in
-`rivet.yaml` and merged in order.
+Rivet ships 13 built-in schemas covering safety, automotive, AI compliance,
+cybersecurity, supply chain, and general development. Schemas are loaded by
+name in `rivet.yaml` and merged in order.
 
 ## Core Schemas
 
@@ -1723,6 +1729,7 @@ cybersecurity, and general development. Schemas are loaded by name in
 | common         | 0     | (all presets)    | Base fields (id, title, status, tags, links) and 8 link types |
 | dev            | 3     | `dev`            | requirement, design-decision, feature    |
 | research       | 5     | —                | market-analysis, patent, tech-eval, competitor-analysis, academic-ref |
+| supply-chain   | 4     | —                | sbom-component, build-attestation, vulnerability, release-artifact (CRA, SBOM, SLSA) |
 
 ## Safety Schemas
 
@@ -1761,6 +1768,7 @@ or can be added explicitly.
 | safety-case-stpa.bridge         | safety-case + stpa    | goal-supported-by-analysis, solution-from-constraint |
 | safety-case-eu-ai-act.bridge    | safety-case + eu-ai-act | goal-for-compliance, solution-from-assessment |
 | stpa-dev.bridge                 | stpa + dev            | hazard-traces-to-req, constraint-implements-req |
+| supply-chain-dev.bridge         | supply-chain + dev    | requirement-addresses-vulnerability, feature-produces-release |
 
 Bridge files live in `schemas/` with the `.bridge.yaml` extension.
 
@@ -1857,5 +1865,159 @@ const STPA_SEC_DOC: &str = concat!(
   (security extension).
 - Young, W. & Leveson, N.G. (2014). *An Integrated Approach to Safety
   and Security Based on Systems Theory*. CACM 57(2).
+"#
+);
+
+const SUPPLY_CHAIN_DOC: &str = concat!(
+    include_str!("../../schemas/supply-chain.yaml"),
+    r#"
+
+# Supply Chain Schema
+
+## What it covers
+
+The supply-chain schema tracks four categories of software supply chain
+artifacts for regulatory compliance (EU Cyber Resilience Act, NTIA SBOM,
+SLSA):
+
+- **SBOM components** (`sbom-component`) — software bill of materials entries
+  with name, version, license (SPDX), package URL (purl), and supplier.
+- **Build attestations** (`build-attestation`) — SLSA-style provenance
+  linking a release artifact to its builder, source repo, commit ref, and
+  cryptographic digest.
+- **Vulnerabilities** (`vulnerability`) — known CVEs with severity (CVSS),
+  remediation status, and links to affected components.
+- **Release artifacts** (`release-artifact`) — binaries, containers, or
+  packages with digest, signing status, and SBOM component manifest.
+
+## Enabling the schema
+
+Add `supply-chain` to the `schemas` list in `rivet.yaml`:
+
+```yaml
+project:
+  name: my-project
+  schemas:
+    - common
+    - dev
+    - supply-chain         # adds SBOM, attestation, vuln, release types
+```
+
+To also bridge supply chain artifacts to dev requirements and features,
+both schemas will automatically load the `supply-chain-dev.bridge` which
+adds `requirement-addresses-vulnerability` and `feature-produces-release`
+link types.
+
+## Example artifacts
+
+### SBOM component
+
+```yaml
+artifacts:
+  - id: SBOM-001
+    type: sbom-component
+    title: serde
+    status: active
+    fields:
+      component-name: serde
+      version: "1.0.200"
+      license: MIT OR Apache-2.0
+      purl: pkg:cargo/serde@1.0.200
+      supplier: David Tolnay
+```
+
+### Build attestation
+
+```yaml
+artifacts:
+  - id: BA-001
+    type: build-attestation
+    title: v1.2.3 release build
+    status: active
+    fields:
+      builder: github-actions
+      source-repo: https://github.com/org/repo
+      source-ref: abc123def456
+      digest: sha256:deadbeef...
+      build-timestamp: "2026-03-15T10:30:00Z"
+      slsa-level: "3"
+    links:
+      - type: attests-build-of
+        target: REL-001
+```
+
+### Vulnerability
+
+```yaml
+artifacts:
+  - id: VULN-001
+    type: vulnerability
+    title: "CVE-2025-12345: buffer overflow in libfoo"
+    status: active
+    fields:
+      cve-id: CVE-2025-12345
+      severity: high
+      cvss-score: "8.1"
+      vuln-status: investigating
+      remediation: Upgrade libfoo to >= 2.1.0
+    links:
+      - type: affects
+        target: SBOM-042
+```
+
+### Release artifact
+
+```yaml
+artifacts:
+  - id: REL-001
+    type: release-artifact
+    title: myapp-v1.2.3-linux-x86_64.tar.gz
+    status: active
+    fields:
+      artifact-name: myapp-v1.2.3-linux-x86_64.tar.gz
+      version: "1.2.3"
+      digest: sha256:deadbeef...
+      signing-status: signed
+      artifact-type: archive
+    links:
+      - type: contains
+        target: SBOM-001
+      - type: contains
+        target: SBOM-002
+```
+
+## Link types
+
+| Link type              | Inverse              | Description                                     |
+|------------------------|----------------------|-------------------------------------------------|
+| `attests-build-of`     | `build-attested-by`  | Build attestation certifies provenance of release |
+| `affects`              | `affected-by`        | Vulnerability affects an SBOM component          |
+| `contains`             | `contained-in`       | Release artifact contains an SBOM component      |
+
+With the `supply-chain-dev` bridge:
+
+| Link type                            | Inverse                              | Description                                       |
+|--------------------------------------|--------------------------------------|---------------------------------------------------|
+| `requirement-addresses-vulnerability`| `vulnerability-addressed-by-requirement` | Requirement addresses a known vulnerability   |
+| `feature-produces-release`           | `release-produced-by-feature`        | Feature produces a release artifact               |
+
+## Traceability rules
+
+| Rule                               | Severity | Description                                          |
+|------------------------------------|----------|------------------------------------------------------|
+| `release-has-attestation`          | warning  | Every release artifact should have a build attestation |
+| `vulnerability-has-affected-component` | error | Every vulnerability must link to an affected component |
+| `critical-vuln-has-requirement`    | warning  | Critical/high vulns should be addressed by a requirement (bridge) |
+
+## References
+
+- EU Cyber Resilience Act (CRA):
+  https://digital-strategy.ec.europa.eu/en/policies/cyber-resilience-act
+- NTIA SBOM Minimum Elements:
+  https://www.ntia.gov/page/software-bill-materials
+- SLSA (Supply-chain Levels for Software Artifacts):
+  https://slsa.dev/
+- in-toto attestation framework:
+  https://in-toto.io/
 "#
 );
