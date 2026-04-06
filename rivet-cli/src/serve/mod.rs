@@ -446,7 +446,13 @@ fn reload_state_incremental(state: &mut AppState) -> Result<()> {
         .with_context(|| format!("loading {}", config_path.display()))?;
 
     // Lock the salsa state for incremental updates
-    let mut salsa = state.salsa.lock().expect("salsa mutex poisoned");
+    let mut salsa = match state.salsa.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => {
+            log::warn!("salsa mutex was poisoned, recovering");
+            poisoned.into_inner()
+        }
+    };
 
     // ── Update schema inputs ─────────────────────────────────────────
     // Re-read schema content; salsa will detect if anything actually changed.
