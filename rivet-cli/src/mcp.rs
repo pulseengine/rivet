@@ -126,6 +126,11 @@ pub struct RivetServer {
     tool_router: ToolRouter<Self>,
     project_dir: Arc<PathBuf>,
     /// Cached project state — loaded once at startup, refreshed via rivet_reload.
+    ///
+    /// Lock ordering: read-only tools acquire read lock via `with_project()`.
+    /// `rivet_reload` acquires write lock. Since rmcp serializes tool calls
+    /// (one at a time over stdio), concurrent read+write cannot occur in
+    /// normal operation. The RwLock is defensive for future multi-transport use.
     project: Arc<RwLock<McpProject>>,
 }
 

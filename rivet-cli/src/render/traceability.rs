@@ -227,7 +227,7 @@ pub(crate) fn render_traceability_view(ctx: &RenderContext, params: &TraceParams
         }
         html.push_str("</tr></thead><tbody>");
         for id in &root_artifacts {
-            let a = store.get(id).unwrap();
+            let Some(a) = store.get(id) else { continue };
             let backlinks = graph.backlinks_to(id);
             let cov_id_esc = html_escape(id);
             html.push_str(&format!(
@@ -258,7 +258,7 @@ pub(crate) fn render_traceability_view(ctx: &RenderContext, params: &TraceParams
     } else {
         html.push_str("<div class=\"trace-tree\">");
         for id in &root_artifacts {
-            let a = store.get(id).unwrap();
+            let Some(a) = store.get(id) else { continue };
             let children = build_trace_children(id, store, graph, 0, 3);
             let badge = badge_for_type(&a.artifact_type);
             let status = a.status.as_deref().unwrap_or("");

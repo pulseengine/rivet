@@ -89,6 +89,16 @@ system-constraints:
         target: H-LSP-001
 
   - id: SC-LSP-003
+    title: LSP must report diagnostics at the correct byte range from the rowan CST
+    description: >
+      Diagnostic positions must be computed from the rowan CST span
+      information, not from line-scanning heuristics. Each diagnostic's
+      start/end positions must fall within the artifact's CST node range.
+    links:
+      - type: prevents
+        target: H-LSP-003
+
+  - id: SC-LSP-004
     title: Schema changes MUST invalidate cached diagnostics
     description: >
       When schema files (rivet.yaml or schema YAML) change, all cached
@@ -98,7 +108,7 @@ system-constraints:
       - type: prevents
         target: H-LSP-002
 
-  - id: SC-LSP-004
+  - id: SC-LSP-005
     title: YAML type coercion MUST be handled explicitly
     description: >
       The validator must handle YAML types (boolean, number, null)
@@ -108,7 +118,7 @@ system-constraints:
       - type: prevents
         target: H-LSP-001
 
-  - id: SC-LSP-005
+  - id: SC-LSP-006
     title: Diagnostic messages MUST include actionable fix guidance
     description: >
       Every diagnostic must explain what is wrong AND suggest how to
@@ -118,7 +128,7 @@ system-constraints:
       - type: prevents
         target: H-LSP-004
 
-  - id: SC-LSP-006
+  - id: SC-LSP-007
     title: LSP MUST NOT cascade errors from parse failures
     description: >
       When one file fails to parse, diagnostics for OTHER files must
@@ -128,7 +138,7 @@ system-constraints:
       - type: prevents
         target: H-LSP-002
 
-  - id: SC-LSP-007
+  - id: SC-LSP-008
     title: Incremental validation MUST produce identical results to full validation
     description: >
       The salsa incremental path and the direct validation path must

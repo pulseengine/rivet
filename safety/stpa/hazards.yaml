@@ -223,6 +223,25 @@ hazards:
       displayed, this enables data exfiltration without filesystem access.
     losses: [L-3, L-5]
 
+  - id: H-21
+    title: Rivet MCP server provides stale validation state to AI agents
+    description: >
+      The MCP server returns cached validation results, coverage metrics,
+      or artifact lists that do not reflect the current disk state. An AI
+      agent makes decisions based on stale data. In a worst-case environment
+      where the agent has autonomy to commit and push, stale MCP results
+      propagate into the main branch.
+    losses: [L-1, L-2, L-5]
+
+  - id: H-24
+    title: Rivet YAML round-trip alters artifact content or formatting
+    description: >
+      The rowan-based YAML parser introduces formatting changes, reorders
+      fields, alters scalar quoting, or drops comments during a
+      read-modify-write cycle. Artifacts that were previously valid become
+      invalid, or human-maintained formatting conventions are destroyed.
+    losses: [L-1, L-4, L-6]
+
 sub-hazards:
   # --- H-1 refinements: types of stale references ---
   - id: H-1.1

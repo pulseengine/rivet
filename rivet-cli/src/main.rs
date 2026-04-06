@@ -249,8 +249,8 @@ enum Command {
 
     /// Show traceability coverage report
     Coverage {
-        /// Output format: "table" (default) or "json"
-        #[arg(short, long, default_value = "table")]
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
         format: String,
 
         /// Exit with failure if overall coverage is below this percentage
@@ -624,6 +624,24 @@ enum Command {
         format: String,
     },
 
+    /// Stamp artifact(s) with AI provenance metadata
+    Stamp {
+        /// Artifact ID to stamp (or "all" for all artifacts in a file)
+        id: String,
+        /// Who created it: "human", "ai", or "ai-assisted"
+        #[arg(long, default_value = "ai-assisted")]
+        created_by: String,
+        /// AI model used (e.g., "claude-opus-4-6")
+        #[arg(long)]
+        model: Option<String>,
+        /// Session identifier
+        #[arg(long)]
+        session_id: Option<String>,
+        /// Human reviewer
+        #[arg(long)]
+        reviewed_by: Option<String>,
+    },
+
     /// Start the language server (LSP over stdio)
     Lsp,
 
@@ -966,6 +984,20 @@ fn run(cli: Cli) -> Result<bool> {
         Command::Remove { id, force } => cmd_remove(&cli, id, *force),
         Command::Batch { file } => cmd_batch(&cli, file),
         Command::Embed { query, format } => cmd_embed(&cli, query, format),
+        Command::Stamp {
+            id,
+            created_by,
+            model,
+            session_id,
+            reviewed_by,
+        } => cmd_stamp(
+            &cli,
+            id,
+            created_by,
+            model.as_deref(),
+            session_id.as_deref(),
+            reviewed_by.as_deref(),
+        ),
     }
 }
 
@@ -6194,6 +6226,111 @@ fn cmd_remove(cli: &Cli, id: &str, force: bool) -> Result<bool> {
         .with_context(|| format!("updating {}", source_file.display()))?;
 
     println!("removed {id}");
+
+    Ok(true)
+}
+
+/// Stamp an artifact (or all artifacts in its file) with AI provenance metadata.
+fn cmd_stamp(
+    cli: &Cli,
+    id: &str,
+    created_by: &str,
+    model: Option<&str>,
+    session_id: Option<&str>,
+    reviewed_by: Option<&str>,
+) -> Result<bool> {
+    use rivet_core::mutate;
+
+    // Validate created-by value
+    match created_by {
+        "human" | "ai" | "ai-assisted" => {}
+        other => anyhow::bail!(
+            "invalid --created-by value '{other}'. Must be one of: human, ai, ai-assisted"
+        ),
+    }
+
+    let ctx = ProjectContext::load(cli)?;
+    let store = ctx.store;
+
+    // Generate ISO 8601 timestamp using std (no chrono dependency)
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap();
+    let secs = now.as_secs();
+    // Convert to UTC date-time components
+    let days = secs / 86400;
+    let day_secs = secs % 86400;
+    let hours = day_secs / 3600;
+    let minutes = (day_secs % 3600) / 60;
+    let seconds = day_secs % 60;
+    // Civil date from days since epoch (algorithm from Howard Hinnant)
+    let z = days as i64 + 719468;
+    let era = if z >= 0 { z } else { z - 146096 } / 146097;
+    let doe = (z - era * 146097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    let timestamp = format!("{y:04}-{m:02}-{d:02}T{hours:02}:{minutes:02}:{seconds:02}Z");
+
+    // Collect artifact IDs to stamp
+    let ids: Vec<String> = if id == "all" {
+        // Stamp every artifact in the store
+        store.iter().map(|a| a.id.clone()).collect()
+    } else {
+        // Single artifact
+        if !store.contains(id) {
+            anyhow::bail!("artifact '{id}' does not exist");
+        }
+        vec![id.to_string()]
+    };
+
+    if ids.is_empty() {
+        anyhow::bail!("no artifacts found to stamp");
+    }
+
+    let mut stamped = 0;
+    // Group artifacts by source file to minimize file I/O
+    let mut by_file: std::collections::BTreeMap<std::path::PathBuf, Vec<String>> =
+        std::collections::BTreeMap::new();
+    for aid in &ids {
+        let source_file = mutate::find_source_file(aid, &store)
+            .ok_or_else(|| anyhow::anyhow!("cannot determine source file for '{aid}'"))?;
+        by_file.entry(source_file).or_default().push(aid.clone());
+    }
+
+    for (file_path, artifact_ids) in &by_file {
+        let content = std::fs::read_to_string(file_path)
+            .with_context(|| format!("reading {}", file_path.display()))?;
+
+        let mut editor = rivet_core::yaml_edit::YamlEditor::parse(&content);
+
+        for aid in artifact_ids {
+            editor
+                .set_provenance(
+                    aid,
+                    created_by,
+                    model,
+                    session_id,
+                    Some(&timestamp),
+                    reviewed_by,
+                )
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            stamped += 1;
+        }
+
+        std::fs::write(file_path, editor.to_string())
+            .with_context(|| format!("writing {}", file_path.display()))?;
+    }
+
+    if stamped == 1 {
+        println!("stamped {}", ids[0]);
+    } else {
+        println!("stamped {stamped} artifacts");
+    }
 
     Ok(true)
 }

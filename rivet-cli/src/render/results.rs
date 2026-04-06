@@ -69,7 +69,9 @@ pub(crate) fn render_verification_view(ctx: &RenderContext) -> String {
         let mut rows: Vec<ReqRow> = Vec::new();
 
         for req_id in source_ids {
-            let req = store.get(req_id).unwrap();
+            let Some(req) = store.get(req_id) else {
+                continue;
+            };
             let backlinks = graph.backlinks_to(req_id);
             let ver_links: Vec<_> = backlinks
                 .iter()

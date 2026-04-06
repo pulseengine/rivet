@@ -741,3 +741,26 @@ loss-scenarios:
       - expected_downstream() is hardcoded, not derived from schema rules
       - No test covers lifecycle checks with non-dev schemas
       - The module was written for the dev schema and not generalized
+
+  # =========================================================================
+  # MCP Server scenarios
+  # =========================================================================
+  - id: LS-M-1
+    title: MCP agent commits based on stale validation results
+    type: inadequate-process-model
+    hazards: [H-21]
+    scenario: >
+      An AI agent invokes rivet_validate via MCP, receives PASS with
+      0 errors. The agent then modifies an artifact YAML file, introducing
+      a broken link. The agent invokes rivet_validate again but the MCP
+      server returns cached results from the previous call. The agent
+      sees PASS, concludes the change is valid, and commits. The broken
+      link reaches the main branch.
+    process-model-flaw: >
+      The MCP server's process model does not include whether cached
+      state reflects current disk state. It believes its cached results
+      are always current.
+    causal-factors:
+      - MCP server caches project state across tool calls without invalidation
+      - No file-change detection between MCP invocations
+      - AI agent trusts MCP results without independent verification

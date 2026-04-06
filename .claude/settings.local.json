@@ -92,7 +92,9 @@
       "Bash(MIRIFLAGS=\"-Zmiri-disable-isolation -Zmiri-tree-borrows\" cargo +nightly miri test -p rivet-core --lib -- yaml_cst::tests --skip parse_actual_hazards)",
       "Bash(MIRIFLAGS=\"-Zmiri-disable-isolation -Zmiri-tree-borrows\" cargo +nightly miri test -p rivet-core --lib -- yaml_cst::tests::parse_actual_hazards_file)",
       "Bash(MIRIFLAGS=\"-Zmiri-disable-isolation -Zmiri-tree-borrows\" cargo +nightly miri test -p rivet-core --lib -- yaml_cst::tests::parse_actual_hazards_file --nocapture)",
-      "Bash(cargo generate-lockfile:*)"
+      "Bash(cargo generate-lockfile:*)",
+      "Bash(git rebase:*)",
+      "Bash(cargo install:*)"
     ]
   }
 }

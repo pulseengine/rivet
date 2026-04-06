@@ -55,6 +55,14 @@ artifact-types:
         type: string
         required: false
         description: Source .aadl file path
+      - name: source-ref
+        type: string
+        required: false
+        description: Source code or AADL file reference (path:line)
+      - name: diagram
+        type: text
+        required: false
+        description: Diagram or visual representation of this component
     link-fields:
       - name: allocated-from
         link-type: allocated-from
@@ -175,6 +183,12 @@ artifact-types:
         cardinality: zero-or-many
 
 link-types:
+  - name: allocated-from
+    inverse: allocated-to
+    description: Component is allocated from (traces back to) a requirement or architecture element
+    source-types: [aadl-component, aadl-flow]
+    target-types: [system-req, sw-req, system-arch-component, requirement, feature, aadl-component]
+
   - name: contains
     inverse: contained-by
     description: Parent AADL component contains a child sub-component

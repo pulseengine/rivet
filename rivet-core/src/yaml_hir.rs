@@ -476,6 +476,32 @@ fn extract_section_item(
         return;
     };
 
+    if artifact_id.trim().is_empty() {
+        result.diagnostics.push(ParseDiagnostic {
+            span: id_span,
+            message: format!("empty artifact id in {type_name} section item"),
+            severity: Severity::Error,
+        });
+        return;
+    }
+
+    // Reject self-referential links
+    links.retain(|l| {
+        if l.target == artifact_id {
+            result.diagnostics.push(ParseDiagnostic {
+                span: block_span,
+                message: format!(
+                    "artifact '{}' links to itself via '{}'",
+                    artifact_id, l.link_type
+                ),
+                severity: Severity::Warning,
+            });
+            false
+        } else {
+            true
+        }
+    });
+
     result.artifacts.push(SpannedArtifact {
         artifact: Artifact {
             id: artifact_id,
@@ -660,7 +686,7 @@ fn extract_artifact_from_item(item: &SyntaxNode, result: &mut ParsedYamlFile) {
         }
     }
 
-    // Validate: id is required
+    // Validate: id is required and non-empty
     let Some(id_val) = id else {
         result.diagnostics.push(ParseDiagnostic {
             span: block_span,
@@ -669,6 +695,32 @@ fn extract_artifact_from_item(item: &SyntaxNode, result: &mut ParsedYamlFile) {
         });
         return;
     };
+
+    if id_val.trim().is_empty() {
+        result.diagnostics.push(ParseDiagnostic {
+            span: id_span,
+            message: "artifact has empty 'id' field".into(),
+            severity: Severity::Error,
+        });
+        return;
+    }
+
+    // Reject self-referential links
+    links.retain(|l| {
+        if l.target == id_val {
+            result.diagnostics.push(ParseDiagnostic {
+                span: block_span,
+                message: format!(
+                    "artifact '{}' links to itself via '{}'",
+                    id_val, l.link_type
+                ),
+                severity: Severity::Warning,
+            });
+            false
+        } else {
+            true
+        }
+    });
 
     let artifact = Artifact {
         id: id_val,
