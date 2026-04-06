@@ -1,0 +1,10 @@
+{
+  "hooks": {
+    "pre-commit": [
+      {
+        "command": "rivet validate",
+        "description": "Validate rivet artifacts before committing"
+      }
+    ]
+  }
+}
