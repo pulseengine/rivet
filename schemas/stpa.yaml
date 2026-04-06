@@ -150,9 +150,26 @@ artifact-types:
   # ── Step 3 ──────────────────────────────────────────────────────────────
   - name: uca
     yaml-section: ucas
+    yaml-sections:
+      - core-ucas
+      - oslc-ucas
+      - reqif-ucas
+      - cli-ucas
+      - ci-ucas
+      - dashboard-ucas
+      - incremental-ucas
+      - parser-ucas
+      - dashboard-rendering-ucas
+      - commit-ucas
+      - cross-repo-ucas
+      - wasm-ucas
+      - lifecycle-ucas
+      - document-validation-ucas
+      - external-sync-ucas
+      - lsp-ucas
     shorthand-links:
       hazards: leads-to-hazard
-      control-action: issued-by
+      controller: issued-by
     description: >
       An Unsafe Control Action — a control action that, in a particular
       context and worst-case environment, leads to a hazard.

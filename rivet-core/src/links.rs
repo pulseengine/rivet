@@ -7,7 +7,7 @@ use crate::schema::Schema;
 use crate::store::Store;
 
 /// A resolved link with source, target, and type information.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedLink {
     pub source: ArtifactId,
     pub target: ArtifactId,
@@ -15,7 +15,7 @@ pub struct ResolvedLink {
 }
 
 /// Backlink: an incoming link seen from the target's perspective.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Backlink {
     pub source: ArtifactId,
     pub link_type: String,
@@ -30,6 +30,13 @@ pub struct Backlink {
 /// - Backlink (inverse) lookup
 /// - petgraph-based graph operations (cycle detection, topological sort)
 /// - Broken link detection
+///
+/// `Clone` is derived so the graph can be returned from salsa tracked
+/// functions. `PartialEq`/`Eq` are implemented manually — they compare
+/// the semantic content (forward, backward, broken) and skip the derived
+/// `petgraph::DiGraph` and `node_map` fields which are reconstructed from
+/// the same data.
+#[derive(Clone)]
 pub struct LinkGraph {
     /// All forward links.
     forward: HashMap<ArtifactId, Vec<ResolvedLink>>,
@@ -42,6 +49,26 @@ pub struct LinkGraph {
     /// Map from artifact ID to petgraph node index (used for graph lookups).
     node_map: HashMap<ArtifactId, NodeIndex>,
 }
+
+impl std::fmt::Debug for LinkGraph {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LinkGraph")
+            .field("forward_count", &self.forward.len())
+            .field("backward_count", &self.backward.len())
+            .field("broken_count", &self.broken.len())
+            .finish()
+    }
+}
+
+impl PartialEq for LinkGraph {
+    fn eq(&self, other: &Self) -> bool {
+        self.forward == other.forward
+            && self.backward == other.backward
+            && self.broken == other.broken
+    }
+}
+
+impl Eq for LinkGraph {}
 
 impl LinkGraph {
     /// Build the link graph from a store and schema.

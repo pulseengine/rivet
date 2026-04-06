@@ -23,6 +23,19 @@ mod render;
 mod schema_cmd;
 mod serve;
 
+/// Validate that a `--format` value is one of the accepted options.
+fn validate_format(format: &str, valid: &[&str]) -> Result<()> {
+    if valid.contains(&format) {
+        Ok(())
+    } else {
+        anyhow::bail!(
+            "invalid format '{}' — valid options: {}",
+            format,
+            valid.join(", ")
+        );
+    }
+}
+
 fn build_version() -> &'static str {
     use std::sync::LazyLock;
     static VERSION: LazyLock<String> = LazyLock::new(|| {
@@ -648,6 +661,14 @@ enum SchemaAction {
     },
     /// Validate that loaded schemas are well-formed
     Validate,
+    /// Show schema-level metadata and summary
+    Info {
+        /// Schema name (e.g., "stpa", "dev", "common")
+        name: String,
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -749,7 +770,7 @@ fn run(cli: Cli) -> Result<bool> {
         return cmd_lsp(&cli);
     }
     if let Command::Mcp = &cli.command {
-        return cmd_mcp();
+        return cmd_mcp(&cli);
     }
 
     match &cli.command {
@@ -857,41 +878,12 @@ fn run(cli: Cli) -> Result<bool> {
                     bind
                 );
             }
-            let ctx = ProjectContext::load_full(&cli)?;
             let schemas_dir = resolve_schemas_dir(&cli);
-            let mut doc_dirs = Vec::new();
-            for docs_path in &ctx.config.docs {
-                let dir = cli.project.join(docs_path);
-                if dir.is_dir() {
-                    doc_dirs.push(dir);
-                }
-            }
-            // Collect source dirs for file watcher
-            let source_paths: Vec<PathBuf> = ctx
-                .config
-                .sources
-                .iter()
-                .map(|s| cli.project.join(&s.path))
-                .collect();
-            let project_name = ctx.config.project.name.clone();
             let project_path =
                 std::fs::canonicalize(&cli.project).unwrap_or_else(|_| cli.project.clone());
+            let app_state = serve::reload_state(&project_path, &schemas_dir, port)?;
             let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
-            rt.block_on(serve::run(
-                ctx.store,
-                ctx.schema,
-                ctx.graph,
-                ctx.doc_store.unwrap_or_default(),
-                ctx.result_store.unwrap_or_default(),
-                project_name,
-                project_path.clone(),
-                schemas_dir.clone(),
-                doc_dirs.clone(),
-                port,
-                bind,
-                watch,
-                source_paths,
-            ))?;
+            rt.block_on(serve::run(app_state, bind, watch))?;
             Ok(true)
         }
         Command::Sync { local } => cmd_sync(&cli, *local),
@@ -2178,6 +2170,15 @@ sources:
         .with_context(|| format!("writing {}", config_path.display()))?;
     println!("  created {}", config_path.display());
 
+    // Report auto-discovered bridge schemas
+    let bridges = rivet_core::embedded::discover_bridges(&schemas);
+    if !bridges.is_empty() {
+        println!("\n  bridge schemas (auto-loaded at runtime):");
+        for bridge in &bridges {
+            println!("    + {bridge}");
+        }
+    }
+
     // Create artifacts/ directory with preset-specific sample files
     let artifacts_dir = dir.join("artifacts");
     std::fs::create_dir_all(&artifacts_dir)
@@ -2262,7 +2263,7 @@ fn cmd_init_agents(cli: &Cli) -> Result<bool> {
     // Load artifacts
     let mut store = Store::new();
     for source in &config.sources {
-        match rivet_core::load_artifacts(source, &cli.project) {
+        match rivet_core::load_artifacts(source, &cli.project, &schema) {
             Ok(artifacts) => {
                 for artifact in artifacts {
                     store.upsert(artifact);
@@ -2525,9 +2526,28 @@ fn cmd_stpa(
         rivet_core::schema::Schema::merge(&files)
     };
 
-    // Load STPA artifacts
-    let artifacts =
-        rivet_core::formats::stpa::import_stpa_directory(stpa_dir).context("loading STPA files")?;
+    // Load STPA artifacts via schema-driven extraction
+    let artifacts = {
+        let mut arts = Vec::new();
+        for entry in std::fs::read_dir(stpa_dir)
+            .with_context(|| format!("reading {}", stpa_dir.display()))?
+            .filter_map(|e| e.ok())
+        {
+            let path = entry.path();
+            if path.extension().is_some_and(|ext| ext == "yaml") {
+                let content = std::fs::read_to_string(&path)
+                    .with_context(|| format!("reading {}", path.display()))?;
+                let parsed =
+                    rivet_core::yaml_hir::extract_schema_driven(&content, &schema, Some(&path));
+                for sa in parsed.artifacts {
+                    let mut a = sa.artifact;
+                    a.source_file = Some(path.clone());
+                    arts.push(a);
+                }
+            }
+        }
+        arts
+    };
 
     println!(
         "Loaded {} artifacts from {}",
@@ -2581,6 +2601,7 @@ fn cmd_validate(
     baseline_name: Option<&str>,
     track_convergence: bool,
 ) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
     check_for_updates();
 
     let ctx = ProjectContext::load_with_docs(cli)?;
@@ -2611,12 +2632,26 @@ fn cmd_validate(
     let doc_store = doc_store.unwrap_or_default();
 
     // Core validation: use salsa incremental by default, --direct for legacy path.
-    // Fall back to the direct path when baseline scoping is active, since the
-    // salsa database validates all source files and does not support scoped stores.
-    let mut diagnostics = if direct || baseline_name.is_some() {
+    // When baseline scoping is active, salsa validates ALL files and we filter
+    // the resulting diagnostics to only include artifacts in the scoped store.
+    let mut diagnostics = if direct {
         validate::validate(&store, &schema, &graph)
     } else {
-        run_salsa_validation(cli, &config)?
+        let all_diags = run_salsa_validation(cli, &config)?;
+        if baseline_name.is_some() {
+            // Filter diagnostics to only those relevant to the scoped store.
+            all_diags
+                .into_iter()
+                .filter(|d| {
+                    d.artifact_id
+                        .as_ref()
+                        .map(|id| store.contains(id))
+                        .unwrap_or(true)
+                })
+                .collect()
+        } else {
+            all_diags
+        }
     };
     diagnostics.extend(validate::validate_documents(&doc_store, &store));
 
@@ -2949,16 +2984,22 @@ fn run_salsa_validation(cli: &Cli, config: &ProjectConfig) -> Result<Vec<validat
     let mut source_contents: Vec<(String, String)> = Vec::new();
     for source in &config.sources {
         let source_path = cli.project.join(&source.path);
-        // The salsa db only handles generic YAML parsing; skip other formats.
-        if source.format != "generic" && source.format != "generic-yaml" {
-            log::info!(
-                "salsa: skipping source '{}' (format '{}' not yet supported, using adapter fallback)",
-                source.path,
-                source.format,
-            );
-            continue;
+        // All YAML-based formats are handled by parse_artifacts_v2 via schema-driven extraction.
+        match source.format.as_str() {
+            "generic" | "generic-yaml" | "stpa-yaml" => {
+                rivet_core::collect_yaml_files(&source_path, &mut source_contents)
+                    .with_context(|| format!("reading source '{}'", source.path))?;
+            }
+            _ => {
+                // Non-YAML formats (reqif, aadl, needs-json) still need their own adapters.
+                log::debug!(
+                    "salsa: skipping non-YAML source '{}' (format: {})",
+                    source.path,
+                    source.format,
+                );
+            }
         }
-        collect_yaml_files(&source_path, &mut source_contents)
+        rivet_core::collect_yaml_files(&source_path, &mut source_contents)
             .with_context(|| format!("reading source '{}'", source.path))?;
     }
 
@@ -2993,35 +3034,9 @@ fn run_salsa_validation(cli: &Cli, config: &ProjectConfig) -> Result<Vec<validat
     Ok(diagnostics)
 }
 
-/// Recursively collect YAML files from a path into (path_string, content) pairs.
-fn collect_yaml_files(path: &std::path::Path, out: &mut Vec<(String, String)>) -> Result<()> {
-    if path.is_file() {
-        let content =
-            std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-        out.push((path.display().to_string(), content));
-    } else if path.is_dir() {
-        let entries = std::fs::read_dir(path)
-            .with_context(|| format!("reading directory {}", path.display()))?;
-        for entry in entries {
-            let entry = entry?;
-            let p = entry.path();
-            if p.is_dir() {
-                collect_yaml_files(&p, out)?;
-            } else if p
-                .extension()
-                .is_some_and(|ext| ext == "yaml" || ext == "yml")
-            {
-                let content = std::fs::read_to_string(&p)
-                    .with_context(|| format!("reading {}", p.display()))?;
-                out.push((p.display().to_string(), content));
-            }
-        }
-    }
-    Ok(())
-}
-
 /// Show a single artifact by ID.
 fn cmd_get(cli: &Cli, id: &str, format: &str) -> Result<bool> {
+    validate_format(format, &["text", "json", "yaml"])?;
     let ctx = ProjectContext::load(cli)?;
 
     let Some(artifact) = ctx.store.get(id) else {
@@ -3114,6 +3129,7 @@ fn cmd_list(
     format: &str,
     baseline_name: Option<&str>,
 ) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
     let ctx = ProjectContext::load(cli)?;
     let store = apply_baseline_scope(ctx.store, baseline_name, &ctx.config);
 
@@ -3161,6 +3177,7 @@ fn cmd_list(
 
 /// Print summary statistics.
 fn cmd_stats(cli: &Cli, format: &str, baseline_name: Option<&str>) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
     let ctx = ProjectContext::load(cli)?;
     let store = apply_baseline_scope(ctx.store, baseline_name, &ctx.config);
     let graph = if baseline_name.is_some() {
@@ -3211,6 +3228,7 @@ fn cmd_coverage(
     fail_under: Option<&f64>,
     baseline_name: Option<&str>,
 ) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
     let ctx = ProjectContext::load(cli)?;
     let store = apply_baseline_scope(ctx.store, baseline_name, &ctx.config);
     let schema = ctx.schema;
@@ -3305,6 +3323,7 @@ fn cmd_coverage(
 
 /// Test-to-requirement coverage via source markers.
 fn cmd_coverage_tests(cli: &Cli, format: &str, scan_paths: &[PathBuf]) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
     use rivet_core::test_scanner;
 
     let ctx = ProjectContext::load(cli)?;
@@ -3423,6 +3442,7 @@ fn cmd_matrix(
     direction: &str,
     format: &str,
 ) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
     let ctx = ProjectContext::load(cli)?;
     let (store, graph) = (ctx.store, ctx.graph);
 
@@ -3502,6 +3522,10 @@ fn cmd_export(
     versions_json: Option<&str>,
     baseline_name: Option<&str>,
 ) -> Result<bool> {
+    validate_format(
+        format,
+        &["reqif", "generic-yaml", "generic", "html", "gherkin"],
+    )?;
     if format == "html" {
         return cmd_export_html(
             cli,
@@ -3931,6 +3955,7 @@ fn cmd_diff(
     head_path: Option<&std::path::Path>,
     format: &str,
 ) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
     let (base_store, base_schema, base_graph, head_store, head_schema, head_graph) =
         match (base_path, head_path) {
             (Some(bp), Some(hp)) => {
@@ -4149,6 +4174,7 @@ fn cmd_impact(
     depth: usize,
     format: &str,
 ) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
     let ctx = ProjectContext::load(cli)?;
     let (current_store, graph) = (ctx.store, ctx.graph);
 
@@ -4443,6 +4469,7 @@ fn parse_yaml_content(
                         })
                         .collect(),
                     fields: raw.fields,
+                    provenance: None,
                     source_file: Some(std::path::PathBuf::from(file_path)),
                 })
                 .collect();
@@ -4471,6 +4498,7 @@ fn parse_yaml_content(
                         })
                         .collect(),
                     fields: raw.fields,
+                    provenance: None,
                     source_file: Some(std::path::PathBuf::from(file_path)),
                 })
                 .collect();
@@ -4514,6 +4542,7 @@ struct RawLink {
 
 /// Show built-in docs (no project load needed).
 fn cmd_docs(topic: Option<&str>, grep: Option<&str>, format: &str, context: usize) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
     if let Some(pattern) = grep {
         print!("{}", docs::grep_docs(pattern, format, context));
     } else if let Some(slug) = topic {
@@ -4539,11 +4568,34 @@ fn cmd_schema(cli: &Cli, action: &SchemaAction) -> Result<bool> {
         rivet_core::load_schemas(&schema_names, &schemas_dir).context("loading schemas")?;
 
     let output = match action {
-        SchemaAction::List { format } => schema_cmd::cmd_list(&schema, format),
-        SchemaAction::Show { name, format } => schema_cmd::cmd_show(&schema, name, format),
-        SchemaAction::Links { format } => schema_cmd::cmd_links(&schema, format),
-        SchemaAction::Rules { format } => schema_cmd::cmd_rules(&schema, format),
+        SchemaAction::List { format } => {
+            validate_format(format, &["text", "json"])?;
+            schema_cmd::cmd_list(&schema, format)
+        }
+        SchemaAction::Show { name, format } => {
+            validate_format(format, &["text", "json"])?;
+            schema_cmd::cmd_show(&schema, name, format)
+        }
+        SchemaAction::Links { format } => {
+            validate_format(format, &["text", "json"])?;
+            schema_cmd::cmd_links(&schema, format)
+        }
+        SchemaAction::Rules { format } => {
+            validate_format(format, &["text", "json"])?;
+            schema_cmd::cmd_rules(&schema, format)
+        }
         SchemaAction::Validate => schema_cmd::cmd_validate(&schema),
+        SchemaAction::Info { name, format } => {
+            let path = schemas_dir.join(format!("{name}.yaml"));
+            let schema_file = if path.exists() {
+                rivet_core::schema::Schema::load_file(&path)
+                    .with_context(|| format!("loading schema {}", path.display()))?
+            } else {
+                rivet_core::embedded::load_embedded_schema(name)
+                    .map_err(|e| anyhow::anyhow!("{e}"))?
+            };
+            schema_cmd::cmd_info(&schema_file, format)
+        }
     };
     print!("{output}");
     Ok(true)
@@ -4830,11 +4882,9 @@ fn cmd_commit_msg_check(cli: &Cli, file: &std::path::Path) -> Result<bool> {
             return Ok(true);
         }
     };
-    let _ = schema; // we only need the store, not schema validation
-
     let mut store = Store::new();
     for source in &config.sources {
-        match rivet_core::load_artifacts(source, &cli.project) {
+        match rivet_core::load_artifacts(source, &cli.project, &schema) {
             Ok(artifacts) => {
                 for a in artifacts {
                     store.upsert(a);
@@ -4896,10 +4946,19 @@ fn cmd_commits(
     format: &str,
     strict: bool,
 ) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
     use std::collections::BTreeMap;
 
     // Load project config
     let config_path = cli.project.join("rivet.yaml");
+    if !config_path.exists() {
+        let project_dir =
+            std::fs::canonicalize(&cli.project).unwrap_or_else(|_| cli.project.clone());
+        anyhow::bail!(
+            "no rivet.yaml found in {}\n\nTo initialize a new project, run: rivet init",
+            project_dir.display()
+        );
+    }
     let config = rivet_core::load_project_config(&config_path)
         .with_context(|| format!("loading {}", config_path.display()))?;
 
@@ -4915,7 +4974,7 @@ fn cmd_commits(
 
     let mut store = Store::new();
     for source in &config.sources {
-        let artifacts = rivet_core::load_artifacts(source, &cli.project)
+        let artifacts = rivet_core::load_artifacts(source, &cli.project, &_schema)
             .with_context(|| format!("loading source '{}'", source.path))?;
         for a in artifacts {
             store.upsert(a);
@@ -5127,8 +5186,17 @@ fn resolve_schemas_dir(cli: &Cli) -> PathBuf {
 }
 
 fn cmd_sync(cli: &Cli, local_only: bool) -> Result<bool> {
-    let config = rivet_core::load_project_config(&cli.project.join("rivet.yaml"))
-        .with_context(|| format!("loading {}", cli.project.join("rivet.yaml").display()))?;
+    let config_path = cli.project.join("rivet.yaml");
+    if !config_path.exists() {
+        let project_dir =
+            std::fs::canonicalize(&cli.project).unwrap_or_else(|_| cli.project.clone());
+        anyhow::bail!(
+            "no rivet.yaml found in {}\n\nTo initialize a new project, run: rivet init",
+            project_dir.display()
+        );
+    }
+    let config = rivet_core::load_project_config(&config_path)
+        .with_context(|| format!("loading {}", config_path.display()))?;
     let externals = config.externals.as_ref();
     if externals.is_none() || externals.unwrap().is_empty() {
         eprintln!("No externals declared in rivet.yaml");
@@ -5182,8 +5250,17 @@ fn cmd_lock(cli: &Cli, update: bool) -> Result<bool> {
     if update {
         eprintln!("Note: --update refreshes all pins to latest refs");
     }
-    let config = rivet_core::load_project_config(&cli.project.join("rivet.yaml"))
-        .with_context(|| format!("loading {}", cli.project.join("rivet.yaml").display()))?;
+    let config_path = cli.project.join("rivet.yaml");
+    if !config_path.exists() {
+        let project_dir =
+            std::fs::canonicalize(&cli.project).unwrap_or_else(|_| cli.project.clone());
+        anyhow::bail!(
+            "no rivet.yaml found in {}\n\nTo initialize a new project, run: rivet init",
+            project_dir.display()
+        );
+    }
+    let config = rivet_core::load_project_config(&config_path)
+        .with_context(|| format!("loading {}", config_path.display()))?;
     let externals = config.externals.as_ref();
     if externals.is_none() || externals.unwrap().is_empty() {
         eprintln!("No externals declared in rivet.yaml");
@@ -5201,7 +5278,16 @@ fn cmd_lock(cli: &Cli, update: bool) -> Result<bool> {
 }
 
 fn cmd_baseline_verify(cli: &Cli, name: &str, strict: bool) -> Result<bool> {
-    let config = rivet_core::load_project_config(&cli.project.join("rivet.yaml"))
+    let config_path = cli.project.join("rivet.yaml");
+    if !config_path.exists() {
+        let project_dir =
+            std::fs::canonicalize(&cli.project).unwrap_or_else(|_| cli.project.clone());
+        anyhow::bail!(
+            "no rivet.yaml found in {}\n\nTo initialize a new project, run: rivet init",
+            project_dir.display()
+        );
+    }
+    let config = rivet_core::load_project_config(&config_path)
         .with_context(|| "Failed to load rivet.yaml")?;
 
     let externals = match config.externals.as_ref() {
@@ -5265,7 +5351,16 @@ fn cmd_baseline_verify(cli: &Cli, name: &str, strict: bool) -> Result<bool> {
 }
 
 fn cmd_baseline_list(cli: &Cli) -> Result<bool> {
-    let config = rivet_core::load_project_config(&cli.project.join("rivet.yaml"))
+    let config_path = cli.project.join("rivet.yaml");
+    if !config_path.exists() {
+        let project_dir =
+            std::fs::canonicalize(&cli.project).unwrap_or_else(|_| cli.project.clone());
+        anyhow::bail!(
+            "no rivet.yaml found in {}\n\nTo initialize a new project, run: rivet init",
+            project_dir.display()
+        );
+    }
+    let config = rivet_core::load_project_config(&config_path)
         .with_context(|| "Failed to load rivet.yaml")?;
 
     // List local baselines
@@ -5367,6 +5462,7 @@ fn cmd_snapshot_diff(
     baseline_path: Option<&std::path::Path>,
     format: &str,
 ) -> Result<bool> {
+    validate_format(format, &["text", "json", "markdown"])?;
     let schemas_dir = resolve_schemas_dir(cli);
     let project_path = cli
         .project
@@ -5641,6 +5737,14 @@ impl ProjectContext {
     /// Load project with artifacts, schema, and link graph.
     fn load(cli: &Cli) -> Result<Self> {
         let config_path = cli.project.join("rivet.yaml");
+        if !config_path.exists() {
+            let project_dir =
+                std::fs::canonicalize(&cli.project).unwrap_or_else(|_| cli.project.clone());
+            anyhow::bail!(
+                "no rivet.yaml found in {}\n\nTo initialize a new project, run: rivet init",
+                project_dir.display()
+            );
+        }
         let config = rivet_core::load_project_config(&config_path)
             .with_context(|| format!("loading {}", config_path.display()))?;
 
@@ -5650,7 +5754,7 @@ impl ProjectContext {
 
         let mut store = Store::new();
         for source in &config.sources {
-            let artifacts = rivet_core::load_artifacts(source, &cli.project)
+            let artifacts = rivet_core::load_artifacts(source, &cli.project, &schema)
                 .with_context(|| format!("loading source '{}'", source.path))?;
             for artifact in artifacts {
                 store.upsert(artifact);
@@ -5706,6 +5810,7 @@ impl ProjectContext {
     }
 
     /// Load project with artifacts, schema, link graph, documents, and test results.
+    #[allow(dead_code)]
     fn load_full(cli: &Cli) -> Result<Self> {
         let mut ctx = Self::load_with_docs(cli)?;
 
@@ -5880,6 +5985,7 @@ fn cmd_next_id(
     prefix: Option<&str>,
     format: &str,
 ) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
     use rivet_core::mutate;
 
     let ctx = ProjectContext::load(cli)?;
@@ -5956,6 +6062,7 @@ fn cmd_add(
         tags: tags.to_vec(),
         links: link_vec,
         fields: fields_map,
+        provenance: None,
         source_file: None,
     };
 
@@ -6212,6 +6319,7 @@ fn cmd_batch(cli: &Cli, file: &std::path::Path) -> Result<bool> {
                     tags: tags.clone(),
                     links: link_vec,
                     fields: fields.clone(),
+                    provenance: None,
                     source_file: None,
                 };
 
@@ -6300,6 +6408,7 @@ fn cmd_batch(cli: &Cli, file: &std::path::Path) -> Result<bool> {
                     tags: tags.clone(),
                     links: link_vec,
                     fields: fields.clone(),
+                    provenance: None,
                     source_file: None,
                 };
 
@@ -6389,6 +6498,7 @@ fn cmd_batch(cli: &Cli, file: &std::path::Path) -> Result<bool> {
 }
 
 fn cmd_embed(cli: &Cli, query: &str, format: &str) -> Result<bool> {
+    validate_format(format, &["text", "html"])?;
     let schemas_dir = resolve_schemas_dir(cli);
     let project_path = cli
         .project
@@ -6458,8 +6568,9 @@ fn strip_html_tags(html: &str) -> String {
         .replace("&quot;", "\"")
 }
 
-fn cmd_mcp() -> Result<bool> {
-    mcp::run()?;
+fn cmd_mcp(cli: &Cli) -> Result<bool> {
+    let rt = tokio::runtime::Runtime::new().context("creating tokio runtime")?;
+    rt.block_on(mcp::run(cli.project.clone()))?;
     Ok(true)
 }
 
@@ -6473,9 +6584,19 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
     let (connection, io_threads) = Connection::stdio();
 
     let server_capabilities = ServerCapabilities {
-        text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
+        text_document_sync: Some(TextDocumentSyncCapability::Options(
+            TextDocumentSyncOptions {
+                open_close: Some(true),
+                change: Some(TextDocumentSyncKind::FULL),
+                save: Some(TextDocumentSyncSaveOptions::SaveOptions(SaveOptions {
+                    include_text: Some(false),
+                })),
+                ..Default::default()
+            },
+        )),
         hover_provider: Some(HoverProviderCapability::Simple(true)),
         definition_provider: Some(OneOf::Left(true)),
+        document_symbol_provider: Some(OneOf::Left(true)),
         completion_provider: Some(CompletionOptions {
             trigger_characters: Some(vec!["[".to_string(), ":".to_string()]),
             ..Default::default()
@@ -6504,12 +6625,23 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
     let config_path = project_dir.join("rivet.yaml");
     let schemas_dir = resolve_schemas_dir(cli);
 
-    let (source_set, schema_set) = if config_path.exists() {
-        let config = rivet_core::load_project_config(&config_path).unwrap_or_else(|e| {
-            eprintln!("rivet lsp: failed to load config: {e}");
-            std::process::exit(1);
-        });
+    let config_opt = if config_path.exists() {
+        match rivet_core::load_project_config(&config_path) {
+            Ok(c) => Some(c),
+            Err(e) => {
+                eprintln!(
+                    "rivet lsp: failed to load {}: {e} — running with empty state",
+                    config_path.display()
+                );
+                None
+            }
+        }
+    } else {
+        eprintln!("rivet lsp: no rivet.yaml found, running with empty store");
+        None
+    };
 
+    let (source_set, schema_set) = if let Some(config) = &config_opt {
         // Load schema contents into salsa inputs
         let schema_contents =
             rivet_core::embedded::load_schema_contents(&config.project.schemas, &schemas_dir);
@@ -6523,7 +6655,7 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
         let mut source_pairs: Vec<(String, String)> = Vec::new();
         for source in &config.sources {
             let source_path = project_dir.join(&source.path);
-            let _ = collect_yaml_files(&source_path, &mut source_pairs);
+            let _ = rivet_core::collect_yaml_files(&source_path, &mut source_pairs);
         }
         let source_refs: Vec<(&str, &str)> = source_pairs
             .iter()
@@ -6533,7 +6665,6 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
 
         (source_set, schema_set)
     } else {
-        eprintln!("rivet lsp: no rivet.yaml found, running with empty store");
         let schema_set = db.load_schemas(&[]);
         let source_set = db.load_sources(&[]);
         (source_set, schema_set)
@@ -6644,6 +6775,23 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                         connection.sender.send(Message::Response(Response {
                             id: req.id,
                             result: Some(serde_json::to_value(result)?),
+                            error: None,
+                        }))?;
+                    }
+                    "textDocument/documentSymbol" => {
+                        let params: DocumentSymbolParams =
+                            serde_json::from_value(req.params.clone())?;
+                        let path = lsp_uri_to_path(&params.text_document.uri);
+                        let symbols = if let Some(path) = path {
+                            let content = std::fs::read_to_string(&path).unwrap_or_default();
+                            lsp_document_symbols(&content)
+                        } else {
+                            Vec::new()
+                        };
+                        let response = DocumentSymbolResponse::Nested(symbols);
+                        connection.sender.send(Message::Response(Response {
+                            id: req.id,
+                            result: Some(serde_json::to_value(response)?),
                             error: None,
                         }))?;
                     }
@@ -6901,6 +7049,45 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
             }
             Message::Notification(notif) => {
                 match notif.method.as_str() {
+                    "textDocument/didOpen" => {
+                        if let Ok(params) = serde_json::from_value::<DidOpenTextDocumentParams>(
+                            notif.params.clone(),
+                        ) {
+                            let path = lsp_uri_to_path(&params.text_document.uri);
+                            if let Some(path) = path {
+                                let path_str = path.to_string_lossy().to_string();
+                                let content = params.text_document.text;
+                                let updated =
+                                    db.update_source(source_set, &path_str, content.clone());
+                                if !updated {
+                                    // New file not yet tracked — add it to the source set
+                                    if path_str.ends_with(".yaml") || path_str.ends_with(".yml") {
+                                        db.add_source(source_set, &path_str, content);
+                                        eprintln!(
+                                            "rivet lsp: added new source file on open: {}",
+                                            path_str
+                                        );
+                                    }
+                                }
+                                // Publish diagnostics for the opened file
+                                let mut new_diagnostics = db.diagnostics(source_set, schema_set);
+                                let new_store = db.store(source_set, schema_set);
+                                new_diagnostics
+                                    .extend(validate::validate_documents(&doc_store, &new_store));
+                                lsp_publish_salsa_diagnostics(
+                                    &connection,
+                                    &new_diagnostics,
+                                    &new_store,
+                                    &mut prev_diagnostic_files,
+                                );
+                                eprintln!(
+                                    "rivet lsp: didOpen diagnostics for {} ({} diagnostics)",
+                                    path_str,
+                                    new_diagnostics.len()
+                                );
+                            }
+                        }
+                    }
                     "textDocument/didSave" => {
                         if let Ok(params) = serde_json::from_value::<DidSaveTextDocumentParams>(
                             notif.params.clone(),
@@ -6982,19 +7169,27 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                                         change.text.clone(),
                                     );
                                     if updated {
-                                        // Re-query diagnostics incrementally,
-                                        // including document [[ID]] reference validation.
+                                        // Re-query diagnostics incrementally
                                         let mut diagnostics =
                                             db.diagnostics(source_set, schema_set);
-                                        let store = db.store(source_set, schema_set);
+                                        let fresh_store = db.store(source_set, schema_set);
                                         diagnostics.extend(validate::validate_documents(
-                                            &doc_store, &store,
+                                            &doc_store,
+                                            &fresh_store,
                                         ));
                                         lsp_publish_salsa_diagnostics(
                                             &connection,
                                             &diagnostics,
-                                            &store,
+                                            &fresh_store,
                                             &mut prev_diagnostic_files,
+                                        );
+
+                                        // Update render state so custom requests
+                                        // (rivet/render, treeData, search) reflect edits
+                                        render_store = fresh_store;
+                                        render_graph = rivet_core::links::LinkGraph::build(
+                                            &render_store,
+                                            &render_schema,
                                         );
                                     }
                                 }
@@ -7017,11 +7212,31 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
 
 fn lsp_uri_to_path(uri: &lsp_types::Uri) -> Option<std::path::PathBuf> {
     let s = uri.as_str();
-    s.strip_prefix("file://").map(std::path::PathBuf::from)
+    // Handle both file:///path (Unix) and file:///C:/path (Windows)
+    if let Some(rest) = s.strip_prefix("file://") {
+        // On Unix: file:///foo → /foo (rest = "/foo")
+        // On Windows: file:///C:/foo → C:/foo (rest = "/C:/foo", strip leading /)
+        let path_str = if rest.len() > 2 && rest.starts_with('/') && rest.as_bytes()[2] == b':' {
+            &rest[1..] // Windows: strip leading / before drive letter
+        } else {
+            rest
+        };
+        Some(std::path::PathBuf::from(
+            urlencoding::decode(path_str).ok()?.into_owned(),
+        ))
+    } else {
+        None
+    }
 }
 
 fn lsp_path_to_uri(path: &std::path::Path) -> Option<lsp_types::Uri> {
-    let s = format!("file://{}", path.display());
+    let path_str = path.to_string_lossy();
+    // On Windows, paths like C:\foo need file:///C:/foo (three slashes)
+    let s = if path_str.len() >= 2 && path_str.as_bytes()[1] == b':' {
+        format!("file:///{}", path_str.replace('\\', "/"))
+    } else {
+        format!("file://{}", path_str)
+    };
     s.parse().ok()
 }
 
@@ -7110,6 +7325,11 @@ fn lsp_publish_salsa_diagnostics(
             continue;
         };
         let col = diag.column.unwrap_or(0);
+        let end_col = if let Some(ref id) = diag.artifact_id {
+            col + id.len() as u32 + 6 // "id: " + ID + some padding
+        } else {
+            col + 20 // reasonable default
+        };
         file_diags
             .entry(path)
             .or_default()
@@ -7121,7 +7341,7 @@ fn lsp_publish_salsa_diagnostics(
                     },
                     end: Position {
                         line,
-                        character: col + 100,
+                        character: end_col,
                     },
                 },
                 severity: Some(match diag.severity {
@@ -7291,6 +7511,180 @@ fn lsp_completion(
         is_incomplete: false,
         items,
     })
+}
+
+/// Extract document symbols (artifact IDs) from a YAML source string.
+///
+/// Walks the CST to find all SequenceItem nodes that contain a mapping with
+/// an "id" key. Returns a flat list of `DocumentSymbol` values suitable for
+/// the `textDocument/documentSymbol` LSP response.
+#[allow(deprecated)] // DocumentSymbol.deprecated field is itself deprecated in lsp_types
+fn lsp_document_symbols(source: &str) -> Vec<lsp_types::DocumentSymbol> {
+    use rivet_core::yaml_cst;
+
+    let (green, _errors) = yaml_cst::parse(source);
+    let root = yaml_cst::SyntaxNode::new_root(green);
+    let line_starts = yaml_cst::line_starts(source);
+
+    let mut symbols = Vec::new();
+    walk_for_symbols(&root, &mut symbols, &line_starts);
+    symbols
+}
+
+/// Recursively walk the CST looking for SequenceItem nodes that represent artifacts.
+#[allow(deprecated)]
+fn walk_for_symbols(
+    node: &rivet_core::yaml_cst::SyntaxNode,
+    symbols: &mut Vec<lsp_types::DocumentSymbol>,
+    line_starts: &[u32],
+) {
+    use rivet_core::yaml_cst::SyntaxKind;
+
+    if node.kind() == SyntaxKind::SequenceItem {
+        if let Some(sym) = extract_symbol_from_item(node, line_starts) {
+            symbols.push(sym);
+            return; // don't recurse into children of matched items
+        }
+    }
+
+    for child in node.children() {
+        walk_for_symbols(&child, symbols, line_starts);
+    }
+}
+
+/// Try to extract a `DocumentSymbol` from a SequenceItem node.
+///
+/// Returns `Some` if the item contains a mapping with an "id" key.
+#[allow(deprecated)]
+fn extract_symbol_from_item(
+    item: &rivet_core::yaml_cst::SyntaxNode,
+    line_starts: &[u32],
+) -> Option<lsp_types::DocumentSymbol> {
+    use rivet_core::yaml_cst::SyntaxKind;
+
+    // The SequenceItem should contain a Mapping
+    let mapping = item.children().find(|c| c.kind() == SyntaxKind::Mapping)?;
+
+    let mut id: Option<String> = None;
+    let mut id_range: Option<rowan::TextRange> = None;
+    let mut title: Option<String> = None;
+    let mut art_type: Option<String> = None;
+
+    for entry in mapping.children() {
+        if entry.kind() != SyntaxKind::MappingEntry {
+            continue;
+        }
+        let key_node = entry.children().find(|c| c.kind() == SyntaxKind::Key)?;
+        let key_text = cst_scalar_text(&key_node)?;
+        let value_node = entry.children().find(|c| c.kind() == SyntaxKind::Value);
+
+        match key_text.as_str() {
+            "id" => {
+                if let Some(ref vn) = value_node {
+                    id = cst_scalar_text(vn);
+                    id_range = Some(vn.text_range());
+                }
+            }
+            "title" => {
+                if let Some(ref vn) = value_node {
+                    title = cst_scalar_text(vn);
+                }
+            }
+            "type" => {
+                if let Some(ref vn) = value_node {
+                    art_type = cst_scalar_text(vn);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let id = id?;
+
+    // Build detail string: "type — title" or just title or just type
+    let detail = match (art_type, title) {
+        (Some(t), Some(ti)) => Some(format!("{t} \u{2014} {ti}")),
+        (Some(t), None) => Some(t),
+        (None, Some(ti)) => Some(ti),
+        (None, None) => None,
+    };
+
+    let item_range = item.text_range();
+    let sel_range = id_range.unwrap_or(item_range);
+
+    let range = text_range_to_lsp(item_range, line_starts);
+    let selection_range = text_range_to_lsp(sel_range, line_starts);
+
+    Some(lsp_types::DocumentSymbol {
+        name: id,
+        detail,
+        kind: lsp_types::SymbolKind::OBJECT,
+        tags: None,
+        deprecated: None,
+        range,
+        selection_range,
+        children: None,
+    })
+}
+
+/// Extract the text of the first scalar token descended from a CST node.
+///
+/// Standalone version for the LSP helpers (mirrors `yaml_hir::scalar_text`).
+fn cst_scalar_text(node: &rivet_core::yaml_cst::SyntaxNode) -> Option<String> {
+    use rivet_core::yaml_cst::SyntaxKind;
+
+    for token in node.descendants_with_tokens() {
+        if let rowan::NodeOrToken::Token(t) = token {
+            match t.kind() {
+                SyntaxKind::SingleQuotedScalar => {
+                    let raw = t.text().to_string();
+                    return Some(raw[1..raw.len() - 1].replace("''", "'"));
+                }
+                SyntaxKind::DoubleQuotedScalar => {
+                    let raw = t.text().to_string();
+                    return Some(raw[1..raw.len() - 1].to_string());
+                }
+                SyntaxKind::PlainScalar => {
+                    let mut text = t.text().to_string();
+                    let mut next = t.next_sibling_or_token();
+                    while let Some(sibling) = next {
+                        match sibling {
+                            rowan::NodeOrToken::Token(ref st) => match st.kind() {
+                                SyntaxKind::Newline | SyntaxKind::Comment => break,
+                                _ => {
+                                    text.push_str(st.text());
+                                    next = sibling.next_sibling_or_token();
+                                }
+                            },
+                            rowan::NodeOrToken::Node(_) => break,
+                        }
+                    }
+                    return Some(text.trim_end().to_string());
+                }
+                _ => {}
+            }
+        }
+    }
+    None
+}
+
+/// Convert a rowan `TextRange` to an LSP `Range` using a line-starts table.
+fn text_range_to_lsp(tr: rowan::TextRange, line_starts: &[u32]) -> lsp_types::Range {
+    use rivet_core::yaml_cst;
+
+    let (start_line, start_col) = yaml_cst::offset_to_line_col(line_starts, u32::from(tr.start()));
+    let (end_line, end_col) = yaml_cst::offset_to_line_col(line_starts, u32::from(tr.end()));
+
+    lsp_types::Range {
+        start: lsp_types::Position {
+            line: start_line,
+            character: start_col,
+        },
+        end: lsp_types::Position {
+            line: end_line,
+            character: end_col,
+        },
+    }
 }
 
 /// Substitute `$prev` in a string with the most recently generated ID.
@@ -7513,6 +7907,7 @@ mod lsp_tests {
             let source_file = art.and_then(|a| a.source_file.as_ref());
             if let Some(path) = source_file {
                 let line = lsp_find_artifact_line(path, art_id);
+                let end_col = art_id.len() as u32 + 6; // "id: " + ID + some padding
                 file_diags
                     .entry(path.clone())
                     .or_default()
@@ -7521,7 +7916,7 @@ mod lsp_tests {
                             start: lsp_types::Position { line, character: 0 },
                             end: lsp_types::Position {
                                 line,
-                                character: 100,
+                                character: end_col,
                             },
                         },
                         severity: Some(match diag.severity {
@@ -7556,6 +7951,7 @@ mod lsp_tests {
                 tags: vec![],
                 links: vec![],
                 fields: std::collections::BTreeMap::new(),
+                provenance: None,
                 source_file: Some(path.clone()),
             })
             .unwrap();
@@ -7599,6 +7995,7 @@ mod lsp_tests {
                 tags: vec![],
                 links: vec![],
                 fields: std::collections::BTreeMap::new(),
+                provenance: None,
                 source_file: Some(path.clone()),
             })
             .unwrap();
@@ -7639,6 +8036,7 @@ mod lsp_tests {
                 tags: vec![],
                 links: vec![],
                 fields: std::collections::BTreeMap::new(),
+                provenance: None,
                 source_file: Some(path.clone()),
             })
             .unwrap();
@@ -7724,6 +8122,7 @@ mod lsp_tests {
                 tags: vec![],
                 links: vec![],
                 fields: std::collections::BTreeMap::new(),
+                provenance: None,
                 source_file: Some(path_a.clone()),
             })
             .unwrap();
@@ -7737,6 +8136,7 @@ mod lsp_tests {
                 tags: vec![],
                 links: vec![],
                 fields: std::collections::BTreeMap::new(),
+                provenance: None,
                 source_file: Some(path_b.clone()),
             })
             .unwrap();
@@ -7750,6 +8150,7 @@ mod lsp_tests {
                 tags: vec![],
                 links: vec![],
                 fields: std::collections::BTreeMap::new(),
+                provenance: None,
                 source_file: Some(path_b.clone()),
             })
             .unwrap();
@@ -7820,6 +8221,7 @@ artifacts:
                 tags: vec![],
                 links: vec![],
                 fields: std::collections::BTreeMap::new(),
+                provenance: None,
                 source_file: Some(path.clone()),
             })
             .unwrap();
@@ -7839,6 +8241,112 @@ artifacts:
         // "  - id: X-003" is on line 5 (0-indexed)
         assert_eq!(lsp_diags[0].range.start.line, 5);
         assert_eq!(lsp_diags[0].range.start.character, 0);
-        assert_eq!(lsp_diags[0].range.end.character, 100);
+        assert_eq!(lsp_diags[0].range.end.character, 11); // "X-003".len() + 6
+    }
+
+    // ── documentSymbol ────────────────────────────────────────────────
+
+    #[test]
+    fn document_symbols_extracts_artifact_ids() {
+        let yaml = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: First requirement
+  - id: REQ-002
+    title: Second requirement
+";
+        let symbols = lsp_document_symbols(yaml);
+        assert_eq!(symbols.len(), 2);
+        assert_eq!(symbols[0].name, "REQ-001");
+        assert_eq!(
+            symbols[0].detail.as_deref(),
+            Some("requirement \u{2014} First requirement")
+        );
+        assert_eq!(symbols[0].kind, lsp_types::SymbolKind::OBJECT);
+        assert_eq!(symbols[1].name, "REQ-002");
+        assert_eq!(symbols[1].detail.as_deref(), Some("Second requirement"));
+    }
+
+    #[test]
+    fn document_symbols_empty_file() {
+        let symbols = lsp_document_symbols("");
+        assert!(symbols.is_empty());
+    }
+
+    #[test]
+    fn document_symbols_no_id_key() {
+        let yaml = "\
+artifacts:
+  - title: No ID here
+    type: note
+";
+        let symbols = lsp_document_symbols(yaml);
+        assert!(symbols.is_empty(), "items without id should be skipped");
+    }
+
+    #[test]
+    fn document_symbols_ranges_are_valid() {
+        let yaml = "\
+artifacts:
+  - id: A-001
+    title: Alpha
+  - id: A-002
+    title: Beta
+";
+        let symbols = lsp_document_symbols(yaml);
+        assert_eq!(symbols.len(), 2);
+
+        // First symbol starts at line 1 (the "- id:" line)
+        assert_eq!(symbols[0].range.start.line, 1);
+        // Second symbol starts at line 3
+        assert_eq!(symbols[1].range.start.line, 3);
+
+        // Selection range should be within the full range
+        assert!(symbols[0].selection_range.start.line >= symbols[0].range.start.line);
+        assert!(symbols[0].selection_range.end.line <= symbols[0].range.end.line);
+    }
+
+    #[test]
+    fn document_symbols_quoted_id() {
+        let yaml = "\
+artifacts:
+  - id: 'REQ-Q01'
+    title: Quoted ID
+";
+        let symbols = lsp_document_symbols(yaml);
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(symbols[0].name, "REQ-Q01");
+    }
+
+    // ── Additional documentSymbol tests ────────────────────────────────
+
+    #[test]
+    fn document_symbols_skips_items_without_id() {
+        let source = "artifacts:\n  - type: requirement\n    title: No ID\n";
+        assert!(lsp_document_symbols(source).is_empty());
+    }
+
+    #[test]
+    fn document_symbols_detail_includes_type_and_title() {
+        let source = "artifacts:\n  - id: FEAT-001\n    type: feature\n    title: My Feature\n";
+        let symbols = lsp_document_symbols(source);
+        assert_eq!(symbols.len(), 1);
+        let detail = symbols[0].detail.as_deref().unwrap_or("");
+        assert!(
+            detail.contains("feature"),
+            "detail should contain type: {detail}"
+        );
+        assert!(
+            detail.contains("My Feature"),
+            "detail should contain title: {detail}"
+        );
+    }
+
+    #[test]
+    fn document_symbols_stpa_sections() {
+        let source = "losses:\n  - id: L-1\n    title: Loss one\nhazards:\n  - id: H-1\n    title: Hazard one\n";
+        let symbols = lsp_document_symbols(source);
+        assert_eq!(symbols.len(), 2);
     }
 }

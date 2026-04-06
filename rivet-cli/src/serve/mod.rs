@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use anyhow::{Context as _, Result};
 use axum::Router;
@@ -25,8 +25,10 @@ mod embedded_wasm {
     pub const CORE3_WASM: &[u8] = include_bytes!("../../assets/wasm/js/spar_wasm.core3.wasm");
 }
 
+use rivet_core::db::{RivetDatabase, SchemaInputSet, SourceFileSet};
 use rivet_core::document::DocumentStore;
 use rivet_core::links::LinkGraph;
+use rivet_core::model::ProjectConfig;
 use rivet_core::results::ResultStore;
 use rivet_core::schema::Schema;
 use rivet_core::store::Store;
@@ -171,6 +173,17 @@ pub(crate) struct ExternalInfo {
     pub(crate) store: Store,
 }
 
+/// Salsa incremental computation state, kept in a `Mutex` because
+/// `RivetDatabase` is `!Sync` (it uses thread-local caches internally).
+///
+/// The `Mutex` is only locked during reload operations. Read-only page
+/// handlers never touch it — they use the pre-computed fields in `AppState`.
+pub(crate) struct SalsaState {
+    pub(crate) db: RivetDatabase,
+    pub(crate) source_set: SourceFileSet,
+    pub(crate) schema_set: SchemaInputSet,
+}
+
 /// Shared application state loaded once at startup.
 pub(crate) struct AppState {
     pub(crate) store: Store,
@@ -192,6 +205,10 @@ pub(crate) struct AppState {
     pub(crate) cached_diagnostics: Vec<rivet_core::validate::Diagnostic>,
     /// Server start time for uptime calculation.
     pub(crate) started_at: std::time::Instant,
+    /// Salsa incremental computation state (behind Mutex for thread safety).
+    pub(crate) salsa: Mutex<SalsaState>,
+    /// Project configuration (needed for incremental reload).
+    pub(crate) config: ProjectConfig,
 }
 
 impl AppState {
@@ -216,55 +233,43 @@ impl AppState {
 /// Convenience alias so handler signatures stay compact.
 pub(crate) type SharedState = Arc<RwLock<AppState>>;
 
-/// Build a fresh `AppState` by loading everything from disk.
-pub(crate) fn reload_state(
-    project_path: &std::path::Path,
+/// Recursively collect YAML files from a path into (path_string, content) pairs.
+fn collect_yaml_files(path: &std::path::Path, out: &mut Vec<(String, String)>) -> Result<()> {
+    if path.is_file() {
+        let content =
+            std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+        out.push((path.display().to_string(), content));
+    } else if path.is_dir() {
+        let entries = std::fs::read_dir(path)
+            .with_context(|| format!("reading directory {}", path.display()))?;
+        for entry in entries {
+            let entry = entry?;
+            let p = entry.path();
+            if p.is_dir() {
+                collect_yaml_files(&p, out)?;
+            } else if p
+                .extension()
+                .is_some_and(|ext| ext == "yaml" || ext == "yml")
+            {
+                let content = std::fs::read_to_string(&p)
+                    .with_context(|| format!("reading {}", p.display()))?;
+                out.push((p.display().to_string(), content));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Collect schema content from disk (with embedded fallback), suitable for salsa.
+fn collect_schema_contents(
+    schema_names: &[String],
     schemas_dir: &std::path::Path,
-    port: u16,
-) -> Result<AppState> {
-    let config_path = project_path.join("rivet.yaml");
-    let config = rivet_core::load_project_config(&config_path)
-        .with_context(|| format!("loading {}", config_path.display()))?;
+) -> Vec<(String, String)> {
+    rivet_core::embedded::load_schema_contents(schema_names, schemas_dir)
+}
 
-    let schema = rivet_core::load_schemas(&config.project.schemas, schemas_dir)
-        .context("loading schemas")?;
-
-    let mut store = Store::new();
-    for source in &config.sources {
-        let artifacts = rivet_core::load_artifacts(source, project_path)
-            .with_context(|| format!("loading source '{}'", source.path))?;
-        for artifact in artifacts {
-            store.upsert(artifact);
-        }
-    }
-
-    let graph = LinkGraph::build(&store, &schema);
-
-    let mut doc_store = DocumentStore::new();
-    let mut doc_dirs = Vec::new();
-    for docs_path in &config.docs {
-        let dir = project_path.join(docs_path);
-        if dir.is_dir() {
-            doc_dirs.push(dir.clone());
-        }
-        let docs = rivet_core::document::load_documents(&dir)
-            .with_context(|| format!("loading docs from '{docs_path}'"))?;
-        for doc in docs {
-            doc_store.insert(doc);
-        }
-    }
-
-    let mut result_store = ResultStore::new();
-    if let Some(ref results_path) = config.results {
-        let dir = project_path.join(results_path);
-        let runs = rivet_core::results::load_results(&dir)
-            .with_context(|| format!("loading results from '{results_path}'"))?;
-        for run in runs {
-            result_store.insert(run);
-        }
-    }
-
-    // ── Load external projects ────────────────────────────────────────
+/// Load external projects.
+fn load_externals(config: &ProjectConfig, project_path: &std::path::Path) -> Vec<ExternalInfo> {
     let mut externals = Vec::new();
     if let Some(ref ext_map) = config.externals {
         let cache_dir = project_path.join(".rivet/repos");
@@ -294,6 +299,88 @@ pub(crate) fn reload_state(
             });
         }
     }
+    externals
+}
+
+/// Load documents and results from config, returning (doc_store, result_store, doc_dirs).
+fn load_docs_and_results(
+    config: &ProjectConfig,
+    project_path: &std::path::Path,
+) -> Result<(DocumentStore, ResultStore, Vec<PathBuf>)> {
+    let mut doc_store = DocumentStore::new();
+    let mut doc_dirs = Vec::new();
+    for docs_path in &config.docs {
+        let dir = project_path.join(docs_path);
+        if dir.is_dir() {
+            doc_dirs.push(dir.clone());
+        }
+        let docs = rivet_core::document::load_documents(&dir)
+            .with_context(|| format!("loading docs from '{docs_path}'"))?;
+        for doc in docs {
+            doc_store.insert(doc);
+        }
+    }
+
+    let mut result_store = ResultStore::new();
+    if let Some(ref results_path) = config.results {
+        let dir = project_path.join(results_path);
+        let runs = rivet_core::results::load_results(&dir)
+            .with_context(|| format!("loading results from '{results_path}'"))?;
+        for run in runs {
+            result_store.insert(run);
+        }
+    }
+
+    Ok((doc_store, result_store, doc_dirs))
+}
+
+/// Build a fresh `AppState` by loading everything from disk.
+///
+/// Initializes a salsa `RivetDatabase` for incremental recomputation on
+/// subsequent reloads. The initial load populates both salsa inputs and
+/// the cached output fields (store, schema, graph, diagnostics).
+pub(crate) fn reload_state(
+    project_path: &std::path::Path,
+    schemas_dir: &std::path::Path,
+    port: u16,
+) -> Result<AppState> {
+    let config_path = project_path.join("rivet.yaml");
+    let config = rivet_core::load_project_config(&config_path)
+        .with_context(|| format!("loading {}", config_path.display()))?;
+
+    // ── Initialize salsa database ────────────────────────────────────
+    let db = RivetDatabase::new();
+
+    // Load schema content into salsa inputs
+    let schema_contents = collect_schema_contents(&config.project.schemas, schemas_dir);
+    let schema_refs: Vec<(&str, &str)> = schema_contents
+        .iter()
+        .map(|(n, c)| (n.as_str(), c.as_str()))
+        .collect();
+    let schema_set = db.load_schemas(&schema_refs);
+
+    // Collect source file content into salsa inputs
+    let mut source_contents: Vec<(String, String)> = Vec::new();
+    for source in &config.sources {
+        let source_path = project_path.join(&source.path);
+        collect_yaml_files(&source_path, &mut source_contents)
+            .with_context(|| format!("reading source '{}'", source.path))?;
+    }
+    let source_refs: Vec<(&str, &str)> = source_contents
+        .iter()
+        .map(|(p, c)| (p.as_str(), c.as_str()))
+        .collect();
+    let source_set = db.load_sources(&source_refs);
+
+    // ── Compute outputs from salsa ───────────────────────────────────
+    let store = db.store(source_set, schema_set);
+    let schema = db.schema(schema_set);
+    let graph = LinkGraph::build(&store, &schema);
+    let cached_diagnostics = db.diagnostics(source_set, schema_set);
+
+    // ── Load non-salsa state (docs, results, externals) ──────────────
+    let (doc_store, result_store, doc_dirs) = load_docs_and_results(&config, project_path)?;
+    let externals = load_externals(&config, project_path);
 
     let git = capture_git_info(project_path);
     let loaded_at = std::process::Command::new("date")
@@ -315,8 +402,6 @@ pub(crate) fn reload_state(
         port,
     };
 
-    let cached_diagnostics = rivet_core::validate::validate(&store, &schema, &graph);
-
     Ok(AppState {
         store,
         schema,
@@ -330,7 +415,122 @@ pub(crate) fn reload_state(
         externals,
         cached_diagnostics,
         started_at: std::time::Instant::now(),
+        salsa: Mutex::new(SalsaState {
+            db,
+            source_set,
+            schema_set,
+        }),
+        config,
     })
+}
+
+/// Incrementally update `AppState` by re-reading source files and letting
+/// salsa recompute only what changed.
+///
+/// Instead of rebuilding everything from scratch, this reads the current
+/// file contents from disk and feeds them into the existing salsa database.
+/// Salsa's content-equality check means that files whose content hasn't
+/// changed will not trigger any downstream recomputation.
+///
+/// Documents, results, and externals are still reloaded fully (they are
+/// cheap and not yet salsa-tracked).
+fn reload_state_incremental(state: &mut AppState) -> Result<()> {
+    let t_start = std::time::Instant::now();
+
+    let project_path = state.project_path_buf.clone();
+    let schemas_dir = state.schemas_dir.clone();
+
+    // Re-read the project config (it may have changed)
+    let config_path = project_path.join("rivet.yaml");
+    let config = rivet_core::load_project_config(&config_path)
+        .with_context(|| format!("loading {}", config_path.display()))?;
+
+    // Lock the salsa state for incremental updates
+    let mut salsa = state.salsa.lock().expect("salsa mutex poisoned");
+
+    // ── Update schema inputs ─────────────────────────────────────────
+    // Re-read schema content; salsa will detect if anything actually changed.
+    let schema_contents = collect_schema_contents(&config.project.schemas, &schemas_dir);
+    let schema_refs: Vec<(&str, &str)> = schema_contents
+        .iter()
+        .map(|(n, c)| (n.as_str(), c.as_str()))
+        .collect();
+    // Replace the schema set entirely (schemas change rarely; this is cheap)
+    salsa.schema_set = salsa.db.load_schemas(&schema_refs);
+
+    // ── Update source file inputs ────────────────────────────────────
+    // Re-read all source files from disk.
+    let mut source_contents: Vec<(String, String)> = Vec::new();
+    for source in &config.sources {
+        let source_path = project_path.join(&source.path);
+        collect_yaml_files(&source_path, &mut source_contents)
+            .with_context(|| format!("reading source '{}'", source.path))?;
+    }
+
+    // Update existing source files and track which paths we've seen.
+    let mut updated_paths: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for (path, content) in &source_contents {
+        updated_paths.insert(path.clone());
+        // Copy the handle before the mutable borrow on db
+        let ss = salsa.source_set;
+        if !salsa.db.update_source(ss, path, content.clone()) {
+            // New file — add it to the source set
+            let ss = salsa.source_set;
+            salsa.source_set = salsa.db.add_source(ss, path, content.clone());
+        }
+    }
+
+    // Handle deleted files: rebuild the source set without paths that no longer exist.
+    let current_files = salsa.source_set.files(&salsa.db);
+    let removed: Vec<String> = current_files
+        .iter()
+        .filter(|sf| !updated_paths.contains(&sf.path(&salsa.db)))
+        .map(|sf| sf.path(&salsa.db))
+        .collect();
+    if !removed.is_empty() {
+        // Rebuild source set without deleted files by re-loading from current contents.
+        let source_refs: Vec<(&str, &str)> = source_contents
+            .iter()
+            .map(|(p, c)| (p.as_str(), c.as_str()))
+            .collect();
+        salsa.source_set = salsa.db.load_sources(&source_refs);
+    }
+
+    // ── Re-query salsa (incremental — only changed inputs recompute) ─
+    state.store = salsa.db.store(salsa.source_set, salsa.schema_set);
+    state.schema = salsa.db.schema(salsa.schema_set);
+    state.graph = LinkGraph::build(&state.store, &state.schema);
+    state.cached_diagnostics = salsa.db.diagnostics(salsa.source_set, salsa.schema_set);
+
+    // Drop the salsa lock before doing non-salsa work
+    drop(salsa);
+
+    // ── Reload non-salsa state ───────────────────────────────────────
+    let (doc_store, result_store, doc_dirs) = load_docs_and_results(&config, &project_path)?;
+    state.doc_store = doc_store;
+    state.result_store = result_store;
+    state.doc_dirs = doc_dirs;
+    state.externals = load_externals(&config, &project_path);
+
+    // Update context metadata
+    state.context.git = capture_git_info(&project_path);
+    state.context.loaded_at = std::process::Command::new("date")
+        .arg("+%H:%M:%S")
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_else(|| "unknown".into());
+
+    state.config = config;
+
+    let elapsed = t_start.elapsed();
+    eprintln!(
+        "[watch] incremental reload: {:.1}ms",
+        elapsed.as_secs_f64() * 1000.0,
+    );
+
+    Ok(())
 }
 
 /// Spawn a detached background thread that watches the filesystem for changes
@@ -468,61 +668,24 @@ fn spawn_file_watcher(
 }
 
 /// Start the axum HTTP server on the given port.
-#[allow(clippy::too_many_arguments)]
-pub async fn run(
-    store: Store,
-    schema: Schema,
-    graph: LinkGraph,
-    doc_store: DocumentStore,
-    result_store: ResultStore,
-    project_name: String,
-    project_path: PathBuf,
-    schemas_dir: PathBuf,
-    doc_dirs: Vec<PathBuf>,
-    port: u16,
-    bind: String,
-    watch: bool,
-    source_paths: Vec<PathBuf>,
-) -> Result<()> {
-    let git = capture_git_info(&project_path);
-    let loaded_at = std::process::Command::new("date")
-        .arg("+%H:%M:%S")
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_else(|| "unknown".into());
-    let siblings = discover_siblings(&project_path);
-    let context = RepoContext {
-        project_name,
-        project_path: project_path.display().to_string(),
-        git,
-        loaded_at,
-        siblings,
-        port,
-    };
-
-    let cached_diagnostics = rivet_core::validate::validate(&store, &schema, &graph);
+///
+/// Accepts a pre-built `AppState` (with salsa database) and a bind address.
+/// File watching is enabled when `watch` is true.
+pub async fn run(app_state: AppState, bind: String, watch: bool) -> Result<()> {
+    let port = app_state.context.port;
 
     // Clone paths before moving into AppState so they remain available for the watcher.
-    let project_path_for_watch = project_path.clone();
-    let schemas_dir_for_watch = schemas_dir.clone();
-    let doc_dirs_for_watch = doc_dirs.clone();
+    let project_path_for_watch = app_state.project_path_buf.clone();
+    let schemas_dir_for_watch = app_state.schemas_dir.clone();
+    let doc_dirs_for_watch = app_state.doc_dirs.clone();
+    let source_paths: Vec<PathBuf> = app_state
+        .config
+        .sources
+        .iter()
+        .map(|s| app_state.project_path_buf.join(&s.path))
+        .collect();
 
-    let state: SharedState = Arc::new(RwLock::new(AppState {
-        store,
-        schema,
-        graph,
-        doc_store,
-        result_store,
-        context,
-        project_path_buf: project_path,
-        schemas_dir,
-        doc_dirs,
-        externals: Vec::new(),
-        cached_diagnostics,
-        started_at: std::time::Instant::now(),
-    }));
+    let state: SharedState = Arc::new(RwLock::new(app_state));
 
     let app = Router::new()
         .route("/", get(views::index))
@@ -541,6 +704,7 @@ pub async fn run(
         .route("/search", get(views::search_view))
         .route("/verification", get(views::verification_view))
         .route("/stpa", get(views::stpa_view))
+        .route("/eu-ai-act", get(views::eu_ai_act_view))
         .route("/results", get(views::results_view))
         .route("/results/{run_id}", get(views::result_detail))
         .route("/source", get(views::source_tree_view))
@@ -892,30 +1056,26 @@ async fn wasm_asset(Path(path): Path<String>) -> impl IntoResponse {
         .into_response()
 }
 
-/// POST /reload — re-read the project from disk and replace the shared state.
+/// POST /reload — incrementally re-read the project from disk using salsa.
 ///
 /// Uses the `HX-Current-URL` header (sent automatically by HTMX) to redirect
 /// back to the current page after reload, preserving the user's position.
+///
+/// Instead of rebuilding everything from scratch, this calls
+/// `reload_state_incremental` which feeds updated file contents into the
+/// existing salsa database. Salsa only recomputes queries whose inputs
+/// actually changed, making reloads much faster for single-file edits.
 async fn reload_handler(
     State(state): State<SharedState>,
     headers: axum::http::HeaderMap,
 ) -> impl IntoResponse {
-    let (project_path, schemas_dir, port, started_at) = {
-        let guard = state.read().await;
-        (
-            guard.project_path_buf.clone(),
-            guard.schemas_dir.clone(),
-            guard.context.port,
-            guard.started_at,
-        )
+    let result = {
+        let mut guard = state.write().await;
+        reload_state_incremental(&mut guard)
     };
 
-    match reload_state(&project_path, &schemas_dir, port) {
-        Ok(new_state) => {
-            let mut guard = state.write().await;
-            *guard = new_state;
-            guard.started_at = started_at;
-
+    match result {
+        Ok(()) => {
             // Redirect back to wherever the user was (HTMX sends HX-Current-URL).
             // Extract the path portion from the full URL (e.g. "http://localhost:3001/documents/DOC-001" → "/documents/DOC-001").
             // Navigate back to wherever the user was (HTMX sends HX-Current-URL).

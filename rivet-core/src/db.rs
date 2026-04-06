@@ -14,8 +14,8 @@
 
 use salsa::Setter;
 
+use crate::coverage::{self, CoverageReport};
 use crate::formats::generic::parse_generic_yaml;
-use crate::formats::stpa;
 use crate::links::LinkGraph;
 use crate::model::Artifact;
 use crate::schema::{Schema, SchemaFile};
@@ -66,7 +66,11 @@ pub struct SchemaInputSet {
 /// Parse artifacts from a single source file.
 ///
 /// Detects STPA files by filename and uses the stpa-yaml adapter;
-/// all other files use the generic YAML adapter.
+/// Fallback parser using the generic YAML adapter (serde_yaml).
+///
+/// For files with `artifacts:` top-level key. Files using non-generic
+/// formats (STPA sections like `losses:`, `hazards:`) return empty here;
+/// they are handled by `parse_artifacts_v2` via schema-driven extraction.
 ///
 /// This is a salsa tracked function — results are memoized and only
 /// recomputed when the `SourceFile` content changes.
@@ -76,37 +80,11 @@ pub fn parse_artifacts(db: &dyn salsa::Database, source: SourceFile) -> Vec<Arti
     let path = source.path(db);
     let source_path = std::path::Path::new(&path);
 
-    // STPA files use a different YAML format (losses:, hazards:, etc.)
-    let filename = source_path
-        .file_name()
-        .and_then(|f| f.to_str())
-        .unwrap_or("");
-    let is_stpa = matches!(
-        filename,
-        "losses.yaml"
-            | "hazards.yaml"
-            | "system-constraints.yaml"
-            | "control-structure.yaml"
-            | "ucas.yaml"
-            | "controller-constraints.yaml"
-            | "loss-scenarios.yaml"
-    );
-
-    if is_stpa {
-        match stpa::import_stpa_file(source_path) {
-            Ok(artifacts) => artifacts,
-            Err(e) => {
-                log::warn!("Failed to parse STPA file {}: {}", path, e);
-                vec![]
-            }
-        }
-    } else {
-        match parse_generic_yaml(&content, Some(source_path)) {
-            Ok(artifacts) => artifacts,
-            Err(e) => {
-                log::warn!("Failed to parse {}: {}", path, e);
-                vec![]
-            }
+    match parse_generic_yaml(&content, Some(source_path)) {
+        Ok(artifacts) => artifacts,
+        Err(e) => {
+            log::debug!("generic parse skipped for {}: {}", path, e);
+            vec![]
         }
     }
 }
@@ -150,30 +128,9 @@ pub fn collect_parse_errors(
         let path = source.path(db);
         let source_path = std::path::Path::new(&path);
 
-        let filename = source_path
-            .file_name()
-            .and_then(|f| f.to_str())
-            .unwrap_or("");
-        let is_stpa = matches!(
-            filename,
-            "losses.yaml"
-                | "hazards.yaml"
-                | "system-constraints.yaml"
-                | "control-structure.yaml"
-                | "ucas.yaml"
-                | "controller-constraints.yaml"
-                | "loss-scenarios.yaml"
-        );
-
-        let result: Result<(), String> = if is_stpa {
-            stpa::import_stpa_file(source_path)
-                .map(|_| ())
-                .map_err(|e| e.to_string())
-        } else {
-            parse_generic_yaml(&content, Some(source_path))
-                .map(|_| ())
-                .map_err(|e| e.to_string())
-        };
+        let result = parse_generic_yaml(&content, Some(source_path))
+            .map(|_| ())
+            .map_err(|e| e.to_string());
 
         if let Err(msg) = result {
             // Try to extract line/column from the error message.
@@ -218,11 +175,11 @@ fn parse_yaml_error_location(msg: &str) -> (Option<u32>, Option<u32>) {
 /// input fields actually changed, and structural validation is unaffected
 /// by schema-only changes to conditional rules.
 ///
-/// The store and link graph construction is folded in here rather than
-/// being separate tracked functions because `Store` and `LinkGraph` do not
-/// (yet) implement the `PartialEq` trait that salsa requires for tracked
-/// return types. A future phase may lift them into their own tracked
-/// functions once those traits are derived.
+/// The store construction is folded in here rather than being a separate
+/// tracked function because `Store` does not (yet) implement the
+/// `PartialEq` trait that salsa requires for tracked return types.
+/// The link graph, however, is built via the tracked `build_link_graph`
+/// function and shared across callers.
 #[salsa::tracked]
 pub fn validate_all(
     db: &dyn salsa::Database,
@@ -281,7 +238,14 @@ pub fn evaluate_conditional_rules(
     // Evaluate each conditional rule against each artifact (pre-compile regexes)
     for rule in &schema.conditional_rules {
         let compiled_re = rule.when.compile_regex();
+        let condition_re = rule.condition.as_ref().and_then(|c| c.compile_regex());
         for artifact in store.iter() {
+            // If a precondition is set, it must also match
+            if let Some(cond) = &rule.condition {
+                if !cond.matches_artifact_with(artifact, condition_re.as_ref()) {
+                    continue;
+                }
+            }
             if rule
                 .when
                 .matches_artifact_with(artifact, compiled_re.as_ref())
@@ -294,13 +258,51 @@ pub fn evaluate_conditional_rules(
     diagnostics
 }
 
+/// Build the link graph as a tracked function.
+///
+/// This is memoized by salsa — when `build_link_graph` is called from
+/// multiple tracked functions (`validate_all`, `evaluate_conditional_rules`,
+/// `compute_coverage_tracked`), the graph is built only once per revision.
+///
+/// `LinkGraph` implements `PartialEq`/`Eq` (comparing forward, backward,
+/// and broken link maps) so that salsa can detect when the graph has not
+/// semantically changed, enabling further downstream memoization.
+#[salsa::tracked]
+pub fn build_link_graph(
+    db: &dyn salsa::Database,
+    source_set: SourceFileSet,
+    schema_set: SchemaInputSet,
+) -> LinkGraph {
+    let store = build_store(db, source_set, schema_set);
+    let schema = build_schema(db, schema_set);
+    LinkGraph::build(&store, &schema)
+}
+
+/// Compute traceability coverage as a tracked function.
+///
+/// Results are memoized by salsa and only recomputed when source files
+/// or schema inputs change. Multiple callers within the same revision
+/// get the cached result for free.
+#[salsa::tracked]
+pub fn compute_coverage_tracked(
+    db: &dyn salsa::Database,
+    source_set: SourceFileSet,
+    schema_set: SchemaInputSet,
+) -> CoverageReport {
+    let store = build_store(db, source_set, schema_set);
+    let schema = build_schema(db, schema_set);
+    let graph = build_link_graph(db, source_set, schema_set);
+    coverage::compute_coverage(&store, &schema, &graph)
+}
+
 // ── Internal helpers (non-tracked) ──────────────────────────────────────
 
 /// Build the full Store + Schema + LinkGraph pipeline from salsa inputs.
 ///
 /// This is NOT a tracked function — it is called from tracked functions
-/// that need the intermediate results. Salsa still caches the outer
-/// tracked call, so this pipeline is only re-executed when inputs change.
+/// that need the intermediate results. The link graph is obtained from
+/// the tracked `build_link_graph` function, so it is memoized across
+/// callers.
 fn build_pipeline(
     db: &dyn salsa::Database,
     source_set: SourceFileSet,
@@ -308,7 +310,7 @@ fn build_pipeline(
 ) -> (Store, Schema, LinkGraph) {
     let store = build_store(db, source_set, schema_set);
     let schema = build_schema(db, schema_set);
-    let graph = LinkGraph::build(&store, &schema);
+    let graph = build_link_graph(db, source_set, schema_set);
     (store, schema, graph)
 }
 
@@ -317,7 +319,6 @@ fn build_pipeline(
 /// When the `rowan-yaml` feature is enabled, uses the schema-driven rowan
 /// parser (`parse_artifacts_v2`) which reads `yaml-section` metadata from
 /// the schema. In debug builds, both parsers run and their output is
-/// compared as a cross-check.
 fn build_store(
     db: &dyn salsa::Database,
     source_set: SourceFileSet,
@@ -330,30 +331,12 @@ fn build_store(
     let mut store = Store::new();
     for source in sources {
         #[cfg(feature = "rowan-yaml")]
-        let artifacts = {
-            let new_arts = parse_artifacts_v2(db, source, schema_set);
-
-            #[cfg(debug_assertions)]
-            {
-                let old_arts = parse_artifacts(db, source);
-                let new_ids: Vec<&str> = new_arts.iter().map(|a| a.id.as_str()).collect();
-                let old_ids: Vec<&str> = old_arts.iter().map(|a| a.id.as_str()).collect();
-                if old_ids != new_ids {
-                    log::warn!(
-                        "parser mismatch for {}: old={old_ids:?} new={new_ids:?}",
-                        source.path(db),
-                    );
-                }
-            }
-
-            new_arts
-        };
+        let artifacts = parse_artifacts_v2(db, source, schema_set);
 
         #[cfg(not(feature = "rowan-yaml"))]
         let artifacts = parse_artifacts(db, source);
 
         for artifact in artifacts {
-            // Use upsert to avoid panics on duplicate IDs across files.
             store.upsert(artifact);
         }
     }
@@ -468,6 +451,20 @@ impl RivetDatabase {
         schema_set: SchemaInputSet,
     ) -> Vec<Diagnostic> {
         evaluate_conditional_rules(self, source_set, schema_set)
+    }
+
+    /// Get the link graph (incrementally computed, salsa-tracked).
+    pub fn link_graph(&self, source_set: SourceFileSet, schema_set: SchemaInputSet) -> LinkGraph {
+        build_link_graph(self, source_set, schema_set)
+    }
+
+    /// Get traceability coverage (incrementally computed, salsa-tracked).
+    pub fn coverage(
+        &self,
+        source_set: SourceFileSet,
+        schema_set: SchemaInputSet,
+    ) -> CoverageReport {
+        compute_coverage_tracked(self, source_set, schema_set)
     }
 
     /// Add a new source file to an existing source file set.
@@ -1042,6 +1039,114 @@ artifacts:
         assert!(
             cond_diags.is_empty(),
             "approved artifact with description should pass, got: {cond_diags:?}"
+        );
+    }
+
+    // ── Test 17: build_link_graph tracked function ─────────────────────────
+
+    // rivet: verifies REQ-029
+    #[test]
+    fn build_link_graph_tracked() {
+        let db = RivetDatabase::new();
+        let sources =
+            db.load_sources(&[("reqs.yaml", SOURCE_REQ), ("design.yaml", SOURCE_DD_LINKED)]);
+        let schemas = db.load_schemas(&[("test", TEST_SCHEMA)]);
+
+        let graph = db.link_graph(sources, schemas);
+
+        // DD-001 has a forward link to REQ-001
+        let fwd = graph.links_from("DD-001");
+        assert_eq!(fwd.len(), 1);
+        assert_eq!(fwd[0].target, "REQ-001");
+        assert_eq!(fwd[0].link_type, "satisfies");
+
+        // REQ-001 has a backlink from DD-001
+        let bwd = graph.backlinks_to("REQ-001");
+        assert_eq!(bwd.len(), 1);
+        assert_eq!(bwd[0].source, "DD-001");
+
+        // No broken links
+        assert!(graph.broken.is_empty());
+    }
+
+    // ── Test 18: build_link_graph returns same result on repeated call ──────
+
+    // rivet: verifies REQ-029
+    #[test]
+    fn link_graph_deterministic() {
+        let db = RivetDatabase::new();
+        let sources =
+            db.load_sources(&[("reqs.yaml", SOURCE_REQ), ("design.yaml", SOURCE_DD_LINKED)]);
+        let schemas = db.load_schemas(&[("test", TEST_SCHEMA)]);
+
+        let graph_a = db.link_graph(sources, schemas);
+        let graph_b = db.link_graph(sources, schemas);
+        assert_eq!(
+            graph_a, graph_b,
+            "repeated calls must produce identical link graphs"
+        );
+    }
+
+    // ── Test 19: compute_coverage_tracked function ─────────────────────────
+
+    // rivet: verifies REQ-029
+    #[test]
+    fn coverage_tracked_basic() {
+        let db = RivetDatabase::new();
+        let sources =
+            db.load_sources(&[("reqs.yaml", SOURCE_REQ), ("design.yaml", SOURCE_DD_LINKED)]);
+        let schemas = db.load_schemas(&[("test", TEST_SCHEMA)]);
+
+        let report = db.coverage(sources, schemas);
+
+        // The schema has one traceability rule: dd-must-satisfy
+        assert_eq!(report.entries.len(), 1);
+        let entry = &report.entries[0];
+        assert_eq!(entry.rule_name, "dd-must-satisfy");
+        // DD-001 links to REQ-001 via satisfies -> 100% coverage
+        assert_eq!(entry.covered, 1);
+        assert_eq!(entry.total, 1);
+        assert!(entry.uncovered_ids.is_empty());
+    }
+
+    // ── Test 20: coverage updates when source changes ──────────────────────
+
+    // rivet: verifies REQ-029
+    #[test]
+    fn coverage_updates_on_source_change() {
+        let mut db = RivetDatabase::new();
+        let sources =
+            db.load_sources(&[("reqs.yaml", SOURCE_REQ), ("design.yaml", SOURCE_DD_LINKED)]);
+        let schemas = db.load_schemas(&[("test", TEST_SCHEMA)]);
+
+        // Before: DD-001 links to REQ-001 -> full coverage
+        let report_before = db.coverage(sources, schemas);
+        assert_eq!(report_before.entries[0].covered, 1);
+
+        // Remove the link
+        db.update_source(sources, "design.yaml", SOURCE_DD_UNLINKED.to_string());
+
+        // After: DD-001 has no link -> zero coverage
+        let report_after = db.coverage(sources, schemas);
+        assert_eq!(report_after.entries[0].covered, 0);
+        assert_eq!(report_after.entries[0].uncovered_ids, vec!["DD-001"]);
+    }
+
+    // ── Test 21: coverage deterministic ────────────────────────────────────
+
+    // rivet: verifies REQ-029
+    #[test]
+    fn coverage_deterministic() {
+        let db = RivetDatabase::new();
+        let sources =
+            db.load_sources(&[("reqs.yaml", SOURCE_REQ), ("design.yaml", SOURCE_DD_LINKED)]);
+        let schemas = db.load_schemas(&[("test", TEST_SCHEMA)]);
+
+        let report_a = db.coverage(sources, schemas);
+        let report_b = db.coverage(sources, schemas);
+        assert_eq!(
+            report_a, report_b,
+            "repeated coverage calls must produce identical reports"
         );
     }
 }

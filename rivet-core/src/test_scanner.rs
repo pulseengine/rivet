@@ -370,6 +370,7 @@ mod tests {
             tags: vec![],
             links: vec![],
             fields: Default::default(),
+            provenance: None,
             source_file: None,
         }
     }

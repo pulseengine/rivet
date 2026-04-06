@@ -779,6 +779,7 @@ pub fn parse_reqif(xml: &str, type_map: &HashMap<String, String>) -> Result<Vec<
             tags,
             links: vec![], // filled in below from SPEC-RELATIONS
             fields,
+            provenance: None,
             source_file: None,
         };
         artifacts.push(artifact);
@@ -1074,6 +1075,7 @@ mod tests {
                     f.insert("priority".into(), serde_yaml::Value::String("must".into()));
                     f
                 },
+                provenance: None,
                 source_file: None,
             },
             Artifact {
@@ -1088,6 +1090,7 @@ mod tests {
                     target: "REQ-001".into(),
                 }],
                 fields: BTreeMap::new(),
+                provenance: None,
                 source_file: None,
             },
         ]

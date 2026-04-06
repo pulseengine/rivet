@@ -45,9 +45,20 @@ impl std::fmt::Display for Diagnostic {
             Severity::Warning => "WARN",
             Severity::Info => "INFO",
         };
+        // Include file location when available
+        if let Some(ref path) = self.source_file {
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
+            if let Some(line) = self.line {
+                write!(f, "  {name}:{}: ", line + 1)?;
+            } else {
+                write!(f, "  {name}: ")?;
+            }
+        } else {
+            write!(f, "  ")?;
+        }
         match &self.artifact_id {
-            Some(id) => write!(f, "  {level}: [{id}] {}", self.message),
-            None => write!(f, "  {level}: {}", self.message),
+            Some(id) => write!(f, "{level}: [{id}] {}", self.message),
+            None => write!(f, "{level}: {}", self.message),
         }
     }
 }
@@ -72,7 +83,14 @@ pub fn validate(store: &Store, schema: &Schema, graph: &LinkGraph) -> Vec<Diagno
     // 8. Check conditional rules (pre-compile regexes to avoid re-compilation per artifact)
     for rule in &schema.conditional_rules {
         let compiled_re = rule.when.compile_regex();
+        let condition_re = rule.condition.as_ref().and_then(|c| c.compile_regex());
         for artifact in store.iter() {
+            // If a precondition is set, it must also match
+            if let Some(cond) = &rule.condition {
+                if !cond.matches_artifact_with(artifact, condition_re.as_ref()) {
+                    continue;
+                }
+            }
             if rule
                 .when
                 .matches_artifact_with(artifact, compiled_re.as_ref())
@@ -513,6 +531,7 @@ mod tests {
             common_mistakes: vec![],
             example: None,
             yaml_section: None,
+            yaml_sections: vec![],
             shorthand_links: std::collections::BTreeMap::new(),
         }];
         file.conditional_rules = conditional_rules;
@@ -673,6 +692,7 @@ mod tests {
         let rule = ConditionalRule {
             name: "approved-needs-desc".to_string(),
             description: None,
+            condition: None,
             when: Condition::Equals {
                 field: "status".to_string(),
                 value: "approved".to_string(),
@@ -736,6 +756,7 @@ mod tests {
         let rule = ConditionalRule {
             name: "warn-rule".to_string(),
             description: None,
+            condition: None,
             when: Condition::Equals {
                 field: "status".to_string(),
                 value: "approved".to_string(),
@@ -826,6 +847,7 @@ then:
             ConditionalRule {
                 name: "dup".to_string(),
                 description: None,
+                condition: None,
                 when: Condition::Equals {
                     field: "status".to_string(),
                     value: "a".to_string(),
@@ -838,6 +860,7 @@ then:
             ConditionalRule {
                 name: "dup".to_string(),
                 description: None,
+                condition: None,
                 when: Condition::Equals {
                     field: "status".to_string(),
                     value: "b".to_string(),
@@ -865,6 +888,7 @@ then:
             common_mistakes: vec![],
             example: None,
             yaml_section: None,
+            yaml_sections: vec![],
             shorthand_links: std::collections::BTreeMap::new(),
         }];
         file.traceability_rules = vec![TraceabilityRule {
@@ -956,6 +980,7 @@ then:
             ConditionalRule {
                 name: "rule-a".to_string(),
                 description: None,
+                condition: None,
                 when: Condition::Equals {
                     field: "status".to_string(),
                     value: "approved".to_string(),
@@ -968,6 +993,7 @@ then:
             ConditionalRule {
                 name: "rule-b".to_string(),
                 description: None,
+                condition: None,
                 when: Condition::Equals {
                     field: "status".to_string(),
                     value: "approved".to_string(),
@@ -1008,6 +1034,7 @@ then:
             common_mistakes: vec![],
             example: None,
             yaml_section: None,
+            yaml_sections: vec![],
             shorthand_links: std::collections::BTreeMap::new(),
         }];
         Schema::merge(&[file])

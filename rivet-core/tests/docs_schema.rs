@@ -122,18 +122,23 @@ fn schema_fallback_stpa() {
 }
 
 /// Fallback ignores completely unknown schema names (logs a warning but
-/// does not error). The resulting merged schema is still valid.
+/// returns an error for unknown schema names so users notice typos.
 // rivet: verifies REQ-010
 #[test]
-fn schema_fallback_unknown_name_ignored() {
+fn schema_fallback_unknown_name_errors() {
     let fake_dir = PathBuf::from("/tmp/rivet-test-nonexistent-dir");
 
     let names: Vec<String> = vec!["common".into(), "totally-unknown-name".into()];
-    let schema = rivet_core::embedded::load_schemas_with_fallback(&names, &fake_dir)
-        .expect("fallback must not error on unknown names");
-
-    // Common link types should still be present from the "common" schema.
-    assert!(schema.link_type("satisfies").is_some());
+    let result = rivet_core::embedded::load_schemas_with_fallback(&names, &fake_dir);
+    assert!(
+        result.is_err(),
+        "unknown schema name should produce an error"
+    );
+    let msg = result.unwrap_err().to_string();
+    assert!(
+        msg.contains("totally-unknown-name"),
+        "error should mention the unknown schema name, got: {msg}"
+    );
 }
 
 // ── Embedded schema content ──────────────────────────────────────────────
@@ -209,6 +214,7 @@ fn all_embedded_constants_parse_as_yaml() {
         ("aspice", rivet_core::embedded::SCHEMA_ASPICE),
         ("cybersecurity", rivet_core::embedded::SCHEMA_CYBERSECURITY),
         ("aadl", rivet_core::embedded::SCHEMA_AADL),
+        ("supply-chain", rivet_core::embedded::SCHEMA_SUPPLY_CHAIN),
     ];
 
     for (name, content) in all {
@@ -219,4 +225,173 @@ fn all_embedded_constants_parse_as_yaml() {
             parsed.err()
         );
     }
+}
+
+// ── Bridge schema auto-discovery ────────────────────────────────────────
+
+/// All embedded bridge schema constants parse as valid SchemaFile YAML.
+// rivet: verifies REQ-010
+#[test]
+fn all_bridge_schemas_parse_as_yaml() {
+    for bridge in rivet_core::embedded::BRIDGE_SCHEMAS {
+        let parsed: Result<rivet_core::schema::SchemaFile, _> =
+            serde_yaml::from_str(bridge.content);
+        assert!(
+            parsed.is_ok(),
+            "bridge schema '{}' must be valid YAML: {:?}",
+            bridge.filename,
+            parsed.err()
+        );
+    }
+}
+
+/// `discover_bridges` returns the stpa-dev bridge when stpa and dev are loaded.
+// rivet: verifies REQ-010
+#[test]
+fn discover_bridge_stpa_dev() {
+    let schemas: Vec<String> = vec!["common".into(), "stpa".into(), "dev".into()];
+    let bridges = rivet_core::embedded::discover_bridges(&schemas);
+    assert!(
+        bridges.contains(&"stpa-dev.bridge"),
+        "stpa + dev should discover stpa-dev bridge, got: {bridges:?}"
+    );
+}
+
+/// `discover_bridges` returns the eu-ai-act-stpa bridge when both schemas are loaded.
+// rivet: verifies REQ-010
+#[test]
+fn discover_bridge_eu_ai_act_stpa() {
+    let schemas: Vec<String> = vec!["common".into(), "eu-ai-act".into(), "stpa".into()];
+    let bridges = rivet_core::embedded::discover_bridges(&schemas);
+    assert!(
+        bridges.contains(&"eu-ai-act-stpa.bridge"),
+        "eu-ai-act + stpa should discover eu-ai-act-stpa bridge, got: {bridges:?}"
+    );
+}
+
+/// `discover_bridges` returns nothing when schemas do not pair.
+// rivet: verifies REQ-010
+#[test]
+fn discover_bridge_no_match() {
+    let schemas: Vec<String> = vec!["common".into(), "cybersecurity".into()];
+    let bridges = rivet_core::embedded::discover_bridges(&schemas);
+    assert!(
+        bridges.is_empty(),
+        "cybersecurity alone should match no bridges, got: {bridges:?}"
+    );
+}
+
+/// `discover_bridges` returns multiple bridges when several pairs are present.
+// rivet: verifies REQ-010
+#[test]
+fn discover_bridge_multiple() {
+    let schemas: Vec<String> = vec![
+        "common".into(),
+        "stpa".into(),
+        "dev".into(),
+        "eu-ai-act".into(),
+    ];
+    let bridges = rivet_core::embedded::discover_bridges(&schemas);
+    assert!(
+        bridges.contains(&"stpa-dev.bridge"),
+        "should include stpa-dev bridge"
+    );
+    assert!(
+        bridges.contains(&"eu-ai-act-stpa.bridge"),
+        "should include eu-ai-act-stpa bridge"
+    );
+}
+
+/// `load_schemas_with_fallback` auto-loads bridge link types.
+///
+/// When stpa + dev are both in the schema list, the stpa-dev bridge's
+/// link types (like `constraint-satisfies`) should appear in the merged schema.
+// rivet: verifies REQ-010
+#[test]
+fn fallback_auto_loads_bridge_link_types() {
+    let fake_dir = PathBuf::from("/tmp/rivet-test-nonexistent-dir");
+    let names: Vec<String> = vec!["common".into(), "stpa".into(), "dev".into()];
+    let schema = rivet_core::embedded::load_schemas_with_fallback(&names, &fake_dir)
+        .expect("fallback must succeed");
+
+    // The stpa-dev bridge defines `constraint-satisfies`.
+    assert!(
+        schema.link_type("constraint-satisfies").is_some(),
+        "auto-loaded stpa-dev bridge should add 'constraint-satisfies' link type"
+    );
+}
+
+/// `load_schemas_with_fallback` auto-loads bridge traceability rules.
+// rivet: verifies REQ-010
+#[test]
+fn fallback_auto_loads_bridge_traceability_rules() {
+    let fake_dir = PathBuf::from("/tmp/rivet-test-nonexistent-dir");
+    let names: Vec<String> = vec!["common".into(), "eu-ai-act".into(), "stpa".into()];
+    let schema = rivet_core::embedded::load_schemas_with_fallback(&names, &fake_dir)
+        .expect("fallback must succeed");
+
+    // The eu-ai-act-stpa bridge defines link type `risk-identified-by-stpa`.
+    assert!(
+        schema.link_type("risk-identified-by-stpa").is_some(),
+        "auto-loaded eu-ai-act-stpa bridge should add 'risk-identified-by-stpa' link type"
+    );
+
+    // It also defines traceability rule `stpa-hazards-map-to-risks`.
+    assert!(
+        schema
+            .traceability_rules
+            .iter()
+            .any(|r| r.name == "stpa-hazards-map-to-risks"),
+        "auto-loaded eu-ai-act-stpa bridge should add 'stpa-hazards-map-to-risks' rule"
+    );
+}
+
+/// `load_schema_contents` also discovers bridges.
+// rivet: verifies REQ-010
+#[test]
+fn load_schema_contents_discovers_bridges() {
+    let fake_dir = PathBuf::from("/tmp/rivet-test-nonexistent-dir");
+    let names: Vec<String> = vec!["common".into(), "stpa".into(), "dev".into()];
+    let contents = rivet_core::embedded::load_schema_contents(&names, &fake_dir);
+
+    let loaded_names: Vec<&str> = contents.iter().map(|(n, _)| n.as_str()).collect();
+    assert!(
+        loaded_names.contains(&"stpa-dev.bridge"),
+        "load_schema_contents should include stpa-dev bridge, got: {loaded_names:?}"
+    );
+}
+
+/// `embedded_bridge` returns content for known bridges.
+// rivet: verifies REQ-010
+#[test]
+fn embedded_bridge_lookup() {
+    assert!(rivet_core::embedded::embedded_bridge("stpa-dev.bridge").is_some());
+    assert!(rivet_core::embedded::embedded_bridge("eu-ai-act-stpa.bridge").is_some());
+    assert!(rivet_core::embedded::embedded_bridge("nonexistent.bridge").is_none());
+}
+
+/// iso-8800-stpa bridge requires three schemas: iso-pas-8800, stpa, stpa-ai.
+// rivet: verifies REQ-010
+#[test]
+fn discover_bridge_iso_8800_requires_three_schemas() {
+    // Missing stpa-ai — should NOT match.
+    let schemas: Vec<String> = vec!["common".into(), "iso-pas-8800".into(), "stpa".into()];
+    let bridges = rivet_core::embedded::discover_bridges(&schemas);
+    assert!(
+        !bridges.contains(&"iso-8800-stpa.bridge"),
+        "iso-8800-stpa bridge requires stpa-ai too, got: {bridges:?}"
+    );
+
+    // All three present — should match.
+    let schemas: Vec<String> = vec![
+        "common".into(),
+        "iso-pas-8800".into(),
+        "stpa".into(),
+        "stpa-ai".into(),
+    ];
+    let bridges = rivet_core::embedded::discover_bridges(&schemas);
+    assert!(
+        bridges.contains(&"iso-8800-stpa.bridge"),
+        "iso-8800-stpa bridge should match when all three deps present, got: {bridges:?}"
+    );
 }

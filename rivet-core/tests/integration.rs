@@ -44,6 +44,7 @@ fn make_artifact(id: &str, art_type: &str, title: &str) -> Artifact {
         tags: vec![],
         links: vec![],
         fields: BTreeMap::new(),
+        provenance: None,
         source_file: None,
     }
 }
@@ -66,6 +67,7 @@ fn make_artifact_full(
         tags: tags.iter().map(|t| t.to_string()).collect(),
         links,
         fields,
+        provenance: None,
         source_file: None,
     }
 }
@@ -88,7 +90,7 @@ fn test_dogfood_validate() {
 
     let mut store = Store::new();
     for source in &config.sources {
-        let artifacts = rivet_core::load_artifacts(source, &root).expect("load artifacts");
+        let artifacts = rivet_core::load_artifacts(source, &root, &schema).expect("load artifacts");
         for a in artifacts {
             store.upsert(a);
         }
@@ -1260,5 +1262,287 @@ fn strictdoc_reqif_import() {
         "Requirements with parent links: {}/{}",
         with_links.len(),
         reqs.len()
+    );
+}
+
+// ── Schema metadata tests ──────────────────────────────────────────────
+
+/// Verify that schema metadata fields (including new optional fields) are
+/// correctly loaded from YAML schema files.
+#[test]
+fn test_schema_metadata_loading() {
+    let schemas_dir = project_root().join("schemas");
+
+    // Load and check the STPA schema (has namespace, extends, description)
+    let stpa_path = schemas_dir.join("stpa.yaml");
+    let stpa = Schema::load_file(&stpa_path).expect("load stpa schema");
+    assert_eq!(stpa.schema.name, "stpa");
+    assert_eq!(stpa.schema.version, "0.1.0");
+    assert!(
+        stpa.schema.description.is_some(),
+        "stpa schema should have a description"
+    );
+    assert_eq!(stpa.schema.extends, vec!["common"]);
+    assert!(
+        stpa.schema.namespace.is_some(),
+        "stpa schema should have a namespace"
+    );
+    assert!(
+        !stpa.artifact_types.is_empty(),
+        "stpa should define artifact types"
+    );
+    assert!(!stpa.link_types.is_empty(), "stpa should define link types");
+
+    // Load and check the common schema (no extends, no namespace)
+    let common_path = schemas_dir.join("common.yaml");
+    let common = Schema::load_file(&common_path).expect("load common schema");
+    assert_eq!(common.schema.name, "common");
+    assert_eq!(common.schema.version, "0.1.0");
+    assert!(
+        common.schema.description.is_some(),
+        "common schema should have a description"
+    );
+    assert!(
+        common.schema.extends.is_empty(),
+        "common schema should not extend anything"
+    );
+    assert!(
+        !common.base_fields.is_empty(),
+        "common schema should define base fields"
+    );
+
+    // Load and check the dev schema
+    let dev_path = schemas_dir.join("dev.yaml");
+    let dev = Schema::load_file(&dev_path).expect("load dev schema");
+    assert_eq!(dev.schema.name, "dev");
+    assert_eq!(dev.schema.version, "0.1.0");
+    assert!(
+        dev.schema.description.is_some(),
+        "dev schema should have a description"
+    );
+    assert_eq!(dev.schema.extends, vec!["common"]);
+
+    // New optional metadata fields default to None when not present
+    assert!(
+        common.schema.min_rivet_version.is_none(),
+        "min_rivet_version should default to None"
+    );
+    assert!(
+        common.schema.license.is_none(),
+        "license should default to None"
+    );
+}
+
+/// Verify that new optional metadata fields can be parsed from YAML.
+#[test]
+fn test_schema_metadata_optional_fields() {
+    let yaml = r#"
+schema:
+  name: test-schema
+  version: "1.0.0"
+  description: A test schema
+  min-rivet-version: "0.5.0"
+  license: Apache-2.0
+"#;
+    let schema_file: rivet_core::schema::SchemaFile =
+        serde_yaml::from_str(yaml).expect("parse schema with optional fields");
+    assert_eq!(schema_file.schema.name, "test-schema");
+    assert_eq!(schema_file.schema.version, "1.0.0");
+    assert_eq!(
+        schema_file.schema.min_rivet_version.as_deref(),
+        Some("0.5.0")
+    );
+    assert_eq!(schema_file.schema.license.as_deref(), Some("Apache-2.0"));
+}
+
+/// Verify that artifact type guidance fields (description, example, common_mistakes)
+/// are present and parseable in the dev schema.
+#[test]
+fn test_artifact_type_guidance_fields() {
+    let schemas_dir = project_root().join("schemas");
+    let dev_path = schemas_dir.join("dev.yaml");
+    let dev = Schema::load_file(&dev_path).expect("load dev schema");
+
+    // The requirement type should have example and common_mistakes
+    let req_type = dev
+        .artifact_types
+        .iter()
+        .find(|t| t.name == "requirement")
+        .expect("dev schema must have requirement type");
+
+    assert!(
+        req_type.example.is_some(),
+        "requirement type should have an example"
+    );
+    assert!(
+        !req_type.common_mistakes.is_empty(),
+        "requirement type should have common mistakes"
+    );
+
+    // Verify common_mistakes structure
+    let first_mistake = &req_type.common_mistakes[0];
+    assert!(
+        !first_mistake.problem.is_empty(),
+        "mistake should have a problem description"
+    );
+}
+
+/// Verify schema metadata counts match expected values.
+#[test]
+fn test_schema_info_counts() {
+    let schemas_dir = project_root().join("schemas");
+    let stpa_path = schemas_dir.join("stpa.yaml");
+    let stpa = Schema::load_file(&stpa_path).expect("load stpa schema");
+
+    // STPA should have a good number of artifact types, link types, and rules
+    assert!(
+        stpa.artifact_types.len() >= 5,
+        "STPA should define at least 5 artifact types, got {}",
+        stpa.artifact_types.len()
+    );
+    assert!(
+        stpa.link_types.len() >= 3,
+        "STPA should define at least 3 link types, got {}",
+        stpa.link_types.len()
+    );
+    assert!(
+        stpa.traceability_rules.len() >= 3,
+        "STPA should define at least 3 traceability rules, got {}",
+        stpa.traceability_rules.len()
+    );
+}
+
+// ── Cross-file link resolution ──────────────────────────────────────────
+
+/// Create two temporary YAML files in different paths: file_a has REQ-001
+/// linking to FEAT-001, file_b has FEAT-001. Load both via the generic
+/// adapter, build the store and link graph, and verify the link resolves
+/// correctly (no broken links, backlink exists on FEAT-001).
+// rivet: verifies REQ-004
+#[test]
+fn cross_file_link_resolution() {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let dir = tmp.path();
+
+    // file_a.yaml: a requirement that links to a feature
+    let file_a_content = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: Cross-file requirement
+    status: approved
+    links:
+      - type: satisfies
+        target: FEAT-001
+";
+    std::fs::write(dir.join("file_a.yaml"), file_a_content).expect("write file_a");
+
+    // file_b.yaml: the feature that REQ-001 links to
+    let file_b_content = "\
+artifacts:
+  - id: FEAT-001
+    type: feature
+    title: Cross-file feature
+    status: active
+    links:
+      - type: implements
+        target: REQ-001
+";
+    std::fs::write(dir.join("file_b.yaml"), file_b_content).expect("write file_b");
+
+    // Load both files through the generic adapter
+    let adapter = GenericYamlAdapter::new();
+    let config = AdapterConfig::default();
+
+    let arts_a = adapter
+        .import(&AdapterSource::Path(dir.join("file_a.yaml")), &config)
+        .expect("import file_a");
+    let arts_b = adapter
+        .import(&AdapterSource::Path(dir.join("file_b.yaml")), &config)
+        .expect("import file_b");
+
+    assert_eq!(arts_a.len(), 1, "file_a should contain 1 artifact");
+    assert_eq!(arts_b.len(), 1, "file_b should contain 1 artifact");
+
+    // Build the store from both files
+    let mut store = Store::new();
+    for a in arts_a {
+        store.insert(a).unwrap();
+    }
+    for a in arts_b {
+        store.insert(a).unwrap();
+    }
+
+    assert_eq!(store.len(), 2, "store should have 2 artifacts");
+    assert!(store.contains("REQ-001"));
+    assert!(store.contains("FEAT-001"));
+
+    // Build link graph with common schema
+    let schema = load_schema_files(&["common", "dev"]);
+    let graph = LinkGraph::build(&store, &schema);
+
+    // Verify no broken links -- both targets exist
+    assert!(
+        graph.broken.is_empty(),
+        "cross-file links should resolve (no broken links), got: {:?}",
+        graph.broken
+    );
+
+    // Forward link: REQ-001 -> FEAT-001 via "satisfies"
+    let req_links = graph.links_from("REQ-001");
+    assert!(
+        req_links
+            .iter()
+            .any(|l| l.target == "FEAT-001" && l.link_type == "satisfies"),
+        "REQ-001 should have a forward 'satisfies' link to FEAT-001"
+    );
+
+    // Forward link: FEAT-001 -> REQ-001 via "implements"
+    let feat_links = graph.links_from("FEAT-001");
+    assert!(
+        feat_links
+            .iter()
+            .any(|l| l.target == "REQ-001" && l.link_type == "implements"),
+        "FEAT-001 should have a forward 'implements' link to REQ-001"
+    );
+
+    // Backlinks: FEAT-001 should have a backlink from REQ-001
+    let feat_backlinks = graph.backlinks_to("FEAT-001");
+    assert!(
+        feat_backlinks
+            .iter()
+            .any(|bl| bl.source == "REQ-001" && bl.link_type == "satisfies"),
+        "FEAT-001 should have a backlink from REQ-001 via 'satisfies'"
+    );
+
+    // Backlinks: REQ-001 should have a backlink from FEAT-001
+    let req_backlinks = graph.backlinks_to("REQ-001");
+    assert!(
+        req_backlinks
+            .iter()
+            .any(|bl| bl.source == "FEAT-001" && bl.link_type == "implements"),
+        "REQ-001 should have a backlink from FEAT-001 via 'implements'"
+    );
+
+    // No orphans -- both artifacts have links
+    let orphans = graph.orphans(&store);
+    assert!(
+        orphans.is_empty(),
+        "no orphans expected, but found: {orphans:?}"
+    );
+
+    // Validation should pass
+    let diagnostics = validate::validate(&store, &schema, &graph);
+    let errors: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Error)
+        .collect();
+
+    // We only care about broken-link errors here; type-specific rule errors
+    // (e.g., design-decision requires 'satisfies') are not relevant
+    let broken_link_errors: Vec<_> = errors.iter().filter(|d| d.rule == "broken-link").collect();
+    assert!(
+        broken_link_errors.is_empty(),
+        "should have no broken-link errors, got: {broken_link_errors:?}"
     );
 }

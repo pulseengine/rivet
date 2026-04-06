@@ -76,6 +76,7 @@ proptest! {
                 tags: vec![],
                 links: vec![],
                 fields: BTreeMap::new(),
+                provenance: None,
                 source_file: None,
             }
         }).collect();
@@ -117,6 +118,7 @@ proptest! {
             tags: vec![],
             links: vec![],
             fields: BTreeMap::new(),
+            provenance: None,
             source_file: None,
         };
         let a2 = Artifact {
@@ -128,6 +130,7 @@ proptest! {
             tags: vec![],
             links: vec![],
             fields: BTreeMap::new(),
+            provenance: None,
             source_file: None,
         };
 
@@ -213,6 +216,7 @@ proptest! {
                 tags: vec![],
                 links: vec![],
                 fields: BTreeMap::new(),
+                provenance: None,
                 source_file: None,
             }).unwrap();
         }
@@ -271,6 +275,7 @@ fn prop_validation_determinism() {
             tags: vec![],
             links: vec![],
             fields: BTreeMap::new(),
+            provenance: None,
             source_file: None,
         })
         .unwrap();
@@ -288,6 +293,7 @@ fn prop_validation_determinism() {
                 target: "DET-L1".into(),
             }],
             fields: BTreeMap::new(),
+            provenance: None,
             source_file: None,
         })
         .unwrap();
@@ -305,6 +311,7 @@ fn prop_validation_determinism() {
                 target: "NONEXISTENT".into(),
             }],
             fields: BTreeMap::new(),
+            provenance: None,
             source_file: None,
         })
         .unwrap();
@@ -354,6 +361,7 @@ proptest! {
                 tags: vec![],
                 links: vec![],
                 fields: BTreeMap::new(),
+                provenance: None,
                 source_file: None,
             }).unwrap();
         }

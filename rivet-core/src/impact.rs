@@ -265,7 +265,7 @@ pub fn load_baseline_from_dir(
 
     let mut store = Store::new();
     for source in &config.sources {
-        let artifacts = crate::load_artifacts(source, baseline_dir)?;
+        let artifacts = crate::load_artifacts(source, baseline_dir, &_schema)?;
         for artifact in artifacts {
             store.upsert(artifact);
         }
@@ -290,6 +290,7 @@ mod tests {
             tags: vec![],
             links: vec![],
             fields: BTreeMap::new(),
+            provenance: None,
             source_file: None,
         }
     }
@@ -315,6 +316,7 @@ mod tests {
                 })
                 .collect(),
             fields: BTreeMap::new(),
+            provenance: None,
             source_file: None,
         }
     }

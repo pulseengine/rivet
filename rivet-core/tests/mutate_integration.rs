@@ -44,6 +44,7 @@ fn make_artifact(
         tags: vec![],
         links,
         fields,
+        provenance: None,
         source_file: None,
     }
 }
@@ -557,6 +558,7 @@ fn test_append_artifact_to_file() {
         tags: vec![],
         links: vec![],
         fields: BTreeMap::new(),
+        provenance: None,
         source_file: None,
     };
 

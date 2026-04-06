@@ -46,6 +46,11 @@ base-fields:
     required: false
     description: Arbitrary tags for categorization
 
+  - name: provenance
+    type: mapping
+    required: false
+    description: AI provenance metadata (created-by, model, session-id, timestamp, reviewed-by)
+
 # ──────────────────────────────────────────────────────────────────────────
 # Common link types — reusable across all domains.
 #
@@ -95,3 +100,20 @@ link-types:
   - name: constrained-by
     inverse: constrains
     description: Source is constrained by the target
+
+# ──────────────────────────────────────────────────────────────────────────
+# Conditional rules — cross-field validation rules that fire when a
+# condition is met and check for additional requirements.
+# ──────────────────────────────────────────────────────────────────────────
+conditional-rules:
+  - name: ai-generated-needs-review
+    description: AI-generated artifacts with active/approved status must have a reviewer
+    condition:
+      field: provenance.created-by
+      matches: "^(ai|ai-assisted)$"
+    when:
+      field: status
+      equals: active
+    then:
+      required-fields: [provenance.reviewed-by]
+    severity: warning

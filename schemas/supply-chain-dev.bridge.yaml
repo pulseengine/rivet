@@ -1,0 +1,38 @@
+# Bridge: Supply Chain <-> Dev
+#
+# Links supply chain artifacts to development tracking.
+# Use with: rivet init --schema supply-chain,dev
+#
+# Supply chain tracking provides SBOM, build provenance, and vulnerability
+# data; dev tracking provides requirements and features. This bridge links
+# them so requirements can trace to supply chain compliance artifacts.
+
+schema:
+  name: supply-chain-dev-bridge
+  version: "0.1.0"
+  extends: [supply-chain, dev]
+  description: >
+    Links supply chain artifacts to development requirements.
+    Ensures SBOM components, build attestations, and vulnerability
+    remediation trace back to requirements.
+
+link-types:
+  - name: requirement-addresses-vulnerability
+    inverse: vulnerability-addressed-by-requirement
+    description: Requirement addresses a known vulnerability
+    source-types: [requirement]
+    target-types: [vulnerability]
+
+  - name: feature-produces-release
+    inverse: release-produced-by-feature
+    description: Feature produces or includes a release artifact
+    source-types: [feature]
+    target-types: [release-artifact]
+
+traceability-rules:
+  - name: critical-vuln-has-requirement
+    description: Critical/high vulnerabilities should be addressed by a requirement
+    source-type: vulnerability
+    required-backlink: requirement-addresses-vulnerability
+    from-types: [requirement]
+    severity: warning

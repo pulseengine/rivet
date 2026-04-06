@@ -34,6 +34,7 @@ mod proofs {
             tags: vec![],
             links,
             fields: BTreeMap::new(),
+            provenance: None,
             source_file: None,
         }
     }
@@ -47,6 +48,8 @@ mod proofs {
                 namespace: None,
                 description: None,
                 extends: vec![],
+                min_rivet_version: None,
+                license: None,
             },
             base_fields: vec![],
             artifact_types: vec![],
@@ -65,6 +68,8 @@ mod proofs {
                 namespace: None,
                 description: None,
                 extends: vec![],
+                min_rivet_version: None,
+                license: None,
             },
             base_fields: vec![],
             artifact_types: vec![ArtifactTypeDef {
@@ -75,6 +80,9 @@ mod proofs {
                 aspice_process: None,
                 common_mistakes: vec![],
                 example: None,
+                yaml_section: None,
+                yaml_sections: vec![],
+                shorthand_links: std::collections::BTreeMap::new(),
             }],
             link_types: vec![LinkTypeDef {
                 name: "satisfies".into(),
@@ -278,6 +286,8 @@ mod proofs {
                 namespace: None,
                 description: None,
                 extends: vec![],
+                min_rivet_version: None,
+                license: None,
             },
             base_fields: vec![],
             artifact_types: vec![ArtifactTypeDef {
@@ -294,6 +304,9 @@ mod proofs {
                 aspice_process: None,
                 common_mistakes: vec![],
                 example: None,
+                yaml_section: None,
+                yaml_sections: vec![],
+                shorthand_links: std::collections::BTreeMap::new(),
             }],
             link_types: vec![],
             traceability_rules: vec![],
@@ -393,6 +406,8 @@ mod proofs {
                 namespace: None,
                 description: None,
                 extends: vec![],
+                min_rivet_version: None,
+                license: None,
             },
             base_fields: vec![],
             artifact_types: vec![ArtifactTypeDef {
@@ -403,6 +418,9 @@ mod proofs {
                 aspice_process: None,
                 common_mistakes: vec![],
                 example: None,
+                yaml_section: None,
+                yaml_sections: vec![],
+                shorthand_links: std::collections::BTreeMap::new(),
             }],
             link_types: vec![LinkTypeDef {
                 name: "satisfies".into(),

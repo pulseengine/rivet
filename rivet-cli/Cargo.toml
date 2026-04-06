@@ -32,7 +32,9 @@ petgraph = { workspace = true }
 urlencoding = { workspace = true }
 lsp-server = "0.7"
 lsp-types = "0.97"
+rowan = { workspace = true }
 notify = "7"
+rmcp = { version = "1.3.0", features = ["server", "transport-io", "macros"] }
 
 [dev-dependencies]
 serde_json = { workspace = true }

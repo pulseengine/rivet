@@ -397,6 +397,37 @@ artifact-types:
         required: true
         cardinality: one-or-many
 
+# ── Annex IV §6: Technical documentation updates ─────────────────────
+
+  - name: documentation-update
+    description: >
+      Record of changes to the technical documentation through the system
+      lifecycle (Annex IV §6). Ensures the documentation is kept up to date
+      and changes are traceable.
+    fields:
+      - name: change-description
+        type: text
+        required: true
+        description: Description of what changed in the technical documentation
+      - name: change-date
+        type: string
+        required: true
+        description: Date of the documentation change
+      - name: change-reason
+        type: text
+        required: true
+        description: Reason for the change (e.g., system update, regulatory change, incident)
+      - name: previous-version
+        type: string
+        required: false
+        description: Reference to the previous version of the documentation
+    link-fields:
+      - name: system
+        link-type: updates-docs-for
+        target-types: [ai-system-description]
+        required: true
+        cardinality: one-or-many
+
 # ── Annex IV §7: Standards ─────────────────────────────────────────────
 
   - name: standards-reference
@@ -533,6 +564,10 @@ link-types:
     inverse: identifies
     description: Misuse risk identified by this risk management process
 
+  - name: updates-docs-for
+    inverse: docs-updated-by
+    description: Documentation update record tracks changes for this AI system
+
 # ── Traceability rules ──────────────────────────────────────────────────
 
 traceability-rules:
@@ -597,6 +632,14 @@ traceability-rules:
     required-backlink: evaluates
     from-types: [performance-evaluation]
     severity: error
+
+  # Annex IV §6: Documentation updates
+  - name: system-has-doc-updates
+    description: Technical documentation updates must be tracked (Annex IV §6)
+    source-type: ai-system-description
+    required-backlink: updates-docs-for
+    from-types: [documentation-update]
+    severity: warning
 
   # Annex IV §7: Standards
   - name: system-has-standards

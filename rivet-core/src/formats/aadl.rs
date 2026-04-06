@@ -236,6 +236,7 @@ fn analysis_diagnostic_to_artifact(
         tags: vec!["aadl".into(), diag.analysis.clone()],
         links: vec![],
         fields,
+        provenance: None,
         source_file: None,
     }
 }
@@ -362,6 +363,7 @@ fn component_to_artifact(
         tags: vec!["aadl".into()],
         links: vec![],
         fields,
+        provenance: None,
         source_file: None,
     }
 }
@@ -396,6 +398,7 @@ fn diagnostic_to_artifact(index: usize, diag: &SparDiagnostic) -> Artifact {
         tags: vec!["aadl".into(), diag.analysis.clone()],
         links: vec![],
         fields,
+        provenance: None,
         source_file: None,
     }
 }

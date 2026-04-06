@@ -56,6 +56,22 @@ pub(crate) fn type_color_map() -> HashMap<String, String> {
         ("security-verification", "#6610f2"),
         ("risk-assessment", "#fd7e14"),
         ("security-event", "#e83e8c"),
+        // EU AI Act
+        ("ai-system-description", "#1565c0"),
+        ("design-specification", "#0277bd"),
+        ("data-governance-record", "#00838f"),
+        ("third-party-component", "#558b2f"),
+        ("monitoring-measure", "#6a1b9a"),
+        ("performance-evaluation", "#4527a0"),
+        ("risk-management-process", "#c62828"),
+        ("risk-mitigation", "#2e7d32"),
+        ("misuse-risk", "#bf360c"),
+        ("transparency-record", "#00695c"),
+        ("human-oversight-measure", "#4e342e"),
+        ("documentation-update", "#37474f"),
+        ("standards-reference", "#263238"),
+        ("conformity-declaration", "#1b5e20"),
+        ("post-market-plan", "#4a148c"),
     ];
     pairs
         .iter()

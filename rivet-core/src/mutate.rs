@@ -477,6 +477,7 @@ mod tests {
                 common_mistakes: vec![],
                 example: None,
                 yaml_section: None,
+                yaml_sections: vec![],
                 shorthand_links: std::collections::BTreeMap::new(),
             },
             ArtifactTypeDef {
@@ -488,6 +489,7 @@ mod tests {
                 common_mistakes: vec![],
                 example: None,
                 yaml_section: None,
+                yaml_sections: vec![],
                 shorthand_links: std::collections::BTreeMap::new(),
             },
         ];

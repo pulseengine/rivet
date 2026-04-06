@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::model::{Artifact, Link};
+use crate::model::{Artifact, Link, Provenance};
 use crate::schema::{Schema, Severity};
 use crate::yaml_cst::{self, SyntaxKind, SyntaxNode};
 
@@ -65,12 +65,22 @@ pub struct ParsedYamlFile {
 /// Parse `source` with the rowan-based YAML parser and extract generic
 /// artifacts with spans.
 pub fn extract_generic_artifacts(source: &str) -> ParsedYamlFile {
-    let (green, _parse_errors) = yaml_cst::parse(source);
+    let (green, parse_errors) = yaml_cst::parse(source);
     let root = SyntaxNode::new_root(green);
 
     let mut result = ParsedYamlFile {
         artifacts: Vec::new(),
-        diagnostics: Vec::new(),
+        diagnostics: parse_errors
+            .iter()
+            .map(|e| ParseDiagnostic {
+                span: Span {
+                    start: e.offset as u32,
+                    end: e.offset as u32,
+                },
+                message: e.message.clone(),
+                severity: Severity::Error,
+            })
+            .collect(),
     };
 
     // Walk root → Mapping → find "artifacts" key → Sequence
@@ -125,12 +135,22 @@ pub fn extract_schema_driven(
     schema: &Schema,
     source_path: Option<&Path>,
 ) -> ParsedYamlFile {
-    let (green, _parse_errors) = yaml_cst::parse(source);
+    let (green, parse_errors) = yaml_cst::parse(source);
     let root = SyntaxNode::new_root(green);
 
     let mut result = ParsedYamlFile {
         artifacts: Vec::new(),
-        diagnostics: Vec::new(),
+        diagnostics: parse_errors
+            .iter()
+            .map(|e| ParseDiagnostic {
+                span: Span {
+                    start: e.offset as u32,
+                    end: e.offset as u32,
+                },
+                message: e.message.clone(),
+                severity: Severity::Error,
+            })
+            .collect(),
     };
 
     let Some(root_mapping) = child_of_kind(&root, SyntaxKind::Mapping) else {
@@ -138,15 +158,16 @@ pub fn extract_schema_driven(
     };
 
     // Build section map: yaml_section_name → (artifact_type_name, shorthand_links)
-    let section_map: HashMap<&str, (&str, &BTreeMap<String, String>)> = schema
-        .artifact_types
-        .values()
-        .filter_map(|t| {
-            t.yaml_section
-                .as_deref()
-                .map(|s| (s, (t.name.as_str(), &t.shorthand_links)))
-        })
-        .collect();
+    let mut section_map: HashMap<&str, (&str, &BTreeMap<String, String>)> = HashMap::new();
+    for t in schema.artifact_types.values() {
+        let entry = (t.name.as_str(), &t.shorthand_links);
+        if let Some(s) = t.yaml_section.as_deref() {
+            section_map.insert(s, entry);
+        }
+        for s in &t.yaml_sections {
+            section_map.insert(s.as_str(), entry);
+        }
+    }
 
     // Walk all top-level mapping entries
     for entry in root_mapping.children() {
@@ -178,17 +199,59 @@ pub fn extract_schema_driven(
             let Some(value_node) = child_of_kind(&entry, SyntaxKind::Value) else {
                 continue;
             };
-            let seq = child_of_kind(&value_node, SyntaxKind::Sequence);
-            if let Some(seq) = seq {
-                for item in seq.children() {
-                    if node_kind(&item) == SyntaxKind::SequenceItem {
-                        extract_section_item(
-                            &item,
-                            type_name,
-                            shorthand_links,
-                            source_path,
-                            &mut result,
-                        );
+            if let Some(seq) = child_of_kind(&value_node, SyntaxKind::Sequence) {
+                // Direct sequence: section → [items]
+                extract_sequence_items(&seq, type_name, shorthand_links, source_path, &mut result);
+            } else if let Some(mapping) = child_of_kind(&value_node, SyntaxKind::Mapping) {
+                // Nested mapping: section → {group → [items], ...}
+                // Handles UCAs grouped by type (not-providing, providing, etc.)
+                //
+                // First pass: collect parent-level scalar fields as inherited
+                // metadata (e.g., controller: CTRL-CORE propagated to all items).
+                let mut inherited = BTreeMap::<String, String>::new();
+                for me in mapping.children() {
+                    if node_kind(&me) != SyntaxKind::MappingEntry {
+                        continue;
+                    }
+                    let Some(k) = child_of_kind(&me, SyntaxKind::Key) else {
+                        continue;
+                    };
+                    let Some(k_text) = scalar_text(&k) else {
+                        continue;
+                    };
+                    let Some(v) = child_of_kind(&me, SyntaxKind::Value) else {
+                        continue;
+                    };
+                    // Only collect entries whose value is a scalar (not a sequence)
+                    if child_of_kind(&v, SyntaxKind::Sequence).is_none()
+                        && child_of_kind(&v, SyntaxKind::Mapping).is_none()
+                    {
+                        if let Some(v_text) = scalar_text(&v) {
+                            inherited.insert(k_text, v_text);
+                        }
+                    }
+                }
+
+                // Second pass: extract items from nested sequences
+                for nested_entry in mapping.children() {
+                    if node_kind(&nested_entry) != SyntaxKind::MappingEntry {
+                        continue;
+                    }
+                    let group_key =
+                        child_of_kind(&nested_entry, SyntaxKind::Key).and_then(|k| scalar_text(&k));
+                    if let Some(nested_value) = child_of_kind(&nested_entry, SyntaxKind::Value) {
+                        if let Some(nested_seq) = child_of_kind(&nested_value, SyntaxKind::Sequence)
+                        {
+                            extract_sequence_items_with_inherited(
+                                &nested_seq,
+                                type_name,
+                                shorthand_links,
+                                source_path,
+                                &inherited,
+                                group_key.as_deref(),
+                                &mut result,
+                            );
+                        }
                     }
                 }
             }
@@ -196,14 +259,89 @@ pub fn extract_schema_driven(
         // Unknown keys are silently skipped (comments, metadata, etc.)
     }
 
-    // Set source_file on all artifacts
-    if let Some(path) = source_path {
-        for sa in &mut result.artifacts {
+    // Set source_file on all artifacts and detect duplicates
+    let mut seen_ids = std::collections::HashSet::new();
+    for sa in &mut result.artifacts {
+        if let Some(path) = source_path {
             sa.artifact.source_file = Some(path.to_path_buf());
+        }
+        if !seen_ids.insert(sa.artifact.id.clone()) {
+            result.diagnostics.push(ParseDiagnostic {
+                span: sa.id_span,
+                message: format!("duplicate artifact id '{}'", sa.artifact.id),
+                severity: Severity::Error,
+            });
         }
     }
 
     result
+}
+
+/// Extract all artifacts from a Sequence node's SequenceItem children.
+fn extract_sequence_items(
+    seq: &SyntaxNode,
+    type_name: &str,
+    shorthand_links: &BTreeMap<String, String>,
+    source_path: Option<&Path>,
+    result: &mut ParsedYamlFile,
+) {
+    for item in seq.children() {
+        if node_kind(&item) == SyntaxKind::SequenceItem {
+            extract_section_item(&item, type_name, shorthand_links, source_path, result);
+        }
+    }
+}
+
+/// Extract items with inherited parent metadata (for nested STPA structures).
+///
+/// `inherited` contains parent-level scalar fields (e.g., `controller: CTRL-CORE`).
+/// `group_key` is the sub-key name (e.g., `not-providing`) used to set the
+/// `uca-type` field on each extracted artifact.
+fn extract_sequence_items_with_inherited(
+    seq: &SyntaxNode,
+    type_name: &str,
+    shorthand_links: &BTreeMap<String, String>,
+    source_path: Option<&Path>,
+    inherited: &BTreeMap<String, String>,
+    group_key: Option<&str>,
+    result: &mut ParsedYamlFile,
+) {
+    for item in seq.children() {
+        if node_kind(&item) == SyntaxKind::SequenceItem {
+            extract_section_item(&item, type_name, shorthand_links, source_path, result);
+
+            // Apply inherited fields and group key to the just-extracted artifact
+            if let Some(sa) = result.artifacts.last_mut() {
+                // Propagate parent fields as shorthand links
+                for (field, value) in inherited {
+                    if let Some(link_type) = shorthand_links.get(field) {
+                        // Only add if the artifact doesn't already have this link
+                        let has_link = sa.artifact.links.iter().any(|l| l.link_type == *link_type);
+                        if !has_link {
+                            sa.artifact.links.push(Link {
+                                link_type: link_type.clone(),
+                                target: value.clone(),
+                            });
+                        }
+                    } else if !sa.artifact.fields.contains_key(field) {
+                        // Non-link inherited field
+                        sa.artifact
+                            .fields
+                            .insert(field.clone(), serde_yaml::Value::String(value.clone()));
+                    }
+                }
+
+                // Set uca-type from the group sub-key name
+                if let Some(gk) = group_key {
+                    if !sa.artifact.fields.contains_key("uca-type") {
+                        sa.artifact
+                            .fields
+                            .insert("uca-type".into(), serde_yaml::Value::String(gk.into()));
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Extract a single artifact from a section item (schema-driven).
@@ -238,6 +376,7 @@ fn extract_section_item(
     let mut links: Vec<Link> = Vec::new();
     let mut fields: BTreeMap<String, serde_yaml::Value> = BTreeMap::new();
     let mut field_spans: BTreeMap<String, Span> = BTreeMap::new();
+    let mut provenance: Option<Provenance> = None;
 
     for entry in mapping.children() {
         if node_kind(&entry) != SyntaxKind::MappingEntry {
@@ -315,6 +454,10 @@ fn extract_section_item(
                 links.extend(extract_links(&value_node));
                 field_spans.insert("links".into(), value_span);
             }
+            "provenance" => {
+                provenance = extract_provenance(&value_node);
+                field_spans.insert("provenance".into(), value_span);
+            }
             // Everything else goes to fields
             _ => {
                 let val = extract_field_value(&value_node);
@@ -343,6 +486,7 @@ fn extract_section_item(
             tags,
             links,
             fields,
+            provenance,
             source_file: None, // set by caller
         },
         id_span,
@@ -421,6 +565,7 @@ fn extract_artifact_from_item(item: &SyntaxNode, result: &mut ParsedYamlFile) {
     let mut links: Vec<Link> = Vec::new();
     let mut fields: BTreeMap<String, serde_yaml::Value> = BTreeMap::new();
     let mut field_spans: BTreeMap<String, Span> = BTreeMap::new();
+    let mut provenance: Option<Provenance> = None;
 
     // Walk all MappingEntry children
     for entry in mapping.children() {
@@ -479,6 +624,10 @@ fn extract_artifact_from_item(item: &SyntaxNode, result: &mut ParsedYamlFile) {
                 links = extract_links(&value_node);
                 field_spans.insert("links".into(), value_span);
             }
+            "provenance" => {
+                provenance = extract_provenance(&value_node);
+                field_spans.insert("provenance".into(), value_span);
+            }
             "fields" => {
                 // Nested mapping of custom fields
                 if let Some(nested_map) = child_of_kind(&value_node, SyntaxKind::Mapping) {
@@ -530,6 +679,7 @@ fn extract_artifact_from_item(item: &SyntaxNode, result: &mut ParsedYamlFile) {
         tags,
         links,
         fields,
+        provenance,
         source_file: None,
     };
 
@@ -598,6 +748,53 @@ fn extract_links(value_node: &SyntaxNode) -> Vec<Link> {
     links
 }
 
+// ── Provenance extraction ─────────────────────────────────────────────
+
+/// Extract a `Provenance` struct from a `provenance:` mapping value node.
+fn extract_provenance(value_node: &SyntaxNode) -> Option<Provenance> {
+    let map = child_of_kind(value_node, SyntaxKind::Mapping)?;
+
+    let mut created_by: Option<String> = None;
+    let mut model: Option<String> = None;
+    let mut session_id: Option<String> = None;
+    let mut timestamp: Option<String> = None;
+    let mut reviewed_by: Option<String> = None;
+
+    for entry in map.children() {
+        if node_kind(&entry) != SyntaxKind::MappingEntry {
+            continue;
+        }
+        let Some(k) = child_of_kind(&entry, SyntaxKind::Key) else {
+            continue;
+        };
+        let Some(k_text) = scalar_text(&k) else {
+            continue;
+        };
+        let Some(v) = child_of_kind(&entry, SyntaxKind::Value) else {
+            continue;
+        };
+        match k_text.as_str() {
+            "created-by" => created_by = scalar_text(&v),
+            "model" => model = scalar_text(&v),
+            "session-id" => session_id = scalar_text(&v),
+            "timestamp" => timestamp = scalar_text(&v),
+            "reviewed-by" => reviewed_by = scalar_text(&v),
+            _ => {} // ignore unknown provenance fields
+        }
+    }
+
+    // `created-by` is the only required field
+    let created_by = created_by?;
+
+    Some(Provenance {
+        created_by,
+        model,
+        session_id,
+        timestamp,
+        reviewed_by,
+    })
+}
+
 // ── String list extraction (tags, etc.) ────────────────────────────────
 
 fn extract_string_list(value_node: &SyntaxNode) -> Vec<String> {
@@ -612,7 +809,7 @@ fn extract_string_list(value_node: &SyntaxNode) -> Vec<String> {
                     SyntaxKind::PlainScalar
                     | SyntaxKind::SingleQuotedScalar
                     | SyntaxKind::DoubleQuotedScalar => {
-                        items.push(unquote_scalar(k, &t.text().to_string()));
+                        items.push(unquote_scalar(k, t.text()));
                     }
                     _ => {}
                 }
@@ -647,7 +844,7 @@ fn scalar_to_yaml_value(kind: SyntaxKind, raw: &str) -> serde_yaml::Value {
         }
         SyntaxKind::DoubleQuotedScalar => {
             let inner = &raw[1..raw.len() - 1];
-            serde_yaml::Value::String(inner.to_string())
+            serde_yaml::Value::String(unescape_double_quoted(inner))
         }
         SyntaxKind::PlainScalar => plain_scalar_to_value(raw),
         _ => serde_yaml::Value::String(raw.to_string()),
@@ -780,10 +977,28 @@ fn scalar_text(node: &SyntaxNode) -> Option<String> {
         if let rowan::NodeOrToken::Token(t) = token {
             let k = t.kind();
             match k {
-                SyntaxKind::PlainScalar
-                | SyntaxKind::SingleQuotedScalar
-                | SyntaxKind::DoubleQuotedScalar => {
-                    return Some(unquote_scalar(k, &t.text().to_string()));
+                SyntaxKind::SingleQuotedScalar | SyntaxKind::DoubleQuotedScalar => {
+                    return Some(unquote_scalar(k, t.text()));
+                }
+                SyntaxKind::PlainScalar => {
+                    // The lexer splits plain scalars at commas and brackets.
+                    // Collect all sibling tokens to reconstruct the full value.
+                    let mut text = t.text().to_string();
+                    let mut next = t.next_sibling_or_token();
+                    while let Some(sibling) = next {
+                        match sibling {
+                            rowan::NodeOrToken::Token(ref st) => match st.kind() {
+                                SyntaxKind::Newline | SyntaxKind::Comment => break,
+                                _ => {
+                                    text.push_str(st.text());
+                                    next = sibling.next_sibling_or_token();
+                                }
+                            },
+                            rowan::NodeOrToken::Node(_) => break,
+                        }
+                    }
+                    let trimmed = text.trim_end().to_string();
+                    return Some(trimmed);
                 }
                 _ => {}
             }
@@ -796,9 +1011,99 @@ fn scalar_text(node: &SyntaxNode) -> Option<String> {
 fn unquote_scalar(kind: SyntaxKind, raw: &str) -> String {
     match kind {
         SyntaxKind::SingleQuotedScalar => raw[1..raw.len() - 1].replace("''", "'"),
-        SyntaxKind::DoubleQuotedScalar => raw[1..raw.len() - 1].to_string(),
+        SyntaxKind::DoubleQuotedScalar => unescape_double_quoted(&raw[1..raw.len() - 1]),
         _ => raw.to_string(),
     }
+}
+
+/// Process YAML double-quoted escape sequences.
+///
+/// Handles: `\\`, `\"`, `\n`, `\t`, `\r`, `\/`, `\0`, and `\uXXXX`.
+fn unescape_double_quoted(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some('\\') => result.push('\\'),
+                Some('"') => result.push('"'),
+                Some('n') => result.push('\n'),
+                Some('t') => result.push('\t'),
+                Some('r') => result.push('\r'),
+                Some('/') => result.push('/'),
+                Some('0') => result.push('\0'),
+                Some('a') => result.push('\u{07}'), // bell
+                Some('b') => result.push('\u{08}'), // backspace
+                Some('e') => result.push('\u{1B}'), // escape
+                Some('v') => result.push('\u{0B}'), // vertical tab
+                Some(' ') => result.push(' '),
+                Some('N') => result.push('\u{85}'),   // next line
+                Some('_') => result.push('\u{A0}'),   // non-breaking space
+                Some('L') => result.push('\u{2028}'), // line separator
+                Some('P') => result.push('\u{2029}'), // paragraph separator
+                Some('x') => {
+                    // \xXX — 2-digit hex
+                    let hex: String = chars.by_ref().take(2).collect();
+                    if hex.len() == 2 {
+                        if let Ok(cp) = u32::from_str_radix(&hex, 16) {
+                            if let Some(ch) = char::from_u32(cp) {
+                                result.push(ch);
+                                continue;
+                            }
+                        }
+                    }
+                    // Malformed — emit literally
+                    result.push('\\');
+                    result.push('x');
+                    result.push_str(&hex);
+                }
+                Some('u') => {
+                    // \uXXXX — 4-digit hex
+                    let hex: String = chars.by_ref().take(4).collect();
+                    if hex.len() == 4 {
+                        if let Ok(cp) = u32::from_str_radix(&hex, 16) {
+                            if let Some(ch) = char::from_u32(cp) {
+                                result.push(ch);
+                                continue;
+                            }
+                        }
+                    }
+                    // Malformed — emit literally
+                    result.push('\\');
+                    result.push('u');
+                    result.push_str(&hex);
+                }
+                Some('U') => {
+                    // \UXXXXXXXX — 8-digit hex
+                    let hex: String = chars.by_ref().take(8).collect();
+                    if hex.len() == 8 {
+                        if let Ok(cp) = u32::from_str_radix(&hex, 16) {
+                            if let Some(ch) = char::from_u32(cp) {
+                                result.push(ch);
+                                continue;
+                            }
+                        }
+                    }
+                    // Malformed — emit literally
+                    result.push('\\');
+                    result.push('U');
+                    result.push_str(&hex);
+                }
+                Some(other) => {
+                    // Unknown escape — preserve literally
+                    result.push('\\');
+                    result.push(other);
+                }
+                None => {
+                    // Trailing backslash — preserve literally
+                    result.push('\\');
+                }
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
 }
 
 /// Extract block-scalar text from a Value node.
@@ -835,7 +1140,14 @@ fn block_scalar_text(value_node: &SyntaxNode) -> Option<String> {
         if line.trim().is_empty() {
             result.push('\n');
         } else if line.len() > min_indent {
-            result.push_str(&line[min_indent..]);
+            // Safety: min_indent counts only leading whitespace bytes,
+            // which are always valid UTF-8 boundaries. The char_boundary
+            // check is a defensive fallback for malformed input.
+            if line.is_char_boundary(min_indent) {
+                result.push_str(&line[min_indent..]);
+            } else {
+                result.push_str(line); // fallback: don't strip
+            }
         } else {
             result.push_str(line);
         }
@@ -953,7 +1265,7 @@ artifacts:
       priority: must
       count: 42
       enabled: true
-      ratio: 3.14
+      ratio: 1.23
 ";
         let hir = extract_generic_artifacts(source);
         assert_eq!(hir.artifacts.len(), 1);
@@ -973,7 +1285,7 @@ artifacts:
         match ratio {
             serde_yaml::Value::Number(n) => {
                 let f = n.as_f64().unwrap();
-                assert!((f - 3.14).abs() < 1e-10, "expected 3.14, got {}", f);
+                assert!((f - 1.23_f64).abs() < 1e-10, "expected 1.23, got {}", f);
             }
             other => panic!("expected Number, got {:?}", other),
         }
@@ -1198,5 +1510,206 @@ artifacts:
         let result = extract_schema_driven(source, &schema, None);
         assert_eq!(result.artifacts.len(), 1);
         assert_eq!(result.artifacts[0].artifact.artifact_type, "requirement");
+    }
+
+    // ── Provenance tests ──────────────────────────────────────────────────
+
+    /// Provenance mapping is extracted correctly from generic artifacts.
+    #[test]
+    fn provenance_extracted_from_generic_artifact() {
+        let source = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: AI-generated requirement
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      session-id: sess-abc123
+      timestamp: '2026-04-05T10:00:00Z'
+      reviewed-by: jane.doe
+";
+        let hir = extract_generic_artifacts(source);
+        assert_eq!(hir.artifacts.len(), 1);
+        let prov = hir.artifacts[0]
+            .artifact
+            .provenance
+            .as_ref()
+            .expect("provenance should be present");
+        assert_eq!(prov.created_by, "ai-assisted");
+        assert_eq!(prov.model.as_deref(), Some("claude-opus-4-6"));
+        assert_eq!(prov.session_id.as_deref(), Some("sess-abc123"));
+        assert_eq!(prov.timestamp.as_deref(), Some("2026-04-05T10:00:00Z"));
+        assert_eq!(prov.reviewed_by.as_deref(), Some("jane.doe"));
+    }
+
+    /// Provenance is extracted in schema-driven mode (STPA sections).
+    #[test]
+    fn provenance_extracted_from_schema_driven_section() {
+        let source = "\
+losses:
+  - id: L-001
+    title: Loss of life
+    provenance:
+      created-by: ai
+      model: claude-opus-4-6
+";
+        let schema = test_schema();
+        let result = extract_schema_driven(source, &schema, None);
+        assert_eq!(result.artifacts.len(), 1);
+        let prov = result.artifacts[0]
+            .artifact
+            .provenance
+            .as_ref()
+            .expect("provenance should be present");
+        assert_eq!(prov.created_by, "ai");
+        assert_eq!(prov.model.as_deref(), Some("claude-opus-4-6"));
+    }
+
+    /// Artifacts without provenance still parse correctly (backward compatible).
+    #[test]
+    fn artifact_without_provenance_parses() {
+        let source = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: No provenance here
+";
+        let hir = extract_generic_artifacts(source);
+        assert_eq!(hir.artifacts.len(), 1);
+        assert!(
+            hir.artifacts[0].artifact.provenance.is_none(),
+            "provenance should be None when absent"
+        );
+    }
+
+    /// Provenance with only the required `created-by` field works.
+    #[test]
+    fn provenance_minimal_created_by_only() {
+        let source = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: Minimal provenance
+    provenance:
+      created-by: human
+";
+        let hir = extract_generic_artifacts(source);
+        assert_eq!(hir.artifacts.len(), 1);
+        let prov = hir.artifacts[0]
+            .artifact
+            .provenance
+            .as_ref()
+            .expect("provenance should be present");
+        assert_eq!(prov.created_by, "human");
+        assert!(prov.model.is_none());
+        assert!(prov.session_id.is_none());
+        assert!(prov.timestamp.is_none());
+        assert!(prov.reviewed_by.is_none());
+    }
+
+    /// Provenance round-trips through the serde-based generic parser too.
+    #[test]
+    fn provenance_cross_validates_with_serde_parser() {
+        let source = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: Cross-validate provenance
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      reviewed-by: jane.doe
+";
+        let hir = extract_generic_artifacts(source);
+        let serde_arts = parse_generic_yaml(source, None).unwrap();
+
+        assert_eq!(hir.artifacts.len(), 1);
+        assert_eq!(serde_arts.len(), 1);
+
+        let hir_prov = hir.artifacts[0].artifact.provenance.as_ref().unwrap();
+        let serde_prov = serde_arts[0].provenance.as_ref().unwrap();
+
+        assert_eq!(hir_prov.created_by, serde_prov.created_by);
+        assert_eq!(hir_prov.model, serde_prov.model);
+        assert_eq!(hir_prov.reviewed_by, serde_prov.reviewed_by);
+    }
+
+    // ── Double-quoted escape tests ─────────────────────────────────
+
+    #[test]
+    fn double_quoted_escapes() {
+        assert_eq!(unescape_double_quoted("hello\\nworld"), "hello\nworld");
+        assert_eq!(unescape_double_quoted("tab\\there"), "tab\there");
+        assert_eq!(unescape_double_quoted("quote\\\"inside"), "quote\"inside");
+        assert_eq!(unescape_double_quoted("no escapes"), "no escapes");
+    }
+
+    #[test]
+    fn double_quoted_escape_backslash_and_null() {
+        assert_eq!(unescape_double_quoted("a\\\\b"), "a\\b");
+        assert_eq!(unescape_double_quoted("nul\\0char"), "nul\0char");
+        assert_eq!(unescape_double_quoted("slash\\/ok"), "slash/ok");
+        assert_eq!(unescape_double_quoted("cr\\rhere"), "cr\rhere");
+    }
+
+    #[test]
+    fn double_quoted_unicode_escape() {
+        // \u0041 == 'A'
+        assert_eq!(unescape_double_quoted("\\u0041BC"), "ABC");
+        // \u00e9 == 'e' with acute accent
+        assert_eq!(unescape_double_quoted("caf\\u00e9"), "caf\u{00e9}");
+    }
+
+    #[test]
+    fn double_quoted_trailing_backslash() {
+        // Trailing backslash preserved literally
+        assert_eq!(unescape_double_quoted("end\\"), "end\\");
+    }
+
+    #[test]
+    fn double_quoted_unknown_escape() {
+        // Unknown escape sequence preserved literally
+        assert_eq!(unescape_double_quoted("\\qfoo"), "\\qfoo");
+    }
+
+    #[test]
+    fn unquote_scalar_double_quoted_integration() {
+        let result = unquote_scalar(SyntaxKind::DoubleQuotedScalar, "\"line1\\nline2\"");
+        assert_eq!(result, "line1\nline2");
+    }
+
+    // ── Block scalar Unicode safety tests ──────────────────────────
+
+    #[test]
+    fn block_scalar_with_unicode_content() {
+        // Block scalar whose content lines contain multi-byte UTF-8.
+        // The indent stripping must not split multi-byte characters.
+        let source = "\
+artifacts:
+  - id: A-1
+    type: req
+    title: Unicode block test
+    description: |
+      Stra\u{00df}e and caf\u{00e9}
+      \u{65e5}\u{672c}\u{8a9e} text
+";
+        let hir = extract_generic_artifacts(source);
+        assert_eq!(hir.artifacts.len(), 1);
+        let desc_str = hir.artifacts[0]
+            .artifact
+            .description
+            .as_deref()
+            .expect("description field missing");
+        assert!(
+            desc_str.contains("Stra\u{00df}e"),
+            "expected Strasse with eszett, got: {:?}",
+            desc_str
+        );
+        assert!(
+            desc_str.contains("\u{65e5}\u{672c}\u{8a9e}"),
+            "expected Japanese chars, got: {:?}",
+            desc_str
+        );
     }
 }

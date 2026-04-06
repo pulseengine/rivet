@@ -264,6 +264,15 @@ pub(crate) async fn stpa_view(
     Html(crate::render::stpa::render_stpa(&ctx, &params))
 }
 
+// ── EU AI Act ────────────────────────────────────────────────────────────
+
+/// GET /eu-ai-act — EU AI Act Annex IV compliance dashboard.
+pub(crate) async fn eu_ai_act_view(State(state): State<SharedState>) -> Html<String> {
+    let state = state.read().await;
+    let ctx = state.as_render_context();
+    Html(crate::render::eu_ai_act::render_eu_ai_act(&ctx))
+}
+
 // ── Results ──────────────────────────────────────────────────────────────
 
 pub(crate) async fn results_view(State(state): State<SharedState>) -> Html<String> {

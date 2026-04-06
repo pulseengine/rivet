@@ -1,10 +1,10 @@
 //! `rivet schema` subcommand — introspect loaded schemas.
 //!
-//! Provides `list`, `show`, `links`, `rules` for both humans and AI agents.
+//! Provides `list`, `show`, `links`, `rules`, `info` for both humans and AI agents.
 
 use std::collections::HashSet;
 
-use rivet_core::schema::{Cardinality, Schema, Severity};
+use rivet_core::schema::{Cardinality, Schema, SchemaFile, Severity};
 
 /// List all artifact types.
 pub fn cmd_list(schema: &Schema, format: &str) -> String {
@@ -391,6 +391,75 @@ fn generate_example_yaml(t: &rivet_core::schema::ArtifactTypeDef, _schema: &Sche
             };
             let comment = if !f.required { "  # optional" } else { "" };
             out.push_str(&format!("      {}: {}{}\n", f.name, val, comment));
+        }
+    }
+
+    out
+}
+
+/// Show schema-level metadata and summary for a single schema file.
+pub fn cmd_info(schema_file: &SchemaFile, format: &str) -> String {
+    let meta = &schema_file.schema;
+    let artifact_count = schema_file.artifact_types.len();
+    let link_count = schema_file.link_types.len();
+    let rule_count = schema_file.traceability_rules.len();
+
+    if format == "json" {
+        let artifact_types: Vec<serde_json::Value> = schema_file
+            .artifact_types
+            .iter()
+            .map(|t| {
+                serde_json::json!({
+                    "name": t.name,
+                    "description": t.description,
+                })
+            })
+            .collect();
+        return serde_json::to_string_pretty(&serde_json::json!({
+            "command": "schema-info",
+            "name": meta.name,
+            "version": meta.version,
+            "description": meta.description,
+            "namespace": meta.namespace,
+            "extends": meta.extends,
+            "min_rivet_version": meta.min_rivet_version,
+            "license": meta.license,
+            "artifact_type_count": artifact_count,
+            "link_type_count": link_count,
+            "traceability_rule_count": rule_count,
+            "artifact_types": artifact_types,
+        }))
+        .unwrap_or_default();
+    }
+
+    let mut out = String::new();
+    out.push_str(&format!("Schema: {}\n", meta.name));
+    out.push_str(&format!("Version: {}\n", meta.version));
+    if let Some(ref desc) = meta.description {
+        out.push_str(&format!("Description: {}\n", desc.trim()));
+    }
+    if let Some(ref ns) = meta.namespace {
+        out.push_str(&format!("Namespace: {ns}\n"));
+    }
+    if !meta.extends.is_empty() {
+        out.push_str(&format!("Extends: {}\n", meta.extends.join(", ")));
+    }
+    if let Some(ref mrv) = meta.min_rivet_version {
+        out.push_str(&format!("Min rivet version: {mrv}\n"));
+    }
+    if let Some(ref lic) = meta.license {
+        out.push_str(&format!("License: {lic}\n"));
+    }
+
+    out.push_str(&format!(
+        "\nArtifact types: {}  |  Link types: {}  |  Traceability rules: {}\n",
+        artifact_count, link_count, rule_count
+    ));
+
+    if !schema_file.artifact_types.is_empty() {
+        out.push_str("\nArtifact types:\n");
+        for t in &schema_file.artifact_types {
+            out.push_str(&format!("  {:<30} {}\n", t.name, t.description.trim()));
         }
     }
 
