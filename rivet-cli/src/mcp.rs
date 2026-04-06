@@ -169,6 +169,25 @@ impl RivetServer {
         })
     }
 
+    /// Create a `RivetServer` from pre-loaded state (used by the dashboard's
+    /// MCP-over-HTTP endpoint so we don't reload from disk).
+    pub fn from_shared(
+        project_dir: PathBuf,
+        store: Store,
+        schema: rivet_core::schema::Schema,
+        graph: LinkGraph,
+    ) -> Self {
+        Self {
+            tool_router: Self::tool_router(),
+            project_dir: Arc::new(project_dir),
+            project: Arc::new(RwLock::new(McpProject {
+                store,
+                schema,
+                graph,
+            })),
+        }
+    }
+
     #[tool(description = "Validate artifacts against schemas and return diagnostics")]
     fn rivet_validate(&self) -> Result<CallToolResult, McpError> {
         let result = self.with_project(|proj| Ok(tool_validate_cached(proj)))?;
