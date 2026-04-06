@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1775175460244,
+  "lastUpdate": 1775484715587,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "38faa8811791736350e78728d28eb330abd9f289",
-          "message": "fix(vscode): handle SSH Remote + LSP crash gracefully (#77)\n\n- Platform-aware binary lookup (bin/{platform}-{arch}/rivet)\n- Falls back to PATH when bundled binary doesn't match remote arch\n- client.stop() errors caught (prevents crash loop on startFailed)\n- deactivate() handles already-stopped client\n\nFor SSH Remote: install rivet on the remote host via cargo install rivet-cli\n\nTrace: skip\n\nCo-authored-by: Test <test@test.com>",
-          "timestamp": "2026-03-22T07:42:39+01:00",
-          "tree_id": "fb22f3c5571af461191432e2e70591daaf44d37d",
-          "url": "https://github.com/pulseengine/rivet/commit/38faa8811791736350e78728d28eb330abd9f289"
-        },
-        "date": 1774167810818,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 78471,
-            "range": "± 2541",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 818058,
-            "range": "± 5258",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 11858834,
-            "range": "± 904555",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2172,
-            "range": "± 10",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 26718,
-            "range": "± 192",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 382710,
-            "range": "± 1504",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 96,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 96,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 96,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 901217,
-            "range": "± 7933",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 161216,
-            "range": "± 1107",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1843392,
-            "range": "± 33852",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 26525485,
-            "range": "± 2665711",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 41212,
-            "range": "± 197",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 469639,
-            "range": "± 1606",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 4773008,
-            "range": "± 180005",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4366,
-            "range": "± 10",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 60617,
-            "range": "± 732",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 786507,
-            "range": "± 3348",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 65648,
-            "range": "± 692",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 725140,
-            "range": "± 2739",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7957113,
-            "range": "± 222575",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 784,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 7156,
-            "range": "± 24",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 112262,
-            "range": "± 914",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 23293,
-            "range": "± 1327",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 163913,
-            "range": "± 1430",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1501551,
-            "range": "± 25665",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1518825,
             "range": "± 23105",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "29b735bf3cfbb06868892c2efde92a4a5a812212",
+          "message": "feat: Phase 6 rowan migration + #93 #98 #99 #104 Phase 1 (#123)\n\n* feat: Phase 6 — delete stpa.rs, fix parser bugs, complete rowan migration\n\nDelete the 861-line serde_yaml-based STPA parser (formats/stpa.rs) and\ncomplete the migration to rowan-based schema-driven extraction.\n\nParser fixes in yaml_cst.rs:\n- Lexer: stop quoted scalar scanning at newlines — unclosed quotes on a\n  line produced multi-line tokens that swallowed subsequent YAML structure\n  (root cause of the \"apostrophe bug\" in block scalars)\n- Parser: consume comments between sequence items in parse_block_sequence\n- Parser: consume entire line for sequence item scalars (commas no longer\n  orphan tokens)\n- Parser: add is_plain_scalar_continuation() for multi-line plain scalar\n  values (e.g. \"alternatives: Rejected because...\\n  continuation\")\n\nExtraction fix in yaml_hir.rs:\n- scalar_text() now collects all sibling tokens after first PlainScalar,\n  reconstructing full values that the lexer split at commas/brackets\n\nSchema changes:\n- Add yaml-sections (plural) field to support artifact types with multiple\n  YAML section names (e.g. UCAs split across core-ucas, oslc-ucas, etc.)\n- Add UCA section names to schemas/stpa.yaml\n- Add cia-impact fields and fix leads-to-sec-loss links in stpa-sec data\n\nAPI change:\n- load_artifacts() now takes &Schema parameter for schema-driven extraction\n- All callers updated (CLI, MCP, serve, impact, externals, tests)\n\nResult: 66/66 YAML files parse with 0 Error nodes, 32/32 hazards extracted\n\nRefs: #91\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* fix: UCA extraction with nested STPA structure + dogfood test passing\n\nTeach the schema-driven extractor to handle nested STPA structures where\nartifacts are grouped under sub-keys (e.g., UCAs under not-providing:,\nproviding:, too-early-too-late:, stopped-too-soon: within each controller\nsection).\n\nChanges:\n- yaml_hir: add extract_sequence_items_with_inherited() that propagates\n  parent-level fields (controller, control-action) to child items and\n  sets uca-type from the grouping sub-key name\n- schema: fix UCA shorthand-links (controller: issued-by, not control-action)\n- schema: add yaml-sections field for multi-section artifact types\n- Fix yaml_sections field in manual ArtifactTypeDef constructors\n- Delete 15 stale debug test files that broke the build\n\nResult: dogfood validation passes (0 errors), all workspace tests green\n\nRefs: #91\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* test: add 83 YAML test suite cases from official suite + edge cases\n\nTests derived from the official YAML Test Suite and the \"YAML Document\nfrom Hell\" edge case collection. Covers:\n- Block mappings, sequences, and nested combinations\n- Plain, single-quoted, double-quoted, and block scalars\n- Comments in various positions\n- Indentation edge cases\n- Flow sequences with mixed types\n- Unsupported features (anchors, tags, flow mappings) — verifies\n  graceful Error recovery with round-trip preservation\n- Stress tests (deep nesting, 100+ items, combined patterns)\n- YAML gotchas: Norway problem, version floats, special characters\n\nRefs: #91\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* chore: clean up diagnostic tree dump from parse_actual_hazards_file test\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* feat(schema): add manifest metadata fields and schema info command (#93 Phase 1)\n\nAdd min-rivet-version and license optional fields to SchemaMetadata for\nschema manifest support. Add `rivet schema info <name>` CLI subcommand\nthat displays schema-level metadata, counts, and artifact type summaries\nin both text and JSON formats. Include integration tests verifying\nmetadata loading, optional field parsing, and guidance field presence.\n\nImplements: REQ-003\nRefs: #93\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* feat(dashboard): add EU AI Act compliance view (#99)\n\nAdd a new dashboard view at /eu-ai-act that shows Annex IV compliance\nstatus, with per-section progress bars, missing type guidance, and\nartifact inventory. The view appears conditionally in the nav when the\neu-ai-act schema is loaded.\n\n- Add rivet-core/src/compliance.rs with compute_compliance() that maps\n  artifact types to Annex IV sections and calculates coverage\n- Add rivet-cli/src/render/eu_ai_act.rs with HTML rendering for the\n  compliance dashboard (stats, section table, missing types, inventory)\n- Add documentation-update artifact type to schemas/eu-ai-act.yaml for\n  Annex IV section 6 (technical documentation updates)\n- Add link type updates-docs-for and traceability rule system-has-doc-updates\n- Register /eu-ai-act route and conditional navigation link\n- Add EU AI Act type colors to the badge color palette\n\nImplements: #99\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* feat: add AI provenance metadata to artifacts (#104 Phase 1)\n\nAdd Provenance struct (created-by, model, session-id, timestamp,\nreviewed-by) as a first-class optional field on Artifact. This enables\ntracking whether artifacts were human-authored, AI-generated, or\nAI-assisted — required for EU AI Act compliance and AIBOM export.\n\nChanges:\n- model.rs: Provenance struct with serde kebab-case rename\n- yaml_hir.rs: extract_provenance() for rowan CST extraction + 5 tests\n- formats/generic.rs: serde round-trip support for provenance\n- schemas/common.yaml: provenance as optional base field\n- All Artifact construction sites updated with provenance: None\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* feat: migrate MCP server to official rmcp crate (#98)\n\nReplace the hand-rolled JSON-RPC 2.0 MCP implementation with the\nofficial rmcp crate (v1.3.0). This provides protocol-compliant\ntransport, typed tool definitions via #[tool] macros, and resource\nprotocol support out of the box.\n\nChanges:\n- Add rmcp dependency with server, transport-io, macros features\n- Rewrite mcp.rs: RivetServer struct with #[tool_router] + #[tool_handler]\n- All 9 tools preserved with typed parameter structs (JsonSchema-derived)\n- Add MCP resources: rivet://diagnostics, rivet://coverage, rivet://artifacts/{id}\n- Update cmd_mcp() to use async rmcp stdio transport\n\nAll existing tool functionality is preserved — this is a transport/protocol\nmigration, not a feature change.\n\nImplements: REQ-022\nRefs: #98\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* fix: peek_colon_after_scalar line boundary + duplicate ID detection\n\n- yaml_cst.rs: peek_colon_after_scalar() now stops at Newline/Comment,\n  preventing cross-line colon detection that could misparse sequences\n- yaml_hir.rs: extract_schema_driven() detects duplicate artifact IDs\n  within a file and emits a diagnostic\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* fix: LSP crash on missing config, stale render state, diagnostic UX\n\nCRITICAL fixes from deep audit:\n- LSP: replace process::exit(1) with graceful empty-state fallback\n  when rivet.yaml fails to load\n- LSP: update render_store/render_graph in didChange handler so\n  custom requests (rivet/render, treeData) reflect unsaved edits\n\nHIGH fixes:\n- Diagnostic Display now includes file name and line number when\n  available (was just \"ERROR: [ID] message\", now \"file.yaml:5: ERROR: ...\")\n- Schema not found changed from log::warn to hard error — misspelled\n  schema names in rivet.yaml now fail loudly instead of silently\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* fix(yaml_hir): unescape double-quoted scalars and add block scalar UTF-8 safety\n\nDouble-quoted YAML scalars now correctly process escape sequences\n(\\n, \\t, \\\\, \\\", \\uXXXX, etc.) instead of being passed through raw.\nBlock scalar indent stripping now includes a char_boundary safety\ncheck to guard against hypothetical multi-byte splitting.\n\nFixes #23\nFixes #24\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* fix: MCP server caches project at startup instead of reloading per call\n\nRivetServer now holds Arc<RwLock<McpProject>> loaded once at startup.\nAll read-only tools use cached state. New rivet_reload tool lets\nclients refresh after file changes. Snapshot and add still use disk.\n\nFixes #9 (CRITICAL: full reload every tool call)\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* fix(lsp): add didOpen handler, fix diagnostic spans, and handle Windows URIs\n\n- Add textDocument/didOpen handler that publishes diagnostics when a file\n  is opened, and update server capabilities to advertise open_close support (#16)\n- Replace hardcoded col+100 diagnostic end column with artifact ID length\n  plus padding for more accurate underline spans (#17)\n- Fix lsp_uri_to_path and lsp_path_to_uri to handle Windows file:///C:/\n  URIs and URL-decode percent-encoded paths (#19)\n- Cross-file diagnostic clearing (#18) was already addressed by the\n  existing prev_diagnostic_files tracking in lsp_publish_salsa_diagnostics\n\nFixes: #16, #17, #18, #19\nTrace: skip\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* fix(cli): validate --format values and improve missing rivet.yaml errors\n\nInvalid --format values (e.g. `rivet validate --format csv`) now produce\na clear error instead of silently falling back to text output. Added\n`validate_format()` helper called from all 18 command handlers that\naccept a format parameter. When rivet.yaml is not found, errors now\nshow the resolved project path and suggest running `rivet init`.\n\nFixes #27, Fixes #28\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* fix(serve): use salsa incremental computation for dashboard reloads\n\nThe dashboard server previously performed a full project rebuild on every\nfile change -- re-reading config, reloading all schemas, re-parsing all\nartifacts, rebuilding the link graph, and recomputing all diagnostics.\n\nThis replaces that with salsa incremental updates: file contents are fed\ninto a persistent RivetDatabase, and salsa only recomputes queries whose\ninputs actually changed. For a single-file edit in a large project, this\navoids re-parsing unchanged files entirely.\n\nKey changes:\n- reload_state() now initializes a salsa RivetDatabase at startup\n- New reload_state_incremental() updates salsa inputs and re-queries\n- SalsaState held in Mutex (salsa DB is !Sync due to thread-local caches)\n- run() simplified to accept pre-built AppState\n- Extracted helpers: collect_yaml_files, load_externals, load_docs_and_results\n\nFixes #10\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* fix: salsa validation handles all YAML formats and baseline scoping\n\nInclude stpa-yaml sources in run_salsa_validation() alongside generic\nformats so STPA projects benefit from salsa incremental caching (#11).\n\nWhen --baseline is specified, use salsa for full validation then filter\ndiagnostics to the scoped store instead of falling back to the direct\n(non-salsa) validation path (#12).\n\nFixes: #11\nFixes: #12\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* feat(db): make LinkGraph and coverage salsa-tracked functions (#13)\n\nLinkGraph::build() and coverage::compute_coverage() were called\ndirectly from non-tracked helpers, causing recomputation on every\ncall even when inputs hadn't changed. This lifts both into salsa\ntracked functions so results are memoized across callers.\n\n- Add PartialEq/Eq to ResolvedLink, Backlink, CoverageEntry,\n  CoverageReport; add Clone + manual PartialEq/Eq/Debug to LinkGraph\n  (skipping petgraph DiGraph which lacks PartialEq)\n- Add build_link_graph tracked function shared by validate_all,\n  evaluate_conditional_rules, and compute_coverage_tracked\n- Add compute_coverage_tracked tracked function\n- Expose link_graph() and coverage() methods on RivetDatabase\n- Add 5 new tests covering the tracked functions\n\nFixes #13\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* feat(lsp): add textDocument/documentSymbol support (#20)\n\nWalk the rowan CST to find artifacts and expose them as DocumentSymbol\nentries. Each artifact shows ID as name, \"type — title\" as detail,\nwith accurate ranges from the CST spans.\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* refactor: extract collect_yaml_files and load_project_full to rivet-core\n\nMove collect_yaml_files() from rivet-cli/src/main.rs to rivet-core as a\npublic utility so both salsa validation and LSP startup share one\nimplementation.\n\nAdd LoadedProject struct and load_project_full() to rivet-core,\nconsolidating the duplicated config→schemas→artifacts→graph loading\npattern. Update mcp.rs load_project() to delegate to the new function.\n\nRefs: code-dedup\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* test: add YAML parser proptests, MCP tool tests, and cross-file link resolution\n\nAdd property-based tests for the rowan YAML CST parser covering flat\nmappings, block scalars, flow sequences, nested mappings, sequences with\nmappings, and mixed documents. Add end-to-end MCP JSON-RPC integration\ntests for validate, list, get, stats, schema, coverage, and tools/list.\nAdd cross-file link resolution test verifying forward links, backlinks,\nand orphan detection across separate artifact files.\n\nVerifies: REQ-003, REQ-004\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* fix: 3 must-fix issues from formal code review\n\nMF-1: scalar_to_yaml_value now calls unescape_double_quoted() for\n      DoubleQuotedScalar values (was using raw slicing, corrupting\n      field data containing \\n, \\t, etc.)\n\nMF-2: Parse errors from yaml_cst::parse() are now propagated into\n      ParsedYamlFile.diagnostics in both extract_generic_artifacts\n      and extract_schema_driven (were silently discarded)\n\nMF-3: Remove dead project_dir parameter from all MCP tool param\n      structs — it was declared in JSON Schema but never read,\n      misleading AI tool callers\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* fix: CI failures — clippy, format, MSRV, benchmark compatibility\n\n- Fix clippy: remove unneeded returns in is_plain_scalar_continuation,\n  eliminate unnecessary to_string() calls in scalar extraction\n- Fix clippy: suppress dead_code on empty MCP param structs\n  (ValidateParams, StatsParams) constructed via rmcp deserialization\n- Fix clippy: change 3.14 test value to 1.23 to avoid approx_constant lint\n- Fix MSRV: add #[allow(dead_code)] on unused load_full method\n- Fix benchmarks: add provenance: None to all Artifact constructors\n- Run cargo fmt across all files\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* fix: MCP tests set current_dir to temp project directory\n\nTests were spawning `rivet mcp` without setting CWD, causing it to\nload from the CI runner's working directory instead of the temp project.\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* fix: MCP tests send proper initialize params for rmcp protocol\n\nrmcp expects InitializeRequestParams with protocolVersion, capabilities,\nand clientInfo — not empty {}. Also send notifications/initialized after\nthe init handshake completes.\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* chore: remove MCP protocol-level integration tests\n\nThe rmcp crate handles JSON-RPC protocol correctness (initialize\nhandshake, message framing, capability negotiation). Testing this\nourselves duplicates rmcp's responsibility and creates brittle tests\nthat break on protocol details. Tool logic is already tested via\nthe dogfood integration test and schema-driven extraction tests.\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* fix: update schema fallback test to expect error on unknown names\n\nThe schema-not-found behavior was changed from log::warn (silent) to\na hard error. Update the docs_schema test to match.\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* fix: cargo fmt on docs_schema test\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* fix: use rowan fork with Miri UB fixes (pulseengine/rowan#fix/miri-soundness)\n\nPoint to our fork that fixes GreenNode/GreenToken deref UB flagged by\nMiri. Upstream PR: rust-analyzer/rowan#210. Will revert to crates.io\nrowan once the fix is merged upstream.\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* fix: revert to crates.io rowan, skip yaml_cst/yaml_hir in Miri CI\n\nrowan 0.16.1 has known Miri UB in its vendored Arc/ThinArc\n(rust-analyzer/rowan#192). Our fork fix is in progress but not\ncomplete — reverting to crates.io rowan and skipping the affected\ntests in Miri CI until the fix is ready.\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* fix: use rowan fork with Miri fixes, tree borrows model in CI\n\nPoint to pulseengine/rowan fix/miri-soundness-v2 which fixes:\n- Arc clone/drop/is_unique: raw pointer refcount access\n- GreenNodeData: unsized (fat Repr) for correct provenance\n- GreenNode/GreenToken: into_raw via ThinArc ptr, not Deref\n- GreenTokenData::text(): raw pointer slice access\n- cursor Cell::as_ptr().read() instead of get()\n\nMiri CI now uses -Zmiri-tree-borrows (the model Rust is converging on).\n260 non-rowan tests pass clean. yaml_cst/yaml_hir still skipped due to\ncursor::free deallocation provenance — needs cursor-level fixes next.\n\nRefs: rust-analyzer/rowan#192\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* feat(schema): auto-discover bridge schemas when dependent schemas are loaded\n\nBridge schemas (.bridge.yaml) define cross-domain traceability rules between\ntwo or more schemas. Instead of requiring explicit listing in rivet.yaml, they\nare now auto-discovered: when the loaded schema set covers every schema in a\nbridge's `extends` list, the bridge is loaded automatically.\n\n- Embed all 7 bridge schemas into the binary (eu-ai-act-aspice, eu-ai-act-stpa,\n  iso-8800-stpa, safety-case-eu-ai-act, safety-case-stpa, sotif-stpa, stpa-dev)\n- Add `discover_bridges()` function that matches bridges to loaded schema sets\n- Update `load_schemas_with_fallback` and `load_schema_contents` to auto-load\n  matching bridges (disk files preferred, embedded fallback)\n- Report auto-discovered bridges during `rivet init`\n- Add 12 tests covering discovery logic, edge cases, and schema merging\n\nImplements: FEAT-042\nRefs: #93\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* feat: provenance conditional rules with dotted field access (#104 Phase 2)\n\nAdd compound conditional validation rules that enforce review requirements\nfor AI-generated artifacts. Extend field access to support dotted paths\n(e.g., provenance.created-by) for traversing nested YAML mappings.\n\n- Add optional `condition` precondition to ConditionalRule (both condition\n  AND when must match for the rule to fire)\n- Implement dotted path resolution in get_field_value via resolve_dotted_path\n- Add ai-generated-needs-review rule to common.yaml schema\n- Update validation loops in validate.rs and db.rs for compound conditions\n- Add 16 tests: dotted field access, condition matching, and full\n  validation pipeline tests for AI/human/draft scenarios\n\nImplements: FEAT-068\nRefs: FEAT-055\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* feat: add supply-chain schema and embedded registration (#107 Phase 1)\n\nAdd supply chain artifact tracking for CRA/SBOM compliance:\n- Schema with 4 artifact types (sbom-component, build-attestation,\n  vulnerability, release-artifact) and 3 link types\n- Traceability rules for build provenance and vulnerability tracking\n- Bridge schema linking supply chain to dev requirements\n- Registered as embedded schema for --preset supply-chain usage\n- 10 integration tests covering loading, types, links, and rules\n\nImplements: FEAT-107\nRefs: #107\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* feat(lsp): add documentSymbol support with rowan CST parsing\n\nImplement lsp_document_symbols() that parses YAML source using the\nrowan CST and returns DocumentSymbol entries for each artifact with an\nid field. Works for both generic artifacts: sections and STPA-style\nnamed sections (losses:, hazards:, etc.). Includes byte_offset_to_position\nhelper for converting CST spans to LSP positions.\n\nAdd 6 tests covering basic extraction, empty files, items without id,\ndetail content, range validity, and STPA sections.\n\nRefs: #93\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* fix: clippy lints, duplicate tests, formatting\n\n- Fix clippy: redundant closure in yaml_value_to_cow, borrowed expr\n  in mapping.get() calls\n- Remove 3 duplicate documentSymbol test functions from cherry-pick\n- Keep 3 unique tests (skips_without_id, detail, stpa_sections)\n- Add yaml_sections: vec![] to 4 schema test constructors\n- cargo fmt\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.6 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-04-06T16:03:41+02:00",
+          "tree_id": "91420e12c05c0ff49e98ea65888605c1ab3958ad",
+          "url": "https://github.com/pulseengine/rivet/commit/29b735bf3cfbb06868892c2efde92a4a5a812212"
+        },
+        "date": 1775484715228,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 83074,
+            "range": "± 642",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 847220,
+            "range": "± 3420",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 12187036,
+            "range": "± 710757",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2194,
+            "range": "± 7",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25975,
+            "range": "± 334",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 372637,
+            "range": "± 5683",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 995367,
+            "range": "± 8796",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 159973,
+            "range": "± 1546",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1883584,
+            "range": "± 32598",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 25436390,
+            "range": "± 3203483",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 108545,
+            "range": "± 607",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 909962,
+            "range": "± 9563",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 10289447,
+            "range": "± 787182",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4408,
+            "range": "± 81",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 62884,
+            "range": "± 662",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 778071,
+            "range": "± 5637",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 64675,
+            "range": "± 1008",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 705325,
+            "range": "± 2242",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7572206,
+            "range": "± 149459",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 828,
+            "range": "± 7",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7810,
+            "range": "± 176",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 115040,
+            "range": "± 1563",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 23077,
+            "range": "± 148",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 157803,
+            "range": "± 1211",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1443192,
+            "range": "± 43789",
             "unit": "ns/iter"
           }
         ]
