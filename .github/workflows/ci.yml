@@ -243,16 +243,16 @@ jobs:
           components: miri
       - uses: Swatinem/rust-cache@v2
       - name: Run Miri
-        # Run only core safety-critical modules under Miri.
-        # Skip: bazel/db (rowan/salsa provenance issues), externals (spawns git),
-        # export/providers/test_scanner/yaml_edit (not safety-critical, slow under interpretation).
-        # Timeout: 5 minutes — Miri is inherently slow.
-        # Also skip yaml_cst/yaml_hir: rowan 0.16.1 has known Miri UB (rust-analyzer/rowan#192).
-        # Our fork fix is in progress at pulseengine/rowan fix/miri-soundness-v2.
-        run: cargo miri test -p rivet-core --lib -- --skip bazel --skip db --skip externals --skip export --skip providers --skip test_scanner --skip yaml_edit --skip markdown --skip yaml_cst --skip yaml_hir
-        timeout-minutes: 5
+        # Run safety-critical modules under Miri with tree borrows model.
+        # Uses pulseengine/rowan fork with Miri UB fixes (upstream: rust-analyzer/rowan#210).
+        # Skip: bazel/db (salsa internals), externals (spawns git),
+        # export/providers/test_scanner/yaml_edit (not safety-critical, slow under Miri).
+        # parse_actual_hazards: reads 15KB file creating deep cursor tree; hits remaining
+        # rowan cursor provenance issue with large trees (pulseengine/rowan#211).
+        run: cargo miri test -p rivet-core --lib -- --skip bazel --skip db --skip externals --skip export --skip providers --skip test_scanner --skip yaml_edit --skip markdown --skip parse_actual_hazards
+        timeout-minutes: 10
         env:
-          MIRIFLAGS: "-Zmiri-disable-isolation"
+          MIRIFLAGS: "-Zmiri-disable-isolation -Zmiri-tree-borrows"
 
   # ── Property-based testing (extended) ───────────────────────────────
   proptest:
