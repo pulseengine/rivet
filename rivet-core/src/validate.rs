@@ -83,7 +83,14 @@ pub fn validate(store: &Store, schema: &Schema, graph: &LinkGraph) -> Vec<Diagno
     // 8. Check conditional rules (pre-compile regexes to avoid re-compilation per artifact)
     for rule in &schema.conditional_rules {
         let compiled_re = rule.when.compile_regex();
+        let condition_re = rule.condition.as_ref().and_then(|c| c.compile_regex());
         for artifact in store.iter() {
+            // If a precondition is set, it must also match
+            if let Some(cond) = &rule.condition {
+                if !cond.matches_artifact_with(artifact, condition_re.as_ref()) {
+                    continue;
+                }
+            }
             if rule
                 .when
                 .matches_artifact_with(artifact, compiled_re.as_ref())
@@ -685,6 +692,7 @@ mod tests {
         let rule = ConditionalRule {
             name: "approved-needs-desc".to_string(),
             description: None,
+            condition: None,
             when: Condition::Equals {
                 field: "status".to_string(),
                 value: "approved".to_string(),
@@ -748,6 +756,7 @@ mod tests {
         let rule = ConditionalRule {
             name: "warn-rule".to_string(),
             description: None,
+            condition: None,
             when: Condition::Equals {
                 field: "status".to_string(),
                 value: "approved".to_string(),
@@ -838,6 +847,7 @@ then:
             ConditionalRule {
                 name: "dup".to_string(),
                 description: None,
+                condition: None,
                 when: Condition::Equals {
                     field: "status".to_string(),
                     value: "a".to_string(),
@@ -850,6 +860,7 @@ then:
             ConditionalRule {
                 name: "dup".to_string(),
                 description: None,
+                condition: None,
                 when: Condition::Equals {
                     field: "status".to_string(),
                     value: "b".to_string(),
@@ -969,6 +980,7 @@ then:
             ConditionalRule {
                 name: "rule-a".to_string(),
                 description: None,
+                condition: None,
                 when: Condition::Equals {
                     field: "status".to_string(),
                     value: "approved".to_string(),
@@ -981,6 +993,7 @@ then:
             ConditionalRule {
                 name: "rule-b".to_string(),
                 description: None,
+                condition: None,
                 when: Condition::Equals {
                     field: "status".to_string(),
                     value: "approved".to_string(),

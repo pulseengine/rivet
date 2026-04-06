@@ -176,11 +176,18 @@ fn default_severity() -> Severity {
 }
 
 /// A conditional validation rule: when a condition is true, require something.
+///
+/// When `condition` is present, BOTH `condition` AND `when` must match for the
+/// rule to fire. This enables compound rules like "AI-generated artifacts with
+/// active status must have a reviewer".
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConditionalRule {
     pub name: String,
     #[serde(default)]
     pub description: Option<String>,
+    /// Optional precondition filter — when present, must also match.
+    #[serde(default)]
+    pub condition: Option<Condition>,
     pub when: Condition,
     pub then: Requirement,
     #[serde(default = "default_severity")]
@@ -311,8 +318,20 @@ impl Condition {
 /// Get a string value for a field from an artifact, checking base fields first.
 ///
 /// Returns a `Cow<str>` to avoid cloning when the value is already a `&str`.
+///
+/// Supports dotted paths (e.g., `provenance.created-by`) to traverse into
+/// nested YAML mappings stored in the artifact's `fields` map.
 #[inline]
 fn get_field_value<'a>(artifact: &'a Artifact, field: &str) -> Option<Cow<'a, str>> {
+    // Fast path: check for dotted path first
+    if let Some(dot_pos) = field.find('.') {
+        let root = &field[..dot_pos];
+        let rest = &field[dot_pos + 1..];
+        // Dotted paths only apply to the fields map
+        let root_val = artifact.fields.get(root)?;
+        return resolve_dotted_path(root_val, rest);
+    }
+
     match field {
         "status" => artifact.status.as_deref().map(Cow::Borrowed),
         "description" => artifact.description.as_deref().map(Cow::Borrowed),
@@ -328,14 +347,42 @@ fn get_field_value<'a>(artifact: &'a Artifact, field: &str) -> Option<Cow<'a, st
                 }
             } else {
                 // Check fields map
-                artifact.fields.get(field).map(|v| match v {
-                    serde_yaml::Value::String(s) => Cow::Borrowed(s.as_str()),
-                    serde_yaml::Value::Bool(b) => Cow::Owned(b.to_string()),
-                    serde_yaml::Value::Number(n) => Cow::Owned(n.to_string()),
-                    _ => Cow::Owned(format!("{v:?}")),
-                })
+                artifact.fields.get(field).and_then(|v| yaml_value_to_cow(v))
             }
         }
+    }
+}
+
+/// Convert a `serde_yaml::Value` to a `Cow<str>`.
+///
+/// Returns `None` for null values; returns a debug representation for
+/// complex types (sequences, mappings).
+fn yaml_value_to_cow(v: &serde_yaml::Value) -> Option<Cow<'_, str>> {
+    match v {
+        serde_yaml::Value::String(s) => Some(Cow::Borrowed(s.as_str())),
+        serde_yaml::Value::Bool(b) => Some(Cow::Owned(b.to_string())),
+        serde_yaml::Value::Number(n) => Some(Cow::Owned(n.to_string())),
+        serde_yaml::Value::Null => None,
+        _ => Some(Cow::Owned(format!("{v:?}"))),
+    }
+}
+
+/// Resolve a dotted path within a `serde_yaml::Value`.
+///
+/// For example, given a mapping `{created-by: ai, reviewed-by: alice}` and
+/// `rest = "created-by"`, returns `Some(Cow::Borrowed("ai"))`.
+///
+/// Supports arbitrary nesting depth (e.g., `a.b.c`).
+fn resolve_dotted_path<'a>(value: &'a serde_yaml::Value, rest: &str) -> Option<Cow<'a, str>> {
+    let mapping = value.as_mapping()?;
+    if let Some(dot_pos) = rest.find('.') {
+        let key = &rest[..dot_pos];
+        let remainder = &rest[dot_pos + 1..];
+        let child = mapping.get(&serde_yaml::Value::String(key.to_string()))?;
+        resolve_dotted_path(child, remainder)
+    } else {
+        let child = mapping.get(&serde_yaml::Value::String(rest.to_string()))?;
+        yaml_value_to_cow(child)
     }
 }
 
@@ -846,5 +893,344 @@ mod tests {
         let mut a = minimal_artifact("X-1", "test");
         a.description = Some("present".into());
         assert!(cond.matches_artifact_with(&a, None));
+    }
+
+    // ── dotted field access tests ───────────────────────────────────────
+
+    /// Helper: create a provenance mapping as a serde_yaml::Value.
+    fn provenance_mapping(entries: &[(&str, &str)]) -> serde_yaml::Value {
+        let mut map = serde_yaml::Mapping::new();
+        for (k, v) in entries {
+            map.insert(
+                serde_yaml::Value::String(k.to_string()),
+                serde_yaml::Value::String(v.to_string()),
+            );
+        }
+        serde_yaml::Value::Mapping(map)
+    }
+
+    #[test]
+    fn get_field_value_dotted_path_simple() {
+        let a = artifact_with_fields(
+            "X-1",
+            vec![(
+                "provenance",
+                provenance_mapping(&[("created-by", "ai"), ("reviewed-by", "alice")]),
+            )],
+        );
+        let val = get_field_value(&a, "provenance.created-by");
+        assert_eq!(val, Some(Cow::Borrowed("ai")));
+    }
+
+    #[test]
+    fn get_field_value_dotted_path_missing_leaf() {
+        let a = artifact_with_fields(
+            "X-1",
+            vec![("provenance", provenance_mapping(&[("created-by", "ai")]))],
+        );
+        let val = get_field_value(&a, "provenance.reviewed-by");
+        assert_eq!(val, None);
+    }
+
+    #[test]
+    fn get_field_value_dotted_path_missing_root() {
+        let a = minimal_artifact("X-1", "test");
+        let val = get_field_value(&a, "provenance.created-by");
+        assert_eq!(val, None);
+    }
+
+    #[test]
+    fn get_field_value_dotted_path_root_not_mapping() {
+        let a = artifact_with_fields(
+            "X-1",
+            vec![("provenance", serde_yaml::Value::String("flat".into()))],
+        );
+        let val = get_field_value(&a, "provenance.created-by");
+        assert_eq!(val, None);
+    }
+
+    #[test]
+    fn get_field_value_dotted_path_deeply_nested() {
+        let mut inner = serde_yaml::Mapping::new();
+        inner.insert(
+            serde_yaml::Value::String("key".into()),
+            serde_yaml::Value::String("deep-value".into()),
+        );
+        let mut outer = serde_yaml::Mapping::new();
+        outer.insert(
+            serde_yaml::Value::String("nested".into()),
+            serde_yaml::Value::Mapping(inner),
+        );
+        let a = artifact_with_fields("X-1", vec![("root", serde_yaml::Value::Mapping(outer))]);
+        let val = get_field_value(&a, "root.nested.key");
+        assert_eq!(val, Some(Cow::Borrowed("deep-value")));
+    }
+
+    #[test]
+    fn condition_matches_dotted_field() {
+        let cond = Condition::Matches {
+            field: "provenance.created-by".into(),
+            pattern: "^(ai|ai-assisted)$".into(),
+        };
+        let a = artifact_with_fields(
+            "X-1",
+            vec![("provenance", provenance_mapping(&[("created-by", "ai")]))],
+        );
+        assert!(cond.matches_artifact(&a));
+    }
+
+    #[test]
+    fn condition_matches_dotted_field_no_match() {
+        let cond = Condition::Matches {
+            field: "provenance.created-by".into(),
+            pattern: "^(ai|ai-assisted)$".into(),
+        };
+        let a = artifact_with_fields(
+            "X-1",
+            vec![(
+                "provenance",
+                provenance_mapping(&[("created-by", "human")]),
+            )],
+        );
+        assert!(!cond.matches_artifact(&a));
+    }
+
+    #[test]
+    fn condition_exists_dotted_field() {
+        let cond = Condition::Exists {
+            field: "provenance.reviewed-by".into(),
+        };
+        let a = artifact_with_fields(
+            "X-1",
+            vec![(
+                "provenance",
+                provenance_mapping(&[("created-by", "ai"), ("reviewed-by", "alice")]),
+            )],
+        );
+        assert!(cond.matches_artifact(&a));
+    }
+
+    #[test]
+    fn condition_exists_dotted_field_missing() {
+        let cond = Condition::Exists {
+            field: "provenance.reviewed-by".into(),
+        };
+        let a = artifact_with_fields(
+            "X-1",
+            vec![("provenance", provenance_mapping(&[("created-by", "ai")]))],
+        );
+        assert!(!cond.matches_artifact(&a));
+    }
+
+    // ── compound conditional rule (condition + when) tests ──────────────
+
+    #[test]
+    fn ai_generated_active_without_reviewer_gets_warning() {
+        use crate::test_helpers::{pipeline, minimal_schema};
+        use crate::schema::{ArtifactTypeDef, ConditionalRule, Condition, Requirement, Severity};
+
+        let mut schema_file = minimal_schema("test");
+        schema_file.artifact_types.push(ArtifactTypeDef {
+            name: "requirement".into(),
+            description: "A requirement".into(),
+            fields: vec![],
+            link_fields: vec![],
+            aspice_process: None,
+            common_mistakes: vec![],
+            example: None,
+            yaml_section: None,
+            shorthand_links: Default::default(),
+        });
+        schema_file.conditional_rules.push(ConditionalRule {
+            name: "ai-generated-needs-review".into(),
+            description: Some("AI-generated artifacts with active status must have a reviewer".into()),
+            condition: Some(Condition::Matches {
+                field: "provenance.created-by".into(),
+                pattern: "^(ai|ai-assisted)$".into(),
+            }),
+            when: Condition::Equals {
+                field: "status".into(),
+                value: "active".into(),
+            },
+            then: Requirement::RequiredFields {
+                fields: vec!["provenance.reviewed-by".into()],
+            },
+            severity: Severity::Warning,
+        });
+
+        // AI-generated, active, no reviewer
+        let mut art = minimal_artifact("REQ-1", "requirement");
+        art.status = Some("active".into());
+        art.fields.insert(
+            "provenance".into(),
+            provenance_mapping(&[("created-by", "ai")]),
+        );
+
+        let (schema, store, graph) = pipeline(schema_file, vec![art]);
+        let diags = crate::validate::validate(&store, &schema, &graph);
+
+        let rule_diags: Vec<_> = diags
+            .iter()
+            .filter(|d| d.rule == "ai-generated-needs-review")
+            .collect();
+        assert_eq!(rule_diags.len(), 1);
+        assert_eq!(rule_diags[0].severity, Severity::Warning);
+        assert!(rule_diags[0].message.contains("provenance.reviewed-by"));
+    }
+
+    #[test]
+    fn ai_generated_active_with_reviewer_passes() {
+        use crate::test_helpers::{pipeline, minimal_schema};
+        use crate::schema::{ArtifactTypeDef, ConditionalRule, Condition, Requirement, Severity};
+
+        let mut schema_file = minimal_schema("test");
+        schema_file.artifact_types.push(ArtifactTypeDef {
+            name: "requirement".into(),
+            description: "A requirement".into(),
+            fields: vec![],
+            link_fields: vec![],
+            aspice_process: None,
+            common_mistakes: vec![],
+            example: None,
+            yaml_section: None,
+            shorthand_links: Default::default(),
+        });
+        schema_file.conditional_rules.push(ConditionalRule {
+            name: "ai-generated-needs-review".into(),
+            description: Some("AI-generated artifacts with active status must have a reviewer".into()),
+            condition: Some(Condition::Matches {
+                field: "provenance.created-by".into(),
+                pattern: "^(ai|ai-assisted)$".into(),
+            }),
+            when: Condition::Equals {
+                field: "status".into(),
+                value: "active".into(),
+            },
+            then: Requirement::RequiredFields {
+                fields: vec!["provenance.reviewed-by".into()],
+            },
+            severity: Severity::Warning,
+        });
+
+        // AI-generated, active, WITH reviewer
+        let mut art = minimal_artifact("REQ-1", "requirement");
+        art.status = Some("active".into());
+        art.fields.insert(
+            "provenance".into(),
+            provenance_mapping(&[("created-by", "ai"), ("reviewed-by", "alice")]),
+        );
+
+        let (schema, store, graph) = pipeline(schema_file, vec![art]);
+        let diags = crate::validate::validate(&store, &schema, &graph);
+
+        let rule_diags: Vec<_> = diags
+            .iter()
+            .filter(|d| d.rule == "ai-generated-needs-review")
+            .collect();
+        assert_eq!(rule_diags.len(), 0);
+    }
+
+    #[test]
+    fn human_authored_active_not_affected_by_ai_rule() {
+        use crate::test_helpers::{pipeline, minimal_schema};
+        use crate::schema::{ArtifactTypeDef, ConditionalRule, Condition, Requirement, Severity};
+
+        let mut schema_file = minimal_schema("test");
+        schema_file.artifact_types.push(ArtifactTypeDef {
+            name: "requirement".into(),
+            description: "A requirement".into(),
+            fields: vec![],
+            link_fields: vec![],
+            aspice_process: None,
+            common_mistakes: vec![],
+            example: None,
+            yaml_section: None,
+            shorthand_links: Default::default(),
+        });
+        schema_file.conditional_rules.push(ConditionalRule {
+            name: "ai-generated-needs-review".into(),
+            description: Some("AI-generated artifacts with active status must have a reviewer".into()),
+            condition: Some(Condition::Matches {
+                field: "provenance.created-by".into(),
+                pattern: "^(ai|ai-assisted)$".into(),
+            }),
+            when: Condition::Equals {
+                field: "status".into(),
+                value: "active".into(),
+            },
+            then: Requirement::RequiredFields {
+                fields: vec!["provenance.reviewed-by".into()],
+            },
+            severity: Severity::Warning,
+        });
+
+        // Human-authored, active, no reviewer
+        let mut art = minimal_artifact("REQ-1", "requirement");
+        art.status = Some("active".into());
+        art.fields.insert(
+            "provenance".into(),
+            provenance_mapping(&[("created-by", "human")]),
+        );
+
+        let (schema, store, graph) = pipeline(schema_file, vec![art]);
+        let diags = crate::validate::validate(&store, &schema, &graph);
+
+        let rule_diags: Vec<_> = diags
+            .iter()
+            .filter(|d| d.rule == "ai-generated-needs-review")
+            .collect();
+        assert_eq!(rule_diags.len(), 0, "human-authored artifact should not trigger AI review rule");
+    }
+
+    #[test]
+    fn ai_generated_draft_not_affected_by_active_rule() {
+        use crate::test_helpers::{pipeline, minimal_schema};
+        use crate::schema::{ArtifactTypeDef, ConditionalRule, Condition, Requirement, Severity};
+
+        let mut schema_file = minimal_schema("test");
+        schema_file.artifact_types.push(ArtifactTypeDef {
+            name: "requirement".into(),
+            description: "A requirement".into(),
+            fields: vec![],
+            link_fields: vec![],
+            aspice_process: None,
+            common_mistakes: vec![],
+            example: None,
+            yaml_section: None,
+            shorthand_links: Default::default(),
+        });
+        schema_file.conditional_rules.push(ConditionalRule {
+            name: "ai-generated-needs-review".into(),
+            description: Some("AI-generated artifacts with active status must have a reviewer".into()),
+            condition: Some(Condition::Matches {
+                field: "provenance.created-by".into(),
+                pattern: "^(ai|ai-assisted)$".into(),
+            }),
+            when: Condition::Equals {
+                field: "status".into(),
+                value: "active".into(),
+            },
+            then: Requirement::RequiredFields {
+                fields: vec!["provenance.reviewed-by".into()],
+            },
+            severity: Severity::Warning,
+        });
+
+        // AI-generated but draft status — rule should NOT fire
+        let mut art = minimal_artifact("REQ-1", "requirement");
+        art.status = Some("draft".into());
+        art.fields.insert(
+            "provenance".into(),
+            provenance_mapping(&[("created-by", "ai")]),
+        );
+
+        let (schema, store, graph) = pipeline(schema_file, vec![art]);
+        let diags = crate::validate::validate(&store, &schema, &graph);
+
+        let rule_diags: Vec<_> = diags
+            .iter()
+            .filter(|d| d.rule == "ai-generated-needs-review")
+            .collect();
+        assert_eq!(rule_diags.len(), 0, "draft AI artifact should not trigger review rule");
     }
 }

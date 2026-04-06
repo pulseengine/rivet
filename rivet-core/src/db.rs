@@ -238,7 +238,14 @@ pub fn evaluate_conditional_rules(
     // Evaluate each conditional rule against each artifact (pre-compile regexes)
     for rule in &schema.conditional_rules {
         let compiled_re = rule.when.compile_regex();
+        let condition_re = rule.condition.as_ref().and_then(|c| c.compile_regex());
         for artifact in store.iter() {
+            // If a precondition is set, it must also match
+            if let Some(cond) = &rule.condition {
+                if !cond.matches_artifact_with(artifact, condition_re.as_ref()) {
+                    continue;
+                }
+            }
             if rule
                 .when
                 .matches_artifact_with(artifact, compiled_re.as_ref())
