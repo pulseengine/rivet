@@ -117,6 +117,11 @@ pub fn parse_artifacts_v2(
 ///
 /// Each file that fails to parse produces a `yaml-parse-error` diagnostic
 /// with the serde_yaml error details and line/column position.
+///
+/// **Note:** This uses the generic serde_yaml parser, which only understands
+/// files with a top-level `artifacts:` key. When the `rowan-yaml` feature is
+/// enabled, `collect_rowan_parse_errors` should be used instead — it detects
+/// actual YAML syntax errors without assuming a particular document structure.
 #[salsa::tracked]
 pub fn collect_parse_errors(
     db: &dyn salsa::Database,
@@ -149,6 +154,62 @@ pub fn collect_parse_errors(
         }
     }
     errors
+}
+
+/// Collect parse errors from all source files using the rowan YAML parser.
+///
+/// Unlike `collect_parse_errors`, this does not assume any particular document
+/// structure — it only reports actual YAML syntax errors detected by the
+/// rowan CST parser. This correctly handles all file formats (generic
+/// `artifacts:` files, STPA section-based files, etc.).
+#[cfg(feature = "rowan-yaml")]
+#[salsa::tracked]
+pub fn collect_rowan_parse_errors(
+    db: &dyn salsa::Database,
+    source_set: SourceFileSet,
+) -> Vec<Diagnostic> {
+    let mut errors = Vec::new();
+    for source in source_set.files(db) {
+        let content = source.content(db);
+        let path = source.path(db);
+        let source_path = std::path::Path::new(&path);
+
+        let (_green, parse_errors) = crate::yaml_cst::parse(&content);
+        for pe in &parse_errors {
+            // Convert byte offset to line/column
+            let (line, col) = byte_offset_to_line_col(&content, pe.offset);
+            let mut diag = Diagnostic::new(
+                crate::schema::Severity::Error,
+                None,
+                "yaml-parse-error",
+                format!("{}: {}", source_path.display(), pe.message),
+            );
+            diag.source_file = Some(source_path.to_path_buf());
+            diag.line = Some(line);
+            diag.column = Some(col);
+            errors.push(diag);
+        }
+    }
+    errors
+}
+
+/// Convert a byte offset within `source` to a 0-based (line, column) pair.
+#[cfg(feature = "rowan-yaml")]
+fn byte_offset_to_line_col(source: &str, offset: usize) -> (u32, u32) {
+    let mut line = 0u32;
+    let mut col = 0u32;
+    for (i, ch) in source.char_indices() {
+        if i >= offset {
+            break;
+        }
+        if ch == '\n' {
+            line += 1;
+            col = 0;
+        } else {
+            col += 1;
+        }
+    }
+    (line, col)
 }
 
 /// Extract line/column from a serde_yaml error message.
@@ -188,6 +249,14 @@ pub fn validate_all(
 ) -> Vec<Diagnostic> {
     // Parse errors come first — if a file can't be parsed, its artifacts
     // are missing and will cause cascading broken-link errors.
+    //
+    // When rowan-yaml is enabled, use the rowan CST parser for error
+    // detection. The generic serde_yaml parser (`collect_parse_errors`)
+    // only understands files with a top-level `artifacts:` key and
+    // produces false errors for STPA section-based files.
+    #[cfg(feature = "rowan-yaml")]
+    let mut diagnostics = collect_rowan_parse_errors(db, source_set);
+    #[cfg(not(feature = "rowan-yaml"))]
     let mut diagnostics = collect_parse_errors(db, source_set);
 
     let (store, schema, graph) = build_pipeline(db, source_set, schema_set);
