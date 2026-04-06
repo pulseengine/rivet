@@ -411,6 +411,83 @@ impl YamlEditor {
         Ok(())
     }
 
+    /// Set or replace provenance metadata on an artifact.
+    ///
+    /// If a `provenance:` section already exists, it is replaced entirely.
+    /// If not, one is appended at the end of the artifact block (before any
+    /// trailing blank lines).
+    pub fn set_provenance(
+        &mut self,
+        id: &str,
+        created_by: &str,
+        model: Option<&str>,
+        session_id: Option<&str>,
+        timestamp: Option<&str>,
+        reviewed_by: Option<&str>,
+    ) -> Result<(), String> {
+        let (block_start, block_end) = self
+            .find_artifact_block(id)
+            .ok_or_else(|| format!("artifact '{id}' not found"))?;
+
+        let field_indent = self.field_indent(block_start);
+        let indent_str = " ".repeat(field_indent);
+        let sub_indent = " ".repeat(field_indent + 2);
+
+        // Build the provenance lines
+        let mut prov_lines = Vec::new();
+        prov_lines.push(format!("{indent_str}provenance:"));
+        prov_lines.push(format!("{sub_indent}created-by: {created_by}"));
+        if let Some(m) = model {
+            prov_lines.push(format!("{sub_indent}model: {m}"));
+        }
+        if let Some(sid) = session_id {
+            prov_lines.push(format!("{sub_indent}session-id: {sid}"));
+        }
+        if let Some(ts) = timestamp {
+            prov_lines.push(format!("{sub_indent}timestamp: {ts}"));
+        }
+        if let Some(rb) = reviewed_by {
+            prov_lines.push(format!("{sub_indent}reviewed-by: {rb}"));
+        }
+
+        // Check if provenance section already exists
+        if let Some(prov_line) = self.find_field_in_block(block_start, block_end, "provenance") {
+            // Find the extent of the provenance block (all deeper-indented lines)
+            let mut prov_end = prov_line + 1;
+            while prov_end < block_end {
+                let line = &self.lines[prov_end];
+                let trimmed = line.trim();
+                if trimmed.is_empty() {
+                    prov_end += 1;
+                    continue;
+                }
+                let this_indent = line.len() - line.trim_start().len();
+                if this_indent <= field_indent {
+                    break;
+                }
+                prov_end += 1;
+            }
+            // Replace the old provenance block
+            self.lines.splice(prov_line..prov_end, prov_lines);
+        } else {
+            // Insert at the end of the block, before trailing blank lines
+            let mut insert_at = block_end;
+            while insert_at > block_start + 1
+                && self
+                    .lines
+                    .get(insert_at - 1)
+                    .is_some_and(|l| l.trim().is_empty())
+            {
+                insert_at -= 1;
+            }
+            for (i, line) in prov_lines.into_iter().enumerate() {
+                self.lines.insert(insert_at + i, line);
+            }
+        }
+
+        Ok(())
+    }
+
     /// Serialize the editor contents back to a string.
     ///
     /// The output preserves the exact original formatting for any lines that
@@ -1061,6 +1138,72 @@ artifacts:
     fn test_remove_artifact_not_found() {
         let mut editor = YamlEditor::parse(SAMPLE_YAML);
         let result = editor.remove_artifact("NOPE-999");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not found"));
+    }
+
+    // rivet: verifies REQ-034
+    #[test]
+    fn test_set_provenance_adds_new() {
+        let mut editor = YamlEditor::parse(SAMPLE_YAML);
+        editor
+            .set_provenance(
+                "REQ-002",
+                "ai-assisted",
+                Some("claude-opus-4-6"),
+                Some("sess-123"),
+                Some("2026-04-05T12:00:00Z"),
+                None,
+            )
+            .unwrap();
+        let output = editor.to_string();
+        assert!(output.contains("    provenance:"));
+        assert!(output.contains("      created-by: ai-assisted"));
+        assert!(output.contains("      model: claude-opus-4-6"));
+        assert!(output.contains("      session-id: sess-123"));
+        assert!(output.contains("      timestamp: 2026-04-05T12:00:00Z"));
+        // reviewed-by should not appear when None
+        assert!(!output.contains("reviewed-by"));
+    }
+
+    // rivet: verifies REQ-034
+    #[test]
+    fn test_set_provenance_replaces_existing() {
+        let yaml_with_prov = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: First
+    provenance:
+      created-by: ai
+      model: old-model
+      timestamp: 2025-01-01T00:00:00Z";
+
+        let mut editor = YamlEditor::parse(yaml_with_prov);
+        editor
+            .set_provenance(
+                "REQ-001",
+                "human",
+                None,
+                None,
+                Some("2026-04-05T12:00:00Z"),
+                Some("Jane Doe"),
+            )
+            .unwrap();
+        let output = editor.to_string();
+        assert!(output.contains("      created-by: human"));
+        assert!(output.contains("      reviewed-by: Jane Doe"));
+        assert!(output.contains("      timestamp: 2026-04-05T12:00:00Z"));
+        // Old model should be gone
+        assert!(!output.contains("old-model"));
+        assert!(!output.contains("model:"));
+    }
+
+    // rivet: verifies REQ-034
+    #[test]
+    fn test_set_provenance_not_found() {
+        let mut editor = YamlEditor::parse(SAMPLE_YAML);
+        let result = editor.set_provenance("NOPE-999", "human", None, None, None, None);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not found"));
     }
