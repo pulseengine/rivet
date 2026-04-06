@@ -1039,6 +1039,7 @@ mod tests {
             common_mistakes: vec![],
             example: None,
             yaml_section: None,
+            yaml_sections: vec![],
             shorthand_links: Default::default(),
         });
         schema_file.conditional_rules.push(ConditionalRule {
@@ -1093,6 +1094,7 @@ mod tests {
             common_mistakes: vec![],
             example: None,
             yaml_section: None,
+            yaml_sections: vec![],
             shorthand_links: Default::default(),
         });
         schema_file.conditional_rules.push(ConditionalRule {
@@ -1145,6 +1147,7 @@ mod tests {
             common_mistakes: vec![],
             example: None,
             yaml_section: None,
+            yaml_sections: vec![],
             shorthand_links: Default::default(),
         });
         schema_file.conditional_rules.push(ConditionalRule {
@@ -1197,6 +1200,7 @@ mod tests {
             common_mistakes: vec![],
             example: None,
             yaml_section: None,
+            yaml_sections: vec![],
             shorthand_links: Default::default(),
         });
         schema_file.conditional_rules.push(ConditionalRule {

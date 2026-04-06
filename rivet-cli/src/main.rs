@@ -8318,4 +8318,53 @@ artifacts:
         assert_eq!(symbols.len(), 1);
         assert_eq!(symbols[0].name, "REQ-Q01");
     }
+
+    // ── lsp_document_symbols ──────────────────────────────────────────
+
+    #[test]
+    fn document_symbols_extracts_artifact_ids() {
+        let source = "artifacts:\n  - id: REQ-001\n    type: requirement\n    title: First\n  - id: REQ-002\n    type: requirement\n    title: Second\n";
+        let symbols = lsp_document_symbols(source);
+        assert_eq!(symbols.len(), 2);
+        assert_eq!(symbols[0].name, "REQ-001");
+        assert_eq!(symbols[1].name, "REQ-002");
+    }
+
+    #[test]
+    fn document_symbols_empty_file() {
+        assert!(lsp_document_symbols("").is_empty());
+        assert!(lsp_document_symbols("# just a comment\n").is_empty());
+    }
+
+    #[test]
+    fn document_symbols_skips_items_without_id() {
+        let source = "artifacts:\n  - type: requirement\n    title: No ID\n";
+        assert!(lsp_document_symbols(source).is_empty());
+    }
+
+    #[test]
+    fn document_symbols_detail_includes_type_and_title() {
+        let source = "artifacts:\n  - id: FEAT-001\n    type: feature\n    title: My Feature\n";
+        let symbols = lsp_document_symbols(source);
+        assert_eq!(symbols.len(), 1);
+        let detail = symbols[0].detail.as_deref().unwrap_or("");
+        assert!(detail.contains("feature"), "detail should contain type: {detail}");
+        assert!(detail.contains("My Feature"), "detail should contain title: {detail}");
+    }
+
+    #[test]
+    fn document_symbols_ranges_are_valid() {
+        let source = "artifacts:\n  - id: REQ-001\n    title: First\n";
+        let symbols = lsp_document_symbols(source);
+        assert_eq!(symbols.len(), 1);
+        let range = &symbols[0].range;
+        assert!(range.start.line <= range.end.line);
+    }
+
+    #[test]
+    fn document_symbols_stpa_sections() {
+        let source = "losses:\n  - id: L-1\n    title: Loss one\nhazards:\n  - id: H-1\n    title: Hazard one\n";
+        let symbols = lsp_document_symbols(source);
+        assert_eq!(symbols.len(), 2);
+    }
 }
