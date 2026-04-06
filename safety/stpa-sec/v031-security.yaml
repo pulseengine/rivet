@@ -100,6 +100,71 @@ artifacts:
     fields:
       cia-impact: [availability]
 
+  # ── Security UCAs ──────────────────────────────────────────────────────
+
+  - id: SUCA-MCP-1
+    type: sec-uca
+    title: MCP server accepts tool invocations without authentication
+    status: draft
+    description: >
+      The MCP stdio transport accepts tool invocations from any process
+      that can pipe to Rivet's stdin. On shared systems, a malicious
+      process could query all project artifacts.
+    links:
+      - type: issued-by
+        target: CTRL-CLI
+      - type: leads-to-sec-hazard
+        target: SH-IMPL-002
+    fields:
+      uca-type: not-providing
+      context: >
+        Shared developer machines or CI runners where multiple processes
+        have access to stdio.
+      adversarial-causation: >
+        Insider attacker on a shared CI runner or developer machine spawns
+        a process that connects to Rivet's MCP stdin/stdout and invokes
+        rivet_list or rivet_validate to exfiltrate project artifacts.
+      attacker-type: insider
+
+  - id: SUCA-MCP-2
+    type: sec-uca
+    title: MCP server returns full file system paths in error messages
+    status: draft
+    description: >
+      Error responses from MCP tools may include absolute file system
+      paths, revealing project directory structure to connected agents.
+    links:
+      - type: issued-by
+        target: CTRL-CLI
+      - type: leads-to-sec-hazard
+        target: SH-IMPL-002
+    fields:
+      uca-type: providing
+      context: >
+        AI agent connected via MCP receives detailed error with paths.
+      adversarial-causation: >
+        External agent connected via MCP triggers an error (e.g., invalid
+        artifact ID) and receives an error response containing absolute
+        file system paths, disclosing the project directory structure and
+        potentially revealing sensitive path components.
+      attacker-type: external-network
+
+  # ── Security Scenarios ─────────────────────────────────────────────────
+
+  - id: SLS-IMPL-001
+    type: sec-scenario
+    title: Malicious VS Code extension queries artifacts via MCP
+    status: draft
+    description: >
+      A compromised VS Code extension spawns a rivet MCP subprocess
+      and calls rivet_list to enumerate all project artifacts including
+      security-sensitive design decisions and vulnerability assessments.
+    links:
+      - type: caused-by-sec-uca
+        target: SUCA-MCP-1
+      - type: leads-to-sec-hazard
+        target: SH-IMPL-002
+
   # ── Security Constraints ────────────────────────────────────────────────
 
   - id: SSC-IMPL-001
@@ -160,6 +225,17 @@ artifacts:
       MCP tools return artifact data, diagnostics, and stats scoped
       to the project directory. No absolute paths or file contents
       outside the project root are exposed.
+    links:
+      - type: prevents-sec-hazard
+        target: SH-IMPL-002
+
+  - id: SSC-IMPL-006
+    type: sec-constraint
+    title: MCP tool results MUST NOT include absolute file paths
+    status: draft
+    description: >
+      MCP tool responses must use project-relative paths only.
+      Error messages must sanitize paths before returning to the client.
     links:
       - type: prevents-sec-hazard
         target: SH-IMPL-002
