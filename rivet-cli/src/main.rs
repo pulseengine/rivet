@@ -368,6 +368,10 @@ enum Command {
         /// Topic slug to display (omit for topic list)
         topic: Option<String>,
 
+        /// List available topics (same as `rivet docs` with no args)
+        #[arg(long)]
+        list: bool,
+
         /// Search across all docs (like grep)
         #[arg(long)]
         grep: Option<String>,
@@ -771,12 +775,13 @@ fn run(cli: Cli) -> Result<bool> {
     }
     if let Command::Docs {
         topic,
+        list,
         grep,
         format,
         context,
     } = &cli.command
     {
-        return cmd_docs(topic.as_deref(), grep.as_deref(), format, *context);
+        return cmd_docs(topic.as_deref(), *list, grep.as_deref(), format, *context);
     }
     if let Command::Context = &cli.command {
         return cmd_context(&cli);
@@ -4623,9 +4628,18 @@ struct RawLink {
 }
 
 /// Show built-in docs (no project load needed).
-fn cmd_docs(topic: Option<&str>, grep: Option<&str>, format: &str, context: usize) -> Result<bool> {
+fn cmd_docs(
+    topic: Option<&str>,
+    list: bool,
+    grep: Option<&str>,
+    format: &str,
+    context: usize,
+) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
-    if let Some(pattern) = grep {
+    if list {
+        // --list explicitly requests the topic listing
+        print!("{}", docs::list_topics(format));
+    } else if let Some(pattern) = grep {
         print!("{}", docs::grep_docs(pattern, format, context));
     } else if let Some(slug) = topic {
         print!("{}", docs::show_topic(slug, format));
@@ -7402,6 +7416,10 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
         }
     }
 
+    // Drop the connection to close the sender channel, allowing the
+    // writer IO thread to finish. Without this, io_threads.join() would
+    // deadlock because the writer thread blocks on the channel.
+    drop(connection);
     io_threads.join()?;
     eprintln!("rivet lsp: shut down");
     Ok(true)

@@ -49,6 +49,27 @@ fn docs_list_topics() {
     );
 }
 
+/// `rivet docs --list` explicitly lists all available topics.
+#[test]
+fn docs_list_flag() {
+    let output = Command::new(rivet_bin())
+        .args(["docs", "--list"])
+        .output()
+        .expect("failed to execute rivet docs --list");
+
+    assert!(output.status.success(), "rivet docs --list must exit 0");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("artifact-format"),
+        "topic list must include 'artifact-format', got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("rivet-yaml"),
+        "topic list must include 'rivet-yaml', got:\n{stdout}"
+    );
+}
+
 /// `rivet docs artifact-format` shows the topic content.
 #[test]
 fn docs_show_topic() {
