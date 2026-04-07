@@ -3585,14 +3585,8 @@ mod tests {
         assert!(nav.contains("graph.html"), "nav missing graph link");
         assert!(nav.contains(">STPA<"), "nav missing STPA label");
         assert!(nav.contains(">Graph<"), "nav missing Graph label");
-        assert!(
-            nav.contains("eu-ai-act.html"),
-            "nav missing eu-ai-act link"
-        );
-        assert!(
-            nav.contains(">EU AI Act<"),
-            "nav missing EU AI Act label"
-        );
+        assert!(nav.contains("eu-ai-act.html"), "nav missing eu-ai-act link");
+        assert!(nav.contains(">EU AI Act<"), "nav missing EU AI Act label");
     }
 
     // rivet: verifies REQ-035

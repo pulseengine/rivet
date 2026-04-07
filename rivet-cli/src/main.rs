@@ -3837,8 +3837,7 @@ fn cmd_export_html(
         } else {
             String::new()
         };
-        let eu_ai_act_loaded =
-            rivet_core::compliance::is_eu_ai_act_loaded(&state.schema);
+        let eu_ai_act_loaded = rivet_core::compliance::is_eu_ai_act_loaded(&state.schema);
         let eu_ai_act_nav = if eu_ai_act_loaded {
             let eu_count: usize = rivet_core::compliance::EU_AI_ACT_TYPES
                 .iter()
@@ -3849,9 +3848,7 @@ fn cmd_export_html(
             } else {
                 String::new()
             };
-            format!(
-                "<li><a href=\"../eu-ai-act/index.html\">EU AI Act{badge}</a></li>"
-            )
+            format!("<li><a href=\"../eu-ai-act/index.html\">EU AI Act{badge}</a></li>")
         } else {
             String::new()
         };
@@ -3941,12 +3938,7 @@ document.addEventListener('DOMContentLoaded',function(){{
     page_count += 1;
     write_page("stpa/index.html", "/stpa", "STPA", out_dir)?;
     page_count += 1;
-    write_page(
-        "eu-ai-act/index.html",
-        "/eu-ai-act",
-        "EU AI Act",
-        out_dir,
-    )?;
+    write_page("eu-ai-act/index.html", "/eu-ai-act", "EU AI Act", out_dir)?;
     page_count += 1;
     write_page("documents/index.html", "/documents", "Documents", out_dir)?;
     page_count += 1;

@@ -1218,7 +1218,10 @@ fn all_json_outputs_are_valid() {
             "coverage",
             vec!["--project", p, "coverage", "--format", "json"],
         ),
-        ("get", vec!["--project", p, "get", "REQ-001", "--format", "json"]),
+        (
+            "get",
+            vec!["--project", p, "get", "REQ-001", "--format", "json"],
+        ),
         (
             "schema list",
             vec!["--project", p, "schema", "list", "--format", "json"],
@@ -1226,7 +1229,13 @@ fn all_json_outputs_are_valid() {
         (
             "schema show",
             vec![
-                "--project", p, "schema", "show", "requirement", "--format", "json",
+                "--project",
+                p,
+                "schema",
+                "show",
+                "requirement",
+                "--format",
+                "json",
             ],
         ),
         (
@@ -1239,9 +1248,7 @@ fn all_json_outputs_are_valid() {
         ),
         (
             "schema info",
-            vec![
-                "--project", p, "schema", "info", "stpa", "--format", "json",
-            ],
+            vec!["--project", p, "schema", "info", "stpa", "--format", "json"],
         ),
         (
             "matrix",

@@ -11,8 +11,7 @@ use tower_http::cors::CorsLayer;
 
 use crate::mcp::RivetServer;
 use rmcp::transport::streamable_http_server::{
-    StreamableHttpServerConfig, StreamableHttpService,
-    session::local::LocalSessionManager,
+    StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
 };
 
 /// HTMX bundled inline — no CDN dependency, works offline.
