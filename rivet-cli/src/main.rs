@@ -5817,9 +5817,21 @@ impl ProjectContext {
                 match rivet_core::externals::load_all_externals(externals, &cli.project) {
                     Ok(resolved) => {
                         for ext in resolved {
+                            // Collect all IDs in this external so we can prefix
+                            // internal link targets consistently.
+                            let ext_ids: std::collections::HashSet<String> =
+                                ext.artifacts.iter().map(|a| a.id.clone()).collect();
                             for mut artifact in ext.artifacts {
                                 // Prefix external artifact IDs so they don't collide
                                 artifact.id = format!("{}:{}", ext.prefix, artifact.id);
+                                // Prefix link targets that reference artifacts within
+                                // this same external project so they resolve correctly.
+                                for link in &mut artifact.links {
+                                    if ext_ids.contains(&link.target) {
+                                        link.target =
+                                            format!("{}:{}", ext.prefix, link.target);
+                                    }
+                                }
                                 store.upsert(artifact);
                             }
                         }

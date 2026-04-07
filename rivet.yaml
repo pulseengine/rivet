@@ -22,6 +22,13 @@ docs:
 
 results: results
 
+externals:
+  spar:
+    git: https://github.com/pulseengine/spar.git
+    ref: 84a7363
+    path: tests/fixtures/spar-external
+    prefix: spar
+
 baselines:
   - name: v0.1.0
     description: Initial release — core validation, STPA, ASPICE schemas, CLI, dashboard
