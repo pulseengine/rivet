@@ -107,6 +107,11 @@ artifact-types:
         type: string
         required: false
         allowed-values: [human, automated, human-and-automated]
+      - name: type
+        type: string
+        required: false
+        allowed-values: [human, automated, human-and-automated]
+        description: Shorthand alias for controller-type
       - name: source-file
         type: string
         required: false
@@ -115,6 +120,14 @@ artifact-types:
         type: list<string>
         required: false
         description: Assumptions the controller holds about the process state
+      - name: control-actions
+        type: list<mapping>
+        required: false
+        description: Control actions issued by this controller (each with ca, target, action)
+      - name: feedback
+        type: list<mapping>
+        required: false
+        description: Feedback received by this controller (each with from, info)
     link-fields: []
 
   - name: controlled-process
@@ -184,6 +197,10 @@ artifact-types:
         type: string
         required: true
         allowed-values: [not-providing, providing, too-early-too-late, stopped-too-soon]
+      - name: control-action
+        type: string
+        required: false
+        description: The control action this UCA pertains to
       - name: context
         type: text
         required: false
@@ -259,6 +276,26 @@ artifact-types:
           - actuator-failure
           - sensor-failure
           - control-path
+      - name: type
+        type: string
+        required: false
+        allowed-values:
+          - controller-failure
+          - inadequate-control-algorithm
+          - inadequate-process-model
+          - inadequate-feedback
+          - process-model-flaw
+          - coordination-failure
+          - actuator-failure
+          - sensor-failure
+          - control-path
+        description: Shorthand alias for scenario-type
+      - name: process-model-flaw
+        type: text
+        required: false
+        description: >
+          Description of the incorrect process-model belief that contributes
+          to this loss scenario
       - name: causal-factors
         type: list<string>
         required: false

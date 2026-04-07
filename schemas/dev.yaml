@@ -56,6 +56,10 @@ artifact-types:
   - name: design-decision
     description: An architectural or design decision with rationale
     fields:
+      - name: decision
+        type: text
+        required: false
+        description: Concise statement of the decision taken
       - name: rationale
         type: text
         required: true
