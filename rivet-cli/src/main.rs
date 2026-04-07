@@ -3002,20 +3002,9 @@ fn run_salsa_validation(cli: &Cli, config: &ProjectConfig) -> Result<Vec<validat
 
     let schemas_dir = resolve_schemas_dir(cli);
 
-    // ── Collect schema content ──────────────────────────────────────────
-    let mut schema_contents: Vec<(String, String)> = Vec::new();
-    for name in &config.project.schemas {
-        let path = schemas_dir.join(format!("{name}.yaml"));
-        if path.exists() {
-            let content = std::fs::read_to_string(&path)
-                .with_context(|| format!("reading schema {}", path.display()))?;
-            schema_contents.push((name.clone(), content));
-        } else if let Some(content) = rivet_core::embedded::embedded_schema(name) {
-            schema_contents.push((name.clone(), content.to_string()));
-        } else {
-            log::warn!("schema '{name}' not found on disk or embedded");
-        }
-    }
+    // ── Collect schema content (including auto-discovered bridges) ──────
+    let schema_contents =
+        rivet_core::embedded::load_schema_contents(&config.project.schemas, &schemas_dir);
 
     // ── Collect source file content ─────────────────────────────────────
     let mut source_contents: Vec<(String, String)> = Vec::new();
@@ -5874,8 +5863,7 @@ impl ProjectContext {
                                 // this same external project so they resolve correctly.
                                 for link in &mut artifact.links {
                                     if ext_ids.contains(&link.target) {
-                                        link.target =
-                                            format!("{}:{}", ext.prefix, link.target);
+                                        link.target = format!("{}:{}", ext.prefix, link.target);
                                     }
                                 }
                                 store.upsert(artifact);
