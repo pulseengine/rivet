@@ -3218,39 +3218,71 @@ fn cmd_stats(cli: &Cli, format: &str, baseline_name: Option<&str>) -> Result<boo
         ctx.graph
     };
 
-    let orphans = graph.orphans(&store);
+    // Compute stats once — both formats share the same data.
+    let stats = compute_stats(&store, &graph);
 
     if format == "json" {
         let mut types = serde_json::Map::new();
-        let mut type_names: Vec<&str> = store.types().collect();
-        type_names.sort();
-        for t in &type_names {
-            types.insert(t.to_string(), serde_json::json!(store.count_by_type(t)));
+        for (name, count) in &stats.type_counts {
+            types.insert(name.clone(), serde_json::json!(count));
         }
         let output = serde_json::json!({
             "command": "stats",
-            "total": store.len(),
+            "total": stats.total,
             "types": types,
-            "orphans": orphans,
-            "broken_links": graph.broken.len(),
+            "orphans": stats.orphans,
+            "broken_links": stats.broken_links,
         });
         println!("{}", serde_json::to_string_pretty(&output).unwrap());
     } else {
-        print_stats(&store);
+        println!("Artifact summary:");
+        for (name, count) in &stats.type_counts {
+            println!("  {:30} {:>4}", name, count);
+        }
+        println!("  {:30} {:>4}", "TOTAL", stats.total);
 
-        if !orphans.is_empty() {
-            println!("\nOrphan artifacts (no links): {}", orphans.len());
-            for id in &orphans {
+        if !stats.orphans.is_empty() {
+            println!("\nOrphan artifacts (no links): {}", stats.orphans.len());
+            for id in &stats.orphans {
                 println!("  {}", id);
             }
         }
 
-        if !graph.broken.is_empty() {
-            println!("\nBroken links: {}", graph.broken.len());
+        if stats.broken_links > 0 {
+            println!("\nBroken links: {}", stats.broken_links);
         }
     }
 
     Ok(true)
+}
+
+/// Pre-computed stats shared by text and JSON output paths.
+struct StatsResult {
+    total: usize,
+    type_counts: Vec<(String, usize)>,
+    orphans: Vec<String>,
+    broken_links: usize,
+}
+
+/// Compute artifact stats from the store and link graph.
+///
+/// The total is derived as the sum of per-type counts so that both text and
+/// JSON formats are guaranteed to agree.
+fn compute_stats(store: &Store, graph: &LinkGraph) -> StatsResult {
+    let mut type_names: Vec<&str> = store.types().collect();
+    type_names.sort();
+    let type_counts: Vec<(String, usize)> = type_names
+        .iter()
+        .map(|t| (t.to_string(), store.count_by_type(t)))
+        .collect();
+    let total: usize = type_counts.iter().map(|(_, c)| c).sum();
+    let orphans: Vec<String> = graph.orphans(store).into_iter().cloned().collect();
+    StatsResult {
+        total,
+        type_counts,
+        orphans,
+        broken_links: graph.broken.len(),
+    }
 }
 
 /// Show traceability coverage report.
@@ -8515,5 +8547,76 @@ artifacts:
         let source = "losses:\n  - id: L-1\n    title: Loss one\nhazards:\n  - id: H-1\n    title: Hazard one\n";
         let symbols = lsp_document_symbols(source);
         assert_eq!(symbols.len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod stats_tests {
+    use super::*;
+    use rivet_core::store::Store;
+
+    fn make_artifact(id: &str, art_type: &str) -> rivet_core::model::Artifact {
+        rivet_core::model::Artifact {
+            id: id.into(),
+            artifact_type: art_type.into(),
+            title: format!("Title of {id}"),
+            description: None,
+            status: None,
+            tags: vec![],
+            links: vec![],
+            fields: Default::default(),
+            provenance: None,
+            source_file: None,
+        }
+    }
+
+    #[test]
+    fn stats_total_equals_sum_of_type_counts() {
+        let mut store = Store::new();
+        store.upsert(make_artifact("R-1", "req"));
+        store.upsert(make_artifact("R-2", "req"));
+        store.upsert(make_artifact("F-1", "feat"));
+        store.upsert(make_artifact("H-1", "hazard"));
+
+        let schema = rivet_core::schema::Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let stats = compute_stats(&store, &graph);
+
+        let sum: usize = stats.type_counts.iter().map(|(_, c)| c).sum();
+        assert_eq!(
+            stats.total, sum,
+            "stats total ({}) must equal sum of type counts ({})",
+            stats.total, sum,
+        );
+        assert_eq!(stats.total, store.len());
+    }
+
+    #[test]
+    fn stats_total_consistent_after_type_change() {
+        let mut store = Store::new();
+        store.upsert(make_artifact("A-1", "req"));
+        store.upsert(make_artifact("A-2", "req"));
+        store.upsert(make_artifact("A-3", "feat"));
+        // Change A-1's type
+        store.upsert(make_artifact("A-1", "feat"));
+
+        let schema = rivet_core::schema::Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let stats = compute_stats(&store, &graph);
+
+        let sum: usize = stats.type_counts.iter().map(|(_, c)| c).sum();
+        assert_eq!(
+            stats.total, sum,
+            "after type change: total ({}) must equal sum of type counts ({})",
+            stats.total, sum,
+        );
+        assert_eq!(stats.total, 3);
+        // No phantom types with 0 count
+        for (name, count) in &stats.type_counts {
+            assert!(
+                *count > 0,
+                "type '{name}' has 0 count but still appears in stats"
+            );
+        }
     }
 }

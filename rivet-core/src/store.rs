@@ -42,8 +42,14 @@ impl Store {
         // Remove from old type index if updating
         let is_update = if let Some(old) = self.artifacts.get(&id) {
             if old.artifact_type != artifact_type {
-                if let Some(ids) = self.by_type.get_mut(&old.artifact_type) {
+                let old_type = old.artifact_type.clone();
+                if let Some(ids) = self.by_type.get_mut(&old_type) {
                     ids.retain(|i| i != &id);
+                    // Remove the type key entirely if no artifacts remain,
+                    // so types() never reports a phantom zero-count type.
+                    if ids.is_empty() {
+                        self.by_type.remove(&old_type);
+                    }
                 }
                 // Type changed: not yet in the new type's list
                 false
@@ -104,6 +110,11 @@ impl Store {
             .get(artifact_type)
             .map(|v| v.len())
             .unwrap_or(0)
+    }
+
+    /// Sum of per-type counts.  Should always equal `len()`.
+    pub fn types_total(&self) -> usize {
+        self.by_type.values().map(|v| v.len()).sum()
     }
 
     /// Check whether an artifact ID exists in the store.
@@ -271,5 +282,34 @@ mod tests {
         // Old type index should be cleared, new one populated
         assert_eq!(store.by_type("req").len(), 0);
         assert_eq!(store.by_type("feat").len(), 1);
+    }
+
+    #[test]
+    fn types_total_equals_len() {
+        let mut store = Store::new();
+        store.upsert(minimal_artifact("A-1", "req"));
+        store.upsert(minimal_artifact("A-2", "feat"));
+        store.upsert(minimal_artifact("A-3", "req"));
+        assert_eq!(store.types_total(), store.len());
+    }
+
+    #[test]
+    fn types_total_after_type_change() {
+        let mut store = Store::new();
+        store.upsert(minimal_artifact("A-1", "req"));
+        store.upsert(minimal_artifact("A-2", "req"));
+        // Change A-1's type from req to feat
+        store.upsert(minimal_artifact("A-1", "feat"));
+
+        assert_eq!(store.len(), 2);
+        assert_eq!(store.types_total(), 2);
+        // The old "req" type should not appear as a phantom with 0 count
+        let type_names: Vec<&str> = store.types().collect();
+        for t in &type_names {
+            assert!(
+                store.count_by_type(t) > 0,
+                "type '{t}' has 0 count but still listed in types()"
+            );
+        }
     }
 }
