@@ -8,6 +8,19 @@ ignore = [
     # `instant` is unmaintained (RUSTSEC-2024-0384) but pulled in transitively
     # by notify 7.0.0 → notify-types. No fix available upstream yet.
     "RUSTSEC-2024-0384",
+    # wasmtime 42.0.1 advisories — all behind the optional `wasm` feature gate.
+    # Tracked: upgrade to wasmtime >=43 when available with component-model fixes.
+    "RUSTSEC-2026-0085",
+    "RUSTSEC-2026-0086",
+    "RUSTSEC-2026-0087",
+    "RUSTSEC-2026-0088",
+    "RUSTSEC-2026-0089",
+    "RUSTSEC-2026-0091",
+    "RUSTSEC-2026-0092",
+    "RUSTSEC-2026-0093",
+    "RUSTSEC-2026-0094",
+    "RUSTSEC-2026-0095",
+    "RUSTSEC-2026-0096",
 ]
 
 [licenses]
