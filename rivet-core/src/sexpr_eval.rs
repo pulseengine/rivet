@@ -133,13 +133,11 @@ pub fn check(expr: &Expr, ctx: &EvalContext) -> bool {
         // Collection predicates
         Expr::In(val, acc) => {
             let needle = value_to_str(val);
-            resolve_list(acc, ctx.artifact)
-                .iter()
-                .any(|item| *item == needle)
+            resolve_list(acc, ctx.artifact).contains(&needle)
         }
         Expr::HasTag(val) => {
             let tag = value_to_str(val);
-            ctx.artifact.tags.iter().any(|t| *t == tag)
+            ctx.artifact.tags.contains(&tag)
         }
         Expr::HasField(val) => {
             let name = value_to_str(val);
@@ -177,7 +175,12 @@ pub fn check(expr: &Expr, ctx: &EvalContext) -> bool {
         }
         Expr::LinksCount(link_type, op, val) => {
             let lt = value_to_str(link_type);
-            let count = ctx.artifact.links.iter().filter(|l| l.link_type == lt).count() as i64;
+            let count = ctx
+                .artifact
+                .links
+                .iter()
+                .filter(|l| l.link_type == lt)
+                .count() as i64;
             let threshold = value_to_i64(val);
             match op {
                 CompOp::Gt => count > threshold,
@@ -350,7 +353,7 @@ pub fn lower(root: &crate::sexpr::SyntaxNode) -> Result<Expr, Vec<LowerError>> {
     let mut exprs = Vec::new();
 
     for child in root.children() {
-        match SK::from(child.kind()) {
+        match child.kind() {
             SK::List => {
                 if let Some(e) = lower_list(&child, &mut errors) {
                     exprs.push(e);
@@ -384,10 +387,7 @@ pub fn lower(root: &crate::sexpr::SyntaxNode) -> Result<Expr, Vec<LowerError>> {
     }
 }
 
-fn lower_list(
-    node: &crate::sexpr::SyntaxNode,
-    errors: &mut Vec<LowerError>,
-) -> Option<Expr> {
+fn lower_list(node: &crate::sexpr::SyntaxNode, errors: &mut Vec<LowerError>) -> Option<Expr> {
     let children: Vec<_> = node.children().collect();
     if children.is_empty() {
         return Some(Expr::BoolLit(true));
@@ -400,17 +400,11 @@ fn lower_list(
 
     match form_name.as_str() {
         "and" => {
-            let sub: Vec<Expr> = args
-                .iter()
-                .filter_map(|a| lower_child(a, errors))
-                .collect();
+            let sub: Vec<Expr> = args.iter().filter_map(|a| lower_child(a, errors)).collect();
             Some(Expr::And(sub))
         }
         "or" => {
-            let sub: Vec<Expr> = args
-                .iter()
-                .filter_map(|a| lower_child(a, errors))
-                .collect();
+            let sub: Vec<Expr> = args.iter().filter_map(|a| lower_child(a, errors)).collect();
             Some(Expr::Or(sub))
         }
         "not" => {
@@ -610,13 +604,10 @@ fn lower_list(
     }
 }
 
-fn lower_child(
-    node: &crate::sexpr::SyntaxNode,
-    errors: &mut Vec<LowerError>,
-) -> Option<Expr> {
+fn lower_child(node: &crate::sexpr::SyntaxNode, errors: &mut Vec<LowerError>) -> Option<Expr> {
     use crate::sexpr::SyntaxKind as SK;
 
-    match SK::from(node.kind()) {
+    match node.kind() {
         SK::List => lower_list(node, errors),
         SK::Atom => lower_atom_expr(node).or_else(|| {
             errors.push(LowerError {
@@ -636,7 +627,7 @@ fn lower_atom_expr(node: &crate::sexpr::SyntaxNode) -> Option<Expr> {
     use crate::sexpr::SyntaxKind as SK;
 
     let token = node.first_token()?;
-    match SK::from(token.kind()) {
+    match token.kind() {
         SK::BoolTrue => Some(Expr::BoolLit(true)),
         SK::BoolFalse => Some(Expr::BoolLit(false)),
         _ => None,
@@ -646,9 +637,9 @@ fn lower_atom_expr(node: &crate::sexpr::SyntaxNode) -> Option<Expr> {
 fn extract_symbol(node: &crate::sexpr::SyntaxNode) -> Option<String> {
     use crate::sexpr::SyntaxKind as SK;
 
-    if SK::from(node.kind()) == SK::Atom {
+    if node.kind() == SK::Atom {
         let token = node.first_token()?;
-        let kind = SK::from(token.kind());
+        let kind = token.kind();
         if kind == SK::Symbol {
             return Some(token.text().to_string());
         }
@@ -664,11 +655,11 @@ fn extract_accessor(node: &crate::sexpr::SyntaxNode) -> Option<Accessor> {
 fn extract_value(node: &crate::sexpr::SyntaxNode) -> Option<Value> {
     use crate::sexpr::SyntaxKind as SK;
 
-    if SK::from(node.kind()) != SK::Atom {
+    if node.kind() != SK::Atom {
         return None;
     }
     let token = node.first_token()?;
-    let kind = SK::from(token.kind());
+    let kind = token.kind();
     let text = token.text();
 
     match kind {
@@ -706,15 +697,30 @@ mod tests {
             status: Some("approved".into()),
             tags: vec!["stpa".into(), "safety".into(), "eu".into()],
             links: vec![
-                Link { link_type: "satisfies".into(), target: "SC-1".into() },
-                Link { link_type: "satisfies".into(), target: "SC-3".into() },
-                Link { link_type: "implements".into(), target: "DD-001".into() },
+                Link {
+                    link_type: "satisfies".into(),
+                    target: "SC-1".into(),
+                },
+                Link {
+                    link_type: "satisfies".into(),
+                    target: "SC-3".into(),
+                },
+                Link {
+                    link_type: "implements".into(),
+                    target: "DD-001".into(),
+                },
             ],
             fields: {
                 let mut m = BTreeMap::new();
                 m.insert("priority".into(), serde_yaml::Value::String("must".into()));
-                m.insert("category".into(), serde_yaml::Value::String("functional".into()));
-                m.insert("baseline".into(), serde_yaml::Value::String("v0.1.0".into()));
+                m.insert(
+                    "category".into(),
+                    serde_yaml::Value::String("functional".into()),
+                );
+                m.insert(
+                    "baseline".into(),
+                    serde_yaml::Value::String("v0.1.0".into()),
+                );
                 m
             },
             provenance: None,
@@ -732,7 +738,10 @@ mod tests {
 
     fn run(expr: &Expr, artifact: &Artifact) -> bool {
         let graph = empty_graph();
-        let ctx = EvalContext { artifact, graph: &graph };
+        let ctx = EvalContext {
+            artifact,
+            graph: &graph,
+        };
         check(expr, &ctx)
     }
 
@@ -898,7 +907,10 @@ mod tests {
     #[test]
     fn implies_equivalence() {
         let a = test_artifact();
-        let p = Expr::Eq(Accessor::Field("type".into()), Value::Str("requirement".into()));
+        let p = Expr::Eq(
+            Accessor::Field("type".into()),
+            Value::Str("requirement".into()),
+        );
         let q = Expr::HasTag(Value::Str("stpa".into()));
         let lhs = Expr::Implies(Box::new(p.clone()), Box::new(q.clone()));
         let rhs = Expr::Or(vec![Expr::Not(Box::new(p)), q]);

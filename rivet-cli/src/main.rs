@@ -853,7 +853,11 @@ fn run(cli: Cli) -> Result<bool> {
             baseline.as_deref(),
         ),
         Command::Get { id, format } => cmd_get(&cli, id, format),
-        Command::Stats { filter, format, baseline } => cmd_stats(&cli, filter.as_deref(), format, baseline.as_deref()),
+        Command::Stats {
+            filter,
+            format,
+            baseline,
+        } => cmd_stats(&cli, filter.as_deref(), format, baseline.as_deref()),
         Command::Coverage {
             filter,
             format,
@@ -865,7 +869,13 @@ fn run(cli: Cli) -> Result<bool> {
             if *tests {
                 cmd_coverage_tests(&cli, format, scan_paths)
             } else {
-                cmd_coverage(&cli, filter.as_deref(), format, fail_under.as_ref(), baseline.as_deref())
+                cmd_coverage(
+                    &cli,
+                    filter.as_deref(),
+                    format,
+                    fail_under.as_ref(),
+                    baseline.as_deref(),
+                )
             }
         }
         Command::Matrix {
@@ -2377,10 +2387,7 @@ fn install_hook(path: &std::path::Path, content: &str) -> Result<()> {
         if !prev.exists() {
             std::fs::rename(path, &prev)
                 .with_context(|| format!("backing up {}", path.display()))?;
-            eprintln!(
-                "  note: existing hook backed up to {}",
-                prev.display()
-            );
+            eprintln!("  note: existing hook backed up to {}", prev.display());
         }
     }
 
@@ -2397,8 +2404,7 @@ fn install_hook(path: &std::path::Path, content: &str) -> Result<()> {
     };
 
     let final_content = format!("{content}{chain_snippet}");
-    std::fs::write(path, &final_content)
-        .with_context(|| format!("writing {}", path.display()))?;
+    std::fs::write(path, &final_content).with_context(|| format!("writing {}", path.display()))?;
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))
         .with_context(|| format!("setting permissions on {}", path.display()))?;
     Ok(())
@@ -3307,11 +3313,10 @@ fn cmd_list(
 
     // Apply s-expression filter if provided.
     if let Some(filter_src) = sexpr_filter {
-        let expr = rivet_core::sexpr_eval::parse_filter(filter_src)
-            .map_err(|errs| {
-                let msgs: Vec<String> = errs.iter().map(|e| e.to_string()).collect();
-                anyhow::anyhow!("invalid filter: {}", msgs.join("; "))
-            })?;
+        let expr = rivet_core::sexpr_eval::parse_filter(filter_src).map_err(|errs| {
+            let msgs: Vec<String> = errs.iter().map(|e| e.to_string()).collect();
+            anyhow::anyhow!("invalid filter: {}", msgs.join("; "))
+        })?;
         let graph = rivet_core::links::LinkGraph::build(&store, &ctx.schema);
         results.retain(|a| rivet_core::sexpr_eval::matches_filter(&expr, a, &graph));
     }
@@ -3351,7 +3356,12 @@ fn cmd_list(
 }
 
 /// Print summary statistics.
-fn cmd_stats(cli: &Cli, sexpr_filter: Option<&str>, format: &str, baseline_name: Option<&str>) -> Result<bool> {
+fn cmd_stats(
+    cli: &Cli,
+    sexpr_filter: Option<&str>,
+    format: &str,
+    baseline_name: Option<&str>,
+) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
     let ctx = ProjectContext::load(cli)?;
     let mut store = apply_baseline_scope(ctx.store, baseline_name, &ctx.config);
@@ -3363,11 +3373,10 @@ fn cmd_stats(cli: &Cli, sexpr_filter: Option<&str>, format: &str, baseline_name:
 
     // Apply s-expression filter if provided.
     if let Some(filter_src) = sexpr_filter {
-        let expr = rivet_core::sexpr_eval::parse_filter(filter_src)
-            .map_err(|errs| {
-                let msgs: Vec<String> = errs.iter().map(|e| e.to_string()).collect();
-                anyhow::anyhow!("invalid filter: {}", msgs.join("; "))
-            })?;
+        let expr = rivet_core::sexpr_eval::parse_filter(filter_src).map_err(|errs| {
+            let msgs: Vec<String> = errs.iter().map(|e| e.to_string()).collect();
+            anyhow::anyhow!("invalid filter: {}", msgs.join("; "))
+        })?;
         let mut filtered = rivet_core::store::Store::default();
         for a in store.iter() {
             if rivet_core::sexpr_eval::matches_filter(&expr, a, &graph) {
@@ -3465,11 +3474,10 @@ fn cmd_coverage(
 
     // Apply s-expression filter if provided.
     if let Some(filter_src) = sexpr_filter {
-        let expr = rivet_core::sexpr_eval::parse_filter(filter_src)
-            .map_err(|errs| {
-                let msgs: Vec<String> = errs.iter().map(|e| e.to_string()).collect();
-                anyhow::anyhow!("invalid filter: {}", msgs.join("; "))
-            })?;
+        let expr = rivet_core::sexpr_eval::parse_filter(filter_src).map_err(|errs| {
+            let msgs: Vec<String> = errs.iter().map(|e| e.to_string()).collect();
+            anyhow::anyhow!("invalid filter: {}", msgs.join("; "))
+        })?;
         let mut filtered = rivet_core::store::Store::default();
         for a in store.iter() {
             if rivet_core::sexpr_eval::matches_filter(&expr, a, &graph) {

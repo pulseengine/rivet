@@ -357,9 +357,10 @@ pub(crate) async fn artifacts(
     let offset = params.offset as usize;
 
     // Parse s-expression filter once before iterating.
-    let sexpr_filter = params.filter.as_deref().and_then(|f| {
-        rivet_core::sexpr_eval::parse_filter(f).ok()
-    });
+    let sexpr_filter = params
+        .filter
+        .as_deref()
+        .and_then(|f| rivet_core::sexpr_eval::parse_filter(f).ok());
 
     let include_externals = params
         .origin

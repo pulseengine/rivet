@@ -362,22 +362,19 @@ impl RivetServer {
         )]))
     }
 
-    #[tool(
-        description = "Add a link between two artifacts. Call rivet_reload after."
-    )]
+    #[tool(description = "Add a link between two artifacts. Call rivet_reload after.")]
     fn rivet_link(
         &self,
         Parameters(p): Parameters<McpLinkParams>,
     ) -> Result<CallToolResult, McpError> {
-        let result = tool_link(self.dir(), &p.source, &p.link_type, &p.target).map_err(Self::err)?;
+        let result =
+            tool_link(self.dir(), &p.source, &p.link_type, &p.target).map_err(Self::err)?;
         Ok(CallToolResult::success(vec![Content::text(
             serde_json::to_string_pretty(&result).unwrap_or_default(),
         )]))
     }
 
-    #[tool(
-        description = "Remove a link between two artifacts. Call rivet_reload after."
-    )]
+    #[tool(description = "Remove a link between two artifacts. Call rivet_reload after.")]
     fn rivet_unlink(
         &self,
         Parameters(p): Parameters<McpLinkParams>,
@@ -389,9 +386,7 @@ impl RivetServer {
         )]))
     }
 
-    #[tool(
-        description = "Remove an artifact from the project. Call rivet_reload after."
-    )]
+    #[tool(description = "Remove an artifact from the project. Call rivet_reload after.")]
     fn rivet_remove(
         &self,
         Parameters(p): Parameters<RemoveParams>,
@@ -1030,7 +1025,9 @@ fn tool_link(project_dir: &Path, source: &str, link_type: &str, target: &str) ->
 
     mutate::add_link_to_file(source, &link, &source_file)?;
 
-    Ok(json!({ "linked": format!("{source} --[{link_type}]--> {target}"), "file": source_file.display().to_string() }))
+    Ok(
+        json!({ "linked": format!("{source} --[{link_type}]--> {target}"), "file": source_file.display().to_string() }),
+    )
 }
 
 fn tool_unlink(project_dir: &Path, source: &str, link_type: &str, target: &str) -> Result<Value> {
@@ -1045,7 +1042,9 @@ fn tool_unlink(project_dir: &Path, source: &str, link_type: &str, target: &str) 
 
     mutate::remove_link_from_file(source, link_type, target, &source_file)?;
 
-    Ok(json!({ "unlinked": format!("{source} --[{link_type}]--> {target}"), "file": source_file.display().to_string() }))
+    Ok(
+        json!({ "unlinked": format!("{source} --[{link_type}]--> {target}"), "file": source_file.display().to_string() }),
+    )
 }
 
 fn tool_remove(project_dir: &Path, id: &str, force: bool) -> Result<Value> {

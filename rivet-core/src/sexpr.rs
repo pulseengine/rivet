@@ -120,11 +120,17 @@ pub fn lex(source: &str) -> Vec<Token<'_>> {
         let start = i;
         match bytes[i] {
             b'(' => {
-                tokens.push(Token { kind: SyntaxKind::LParen, text: &source[i..i + 1] });
+                tokens.push(Token {
+                    kind: SyntaxKind::LParen,
+                    text: &source[i..i + 1],
+                });
                 i += 1;
             }
             b')' => {
-                tokens.push(Token { kind: SyntaxKind::RParen, text: &source[i..i + 1] });
+                tokens.push(Token {
+                    kind: SyntaxKind::RParen,
+                    text: &source[i..i + 1],
+                });
                 i += 1;
             }
             b';' => {
@@ -132,13 +138,19 @@ pub fn lex(source: &str) -> Vec<Token<'_>> {
                 while i < bytes.len() && bytes[i] != b'\n' {
                     i += 1;
                 }
-                tokens.push(Token { kind: SyntaxKind::Comment, text: &source[start..i] });
+                tokens.push(Token {
+                    kind: SyntaxKind::Comment,
+                    text: &source[start..i],
+                });
             }
             b' ' | b'\t' | b'\n' | b'\r' => {
                 while i < bytes.len() && matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r') {
                     i += 1;
                 }
-                tokens.push(Token { kind: SyntaxKind::Whitespace, text: &source[start..i] });
+                tokens.push(Token {
+                    kind: SyntaxKind::Whitespace,
+                    text: &source[start..i],
+                });
             }
             b'"' => {
                 // String literal with \" escaping.
@@ -153,7 +165,10 @@ pub fn lex(source: &str) -> Vec<Token<'_>> {
                         i += 1;
                     }
                 }
-                tokens.push(Token { kind: SyntaxKind::StringLit, text: &source[start..i] });
+                tokens.push(Token {
+                    kind: SyntaxKind::StringLit,
+                    text: &source[start..i],
+                });
             }
             b'0'..=b'9' | b'+' | b'-'
                 if {
@@ -169,15 +184,26 @@ pub fn lex(source: &str) -> Vec<Token<'_>> {
                 while i < bytes.len() && bytes[i].is_ascii_digit() {
                     i += 1;
                 }
-                if i < bytes.len() && bytes[i] == b'.' && i + 1 < bytes.len() && bytes[i + 1].is_ascii_digit() {
+                if i < bytes.len()
+                    && bytes[i] == b'.'
+                    && i + 1 < bytes.len()
+                    && bytes[i + 1].is_ascii_digit()
+                {
                     is_float = true;
                     i += 1; // skip dot
                     while i < bytes.len() && bytes[i].is_ascii_digit() {
                         i += 1;
                     }
                 }
-                let kind = if is_float { SyntaxKind::FloatLit } else { SyntaxKind::IntLit };
-                tokens.push(Token { kind, text: &source[start..i] });
+                let kind = if is_float {
+                    SyntaxKind::FloatLit
+                } else {
+                    SyntaxKind::IntLit
+                };
+                tokens.push(Token {
+                    kind,
+                    text: &source[start..i],
+                });
             }
             _ if is_symbol_start(bytes[i]) => {
                 while i < bytes.len() && is_symbol_cont(bytes[i]) {
@@ -196,7 +222,10 @@ pub fn lex(source: &str) -> Vec<Token<'_>> {
                 // Unknown byte — advance one character (UTF-8 aware).
                 let ch = source[i..].chars().next().unwrap();
                 i += ch.len_utf8();
-                tokens.push(Token { kind: SyntaxKind::Error, text: &source[start..i] });
+                tokens.push(Token {
+                    kind: SyntaxKind::Error,
+                    text: &source[start..i],
+                });
             }
         }
     }
@@ -209,7 +238,11 @@ fn is_symbol_start(b: u8) -> bool {
 }
 
 fn is_symbol_cont(b: u8) -> bool {
-    b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'!' | b'?' | b'.' | b'*' | b'>' | b'<' | b'=')
+    b.is_ascii_alphanumeric()
+        || matches!(
+            b,
+            b'_' | b'-' | b'!' | b'?' | b'.' | b'*' | b'>' | b'<' | b'='
+        )
 }
 
 // ── Parser ──────────────────────────────────────────────────────────────
@@ -375,7 +408,9 @@ pub fn line_starts(source: &str) -> Vec<usize> {
 
 /// Convert a byte offset to (line, col), both 0-based.
 pub fn offset_to_line_col(line_starts: &[usize], offset: usize) -> (usize, usize) {
-    let line = line_starts.partition_point(|&s| s <= offset).saturating_sub(1);
+    let line = line_starts
+        .partition_point(|&s| s <= offset)
+        .saturating_sub(1);
     let col = offset - line_starts[line];
     (line, col)
 }
@@ -451,29 +486,43 @@ mod tests {
     #[test]
     fn lex_numbers() {
         let tokens = lex("42 -3 +7 3.14 -0.5");
-        let kinds: Vec<_> = tokens.iter().filter(|t| !t.kind.is_trivia()).map(|t| t.kind).collect();
-        assert_eq!(kinds, vec![
-            SyntaxKind::IntLit,
-            SyntaxKind::IntLit,
-            SyntaxKind::IntLit,
-            SyntaxKind::FloatLit,
-            SyntaxKind::FloatLit,
-        ]);
+        let kinds: Vec<_> = tokens
+            .iter()
+            .filter(|t| !t.kind.is_trivia())
+            .map(|t| t.kind)
+            .collect();
+        assert_eq!(
+            kinds,
+            vec![
+                SyntaxKind::IntLit,
+                SyntaxKind::IntLit,
+                SyntaxKind::IntLit,
+                SyntaxKind::FloatLit,
+                SyntaxKind::FloatLit,
+            ]
+        );
     }
 
     #[test]
     fn lex_keywords() {
         let tokens = lex("true false _ and or not implies");
-        let kinds: Vec<_> = tokens.iter().filter(|t| !t.kind.is_trivia()).map(|t| t.kind).collect();
-        assert_eq!(kinds, vec![
-            SyntaxKind::BoolTrue,
-            SyntaxKind::BoolFalse,
-            SyntaxKind::Wildcard,
-            SyntaxKind::Symbol,
-            SyntaxKind::Symbol,
-            SyntaxKind::Symbol,
-            SyntaxKind::Symbol,
-        ]);
+        let kinds: Vec<_> = tokens
+            .iter()
+            .filter(|t| !t.kind.is_trivia())
+            .map(|t| t.kind)
+            .collect();
+        assert_eq!(
+            kinds,
+            vec![
+                SyntaxKind::BoolTrue,
+                SyntaxKind::BoolFalse,
+                SyntaxKind::Wildcard,
+                SyntaxKind::Symbol,
+                SyntaxKind::Symbol,
+                SyntaxKind::Symbol,
+                SyntaxKind::Symbol,
+            ]
+        );
     }
 
     #[test]
@@ -520,7 +569,11 @@ mod tests {
     #[test]
     fn symbol_with_dots_and_stars() {
         let tokens = lex("fields.priority links.satisfies.*");
-        let kinds: Vec<_> = tokens.iter().filter(|t| !t.kind.is_trivia()).map(|t| t.kind).collect();
+        let kinds: Vec<_> = tokens
+            .iter()
+            .filter(|t| !t.kind.is_trivia())
+            .map(|t| t.kind)
+            .collect();
         assert_eq!(kinds, vec![SyntaxKind::Symbol, SyntaxKind::Symbol]);
     }
 }

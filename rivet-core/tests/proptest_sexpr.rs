@@ -17,7 +17,7 @@ use proptest::prelude::*;
 use rivet_core::links::LinkGraph;
 use rivet_core::model::{Artifact, Link};
 use rivet_core::schema::Schema;
-use rivet_core::sexpr_eval::{self, Accessor, CompOp, EvalContext, Expr, Value};
+use rivet_core::sexpr_eval::{self, Accessor, EvalContext, Expr, Value};
 use rivet_core::store::Store;
 
 // ── Strategies ──────────────────────────────────────────────────────────
@@ -25,33 +25,54 @@ use rivet_core::store::Store;
 /// Generate a random artifact with varied fields, tags, and links.
 fn arb_artifact() -> impl Strategy<Value = Artifact> {
     (
-        "[A-Z]{2,4}-[0-9]{1,3}",           // id
+        "[A-Z]{2,4}-[0-9]{1,3}", // id
         prop::sample::select(vec![
-            "requirement", "feature", "design-decision", "test-case",
-            "loss", "hazard", "system-constraint",
-        ]),                                   // type
-        "[a-z ]{5,30}",                      // title
-        prop::option::of("[a-z ]{10,50}"),   // description
+            "requirement",
+            "feature",
+            "design-decision",
+            "test-case",
+            "loss",
+            "hazard",
+            "system-constraint",
+        ]), // type
+        "[a-z ]{5,30}",          // title
+        prop::option::of("[a-z ]{10,50}"), // description
         prop::option::of(prop::sample::select(vec![
-            "draft", "approved", "implemented", "obsolete",
-        ])),                                  // status
+            "draft",
+            "approved",
+            "implemented",
+            "obsolete",
+        ])), // status
         prop::collection::vec(
             prop::sample::select(vec![
-                "stpa", "safety", "eu", "automotive", "core", "cli",
-                "schema", "testing", "performance", "future",
+                "stpa",
+                "safety",
+                "eu",
+                "automotive",
+                "core",
+                "cli",
+                "schema",
+                "testing",
+                "performance",
+                "future",
             ]),
             0..=4,
-        ),                                    // tags
+        ), // tags
         prop::collection::vec(
             (
                 prop::sample::select(vec![
-                    "satisfies", "implements", "verifies", "traces-to",
-                    "refines", "mitigates", "linked-by",
+                    "satisfies",
+                    "implements",
+                    "verifies",
+                    "traces-to",
+                    "refines",
+                    "mitigates",
+                    "linked-by",
                 ]),
                 "[A-Z]{2,4}-[0-9]{1,3}",
             ),
             0..=3,
-        ),                                    // links
+        ), // links
     )
         .prop_map(|(id, art_type, title, desc, status, tags, links)| {
             let links = links
@@ -81,23 +102,18 @@ fn arb_leaf_pred() -> impl Strategy<Value = Expr> {
     prop_oneof![
         // Type equality
         prop::sample::select(vec![
-            "requirement", "feature", "design-decision", "test-case",
+            "requirement",
+            "feature",
+            "design-decision",
+            "test-case",
         ])
-        .prop_map(|t| Expr::Eq(
-            Accessor::Field("type".into()),
-            Value::Str(t.to_string()),
-        )),
+        .prop_map(|t| Expr::Eq(Accessor::Field("type".into()), Value::Str(t.to_string()),)),
         // Status equality
         prop::sample::select(vec!["draft", "approved", "implemented", "obsolete"])
-            .prop_map(|s| Expr::Eq(
-                Accessor::Field("status".into()),
-                Value::Str(s.to_string()),
-            )),
+            .prop_map(|s| Expr::Eq(Accessor::Field("status".into()), Value::Str(s.to_string()),)),
         // Has-tag
-        prop::sample::select(vec![
-            "stpa", "safety", "eu", "automotive", "core", "cli",
-        ])
-        .prop_map(|t| Expr::HasTag(Value::Str(t.to_string()))),
+        prop::sample::select(vec!["stpa", "safety", "eu", "automotive", "core", "cli",])
+            .prop_map(|t| Expr::HasTag(Value::Str(t.to_string()))),
         // Has-field
         prop::sample::select(vec!["description", "status", "priority", "nonexistent"])
             .prop_map(|f| Expr::HasField(Value::Str(f.to_string()))),
@@ -251,8 +267,7 @@ fn arb_sexpr_string() -> impl Strategy<Value = String> {
         "[a-z]{3,8}".prop_map(|s| format!("\"{s}\"")),
         // Simple lists
         "[a-z-]{2,10}".prop_map(|sym| format!("({sym})")),
-        ("[a-z-]{2,10}", "[a-z-]{2,10}")
-            .prop_map(|(a, b)| format!("({a} {b})")),
+        ("[a-z-]{2,10}", "[a-z-]{2,10}").prop_map(|(a, b)| format!("({a} {b})")),
         // Nested
         ("[a-z-]{2,10}", "[a-z-]{2,10}", "[a-z-]{2,10}")
             .prop_map(|(a, b, c)| format!("(and ({a} {b}) ({a} {c}))")),
