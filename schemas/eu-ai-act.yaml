@@ -208,6 +208,52 @@ artifact-types:
         required: true
         cardinality: one-or-many
 
+# ── Art. 12(2): Runtime evidence (tamper-evident log records) ───────────
+
+  - name: runtime-evidence
+    description: >
+      Signed runtime evidence record per Art. 12(2). References tamper-evident
+      logs from actual AI system operation. Each record attests that the
+      logging described by a monitoring-measure actually executed during a
+      time period. Hash-chained via previous-digest for append-only integrity.
+      Imported via rivet import-results --format evidence.
+    fields:
+      - name: evidence-type
+        type: string
+        required: true
+        allowed-values: [log-digest, attestation, drift-snapshot, override-record, incident-record]
+        description: Category of runtime evidence
+      - name: time-range
+        type: string
+        required: true
+        description: "ISO 8601 interval covered (e.g., 2026-04-01T00:00Z/2026-04-07T23:59Z)"
+      - name: digest
+        type: string
+        required: true
+        description: "SHA-256 hex digest of the referenced log bundle (64 hex chars)"
+      - name: signature
+        type: string
+        required: false
+        description: "Detached signature (cosign, sigstore) over the digest"
+      - name: signer-identity
+        type: string
+        required: false
+        description: "Identity that produced the signature (OIDC subject or key fingerprint)"
+      - name: storage-uri
+        type: string
+        required: false
+        description: "URI to the actual evidence (S3, OCI registry, IPFS)"
+      - name: previous-digest
+        type: string
+        required: false
+        description: "SHA-256 digest of the prior evidence record in the chain"
+    link-fields:
+      - name: monitoring
+        link-type: evidences
+        target-types: [monitoring-measure]
+        required: true
+        cardinality: one-or-many
+
 # ── Annex IV §4 + Art. 15: Performance evaluation ──────────────────────
 
   - name: performance-evaluation
@@ -556,6 +602,10 @@ link-types:
     inverse: post-market-monitored-by
     description: Post-market monitoring plan covers this AI system
 
+  - name: evidences
+    inverse: evidenced-by
+    description: Runtime evidence attests execution of a monitoring measure (Art. 12)
+
   - name: transparency-for
     inverse: transparent-to
     description: Transparency record documents this AI system
@@ -664,3 +714,15 @@ traceability-rules:
     required-backlink: monitors-post-market
     from-types: [post-market-plan]
     severity: error
+
+  # Art. 12(2): Runtime evidence for monitoring measures
+  - name: monitoring-has-evidence
+    description: >
+      Each monitoring measure should have at least one runtime evidence
+      record attesting actual execution (Art. 12(2)). Warning severity
+      because evidence accumulates over time — a newly created monitoring
+      measure won't have evidence yet.
+    source-type: monitoring-measure
+    required-backlink: evidences
+    from-types: [runtime-evidence]
+    severity: warning
