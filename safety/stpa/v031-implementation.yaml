@@ -10,6 +10,9 @@ losses:
       The HTML export shows delta values, coverage, or diagnostics
       that don't match the actual project state. A compliance reviewer
       (or notified body for EU AI Act) relies on incorrect data.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: L-IMPL-002
     title: MCP tool returns invalid or inconsistent results
@@ -17,6 +20,9 @@ losses:
       An AI agent queries rivet via MCP and receives wrong data
       (stale validation, incorrect artifact list, wrong stats).
       Agent makes decisions based on incorrect information.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: L-IMPL-003
     title: Schema bridge creates incorrect traceability
@@ -24,6 +30,9 @@ losses:
       A bridge schema links artifact types that shouldn't be linked,
       or fails to link types that should be. Coverage reports show
       false completeness or false gaps.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: L-IMPL-004
     title: Convergence tracker gives wrong escalation guidance
@@ -31,6 +40,9 @@ losses:
       The convergence tracker either fails to detect a stuck loop
       (agent burns tokens forever) or falsely escalates when the
       agent is actually making progress.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
 hazards:
   - id: H-IMPL-001
@@ -42,6 +54,9 @@ hazards:
     links:
       - type: leads-to-loss
         target: L-IMPL-001
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-IMPL-002
     title: Delta auto-detection picks wrong baseline
@@ -52,6 +67,9 @@ hazards:
     links:
       - type: leads-to-loss
         target: L-IMPL-001
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-IMPL-003
     title: MCP server loads stale project state
@@ -62,6 +80,9 @@ hazards:
     links:
       - type: leads-to-loss
         target: L-IMPL-002
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-IMPL-004
     title: Embed resolver renders outdated data in export
@@ -72,6 +93,9 @@ hazards:
     links:
       - type: leads-to-loss
         target: L-IMPL-001
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-IMPL-005
     title: Bridge schema creates bidirectional rule conflicts
@@ -82,6 +106,9 @@ hazards:
     links:
       - type: leads-to-loss
         target: L-IMPL-003
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-IMPL-006
     title: Failure signature hash collision
@@ -92,6 +119,9 @@ hazards:
     links:
       - type: leads-to-loss
         target: L-IMPL-004
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
 system-constraints:
   - id: SC-IMPL-001
@@ -103,6 +133,9 @@ system-constraints:
     links:
       - type: prevents
         target: H-IMPL-001
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SC-IMPL-002
     title: Delta MUST compare against the PREVIOUS release snapshot
@@ -113,6 +146,9 @@ system-constraints:
     links:
       - type: prevents
         target: H-IMPL-002
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SC-IMPL-003
     title: MCP tools MUST reload project state on each call
@@ -123,6 +159,9 @@ system-constraints:
     links:
       - type: prevents
         target: H-IMPL-003
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SC-IMPL-004
     title: Embed resolver MUST use current AppState, not cached data
@@ -133,6 +172,9 @@ system-constraints:
     links:
       - type: prevents
         target: H-IMPL-004
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SC-IMPL-005
     title: Bridge schemas MUST NOT define artifact types
@@ -143,6 +185,9 @@ system-constraints:
     links:
       - type: prevents
         target: H-IMPL-005
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SC-IMPL-006
     title: Convergence signature MUST include all diagnostic fields
@@ -154,3 +199,6 @@ system-constraints:
     links:
       - type: prevents
         target: H-IMPL-006
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z

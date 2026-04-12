@@ -20,6 +20,9 @@ hazards:
       automated link validation, stale references create an illusion of
       complete traceability while gaps exist.
     losses: [L-1, L-5]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-2
     title: Rivet silently drops artifacts or links during synchronization
@@ -29,6 +32,9 @@ hazards:
       The lost data may include safety-critical requirements or their
       verification evidence.
     losses: [L-1, L-3, L-5]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-3
     title: Rivet produces incorrect coverage metrics showing completeness when gaps exist
@@ -37,6 +43,9 @@ hazards:
       than actually exists.  Engineers and auditors rely on these metrics
       to judge readiness, so inflated metrics hide real traceability gaps.
     losses: [L-2, L-5]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-4
     title: Rivet imports semantically mismatched data from external tools
@@ -47,6 +56,9 @@ hazards:
       or a "refines" link might be imported as "satisfies," distorting
       the traceability argument.
     losses: [L-1, L-3]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-5
     title: Rivet fails to detect conflicting concurrent modifications
@@ -55,6 +67,9 @@ hazards:
       same artifact simultaneously.  Without conflict detection, the last
       writer wins, silently overwriting safety-relevant changes.
     losses: [L-1, L-3, L-6]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-6
     title: Rivet generates compliance reports from unverified traceability data
@@ -63,6 +78,9 @@ hazards:
       validation — containing dangling links, schema violations, or
       outdated sync state.  Auditors receive misleading evidence.
     losses: [L-2, L-5]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-7
     title: Rivet allows unattributed modification of safety-critical artifacts
@@ -71,6 +89,9 @@ hazards:
       analyses, verification records) occur without recording who made
       the change, when, or why.  The audit trail is incomplete.
     losses: [L-3, L-5, L-6]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-8
     title: Rivet propagates errors bidirectionally across connected tools
@@ -81,6 +102,9 @@ hazards:
       amplifying a single-tool error into a multi-tool data integrity
       incident.
     losses: [L-1, L-3, L-4]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-9
     title: Rivet incremental validation returns stale results due to missed invalidation
@@ -92,6 +116,9 @@ hazards:
       where CI trusts incremental results, this silently passes a
       broken traceability state.
     losses: [L-1, L-2, L-5]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-10
     title: Rivet conditional validation rules contradict, making compliance impossible
@@ -103,6 +130,9 @@ hazards:
       detect the inconsistency, causing perpetual validation failures
       that engineers work around by disabling rules.
     losses: [L-1, L-4, L-5]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-11
     title: Rivet MODULE.bazel parser silently misparses dependency declarations
@@ -112,6 +142,9 @@ hazards:
       validation runs against the wrong repo versions, reporting
       traceability coverage against mismatched baselines.
     losses: [L-1, L-2, L-5]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-12
     title: Rivet formal proofs verify a model that diverges from the implementation
@@ -122,6 +155,9 @@ hazards:
       has bugs that the proofs do not cover, creating false assurance
       of correctness.
     losses: [L-2, L-5]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-13
     title: Rivet document renderer produces HTML containing unescaped artifact content
@@ -137,6 +173,9 @@ hazards:
       data, exfiltrate session information, or modify the visual
       presentation of compliance metrics.
     losses: [L-1, L-2, L-3]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-14
     title: Rivet WASM adapter executes untrusted code that corrupts import results
@@ -150,6 +189,9 @@ hazards:
       distributed as binary components without source review, a supply
       chain attack could introduce falsified traceability data.
     losses: [L-1, L-3, L-5]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-15
     title: Rivet commit traceability analysis produces false coverage from misidentified artifact references
@@ -163,6 +205,9 @@ hazards:
       does not match. Both inflate or deflate commit-artifact coverage
       metrics, misrepresenting implementation completeness.
     losses: [L-1, L-2]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-16
     title: Rivet dashboard serves stale data after hot-reload fails silently
@@ -177,6 +222,9 @@ hazards:
       and reloaded, they see the old (passing) state and conclude
       their fix is working when it actually introduced a new error.
     losses: [L-1, L-3, L-4]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-17
     title: Rivet cross-repo sync clones arbitrary git repositories specified in rivet.yaml
@@ -191,6 +239,9 @@ hazards:
       supply chain attack, the sync command becomes a vector for
       arbitrary code execution via git hooks.
     losses: [L-3, L-5]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-18
     title: Rivet fails to resolve external repository paths across platforms
@@ -200,6 +251,9 @@ hazards:
       don't exist on CI runners.  If path resolution fails silently,
       cross-repo links break without warning and traceability is lost.
     losses: [L-1, L-3]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-19
     title: LSP server provides stale validation results after file change
@@ -211,6 +265,9 @@ hazards:
       trusts the editor's inline diagnostics, stale PASS results hide
       newly introduced traceability violations.
     losses: [L-1, L-2, L-5]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-20
     title: Dashboard WebView in VS Code exposes artifact data via iframe postMessage
@@ -222,6 +279,9 @@ hazards:
       environment where sensitive requirements or safety analyses are
       displayed, this enables data exfiltration without filesystem access.
     losses: [L-3, L-5]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-21
     title: Rivet MCP server provides stale validation state to AI agents
@@ -232,6 +292,9 @@ hazards:
       where the agent has autonomy to commit and push, stale MCP results
       propagate into the main branch.
     losses: [L-1, L-2, L-5]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-24
     title: Rivet YAML round-trip alters artifact content or formatting
@@ -241,6 +304,9 @@ hazards:
       read-modify-write cycle. Artifacts that were previously valid become
       invalid, or human-maintained formatting conventions are destroyed.
     losses: [L-1, L-4, L-6]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
 sub-hazards:
   # --- H-1 refinements: types of stale references ---
@@ -251,6 +317,9 @@ sub-hazards:
       An artifact referenced by a Rivet link is deleted in an external
       ALM tool.  The OSLC TRS change log records the deletion, but
       Rivet does not process it, leaving a dangling forward reference.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-1.2
     parent: H-1
@@ -259,6 +328,9 @@ sub-hazards:
       An artifact's identifier changes (e.g., REQ-042 becomes REQ-042a
       after a rebase in the external tool).  Rivet's links still point
       to the old identifier.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-1.3
     parent: H-1
@@ -267,6 +339,9 @@ sub-hazards:
       An artifact originally typed as "requirement" is reclassified as
       "information" in the external tool, but Rivet still treats the
       link as a requirement-level trace.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # --- H-4 refinements: types of semantic mismatch ---
   - id: H-4.1
@@ -276,6 +351,9 @@ sub-hazards:
       Lifecycle status strings from external tools (e.g., "In Review",
       "Baselined", "Obsolete") are mapped to the wrong Rivet status,
       causing artifacts to appear validated when they are still draft.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-4.2
     parent: H-4
@@ -284,6 +362,9 @@ sub-hazards:
       Link type semantics differ between tools.  A "derives" link in
       DOORS may mean "refines" in Rivet's schema, but an incorrect
       mapping treats it as "satisfies," inflating coverage metrics.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-4.3
     parent: H-4
@@ -292,6 +373,9 @@ sub-hazards:
       ReqIF XHTML content or OSLC rich-text descriptions are stripped
       to plain text, losing tables, formulas, or embedded diagrams that
       are essential to understanding the requirement.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # --- H-9 refinements: incremental invalidation failures ---
   - id: H-9.1
@@ -301,6 +385,9 @@ sub-hazards:
       A schema file is modified (e.g., adding a conditional rule) but
       the salsa input query for schemas is not invalidated. Validation
       continues using the old schema, missing the new rule.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-9.2
     parent: H-9
@@ -309,6 +396,9 @@ sub-hazards:
       An external repository's artifacts change (new commit fetched),
       but the salsa queries for cross-repo link resolution are not
       invalidated. Broken cross-repo links are not detected.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # --- H-11 refinements: parser misparse scenarios ---
   - id: H-11.1
@@ -319,6 +409,9 @@ sub-hazards:
       git_override(commit="abc123"). The parser extracts the registry
       version but misses the override, causing validation against the
       wrong repo checkout.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-11.2
     parent: H-11
@@ -328,6 +421,9 @@ sub-hazards:
       load() statements that the Starlark subset parser does not handle.
       The parser silently skips the unrecognized construct, missing a
       dependency declaration.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # --- H-13 refinements: XSS rendering paths ---
   - id: H-13.1
@@ -338,6 +434,9 @@ sub-hazards:
       `onerror` attributes. The dashboard's HTML rendering pipeline
       includes the content without sanitization in the artifact detail
       view, enabling script execution in the viewer's browser.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-13.2
     parent: H-13
@@ -348,3 +447,6 @@ sub-hazards:
       only allows http/https/# URLs, but the img tag rendering path may
       not apply the same restriction, enabling script injection via
       crafted image sources.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z

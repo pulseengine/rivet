@@ -34,6 +34,9 @@ artifacts:
     fields:
       cia-impact: [confidentiality]
       stakeholders: [safety-engineers, tool-administrators, certification-authorities]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SL-2
     type: sec-loss
@@ -47,6 +50,9 @@ artifacts:
     fields:
       cia-impact: [integrity]
       stakeholders: [safety-engineers, certification-authorities, developers]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SL-3
     type: sec-loss
@@ -60,6 +66,9 @@ artifacts:
     fields:
       cia-impact: [availability]
       stakeholders: [safety-engineers, developers, project-managers]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SL-4
     type: sec-loss
@@ -74,6 +83,9 @@ artifacts:
     fields:
       cia-impact: [integrity, confidentiality]
       stakeholders: [certification-authorities, project-managers, safety-engineers]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SL-5
     type: sec-loss
@@ -88,3 +100,6 @@ artifacts:
     fields:
       cia-impact: [integrity]
       stakeholders: [safety-engineers, developers, certification-authorities]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z

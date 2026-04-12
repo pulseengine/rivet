@@ -43,6 +43,9 @@ artifacts:
         the OSLC server URL to an attacker-controlled host.  On next sync, the
         CLI imports adversary-crafted artifacts without provenance verification.
       attacker-type: supply-chain
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SUCA-CLI-2
     type: sec-uca
@@ -67,6 +70,9 @@ artifacts:
         CLI export includes this verbatim in the HTML output, triggering XSS
         in any browser that opens the export.
       attacker-type: insider
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # ── CTRL-DASH (dashboard controller) ────────────────────────────────────
 
@@ -94,6 +100,9 @@ artifacts:
         developer machines.  The dashboard responds with full artifact JSON
         including proprietary requirements and safety analyses.
       attacker-type: external-network
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SUCA-DASH-2
     type: sec-uca
@@ -120,6 +129,9 @@ artifacts:
         so the attacker's script executes in every reviewer's browser —
         potentially exfiltrating session state or injecting false data.
       attacker-type: insider
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # ── CTRL-CORE (validation engine) ───────────────────────────────────────
 
@@ -146,6 +158,9 @@ artifacts:
         description string.  The CI runner exhausts memory, denying the
         pipeline to legitimate work.
       attacker-type: supply-chain
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # ── CTRL-OSLC (OSLC sync controller) ────────────────────────────────────
 
@@ -173,6 +188,9 @@ artifacts:
         artifacts to the attacker's server and accepts adversary-injected
         artifacts as authoritative.
       attacker-type: supply-chain
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SUCA-OSLC-2
     type: sec-uca
@@ -200,3 +218,6 @@ artifacts:
         self-signed certificate.  With certificate validation disabled, Rivet
         connects, disclosing artifact payloads and accepting injected responses.
       attacker-type: external-network
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z

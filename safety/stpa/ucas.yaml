@@ -37,6 +37,9 @@ core-ucas:
       rationale: >
         Stale links from the previous validation state are used to
         generate coverage metrics, hiding newly introduced gaps.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
     - id: UCA-C-2
       description: >
@@ -49,6 +52,9 @@ core-ucas:
       rationale: >
         Coverage metrics computed from the stale graph do not account
         for links added or removed by the sync.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
     - id: UCA-C-3
       description: >
@@ -60,6 +66,9 @@ core-ucas:
       rationale: >
         Schema-violating artifacts may have mistyped fields, missing
         required attributes, or incorrect link semantics.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   providing:
     - id: UCA-C-4
@@ -73,6 +82,9 @@ core-ucas:
       rationale: >
         A false-positive validation result causes downstream reports
         and CI gates to treat the traceability as complete.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
     - id: UCA-C-5
       description: >
@@ -85,6 +97,9 @@ core-ucas:
       rationale: >
         Coverage percentage is inflated because unresolvable links are
         counted as coverage rather than gaps.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
     - id: UCA-C-6
       description: >
@@ -96,6 +111,9 @@ core-ucas:
       rationale: >
         Artifacts with incorrect or missing fields pass validation,
         allowing semantically invalid data into the traceability store.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   too-early-too-late:
     - id: UCA-C-7
@@ -109,6 +127,9 @@ core-ucas:
         Links to artifacts in not-yet-loaded sources are reported as
         dangling, producing false negatives, or worse — if the
         incomplete set passes validation, gaps are hidden.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
     - id: UCA-C-8
       description: >
@@ -121,6 +142,9 @@ core-ucas:
       rationale: >
         The report reflects the previously validated state, not the
         current state, potentially showing stale coverage data.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   stopped-too-soon:
     - id: UCA-C-9
@@ -134,6 +158,9 @@ core-ucas:
       rationale: >
         Engineers fix only the first error and assume the rest is clean,
         leaving other validation failures undetected.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
 # =============================================================================
 # OSLC Client UCAs — CA-OSLC-1: Fetch remote artifacts
@@ -156,6 +183,9 @@ oslc-ucas:
       rationale: >
         Local artifact store becomes increasingly stale relative to
         the external tool, and links to external artifacts may dangle.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
     - id: UCA-O-2
       description: >
@@ -167,6 +197,9 @@ oslc-ucas:
       rationale: >
         The external tool's view of traceability diverges from the
         local authoritative state, causing inconsistencies.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
     - id: UCA-O-3
       description: >
@@ -178,6 +211,9 @@ oslc-ucas:
       rationale: >
         Developer believes sync succeeded when it did not, and
         proceeds to generate reports from stale data.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   providing:
     - id: UCA-O-4
@@ -191,6 +227,9 @@ oslc-ucas:
       rationale: >
         The last-writer-wins behavior silently discards the local
         engineer's changes, including potential safety-critical edits.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
     - id: UCA-O-5
       description: >
@@ -203,6 +242,9 @@ oslc-ucas:
       rationale: >
         Phantom deletion — the artifact disappears from the local
         store, creating dangling links and coverage gaps.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
     - id: UCA-O-6
       description: >
@@ -215,6 +257,9 @@ oslc-ucas:
       rationale: >
         Corruption flows from the external tool into Rivet's local
         store and potentially onward to other connected tools.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
     - id: UCA-O-7
       description: >
@@ -226,6 +271,9 @@ oslc-ucas:
       rationale: >
         Error propagation in the outbound direction corrupts the
         external tool's data, affecting all users of that tool.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   too-early-too-late:
     - id: UCA-O-8
@@ -239,6 +287,9 @@ oslc-ucas:
       rationale: >
         The compliance report does not reflect the current state of
         traceability, misleading auditors.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
     - id: UCA-O-9
       description: >
@@ -251,6 +302,9 @@ oslc-ucas:
       rationale: >
         Interleaved writes corrupt the YAML structure or silently
         overwrite in-progress edits.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   stopped-too-soon:
     - id: UCA-O-10
@@ -265,6 +319,9 @@ oslc-ucas:
         Partial sync creates an inconsistent local state — some links
         resolve to updated targets while others point to stale data,
         and the sync cursor may be advanced past un-applied changes.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
 # =============================================================================
 # ReqIF Adapter UCAs — CA-REQIF-1: Import ReqIF artifacts
@@ -286,6 +343,9 @@ reqif-ucas:
       rationale: >
         Requirements from the external tool are silently lost during
         import, creating gaps in the traceability chain.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
     - id: UCA-Q-2
       description: >
@@ -298,6 +358,9 @@ reqif-ucas:
       rationale: >
         Downstream tools retain a deleted artifact, creating phantom
         links and inconsistent traceability state.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   providing:
     - id: UCA-Q-3
@@ -311,6 +374,9 @@ reqif-ucas:
       rationale: >
         Semantically mismatched artifacts pass validation against a
         permissive schema but distort the traceability argument.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
     - id: UCA-Q-4
       description: >
@@ -324,6 +390,9 @@ reqif-ucas:
       rationale: >
         Duplicate artifacts inflate coverage metrics and create
         ambiguous link targets.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
     - id: UCA-Q-5
       description: >
@@ -336,6 +405,9 @@ reqif-ucas:
       rationale: >
         Downstream tools receive impoverished content that may be
         misinterpreted, breaking the semantic chain.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   too-early-too-late:
     - id: UCA-Q-6
@@ -349,6 +421,9 @@ reqif-ucas:
       rationale: >
         Without schema context, the adapter cannot validate or
         correctly map imported artifact types.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   stopped-too-soon:
     - id: UCA-Q-7
@@ -362,6 +437,9 @@ reqif-ucas:
       rationale: >
         A single bad record causes loss of all subsequent records,
         potentially dropping hundreds of requirements.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
 # =============================================================================
 # CLI UCAs — CA-CLI-1: Invoke core operations
@@ -384,6 +462,9 @@ cli-ucas:
       rationale: >
         Warnings about potential issues (e.g., weak link types,
         deprecated schemas) are ignored, accumulating into failures.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
     - id: UCA-L-2
       description: >
@@ -395,6 +476,9 @@ cli-ucas:
       rationale: >
         Reports are generated from unvalidated data, potentially
         containing dangling links or schema violations.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   providing:
     - id: UCA-L-3
@@ -408,6 +492,9 @@ cli-ucas:
       rationale: >
         Developer's in-progress work is silently destroyed by the
         sync operation.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
     - id: UCA-L-4
       description: >
@@ -419,6 +506,9 @@ cli-ucas:
       rationale: >
         Using the wrong adapter applies incorrect schema mappings,
         producing semantically invalid artifacts.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   too-early-too-late:
     - id: UCA-L-5
@@ -432,6 +522,9 @@ cli-ucas:
       rationale: >
         Race condition between sync writes and editor saves causes
         data loss or YAML corruption.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   stopped-too-soon: []
 
@@ -455,6 +548,9 @@ ci-ucas:
       rationale: >
         Broken links or schema violations are merged into the main
         branch without detection.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
     - id: UCA-I-2
       description: >
@@ -466,6 +562,9 @@ ci-ucas:
       rationale: >
         Developers see the failure but can merge anyway, allowing
         known traceability issues into the baseline.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   providing:
     - id: UCA-I-3
@@ -479,6 +578,9 @@ ci-ucas:
       rationale: >
         CI green-lights a merge despite validation failures, creating
         false confidence in the traceability state.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   too-early-too-late:
     - id: UCA-I-4
@@ -492,6 +594,9 @@ ci-ucas:
       rationale: >
         Validation passes against old data while the current data
         contains new issues.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   stopped-too-soon: []
 
@@ -513,6 +618,9 @@ dashboard-ucas:
       rationale: >
         Engineers see green metrics without the associated caveats,
         developing false confidence in traceability completeness.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   providing:
     - id: UCA-D-2
@@ -526,6 +634,9 @@ dashboard-ucas:
       rationale: >
         Stale metrics mislead developers and auditors about the
         current state of traceability.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   too-early-too-late: []
   stopped-too-soon: []
@@ -552,6 +663,9 @@ incremental-ucas:
       rationale: >
         The fundamental incremental correctness property is violated:
         stale cached validation results create false assurance.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
     - id: UCA-C-11
       description: >
@@ -567,6 +681,9 @@ incremental-ucas:
         The newly-approved artifact lacks verification-criteria but
         the conditional rule does not fire because salsa returns the
         cached result from when the artifact was still draft.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   providing:
     - id: UCA-C-12
@@ -581,6 +698,9 @@ incremental-ucas:
       rationale: >
         Contradictory rules make compliance impossible. Engineers
         disable or work around rules, undermining the validation system.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
     - id: UCA-C-13
       description: >
@@ -593,6 +713,9 @@ incremental-ucas:
       rationale: >
         Divergence between incremental and full results means the tool
         cannot be trusted. Safety-critical tooling must be deterministic.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   too-early-too-late:
     - id: UCA-C-14
@@ -606,6 +729,9 @@ incremental-ucas:
       rationale: >
         Missing conditional rules means violations go undetected.
         Rules added later in the schema merge are never applied.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   stopped-too-soon: []
 
@@ -629,6 +755,9 @@ parser-ucas:
       rationale: >
         Validation runs against the wrong version of the external repo,
         producing coverage results that don't match the actual baseline.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
     - id: UCA-C-16
       description: >
@@ -641,6 +770,9 @@ parser-ucas:
       rationale: >
         Missing dependencies are not reported. Cross-repo validation
         has blind spots where repos are not discovered.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   providing:
     - id: UCA-C-17
@@ -654,6 +786,9 @@ parser-ucas:
       rationale: >
         Cross-repo links resolve against a different module than
         intended, producing silently incorrect traceability.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   too-early-too-late: []
   stopped-too-soon: []
@@ -678,6 +813,9 @@ dashboard-rendering-ucas:
       rationale: >
         Script injection in the dashboard compromises the integrity of
         all displayed traceability data for the current session.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   not-providing:
     - id: UCA-D-4
@@ -691,6 +829,9 @@ dashboard-rendering-ucas:
       rationale: >
         User believes they are viewing current data when the dashboard
         is serving stale state from before the edit.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   too-early-too-late: []
   stopped-too-soon: []
@@ -715,6 +856,9 @@ commit-ucas:
       rationale: >
         False positive artifact references inflate commit coverage
         metrics, creating an illusion of implementation completeness.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   not-providing:
     - id: UCA-C-19
@@ -731,6 +875,9 @@ commit-ucas:
         False negative artifact references create coverage gaps. STPA
         artifacts (the most safety-critical) are systematically missed
         by the commit traceability engine.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   too-early-too-late: []
   stopped-too-soon: []
@@ -754,6 +901,9 @@ cross-repo-ucas:
       rationale: >
         Circular dependencies cause the tool to hang or crash during
         sync, preventing any validation from completing.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   providing: []
   too-early-too-late: []
@@ -781,6 +931,9 @@ wasm-ucas:
         Fabricated artifacts pass schema validation because they
         conform to the declared types, but they introduce false
         traceability links that inflate coverage.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
     - id: UCA-C-22
       description: >
@@ -794,6 +947,9 @@ wasm-ucas:
       rationale: >
         Denial of service during import blocks all validation and
         reporting operations.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
     - id: UCA-C-23
       description: >
@@ -807,6 +963,9 @@ wasm-ucas:
       rationale: >
         Information disclosure of host filesystem structure aids
         further attacks. Arbitrary file read enables data exfiltration.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   too-early-too-late: []
   stopped-too-soon: []
@@ -837,6 +996,9 @@ lifecycle-ucas:
         Lifecycle gap analysis produces false negatives for schemas
         other than the dev schema, missing genuine coverage gaps in
         cybersecurity and STPA domains.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   too-early-too-late: []
   stopped-too-soon: []
@@ -862,6 +1024,9 @@ document-validation-ucas:
         Broken artifact embeds in documents are invisible to validation,
         producing documents that appear complete but contain broken
         references.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   providing: []
   too-early-too-late: []
@@ -890,6 +1055,9 @@ external-sync-ucas:
         The rivet.yaml file is the trust boundary for external
         dependencies. A compromised config file enables arbitrary
         code execution on the developer's machine.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
     - id: UCA-L-7
       description: >
@@ -904,6 +1072,9 @@ external-sync-ucas:
         The lock file is meant to ensure reproducible baselines.
         If it can be tampered with undetected, the baseline guarantee
         is void.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   too-early-too-late: []
   stopped-too-soon: []
@@ -929,6 +1100,9 @@ lsp-ucas:
       rationale: >
         Stale diagnostics in the editor create false confidence that the
         artifact file is valid, hiding newly introduced traceability errors.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   providing:
     - id: UCA-C-27
@@ -945,6 +1119,9 @@ lsp-ucas:
       rationale: >
         Unrestricted postMessage handling allows data exfiltration of
         sensitive artifacts without requiring filesystem access.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   too-early-too-late: []
   stopped-too-soon: []
@@ -971,6 +1148,9 @@ mcp-ucas:
         Stale validation results cause the agent to believe its changes
         are valid when they may have introduced errors, or to continue
         fixing issues that no longer exist.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   providing:
     - id: UCA-M-2
@@ -986,6 +1166,9 @@ mcp-ucas:
         An incomplete artifact list produces incorrect coverage metrics
         and missing link targets. The agent cannot detect the omission
         because no error is reported.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   too-early-too-late:
     - id: UCA-M-3
@@ -1000,5 +1183,8 @@ mcp-ucas:
       rationale: >
         Coverage metrics reflect the old artifact state, misleading the
         agent about the impact of its changes.
+      provenance:
+        created-by: ai-assisted
+        timestamp: 2026-04-07T03:40:26Z
 
   stopped-too-soon: []

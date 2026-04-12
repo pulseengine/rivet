@@ -9,7 +9,7 @@
 use std::collections::{BTreeMap, HashSet};
 
 use rivet_core::externals::{
-    load_all_externals, load_external_project, sync_external, validate_refs, ResolvedExternal,
+    ResolvedExternal, load_all_externals, load_external_project, sync_external, validate_refs,
 };
 use rivet_core::model::ExternalProject;
 use serial_test::serial;
@@ -113,7 +113,12 @@ fn cross_repo_link_resolution_with_spar() {
         "unknown:REQ-001",  // unknown prefix
     ];
     let broken2 = validate_refs(&bad_refs, &local_ids, &external_ids);
-    assert_eq!(broken2.len(), 2, "expected 2 broken refs, got: {:?}", broken2);
+    assert_eq!(
+        broken2.len(),
+        2,
+        "expected 2 broken refs, got: {:?}",
+        broken2
+    );
 }
 
 // rivet: verifies REQ-020
@@ -193,12 +198,14 @@ fn backlinks_from_spar_to_local() {
 #[serial]
 fn dogfood_rivet_yaml_with_spar_external() {
     // Load the actual project's rivet.yaml and verify it parses with the spar external
-    let project_root =
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+    let project_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
     let config_path = project_root.join("rivet.yaml");
     let config = rivet_core::load_project_config(&config_path).unwrap();
 
-    let externals = config.externals.as_ref().expect("externals must be configured");
+    let externals = config
+        .externals
+        .as_ref()
+        .expect("externals must be configured");
     assert!(externals.contains_key("spar"), "spar must be in externals");
 
     let spar = &externals["spar"];
@@ -208,8 +215,5 @@ fn dogfood_rivet_yaml_with_spar_external() {
         Some("https://github.com/pulseengine/spar.git")
     );
     assert_eq!(spar.git_ref.as_deref(), Some("84a7363"));
-    assert_eq!(
-        spar.path.as_deref(),
-        Some("tests/fixtures/spar-external")
-    );
+    assert_eq!(spar.path.as_deref(), Some("tests/fixtures/spar-external"));
 }

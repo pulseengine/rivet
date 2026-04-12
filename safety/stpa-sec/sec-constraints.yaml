@@ -22,6 +22,9 @@ artifacts:
     links:
       - type: prevents-sec-hazard
         target: SH-1
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SSC-2
     type: sec-constraint
@@ -37,6 +40,9 @@ artifacts:
     links:
       - type: prevents-sec-hazard
         target: SH-2
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SSC-3
     type: sec-constraint
@@ -52,6 +58,9 @@ artifacts:
     links:
       - type: prevents-sec-hazard
         target: SH-3
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SSC-4
     type: sec-constraint
@@ -66,6 +75,9 @@ artifacts:
     links:
       - type: prevents-sec-hazard
         target: SH-4
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SSC-5
     type: sec-constraint
@@ -80,6 +92,9 @@ artifacts:
     links:
       - type: prevents-sec-hazard
         target: SH-5
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SSC-6
     type: sec-constraint
@@ -94,6 +109,9 @@ artifacts:
     links:
       - type: prevents-sec-hazard
         target: SH-6
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SSC-7
     type: sec-constraint
@@ -109,3 +127,6 @@ artifacts:
     links:
       - type: prevents-sec-hazard
         target: SH-7
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z

@@ -20,6 +20,9 @@ artifacts:
       appear compliant.
     fields:
       cia-impact: [integrity]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SL-IMPL-002
     type: sec-loss
@@ -30,6 +33,9 @@ artifacts:
       and project structure to unauthorized agents.
     fields:
       cia-impact: [confidentiality]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SL-IMPL-003
     type: sec-loss
@@ -41,6 +47,9 @@ artifacts:
       or resource exhaustion.
     fields:
       cia-impact: [integrity, availability]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # ── Hazards ─────────────────────────────────────────────────────────────
 
@@ -57,6 +66,9 @@ artifacts:
         target: SL-IMPL-001
     fields:
       cia-impact: [integrity]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SH-IMPL-002
     type: sec-hazard
@@ -71,6 +83,9 @@ artifacts:
         target: SL-IMPL-002
     fields:
       cia-impact: [confidentiality, integrity]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SH-IMPL-003
     type: sec-hazard
@@ -85,6 +100,9 @@ artifacts:
         target: SL-IMPL-003
     fields:
       cia-impact: [integrity]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SH-IMPL-004
     type: sec-hazard
@@ -99,6 +117,9 @@ artifacts:
         target: SL-IMPL-001
     fields:
       cia-impact: [availability]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # ── Security UCAs ──────────────────────────────────────────────────────
 
@@ -125,6 +146,9 @@ artifacts:
         a process that connects to Rivet's MCP stdin/stdout and invokes
         rivet_list or rivet_validate to exfiltrate project artifacts.
       attacker-type: insider
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SUCA-MCP-2
     type: sec-uca
@@ -148,6 +172,9 @@ artifacts:
         file system paths, disclosing the project directory structure and
         potentially revealing sensitive path components.
       attacker-type: external-network
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # ── Security Scenarios ─────────────────────────────────────────────────
 
@@ -164,6 +191,9 @@ artifacts:
         target: SUCA-MCP-1
       - type: leads-to-sec-hazard
         target: SH-IMPL-002
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # ── Security Constraints ────────────────────────────────────────────────
 
@@ -178,6 +208,9 @@ artifacts:
     links:
       - type: prevents-sec-hazard
         target: SH-IMPL-001
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SSC-IMPL-002
     type: sec-constraint
@@ -191,6 +224,9 @@ artifacts:
     links:
       - type: prevents-sec-hazard
         target: SH-IMPL-002
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SSC-IMPL-003
     type: sec-constraint
@@ -203,6 +239,9 @@ artifacts:
     links:
       - type: prevents-sec-hazard
         target: SH-IMPL-003
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SSC-IMPL-004
     type: sec-constraint
@@ -216,6 +255,9 @@ artifacts:
     links:
       - type: prevents-sec-hazard
         target: SH-IMPL-004
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SSC-IMPL-005
     type: sec-constraint
@@ -228,6 +270,9 @@ artifacts:
     links:
       - type: prevents-sec-hazard
         target: SH-IMPL-002
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SSC-IMPL-006
     type: sec-constraint
@@ -239,3 +284,6 @@ artifacts:
     links:
       - type: prevents-sec-hazard
         target: SH-IMPL-002
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z

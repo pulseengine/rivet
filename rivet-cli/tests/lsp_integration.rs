@@ -392,8 +392,7 @@ fn lsp_diagnostics_on_did_open() {
                 {
                     got_diagnostics = true;
                 }
-                let is_sym_response =
-                    msg.get("id").and_then(|v| v.as_u64()) == Some(50);
+                let is_sym_response = msg.get("id").and_then(|v| v.as_u64()) == Some(50);
                 all_messages.push(msg);
                 if is_sym_response {
                     break;
@@ -493,9 +492,7 @@ fn lsp_document_symbols() {
 
     // Read the response with id=2
     let response = lsp
-        .recv_until(TIMEOUT, |m| {
-            m.get("id").and_then(|v| v.as_u64()) == Some(2)
-        })
+        .recv_until(TIMEOUT, |m| m.get("id").and_then(|v| v.as_u64()) == Some(2))
         .expect("documentSymbol response");
 
     let result = response

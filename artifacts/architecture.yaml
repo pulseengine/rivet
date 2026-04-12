@@ -22,6 +22,9 @@ artifacts:
       aadl-file: arch/rivet_system.aadl:49
       source-ref: arch/rivet_system.aadl:49-54
       diagram: "root: RivetSystem::Rivet.Impl"
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: ARCH-SYS-002
     type: aadl-component
@@ -36,6 +39,9 @@ artifacts:
       aadl-package: RivetSystem
       classifier-kind: implementation
       aadl-file: arch/rivet_system.aadl:56-67
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # ── Core process ─────────────────────────────────────────────
 
@@ -79,6 +85,9 @@ artifacts:
       classifier-kind: implementation
       aadl-file: arch/rivet_system.aadl:75-108
       source-ref: rivet-core/src/lib.rs:1
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # ── CLI process ──────────────────────────────────────────────
 
@@ -99,6 +108,9 @@ artifacts:
       classifier-kind: implementation
       aadl-file: arch/rivet_system.aadl:112-125
       source-ref: rivet-cli/src/main.rs:1
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # ── Core threads (one per module) ────────────────────────────
 
@@ -122,6 +134,9 @@ artifacts:
       aadl-package: RivetSystem
       classifier-kind: type
       source-ref: rivet-core/src/schema.rs:1
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: ARCH-CORE-STORE
     type: aadl-component
@@ -139,6 +154,9 @@ artifacts:
       aadl-package: RivetSystem
       classifier-kind: type
       source-ref: rivet-core/src/store.rs:1
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: ARCH-CORE-ADAPTERS
     type: aadl-component
@@ -168,6 +186,9 @@ artifacts:
       aadl-package: RivetSystem
       classifier-kind: type
       source-ref: rivet-core/src/adapter.rs:1
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: ARCH-CORE-GRAPH
     type: aadl-component
@@ -185,6 +206,9 @@ artifacts:
       aadl-package: RivetSystem
       classifier-kind: type
       source-ref: rivet-core/src/links.rs:1
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: ARCH-CORE-VALIDATE
     type: aadl-component
@@ -203,6 +227,9 @@ artifacts:
       aadl-package: RivetSystem
       classifier-kind: type
       source-ref: rivet-core/src/validate.rs:1
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: ARCH-CORE-MATRIX
     type: aadl-component
@@ -220,6 +247,9 @@ artifacts:
       aadl-package: RivetSystem
       classifier-kind: type
       source-ref: rivet-core/src/matrix.rs:1
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: ARCH-CORE-DIFF
     type: aadl-component
@@ -237,6 +267,9 @@ artifacts:
       aadl-package: RivetSystem
       classifier-kind: type
       source-ref: rivet-core/src/diff.rs:1
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: ARCH-CORE-DOC
     type: aadl-component
@@ -254,6 +287,9 @@ artifacts:
       aadl-package: RivetSystem
       classifier-kind: type
       source-ref: rivet-core/src/document.rs:1
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: ARCH-CORE-QUERY
     type: aadl-component
@@ -271,6 +307,9 @@ artifacts:
       aadl-package: RivetSystem
       classifier-kind: type
       source-ref: rivet-core/src/query.rs:1
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: ARCH-CORE-RESULTS
     type: aadl-component
@@ -288,6 +327,9 @@ artifacts:
       aadl-package: RivetSystem
       classifier-kind: type
       source-ref: rivet-core/src/results.rs:1
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # ── Adapter components ───────────────────────────────────────
 
@@ -307,6 +349,9 @@ artifacts:
       aadl-package: RivetAdapters
       classifier-kind: type
       source-ref: rivet-core/src/formats/generic.rs:1
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: ARCH-ADAPT-STPA
     type: aadl-component
@@ -324,6 +369,9 @@ artifacts:
       aadl-package: RivetAdapters
       classifier-kind: type
       source-ref: rivet-core/src/formats/stpa.rs:1
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: ARCH-ADAPT-AADL
     type: aadl-component
@@ -341,6 +389,9 @@ artifacts:
       aadl-package: RivetAdapters
       classifier-kind: type
       source-ref: rivet-core/src/formats/aadl.rs:1
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: ARCH-ADAPT-REQIF
     type: aadl-component
@@ -358,6 +409,9 @@ artifacts:
       aadl-package: RivetAdapters
       classifier-kind: type
       source-ref: rivet-core/src/reqif.rs:1
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: ARCH-ADAPT-WASM
     type: aadl-component
@@ -377,6 +431,9 @@ artifacts:
       aadl-package: RivetAdapters
       classifier-kind: implementation
       source-ref: rivet-core/src/wasm_runtime.rs:1
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # ── Dashboard components ─────────────────────────────────────
 
@@ -400,6 +457,9 @@ artifacts:
       classifier-kind: implementation
       aadl-file: arch/rivet_dashboard.aadl:18-35
       source-ref: rivet-cli/src/serve.rs:1
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: ARCH-DASH-GRAPH
     type: aadl-component
@@ -416,6 +476,9 @@ artifacts:
       category: process
       aadl-package: RivetDashboard
       classifier-kind: type
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # ── Phase 3 core components ────────────────────────────────────
 
@@ -437,6 +500,9 @@ artifacts:
     fields:
       category: process
       aadl-package: RivetCore
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: ARCH-CORE-EXTERNALS
     type: aadl-component
@@ -454,6 +520,9 @@ artifacts:
     fields:
       category: process
       aadl-package: RivetCore
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: ARCH-CORE-IMPACT
     type: aadl-component
@@ -469,6 +538,9 @@ artifacts:
     fields:
       category: process
       aadl-package: RivetCore
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: ARCH-CORE-MUTATE
     type: aadl-component
@@ -486,6 +558,9 @@ artifacts:
     fields:
       category: process
       aadl-package: RivetCore
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: ARCH-CORE-MARKDOWN
     type: aadl-component
@@ -503,6 +578,9 @@ artifacts:
     fields:
       category: process
       aadl-package: RivetCore
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: ARCH-CORE-EXPORT
     type: aadl-component
@@ -520,6 +598,9 @@ artifacts:
     fields:
       category: process
       aadl-package: RivetCore
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: ARCH-ADAPT-NEEDSJSON
     type: aadl-component
@@ -535,6 +616,9 @@ artifacts:
     fields:
       category: process
       aadl-package: RivetAdapters
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: ARCH-CORE-SCANNER
     type: aadl-component
@@ -550,3 +634,6 @@ artifacts:
     fields:
       category: process
       aadl-package: RivetCore
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z

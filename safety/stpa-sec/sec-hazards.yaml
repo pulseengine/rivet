@@ -31,6 +31,9 @@ artifacts:
     fields:
       cia-impact: [integrity]
       severity: critical
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SH-2
     type: sec-hazard
@@ -50,6 +53,9 @@ artifacts:
     fields:
       cia-impact: [integrity]
       severity: critical
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SH-3
     type: sec-hazard
@@ -66,6 +72,9 @@ artifacts:
     fields:
       cia-impact: [confidentiality]
       severity: high
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SH-4
     type: sec-hazard
@@ -85,6 +94,9 @@ artifacts:
     fields:
       cia-impact: [confidentiality, integrity]
       severity: high
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SH-5
     type: sec-hazard
@@ -104,6 +116,9 @@ artifacts:
     fields:
       cia-impact: [confidentiality, integrity]
       severity: high
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SH-6
     type: sec-hazard
@@ -121,6 +136,9 @@ artifacts:
     fields:
       cia-impact: [availability]
       severity: medium
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SH-7
     type: sec-hazard
@@ -142,3 +160,6 @@ artifacts:
     fields:
       cia-impact: [integrity]
       severity: high
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z

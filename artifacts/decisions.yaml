@@ -29,6 +29,9 @@ artifacts:
           style B fill:#f0f0f0,stroke:#666
           style C fill:#f0f0f0,stroke:#666
           style D fill:#f0f0f0,stroke:#666
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-002
     type: design-decision
@@ -51,6 +54,9 @@ artifacts:
         Custom adjacency list implementation. Rejected because graph
         algorithms are subtle and petgraph is well-proven.
       source-ref: rivet-core/src/links.rs:1
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-003
     type: design-decision
@@ -76,6 +82,9 @@ artifacts:
       alternatives: >
         Single monolithic schema. Rejected because different projects need
         different subsets (STPA-only, ASPICE-only, or both).
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-004
     type: design-decision
@@ -97,6 +106,9 @@ artifacts:
       alternatives: >
         Plugin via dynamic libraries (.so/.dylib). Rejected due to ABI
         fragility and platform-specific builds.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-005
     type: design-decision
@@ -118,6 +130,9 @@ artifacts:
       alternatives: >
         Tauri desktop app. Rejected per user preference — CLI + serve
         is simpler and works over SSH.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-006
     type: design-decision
@@ -140,6 +155,9 @@ artifacts:
         Deep module hierarchy (rivet-core/src/domain/stpa/model/...).
         Rejected because it adds navigation overhead without benefit
         at this project scale.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-007
     type: design-decision
@@ -162,6 +180,9 @@ artifacts:
       alternatives: >
         Separate S3/GCS bucket for test evidence. Rejected because it
         adds infrastructure and GitHub releases are already available.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-008
     type: design-decision
@@ -187,6 +208,9 @@ artifacts:
       alternatives: >
         Minimal CI with just tests. Rejected because safety-critical
         tooling requires the same rigor it enforces on its users.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-009
     type: design-decision
@@ -209,6 +233,9 @@ artifacts:
       alternatives: >
         Manual timing with std::time::Instant. Rejected because it
         lacks statistical rigor and regression detection.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-010
     type: design-decision
@@ -237,6 +264,9 @@ artifacts:
         Keep old test terminology for backward compatibility. Rejected
         because the schema is pre-1.0 and alignment with the standard
         is more valuable than backward compatibility at this stage.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-011
     type: design-decision
@@ -262,6 +292,9 @@ artifacts:
         Inline regex parsing of [ARTIFACT-ID] patterns (Jira-style).
         Rejected because regex is fragile and cannot distinguish
         intentional references from incidental mentions.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-012
     type: design-decision
@@ -286,6 +319,9 @@ artifacts:
         rivet sync-commits writing commit YAML files to a commits/
         directory. Rejected because it creates thousands of redundant
         files and requires ongoing sync discipline.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-013
     type: design-decision
@@ -314,6 +350,9 @@ artifacts:
         No exemption mechanism (all commits must reference artifacts).
         Rejected because it creates excessive friction for routine
         maintenance commits that have no traceability value.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-014
     type: design-decision
@@ -331,6 +370,9 @@ artifacts:
       rationale: >
         Simpler and more readable than URIs. Prefix is a local alias
         configured per project, matching sphinx-needs id_prefix pattern.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-015
     type: design-decision
@@ -347,6 +389,9 @@ artifacts:
       rationale: >
         Avoids central authority requirement. Matches distributed team
         workflows. Transitive resolution handles indirect dependencies.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-016
     type: design-decision
@@ -363,6 +408,9 @@ artifacts:
       rationale: >
         No platform repo required. Each repo joins baselines independently.
         Matches OSLC global configuration model where contributions are optional.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-017
     type: design-decision
@@ -379,6 +427,9 @@ artifacts:
       rationale: >
         Scales naturally. Avoids redundant declarations. Similar to cargo/npm
         dependency resolution.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-018
     type: design-decision
@@ -403,6 +454,9 @@ artifacts:
         OPA/Rego policies or embedded Lua scripting for validation rules.
         Rejected because they add runtime dependencies and split validation
         logic away from the schema that defines the types.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-019
     type: design-decision
@@ -428,6 +482,9 @@ artifacts:
         Git-diff-based detection (parse YAML file diffs). Rejected because
         YAML formatting changes produce false positives and it cannot detect
         semantic changes (e.g., reordered fields that are logically identical).
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-020
     type: design-decision
@@ -452,6 +509,9 @@ artifacts:
         Auto-generate rivet schema types from needs.json structure.
         Rejected because it would create throwaway types that don't
         align with any standard schema (aspice, stpa, cybersecurity).
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-021
     type: design-decision
@@ -477,6 +537,9 @@ artifacts:
         Generate test artifact YAML via a rivet sync-tests command.
         Rejected because it creates thousands of files that must be
         re-synced whenever tests change, duplicating DD-012's lesson.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-022
     type: design-decision
@@ -509,6 +572,9 @@ artifacts:
         Rivet-only externals config with manual repo/ref declarations.
         Kept as fallback for projects without Bazel or Nix, but not
         the primary path for build-system-managed projects.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-023
     type: design-decision
@@ -539,6 +605,9 @@ artifacts:
         massive overkill). tree-sitter-starlark (adds C dependency,
         grammar may not be maintained). Both rejected in favor of the
         lightweight hand-written approach proven in spar.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-024
     type: design-decision
@@ -572,6 +641,9 @@ artifacts:
         it reimplements what salsa does correctly and is error-prone for
         transitive dependencies. The phased approach keeps the existing
         pipeline working during migration.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-028
     type: design-decision
@@ -601,6 +673,9 @@ artifacts:
         does not preserve comments, key ordering, or blank lines in
         YAML. A rowan-based YAML CST editor could preserve formatting
         but is a larger investment (future work for the salsa migration).
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-025
     type: design-decision
@@ -628,6 +703,9 @@ artifacts:
         testing cannot prove absence of panics — only Kani's exhaustive
         bounded checking can. Both are kept: proptest for quick CI,
         Kani for proof.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-026
     type: design-decision
@@ -654,6 +732,9 @@ artifacts:
         integration. Prusti (Viper-based). Less mature for complex
         data structures. Both viable but Verus has the strongest
         Rust integration story.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-027
     type: design-decision
@@ -684,6 +765,9 @@ artifacts:
         metaprogramming but less Rust tooling maturity. F* via hacspec.
         Good for cryptographic properties but less natural for domain
         modeling.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-029
     type: design-decision
@@ -696,6 +780,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-032
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
   - id: DD-030
     type: design-decision
     title: Schema-driven embed modifiers with link traversal depth
@@ -706,6 +793,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-033
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-031
     type: design-decision
@@ -726,6 +816,9 @@ artifacts:
         target: REQ-002
       - type: satisfies
         target: REQ-001
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
   - id: DD-032
     type: design-decision
     title: Canonical generic YAML format with explicit type and links array
@@ -743,6 +836,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-001
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
   - id: DD-033
     type: design-decision
     title: spar CLI JSON bridge for AADL import
@@ -762,6 +858,9 @@ artifacts:
         target: REQ-001
       - type: satisfies
         target: REQ-005
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
   - id: DD-034
     type: design-decision
     title: ReqIF XML round-trip with XHTML content preservation
@@ -778,6 +877,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-005
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-035
     type: design-decision
@@ -794,6 +896,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-034
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-036
     type: design-decision
@@ -816,6 +921,9 @@ artifacts:
         authorities who expect evidence at each tier. Tagging artifacts with
         tier makes the mapping explicit in the traceability matrix.
       alternatives: Flat test structure with no tier distinction. Rejected because it makes ASPICE compliance reporting harder and obscures which tests constitute qualification evidence.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-037
     type: design-decision
@@ -837,6 +945,9 @@ artifacts:
         Static output means the export is self-contained and requires no
         running server.
       alternatives: Separate static site generator. Rejected as it would duplicate the rendering logic.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-038
     type: design-decision
@@ -858,6 +969,9 @@ artifacts:
         metadata from the export content so the same export can be deployed
         in multiple contexts.
       alternatives: Embed version list at export generation time. Rejected because it requires re-export when new versions are published.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-039
     type: design-decision
@@ -879,6 +993,9 @@ artifacts:
         missing optional WASM assets.
       alternatives: Serve from filesystem at runtime. Rejected because it
         requires deploying assets separately from the binary.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-040
     type: design-decision
@@ -912,6 +1029,9 @@ artifacts:
         enforcement (rejected: baselines are release markers, not workflow
         state). (3) Per-rule severity override (rejected: too granular,
         rule-level config does not match the artifact-level intent).
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: DD-041
     type: design-decision
@@ -940,3 +1060,6 @@ artifacts:
         (1) VS Code embeds serve via iframe (rejected: fails over SSH Remote).
         (2) Separate TypeScript renderer (rejected: duplicates rendering).
         (3) Template engine (rejected: string building is sufficient).
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z

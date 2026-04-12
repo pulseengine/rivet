@@ -17,6 +17,9 @@ artifacts:
     fields:
       phase: phase-1
       baseline: v0.1.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-002
     type: feature
@@ -34,6 +37,9 @@ artifacts:
     fields:
       phase: phase-1
       baseline: v0.1.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-003
     type: feature
@@ -49,6 +55,9 @@ artifacts:
     fields:
       phase: phase-1
       baseline: v0.1.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-004
     type: feature
@@ -66,6 +75,9 @@ artifacts:
     fields:
       phase: phase-1
       baseline: v0.1.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-005
     type: feature
@@ -82,6 +94,9 @@ artifacts:
     fields:
       phase: phase-1
       baseline: v0.1.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-006
     type: feature
@@ -97,6 +112,9 @@ artifacts:
     fields:
       phase: phase-1
       baseline: v0.1.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-007
     type: feature
@@ -112,6 +130,9 @@ artifacts:
     fields:
       phase: phase-1
       baseline: v0.1.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-008
     type: feature
@@ -129,6 +150,9 @@ artifacts:
     fields:
       phase: phase-1
       baseline: v0.1.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-009
     type: feature
@@ -146,6 +170,9 @@ artifacts:
     fields:
       phase: phase-2
       baseline: v0.1.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-010
     type: feature
@@ -162,6 +189,9 @@ artifacts:
     fields:
       phase: phase-2
       baseline: v0.1.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-011
     type: feature
@@ -179,6 +209,9 @@ artifacts:
     fields:
       phase: phase-3
       baseline: v0.2.0-dev
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-012
     type: feature
@@ -196,6 +229,9 @@ artifacts:
     fields:
       phase: phase-3
       baseline: v0.2.0-dev
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-013
     type: feature
@@ -211,6 +247,9 @@ artifacts:
     fields:
       phase: phase-1
       baseline: v0.1.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-014
     type: feature
@@ -229,6 +268,9 @@ artifacts:
     fields:
       phase: phase-1
       baseline: v0.1.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-015
     type: feature
@@ -247,6 +289,9 @@ artifacts:
     fields:
       phase: phase-1
       baseline: v0.1.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-016
     type: feature
@@ -269,6 +314,9 @@ artifacts:
     fields:
       phase: phase-1
       baseline: v0.1.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-017
     type: feature
@@ -289,6 +337,9 @@ artifacts:
     fields:
       phase: phase-1
       baseline: v0.1.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-018
     type: feature
@@ -309,6 +360,9 @@ artifacts:
     fields:
       phase: phase-2
       baseline: v0.1.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-019
     type: feature
@@ -326,6 +380,9 @@ artifacts:
     fields:
       phase: phase-2
       baseline: v0.1.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-020
     type: feature
@@ -344,6 +401,9 @@ artifacts:
     fields:
       phase: phase-3
       baseline: v0.2.0-dev
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-021
     type: feature
@@ -361,6 +421,9 @@ artifacts:
     fields:
       phase: phase-2
       baseline: v0.1.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-022
     type: feature
@@ -378,6 +441,9 @@ artifacts:
     fields:
       phase: phase-2
       baseline: v0.1.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-023
     type: feature
@@ -396,6 +462,9 @@ artifacts:
     fields:
       phase: phase-2
       baseline: v0.1.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-024
     type: feature
@@ -413,6 +482,9 @@ artifacts:
     fields:
       phase: phase-2
       baseline: v0.1.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-025
     type: feature
@@ -430,6 +502,9 @@ artifacts:
     fields:
       phase: phase-2
       baseline: v0.1.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-026
     type: feature
@@ -448,6 +523,9 @@ artifacts:
     fields:
       phase: phase-2
       baseline: v0.1.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-027
     type: feature
@@ -464,6 +542,9 @@ artifacts:
     fields:
       phase: phase-2
       baseline: v0.1.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-028
     type: feature
@@ -481,6 +562,9 @@ artifacts:
     fields:
       phase: phase-2
       baseline: v0.1.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-029
     type: feature
@@ -501,6 +585,9 @@ artifacts:
     fields:
       phase: phase-3
       baseline: v0.2.0-dev
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-030
     type: feature
@@ -521,6 +608,9 @@ artifacts:
     fields:
       phase: phase-3
       baseline: v0.2.0-dev
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-031
     type: feature
@@ -538,6 +628,9 @@ artifacts:
     fields:
       phase: phase-3
       baseline: v0.2.0-dev
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-032
     type: feature
@@ -558,6 +651,9 @@ artifacts:
     fields:
       phase: phase-3
       baseline: v0.2.0-dev
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-033
     type: feature
@@ -572,6 +668,9 @@ artifacts:
       - type: satisfies
         target: REQ-020
     tags: [cross-repo]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-034
     type: feature
@@ -585,6 +684,9 @@ artifacts:
       - type: satisfies
         target: REQ-020
     tags: [cross-repo, cli]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-035
     type: feature
@@ -598,6 +700,9 @@ artifacts:
       - type: satisfies
         target: REQ-020
     tags: [cross-repo, cli]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-036
     type: feature
@@ -611,6 +716,9 @@ artifacts:
       - type: satisfies
         target: REQ-021
     tags: [cross-repo, baseline, cli]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-037
     type: feature
@@ -624,6 +732,9 @@ artifacts:
       - type: satisfies
         target: REQ-022
     tags: [packaging, wasm]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-038
     type: feature
@@ -638,6 +749,9 @@ artifacts:
       - type: satisfies
         target: REQ-020
     tags: [cross-repo, validation]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-039
     type: feature
@@ -650,6 +764,9 @@ artifacts:
     description: >
       Dashboard section for browsing external project artifacts with sync
       status, cross-repo link navigation, and conditional nav entry.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-040
     type: feature
@@ -669,6 +786,9 @@ artifacts:
     fields:
       phase: phase-3
       baseline: v0.2.0-dev
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-041
     type: feature
@@ -689,6 +809,9 @@ artifacts:
     fields:
       phase: phase-3
       baseline: v0.2.0-dev
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-042
     type: feature
@@ -709,6 +832,9 @@ artifacts:
     fields:
       phase: phase-3
       baseline: v0.2.0-dev
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-043
     type: feature
@@ -730,6 +856,9 @@ artifacts:
     fields:
       phase: phase-3
       baseline: v0.2.0-dev
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-044
     type: feature
@@ -751,6 +880,9 @@ artifacts:
     fields:
       phase: phase-3
       baseline: v0.2.0-dev
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-045
     type: feature
@@ -771,6 +903,9 @@ artifacts:
     fields:
       phase: phase-3
       baseline: v0.2.0-dev
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-057
     type: feature
@@ -790,6 +925,9 @@ artifacts:
     fields:
       phase: phase-3
       baseline: v0.2.0-dev
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-052
     type: feature
@@ -811,6 +949,9 @@ artifacts:
     fields:
       phase: phase-3
       baseline: v0.2.0-dev
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-053
     type: feature
@@ -831,6 +972,9 @@ artifacts:
     fields:
       phase: phase-3
       baseline: v0.2.0-dev
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-054
     type: feature
@@ -853,6 +997,9 @@ artifacts:
     fields:
       phase: phase-3
       baseline: v0.2.0-dev
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-055
     type: feature
@@ -877,6 +1024,9 @@ artifacts:
     fields:
       phase: phase-3
       baseline: v0.2.0-dev
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-056
     type: feature
@@ -897,6 +1047,9 @@ artifacts:
     fields:
       phase: phase-3
       baseline: v0.2.0-dev
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-046
     type: feature
@@ -920,6 +1073,9 @@ artifacts:
     fields:
       phase: phase-3
       baseline: v0.2.0-dev
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-047
     type: feature
@@ -943,6 +1099,9 @@ artifacts:
     fields:
       phase: phase-3
       baseline: v0.2.0-dev
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-048
     type: feature
@@ -967,6 +1126,9 @@ artifacts:
     fields:
       phase: phase-3
       baseline: v0.2.0-dev
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-049
     type: feature
@@ -987,6 +1149,9 @@ artifacts:
     fields:
       phase: phase-3
       baseline: v0.2.0-dev
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-050
     type: feature
@@ -1006,6 +1171,9 @@ artifacts:
         target: DD-026
     fields:
       phase: future
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-051
     type: feature
@@ -1027,6 +1195,9 @@ artifacts:
         target: DD-027
     fields:
       phase: future
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-058
     type: feature
@@ -1042,6 +1213,9 @@ artifacts:
         target: REQ-032
       - type: implements
         target: DD-029
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-059
     type: feature
@@ -1057,6 +1231,9 @@ artifacts:
         target: REQ-033
       - type: implements
         target: DD-030
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-060
     type: feature
@@ -1073,6 +1250,9 @@ artifacts:
         target: REQ-033
       - type: satisfies
         target: REQ-032
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-061
     type: feature
@@ -1086,6 +1266,9 @@ artifacts:
         target: REQ-034
       - type: implements
         target: DD-035
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-062
     type: feature
@@ -1097,6 +1280,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-035
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-063
     type: feature
@@ -1108,6 +1294,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-036
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-064
     type: feature
@@ -1124,6 +1313,9 @@ artifacts:
     fields:
       phase: phase-2
       baseline: v0.1.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-065
     type: feature
@@ -1142,6 +1334,9 @@ artifacts:
     fields:
       phase: phase-2
       baseline: v0.1.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-066
     type: feature
@@ -1160,6 +1355,9 @@ artifacts:
     fields:
       phase: phase-3
       baseline: v0.3.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-067
     type: feature
@@ -1178,6 +1376,9 @@ artifacts:
     fields:
       phase: future
       baseline: v0.3.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-068
     type: feature
@@ -1195,6 +1396,9 @@ artifacts:
     fields:
       phase: future
       baseline: v0.3.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-069
     type: feature
@@ -1212,6 +1416,9 @@ artifacts:
     fields:
       phase: future
       baseline: v0.3.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-071
     type: feature
@@ -1230,6 +1437,9 @@ artifacts:
     fields:
       phase: future
       baseline: v0.4.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-072
     type: feature
@@ -1247,6 +1457,9 @@ artifacts:
     fields:
       phase: future
       baseline: v0.4.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-073
     type: feature
@@ -1264,6 +1477,9 @@ artifacts:
     fields:
       phase: phase-3
       baseline: v0.3.1
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-070
     type: feature
@@ -1283,3 +1499,6 @@ artifacts:
     fields:
       phase: phase-3
       baseline: v0.3.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z

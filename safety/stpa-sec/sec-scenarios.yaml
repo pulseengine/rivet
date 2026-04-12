@@ -47,6 +47,9 @@ artifacts:
         - Git remote credentials stolen via phishing or leaked CI token
         - No branch protection or required review on safety/ directory
         - Rivet does not verify artifact store against last signed commit
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SLS-2
     type: sec-scenario
@@ -76,6 +79,9 @@ artifacts:
         - tls-verify disabled for development and not re-enabled for production
         - No artifact signature scheme to detect OSLC-injected content
         - Adjacent network adversary (e.g., corporate LAN or CI network segment)
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SLS-3
     type: sec-scenario
@@ -103,6 +109,9 @@ artifacts:
         - Artifact YAML fields included in HTML without escaping
         - No Content-Security-Policy header restricting inline script execution
         - Insider has write access to artifact YAML files
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SLS-4
     type: sec-scenario
@@ -129,6 +138,9 @@ artifacts:
       causal-factors:
         - HTML export pipeline uses same rendering code as dashboard without additional escaping
         - Export files distributed outside the controlled repository environment
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SLS-5
     type: sec-scenario
@@ -158,6 +170,9 @@ artifacts:
         - serde_yaml (pre-0.9) follows YAML 1.1 aliases without recursion guard
         - No maximum document size or node count limit in parsing pipeline
         - CI allows external contributors to trigger the validate workflow on PRs
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SLS-6
     type: sec-scenario
@@ -186,6 +201,9 @@ artifacts:
         - No OSLC server URL allowlist configured or enforced
         - Sync credentials (env vars) are sent to the URL in rivet.yaml without URL verification
         - No review requirement on changes to rivet.yaml sync configuration
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SLS-7
     type: sec-scenario
@@ -212,3 +230,6 @@ artifacts:
         - Default bind address is network-accessible (0.0.0.0)
         - No authentication required for any dashboard endpoint
         - CI runner has public IP without egress/ingress filtering
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z

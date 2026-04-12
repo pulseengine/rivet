@@ -46,6 +46,9 @@ controllers:
       - Which artifacts have been modified since last validation
       - Whether external tools have pending changes
       - Coverage completeness of the traceability matrix
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # --- CLI controller ---
   - id: CTRL-CLI
@@ -81,6 +84,9 @@ controllers:
       - Which adapter to use for the current operation
       - Current rivet.yaml configuration (schemas, sources, adapters)
       - Whether the last operation succeeded or failed
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # --- Core engine controller ---
   - id: CTRL-CORE
@@ -111,6 +117,9 @@ controllers:
       - Link graph topology (nodes, edges, directionality)
       - Schema definitions and valid link-type pairs
       - Known artifact types and their required fields
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # --- OSLC sync controller ---
   - id: CTRL-OSLC
@@ -142,6 +151,9 @@ controllers:
       - Mapping between local IDs and remote OSLC URIs
       - Connection status and authentication state
       - Which artifacts are locally authoritative vs. remotely authoritative
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # --- ReqIF adapter controller ---
   - id: CTRL-REQIF
@@ -167,6 +179,9 @@ controllers:
       - SpecType-to-artifact-type mapping
       - Enum value lookup tables
       - Which ReqIF standard attributes are present (ForeignID, Name, Text)
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # --- CI pipeline controller ---
   - id: CTRL-CI
@@ -192,6 +207,9 @@ controllers:
       - Which files changed in the current PR
       - Whether rivet validate passed or failed
       - CI workflow configuration (which checks are required)
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # --- Dashboard controller ---
   - id: CTRL-DASH
@@ -216,6 +234,9 @@ controllers:
       - Cached rendering of current artifact state
       - Last refresh timestamp
       - Active filters and view state
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # --- MCP Server controller ---
   - id: CTRL-MCP
@@ -243,6 +264,9 @@ controllers:
       - Set of registered tools and their parameter schemas
       - Cached project state (store, schema, link graph)
       - Whether cached state reflects current disk state
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
 controlled-processes:
   - id: PROC-ARTIFACTS
@@ -251,6 +275,9 @@ controlled-processes:
       YAML artifact files in the git working tree, organized by schema
       domain (stpa, aspice, cybersecurity, dev, aadl).  The local
       source of truth for all traceability data.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: PROC-LINKGRAPH
     name: In-Memory Link Graph
@@ -259,6 +286,9 @@ controlled-processes:
       between artifacts.  Ephemeral — rebuilt from YAML on each
       invocation.  Supports cycle detection, reachability, and
       coverage queries.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: PROC-EXTERNAL
     name: External ALM Tool Data
@@ -266,6 +296,9 @@ controlled-processes:
       Artifact data residing in external tools (Polarion, DOORS,
       codebeamer, StrictDoc) accessed via OSLC or ReqIF.  Rivet does
       not control this data directly — it observes and syncs.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: PROC-REPORTS
     name: Generated Reports and Metrics
@@ -273,6 +306,9 @@ controlled-processes:
       Output artifacts: coverage matrices, compliance reports,
       validation summaries, ReqIF exports.  Consumed by auditors,
       project managers, and downstream tools.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: PROC-GITREPO
     name: Git Repository
@@ -280,3 +316,6 @@ controlled-processes:
       Version-controlled repository containing artifact YAML files,
       configuration, and code.  Provides the audit trail via commit
       history and enables conflict detection via merge semantics.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z

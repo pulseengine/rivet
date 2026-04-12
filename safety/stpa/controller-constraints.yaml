@@ -20,6 +20,9 @@ controller-constraints:
       since the last validation pass, before producing any output.
     ucas: [UCA-C-1]
     hazards: [H-1, H-3]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-C-2
     controller: CTRL-CORE
@@ -28,6 +31,9 @@ controller-constraints:
       operation writes new or modified artifacts.
     ucas: [UCA-C-2]
     hazards: [H-1, H-3]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-C-3
     controller: CTRL-CORE
@@ -36,6 +42,9 @@ controller-constraints:
       regardless of the import source.
     ucas: [UCA-C-3]
     hazards: [H-4, H-2]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-C-4
     controller: CTRL-CORE
@@ -44,6 +53,9 @@ controller-constraints:
       exist in the link graph.
     ucas: [UCA-C-4]
     hazards: [H-1, H-3, H-6]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-C-5
     controller: CTRL-CORE
@@ -52,6 +64,9 @@ controller-constraints:
       relationships when computing coverage metrics.
     ucas: [UCA-C-5]
     hazards: [H-3, H-6]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-C-6
     controller: CTRL-CORE
@@ -60,6 +75,9 @@ controller-constraints:
       declared type, and must reject artifacts with unknown types.
     ucas: [UCA-C-6]
     hazards: [H-4, H-2]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-C-7
     controller: CTRL-CORE
@@ -68,6 +86,9 @@ controller-constraints:
       sources have been fully loaded.
     ucas: [UCA-C-7]
     hazards: [H-1, H-3]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-C-8
     controller: CTRL-CORE
@@ -76,6 +97,9 @@ controller-constraints:
       been validated in the current session.
     ucas: [UCA-C-8]
     hazards: [H-3, H-6]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-C-9
     controller: CTRL-CORE
@@ -84,6 +108,9 @@ controller-constraints:
       files, not terminate after the first error.
     ucas: [UCA-C-9]
     hazards: [H-1, H-3]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # =========================================================================
   # OSLC Client constraints
@@ -95,6 +122,9 @@ controller-constraints:
       since the last sync cursor when triggered.
     ucas: [UCA-O-1]
     hazards: [H-1, H-5]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-O-2
     controller: CTRL-OSLC
@@ -103,6 +133,9 @@ controller-constraints:
       when bidirectional sync is configured.
     ucas: [UCA-O-2]
     hazards: [H-5, H-1]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-O-3
     controller: CTRL-OSLC
@@ -111,6 +144,9 @@ controller-constraints:
       information to the CLI and developer.
     ucas: [UCA-O-3]
     hazards: [H-2, H-1]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-O-4
     controller: CTRL-OSLC
@@ -119,6 +155,9 @@ controller-constraints:
       modifications and require explicit resolution before writing.
     ucas: [UCA-O-4]
     hazards: [H-5, H-3, H-7]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-O-5
     controller: CTRL-OSLC
@@ -127,6 +166,9 @@ controller-constraints:
       confirmation when the deleted artifact is referenced by local links.
     ucas: [UCA-O-5]
     hazards: [H-2, H-1, H-5]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-O-6
     controller: CTRL-OSLC
@@ -135,6 +177,9 @@ controller-constraints:
       schema before writing them to the artifact store.
     ucas: [UCA-O-6]
     hazards: [H-8, H-4]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-O-7
     controller: CTRL-OSLC
@@ -143,6 +188,9 @@ controller-constraints:
       validation to the remote tool.
     ucas: [UCA-O-7]
     hazards: [H-8, H-4]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-O-8
     controller: CTRL-OSLC
@@ -151,6 +199,9 @@ controller-constraints:
       generation, or clearly indicate the sync state in the report.
     ucas: [UCA-O-8]
     hazards: [H-6, H-3]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-O-9
     controller: CTRL-OSLC
@@ -159,6 +210,9 @@ controller-constraints:
       or must use a staging area to avoid write conflicts.
     ucas: [UCA-O-9]
     hazards: [H-5, H-3]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-O-10
     controller: CTRL-OSLC
@@ -168,6 +222,9 @@ controller-constraints:
       consistent state on failure.
     ucas: [UCA-O-10]
     hazards: [H-2, H-1, H-5]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # =========================================================================
   # ReqIF Adapter constraints
@@ -179,6 +236,9 @@ controller-constraints:
       must not silently discard SpecObjects it cannot parse.
     ucas: [UCA-Q-1]
     hazards: [H-2]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-Q-2
     controller: CTRL-REQIF
@@ -187,6 +247,9 @@ controller-constraints:
       artifacts that have been removed from the local store.
     ucas: [UCA-Q-2]
     hazards: [H-1, H-5]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-Q-3
     controller: CTRL-REQIF
@@ -195,6 +258,9 @@ controller-constraints:
       must reject unmapped attributes with a hard error.
     ucas: [UCA-Q-3]
     hazards: [H-4]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-Q-4
     controller: CTRL-REQIF
@@ -203,6 +269,9 @@ controller-constraints:
       identifier and update them rather than creating duplicates.
     ucas: [UCA-Q-4]
     hazards: [H-3, H-5]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-Q-5
     controller: CTRL-REQIF
@@ -211,6 +280,9 @@ controller-constraints:
       during export, or warn when content simplification occurs.
     ucas: [UCA-Q-5]
     hazards: [H-4]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-Q-6
     controller: CTRL-REQIF
@@ -219,6 +291,9 @@ controller-constraints:
       and rivet.yaml configuration have been loaded.
     ucas: [UCA-Q-6]
     hazards: [H-4, H-2]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-Q-7
     controller: CTRL-REQIF
@@ -228,6 +303,9 @@ controller-constraints:
       record and reporting it separately.
     ucas: [UCA-Q-7]
     hazards: [H-2]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # =========================================================================
   # CLI constraints
@@ -239,6 +317,9 @@ controller-constraints:
       regardless of verbosity settings.
     ucas: [UCA-L-1]
     hazards: [H-1, H-3]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-L-2
     controller: CTRL-CLI
@@ -247,6 +328,9 @@ controller-constraints:
       metric output, or clearly label the output as unvalidated.
     ucas: [UCA-L-2]
     hazards: [H-3, H-6]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-L-3
     controller: CTRL-CLI
@@ -255,6 +339,9 @@ controller-constraints:
       without prompting the developer for confirmation.
     ucas: [UCA-L-3]
     hazards: [H-5, H-3, H-7]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-L-4
     controller: CTRL-CLI
@@ -263,6 +350,9 @@ controller-constraints:
       not inference from file extension or path patterns.
     ucas: [UCA-L-4]
     hazards: [H-4, H-2]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-L-5
     controller: CTRL-CLI
@@ -271,6 +361,9 @@ controller-constraints:
       being edited, or must use atomic file replacement.
     ucas: [UCA-L-5]
     hazards: [H-5, H-7]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # =========================================================================
   # CI Pipeline constraints
@@ -282,6 +375,9 @@ controller-constraints:
       artifact YAML files or schema definitions.
     ucas: [UCA-I-1]
     hazards: [H-1, H-3]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-I-2
     controller: CTRL-CI
@@ -290,6 +386,9 @@ controller-constraints:
       blocks merge on failure.
     ucas: [UCA-I-2]
     hazards: [H-1, H-3, H-6]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-I-3
     controller: CTRL-CI
@@ -298,6 +397,9 @@ controller-constraints:
       and fail the check on non-zero exit.
     ucas: [UCA-I-3]
     hazards: [H-3, H-6]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-I-4
     controller: CTRL-CI
@@ -306,6 +408,9 @@ controller-constraints:
       validation, without using cached artifact state.
     ucas: [UCA-I-4]
     hazards: [H-1, H-3]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # =========================================================================
   # Dashboard constraints
@@ -317,6 +422,9 @@ controller-constraints:
       coverage metrics.
     ucas: [UCA-D-1]
     hazards: [H-3, H-6]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-D-2
     controller: CTRL-DASH
@@ -325,6 +433,9 @@ controller-constraints:
       and warn when displayed data may be stale.
     ucas: [UCA-D-2]
     hazards: [H-3, H-6]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # =========================================================================
   # Incremental validation constraints (salsa)
@@ -337,6 +448,9 @@ controller-constraints:
       cached results are returned.
     ucas: [UCA-C-10]
     hazards: [H-9, H-1, H-3]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-C-11
     controller: CTRL-CORE
@@ -346,6 +460,9 @@ controller-constraints:
       other fields are unchanged.
     ucas: [UCA-C-11]
     hazards: [H-9, H-1]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-C-12
     controller: CTRL-CORE
@@ -355,6 +472,9 @@ controller-constraints:
       conflicting rules, before any validation occurs.
     ucas: [UCA-C-12]
     hazards: [H-10]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-C-13
     controller: CTRL-CORE
@@ -364,6 +484,9 @@ controller-constraints:
       A periodic full-revalidation check must verify this invariant.
     ucas: [UCA-C-13]
     hazards: [H-9, H-3]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-C-14
     controller: CTRL-CORE
@@ -372,6 +495,9 @@ controller-constraints:
       conditional rule evaluation begins, via salsa query dependencies.
     ucas: [UCA-C-14]
     hazards: [H-9, H-10]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # =========================================================================
   # MODULE.bazel parser constraints
@@ -384,6 +510,9 @@ controller-constraints:
       the corresponding bazel_dep version/source.
     ucas: [UCA-C-15]
     hazards: [H-11, H-1]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-C-16
     controller: CTRL-CORE
@@ -393,6 +522,9 @@ controller-constraints:
       may be missing from the result. Silent skip is forbidden.
     ucas: [UCA-C-16]
     hazards: [H-11]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-C-17
     controller: CTRL-CORE
@@ -402,6 +534,9 @@ controller-constraints:
       supported function call types.
     ucas: [UCA-C-17]
     hazards: [H-11, H-1]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # =========================================================================
   # STPA-Sec extension constraints
@@ -415,6 +550,9 @@ controller-constraints:
       escaping.
     ucas: [UCA-D-3]
     hazards: [H-13]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-D-4
     controller: CTRL-DASH
@@ -424,6 +562,9 @@ controller-constraints:
       occurs.
     ucas: [UCA-D-4]
     hazards: [H-16]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-C-18
     controller: CTRL-CORE
@@ -434,6 +575,9 @@ controller-constraints:
       counted as coverage.
     ucas: [UCA-C-18]
     hazards: [H-15]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-C-19
     controller: CTRL-CORE
@@ -443,6 +587,9 @@ controller-constraints:
       prefixes (UCA-C-10), and controller constraints (CC-L-5).
     ucas: [UCA-C-19]
     hazards: [H-15, H-1]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-C-20
     controller: CTRL-CORE
@@ -452,6 +599,9 @@ controller-constraints:
       error.
     ucas: [UCA-C-20]
     hazards: [H-11, H-1]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-C-21
     controller: CTRL-CORE
@@ -461,6 +611,9 @@ controller-constraints:
       artifact store.
     ucas: [UCA-C-21]
     hazards: [H-14]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-C-22
     controller: CTRL-CORE
@@ -470,6 +623,9 @@ controller-constraints:
       diagnostic.
     ucas: [UCA-C-22]
     hazards: [H-14]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-C-23
     controller: CTRL-CORE
@@ -479,6 +635,9 @@ controller-constraints:
       outside those paths.
     ucas: [UCA-C-23]
     hazards: [H-14, H-17]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-C-24
     controller: CTRL-CORE
@@ -488,6 +647,9 @@ controller-constraints:
       hardcoded mappings.
     ucas: [UCA-C-24]
     hazards: [H-3, H-1]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-C-25
     controller: CTRL-CORE
@@ -497,6 +659,9 @@ controller-constraints:
       artifact store.
     ucas: [UCA-C-25]
     hazards: [H-1, H-3]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-L-6
     controller: CTRL-CLI
@@ -506,6 +671,9 @@ controller-constraints:
       execute arbitrary URLs without user confirmation for new repos.
     ucas: [UCA-L-6]
     hazards: [H-17]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-L-7
     controller: CTRL-CLI
@@ -515,6 +683,9 @@ controller-constraints:
       external sync operations.
     ucas: [UCA-L-7]
     hazards: [H-17, H-14]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # =========================================================================
   # LSP server constraints (Phase 3 extension)
@@ -527,6 +698,9 @@ controller-constraints:
       500 ms for stores under 5000 artifacts.
     ucas: [UCA-C-26]
     hazards: [H-19, H-9]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-C-27
     controller: CTRL-CORE
@@ -537,6 +711,9 @@ controller-constraints:
       artifact data.
     ucas: [UCA-C-27]
     hazards: [H-20]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # =========================================================================
   # MCP server constraints
@@ -549,6 +726,9 @@ controller-constraints:
       metrics across tool calls.
     ucas: [UCA-M-1]
     hazards: [H-IMPL-003]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-M-2
     controller: CTRL-CLI
@@ -558,6 +738,9 @@ controller-constraints:
       be clearly indicated, not silently accepted.
     ucas: [UCA-M-2]
     hazards: [H-1, H-3]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: CC-M-3
     controller: CTRL-CLI
@@ -567,3 +750,6 @@ controller-constraints:
       a previous validation pass.
     ucas: [UCA-M-3]
     hazards: [H-3, H-IMPL-003]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
