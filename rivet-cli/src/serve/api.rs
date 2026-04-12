@@ -380,7 +380,12 @@ pub(crate) async fn artifacts(
                 continue;
             }
             if let Some(ref expr) = sexpr_filter {
-                if !rivet_core::sexpr_eval::matches_filter(expr, artifact, &guard.graph) {
+                if !rivet_core::sexpr_eval::matches_filter_with_store(
+                    expr,
+                    artifact,
+                    &guard.graph,
+                    &guard.store,
+                ) {
                     continue;
                 }
             }

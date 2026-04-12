@@ -150,6 +150,7 @@ fn run_check(expr: &Expr, artifact: &Artifact) -> bool {
     let ctx = EvalContext {
         artifact,
         graph: &graph,
+        store: None,
     };
     sexpr_eval::check(expr, &ctx)
 }

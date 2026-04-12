@@ -410,7 +410,7 @@ pub fn filter_artifact_ids(
     let graph = build_link_graph(db, source_set, schema_set);
     store
         .iter()
-        .filter(|a| crate::sexpr_eval::matches_filter(&expr, a, &graph))
+        .filter(|a| crate::sexpr_eval::matches_filter_with_store(&expr, a, &graph, &store))
         .map(|a| a.id.clone())
         .collect()
 }
