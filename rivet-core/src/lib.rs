@@ -27,6 +27,8 @@ pub mod mutate;
 pub mod oslc;
 pub mod query;
 pub mod reqif;
+pub mod sexpr;
+pub mod sexpr_eval;
 pub mod results;
 pub mod schema;
 pub mod snapshot;

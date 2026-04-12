@@ -227,6 +227,10 @@ enum Command {
         #[arg(short, long)]
         status: Option<String>,
 
+        /// S-expression filter, e.g. '(and (= type "requirement") (has-tag "stpa"))'
+        #[arg(long)]
+        filter: Option<String>,
+
         /// Output format: "text" (default) or "json"
         #[arg(short, long, default_value = "text")]
         format: String,
@@ -238,6 +242,10 @@ enum Command {
 
     /// Show artifact summary statistics
     Stats {
+        /// S-expression filter to scope statistics
+        #[arg(long)]
+        filter: Option<String>,
+
         /// Output format: "text" (default) or "json"
         #[arg(short, long, default_value = "text")]
         format: String,
@@ -249,6 +257,10 @@ enum Command {
 
     /// Show traceability coverage report
     Coverage {
+        /// S-expression filter to scope coverage
+        #[arg(long)]
+        filter: Option<String>,
+
         /// Output format: "text" (default) or "json"
         #[arg(short, long, default_value = "text")]
         format: String,
@@ -821,18 +833,21 @@ fn run(cli: Cli) -> Result<bool> {
         Command::List {
             r#type,
             status,
+            filter,
             format,
             baseline,
         } => cmd_list(
             &cli,
             r#type.as_deref(),
             status.as_deref(),
+            filter.as_deref(),
             format,
             baseline.as_deref(),
         ),
         Command::Get { id, format } => cmd_get(&cli, id, format),
-        Command::Stats { format, baseline } => cmd_stats(&cli, format, baseline.as_deref()),
+        Command::Stats { filter, format, baseline } => cmd_stats(&cli, filter.as_deref(), format, baseline.as_deref()),
         Command::Coverage {
+            filter,
             format,
             fail_under,
             tests,
@@ -842,7 +857,7 @@ fn run(cli: Cli) -> Result<bool> {
             if *tests {
                 cmd_coverage_tests(&cli, format, scan_paths)
             } else {
-                cmd_coverage(&cli, format, fail_under.as_ref(), baseline.as_deref())
+                cmd_coverage(&cli, filter.as_deref(), format, fail_under.as_ref(), baseline.as_deref())
             }
         }
         Command::Matrix {
@@ -3152,6 +3167,7 @@ fn cmd_list(
     cli: &Cli,
     type_filter: Option<&str>,
     status_filter: Option<&str>,
+    sexpr_filter: Option<&str>,
     format: &str,
     baseline_name: Option<&str>,
 ) -> Result<bool> {
@@ -3165,7 +3181,18 @@ fn cmd_list(
         ..Default::default()
     };
 
-    let results = rivet_core::query::execute(&store, &query);
+    let mut results = rivet_core::query::execute(&store, &query);
+
+    // Apply s-expression filter if provided.
+    if let Some(filter_src) = sexpr_filter {
+        let expr = rivet_core::sexpr_eval::parse_filter(filter_src)
+            .map_err(|errs| {
+                let msgs: Vec<String> = errs.iter().map(|e| e.to_string()).collect();
+                anyhow::anyhow!("invalid filter: {}", msgs.join("; "))
+            })?;
+        let graph = rivet_core::links::LinkGraph::build(&store, &ctx.schema);
+        results.retain(|a| rivet_core::sexpr_eval::matches_filter(&expr, a, &graph));
+    }
 
     if format == "json" {
         let artifacts_json: Vec<serde_json::Value> = results
@@ -3202,15 +3229,32 @@ fn cmd_list(
 }
 
 /// Print summary statistics.
-fn cmd_stats(cli: &Cli, format: &str, baseline_name: Option<&str>) -> Result<bool> {
+fn cmd_stats(cli: &Cli, sexpr_filter: Option<&str>, format: &str, baseline_name: Option<&str>) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
     let ctx = ProjectContext::load(cli)?;
-    let store = apply_baseline_scope(ctx.store, baseline_name, &ctx.config);
-    let graph = if baseline_name.is_some() {
+    let mut store = apply_baseline_scope(ctx.store, baseline_name, &ctx.config);
+    let mut graph = if baseline_name.is_some() {
         LinkGraph::build(&store, &ctx.schema)
     } else {
         ctx.graph
     };
+
+    // Apply s-expression filter if provided.
+    if let Some(filter_src) = sexpr_filter {
+        let expr = rivet_core::sexpr_eval::parse_filter(filter_src)
+            .map_err(|errs| {
+                let msgs: Vec<String> = errs.iter().map(|e| e.to_string()).collect();
+                anyhow::anyhow!("invalid filter: {}", msgs.join("; "))
+            })?;
+        let mut filtered = rivet_core::store::Store::default();
+        for a in store.iter() {
+            if rivet_core::sexpr_eval::matches_filter(&expr, a, &graph) {
+                filtered.upsert(a.clone());
+            }
+        }
+        store = filtered;
+        graph = LinkGraph::build(&store, &ctx.schema);
+    }
 
     // Compute stats once — both formats share the same data.
     let stats = compute_stats(&store, &graph);
@@ -3282,19 +3326,38 @@ fn compute_stats(store: &Store, graph: &LinkGraph) -> StatsResult {
 /// Show traceability coverage report.
 fn cmd_coverage(
     cli: &Cli,
+    sexpr_filter: Option<&str>,
     format: &str,
     fail_under: Option<&f64>,
     baseline_name: Option<&str>,
 ) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
     let ctx = ProjectContext::load(cli)?;
-    let store = apply_baseline_scope(ctx.store, baseline_name, &ctx.config);
+    let mut store = apply_baseline_scope(ctx.store, baseline_name, &ctx.config);
     let schema = ctx.schema;
-    let graph = if baseline_name.is_some() {
+    let mut graph = if baseline_name.is_some() {
         LinkGraph::build(&store, &schema)
     } else {
         ctx.graph
     };
+
+    // Apply s-expression filter if provided.
+    if let Some(filter_src) = sexpr_filter {
+        let expr = rivet_core::sexpr_eval::parse_filter(filter_src)
+            .map_err(|errs| {
+                let msgs: Vec<String> = errs.iter().map(|e| e.to_string()).collect();
+                anyhow::anyhow!("invalid filter: {}", msgs.join("; "))
+            })?;
+        let mut filtered = rivet_core::store::Store::default();
+        for a in store.iter() {
+            if rivet_core::sexpr_eval::matches_filter(&expr, a, &graph) {
+                filtered.upsert(a.clone());
+            }
+        }
+        store = filtered;
+        graph = LinkGraph::build(&store, &schema);
+    }
+
     let report = coverage::compute_coverage(&store, &schema, &graph);
 
     if format == "json" {
@@ -6342,8 +6405,12 @@ fn cmd_stamp(
 
     // Collect artifact IDs to stamp
     let ids: Vec<String> = if id == "all" {
-        // Stamp every artifact in the store
-        store.iter().map(|a| a.id.clone()).collect()
+        // Stamp every local artifact (skip externals with ':' prefix)
+        store
+            .iter()
+            .filter(|a| !a.id.contains(':'))
+            .map(|a| a.id.clone())
+            .collect()
     } else {
         // Single artifact
         if !store.contains(id) {
@@ -6361,9 +6428,10 @@ fn cmd_stamp(
     let mut by_file: std::collections::BTreeMap<std::path::PathBuf, Vec<String>> =
         std::collections::BTreeMap::new();
     for aid in &ids {
-        let source_file = mutate::find_source_file(aid, &store)
-            .ok_or_else(|| anyhow::anyhow!("cannot determine source file for '{aid}'"))?;
-        by_file.entry(source_file).or_default().push(aid.clone());
+        if let Some(source_file) = mutate::find_source_file(aid, &store) {
+            by_file.entry(source_file).or_default().push(aid.clone());
+        }
+        // Skip artifacts without source files (externals, etc.)
     }
 
     for (file_path, artifact_ids) in &by_file {

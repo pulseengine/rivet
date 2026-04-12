@@ -1,0 +1,223 @@
+# Features for v0.4.0 development cycle — s-expression language + variant/PLE
+artifacts:
+  - id: FEAT-106
+    type: feature
+    title: S-expression parser and AST
+    status: draft
+    description: >
+      Hand-rolled or nom-based parser for s-expressions. Produces a typed
+      AST: atoms (string, integer, float, boolean, wildcard, symbol), lists,
+      and special forms (and, or, not, implies, forall, exists, etc.).
+      Parser produces span information for error reporting. Approximately
+      200 lines of parser + 100 lines of AST types.
+    tags: [s-expression, parser, phase-1]
+    links:
+      - type: satisfies
+        target: REQ-041
+      - type: implements
+        target: DD-048
+    fields:
+      phase: phase-1
+      baseline: v0.4.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: FEAT-107
+    type: feature
+    title: Predicate evaluator for single-artifact filtering
+    status: draft
+    description: >
+      Evaluate s-expression predicates against a single artifact. Supports
+      field access (type, status, id, title, tags, custom fields), comparison
+      operators (=, !=, >, <, >=, <=), set membership (in, has-tag, has-field),
+      string matching (matches, contains), link predicates (linked-by,
+      linked-from, linked-to, links-count), and logical connectives (and, or,
+      not). This is the foundation for CLI --filter flags. Approximately 300
+      lines.
+    tags: [s-expression, evaluator, phase-1]
+    links:
+      - type: satisfies
+        target: REQ-041
+      - type: implements
+        target: DD-048
+    fields:
+      phase: phase-1
+      baseline: v0.4.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: FEAT-108
+    type: feature
+    title: CLI --filter integration for list, coverage, matrix, stats
+    status: draft
+    description: >
+      Add --filter flag to rivet list, coverage, matrix, stats, and export
+      commands. The flag accepts an s-expression string that is parsed and
+      evaluated to filter the artifact set. Composes with existing --type
+      and --status flags (logical AND). Also add filter support to dashboard
+      API endpoints as a query parameter.
+    tags: [s-expression, cli, api, phase-1]
+    links:
+      - type: satisfies
+        target: REQ-041
+      - type: satisfies
+        target: REQ-046
+    fields:
+      phase: phase-1
+      baseline: v0.4.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: FEAT-109
+    type: feature
+    title: Datalog compiler and semi-naive evaluator
+    status: draft
+    description: >
+      Compile s-expression quantifiers (forall, exists) and graph traversal
+      (reachable-from, reachable-to, path) into Datalog relations. Implement
+      semi-naive evaluation with fixpoint iteration for transitive closure.
+      Integrate with salsa for incremental re-evaluation. Approximately 500
+      lines. Unlocks s-expression-based traceability rules in schemas.
+    tags: [s-expression, datalog, evaluator, phase-2]
+    links:
+      - type: satisfies
+        target: REQ-041
+      - type: implements
+        target: DD-049
+      - type: implements
+        target: DD-051
+    fields:
+      phase: phase-2
+      baseline: v0.4.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: FEAT-110
+    type: feature
+    title: Feature model schema and parser
+    status: draft
+    description: >
+      New artifact kind "feature-model" with YAML structure for FODA-style
+      feature trees. Supports group types (mandatory, optional, alternative,
+      or), feature hierarchy (parent/children), and cross-tree constraints
+      as s-expressions. Schema validation ensures well-formedness: no
+      cycles in feature tree, valid group types, parseable constraints.
+    tags: [variant, ple, feature-model, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-042
+      - type: implements
+        target: DD-050
+    fields:
+      phase: phase-3
+      baseline: v0.4.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: FEAT-111
+    type: feature
+    title: Propositional constraint solver for variant configurations
+    status: draft
+    description: >
+      Solve feature model constraints to validate and propagate variant
+      configurations. Given a set of selected features, propagate
+      implications (implies, requires), detect conflicts (excludes,
+      alternative group violations), and derive the effective feature set.
+      Report clear diagnostics for invalid configurations. Approximately
+      400 lines using boolean constraint propagation (BCP).
+    tags: [variant, ple, constraint-solver, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-043
+      - type: implements
+        target: DD-049
+    fields:
+      phase: phase-3
+      baseline: v0.4.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: FEAT-112
+    type: feature
+    title: Binding model for feature-to-artifact mapping
+    status: draft
+    description: >
+      New artifact kind "feature-binding" that maps features to artifact
+      IDs and source file glob patterns. Validation detects unbound
+      features, unbound artifacts, stale bindings (deleted artifacts,
+      non-existent paths), and binding conflicts (same artifact bound
+      to mutually exclusive features). Approximately 200 lines.
+    tags: [variant, ple, binding, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-044
+      - type: implements
+        target: DD-050
+    fields:
+      phase: phase-3
+      baseline: v0.4.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: FEAT-113
+    type: feature
+    title: Per-variant validation and coverage reporting
+    status: draft
+    description: >
+      Extend the validation engine to scope traceability checks to a
+      variant's effective artifact set. rivet validate --variant X derives
+      features, collects bound artifacts, validates within that scope.
+      rivet validate --all-variants iterates all defined variants. Coverage
+      reports include per-variant breakdowns. Dashboard and API endpoints
+      support variant scoping via query parameter.
+    tags: [variant, validation, coverage, future]
+    links:
+      - type: satisfies
+        target: REQ-045
+      - type: satisfies
+        target: REQ-046
+    fields:
+      phase: future
+      baseline: v0.4.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: FEAT-114
+    type: feature
+    title: Variant-aware impact analysis
+    status: draft
+    description: >
+      Extend rivet impact to use the binding model for variant-scoped
+      change propagation. Given a changed source file, identify affected
+      features via source globs, then identify affected variants that
+      include those features. Report which variants need re-validation
+      based on which files changed.
+    tags: [variant, impact, future]
+    links:
+      - type: satisfies
+        target: REQ-045
+      - type: satisfies
+        target: REQ-024
+    fields:
+      phase: future
+      baseline: v0.4.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z

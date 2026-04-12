@@ -34,6 +34,8 @@ baselines:
     description: Initial release — core validation, STPA, ASPICE schemas, CLI, dashboard
   - name: v0.2.0-dev
     description: Current development — cross-repo, mutations, STPA-Sec, export, AADL
+  - name: v0.4.0
+    description: Planned — s-expression query language, product line engineering, variant management
 
 commits:
   format: trailers
@@ -123,4 +125,14 @@ commits:
      # LSP diagnostic STPA artifacts
      H-LSP-001, H-LSP-002, H-LSP-003, H-LSP-004,
      L-LSP-001, L-LSP-002, L-LSP-003,
-     SC-LSP-001, SC-LSP-002, SC-LSP-003, SC-LSP-004, SC-LSP-005, SC-LSP-006, SC-LSP-007]
+     SC-LSP-001, SC-LSP-002, SC-LSP-003, SC-LSP-004, SC-LSP-005, SC-LSP-006, SC-LSP-007,
+     # v0.4.0 variant/PLE artifacts (draft, no code yet)
+     REQ-041, REQ-042, REQ-043, REQ-044, REQ-045, REQ-046,
+     DD-048, DD-049, DD-050, DD-051,
+     FEAT-106, FEAT-107, FEAT-108, FEAT-109, FEAT-110, FEAT-111, FEAT-112, FEAT-113, FEAT-114,
+     # v0.4.0 variant STPA artifacts
+     H-VAR-001, H-VAR-002, H-VAR-003, H-VAR-004, H-VAR-005, H-VAR-006, H-VAR-007,
+     SC-VAR-001, SC-VAR-002, SC-VAR-003, SC-VAR-004, SC-VAR-005, SC-VAR-006, SC-VAR-007,
+     UCA-VAR-001, UCA-VAR-002, UCA-VAR-003, UCA-VAR-004, UCA-VAR-005,
+     CC-VAR-001, CC-VAR-002, CC-VAR-003, CC-VAR-004, CC-VAR-005,
+     LS-VAR-001, LS-VAR-002, LS-VAR-003, LS-VAR-004]

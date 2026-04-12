@@ -1,0 +1,158 @@
+# Design decisions for v0.4.0 development cycle — variant/PLE system
+artifacts:
+  - id: DD-048
+    type: design-decision
+    title: S-expressions as the single canonical expression syntax
+    status: approved
+    description: >
+      All expressions in rivet — CLI filters, schema traceability rules,
+      feature model constraints, binding validation — use s-expression
+      syntax. No infix sugar, no "simple mode" alternatives.
+    fields:
+      rationale: >
+        One syntax means one parser, one evaluator, one learning curve.
+        Multiple syntaxes for the same thing create edge cases and
+        ambiguity at the boundaries. Lisp demonstrated for 60+ years
+        that s-expressions compose reliably. The syntax embeds cleanly
+        in YAML strings (no escaping issues), is trivially parseable
+        (no operator precedence), and is homoiconic (the expression IS
+        the AST). Users learn and, or, not, implies, forall, exists,
+        plus a handful of predicates — that covers all use cases.
+      alternatives: >
+        Infix expressions with operator precedence (Python-like).
+        Rejected: ambiguity at complex nesting, escaping issues in YAML,
+        need for precedence rules. Two syntaxes (simple infix + advanced
+        s-expr). Rejected: creates "which one do I use?" confusion and
+        edge cases where they diverge. Prolog syntax. Rejected: powerful
+        but alien to YAML-native users and brings non-termination risk.
+    links:
+      - type: satisfies
+        target: REQ-041
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: DD-049
+    type: design-decision
+    title: Datalog semantics with termination guarantee
+    status: approved
+    description: >
+      The s-expression language compiles internally to Datalog relations
+      and is evaluated using semi-naive evaluation. This guarantees
+      termination for all queries (unlike Prolog) while supporting
+      transitive closure, negation-as-failure, and incremental evaluation.
+    fields:
+      rationale: >
+        Traceability is fundamentally graph queries over relations:
+        type(X, requirement), tag(X, eu), link(X, satisfies, Y). Datalog
+        is purpose-built for this. It guarantees termination (no infinite
+        loops from recursive rules), supports transitive closure natively
+        (needed for impact analysis), and is incrementally evaluable
+        (fits salsa's dependency tracking). The Rust borrow checker's
+        Polonius engine uses datafrog for the same reasons. Propositional
+        constraints (feature model) are a strict subset of Datalog, so
+        the same engine handles both filtering and constraint solving.
+      alternatives: >
+        Full Prolog engine. Rejected: non-termination risk, heavyweight
+        embedding, overkill for rivet's constraint complexity. Simple
+        predicate evaluator without Datalog. Rejected: cannot express
+        transitive closure or recursive rules needed for impact analysis
+        and reachability queries. External SAT solver (minisat, varisat).
+        Rejected: separate engine for constraints vs queries, impedance
+        mismatch with artifact data model.
+      source-ref: >
+        Polonius (Rust borrow checker) uses datafrog for Datalog.
+        Soufflé, Datomic, LogicBlox validate the approach at scale.
+    links:
+      - type: satisfies
+        target: REQ-041
+      - type: satisfies
+        target: REQ-043
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: DD-050
+    type: design-decision
+    title: Three-layer PLE architecture (feature / variant / binding)
+    status: approved
+    description: >
+      Product line engineering uses three separate artifact layers:
+      (1) Feature model — logical problem space, no implementation details.
+      (2) Variant configurations — specific feature selections.
+      (3) Binding model — maps features to artifacts and source globs.
+      Each layer is maintained independently by different roles.
+    fields:
+      rationale: >
+        pure::variants proved this separation at industrial scale.
+        Collapsing layers (e.g., annotating artifacts with variant tags)
+        mixes problem and solution space, making it impossible for domain
+        experts to reason about features without understanding
+        implementation details. The three-layer model lets safety
+        engineers own the feature model, systems engineers own the
+        artifacts, and integration engineers own the bindings — three
+        different roles, three different files, one validation.
+        Sphinx-Needs' needs_variants puts variant tags on needs directly,
+        which collapses this separation and creates coupling between
+        domain logic and artifact management.
+      alternatives: >
+        Tag-based variants (Sphinx-Needs style). Rejected: collapses
+        problem/solution space separation, combinatorial tag explosion,
+        no constraint solving. Per-artifact variant annotation (Option C
+        from design exploration). Rejected: adds variant fields to the
+        core schema, mixes concerns, forces every artifact to be
+        variant-aware. Two-layer (feature model + direct artifact
+        annotation). Rejected: loses the binding model, meaning you
+        can't independently refactor artifacts without updating the
+        feature model.
+    links:
+      - type: satisfies
+        target: REQ-042
+      - type: satisfies
+        target: REQ-044
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: DD-051
+    type: design-decision
+    title: Thin custom Datalog evaluator over salsa
+    status: draft
+    description: >
+      Implement a minimal semi-naive Datalog evaluator (~300-500 lines)
+      that plugs into salsa's dependency tracking, rather than embedding
+      datafrog or crepe as external crates.
+    fields:
+      rationale: >
+        Rivet needs a narrow subset of Datalog: no aggregation beyond
+        count, no stratified negation beyond simple not-in-set, no
+        recursive rules beyond transitive closure. A thin evaluator
+        over salsa means incremental re-evaluation is automatic — change
+        one artifact, only re-derive affected query results. datafrog is
+        excellent but has its own fixpoint loop that doesn't compose with
+        salsa's memoization. crepe uses proc macros that define rules at
+        compile time, but rivet needs runtime-defined rules (user
+        expressions parsed from YAML). A custom evaluator trades
+        generality for integration: it knows about rivet's artifact
+        model and can optimize common patterns (type equality, tag
+        membership, link existence) as indexed lookups rather than
+        general joins.
+      alternatives: >
+        datafrog crate. Rejected: own fixpoint loop doesn't compose
+        with salsa, would require double-tracking of dependencies.
+        crepe crate. Rejected: compile-time rule definitions, rivet
+        needs runtime-parsed rules from user YAML. Full Datalog engine
+        (Soufflé FFI). Rejected: C++ dependency, massive overkill,
+        hard to cross-compile.
+    links:
+      - type: satisfies
+        target: REQ-041
+      - type: satisfies
+        target: REQ-029
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
