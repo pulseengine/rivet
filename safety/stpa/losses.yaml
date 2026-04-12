@@ -31,6 +31,9 @@ losses:
       (ISO 26262, DO-178C, ASPICE), incomplete traceability can mask gaps that
       lead to fielded defects in safety-relevant functions.
     stakeholders: [safety-engineers, certification-authorities, developers]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: L-2
     title: Loss of compliance evidence
@@ -40,6 +43,9 @@ losses:
       organization cannot pass certification audits, potentially blocking
       product release or triggering recalls.
     stakeholders: [certification-authorities, project-managers]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: L-3
     title: Loss of data sovereignty
@@ -50,6 +56,9 @@ losses:
       content to unauthorized systems, the organization loses control of its
       engineering records.
     stakeholders: [safety-engineers, tool-administrators, developers]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: L-4
     title: Loss of engineering productivity
@@ -58,6 +67,9 @@ losses:
       debugging sync failures, or reconciling conflicting artifact versions
       instead of performing value-adding engineering work.
     stakeholders: [developers, project-managers]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: L-5
     title: Loss of safety assurance
@@ -67,6 +79,9 @@ losses:
       safety argument.  This can result in hazardous system behavior reaching
       production.
     stakeholders: [safety-engineers, certification-authorities]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: L-6
     title: Loss of audit trail
@@ -76,3 +91,6 @@ losses:
       root-cause analysis after incidents is impaired and regulatory
       post-market obligations cannot be met.
     stakeholders: [certification-authorities, safety-engineers, project-managers]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z

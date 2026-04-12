@@ -108,15 +108,76 @@ Use `rivet validate --format json` for machine-readable output.
 
 ## Commit Traceability
 
-This project enforces commit-to-artifact traceability.
+This project enforces commit-to-artifact traceability. Every non-exempt
+commit that touches code in `rivet-core/src/` or `rivet-cli/src/` MUST
+include at least one artifact trailer in the commit message body.
 
-Required git trailers:
-- `Fixes` -> maps to link type `fixes`
-- `Implements` -> maps to link type `implements`
-- `Refs` -> maps to link type `traces-to`
-- `Satisfies` -> maps to link type `satisfies`
-- `Verifies` -> maps to link type `verifies`
+### Required Git Trailers
 
-Exempt artifact types (no trailer required): `chore`, `style`, `ci`, `docs`, `build`
+Add one or more of these trailers to the **last paragraph** of the commit
+message body (after a blank line, before any Co-Authored-By):
 
-To skip traceability for a commit, add: `Trace: skip`
+| Trailer | Link Type | When to Use |
+|---------|-----------|-------------|
+| `Implements: REQ-NNN` | implements | New feature that fulfils a requirement or feature artifact |
+| `Fixes: REQ-NNN` | fixes | Bug fix or correction related to an artifact |
+| `Verifies: REQ-NNN` | verifies | Test or verification that validates an artifact |
+| `Satisfies: SC-NNN` | satisfies | Implementation that satisfies a system constraint |
+| `Refs: FEAT-NNN` | traces-to | General reference when the commit relates to but does not fully implement an artifact |
+
+Multiple trailers are encouraged. Comma-separate IDs for the same trailer type:
+```
+Implements: REQ-028, REQ-029
+Refs: #91
+```
+
+### Exempt Commits
+
+These conventional-commit types do NOT require trailers: `chore`, `style`,
+`ci`, `docs`, `build`.
+
+To explicitly skip traceability for any other commit, add: `Trace: skip`
+
+### Choosing the Right Artifacts
+
+- **New parser/extraction feature** -> `Implements: REQ-028` (lossless CST) or `REQ-029` (incremental validation)
+- **Schema addition** -> `Implements: REQ-010` (schema-driven validation)
+- **CLI command** -> `Implements: REQ-007` (CLI and serve pattern)
+- **STPA-related** -> `Implements: REQ-002` (STPA artifact support)
+- **Validation fix** -> `Fixes: REQ-004` (validation engine)
+- **Dashboard/serve** -> `Refs: FEAT-001` or relevant FEAT-NNN
+- **MCP server** -> `Refs: FEAT-010, REQ-022`
+- **Test addition** -> `Verifies: REQ-NNN` for the requirement being tested
+
+### Retroactive Traceability Map
+
+The following major commits predate strict trailer enforcement. This table
+documents their artifact relationships for audit purposes (these cannot be
+added as trailers without rewriting git history):
+
+| Commit | PR | Summary | Artifacts |
+|--------|----|---------|-----------|
+| `8321f8bb` | #114 | Rowan-based lossless YAML CST parser (Phase 1) | Implements REQ-028 |
+| `fd99574e` | #119 | Rowan HIR extraction (Phase 2) + MCP tools | Implements REQ-028, REQ-029; Refs FEAT-010 |
+| `e4f398ec` | #120 | Schema-driven extraction from rowan CST (Phase 3) | Implements REQ-028, REQ-010 |
+| `bd0d729a` | #121 | Salsa integration (Phase 5) + dogfood tracking | Implements REQ-029 |
+| `4e2aa4ab` | #122 | Doc spans + round-trip equivalence tests | Verifies REQ-028, REQ-034 |
+| `29b735bf` | #123 | Phase 6 rowan migration + issue fixes | Implements REQ-028, REQ-029; Fixes REQ-002, REQ-004 |
+| `6f781be1` | #124 | Edge case hardening + STPA + MCP tests | Fixes REQ-004; Verifies FEAT-010 |
+| `2b7acd41` | #118 | `rivet schema validate` command | Implements REQ-010; Refs #93 |
+| `28402ebe` | #117 | ISO/PAS 8800 AI safety + SOTIF schemas | Implements REQ-010 |
+| `ffeff760` | #115 | Domain schemas (IEC 61508, IEC 62304, DO-178C, EN 50128) | Implements REQ-010 |
+| `2c9fb62b` | #112 | yaml-section and shorthand-links in schema | Implements REQ-010 |
+| `aba9c5f3` | #111 | STPA adapter handles arbitrary filenames | Fixes REQ-002 |
+| `43830b9b` | #109 | GSN safety cases + STPA-for-AI schemas | Implements REQ-010 |
+| `9a5011e2` | #108 | Convergence tracking, rivet get, MCP server | Implements FEAT-010, REQ-007 |
+| `2f54fabc` | #101 | Schema/LSP fixes, EU AI Act, salsa, STPA | Implements REQ-010, REQ-029 |
+| `0661926d` | #97 | Release delta in export + CI snapshot | Implements REQ-035 |
+| `c5ff64c8` | #96 | Embed phases 2+5 (diagnostics, matrix, snapshots) | Implements REQ-033 |
+| `cc4cc1c1` | #94 | oEmbed provider and Grafana JSON API | Implements FEAT-001 |
+| `adcf0bc1` | #28 | Phase 3 (30+ features, 402 tests, formal verification) | Implements REQ-004, REQ-012 |
+
+### Current Coverage
+
+Run `rivet commits` to see current commit-to-artifact traceability status.
+Target: 100% of non-exempt commits in traced paths should have trailers.

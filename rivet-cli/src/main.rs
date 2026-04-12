@@ -182,6 +182,10 @@ enum Command {
         /// Generate AGENTS.md (and CLAUDE.md shim) from current project state
         #[arg(long)]
         agents: bool,
+
+        /// Install git hooks (commit-msg, pre-commit) that call rivet for validation
+        #[arg(long)]
+        hooks: bool,
     },
 
     /// Validate artifacts against schemas
@@ -227,6 +231,10 @@ enum Command {
         #[arg(short, long)]
         status: Option<String>,
 
+        /// S-expression filter, e.g. '(and (= type "requirement") (has-tag "stpa"))'
+        #[arg(long)]
+        filter: Option<String>,
+
         /// Output format: "text" (default) or "json"
         #[arg(short, long, default_value = "text")]
         format: String,
@@ -238,6 +246,10 @@ enum Command {
 
     /// Show artifact summary statistics
     Stats {
+        /// S-expression filter to scope statistics
+        #[arg(long)]
+        filter: Option<String>,
+
         /// Output format: "text" (default) or "json"
         #[arg(short, long, default_value = "text")]
         format: String,
@@ -249,6 +261,10 @@ enum Command {
 
     /// Show traceability coverage report
     Coverage {
+        /// S-expression filter to scope coverage
+        #[arg(long)]
+        filter: Option<String>,
+
         /// Output format: "text" (default) or "json"
         #[arg(short, long, default_value = "text")]
         format: String,
@@ -367,6 +383,10 @@ enum Command {
     Docs {
         /// Topic slug to display (omit for topic list)
         topic: Option<String>,
+
+        /// List available topics (same as `rivet docs` with no args)
+        #[arg(long)]
+        list: bool,
 
         /// Search across all docs (like grep)
         #[arg(long)]
@@ -762,21 +782,26 @@ fn run(cli: Cli) -> Result<bool> {
         schema,
         dir,
         agents,
+        hooks,
     } = &cli.command
     {
         if *agents {
             return cmd_init_agents(&cli);
         }
+        if *hooks {
+            return cmd_init_hooks(dir);
+        }
         return cmd_init(name.as_deref(), preset, schema, dir);
     }
     if let Command::Docs {
         topic,
+        list,
         grep,
         format,
         context,
     } = &cli.command
     {
-        return cmd_docs(topic.as_deref(), grep.as_deref(), format, *context);
+        return cmd_docs(topic.as_deref(), *list, grep.as_deref(), format, *context);
     }
     if let Command::Context = &cli.command {
         return cmd_context(&cli);
@@ -816,18 +841,25 @@ fn run(cli: Cli) -> Result<bool> {
         Command::List {
             r#type,
             status,
+            filter,
             format,
             baseline,
         } => cmd_list(
             &cli,
             r#type.as_deref(),
             status.as_deref(),
+            filter.as_deref(),
             format,
             baseline.as_deref(),
         ),
         Command::Get { id, format } => cmd_get(&cli, id, format),
-        Command::Stats { format, baseline } => cmd_stats(&cli, format, baseline.as_deref()),
+        Command::Stats {
+            filter,
+            format,
+            baseline,
+        } => cmd_stats(&cli, filter.as_deref(), format, baseline.as_deref()),
         Command::Coverage {
+            filter,
             format,
             fail_under,
             tests,
@@ -837,7 +869,13 @@ fn run(cli: Cli) -> Result<bool> {
             if *tests {
                 cmd_coverage_tests(&cli, format, scan_paths)
             } else {
-                cmd_coverage(&cli, format, fail_under.as_ref(), baseline.as_deref())
+                cmd_coverage(
+                    &cli,
+                    filter.as_deref(),
+                    format,
+                    fail_under.as_ref(),
+                    baseline.as_deref(),
+                )
             }
         }
         Command::Matrix {
@@ -2262,6 +2300,116 @@ rivet stats        # Show summary statistics
     Ok(true)
 }
 
+/// Install git hooks that delegate to rivet for commit validation.
+///
+/// Hooks chain with existing hooks: if a hook file already exists, it is
+/// renamed to `<hook>.prev` and called after rivet's check succeeds.
+/// This allows coexistence with other hook managers (husky, pre-commit, lefthook).
+fn cmd_init_hooks(dir: &std::path::Path) -> Result<bool> {
+    let dir = if dir == std::path::Path::new(".") {
+        std::env::current_dir().context("resolving current directory")?
+    } else {
+        dir.to_path_buf()
+    };
+
+    // Find .git directory (supports worktrees)
+    let git_dir_output = std::process::Command::new("git")
+        .args(["rev-parse", "--git-dir"])
+        .current_dir(&dir)
+        .output()
+        .context("running git rev-parse --git-dir")?;
+
+    if !git_dir_output.status.success() {
+        anyhow::bail!("not a git repository (run from a git working tree)");
+    }
+
+    let git_dir = dir.join(String::from_utf8_lossy(&git_dir_output.stdout).trim());
+    let hooks_dir = git_dir.join("hooks");
+    std::fs::create_dir_all(&hooks_dir)
+        .with_context(|| format!("creating {}", hooks_dir.display()))?;
+
+    // Resolve rivet binary path for the hook.
+    let rivet_bin = std::env::current_exe()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|_| "rivet".to_string());
+
+    // ── commit-msg hook ─────────────────────────────────────────────
+    let commit_msg_path = hooks_dir.join("commit-msg");
+    install_hook(
+        &commit_msg_path,
+        &format!(
+            r#"#!/usr/bin/env bash
+# Installed by: rivet init --hooks
+# Validates commit trailers reference artifact IDs.
+"{rivet_bin}" commit-msg-check "$1" || exit $?
+"#,
+        ),
+    )?;
+    println!("  installed {}", commit_msg_path.display());
+
+    // ── pre-commit hook ─────────────────────────────────────────────
+    let pre_commit_path = hooks_dir.join("pre-commit");
+    install_hook(
+        &pre_commit_path,
+        &format!(
+            r#"#!/usr/bin/env bash
+# Installed by: rivet init --hooks
+# Runs rivet validate and blocks on errors.
+output=$("{rivet_bin}" validate --format json 2>/dev/null)
+errors=$(echo "$output" | python3 -c "import json,sys; print(json.load(sys.stdin).get('errors',0))" 2>/dev/null || echo "0")
+if [ "$errors" -gt 0 ]; then
+    echo "rivet validate: $errors error(s). Run 'rivet validate' for details."
+    exit 1
+fi
+"#,
+        ),
+    )?;
+    println!("  installed {}", pre_commit_path.display());
+
+    println!("\nGit hooks installed. Rivet will validate commits automatically.");
+    println!("Hooks chain with existing hooks via .prev files.");
+    Ok(true)
+}
+
+/// Install a hook file, chaining with any existing hook.
+///
+/// If a hook already exists:
+/// 1. Rename it to `<hook>.prev`
+/// 2. The new hook calls `<hook>.prev` at the end (after rivet's check)
+///
+/// This allows coexistence with pre-commit, husky, lefthook, etc.
+fn install_hook(path: &std::path::Path, content: &str) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    if path.exists() {
+        let prev = path.with_extension("prev");
+        // Don't overwrite an existing .prev (user may have modified it)
+        if !prev.exists() {
+            std::fs::rename(path, &prev)
+                .with_context(|| format!("backing up {}", path.display()))?;
+            eprintln!("  note: existing hook backed up to {}", prev.display());
+        }
+    }
+
+    // Check for .prev file and append chaining call
+    let prev = path.with_extension("prev");
+    let chain_snippet = if prev.exists() {
+        format!(
+            "\n# Chain to previous hook\nif [ -x \"{}\" ]; then\n    \"{}\" \"$@\"\nfi\n",
+            prev.display(),
+            prev.display()
+        )
+    } else {
+        String::new()
+    };
+
+    let final_content = format!("{content}{chain_snippet}");
+    std::fs::write(path, &final_content).with_context(|| format!("writing {}", path.display()))?;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))
+        .with_context(|| format!("setting permissions on {}", path.display()))?;
+    Ok(())
+}
+
 /// Collapse newlines and pipes so a description fits in a markdown table cell.
 fn sanitize_for_table(s: &str) -> String {
     s.replace('\n', " ")
@@ -2997,20 +3145,9 @@ fn run_salsa_validation(cli: &Cli, config: &ProjectConfig) -> Result<Vec<validat
 
     let schemas_dir = resolve_schemas_dir(cli);
 
-    // ── Collect schema content ──────────────────────────────────────────
-    let mut schema_contents: Vec<(String, String)> = Vec::new();
-    for name in &config.project.schemas {
-        let path = schemas_dir.join(format!("{name}.yaml"));
-        if path.exists() {
-            let content = std::fs::read_to_string(&path)
-                .with_context(|| format!("reading schema {}", path.display()))?;
-            schema_contents.push((name.clone(), content));
-        } else if let Some(content) = rivet_core::embedded::embedded_schema(name) {
-            schema_contents.push((name.clone(), content.to_string()));
-        } else {
-            log::warn!("schema '{name}' not found on disk or embedded");
-        }
-    }
+    // ── Collect schema content (including auto-discovered bridges) ──────
+    let schema_contents =
+        rivet_core::embedded::load_schema_contents(&config.project.schemas, &schemas_dir);
 
     // ── Collect source file content ─────────────────────────────────────
     let mut source_contents: Vec<(String, String)> = Vec::new();
@@ -3158,6 +3295,7 @@ fn cmd_list(
     cli: &Cli,
     type_filter: Option<&str>,
     status_filter: Option<&str>,
+    sexpr_filter: Option<&str>,
     format: &str,
     baseline_name: Option<&str>,
 ) -> Result<bool> {
@@ -3171,7 +3309,17 @@ fn cmd_list(
         ..Default::default()
     };
 
-    let results = rivet_core::query::execute(&store, &query);
+    let mut results = rivet_core::query::execute(&store, &query);
+
+    // Apply s-expression filter if provided.
+    if let Some(filter_src) = sexpr_filter {
+        let expr = rivet_core::sexpr_eval::parse_filter(filter_src).map_err(|errs| {
+            let msgs: Vec<String> = errs.iter().map(|e| e.to_string()).collect();
+            anyhow::anyhow!("invalid filter: {}", msgs.join("; "))
+        })?;
+        let graph = rivet_core::links::LinkGraph::build(&store, &ctx.schema);
+        results.retain(|a| rivet_core::sexpr_eval::matches_filter(&expr, a, &graph));
+    }
 
     if format == "json" {
         let artifacts_json: Vec<serde_json::Value> = results
@@ -3208,67 +3356,138 @@ fn cmd_list(
 }
 
 /// Print summary statistics.
-fn cmd_stats(cli: &Cli, format: &str, baseline_name: Option<&str>) -> Result<bool> {
+fn cmd_stats(
+    cli: &Cli,
+    sexpr_filter: Option<&str>,
+    format: &str,
+    baseline_name: Option<&str>,
+) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
     let ctx = ProjectContext::load(cli)?;
-    let store = apply_baseline_scope(ctx.store, baseline_name, &ctx.config);
-    let graph = if baseline_name.is_some() {
+    let mut store = apply_baseline_scope(ctx.store, baseline_name, &ctx.config);
+    let mut graph = if baseline_name.is_some() {
         LinkGraph::build(&store, &ctx.schema)
     } else {
         ctx.graph
     };
 
-    let orphans = graph.orphans(&store);
+    // Apply s-expression filter if provided.
+    if let Some(filter_src) = sexpr_filter {
+        let expr = rivet_core::sexpr_eval::parse_filter(filter_src).map_err(|errs| {
+            let msgs: Vec<String> = errs.iter().map(|e| e.to_string()).collect();
+            anyhow::anyhow!("invalid filter: {}", msgs.join("; "))
+        })?;
+        let mut filtered = rivet_core::store::Store::default();
+        for a in store.iter() {
+            if rivet_core::sexpr_eval::matches_filter(&expr, a, &graph) {
+                filtered.upsert(a.clone());
+            }
+        }
+        store = filtered;
+        graph = LinkGraph::build(&store, &ctx.schema);
+    }
+
+    // Compute stats once — both formats share the same data.
+    let stats = compute_stats(&store, &graph);
 
     if format == "json" {
         let mut types = serde_json::Map::new();
-        let mut type_names: Vec<&str> = store.types().collect();
-        type_names.sort();
-        for t in &type_names {
-            types.insert(t.to_string(), serde_json::json!(store.count_by_type(t)));
+        for (name, count) in &stats.type_counts {
+            types.insert(name.clone(), serde_json::json!(count));
         }
         let output = serde_json::json!({
             "command": "stats",
-            "total": store.len(),
+            "total": stats.total,
             "types": types,
-            "orphans": orphans,
-            "broken_links": graph.broken.len(),
+            "orphans": stats.orphans,
+            "broken_links": stats.broken_links,
         });
         println!("{}", serde_json::to_string_pretty(&output).unwrap());
     } else {
-        print_stats(&store);
+        println!("Artifact summary:");
+        for (name, count) in &stats.type_counts {
+            println!("  {:30} {:>4}", name, count);
+        }
+        println!("  {:30} {:>4}", "TOTAL", stats.total);
 
-        if !orphans.is_empty() {
-            println!("\nOrphan artifacts (no links): {}", orphans.len());
-            for id in &orphans {
+        if !stats.orphans.is_empty() {
+            println!("\nOrphan artifacts (no links): {}", stats.orphans.len());
+            for id in &stats.orphans {
                 println!("  {}", id);
             }
         }
 
-        if !graph.broken.is_empty() {
-            println!("\nBroken links: {}", graph.broken.len());
+        if stats.broken_links > 0 {
+            println!("\nBroken links: {}", stats.broken_links);
         }
     }
 
     Ok(true)
 }
 
+/// Pre-computed stats shared by text and JSON output paths.
+struct StatsResult {
+    total: usize,
+    type_counts: Vec<(String, usize)>,
+    orphans: Vec<String>,
+    broken_links: usize,
+}
+
+/// Compute artifact stats from the store and link graph.
+///
+/// The total is derived as the sum of per-type counts so that both text and
+/// JSON formats are guaranteed to agree.
+fn compute_stats(store: &Store, graph: &LinkGraph) -> StatsResult {
+    let mut type_names: Vec<&str> = store.types().collect();
+    type_names.sort();
+    let type_counts: Vec<(String, usize)> = type_names
+        .iter()
+        .map(|t| (t.to_string(), store.count_by_type(t)))
+        .collect();
+    let total: usize = type_counts.iter().map(|(_, c)| c).sum();
+    let orphans: Vec<String> = graph.orphans(store).into_iter().cloned().collect();
+    StatsResult {
+        total,
+        type_counts,
+        orphans,
+        broken_links: graph.broken.len(),
+    }
+}
+
 /// Show traceability coverage report.
 fn cmd_coverage(
     cli: &Cli,
+    sexpr_filter: Option<&str>,
     format: &str,
     fail_under: Option<&f64>,
     baseline_name: Option<&str>,
 ) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
     let ctx = ProjectContext::load(cli)?;
-    let store = apply_baseline_scope(ctx.store, baseline_name, &ctx.config);
+    let mut store = apply_baseline_scope(ctx.store, baseline_name, &ctx.config);
     let schema = ctx.schema;
-    let graph = if baseline_name.is_some() {
+    let mut graph = if baseline_name.is_some() {
         LinkGraph::build(&store, &schema)
     } else {
         ctx.graph
     };
+
+    // Apply s-expression filter if provided.
+    if let Some(filter_src) = sexpr_filter {
+        let expr = rivet_core::sexpr_eval::parse_filter(filter_src).map_err(|errs| {
+            let msgs: Vec<String> = errs.iter().map(|e| e.to_string()).collect();
+            anyhow::anyhow!("invalid filter: {}", msgs.join("; "))
+        })?;
+        let mut filtered = rivet_core::store::Store::default();
+        for a in store.iter() {
+            if rivet_core::sexpr_eval::matches_filter(&expr, a, &graph) {
+                filtered.upsert(a.clone());
+            }
+        }
+        store = filtered;
+        graph = LinkGraph::build(&store, &schema);
+    }
+
     let report = coverage::compute_coverage(&store, &schema, &graph);
 
     if format == "json" {
@@ -3837,6 +4056,21 @@ fn cmd_export_html(
         } else {
             String::new()
         };
+        let eu_ai_act_loaded = rivet_core::compliance::is_eu_ai_act_loaded(&state.schema);
+        let eu_ai_act_nav = if eu_ai_act_loaded {
+            let eu_count: usize = rivet_core::compliance::EU_AI_ACT_TYPES
+                .iter()
+                .map(|t| state.store.count_by_type(t))
+                .sum();
+            let badge = if eu_count > 0 {
+                format!("<span class=\"nav-badge\">{eu_count}</span>")
+            } else {
+                String::new()
+            };
+            format!("<li><a href=\"../eu-ai-act/index.html\">EU AI Act{badge}</a></li>")
+        } else {
+            String::new()
+        };
         format!(
             r#"<!DOCTYPE html>
 <html lang="en">
@@ -3871,6 +4105,7 @@ document.addEventListener('DOMContentLoaded',function(){{
     <li><a href="../documents/index.html">Documents{doc_badge}</a></li>
     <li class="nav-divider"></li>
     {stpa_nav}
+    {eu_ai_act_nav}
     <li><a href="../help/index.html">Help &amp; Docs</a></li>
   </ul>
   <div style="padding:.75rem 1rem;font-size:.7rem;color:var(--sidebar-text)">
@@ -3921,6 +4156,8 @@ document.addEventListener('DOMContentLoaded',function(){{
     write_page("validate/index.html", "/validate", "Validation", out_dir)?;
     page_count += 1;
     write_page("stpa/index.html", "/stpa", "STPA", out_dir)?;
+    page_count += 1;
+    write_page("eu-ai-act/index.html", "/eu-ai-act", "EU AI Act", out_dir)?;
     page_count += 1;
     write_page("documents/index.html", "/documents", "Documents", out_dir)?;
     page_count += 1;
@@ -4573,9 +4810,18 @@ struct RawLink {
 }
 
 /// Show built-in docs (no project load needed).
-fn cmd_docs(topic: Option<&str>, grep: Option<&str>, format: &str, context: usize) -> Result<bool> {
+fn cmd_docs(
+    topic: Option<&str>,
+    list: bool,
+    grep: Option<&str>,
+    format: &str,
+    context: usize,
+) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
-    if let Some(pattern) = grep {
+    if list {
+        // --list explicitly requests the topic listing
+        print!("{}", docs::list_topics(format));
+    } else if let Some(pattern) = grep {
         print!("{}", docs::grep_docs(pattern, format, context));
     } else if let Some(slug) = topic {
         print!("{}", docs::show_topic(slug, format));
@@ -5799,9 +6045,20 @@ impl ProjectContext {
                 match rivet_core::externals::load_all_externals(externals, &cli.project) {
                     Ok(resolved) => {
                         for ext in resolved {
+                            // Collect all IDs in this external so we can prefix
+                            // internal link targets consistently.
+                            let ext_ids: std::collections::HashSet<String> =
+                                ext.artifacts.iter().map(|a| a.id.clone()).collect();
                             for mut artifact in ext.artifacts {
                                 // Prefix external artifact IDs so they don't collide
                                 artifact.id = format!("{}:{}", ext.prefix, artifact.id);
+                                // Prefix link targets that reference artifacts within
+                                // this same external project so they resolve correctly.
+                                for link in &mut artifact.links {
+                                    if ext_ids.contains(&link.target) {
+                                        link.target = format!("{}:{}", ext.prefix, link.target);
+                                    }
+                                }
                                 store.upsert(artifact);
                             }
                         }
@@ -6278,8 +6535,12 @@ fn cmd_stamp(
 
     // Collect artifact IDs to stamp
     let ids: Vec<String> = if id == "all" {
-        // Stamp every artifact in the store
-        store.iter().map(|a| a.id.clone()).collect()
+        // Stamp every local artifact (skip externals with ':' prefix)
+        store
+            .iter()
+            .filter(|a| !a.id.contains(':'))
+            .map(|a| a.id.clone())
+            .collect()
     } else {
         // Single artifact
         if !store.contains(id) {
@@ -6297,9 +6558,10 @@ fn cmd_stamp(
     let mut by_file: std::collections::BTreeMap<std::path::PathBuf, Vec<String>> =
         std::collections::BTreeMap::new();
     for aid in &ids {
-        let source_file = mutate::find_source_file(aid, &store)
-            .ok_or_else(|| anyhow::anyhow!("cannot determine source file for '{aid}'"))?;
-        by_file.entry(source_file).or_default().push(aid.clone());
+        if let Some(source_file) = mutate::find_source_file(aid, &store) {
+            by_file.entry(source_file).or_default().push(aid.clone());
+        }
+        // Skip artifacts without source files (externals, etc.)
     }
 
     for (file_path, artifact_ids) in &by_file {
@@ -7340,6 +7602,10 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
         }
     }
 
+    // Drop the connection to close the sender channel, allowing the
+    // writer IO thread to finish. Without this, io_threads.join() would
+    // deadlock because the writer thread blocks on the channel.
+    drop(connection);
     io_threads.join()?;
     eprintln!("rivet lsp: shut down");
     Ok(true)
@@ -8485,5 +8751,76 @@ artifacts:
         let source = "losses:\n  - id: L-1\n    title: Loss one\nhazards:\n  - id: H-1\n    title: Hazard one\n";
         let symbols = lsp_document_symbols(source);
         assert_eq!(symbols.len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod stats_tests {
+    use super::*;
+    use rivet_core::store::Store;
+
+    fn make_artifact(id: &str, art_type: &str) -> rivet_core::model::Artifact {
+        rivet_core::model::Artifact {
+            id: id.into(),
+            artifact_type: art_type.into(),
+            title: format!("Title of {id}"),
+            description: None,
+            status: None,
+            tags: vec![],
+            links: vec![],
+            fields: Default::default(),
+            provenance: None,
+            source_file: None,
+        }
+    }
+
+    #[test]
+    fn stats_total_equals_sum_of_type_counts() {
+        let mut store = Store::new();
+        store.upsert(make_artifact("R-1", "req"));
+        store.upsert(make_artifact("R-2", "req"));
+        store.upsert(make_artifact("F-1", "feat"));
+        store.upsert(make_artifact("H-1", "hazard"));
+
+        let schema = rivet_core::schema::Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let stats = compute_stats(&store, &graph);
+
+        let sum: usize = stats.type_counts.iter().map(|(_, c)| c).sum();
+        assert_eq!(
+            stats.total, sum,
+            "stats total ({}) must equal sum of type counts ({})",
+            stats.total, sum,
+        );
+        assert_eq!(stats.total, store.len());
+    }
+
+    #[test]
+    fn stats_total_consistent_after_type_change() {
+        let mut store = Store::new();
+        store.upsert(make_artifact("A-1", "req"));
+        store.upsert(make_artifact("A-2", "req"));
+        store.upsert(make_artifact("A-3", "feat"));
+        // Change A-1's type
+        store.upsert(make_artifact("A-1", "feat"));
+
+        let schema = rivet_core::schema::Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let stats = compute_stats(&store, &graph);
+
+        let sum: usize = stats.type_counts.iter().map(|(_, c)| c).sum();
+        assert_eq!(
+            stats.total, sum,
+            "after type change: total ({}) must equal sum of type counts ({})",
+            stats.total, sum,
+        );
+        assert_eq!(stats.total, 3);
+        // No phantom types with 0 count
+        for (name, count) in &stats.type_counts {
+            assert!(
+                *count > 0,
+                "type '{name}' has 0 count but still appears in stats"
+            );
+        }
     }
 }

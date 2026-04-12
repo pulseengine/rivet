@@ -13,6 +13,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-035
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-075
     type: feature
@@ -24,6 +27,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-035
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-076
     type: feature
@@ -35,6 +41,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-001
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # ── Snapshot and delta ─────────────────────────────────────────────
 
@@ -49,6 +58,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-001
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-078
     type: feature
@@ -61,6 +73,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-035
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-079
     type: feature
@@ -73,6 +88,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-035
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # ── MCP server ─────────────────────────────────────────────────────
 
@@ -87,6 +105,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-001
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # ── Convergence tracking ───────────────────────────────────────────
 
@@ -101,6 +122,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-001
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # ── CLI commands ───────────────────────────────────────────────────
 
@@ -114,6 +138,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-001
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # ── LSP fixes ──────────────────────────────────────────────────────
 
@@ -127,6 +154,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-002
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-084
     type: feature
@@ -139,6 +169,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-002
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-085
     type: feature
@@ -150,6 +183,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-002
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-086
     type: feature
@@ -161,6 +197,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-002
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-087
     type: feature
@@ -172,6 +211,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-002
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # ── Schemas ────────────────────────────────────────────────────────
 
@@ -186,6 +228,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-010
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-089
     type: feature
@@ -198,6 +243,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-010
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-090
     type: feature
@@ -209,6 +257,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-010
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-091
     type: feature
@@ -220,6 +271,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-010
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-092
     type: feature
@@ -232,3 +286,6 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-004
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z

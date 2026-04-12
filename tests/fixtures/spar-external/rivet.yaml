@@ -1,0 +1,13 @@
+# Minimal rivet.yaml for testing cross-repo artifact sync.
+# Simulates what spar's rivet.yaml would look like if it tracked
+# its own AADL components as rivet artifacts.
+project:
+  name: spar
+  version: "0.1.0"
+  schemas:
+    - common
+    - aadl
+
+sources:
+  - path: artifacts
+    format: generic-yaml

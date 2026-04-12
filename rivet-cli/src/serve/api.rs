@@ -330,6 +330,8 @@ pub(crate) struct ArtifactsParams {
     status: Option<String>,
     origin: Option<String>,
     q: Option<String>,
+    /// S-expression filter, e.g. `(and (= type "requirement") (has-tag "stpa"))`
+    filter: Option<String>,
     #[serde(default = "default_limit")]
     limit: u32,
     #[serde(default)]
@@ -354,6 +356,12 @@ pub(crate) async fn artifacts(
     let limit = params.limit.min(1000) as usize;
     let offset = params.offset as usize;
 
+    // Parse s-expression filter once before iterating.
+    let sexpr_filter = params
+        .filter
+        .as_deref()
+        .and_then(|f| rivet_core::sexpr_eval::parse_filter(f).ok());
+
     let include_externals = params
         .origin
         .as_deref()
@@ -368,9 +376,15 @@ pub(crate) async fn artifacts(
         .is_none_or(|o| o == "all" || o == "local");
     if include_local {
         for artifact in guard.store.iter() {
-            if matches_filters(artifact, &params) {
-                results.push(to_api_artifact(artifact, "local", &guard));
+            if !matches_filters(artifact, &params) {
+                continue;
             }
+            if let Some(ref expr) = sexpr_filter {
+                if !rivet_core::sexpr_eval::matches_filter(expr, artifact, &guard.graph) {
+                    continue;
+                }
+            }
+            results.push(to_api_artifact(artifact, "local", &guard));
         }
     }
 

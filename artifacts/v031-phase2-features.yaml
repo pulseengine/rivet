@@ -13,6 +13,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-002
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-094
     type: feature
@@ -24,6 +27,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-002
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-095
     type: feature
@@ -38,6 +44,9 @@ artifacts:
         target: REQ-002
       - type: satisfies
         target: REQ-010
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # ── Domain schemas ─────────────────────────────────────────────────
 
@@ -51,6 +60,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-010
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-097
     type: feature
@@ -62,6 +74,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-010
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-098
     type: feature
@@ -73,6 +88,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-010
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-099
     type: feature
@@ -84,6 +102,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-010
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-100
     type: feature
@@ -95,6 +116,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-010
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-101
     type: feature
@@ -106,6 +130,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-010
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # ── Other features ─────────────────────────────────────────────────
 
@@ -120,6 +147,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-001
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-103
     type: feature
@@ -132,6 +162,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-010
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-104
     type: feature
@@ -144,6 +177,9 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-001
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: FEAT-105
     type: feature
@@ -155,3 +191,6 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-001
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z

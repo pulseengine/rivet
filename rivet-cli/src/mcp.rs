@@ -119,6 +119,50 @@ pub struct LinkParam {
     pub target: String,
 }
 
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct ModifyParams {
+    #[schemars(description = "Artifact ID to modify")]
+    pub id: String,
+    #[schemars(description = "New status value")]
+    pub status: Option<String>,
+    #[schemars(description = "New title")]
+    pub title: Option<String>,
+    #[schemars(description = "Tags to add")]
+    pub add_tags: Option<Vec<String>>,
+    #[schemars(description = "Tags to remove")]
+    pub remove_tags: Option<Vec<String>>,
+    #[schemars(description = "Fields to set as key=value pairs")]
+    pub set_fields: Option<Vec<String>>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct McpLinkParams {
+    #[schemars(description = "Source artifact ID")]
+    pub source: String,
+    #[schemars(description = "Link type (e.g., 'satisfies', 'implements')")]
+    pub link_type: String,
+    #[schemars(description = "Target artifact ID")]
+    pub target: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct RemoveParams {
+    #[schemars(description = "Artifact ID to remove")]
+    pub id: String,
+    #[schemars(description = "Force removal even if other artifacts link to this one")]
+    pub force: Option<bool>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct QueryParams {
+    #[schemars(
+        description = "S-expression filter, e.g. '(and (= type \"requirement\") (has-tag \"stpa\"))'"
+    )]
+    pub filter: String,
+    #[schemars(description = "Maximum number of results (default: 100)")]
+    pub limit: Option<usize>,
+}
+
 // ── RivetServer ────────────────────────────────────────────────────────
 
 #[derive(Clone)]
@@ -167,6 +211,25 @@ impl RivetServer {
             project_dir: Arc::new(project_dir),
             project: Arc::new(RwLock::new(project)),
         })
+    }
+
+    /// Create a `RivetServer` from pre-loaded state (used by the dashboard's
+    /// MCP-over-HTTP endpoint so we don't reload from disk).
+    pub fn from_shared(
+        project_dir: PathBuf,
+        store: Store,
+        schema: rivet_core::schema::Schema,
+        graph: LinkGraph,
+    ) -> Self {
+        Self {
+            tool_router: Self::tool_router(),
+            project_dir: Arc::new(project_dir),
+            project: Arc::new(RwLock::new(McpProject {
+                store,
+                schema,
+                graph,
+            })),
+        }
     }
 
     #[tool(description = "Validate artifacts against schemas and return diagnostics")]
@@ -268,6 +331,67 @@ impl RivetServer {
             "fields": p.fields.unwrap_or_default(),
         });
         let result = tool_add(self.dir(), &args).map_err(Self::err)?;
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&result).unwrap_or_default(),
+        )]))
+    }
+
+    #[tool(
+        description = "Query artifacts using an s-expression filter. Returns matching artifacts with full details."
+    )]
+    fn rivet_query(
+        &self,
+        Parameters(p): Parameters<QueryParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let result = self.with_project(|proj| tool_query(proj, &p))?;
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&result).unwrap_or_default(),
+        )]))
+    }
+
+    #[tool(
+        description = "Modify an existing artifact (status, title, tags, fields). Call rivet_reload after."
+    )]
+    fn rivet_modify(
+        &self,
+        Parameters(p): Parameters<ModifyParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let result = tool_modify(self.dir(), &p).map_err(Self::err)?;
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&result).unwrap_or_default(),
+        )]))
+    }
+
+    #[tool(description = "Add a link between two artifacts. Call rivet_reload after.")]
+    fn rivet_link(
+        &self,
+        Parameters(p): Parameters<McpLinkParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let result =
+            tool_link(self.dir(), &p.source, &p.link_type, &p.target).map_err(Self::err)?;
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&result).unwrap_or_default(),
+        )]))
+    }
+
+    #[tool(description = "Remove a link between two artifacts. Call rivet_reload after.")]
+    fn rivet_unlink(
+        &self,
+        Parameters(p): Parameters<McpLinkParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let result =
+            tool_unlink(self.dir(), &p.source, &p.link_type, &p.target).map_err(Self::err)?;
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&result).unwrap_or_default(),
+        )]))
+    }
+
+    #[tool(description = "Remove an artifact from the project. Call rivet_reload after.")]
+    fn rivet_remove(
+        &self,
+        Parameters(p): Parameters<RemoveParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let result = tool_remove(self.dir(), &p.id, p.force.unwrap_or(false)).map_err(Self::err)?;
         Ok(CallToolResult::success(vec![Content::text(
             serde_json::to_string_pretty(&result).unwrap_or_default(),
         )]))
@@ -804,6 +928,138 @@ fn json_to_yaml_value(v: &Value) -> serde_yaml::Value {
             serde_yaml::Value::Mapping(map)
         }
     }
+}
+
+// ── Query tool helper ─────────────────────────────────────────────────
+
+fn tool_query(proj: &McpProject, params: &QueryParams) -> Result<Value> {
+    let expr = rivet_core::sexpr_eval::parse_filter(&params.filter).map_err(|errs| {
+        let msgs: Vec<String> = errs.iter().map(|e| e.to_string()).collect();
+        anyhow::anyhow!("invalid filter: {}", msgs.join("; "))
+    })?;
+
+    let limit = params.limit.unwrap_or(100);
+    let mut results: Vec<Value> = Vec::new();
+
+    for artifact in proj.store.iter() {
+        if !rivet_core::sexpr_eval::matches_filter(&expr, artifact, &proj.graph) {
+            continue;
+        }
+        let links_json: Vec<Value> = artifact
+            .links
+            .iter()
+            .map(|l| json!({"type": l.link_type, "target": l.target}))
+            .collect();
+        results.push(json!({
+            "id": artifact.id,
+            "type": artifact.artifact_type,
+            "title": artifact.title,
+            "status": artifact.status.as_deref().unwrap_or("-"),
+            "tags": artifact.tags,
+            "links": links_json,
+            "description": artifact.description.as_deref().unwrap_or(""),
+        }));
+        if results.len() >= limit {
+            break;
+        }
+    }
+
+    Ok(json!({
+        "filter": params.filter,
+        "count": results.len(),
+        "artifacts": results,
+    }))
+}
+
+// ── Mutation tool helpers ──────────────────────────────────────────────
+
+fn tool_modify(project_dir: &Path, p: &ModifyParams) -> Result<Value> {
+    use rivet_core::mutate;
+
+    let proj = load_project(project_dir)?;
+
+    let set_fields: Vec<(String, String)> = p
+        .set_fields
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|s| {
+            let (k, v) = s.split_once('=')?;
+            Some((k.to_string(), v.to_string()))
+        })
+        .collect();
+
+    let params = mutate::ModifyParams {
+        set_status: p.status.clone(),
+        set_title: p.title.clone(),
+        add_tags: p.add_tags.clone().unwrap_or_default(),
+        remove_tags: p.remove_tags.clone().unwrap_or_default(),
+        set_fields,
+    };
+
+    mutate::validate_modify(&p.id, &params, &proj.store, &proj.schema)?;
+
+    let source_file = mutate::find_source_file(&p.id, &proj.store)
+        .ok_or_else(|| anyhow::anyhow!("cannot find source file for '{}'", p.id))?;
+
+    mutate::modify_artifact_in_file(&p.id, &params, &source_file, &proj.store)?;
+
+    Ok(json!({ "modified": p.id, "file": source_file.display().to_string() }))
+}
+
+fn tool_link(project_dir: &Path, source: &str, link_type: &str, target: &str) -> Result<Value> {
+    use rivet_core::model::Link;
+    use rivet_core::mutate;
+
+    let proj = load_project(project_dir)?;
+
+    mutate::validate_link(source, link_type, target, &proj.store, &proj.schema)?;
+
+    let source_file = mutate::find_source_file(source, &proj.store)
+        .ok_or_else(|| anyhow::anyhow!("cannot find source file for '{source}'"))?;
+
+    let link = Link {
+        link_type: link_type.to_string(),
+        target: target.to_string(),
+    };
+
+    mutate::add_link_to_file(source, &link, &source_file)?;
+
+    Ok(
+        json!({ "linked": format!("{source} --[{link_type}]--> {target}"), "file": source_file.display().to_string() }),
+    )
+}
+
+fn tool_unlink(project_dir: &Path, source: &str, link_type: &str, target: &str) -> Result<Value> {
+    use rivet_core::mutate;
+
+    let proj = load_project(project_dir)?;
+
+    mutate::validate_unlink(source, link_type, target, &proj.store)?;
+
+    let source_file = mutate::find_source_file(source, &proj.store)
+        .ok_or_else(|| anyhow::anyhow!("cannot find source file for '{source}'"))?;
+
+    mutate::remove_link_from_file(source, link_type, target, &source_file)?;
+
+    Ok(
+        json!({ "unlinked": format!("{source} --[{link_type}]--> {target}"), "file": source_file.display().to_string() }),
+    )
+}
+
+fn tool_remove(project_dir: &Path, id: &str, force: bool) -> Result<Value> {
+    use rivet_core::mutate;
+
+    let proj = load_project(project_dir)?;
+
+    mutate::validate_remove(id, force, &proj.store, &proj.graph)?;
+
+    let source_file = mutate::find_source_file(id, &proj.store)
+        .ok_or_else(|| anyhow::anyhow!("cannot find source file for '{id}'"))?;
+
+    mutate::remove_artifact_from_file(id, &source_file)?;
+
+    Ok(json!({ "removed": id, "file": source_file.display().to_string() }))
 }
 
 // ── Entry point ────────────────────────────────────────────────────────

@@ -20,6 +20,9 @@ artifacts:
         - "Given a YAML artifact file, When rivet loads it, Then the artifact is stored with correct ID and title"
         - "Given a store with artifacts, When querying by type, Then only artifacts of that type are returned"
         - "Given two store snapshots, When computing diff, Then added/removed/modified artifacts are identified"
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: TEST-002
     type: feature
@@ -39,6 +42,9 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-1
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: TEST-003
     type: feature
@@ -59,6 +65,9 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-1
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: TEST-004
     type: feature
@@ -76,6 +85,9 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-1
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: TEST-005
     type: feature
@@ -94,6 +106,9 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-1
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: TEST-006
     type: feature
@@ -116,6 +131,9 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-1
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: TEST-007
     type: feature
@@ -138,6 +156,9 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-1
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: TEST-008
     type: feature
@@ -155,6 +176,9 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-1
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: TEST-009
     type: feature
@@ -176,6 +200,9 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-1
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: TEST-010
     type: feature
@@ -195,6 +222,9 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-1
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: TEST-011
     type: feature
@@ -217,6 +247,9 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-2
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: TEST-012
     type: feature
@@ -235,6 +268,9 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-2
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: TEST-013
     type: feature
@@ -254,6 +290,9 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-2
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: TEST-014
     type: feature
@@ -272,6 +311,9 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-2
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: TEST-015
     type: feature
@@ -293,6 +335,9 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-2
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: TEST-016
     type: feature
@@ -311,6 +356,9 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-2
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: TEST-017
     type: feature
@@ -331,6 +379,9 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-3
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: TEST-018
     type: feature
@@ -349,6 +400,9 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-3
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: TEST-019
     type: feature
@@ -367,6 +421,9 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-3
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: TEST-020
     type: feature
@@ -385,6 +442,9 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-3
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: TEST-021
     type: feature
@@ -403,6 +463,9 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-3
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: TEST-022
     type: feature
@@ -422,6 +485,9 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-3
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: TEST-023
     type: feature
@@ -443,6 +509,9 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-3
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: TEST-024
     type: feature
@@ -463,6 +532,9 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-3
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: TEST-025
     type: feature
@@ -482,6 +554,9 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-3
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: TEST-026
     type: feature
@@ -503,6 +578,9 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-3
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: TEST-027
     type: feature
@@ -522,6 +600,9 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-3
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: TEST-028
     type: feature
@@ -543,6 +624,9 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-3
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: TEST-029
     type: feature
@@ -564,6 +648,9 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-2
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: TEST-030
     type: feature
@@ -583,6 +670,9 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-2
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: TEST-031
     type: feature
@@ -603,6 +693,9 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-3
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: TEST-032
     type: feature
@@ -622,6 +715,9 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-3
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: TEST-033
     type: feature
@@ -643,6 +739,9 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-2
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: TEST-034
     type: feature
@@ -663,6 +762,9 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-2
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: TEST-035
     type: feature
@@ -682,3 +784,6 @@ artifacts:
         target: REQ-014
     fields:
       phase: phase-3
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z

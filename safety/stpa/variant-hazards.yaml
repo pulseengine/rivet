@@ -1,0 +1,479 @@
+# =============================================================================
+# STPA Analysis — Variant/PLE System Hazards
+# =============================================================================
+#
+# Safety analysis for the product line engineering (PLE) and variant
+# management features added in v0.4.0. These hazards are specific to
+# the three-layer architecture (feature model / variant config / binding)
+# and the s-expression query/constraint language.
+#
+# The variant system introduces new failure modes beyond base rivet:
+# variant-scoped validation can miss gaps that exist in specific
+# configurations even when the union of all artifacts passes. The
+# constraint solver can be unsound (accepting invalid configs) or
+# incomplete (rejecting valid ones). Bindings can drift from both
+# the feature model and the artifacts they reference.
+#
+# Reference: STPA Handbook, §2.3.2
+# =============================================================================
+
+hazards:
+  - id: H-VAR-001
+    title: Variant-scoped validation passes but traceability gaps exist in deployed configuration
+    description: >
+      The constraint solver accepts a variant configuration and per-variant
+      validation reports PASS, but the effective artifact subset has
+      incomplete traceability chains. This is the most severe variant hazard
+      because it produces false confidence in a specific product
+      configuration's safety compliance. Causes include: unsound constraint
+      propagation missing a required feature, stale bindings referencing
+      deleted artifacts still counting as "bound," or the evaluator
+      incorrectly scoping the artifact set.
+    losses: [L-1, L-2, L-5]
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: H-VAR-002
+    title: Feature model constraints are satisfiable but do not capture real-world exclusions
+    description: >
+      The feature model's cross-tree constraints are satisfiable (the solver
+      says the model is valid), but they fail to encode actual domain
+      constraints. For example, a real regulatory constraint that "autonomous
+      driving requires ASIL D" is missing from the feature model, so
+      a variant selecting autonomous + ASIL B is accepted. The tool cannot
+      detect what domain experts forgot to encode — it can only validate
+      what's written.
+    losses: [L-1, L-5]
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: H-VAR-003
+    title: Binding model drifts from actual artifact set without detection
+    description: >
+      Artifacts are added, removed, or refactored but the binding model is
+      not updated. Features reference artifact IDs that no longer exist or
+      source globs that no longer match any files. Stale bindings create
+      phantom coverage — the variant appears to have artifacts bound to
+      features, but the bound artifacts are gone. This is especially
+      dangerous in long-lived projects where binding maintenance is
+      neglected.
+    losses: [L-1, L-2, L-4]
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: H-VAR-004
+    title: S-expression query produces incorrect results due to evaluator bug
+    description: >
+      A bug in the s-expression evaluator (predicate evaluation, quantifier
+      scoping, or Datalog compilation) causes a filter or traceability rule
+      to return wrong results. This affects all downstream consumers: CLI
+      --filter shows wrong artifacts, traceability rules pass when they
+      should fail, constraint solver accepts invalid configurations. The
+      s-expression evaluator is the single point of failure for all query
+      and validation logic.
+    losses: [L-1, L-2, L-5]
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: H-VAR-005
+    title: Variant validation omits artifacts that should be in scope
+    description: >
+      The variant-scoped artifact collection (feature → binding → artifact)
+      misses artifacts that should be included. This can happen when an
+      artifact satisfies a requirement that is bound to a feature, but the
+      artifact itself is not directly bound. The binding model captures
+      direct bindings but may miss indirect dependencies via the link graph.
+      Result: coverage appears lower than reality (optimistic: less bad)
+      or higher than reality (if the missing artifact had failing checks).
+    losses: [L-1, L-4]
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: H-VAR-006
+    title: Constraint solver non-termination or excessive runtime on large feature models
+    description: >
+      The Datalog evaluator or constraint propagation enters a long-running
+      or non-terminating computation on a feature model with many cross-tree
+      constraints. While Datalog guarantees termination in theory, a bug in
+      the semi-naive evaluator (e.g., missing fixpoint check) or pathological
+      constraint interaction could cause the solver to spin. In CI, this
+      manifests as a hung validation step.
+    losses: [L-4]
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: H-VAR-007
+    title: Different users get different validation results for the same variant
+    description: >
+      Non-determinism in the evaluator (e.g., hash map iteration order,
+      parallel evaluation races, or platform-dependent floating-point in
+      aggregation) causes different validation results on different
+      machines or runs. This breaks reproducibility — a variant that passes
+      in CI fails on a developer's machine or vice versa.
+    losses: [L-2, L-4]
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+# =============================================================================
+# System Constraints for Variant Hazards
+# =============================================================================
+
+system-constraints:
+  - id: SC-VAR-001
+    title: Per-variant validation must detect all traceability gaps within the variant's artifact subset
+    hazards: [H-VAR-001]
+    description: >
+      When validating a variant, the system must apply all traceability rules
+      to the variant's effective artifact set and report any gaps. The variant
+      validation result must be identical to what would be obtained by
+      extracting only the variant's artifacts into a standalone project and
+      running full validation.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: SC-VAR-002
+    title: Constraint solver must be sound — accepted configurations must satisfy all constraints
+    hazards: [H-VAR-002]
+    description: >
+      If the constraint solver accepts a variant configuration, every
+      cross-tree constraint in the feature model must hold for the derived
+      effective feature set. Soundness is non-negotiable; completeness
+      (rejecting valid configs) is acceptable as a conservative failure mode.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: SC-VAR-003
+    title: Binding validation must detect stale references on every validation run
+    hazards: [H-VAR-003]
+    description: >
+      Every validation run must verify that all artifact IDs in bindings
+      exist in the current artifact store and all source globs match at
+      least one file. Stale bindings must produce error-level diagnostics,
+      not warnings, because they directly affect variant scoping correctness.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: SC-VAR-004
+    title: S-expression evaluator must produce identical results to a reference implementation
+    hazards: [H-VAR-004]
+    description: >
+      The s-expression evaluator must be testable against a reference
+      implementation or formal specification. For every predicate and
+      quantifier, the evaluator's result must match a specification-defined
+      truth table. Property-based tests must verify equivalences (e.g.,
+      (not (and A B)) == (or (not A) (not B))).
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: SC-VAR-005
+    title: Variant artifact scoping must include transitive dependencies
+    hazards: [H-VAR-005]
+    description: >
+      When collecting artifacts for a variant, the system must follow
+      link graph edges to include transitively reachable artifacts, not
+      only directly bound ones. The scoping algorithm must be documented
+      and configurable (direct-only vs transitive).
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: SC-VAR-006
+    title: Datalog evaluator must enforce a fixpoint iteration bound
+    hazards: [H-VAR-006]
+    description: >
+      The semi-naive evaluator must enforce a maximum iteration count
+      (proportional to the number of facts) and abort with a clear error
+      if the fixpoint is not reached. This provides a safety net even
+      though Datalog theoretically guarantees termination.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: SC-VAR-007
+    title: Validation results must be deterministic across platforms and runs
+    hazards: [H-VAR-007]
+    description: >
+      The evaluator must use deterministic data structures (BTreeMap, sorted
+      iteration) and avoid floating-point in boolean logic. Validation
+      results for the same inputs must be byte-identical across platforms,
+      compiler versions, and repeated runs.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+# =============================================================================
+# UCAs for Variant Controller (CTRL-CORE handling variant commands)
+# =============================================================================
+
+ucas:
+  - id: UCA-VAR-001
+    title: Core engine validates variant without loading binding model
+    controller: CTRL-CORE
+    control-action: CA-CORE-1
+    uca-type: not-providing
+    context: >
+      User runs rivet validate --variant X, but the binding model file is
+      missing or not declared in rivet.yaml.
+    hazards: [H-VAR-001]
+    rationale: >
+      Without bindings, the system cannot determine which artifacts belong
+      to the variant. Validating the entire artifact set as if it were the
+      variant gives a false PASS.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: UCA-VAR-002
+    title: Core engine accepts variant configuration without running constraint solver
+    controller: CTRL-CORE
+    control-action: CA-CORE-1
+    uca-type: not-providing
+    context: >
+      User defines a variant that violates cross-tree constraints, but the
+      system skips constraint solving and proceeds to validation.
+    hazards: [H-VAR-002]
+    rationale: >
+      An invalid variant configuration (e.g., autonomous + ASIL B when the
+      model requires ASIL D for autonomous) should be rejected before
+      artifact validation begins. Skipping the solver masks configuration errors.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: UCA-VAR-003
+    title: Core engine does not re-validate bindings when artifacts change
+    controller: CTRL-CORE
+    control-action: CA-CORE-1
+    uca-type: too-late
+    context: >
+      Artifacts are modified (IDs renamed, deleted) between binding file
+      creation and validation run. salsa caches stale binding validation.
+    hazards: [H-VAR-003]
+    rationale: >
+      Binding validation must be invalidated when the artifact store changes.
+      If salsa's dependency tracking doesn't cover the binding→artifact edge,
+      stale bindings persist across incremental runs.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: UCA-VAR-004
+    title: S-expression evaluator applies wrong quantifier scope in nested expressions
+    controller: CTRL-CORE
+    control-action: CA-CORE-1
+    uca-type: wrong-action
+    context: >
+      User writes (forall (where type "req") (exists (linked-by satisfies)
+      (where type "spec"))) — evaluator binds the inner (where) to the
+      wrong scope, checking all specs instead of only linked specs.
+    hazards: [H-VAR-004]
+    rationale: >
+      Nested quantifier scoping is the most error-prone part of the evaluator.
+      Wrong scoping can make a traceability rule vacuously true (exists
+      over the whole artifact set instead of the linked subset).
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: UCA-VAR-005
+    title: CLI reports variant validation PASS without indicating that binding coverage is incomplete
+    controller: CTRL-CLI
+    control-action: CA-CLI-1
+    uca-type: not-providing
+    context: >
+      Variant validation passes all traceability rules, but 40% of the
+      variant's features have no artifact bindings. The CLI does not
+      report unbound features.
+    hazards: [H-VAR-001, H-VAR-003]
+    rationale: >
+      A variant that "passes" but has many unbound features is misleadingly
+      reported as compliant. The CLI must report binding coverage alongside
+      traceability coverage.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+# =============================================================================
+# Controller Constraints for Variant UCAs
+# =============================================================================
+
+controller-constraints:
+  - id: CC-VAR-001
+    title: validate --variant must require binding model presence
+    controller: CTRL-CORE
+    constraint: >
+      The validation engine must emit an error-level diagnostic if
+      --variant is specified but no binding model is loaded. Variant
+      validation must not fall back to union validation silently.
+    ucas: [UCA-VAR-001]
+    hazards: [H-VAR-001]
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: CC-VAR-002
+    title: Constraint solver must run before variant-scoped validation
+    controller: CTRL-CORE
+    constraint: >
+      The pipeline order must be: (1) parse feature model, (2) solve
+      constraints for selected variant, (3) if valid, collect bound
+      artifacts, (4) validate traceability within scope. Step 4 must
+      not execute if step 2 fails.
+    ucas: [UCA-VAR-002]
+    hazards: [H-VAR-002]
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: CC-VAR-003
+    title: Binding staleness check must precede variant scoping
+    controller: CTRL-CORE
+    constraint: >
+      Before using bindings to scope artifacts, the system must verify
+      all referenced artifact IDs exist and all source globs resolve.
+      Stale binding detection must invalidate salsa cached results.
+    ucas: [UCA-VAR-003]
+    hazards: [H-VAR-003]
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: CC-VAR-004
+    title: S-expression evaluator must have property-based tests for logical equivalences
+    controller: CTRL-CORE
+    constraint: >
+      Property-based tests (proptest) must verify: De Morgan's laws,
+      double negation elimination, implies expansion, quantifier duality,
+      and commutativity of and/or. These serve as regression detection
+      for evaluator correctness.
+    ucas: [UCA-VAR-004]
+    hazards: [H-VAR-004]
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: CC-VAR-005
+    title: CLI must report binding coverage in variant validation output
+    controller: CTRL-CLI
+    constraint: >
+      When --variant is used, the CLI output must include: (1) effective
+      feature count, (2) bound vs unbound features, (3) bound artifact
+      count, (4) per-rule traceability coverage within the variant scope.
+      Unbound features must be listed explicitly.
+    ucas: [UCA-VAR-005]
+    hazards: [H-VAR-001, H-VAR-003]
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+# =============================================================================
+# Loss Scenarios for Variant Hazards
+# =============================================================================
+
+loss-scenarios:
+  - id: LS-VAR-001
+    title: Constraint implication chain not propagated — invalid variant accepted
+    type: inadequate-control-algorithm
+    uca: UCA-VAR-002
+    hazards: [H-VAR-002]
+    scenario: >
+      The feature model defines (implies adas (or asil-b asil-c asil-d)).
+      A user creates variant selecting [autonomous, asil-a]. The constraint
+      (implies autonomous (and adas asil-d)) should reject this, but a bug
+      in implication chaining only checks direct constraints, missing the
+      transitive chain autonomous → adas → asil-b+. The variant is accepted,
+      and validation runs on an artifact set missing ASIL-D-specific safety
+      requirements.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: LS-VAR-002
+    title: Binding references deleted artifact — phantom coverage
+    type: inadequate-process-model
+    uca: UCA-VAR-003
+    hazards: [H-VAR-003]
+    scenario: >
+      Feature "pedestrian-detection" binds to [REQ-042, REQ-043, SPEC-021].
+      During a refactoring, SPEC-021 is deleted and replaced by SPEC-025.
+      The binding file is not updated. Variant validation counts SPEC-021
+      as bound (it's in the binding) but the artifact doesn't exist, so
+      no traceability check runs on it. The feature appears fully covered
+      when it actually has a gap. This is detected only if binding validation
+      checks artifact existence before scoping.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: LS-VAR-003
+    title: Nested quantifier scope error makes traceability rule vacuously true
+    type: inadequate-control-algorithm
+    uca: UCA-VAR-004
+    hazards: [H-VAR-004]
+    scenario: >
+      A traceability rule (forall (where type "requirement") (exists
+      (linked-by satisfies) (where type "specification"))) should check
+      that each requirement has a satisfies link to some specification.
+      A scoping bug evaluates the inner (exists) against ALL specifications
+      in the store rather than only those linked from the current requirement.
+      Since at least one specification exists in any real project, the rule
+      passes vacuously for every requirement, even orphaned ones.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: LS-VAR-004
+    title: --all-variants passes each variant individually but misses cross-variant gap
+    type: inadequate-control-algorithm
+    uca: UCA-VAR-005
+    hazards: [H-VAR-001, H-VAR-005]
+    scenario: >
+      Each variant passes validation independently. However, a shared
+      component (bound to multiple features across variants) has a
+      traceability gap that only manifests when two specific features
+      are combined in the same variant. No defined variant includes both
+      features, so the gap is never checked. This is a limitation of
+      variant-based validation — it only checks defined configurations,
+      not all possible combinations.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z

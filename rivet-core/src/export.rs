@@ -17,6 +17,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write as _;
 
+use crate::compliance;
 use crate::coverage;
 use crate::document::{self, ArtifactInfo, DocumentStore};
 use crate::links::LinkGraph;
@@ -479,6 +480,7 @@ fn nav_bar(active: &str, _config: &ExportConfig, is_single_page: bool) -> String
         ("requirements", "Requirements", "requirements.html"),
         ("documents", "Documents", "documents.html"),
         ("stpa", "STPA", "stpa.html"),
+        ("eu-ai-act", "EU AI Act", "eu-ai-act.html"),
         ("matrix", "Matrix", "matrix.html"),
         ("coverage", "Coverage", "coverage.html"),
         ("validation", "Validation", "validation.html"),
@@ -1644,6 +1646,141 @@ pub fn render_graph(store: &Store, graph: &LinkGraph, config: &ExportConfig) -> 
     out
 }
 
+/// Render the EU AI Act Annex IV compliance section (no HTML wrapper).
+fn render_section_eu_ai_act(store: &Store, schema: &Schema) -> String {
+    let report = compliance::compute_compliance(store, schema);
+
+    if !report.schema_loaded {
+        return "<h1>EU AI Act Compliance</h1>\n\
+                <p class=\"meta\">The EU AI Act schema is not loaded for this project. \
+                Add <code>eu-ai-act</code> to your <code>rivet.yaml</code> schemas list \
+                to enable the Annex IV compliance dashboard.</p>\n"
+            .to_string();
+    }
+
+    let mut out = String::from("<h1>EU AI Act Compliance</h1>\n");
+
+    // ── Overall stats ──────────────────────────────────────────────
+    let complete = report
+        .sections
+        .iter()
+        .filter(|s| s.coverage_pct >= 100.0)
+        .count();
+    writeln!(
+        out,
+        "<p>Overall compliance: <strong>{:.1}%</strong> &mdash; \
+         {complete}/{total} sections complete &mdash; \
+         {artifacts} artifact(s) total</p>",
+        report.overall_pct,
+        total = report.sections.len(),
+        artifacts = report.total_artifacts,
+    )
+    .unwrap();
+
+    // ── Per-section table ──────────────────────────────────────────
+    out.push_str(
+        "<table>\n<thead><tr>\
+         <th>Section</th>\
+         <th>Reference</th>\
+         <th>Required Types</th>\
+         <th>Covered</th>\
+         <th>Coverage</th>\
+         </tr></thead>\n<tbody>\n",
+    );
+
+    for section in &report.sections {
+        let types_list: String = section
+            .required_types
+            .iter()
+            .map(|t| format!("<code>{}</code>", html_escape(t)))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let covered_str = format!(
+            "{}/{}",
+            section.covered_types.len(),
+            section.required_types.len()
+        );
+
+        let pct_class = if section.coverage_pct >= 100.0 {
+            "badge-approved"
+        } else if section.coverage_pct >= 50.0 {
+            "badge-draft"
+        } else {
+            "badge-obsolete"
+        };
+
+        writeln!(
+            out,
+            "<tr>\
+             <td><strong>{title}</strong></td>\
+             <td>{reference}</td>\
+             <td>{types_list}</td>\
+             <td>{covered_str}</td>\
+             <td><span class=\"badge {pct_class}\">{pct:.0}%</span></td>\
+             </tr>",
+            title = html_escape(&section.title),
+            reference = html_escape(&section.reference),
+            pct = section.coverage_pct,
+        )
+        .unwrap();
+    }
+
+    out.push_str("</tbody>\n</table>\n");
+
+    // ── Missing types ──────────────────────────────────────────────
+    let has_missing = report.sections.iter().any(|s| !s.missing_types.is_empty());
+    if has_missing {
+        out.push_str("<h2>Missing Artifact Types</h2>\n");
+        out.push_str("<ul>\n");
+        for section in &report.sections {
+            for missing in &section.missing_types {
+                writeln!(
+                    out,
+                    "<li><strong>{section}</strong>: <code>{typ}</code></li>",
+                    section = html_escape(&section.title),
+                    typ = html_escape(missing),
+                )
+                .unwrap();
+            }
+        }
+        out.push_str("</ul>\n");
+    }
+
+    // ── Artifact inventory ─────────────────────────────────────────
+    if report.total_artifacts > 0 {
+        out.push_str("<h2>Artifact Inventory</h2>\n");
+        out.push_str(
+            "<table>\n<thead><tr>\
+             <th>Type</th>\
+             <th>Count</th>\
+             <th>Artifacts</th>\
+             </tr></thead>\n<tbody>\n",
+        );
+        for typ in compliance::EU_AI_ACT_TYPES {
+            let count = store.count_by_type(typ);
+            if count == 0 {
+                continue;
+            }
+            let ids: Vec<String> = store
+                .by_type(typ)
+                .iter()
+                .map(|id| format!("<code>{}</code>", html_escape(id)))
+                .collect();
+            writeln!(
+                out,
+                "<tr><td><code>{}</code></td><td>{count}</td><td>{}</td></tr>",
+                html_escape(typ),
+                ids.join(", "),
+            )
+            .unwrap();
+        }
+        out.push_str("</tbody>\n</table>\n");
+    }
+
+    out
+}
+
 /// Render the graph section content (no HTML wrapper).
 fn render_section_graph(store: &Store, link_graph: &LinkGraph) -> String {
     use etch::layout::{EdgeInfo, LayoutOptions, NodeInfo};
@@ -2352,6 +2489,11 @@ pub fn render_single_page(
     out.push_str(&render_section_stpa(store, graph));
     out.push_str("</section>\n<hr>\n");
 
+    // EU AI Act section
+    out.push_str("<section id=\"eu-ai-act\">\n");
+    out.push_str(&render_section_eu_ai_act(store, schema));
+    out.push_str("</section>\n<hr>\n");
+
     // Matrix section
     out.push_str("<section id=\"matrix\">\n");
     out.push_str(&render_section_matrix(store, graph));
@@ -3042,8 +3184,19 @@ mod tests {
         assert!(html.contains("id=\"matrix\""));
         assert!(html.contains("id=\"coverage\""));
         assert!(html.contains("id=\"validation\""));
+        assert!(html.contains("id=\"eu-ai-act\""));
         assert!(html.contains("SingleTest"));
         assert!(html.contains("Generated by Rivet"));
+    }
+
+    // rivet: verifies REQ-035
+    #[test]
+    fn eu_ai_act_section_not_loaded() {
+        let (store, schema, _graph, _) = test_fixtures();
+        // test_fixtures uses an empty-ish schema, so EU AI Act should NOT be loaded
+        let html = render_section_eu_ai_act(&store, &schema);
+        assert!(html.contains("EU AI Act Compliance"));
+        assert!(html.contains("not loaded"));
     }
 
     // rivet: verifies REQ-035
@@ -3432,6 +3585,8 @@ mod tests {
         assert!(nav.contains("graph.html"), "nav missing graph link");
         assert!(nav.contains(">STPA<"), "nav missing STPA label");
         assert!(nav.contains(">Graph<"), "nav missing Graph label");
+        assert!(nav.contains("eu-ai-act.html"), "nav missing eu-ai-act link");
+        assert!(nav.contains(">EU AI Act<"), "nav missing EU AI Act label");
     }
 
     // rivet: verifies REQ-035

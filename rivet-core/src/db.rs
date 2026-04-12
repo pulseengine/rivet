@@ -364,6 +364,57 @@ pub fn compute_coverage_tracked(
     coverage::compute_coverage(&store, &schema, &graph)
 }
 
+// ── S-expression filter support ────────────────────────────────────────
+
+/// A filter expression tracked as a salsa input.
+///
+/// Changing the filter source triggers re-parsing and re-evaluation of
+/// the filter against all artifacts.
+#[salsa::input]
+pub struct FilterInput {
+    pub source: String,
+}
+
+/// Parse a filter expression string into a typed AST.
+///
+/// Cached by salsa — the same filter string is only parsed once until the
+/// input changes.
+#[salsa::tracked]
+pub fn parse_filter_expr(
+    db: &dyn salsa::Database,
+    filter: FilterInput,
+) -> Option<crate::sexpr_eval::Expr> {
+    let source = filter.source(db);
+    if source.is_empty() {
+        return None;
+    }
+    crate::sexpr_eval::parse_filter(&source).ok()
+}
+
+/// Build a filtered list of artifact IDs matching a filter expression.
+///
+/// Returns artifact IDs rather than a Store to satisfy salsa's PartialEq
+/// requirement on tracked return types.
+#[salsa::tracked]
+pub fn filter_artifact_ids(
+    db: &dyn salsa::Database,
+    source_set: SourceFileSet,
+    schema_set: SchemaInputSet,
+    filter: FilterInput,
+) -> Vec<String> {
+    let expr = match parse_filter_expr(db, filter) {
+        Some(e) => e,
+        None => return Vec::new(), // no filter = empty (caller uses full store)
+    };
+    let store = build_store(db, source_set, schema_set);
+    let graph = build_link_graph(db, source_set, schema_set);
+    store
+        .iter()
+        .filter(|a| crate::sexpr_eval::matches_filter(&expr, a, &graph))
+        .map(|a| a.id.clone())
+        .collect()
+}
+
 // ── Internal helpers (non-tracked) ──────────────────────────────────────
 
 /// Build the full Store + Schema + LinkGraph pipeline from salsa inputs.

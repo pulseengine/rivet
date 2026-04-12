@@ -1,0 +1,35 @@
+# Test fixture: AADL components from a simulated spar external project.
+# Used to verify cross-repo artifact sync and link resolution.
+artifacts:
+  - id: SPAR-SYS-001
+    type: aadl-component
+    title: Top-level system component
+    status: approved
+    category: system
+    aadl-package: spar_test
+    tags: [aadl, system]
+
+  - id: SPAR-PROC-001
+    type: aadl-component
+    title: Main processing thread
+    status: approved
+    category: process
+    aadl-package: spar_test
+    links:
+      - type: contains
+        target: SPAR-THR-001
+    tags: [aadl, process]
+
+  - id: SPAR-THR-001
+    type: aadl-component
+    title: Worker thread
+    status: draft
+    category: thread
+    aadl-package: spar_test
+    tags: [aadl, thread]
+
+  - id: SPAR-REQ-001
+    type: requirement
+    title: Spar shall parse AADL v2.2 models
+    status: approved
+    tags: [parsing]

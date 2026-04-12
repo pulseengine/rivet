@@ -150,7 +150,7 @@ fn parse_result(result: &CallToolResult) -> Value {
 // ── Tests ───────────────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn test_tools_list_returns_all_10_tools() {
+async fn test_tools_list_returns_all_15_tools() {
     let tmp = tempfile::tempdir().unwrap();
     create_test_project(tmp.path());
 
@@ -170,6 +170,11 @@ async fn test_tools_list_returns_all_10_tools() {
         "rivet_embed",
         "rivet_snapshot_capture",
         "rivet_add",
+        "rivet_query",
+        "rivet_modify",
+        "rivet_link",
+        "rivet_unlink",
+        "rivet_remove",
         "rivet_reload",
     ];
 

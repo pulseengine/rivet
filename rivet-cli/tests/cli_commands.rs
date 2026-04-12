@@ -49,6 +49,27 @@ fn docs_list_topics() {
     );
 }
 
+/// `rivet docs --list` explicitly lists all available topics.
+#[test]
+fn docs_list_flag() {
+    let output = Command::new(rivet_bin())
+        .args(["docs", "--list"])
+        .output()
+        .expect("failed to execute rivet docs --list");
+
+    assert!(output.status.success(), "rivet docs --list must exit 0");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("artifact-format"),
+        "topic list must include 'artifact-format', got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("rivet-yaml"),
+        "topic list must include 'rivet-yaml', got:\n{stdout}"
+    );
+}
+
 /// `rivet docs artifact-format` shows the topic content.
 #[test]
 fn docs_show_topic() {
@@ -877,4 +898,427 @@ fn get_nonexistent_returns_error() {
         stderr.contains("not found"),
         "stderr must mention 'not found'. Got:\n{stderr}"
     );
+}
+
+/// `rivet get REQ-001 --format yaml` produces YAML output.
+#[test]
+fn get_yaml_produces_valid_output() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "get",
+            "REQ-001",
+            "--format",
+            "yaml",
+        ])
+        .output()
+        .expect("failed to execute rivet get REQ-001 --format yaml");
+
+    assert!(
+        output.status.success(),
+        "rivet get REQ-001 --format yaml must exit 0. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("REQ-001"),
+        "YAML output must contain artifact ID. Got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("requirement"),
+        "YAML output must contain artifact type. Got:\n{stdout}"
+    );
+}
+
+// ── rivet coverage ─────────────────────────────────────────────────────
+
+/// `rivet coverage --format json` produces valid JSON with overall and rules.
+#[test]
+fn coverage_json() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "coverage",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("failed to execute rivet coverage --format json");
+
+    assert!(
+        output.status.success(),
+        "rivet coverage --format json must exit 0. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("coverage JSON must be valid");
+
+    assert!(
+        parsed.get("overall").is_some(),
+        "coverage JSON must contain 'overall'"
+    );
+    assert!(
+        parsed.get("rules").and_then(|v| v.as_array()).is_some(),
+        "coverage JSON must contain 'rules' array"
+    );
+}
+
+// ── rivet matrix ───────────────────────────────────────────────────────
+
+/// `rivet matrix --format json` produces valid JSON with matrix data.
+#[test]
+fn matrix_json() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "matrix",
+            "--from",
+            "requirement",
+            "--to",
+            "feature",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("failed to execute rivet matrix --format json");
+
+    assert!(
+        output.status.success(),
+        "rivet matrix --format json must exit 0. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("matrix JSON must be valid");
+
+    assert_eq!(
+        parsed.get("command").and_then(|v| v.as_str()),
+        Some("matrix"),
+    );
+    assert!(
+        parsed.get("rows").and_then(|v| v.as_array()).is_some(),
+        "matrix JSON must contain 'rows' array"
+    );
+    assert!(
+        parsed.get("source_type").and_then(|v| v.as_str()).is_some(),
+        "matrix JSON must contain 'source_type'"
+    );
+    assert!(
+        parsed.get("target_type").and_then(|v| v.as_str()).is_some(),
+        "matrix JSON must contain 'target_type'"
+    );
+}
+
+// ── rivet next-id ──────────────────────────────────────────────────────
+
+/// `rivet next-id --type requirement --format json` produces valid JSON.
+#[test]
+fn next_id_json() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "next-id",
+            "--type",
+            "requirement",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("failed to execute rivet next-id --format json");
+
+    assert!(
+        output.status.success(),
+        "rivet next-id --format json must exit 0. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("next-id JSON must be valid");
+
+    assert!(
+        parsed.get("next_id").and_then(|v| v.as_str()).is_some(),
+        "next-id JSON must contain 'next_id'"
+    );
+    assert!(
+        parsed.get("prefix").and_then(|v| v.as_str()).is_some(),
+        "next-id JSON must contain 'prefix'"
+    );
+}
+
+// ── rivet schema subcommands ───────────────────────────────────────────
+
+/// `rivet schema show requirement --format json` produces valid JSON.
+#[test]
+fn schema_show_json() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "schema",
+            "show",
+            "requirement",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("failed to execute rivet schema show --format json");
+
+    assert!(
+        output.status.success(),
+        "rivet schema show --format json must exit 0. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("schema show JSON must be valid");
+
+    assert_eq!(
+        parsed.get("command").and_then(|v| v.as_str()),
+        Some("schema-show"),
+    );
+    assert!(
+        parsed.get("artifact_type").is_some(),
+        "schema show JSON must contain 'artifact_type'"
+    );
+}
+
+/// `rivet schema links --format json` produces valid JSON with link_types.
+#[test]
+fn schema_links_json() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "schema",
+            "links",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("failed to execute rivet schema links --format json");
+
+    assert!(
+        output.status.success(),
+        "rivet schema links --format json must exit 0. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("schema links JSON must be valid");
+
+    assert_eq!(
+        parsed.get("command").and_then(|v| v.as_str()),
+        Some("schema-links"),
+    );
+    assert!(
+        parsed
+            .get("link_types")
+            .and_then(|v| v.as_array())
+            .is_some(),
+        "schema links JSON must contain 'link_types' array"
+    );
+    assert!(
+        parsed.get("count").and_then(|v| v.as_u64()).unwrap_or(0) > 0,
+        "schema links must report at least one link type"
+    );
+}
+
+/// `rivet schema rules --format json` produces valid JSON with rules.
+#[test]
+fn schema_rules_json() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "schema",
+            "rules",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("failed to execute rivet schema rules --format json");
+
+    assert!(
+        output.status.success(),
+        "rivet schema rules --format json must exit 0. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("schema rules JSON must be valid");
+
+    assert_eq!(
+        parsed.get("command").and_then(|v| v.as_str()),
+        Some("schema-rules"),
+    );
+    assert!(
+        parsed.get("rules").and_then(|v| v.as_array()).is_some(),
+        "schema rules JSON must contain 'rules' array"
+    );
+    assert!(
+        parsed.get("count").and_then(|v| v.as_u64()).unwrap_or(0) > 0,
+        "schema rules must report at least one rule"
+    );
+}
+
+/// `rivet schema info stpa --format json` produces valid JSON with schema metadata.
+#[test]
+fn schema_info_json() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "schema",
+            "info",
+            "stpa",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("failed to execute rivet schema info --format json");
+
+    assert!(
+        output.status.success(),
+        "rivet schema info --format json must exit 0. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("schema info JSON must be valid");
+
+    assert_eq!(
+        parsed.get("command").and_then(|v| v.as_str()),
+        Some("schema-info"),
+    );
+    assert_eq!(
+        parsed.get("name").and_then(|v| v.as_str()),
+        Some("stpa"),
+        "schema info must report correct schema name"
+    );
+    assert!(
+        parsed.get("version").is_some(),
+        "schema info JSON must contain 'version'"
+    );
+    assert!(
+        parsed.get("artifact_type_count").is_some(),
+        "schema info JSON must contain 'artifact_type_count'"
+    );
+}
+
+// ── JSON validity sweep ────────────────────────────────────────────────
+
+/// Comprehensive sweep: every command that accepts `--format json` must
+/// produce output that parses as valid JSON on stdout.
+#[test]
+fn all_json_outputs_are_valid() {
+    let project = project_root();
+    let p = project.to_str().unwrap();
+
+    // (description, args)
+    let cases: Vec<(&str, Vec<&str>)> = vec![
+        (
+            "validate",
+            vec!["--project", p, "validate", "--format", "json"],
+        ),
+        ("list", vec!["--project", p, "list", "--format", "json"]),
+        ("stats", vec!["--project", p, "stats", "--format", "json"]),
+        (
+            "coverage",
+            vec!["--project", p, "coverage", "--format", "json"],
+        ),
+        (
+            "get",
+            vec!["--project", p, "get", "REQ-001", "--format", "json"],
+        ),
+        (
+            "schema list",
+            vec!["--project", p, "schema", "list", "--format", "json"],
+        ),
+        (
+            "schema show",
+            vec![
+                "--project",
+                p,
+                "schema",
+                "show",
+                "requirement",
+                "--format",
+                "json",
+            ],
+        ),
+        (
+            "schema links",
+            vec!["--project", p, "schema", "links", "--format", "json"],
+        ),
+        (
+            "schema rules",
+            vec!["--project", p, "schema", "rules", "--format", "json"],
+        ),
+        (
+            "schema info",
+            vec!["--project", p, "schema", "info", "stpa", "--format", "json"],
+        ),
+        (
+            "matrix",
+            vec![
+                "--project",
+                p,
+                "matrix",
+                "--from",
+                "requirement",
+                "--to",
+                "feature",
+                "--format",
+                "json",
+            ],
+        ),
+        (
+            "next-id",
+            vec![
+                "--project",
+                p,
+                "next-id",
+                "--type",
+                "requirement",
+                "--format",
+                "json",
+            ],
+        ),
+        ("docs", vec!["docs", "--format", "json"]),
+        (
+            "docs grep",
+            vec!["docs", "--grep", "verification", "--format", "json"],
+        ),
+    ];
+
+    for (label, args) in cases {
+        let output = Command::new(rivet_bin())
+            .args(&args)
+            .output()
+            .unwrap_or_else(|e| panic!("failed to execute rivet {label}: {e}"));
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+
+        let parsed: Result<serde_json::Value, _> = serde_json::from_str(&stdout);
+        assert!(
+            parsed.is_ok(),
+            "rivet {label} --format json must produce valid JSON.\n\
+             stdout: {stdout}\nstderr: {stderr}\nerror: {}",
+            parsed.unwrap_err()
+        );
+    }
 }

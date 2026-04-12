@@ -9,6 +9,11 @@ use axum::routing::{get, post};
 use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
 
+use crate::mcp::RivetServer;
+use rmcp::transport::streamable_http_server::{
+    StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
+};
+
 /// HTMX bundled inline — no CDN dependency, works offline.
 const HTMX_JS: &str = include_str!("../../assets/htmx.min.js");
 
@@ -693,6 +698,40 @@ pub async fn run(app_state: AppState, bind: String, watch: bool) -> Result<()> {
 
     let state: SharedState = Arc::new(RwLock::new(app_state));
 
+    // ── MCP over Streamable HTTP ───────────────────────────────────────
+    //
+    // Creates an MCP endpoint at /mcp that reuses the same project data as
+    // the dashboard.  Each MCP session snapshots the current store/schema/graph
+    // so that a dashboard reload is picked up by new sessions automatically.
+    let mcp_state = state.clone();
+    let mcp_project_path = project_path_for_watch.clone();
+    let mcp_config = StreamableHttpServerConfig::default()
+        .with_stateful_mode(false)
+        .with_json_response(true);
+    let mcp_service: StreamableHttpService<RivetServer, LocalSessionManager> =
+        StreamableHttpService::new(
+            move || {
+                // Snapshot the dashboard state into a fresh RivetServer.
+                // `try_read()` avoids blocking the tokio runtime if a reload
+                // is in progress — in that (rare) case we return an error and
+                // the MCP client retries.
+                let guard = mcp_state.try_read().map_err(|_| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::WouldBlock,
+                        "project is reloading, retry shortly",
+                    )
+                })?;
+                Ok(RivetServer::from_shared(
+                    mcp_project_path.clone(),
+                    guard.store.clone(),
+                    guard.schema.clone(),
+                    guard.graph.clone(),
+                ))
+            },
+            Arc::new(LocalSessionManager::default()),
+            mcp_config,
+        );
+
     let app = Router::new()
         .route("/", get(views::index))
         .route("/artifacts", get(views::artifacts_list))
@@ -747,6 +786,7 @@ pub async fn run(app_state: AppState, bind: String, watch: bool) -> Result<()> {
         .route("/assets/htmx.js", get(htmx_asset))
         .route("/assets/mermaid.js", get(mermaid_asset))
         .route("/reload", post(reload_handler))
+        .nest_service("/mcp", mcp_service)
         .with_state(state.clone())
         .layer(axum::middleware::from_fn_with_state(state.clone(), wrap_full_page))
         .layer(axum::middleware::map_response(
@@ -772,6 +812,7 @@ pub async fn run(app_state: AppState, bind: String, watch: bool) -> Result<()> {
     }
 
     eprintln!("rivet dashboard listening on http://{bind}:{actual_port}");
+    eprintln!("  MCP endpoint: http://{bind}:{actual_port}/mcp");
 
     if watch {
         spawn_file_watcher(
@@ -840,6 +881,7 @@ async fn wrap_full_page(
         && !is_htmx
         && (path != "/" || is_print || is_embed)
         && !path.starts_with("/api/")
+        && !path.starts_with("/mcp")
         && !path.starts_with("/oembed")
         && !path.starts_with("/assets/")
         && !path.starts_with("/wasm/")

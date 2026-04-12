@@ -6,12 +6,14 @@ artifacts:
     description: >
       All lifecycle artifacts are stored as YAML files in git repositories.
       No database or external service required for core operation.
-    tags: [core]
+    tags: [core, hook-test]
     fields:
       priority: must
       category: functional
       baseline: v0.1.0
-
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
   - id: REQ-002
     type: requirement
     title: STPA artifact support
@@ -25,6 +27,9 @@ artifacts:
       priority: must
       category: functional
       baseline: v0.1.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: REQ-003
     type: requirement
@@ -39,6 +44,9 @@ artifacts:
       priority: must
       category: functional
       baseline: v0.1.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: REQ-004
     type: requirement
@@ -61,6 +69,49 @@ artifacts:
         target: SC-3
       - type: satisfies
         target: SC-15
+      - type: constraint-satisfies
+        target: SC-1
+      - type: constraint-satisfies
+        target: SC-3
+      - type: constraint-satisfies
+        target: SC-15
+      - type: constraint-satisfies
+        target: SC-LSP-002
+      - type: constraint-satisfies
+        target: SC-LSP-004
+      - type: constraint-satisfies
+        target: SC-IMPL-001
+      - type: constraint-satisfies
+        target: SC-IMPL-004
+      - type: constraint-satisfies
+        target: SC-IMPL-006
+      - type: constraint-satisfies
+        target: CC-C-1
+      - type: constraint-satisfies
+        target: CC-C-2
+      - type: constraint-satisfies
+        target: CC-C-3
+      - type: constraint-satisfies
+        target: CC-C-4
+      - type: constraint-satisfies
+        target: CC-C-5
+      - type: constraint-satisfies
+        target: CC-C-6
+      - type: constraint-satisfies
+        target: CC-C-7
+      - type: constraint-satisfies
+        target: CC-C-8
+      - type: constraint-satisfies
+        target: CC-C-9
+      - type: constraint-satisfies
+        target: CC-C-24
+      - type: constraint-satisfies
+        target: CC-C-25
+      - type: constraint-satisfies
+        target: CC-D-3
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
   - id: REQ-005
     type: requirement
     title: ReqIF 1.2 import/export
@@ -80,6 +131,27 @@ artifacts:
         target: SC-4
       - type: satisfies
         target: SC-9
+      - type: constraint-satisfies
+        target: SC-4
+      - type: constraint-satisfies
+        target: SC-9
+      - type: constraint-satisfies
+        target: CC-Q-1
+      - type: constraint-satisfies
+        target: CC-Q-2
+      - type: constraint-satisfies
+        target: CC-Q-3
+      - type: constraint-satisfies
+        target: CC-Q-4
+      - type: constraint-satisfies
+        target: CC-Q-5
+      - type: constraint-satisfies
+        target: CC-Q-6
+      - type: constraint-satisfies
+        target: CC-Q-7
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
   - id: REQ-006
     type: requirement
     title: OSLC-based tool synchronization
@@ -99,6 +171,33 @@ artifacts:
         target: SC-5
       - type: satisfies
         target: SC-8
+      - type: constraint-satisfies
+        target: SC-5
+      - type: constraint-satisfies
+        target: SC-8
+      - type: constraint-satisfies
+        target: CC-O-1
+      - type: constraint-satisfies
+        target: CC-O-2
+      - type: constraint-satisfies
+        target: CC-O-3
+      - type: constraint-satisfies
+        target: CC-O-4
+      - type: constraint-satisfies
+        target: CC-O-5
+      - type: constraint-satisfies
+        target: CC-O-6
+      - type: constraint-satisfies
+        target: CC-O-7
+      - type: constraint-satisfies
+        target: CC-O-8
+      - type: constraint-satisfies
+        target: CC-O-9
+      - type: constraint-satisfies
+        target: CC-O-10
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
   - id: REQ-007
     type: requirement
     title: CLI and serve pattern
@@ -115,6 +214,39 @@ artifacts:
     links:
       - type: satisfies
         target: SC-18
+      - type: constraint-satisfies
+        target: SC-18
+      - type: constraint-satisfies
+        target: SC-22
+      - type: constraint-satisfies
+        target: SC-IMPL-003
+      - type: constraint-satisfies
+        target: CC-L-1
+      - type: constraint-satisfies
+        target: CC-L-2
+      - type: constraint-satisfies
+        target: CC-L-3
+      - type: constraint-satisfies
+        target: CC-L-4
+      - type: constraint-satisfies
+        target: CC-L-5
+      - type: constraint-satisfies
+        target: CC-D-1
+      - type: constraint-satisfies
+        target: CC-D-2
+      - type: constraint-satisfies
+        target: CC-D-4
+      - type: constraint-satisfies
+        target: CC-C-27
+      - type: constraint-satisfies
+        target: CC-M-1
+      - type: constraint-satisfies
+        target: CC-M-2
+      - type: constraint-satisfies
+        target: CC-M-3
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: REQ-008
     type: requirement
@@ -131,6 +263,17 @@ artifacts:
     links:
       - type: satisfies
         target: SC-16
+      - type: constraint-satisfies
+        target: SC-16
+      - type: constraint-satisfies
+        target: CC-C-21
+      - type: constraint-satisfies
+        target: CC-C-22
+      - type: constraint-satisfies
+        target: CC-C-23
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: REQ-009
     type: requirement
@@ -149,6 +292,11 @@ artifacts:
     links:
       - type: satisfies
         target: SC-6
+      - type: constraint-satisfies
+        target: SC-6
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
   - id: REQ-010
     type: requirement
     title: Schema-driven validation
@@ -166,6 +314,11 @@ artifacts:
     links:
       - type: satisfies
         target: SC-1
+      - type: constraint-satisfies
+        target: SC-IMPL-005
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
   - id: REQ-011
     type: requirement
     title: Rust edition 2024 with MSRV 1.85
@@ -177,6 +330,9 @@ artifacts:
       priority: must
       category: constraint
       baseline: v0.1.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: REQ-012
     type: requirement
@@ -191,6 +347,18 @@ artifacts:
       priority: must
       category: non-functional
       baseline: v0.1.0
+    links:
+      - type: constraint-satisfies
+        target: CC-I-1
+      - type: constraint-satisfies
+        target: CC-I-2
+      - type: constraint-satisfies
+        target: CC-I-3
+      - type: constraint-satisfies
+        target: CC-I-4
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: REQ-013
     type: requirement
@@ -205,6 +373,9 @@ artifacts:
       priority: must
       category: non-functional
       baseline: v0.1.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: REQ-014
     type: requirement
@@ -220,6 +391,9 @@ artifacts:
       priority: must
       category: non-functional
       baseline: v0.1.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: REQ-015
     type: requirement
@@ -242,6 +416,11 @@ artifacts:
     links:
       - type: satisfies
         target: SC-4
+      - type: constraint-satisfies
+        target: SC-4
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
   - id: REQ-016
     type: requirement
     title: Cybersecurity schema (ISO 21434 / ASPICE SEC.1-4)
@@ -260,7 +439,11 @@ artifacts:
     links:
       - type: satisfies
         target: SC-4
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
   - id: REQ-017
+
     type: requirement
     title: Commit-to-artifact traceability
     status: approved
@@ -281,6 +464,17 @@ artifacts:
         target: SC-7
       - type: satisfies
         target: SC-17
+      - type: constraint-satisfies
+        target: SC-7
+      - type: constraint-satisfies
+        target: SC-17
+      - type: constraint-satisfies
+        target: CC-C-18
+      - type: constraint-satisfies
+        target: CC-C-19
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
   - id: REQ-018
     type: requirement
     title: Commit message validation at commit time
@@ -299,6 +493,9 @@ artifacts:
     links:
       - type: satisfies
         target: SC-7
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
   - id: REQ-019
     type: requirement
     title: Orphan commit detection
@@ -317,6 +514,9 @@ artifacts:
     links:
       - type: satisfies
         target: SC-7
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
   - id: REQ-020
     type: requirement
     title: Cross-repository artifact linking via prefixed IDs
@@ -335,6 +535,19 @@ artifacts:
         target: SC-10
       - type: satisfies
         target: SC-19
+      - type: constraint-satisfies
+        target: SC-10
+      - type: constraint-satisfies
+        target: SC-19
+      - type: constraint-satisfies
+        target: CC-C-20
+      - type: constraint-satisfies
+        target: CC-L-6
+      - type: constraint-satisfies
+        target: CC-L-7
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
   - id: REQ-021
     type: requirement
     title: Distributed baselining via convention tags
@@ -351,6 +564,9 @@ artifacts:
     links:
       - type: satisfies
         target: SC-10
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
   - id: REQ-022
     type: requirement
     title: Single-binary WASM asset embedding
@@ -363,6 +579,9 @@ artifacts:
       priority: should
       category: functional
       baseline: v0.2.0-dev
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: REQ-023
     type: requirement
@@ -380,11 +599,18 @@ artifacts:
     links:
       - type: satisfies
         target: SC-12
+      - type: constraint-satisfies
+        target: SC-12
+      - type: constraint-satisfies
+        target: CC-C-12
     fields:
       priority: should
       category: functional
       upstream-ref: "eclipse-score/docs-as-code#180"
       baseline: v0.2.0-dev
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: REQ-024
     type: requirement
@@ -405,6 +631,11 @@ artifacts:
     links:
       - type: satisfies
         target: SC-3
+      - type: constraint-satisfies
+        target: SC-IMPL-002
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
   - id: REQ-025
     type: requirement
     title: sphinx-needs JSON import
@@ -424,6 +655,9 @@ artifacts:
     links:
       - type: satisfies
         target: SC-4
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
   - id: REQ-026
     type: requirement
     title: Test-to-requirement traceability extraction
@@ -444,7 +678,11 @@ artifacts:
     links:
       - type: satisfies
         target: SC-7
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
   - id: REQ-027
+
     type: requirement
     title: Build-system-aware cross-repo discovery
     status: approved
@@ -465,6 +703,17 @@ artifacts:
     links:
       - type: satisfies
         target: SC-10
+      - type: constraint-satisfies
+        target: SC-20
+      - type: constraint-satisfies
+        target: CC-C-15
+      - type: constraint-satisfies
+        target: CC-C-16
+      - type: constraint-satisfies
+        target: CC-C-17
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
   - id: REQ-028
     type: requirement
     title: Diagnostic-quality parsing with lossless syntax trees
@@ -479,10 +728,19 @@ artifacts:
     links:
       - type: satisfies
         target: SC-13
+      - type: constraint-satisfies
+        target: SC-13
+      - type: constraint-satisfies
+        target: SC-LSP-001
+      - type: constraint-satisfies
+        target: SC-LSP-005
     fields:
       priority: must
       category: non-functional
       baseline: v0.2.0-dev
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: REQ-029
     type: requirement
@@ -500,10 +758,33 @@ artifacts:
     links:
       - type: satisfies
         target: SC-11
+      - type: constraint-satisfies
+        target: SC-11
+      - type: constraint-satisfies
+        target: SC-21
+      - type: constraint-satisfies
+        target: SC-LSP-003
+      - type: constraint-satisfies
+        target: SC-LSP-006
+      - type: constraint-satisfies
+        target: SC-LSP-007
+      - type: constraint-satisfies
+        target: CC-C-10
+      - type: constraint-satisfies
+        target: CC-C-11
+      - type: constraint-satisfies
+        target: CC-C-13
+      - type: constraint-satisfies
+        target: CC-C-14
+      - type: constraint-satisfies
+        target: CC-C-26
     fields:
       priority: must
       category: non-functional
       baseline: v0.2.0-dev
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: REQ-031
     type: requirement
@@ -525,10 +806,15 @@ artifacts:
         target: SC-1
       - type: satisfies
         target: SC-2
+      - type: constraint-satisfies
+        target: SC-2
     fields:
       priority: must
       category: functional
       baseline: v0.2.0-dev
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: REQ-030
     type: requirement
@@ -546,10 +832,15 @@ artifacts:
     links:
       - type: satisfies
         target: SC-14
+      - type: constraint-satisfies
+        target: SC-14
     fields:
       priority: should
       category: non-functional
       baseline: v0.2.0-dev
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: REQ-032
     type: requirement
@@ -562,6 +853,9 @@ artifacts:
       category: functional
       priority: should
       baseline: v0.2.0-dev
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: REQ-033
     type: requirement
@@ -574,6 +868,9 @@ artifacts:
       category: functional
       priority: should
       baseline: v0.2.0-dev
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: REQ-034
     type: requirement
@@ -589,6 +886,9 @@ artifacts:
     links:
       - type: satisfies
         target: SC-2
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: REQ-035
     type: requirement
@@ -601,6 +901,9 @@ artifacts:
       category: functional
       priority: must
       baseline: v0.2.0-dev
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: REQ-036
     type: requirement
@@ -613,6 +916,9 @@ artifacts:
       category: functional
       priority: should
       baseline: v0.2.0-dev
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: REQ-037
     type: requirement
@@ -629,6 +935,9 @@ artifacts:
       priority: should
       category: functional
       baseline: v0.3.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: REQ-038
     type: requirement
@@ -645,6 +954,9 @@ artifacts:
       priority: could
       category: functional
       baseline: v0.3.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: REQ-040
     type: requirement
@@ -662,6 +974,9 @@ artifacts:
       priority: should
       category: functional
       baseline: v0.4.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: REQ-039
     type: requirement
@@ -679,3 +994,167 @@ artifacts:
       priority: must
       category: functional
       baseline: v0.3.0
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
+
+  - id: REQ-041
+    type: requirement
+    title: S-expression query and constraint language
+    status: draft
+    description: >
+      The system must provide a single s-expression-based language for
+      artifact filtering, traceability queries, feature model constraints,
+      and variant-scoped validation. The language must support predicates
+      over artifact fields (type, status, tags, custom fields), logical
+      connectives (and, or, not, implies, excludes), quantifiers (forall,
+      exists) over artifact sets, link traversal predicates (linked-by,
+      linked-from, reachable-from), and aggregation (count, ratio). The
+      same syntax must be usable in CLI --filter flags, schema traceability
+      rules, feature model constraints, and binding validation rules. No
+      alternative syntax or sugar — one canonical form.
+    tags: [core, query, s-expression]
+    links:
+      - type: constraint-satisfies
+        target: SC-VAR-004
+    fields:
+      priority: must
+      category: functional
+      baseline: v0.4.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: REQ-042
+    type: requirement
+    title: Feature model for product line engineering
+    status: draft
+    description: >
+      The system must support FODA-style feature models that describe the
+      logical problem space of a product line. Feature models define a
+      tree of features with group types (mandatory, optional, alternative,
+      or) and cross-tree constraints expressed as s-expressions (implies,
+      excludes, requires). Feature models are stored as YAML artifacts
+      separate from implementation artifacts, maintaining the separation
+      between logical (problem space) and implementation (solution space)
+      concerns. Feature models must be validatable independently — the
+      constraint set must be satisfiable.
+    tags: [variant, ple, feature-model]
+    fields:
+      priority: must
+      category: functional
+      baseline: v0.4.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: REQ-043
+    type: requirement
+    title: Variant configuration with constraint solving
+    status: draft
+    description: >
+      The system must support named variant configurations that select a
+      subset of features from a feature model. A constraint solver must
+      propagate implications (selecting feature A forces feature B via
+      constraints), detect conflicts (mutually exclusive selections), and
+      validate that the final feature set satisfies all cross-tree
+      constraints. Invalid configurations must produce clear diagnostics
+      identifying which constraints are violated. The solver must use
+      propositional logic (boolean SAT) at minimum, with optional
+      first-order extensions (forall/exists over feature sets) for
+      advanced constraints.
+    tags: [variant, ple, constraint-solver]
+    links:
+      - type: constraint-satisfies
+        target: SC-VAR-002
+      - type: constraint-satisfies
+        target: SC-VAR-006
+    fields:
+      priority: must
+      category: functional
+      baseline: v0.4.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: REQ-044
+    type: requirement
+    title: Feature-to-artifact binding model
+    status: draft
+    description: >
+      The system must support a binding model that maps features from the
+      logical feature model to implementation artifacts and source code
+      globs. Bindings are stored in separate YAML files, maintaining the
+      three-layer separation (feature model / variant config / binding).
+      Each feature can bind to zero or more artifact IDs and zero or more
+      source file glob patterns. Validation must detect: unbound features
+      (feature with no artifacts), unbound artifacts (artifacts not mapped
+      to any feature), and stale bindings (referencing deleted artifacts
+      or non-existent source paths).
+    tags: [variant, ple, binding]
+    links:
+      - type: constraint-satisfies
+        target: SC-VAR-003
+      - type: constraint-satisfies
+        target: SC-VAR-005
+    fields:
+      priority: must
+      category: functional
+      baseline: v0.4.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: REQ-045
+    type: requirement
+    title: Per-variant validation and coverage
+    status: draft
+    description: >
+      The system must validate traceability and coverage independently for
+      each variant configuration. Given a variant, the system derives the
+      effective feature set, collects all bound artifacts, and validates
+      that traceability chains are complete within that subset. Coverage
+      reports must be per-variant. An --all-variants mode must validate
+      every defined variant independently and report per-variant results.
+      A variant that passes validation when the union of all artifacts
+      passes must still fail if its own subset has broken traceability.
+    tags: [variant, validation, coverage]
+    links:
+      - type: constraint-satisfies
+        target: SC-VAR-001
+      - type: constraint-satisfies
+        target: SC-VAR-007
+    fields:
+      priority: must
+      category: functional
+      baseline: v0.4.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z
+
+  - id: REQ-046
+    type: requirement
+    title: Variant-scoped CLI and API commands
+    status: draft
+    description: >
+      All relevant CLI commands must accept --variant flags to scope
+      operations to a specific product configuration. This includes
+      validate, coverage, matrix, list, stats, impact, export, and the
+      dashboard API endpoints. The --variant flag composes with existing
+      --type and --status filters. rivet validate without --variant
+      validates the union (all artifacts). rivet validate --variant X
+      validates only the subset bound to variant X's features.
+    tags: [variant, cli, api]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.4.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-12T12:00:00Z

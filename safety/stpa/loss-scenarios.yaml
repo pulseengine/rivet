@@ -38,6 +38,9 @@ loss-scenarios:
       - Link resolution algorithm scopes search to per-file or per-directory
       - No integration test covers cross-source link resolution
       - Original design assumed single-source artifact stores
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: LS-C-2
     title: Coverage counts untyped links as valid traces
@@ -56,6 +59,9 @@ loss-scenarios:
       - Coverage algorithm does not filter by link type semantics
       - Schema does not enforce required link types per artifact type
       - No distinction between informational and trace links
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: LS-C-3
     title: Schema fallback accepts unknown artifact types
@@ -79,6 +85,9 @@ loss-scenarios:
       - No explicit "unknown type" rejection in the validation pipeline
       - Permissive default behavior chosen over strict validation
       - ReqIF adapter may produce types not in the schema registry
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: LS-C-4
     title: Partial source loading during incremental validation
@@ -104,6 +113,9 @@ loss-scenarios:
       - No per-source load-status tracking in the process model
       - Filesystem errors during directory traversal are logged but not fatal
       - No pre-validation check that all sources are available
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # =========================================================================
   # OSLC Client scenarios
@@ -126,6 +138,9 @@ loss-scenarios:
       - Cursor advancement is not transactional with local writes
       - No journal or write-ahead log for sync operations
       - Retry logic starts from the current cursor, not from the last committed cursor
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: LS-O-2
     title: Last-writer-wins during concurrent modification
@@ -147,6 +162,9 @@ loss-scenarios:
       - No ETag or timestamp comparison before local writes
       - No merge/diff presentation for conflicting changes
       - OSLC client assumes remote is authoritative for all fields
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: LS-O-3
     title: Phantom deletion propagates through sync
@@ -170,6 +188,9 @@ loss-scenarios:
       - TRS protocol does not distinguish deletion from archival
       - No confirmation prompt before applying remote deletions
       - No "soft delete" or quarantine mechanism for remotely-deleted artifacts
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: LS-O-4
     title: Semantic mismatch in status mapping
@@ -194,6 +215,9 @@ loss-scenarios:
       - Status mapping is hardcoded rather than configurable
       - No validation that all remote statuses have explicit mappings
       - External tool added new statuses after the mapping was created
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: LS-O-5
     title: Authentication token expiry during long sync
@@ -212,6 +236,9 @@ loss-scenarios:
       - HTTP 401 responses not distinguished from empty TRS pages
       - No token refresh mechanism during long-running operations
       - Sync completion is reported based on reaching an empty page rather than the TRS base URI
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: LS-O-6
     title: Error amplification through bidirectional sync chain
@@ -231,6 +258,9 @@ loss-scenarios:
       - No pre-push validation gate in the OSLC client
       - Outbound sync treats all local artifacts as authoritative
       - No circuit-breaker to halt sync when error rates exceed a threshold
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # =========================================================================
   # ReqIF Adapter scenarios
@@ -254,6 +284,9 @@ loss-scenarios:
       - Serde deserialization assumes grouped (non-interleaved) XML elements
       - ReqIF standard does not mandate element ordering within containers
       - Parser was tested only against ReqIF exports with grouped elements
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: LS-Q-2
     title: UUID-based identifiers lose human readability
@@ -277,6 +310,9 @@ loss-scenarios:
       - ReqIF standard allows both patterns (UUID vs. human-readable IDENTIFIER)
       - No configurable ID-source field in the adapter
       - Fixed by adding ReqIF.ForeignID lookup, but other non-standard patterns may exist
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: LS-Q-3
     title: SpecRelation targets reference missing SpecObjects
@@ -296,6 +332,9 @@ loss-scenarios:
       - ReqIF import processes files independently, not as a correlated set
       - Cross-file SpecRelation references are common in multi-module exports
       - No warning emitted for unresolvable SpecRelation targets
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # =========================================================================
   # CLI scenarios
@@ -317,6 +356,9 @@ loss-scenarios:
       - CLI writes directly to working-tree YAML files, no staging area
       - No file-locking mechanism to coordinate with editors
       - No atomic write (write-to-temp-then-rename) pattern used
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: LS-L-2
     title: Wrong adapter selected for ambiguous file format
@@ -337,6 +379,9 @@ loss-scenarios:
       - Adapter selection based on file extension rather than content sniffing
       - No explicit --adapter flag required for ambiguous formats
       - No content-type validation before adapter dispatch
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # =========================================================================
   # CI Pipeline scenarios
@@ -357,6 +402,9 @@ loss-scenarios:
       - CI path filters are manually maintained, not derived from rivet.yaml
       - No CI test that validates the path filter matches all configured sources
       - Adding a new source directory is a multi-step process with no checklist
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: LS-I-2
     title: CI caches stale artifacts across workflow runs
@@ -379,6 +427,9 @@ loss-scenarios:
       - Cache key does not include artifact file hashes
       - rivet validate may read cached intermediate state
       - No cache-busting mechanism for artifact-only changes
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # =========================================================================
   # Control-path scenarios (Type B — not tied to a specific UCA)
@@ -399,6 +450,9 @@ loss-scenarios:
       - YAML is line-based but semantically structured; git merges lines, not structure
       - Post-merge validation is not automatically triggered
       - Pre-commit hooks may not run during merge commits
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: LS-CP-2
     title: Network partition during OSLC sync corrupts local state
@@ -417,6 +471,9 @@ loss-scenarios:
       - No transactional write mechanism for bulk artifact updates
       - Partial writes are committed to the working tree immediately
       - No rollback capability for interrupted sync operations
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # =========================================================================
   # Incremental validation scenarios (UCA-C-10 through UCA-C-14)
@@ -444,6 +501,9 @@ loss-scenarios:
       - No file-system watcher to detect external file modifications
       - Salsa inputs are set once at load time, not refreshed
       - Dashboard reload may not invalidate all salsa inputs
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: LS-C-6
     title: Conditional rule evaluation uses cached field values
@@ -470,6 +530,9 @@ loss-scenarios:
       - Conditional rule query does not declare artifact fields as inputs
       - Salsa dependency tracking is opt-in per query
       - No test verifies conditional rule re-evaluation after field change
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: LS-C-7
     title: Contradictory conditional rules not detected at schema load
@@ -489,6 +552,9 @@ loss-scenarios:
       - Schema merge is purely additive (union of all rules)
       - No SAT-solver or constraint check for rule compatibility
       - Conditional rules lack a priority or override mechanism
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: LS-C-8
     title: Incremental validation diverges from full validation after rename
@@ -509,6 +575,9 @@ loss-scenarios:
       - Link resolution queries depend on the link graph, not individual files
       - Salsa does not track cross-file artifact ID dependencies
       - No periodic full-revalidation check is implemented
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: LS-C-9
     title: Schema loading races with conditional rule evaluation
@@ -529,6 +598,9 @@ loss-scenarios:
       - Schema merge is incremental (file-by-file) rather than all-at-once
       - No barrier between "all schemas loaded" and "evaluation begins"
       - Salsa query ordering is determined by demand, not explicit sequencing
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # =========================================================================
   # Parser scenarios (UCA-C-15 through UCA-C-17)
@@ -551,6 +623,9 @@ loss-scenarios:
       - Parser's function recognition list is incomplete
       - git_override is parsed separately from bazel_dep with no linkage
       - No test covers the override-applies-to-dep scenario
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: LS-C-11
     title: Parser silently skips load() statement containing dependency
@@ -569,6 +644,9 @@ loss-scenarios:
       - Starlark load() support is not implemented
       - Parser treats unrecognized lines as comments
       - No diagnostic emitted for skipped lines
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: LS-C-12
     title: Parser swaps keyword argument name and value
@@ -586,6 +664,9 @@ loss-scenarios:
       - Parser uses positional extraction rather than keyword matching
       - No unit test for non-standard argument ordering
       - CST construction assumes a fixed parameter order
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # =========================================================================
   # New UCA scenarios (STPA-Sec extension)
@@ -609,6 +690,9 @@ loss-scenarios:
       - Multiple rendering paths with inconsistent escaping
       - serve.rs generates HTML via string formatting, not a template engine
       - No Content-Security-Policy header to mitigate XSS
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: LS-C-13
     title: WASM adapter returns fabricated artifacts
@@ -633,6 +717,9 @@ loss-scenarios:
       - WASM adapter output is trusted without independent verification
       - No artifact-count or hash-based integrity check on adapter output
       - Binary WASM components cannot be source-reviewed by users
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: LS-C-14
     title: Commit trailer false positive from non-artifact ID
@@ -652,6 +739,9 @@ loss-scenarios:
       - is_artifact_id() uses an overly broad pattern
       - No validation against the actual artifact store during extraction
       - Standard identifiers (ISO numbers, MISRA rules) match the pattern
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: LS-L-3
     title: Git clone executes malicious post-checkout hook
@@ -672,6 +762,9 @@ loss-scenarios:
       - git clone enables hooks by default
       - No URL allowlist or domain restriction for external repos
       - sync command does not use --config core.hooksPath=/dev/null
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: LS-L-4
     title: Salsa memoization returns cached diagnostics from a previous file version
@@ -696,6 +789,9 @@ loss-scenarios:
       - didSave handler does not re-read file and update salsa input
       - Salsa input queries are set once at file-open time
       - No test verifies that diagnostics change after a file save
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: LS-L-5
     title: VS Code extension postMessage handler accepts navigation commands from any origin
@@ -716,6 +812,9 @@ loss-scenarios:
       - WebView message handler does not validate event.origin
       - No Content-Security-Policy restricting frame-ancestors
       - VS Code extension API allows cross-extension WebView messaging
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: LS-C-15
     title: Lifecycle check misses cybersecurity downstream requirements
@@ -741,6 +840,9 @@ loss-scenarios:
       - expected_downstream() is hardcoded, not derived from schema rules
       - No test covers lifecycle checks with non-dev schemas
       - The module was written for the dev schema and not generalized
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   # =========================================================================
   # MCP Server scenarios
@@ -764,3 +866,6 @@ loss-scenarios:
       - MCP server caches project state across tool calls without invalidation
       - No file-change detection between MCP invocations
       - AI agent trusts MCP results without independent verification
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z

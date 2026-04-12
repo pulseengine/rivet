@@ -10,6 +10,9 @@ losses:
       The LSP fails to report a validation error, and the user commits
       artifacts that violate schema rules. In safety-critical contexts
       (ASPICE, EU AI Act), this means non-compliant deliverables.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: L-LSP-002
     title: User wastes time fixing false positive diagnostics
@@ -17,6 +20,9 @@ losses:
       The LSP reports an error that doesn't actually exist. The user
       (or AI agent) spends effort fixing a non-issue, or worse, introduces
       a real bug while "fixing" the false positive.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: L-LSP-003
     title: AI agent enters infinite retry loop on wrong diagnostic
@@ -24,6 +30,9 @@ losses:
       An AI coding agent receives a diagnostic from the LSP, attempts
       a fix, but the diagnostic persists because it was either wrong or
       the fix approach was incorrect. The agent retries indefinitely.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
 hazards:
   - id: H-LSP-001
@@ -35,6 +44,9 @@ hazards:
     links:
       - type: leads-to-loss
         target: L-LSP-001
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-LSP-002
     title: LSP reports errors that don't exist (false positive)
@@ -47,6 +59,9 @@ hazards:
         target: L-LSP-002
       - type: leads-to-loss
         target: L-LSP-003
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-LSP-003
     title: LSP diagnostic points to wrong location or file
@@ -56,6 +71,9 @@ hazards:
     links:
       - type: leads-to-loss
         target: L-LSP-002
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: H-LSP-004
     title: LSP provides misleading fix suggestion
@@ -66,6 +84,9 @@ hazards:
     links:
       - type: leads-to-loss
         target: L-LSP-003
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
 system-constraints:
   - id: SC-LSP-001
@@ -77,6 +98,9 @@ system-constraints:
     links:
       - type: prevents
         target: H-LSP-001
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SC-LSP-002
     title: All validation phases in CLI MUST also run in LSP
@@ -87,6 +111,9 @@ system-constraints:
     links:
       - type: prevents
         target: H-LSP-001
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SC-LSP-003
     title: LSP must report diagnostics at the correct byte range from the rowan CST
@@ -97,6 +124,9 @@ system-constraints:
     links:
       - type: prevents
         target: H-LSP-003
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SC-LSP-004
     title: Schema changes MUST invalidate cached diagnostics
@@ -107,6 +137,9 @@ system-constraints:
     links:
       - type: prevents
         target: H-LSP-002
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SC-LSP-005
     title: YAML type coercion MUST be handled explicitly
@@ -117,6 +150,9 @@ system-constraints:
     links:
       - type: prevents
         target: H-LSP-001
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SC-LSP-006
     title: Diagnostic messages MUST include actionable fix guidance
@@ -127,6 +163,9 @@ system-constraints:
     links:
       - type: prevents
         target: H-LSP-004
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SC-LSP-007
     title: LSP MUST NOT cascade errors from parse failures
@@ -137,6 +176,9 @@ system-constraints:
     links:
       - type: prevents
         target: H-LSP-002
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SC-LSP-008
     title: Incremental validation MUST produce identical results to full validation
@@ -149,3 +191,6 @@ system-constraints:
         target: H-LSP-001
       - type: prevents
         target: H-LSP-002
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z

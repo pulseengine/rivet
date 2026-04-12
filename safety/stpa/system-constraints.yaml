@@ -19,6 +19,9 @@ system-constraints:
       typed targets.  Dangling or type-mismatched links must be reported as
       errors, not warnings.
     hazards: [H-1]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SC-2
     title: Rivet must never silently discard artifacts or links during any operation
@@ -28,6 +31,9 @@ system-constraints:
       an explicit diagnostic and either fail the operation or quarantine the
       unprocessable item — never silently drop it.
     hazards: [H-2]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SC-3
     title: Rivet must compute coverage metrics only from validated, current data
@@ -36,6 +42,9 @@ system-constraints:
       has passed validation in the current session.  Cached or stale
       metrics must be clearly labeled with their validation timestamp.
     hazards: [H-3]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SC-4
     title: Rivet must verify semantic compatibility when mapping between schemas
@@ -45,6 +54,9 @@ system-constraints:
       flows through them.  Unmapped or ambiguously mapped fields must
       cause a hard error, not a silent default.
     hazards: [H-4]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SC-5
     title: Rivet must detect and surface conflicting modifications before merging
@@ -53,6 +65,9 @@ system-constraints:
       the conflict (via timestamps, ETags, or content hashing), present
       it to the user, and require explicit resolution before committing.
     hazards: [H-5]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SC-6
     title: Rivet must generate compliance reports only from verified traceability data
@@ -61,6 +76,9 @@ system-constraints:
       If validation has not been run or has failed, report generation
       must either fail or embed a prominent "UNVERIFIED" watermark.
     hazards: [H-6]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SC-7
     title: Rivet must maintain a complete audit trail for all artifact modifications
@@ -70,6 +88,9 @@ system-constraints:
       preserved in the git history.  Sync operations must record the
       remote source and change event identifier.
     hazards: [H-7]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SC-8
     title: Rivet must isolate sync errors and prevent cross-tool error propagation
@@ -79,6 +100,9 @@ system-constraints:
       to outbound sync channels or to local authoritative stores
       without explicit user approval.
     hazards: [H-8]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SC-9
     title: Rivet must preserve rich-text structure during import and export
@@ -88,6 +112,9 @@ system-constraints:
       has been simplified, so users can verify no semantic information
       was lost.
     hazards: [H-4]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SC-10
     title: Rivet must validate external artifact existence before accepting links
@@ -97,6 +124,9 @@ system-constraints:
       exists and is reachable at link-creation time, recording the
       verification timestamp.
     hazards: [H-1, H-3]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SC-11
     title: Rivet incremental validation must produce identical results to full validation
@@ -106,6 +136,9 @@ system-constraints:
       validation pass. If incremental and full results ever diverge, the
       system must detect the divergence and fall back to full validation.
     hazards: [H-9]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SC-12
     title: Rivet must verify conditional rule consistency before applying rules
@@ -115,6 +148,9 @@ system-constraints:
       on a single artifact. Inconsistent rule sets must be rejected at
       schema load time with a diagnostic identifying the conflicting rules.
     hazards: [H-10]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SC-13
     title: Rivet build-system parsers must reject unrecognized constructs with diagnostics
@@ -125,6 +161,9 @@ system-constraints:
       is forbidden. The parser must report what it could not parse and
       what dependencies may be missing from the result.
     hazards: [H-11]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SC-14
     title: Rivet formal proofs must be validated against the implementation under test
@@ -135,6 +174,9 @@ system-constraints:
       Rocq specifications must be generated from or validated against
       the Rust source via coq-of-rust, not hand-written independently.
     hazards: [H-12]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SC-15
     title: Rivet must HTML-escape all artifact content before rendering in dashboard or document views
@@ -146,6 +188,9 @@ system-constraints:
       boundary (rendering), not at the input boundary (parsing), to
       ensure defense-in-depth.
     hazards: [H-13]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SC-16
     title: Rivet must validate WASM adapter outputs against the source data independently
@@ -158,6 +203,9 @@ system-constraints:
       insufficient because a compromised adapter could produce
       schema-conforming but fabricated artifacts.
     hazards: [H-14]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SC-17
     title: Rivet commit analysis must validate extracted artifact IDs against the known artifact set before counting coverage
@@ -168,6 +216,9 @@ system-constraints:
       store.contains() check. Unresolved references must be reported
       as broken refs, not counted as coverage.
     hazards: [H-15]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SC-18
     title: Rivet dashboard must report reload failures and indicate stale data state
@@ -179,6 +230,9 @@ system-constraints:
       reload occurs, (c) log the specific error that caused the reload
       failure.
     hazards: [H-16]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SC-19
     title: Rivet must not execute git clone/fetch against untrusted URLs without hook protection
@@ -189,6 +243,9 @@ system-constraints:
       cloned repository (--config core.hooksPath=/dev/null) to prevent
       arbitrary code execution.
     hazards: [H-17]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SC-20
     title: Rivet must normalize and validate external paths before use
@@ -198,6 +255,9 @@ system-constraints:
       if a path is unreachable rather than silently skipping the external.
       Platform-specific path separators must be normalized.
     hazards: [H-18]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SC-21
     title: LSP must re-validate within 500ms of file save for stores under 5000 artifacts
@@ -208,6 +268,9 @@ system-constraints:
       fewer than 5000 artifacts.  Stale cached results must never be
       returned after a save event.
     hazards: [H-19]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SC-22
     title: VS Code WebView must use sandbox restrictions for dashboard content
@@ -218,6 +281,9 @@ system-constraints:
       postMessage commands from the extension host and must not
       relay artifact data to untrusted iframe origins.
     hazards: [H-20]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SC-23
     title: Rivet MCP server must not return stale data after disk changes
@@ -227,6 +293,9 @@ system-constraints:
       returning results. Alternatively, the server must provide an explicit
       reload mechanism and document that results may be stale.
     hazards: [H-21]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
 
   - id: SC-24
     title: Rivet must preserve YAML content byte-for-byte during round-trip operations
@@ -236,3 +305,6 @@ system-constraints:
       specific insertion or modification should differ. Verified by the
       rowan round-trip test suite (66 files, 83 edge cases).
     hazards: [H-24]
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-04-07T03:40:26Z
