@@ -389,17 +389,27 @@ test.describe("API v1: CORS for Grafana", () => {
 // ── Cross-checks: API vs Dashboard consistency ───────────────────────────
 
 test.describe("API vs Dashboard consistency", () => {
-  test("API requirement count matches dashboard filter", async ({ page }) => {
-    // Get requirement count from API
+  test("requirement count matches dashboard filter", async ({ page }) => {
+    // Get local requirement count from artifacts API (defaults to local only)
     const resp = await page.request.get("/api/v1/artifacts?type=requirement");
     const data = await resp.json();
-    const apiCount = data.total;
+    const localApiCount = data.total;
 
-    // Get count from stats API
+    // Get total (local + external) requirement count from stats API
     const statsResp = await page.request.get("/api/v1/stats");
     const stats = await statsResp.json();
 
-    expect(apiCount).toBe(stats.by_type.requirement);
+    // Stats by_type includes external artifacts, artifacts API defaults to
+    // local only. The local count should be <= the stats total.
+    expect(localApiCount).toBeGreaterThan(0);
+    expect(stats.by_type.requirement).toBeGreaterThanOrEqual(localApiCount);
+
+    // When we explicitly include all origins, the count should match stats
+    const allResp = await page.request.get(
+      "/api/v1/artifacts?type=requirement&origin=all",
+    );
+    const allData = await allResp.json();
+    expect(allData.total).toBe(stats.by_type.requirement);
   });
 
   test("API stats coverage matches /api/v1/coverage details", async ({
