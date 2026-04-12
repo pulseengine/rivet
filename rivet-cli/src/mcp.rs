@@ -153,6 +153,16 @@ pub struct RemoveParams {
     pub force: Option<bool>,
 }
 
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct QueryParams {
+    #[schemars(
+        description = "S-expression filter, e.g. '(and (= type \"requirement\") (has-tag \"stpa\"))'"
+    )]
+    pub filter: String,
+    #[schemars(description = "Maximum number of results (default: 100)")]
+    pub limit: Option<usize>,
+}
+
 // ── RivetServer ────────────────────────────────────────────────────────
 
 #[derive(Clone)]
@@ -321,6 +331,19 @@ impl RivetServer {
             "fields": p.fields.unwrap_or_default(),
         });
         let result = tool_add(self.dir(), &args).map_err(Self::err)?;
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&result).unwrap_or_default(),
+        )]))
+    }
+
+    #[tool(
+        description = "Query artifacts using an s-expression filter. Returns matching artifacts with full details."
+    )]
+    fn rivet_query(
+        &self,
+        Parameters(p): Parameters<QueryParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let result = self.with_project(|proj| tool_query(proj, &p))?;
         Ok(CallToolResult::success(vec![Content::text(
             serde_json::to_string_pretty(&result).unwrap_or_default(),
         )]))
@@ -910,6 +933,47 @@ fn json_to_yaml_value(v: &Value) -> serde_yaml::Value {
             serde_yaml::Value::Mapping(map)
         }
     }
+}
+
+// ── Query tool helper ─────────────────────────────────────────────────
+
+fn tool_query(proj: &McpProject, params: &QueryParams) -> Result<Value> {
+    let expr = rivet_core::sexpr_eval::parse_filter(&params.filter).map_err(|errs| {
+        let msgs: Vec<String> = errs.iter().map(|e| e.to_string()).collect();
+        anyhow::anyhow!("invalid filter: {}", msgs.join("; "))
+    })?;
+
+    let limit = params.limit.unwrap_or(100);
+    let mut results: Vec<Value> = Vec::new();
+
+    for artifact in proj.store.iter() {
+        if !rivet_core::sexpr_eval::matches_filter(&expr, artifact, &proj.graph) {
+            continue;
+        }
+        let links_json: Vec<Value> = artifact
+            .links
+            .iter()
+            .map(|l| json!({"type": l.link_type, "target": l.target}))
+            .collect();
+        results.push(json!({
+            "id": artifact.id,
+            "type": artifact.artifact_type,
+            "title": artifact.title,
+            "status": artifact.status.as_deref().unwrap_or("-"),
+            "tags": artifact.tags,
+            "links": links_json,
+            "description": artifact.description.as_deref().unwrap_or(""),
+        }));
+        if results.len() >= limit {
+            break;
+        }
+    }
+
+    Ok(json!({
+        "filter": params.filter,
+        "count": results.len(),
+        "artifacts": results,
+    }))
 }
 
 // ── Mutation tool helpers ──────────────────────────────────────────────

@@ -182,6 +182,10 @@ enum Command {
         /// Generate AGENTS.md (and CLAUDE.md shim) from current project state
         #[arg(long)]
         agents: bool,
+
+        /// Install git hooks (commit-msg, pre-commit) that call rivet for validation
+        #[arg(long)]
+        hooks: bool,
     },
 
     /// Validate artifacts against schemas
@@ -778,10 +782,14 @@ fn run(cli: Cli) -> Result<bool> {
         schema,
         dir,
         agents,
+        hooks,
     } = &cli.command
     {
         if *agents {
             return cmd_init_agents(&cli);
+        }
+        if *hooks {
+            return cmd_init_hooks(dir);
         }
         return cmd_init(name.as_deref(), preset, schema, dir);
     }
@@ -2280,6 +2288,120 @@ rivet stats        # Show summary statistics
     );
 
     Ok(true)
+}
+
+/// Install git hooks that delegate to rivet for commit validation.
+///
+/// Hooks chain with existing hooks: if a hook file already exists, it is
+/// renamed to `<hook>.prev` and called after rivet's check succeeds.
+/// This allows coexistence with other hook managers (husky, pre-commit, lefthook).
+fn cmd_init_hooks(dir: &std::path::Path) -> Result<bool> {
+    let dir = if dir == std::path::Path::new(".") {
+        std::env::current_dir().context("resolving current directory")?
+    } else {
+        dir.to_path_buf()
+    };
+
+    // Find .git directory (supports worktrees)
+    let git_dir_output = std::process::Command::new("git")
+        .args(["rev-parse", "--git-dir"])
+        .current_dir(&dir)
+        .output()
+        .context("running git rev-parse --git-dir")?;
+
+    if !git_dir_output.status.success() {
+        anyhow::bail!("not a git repository (run from a git working tree)");
+    }
+
+    let git_dir = dir.join(String::from_utf8_lossy(&git_dir_output.stdout).trim());
+    let hooks_dir = git_dir.join("hooks");
+    std::fs::create_dir_all(&hooks_dir)
+        .with_context(|| format!("creating {}", hooks_dir.display()))?;
+
+    // Resolve rivet binary path for the hook.
+    let rivet_bin = std::env::current_exe()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|_| "rivet".to_string());
+
+    // ── commit-msg hook ─────────────────────────────────────────────
+    let commit_msg_path = hooks_dir.join("commit-msg");
+    install_hook(
+        &commit_msg_path,
+        &format!(
+            r#"#!/usr/bin/env bash
+# Installed by: rivet init --hooks
+# Validates commit trailers reference artifact IDs.
+"{rivet_bin}" commit-msg-check "$1" || exit $?
+"#,
+        ),
+    )?;
+    println!("  installed {}", commit_msg_path.display());
+
+    // ── pre-commit hook ─────────────────────────────────────────────
+    let pre_commit_path = hooks_dir.join("pre-commit");
+    install_hook(
+        &pre_commit_path,
+        &format!(
+            r#"#!/usr/bin/env bash
+# Installed by: rivet init --hooks
+# Runs rivet validate and blocks on errors.
+output=$("{rivet_bin}" validate --format json 2>/dev/null)
+errors=$(echo "$output" | python3 -c "import json,sys; print(json.load(sys.stdin).get('errors',0))" 2>/dev/null || echo "0")
+if [ "$errors" -gt 0 ]; then
+    echo "rivet validate: $errors error(s). Run 'rivet validate' for details."
+    exit 1
+fi
+"#,
+        ),
+    )?;
+    println!("  installed {}", pre_commit_path.display());
+
+    println!("\nGit hooks installed. Rivet will validate commits automatically.");
+    println!("Hooks chain with existing hooks via .prev files.");
+    Ok(true)
+}
+
+/// Install a hook file, chaining with any existing hook.
+///
+/// If a hook already exists:
+/// 1. Rename it to `<hook>.prev`
+/// 2. The new hook calls `<hook>.prev` at the end (after rivet's check)
+///
+/// This allows coexistence with pre-commit, husky, lefthook, etc.
+fn install_hook(path: &std::path::Path, content: &str) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    if path.exists() {
+        let prev = path.with_extension("prev");
+        // Don't overwrite an existing .prev (user may have modified it)
+        if !prev.exists() {
+            std::fs::rename(path, &prev)
+                .with_context(|| format!("backing up {}", path.display()))?;
+            eprintln!(
+                "  note: existing hook backed up to {}",
+                prev.display()
+            );
+        }
+    }
+
+    // Check for .prev file and append chaining call
+    let prev = path.with_extension("prev");
+    let chain_snippet = if prev.exists() {
+        format!(
+            "\n# Chain to previous hook\nif [ -x \"{}\" ]; then\n    \"{}\" \"$@\"\nfi\n",
+            prev.display(),
+            prev.display()
+        )
+    } else {
+        String::new()
+    };
+
+    let final_content = format!("{content}{chain_snippet}");
+    std::fs::write(path, &final_content)
+        .with_context(|| format!("writing {}", path.display()))?;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))
+        .with_context(|| format!("setting permissions on {}", path.display()))?;
+    Ok(())
 }
 
 /// Collapse newlines and pipes so a description fits in a markdown table cell.
