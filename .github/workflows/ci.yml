@@ -188,7 +188,20 @@ jobs:
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
       - name: Run cargo audit
-        run: cargo audit
+        # wasmtime 42.0.1 advisories ignored — behind optional wasm feature gate.
+        run: >-
+          cargo audit
+          --ignore RUSTSEC-2026-0085
+          --ignore RUSTSEC-2026-0086
+          --ignore RUSTSEC-2026-0087
+          --ignore RUSTSEC-2026-0088
+          --ignore RUSTSEC-2026-0089
+          --ignore RUSTSEC-2026-0091
+          --ignore RUSTSEC-2026-0092
+          --ignore RUSTSEC-2026-0093
+          --ignore RUSTSEC-2026-0094
+          --ignore RUSTSEC-2026-0095
+          --ignore RUSTSEC-2026-0096
 
   deny:
     name: Cargo Deny (licenses, bans, sources, advisories)
