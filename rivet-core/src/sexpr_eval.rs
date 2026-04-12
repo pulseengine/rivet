@@ -818,6 +818,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)] // regex crate uses SIMD/FFI incompatible with Miri
     fn filter_matches_regex() {
         let expr = parse_filter(r#"(matches id "^REQ-\\d+")"#).unwrap();
         assert!(run(&expr, &test_artifact()));
