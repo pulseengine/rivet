@@ -336,11 +336,11 @@ enum Command {
 
     /// Export artifacts to a specified format
     Export {
-        /// Output format: "reqif", "generic-yaml", "html"
+        /// Output format: "reqif", "generic-yaml", "html", "zola"
         #[arg(short, long)]
         format: String,
 
-        /// Output path: file for reqif/generic-yaml, directory for html (default: "dist")
+        /// Output path: file for reqif/generic-yaml, directory for html/zola (default: "dist")
         #[arg(short, long)]
         output: Option<PathBuf>,
 
@@ -371,6 +371,18 @@ enum Command {
         /// Scope export to a named baseline (cumulative)
         #[arg(long)]
         baseline: Option<String>,
+
+        /// Prefix for Zola export: content goes under content/<prefix>/ and data/<prefix>/
+        #[arg(long, default_value = "rivet")]
+        prefix: String,
+
+        /// S-expression filter to select artifact subset for export
+        #[arg(long)]
+        filter: Option<String>,
+
+        /// Install rivet_* shortcode templates into templates/shortcodes/ (Zola only)
+        #[arg(long)]
+        shortcodes: bool,
     },
 
     /// Introspect loaded schemas (types, links, rules)
@@ -898,6 +910,9 @@ fn run(cli: Cli) -> Result<bool> {
             version_label,
             versions,
             baseline,
+            prefix,
+            filter,
+            shortcodes,
         } => cmd_export(
             &cli,
             format,
@@ -909,6 +924,9 @@ fn run(cli: Cli) -> Result<bool> {
             version_label.as_deref(),
             versions.as_deref(),
             baseline.as_deref(),
+            prefix,
+            filter.as_deref(),
+            *shortcodes,
         ),
         Command::Impact {
             since,
@@ -3774,11 +3792,24 @@ fn cmd_export(
     version_label: Option<&str>,
     versions_json: Option<&str>,
     baseline_name: Option<&str>,
+    prefix: &str,
+    sexpr_filter: Option<&str>,
+    shortcodes: bool,
 ) -> Result<bool> {
     validate_format(
         format,
-        &["reqif", "generic-yaml", "generic", "html", "gherkin"],
+        &[
+            "reqif",
+            "generic-yaml",
+            "generic",
+            "html",
+            "gherkin",
+            "zola",
+        ],
     )?;
+    if format == "zola" {
+        return cmd_export_zola(cli, output, prefix, sexpr_filter, shortcodes, baseline_name);
+    }
     if format == "html" {
         return cmd_export_html(
             cli,
@@ -3836,6 +3867,282 @@ fn cmd_export(
             .write_all(&bytes)
             .context("writing to stdout")?;
     }
+
+    Ok(true)
+}
+
+/// Export artifacts to a Zola-compatible static site structure.
+///
+/// Writes content/<prefix>/artifacts/*.md with TOML frontmatter and
+/// data/<prefix>/*.json with aggregate data. Additive-only: never
+/// modifies existing files outside the prefix namespace.
+fn cmd_export_zola(
+    cli: &Cli,
+    output: Option<&std::path::Path>,
+    prefix: &str,
+    sexpr_filter: Option<&str>,
+    shortcodes: bool,
+    baseline_name: Option<&str>,
+) -> Result<bool> {
+    let ctx = ProjectContext::load(cli)?;
+    let store = apply_baseline_scope(ctx.store, baseline_name, &ctx.config);
+    let graph = rivet_core::links::LinkGraph::build(&store, &ctx.schema);
+
+    // Apply s-expression filter if provided.
+    let artifacts: Vec<&rivet_core::model::Artifact> = if let Some(filter_src) = sexpr_filter {
+        let expr = rivet_core::sexpr_eval::parse_filter(filter_src).map_err(|errs| {
+            let msgs: Vec<String> = errs.iter().map(|e| e.to_string()).collect();
+            anyhow::anyhow!("invalid filter: {}", msgs.join("; "))
+        })?;
+        store
+            .iter()
+            .filter(|a| rivet_core::sexpr_eval::matches_filter(&expr, a, &graph))
+            .collect()
+    } else {
+        store.iter().collect()
+    };
+
+    let site_dir = output
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+
+    // Validate the output directory looks like a Zola site.
+    if !site_dir.join("config.toml").exists() && !site_dir.join("content").exists() {
+        eprintln!(
+            "warning: {} doesn't look like a Zola site (no config.toml or content/). Creating directories anyway.",
+            site_dir.display()
+        );
+    }
+
+    // Create namespaced directories.
+    let content_dir = site_dir.join("content").join(prefix);
+    let artifacts_dir = content_dir.join("artifacts");
+    let data_dir = site_dir.join("data").join(prefix);
+
+    std::fs::create_dir_all(&artifacts_dir)
+        .with_context(|| format!("creating {}", artifacts_dir.display()))?;
+    std::fs::create_dir_all(&data_dir)
+        .with_context(|| format!("creating {}", data_dir.display()))?;
+
+    // ── Section index ───────────────────────────────────────────────
+    let section_index = format!(
+        "\
++++
+title = \"{prefix}\"
+sort_by = \"title\"
+template = \"section.html\"
+page_template = \"page.html\"
++++
+
+Artifacts from the **{prefix}** project, exported by [rivet](https://github.com/pulseengine/rivet).
+"
+    );
+    std::fs::write(content_dir.join("_index.md"), &section_index)?;
+
+    let artifacts_index = format!(
+        "\
++++
+title = \"{prefix} — Artifacts\"
+sort_by = \"title\"
++++
+
+{count} artifacts exported.
+",
+        count = artifacts.len()
+    );
+    std::fs::write(artifacts_dir.join("_index.md"), &artifacts_index)?;
+
+    // ── Individual artifact pages ───────────────────────────────────
+    let mut artifact_count = 0;
+    for artifact in &artifacts {
+        let slug = artifact.id.to_lowercase().replace('.', "-");
+        let status = artifact.status.as_deref().unwrap_or("unset");
+        let tags_toml: Vec<String> = artifact.tags.iter().map(|t| format!("\"{t}\"")).collect();
+        let description = artifact
+            .description
+            .as_deref()
+            .unwrap_or("")
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"");
+
+        let links_md: String = artifact
+            .links
+            .iter()
+            .map(|l| {
+                let target_slug = l.target.to_lowercase().replace('.', "-");
+                format!(
+                    "- **{}** → [{}](/{prefix}/artifacts/{target_slug}/)\n",
+                    l.link_type, l.target
+                )
+            })
+            .collect();
+
+        let page = format!(
+            "\
++++
+title = \"{id}: {title}\"
+slug = \"{slug}\"
+weight = {weight}
+
+[taxonomies]
+artifact_type = [\"{art_type}\"]
+artifact_status = [\"{status}\"]
+tags = [{tags}]
+
+[extra]
+id = \"{id}\"
+artifact_type = \"{art_type}\"
+status = \"{status}\"
+description = \"{description}\"
+links_count = {links_count}
++++
+
+## {id}: {title}
+
+{desc_body}
+
+### Links
+
+{links_md}\
+",
+            id = artifact.id,
+            title = artifact.title.replace("\"", "\\\""),
+            slug = slug,
+            weight = artifact_count,
+            art_type = artifact.artifact_type,
+            status = status,
+            tags = tags_toml.join(", "),
+            description = description,
+            links_count = artifact.links.len(),
+            desc_body = artifact.description.as_deref().unwrap_or(""),
+            links_md = if links_md.is_empty() {
+                "No links.".to_string()
+            } else {
+                links_md
+            },
+        );
+
+        let page_path = artifacts_dir.join(format!("{slug}.md"));
+        std::fs::write(&page_path, &page)?;
+        artifact_count += 1;
+    }
+    println!(
+        "  wrote {artifact_count} artifact pages to {}",
+        artifacts_dir.display()
+    );
+
+    // ── JSON data files ─────────────────────────────────────────────
+    let artifacts_json: Vec<serde_json::Value> = artifacts
+        .iter()
+        .map(|a| {
+            serde_json::json!({
+                "id": a.id,
+                "type": a.artifact_type,
+                "title": a.title,
+                "status": a.status.as_deref().unwrap_or("-"),
+                "tags": a.tags,
+                "links": a.links.iter().map(|l| serde_json::json!({"type": l.link_type, "target": l.target})).collect::<Vec<_>>(),
+                "description": a.description.as_deref().unwrap_or(""),
+            })
+        })
+        .collect();
+
+    let data_output = serde_json::json!({
+        "project": ctx.config.project.name,
+        "prefix": prefix,
+        "count": artifacts_json.len(),
+        "artifacts": artifacts_json,
+    });
+    std::fs::write(
+        data_dir.join("artifacts.json"),
+        serde_json::to_string_pretty(&data_output)?,
+    )?;
+
+    // Stats data.
+    let mut type_counts = std::collections::BTreeMap::new();
+    let mut status_counts = std::collections::BTreeMap::new();
+    for a in &artifacts {
+        *type_counts.entry(a.artifact_type.clone()).or_insert(0usize) += 1;
+        *status_counts
+            .entry(a.status.clone().unwrap_or_else(|| "unset".into()))
+            .or_insert(0usize) += 1;
+    }
+    let stats_output = serde_json::json!({
+        "total": artifacts.len(),
+        "by_type": type_counts,
+        "by_status": status_counts,
+    });
+    std::fs::write(
+        data_dir.join("stats.json"),
+        serde_json::to_string_pretty(&stats_output)?,
+    )?;
+    println!("  wrote data files to {}", data_dir.display());
+
+    // ── Shortcodes (optional) ───────────────────────────────────────
+    if shortcodes {
+        let shortcodes_dir = site_dir.join("templates").join("shortcodes");
+        std::fs::create_dir_all(&shortcodes_dir)?;
+
+        // rivet_artifact shortcode.
+        let artifact_shortcode = r#"{# rivet_artifact: embed an artifact card by ID.
+   Usage: {{ rivet_artifact(id="REQ-001", prefix="rivet") }}
+#}
+{% set prefix = prefix | default(value="rivet") %}
+{% set data = load_data(path="data/" ~ prefix ~ "/artifacts.json") %}
+{% set matches = data.artifacts | filter(attribute="id", value=id) %}
+{% if matches | length > 0 %}
+{% set art = matches | first %}
+<div class="rivet-artifact-card" style="border:1px solid #444; border-radius:6px; padding:12px; margin:8px 0;">
+  <div>
+    <span style="background:#2563eb;color:#fff;padding:2px 8px;border-radius:3px;font-size:0.85em;">{{ art.type }}</span>
+    <span style="background:#059669;color:#fff;padding:2px 8px;border-radius:3px;font-size:0.85em;">{{ art.status }}</span>
+  </div>
+  <strong><a href="/{{ prefix }}/artifacts/{{ art.id | lower | replace(from=".", to="-") }}/">{{ art.id }}</a></strong>: {{ art.title }}
+  {% if art.description %}<p style="margin:4px 0;font-size:0.9em;">{{ art.description | truncate(length=200) }}</p>{% endif %}
+</div>
+{% else %}
+<span style="color:red;">Unknown artifact: {{ id }}</span>
+{% endif %}
+"#;
+        std::fs::write(
+            shortcodes_dir.join("rivet_artifact.html"),
+            artifact_shortcode,
+        )?;
+
+        // rivet_stats shortcode.
+        let stats_shortcode = r#"{# rivet_stats: show artifact counts.
+   Usage: {{ rivet_stats(prefix="rivet") }}
+#}
+{% set prefix = prefix | default(value="rivet") %}
+{% set data = load_data(path="data/" ~ prefix ~ "/stats.json") %}
+<div class="rivet-stats" style="display:flex;gap:16px;flex-wrap:wrap;margin:8px 0;">
+  <div style="padding:8px 16px;background:#1e293b;border-radius:6px;">
+    <strong>{{ data.total }}</strong> artifacts
+  </div>
+  {% for type_name, count in data.by_type %}
+  <div style="padding:8px 16px;background:#1e293b;border-radius:6px;">
+    <strong>{{ count }}</strong> {{ type_name }}
+  </div>
+  {% endfor %}
+</div>
+"#;
+        std::fs::write(shortcodes_dir.join("rivet_stats.html"), stats_shortcode)?;
+        println!("  wrote shortcodes to {}", shortcodes_dir.display());
+    }
+
+    // ── Instructions ────────────────────────────────────────────────
+    println!("\nZola export complete ({prefix}).");
+    println!("  Content: content/{prefix}/artifacts/");
+    println!("  Data:    data/{prefix}/");
+    println!("\n  To enable taxonomy pages, add to your config.toml:");
+    println!("    [[taxonomies]]");
+    println!("    name = \"artifact_type\"");
+    println!("    ");
+    println!("    [[taxonomies]]");
+    println!("    name = \"artifact_status\"");
+    println!("    ");
+    println!("    [[taxonomies]]");
+    println!("    name = \"tags\"");
 
     Ok(true)
 }
