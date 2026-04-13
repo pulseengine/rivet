@@ -7002,6 +7002,7 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
             trigger_characters: Some(vec!["[".to_string(), ":".to_string()]),
             ..Default::default()
         }),
+        code_action_provider: Some(CodeActionProviderCapability::Simple(true)),
         ..Default::default()
     };
 
@@ -7193,6 +7194,15 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                         connection.sender.send(Message::Response(Response {
                             id: req.id,
                             result: Some(serde_json::to_value(response)?),
+                            error: None,
+                        }))?;
+                    }
+                    "textDocument/codeAction" => {
+                        let params: CodeActionParams = serde_json::from_value(req.params.clone())?;
+                        let actions = lsp_code_actions(&params);
+                        connection.sender.send(Message::Response(Response {
+                            id: req.id,
+                            result: Some(serde_json::to_value(actions)?),
                             error: None,
                         }))?;
                     }
@@ -7934,6 +7944,78 @@ fn lsp_document_symbols(source: &str) -> Vec<lsp_types::DocumentSymbol> {
     let mut symbols = Vec::new();
     walk_for_symbols(&root, &mut symbols, &line_starts);
     symbols
+}
+
+/// Produce code actions (quick-fixes) for "missing required link" diagnostics.
+///
+/// The LSP client sends us the diagnostics that overlap the cursor range.
+/// For each diagnostic whose message matches the cardinality pattern
+/// (`requires at least` or `requires exactly`), we generate a workspace-edit
+/// code action that inserts a TODO comment reminding the user to add the link.
+#[allow(clippy::mutable_key_type)] // Uri has interior mutability but HashMap<Uri, _> is the lsp_types API
+fn lsp_code_actions(params: &lsp_types::CodeActionParams) -> Vec<lsp_types::CodeActionOrCommand> {
+    let uri = &params.text_document.uri;
+    let mut actions = Vec::new();
+
+    for diag in &params.context.diagnostics {
+        // Only handle diagnostics produced by rivet
+        if diag.source.as_deref() != Some("rivet") {
+            continue;
+        }
+
+        // Match the two "missing link" message patterns from validate.rs:
+        //   "link '<type>' requires at least 1 target, found 0"
+        //   "link '<type>' requires exactly 1 target, found 0"
+        let msg = &diag.message;
+        let link_type = if msg.contains("requires at least") || msg.contains("requires exactly") {
+            // Extract the link type name between the single quotes
+            msg.split('\'').nth(1).map(|s| s.to_string())
+        } else {
+            None
+        };
+
+        let link_type = match link_type {
+            Some(lt) => lt,
+            None => continue,
+        };
+
+        // Build a TextEdit that inserts a TODO comment on the line after the
+        // diagnostic range.  We place it at column 0 of the next line with
+        // suitable indentation (4 spaces — typical YAML artifact indent).
+        let insert_line = diag.range.end.line + 1;
+        let insert_pos = lsp_types::Position {
+            line: insert_line,
+            character: 0,
+        };
+        let new_text = format!("    # TODO: add {link_type} link\n");
+
+        let text_edit = lsp_types::TextEdit {
+            range: lsp_types::Range {
+                start: insert_pos,
+                end: insert_pos,
+            },
+            new_text,
+        };
+
+        let mut changes = std::collections::HashMap::new();
+        changes.insert(uri.clone(), vec![text_edit]);
+
+        let action = lsp_types::CodeAction {
+            title: format!("Add missing '{link_type}' link (TODO)"),
+            kind: Some(lsp_types::CodeActionKind::QUICKFIX),
+            diagnostics: Some(vec![diag.clone()]),
+            edit: Some(lsp_types::WorkspaceEdit {
+                changes: Some(changes),
+                ..Default::default()
+            }),
+            is_preferred: Some(true),
+            ..Default::default()
+        };
+
+        actions.push(lsp_types::CodeActionOrCommand::CodeAction(action));
+    }
+
+    actions
 }
 
 /// Recursively walk the CST looking for SequenceItem nodes that represent artifacts.
