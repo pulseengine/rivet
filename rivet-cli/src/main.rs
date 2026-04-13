@@ -3884,8 +3884,9 @@ fn cmd_export_zola(
     shortcodes: bool,
     baseline_name: Option<&str>,
 ) -> Result<bool> {
-    let ctx = ProjectContext::load(cli)?;
+    let ctx = ProjectContext::load_with_docs(cli)?;
     let store = apply_baseline_scope(ctx.store, baseline_name, &ctx.config);
+    let doc_store = ctx.doc_store.unwrap_or_default();
     let graph = rivet_core::links::LinkGraph::build(&store, &ctx.schema);
 
     // Apply s-expression filter if provided.
@@ -4130,9 +4131,86 @@ links_count = {links_count}
         println!("  wrote shortcodes to {}", shortcodes_dir.display());
     }
 
+    // ── Documents ────────────────────────────────────────────────────
+    if !doc_store.is_empty() {
+        let docs_dir = content_dir.join("docs");
+        std::fs::create_dir_all(&docs_dir)?;
+
+        let docs_index = format!(
+            "\
++++
+title = \"{prefix} — Documents\"
+sort_by = \"title\"
++++
+
+{count} document(s) exported.
+",
+            count = doc_store.len()
+        );
+        std::fs::write(docs_dir.join("_index.md"), &docs_index)?;
+
+        let mut doc_count = 0;
+        for doc in doc_store.iter() {
+            let slug: String = doc
+                .id
+                .to_lowercase()
+                .chars()
+                .map(|c| if c == '.' || c == ' ' { '-' } else { c })
+                .collect();
+            let status = doc.status.as_deref().unwrap_or("unset");
+
+            // Resolve [[ID]] wiki-links to Zola internal links.
+            let mut body = doc.body.clone();
+            while let Some(start) = body.find("[[") {
+                if let Some(end) = body[start + 2..].find("]]") {
+                    let id = &body[start + 2..start + 2 + end];
+                    let target_slug = id.to_lowercase().replace('.', "-");
+                    let replacement = format!("[{id}](/{prefix}/artifacts/{target_slug}/)");
+                    body.replace_range(start..start + 2 + end + 2, &replacement);
+                } else {
+                    break;
+                }
+            }
+
+            let page = format!(
+                "\
++++
+title = \"{title}\"
+slug = \"{slug}\"
+weight = {weight}
+
+[extra]
+id = \"{id}\"
+doc_type = \"{doc_type}\"
+status = \"{status}\"
++++
+
+{body}
+",
+                title = doc.title.replace("\"", "\\\""),
+                slug = slug,
+                weight = doc_count,
+                id = doc.id,
+                doc_type = doc.doc_type,
+                status = status,
+                body = body,
+            );
+
+            std::fs::write(docs_dir.join(format!("{slug}.md")), &page)?;
+            doc_count += 1;
+        }
+        println!(
+            "  wrote {doc_count} document pages to {}",
+            docs_dir.display()
+        );
+    }
+
     // ── Instructions ────────────────────────────────────────────────
     println!("\nZola export complete ({prefix}).");
     println!("  Content: content/{prefix}/artifacts/");
+    if !doc_store.is_empty() {
+        println!("  Content: content/{prefix}/docs/");
+    }
     println!("  Data:    data/{prefix}/");
     println!("\n  To enable taxonomy pages, add to your config.toml:");
     println!("    [[taxonomies]]");
