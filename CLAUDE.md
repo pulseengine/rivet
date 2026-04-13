@@ -39,6 +39,13 @@ To skip explicitly: add `Trace: skip` trailer.
 See AGENTS.md "Commit Traceability" section for the full trailer reference
 and retroactive traceability map.
 
+## Hook Security Model (REQ-051)
+- `rivet init --hooks` installs git hooks for convenience, NOT security
+- `git commit --no-verify` trivially bypasses all hooks
+- CI must independently run `rivet commits` and `rivet validate` as required checks
+- Hook absence must not block local development
+- Only CI enforcement provides traceability assurance for auditors
+
 ## AI Provenance
 - AI provenance is auto-stamped via PostToolUse hook when artifact files are edited
 - When manually stamping, include model: `rivet stamp <ID> --created-by ai-assisted --model claude-opus-4-6`

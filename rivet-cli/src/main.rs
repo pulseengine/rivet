@@ -383,6 +383,10 @@ enum Command {
         /// Install rivet_* shortcode templates into templates/shortcodes/ (Zola only)
         #[arg(long)]
         shortcodes: bool,
+
+        /// Remove existing content/<prefix>/ before writing (prevents stale pages)
+        #[arg(long)]
+        clean: bool,
     },
 
     /// Introspect loaded schemas (types, links, rules)
@@ -965,6 +969,7 @@ fn run(cli: Cli) -> Result<bool> {
             prefix,
             filter,
             shortcodes,
+            clean,
         } => cmd_export(
             &cli,
             format,
@@ -979,6 +984,7 @@ fn run(cli: Cli) -> Result<bool> {
             prefix,
             filter.as_deref(),
             *shortcodes,
+            *clean,
         ),
         Command::Impact {
             since,
@@ -2412,10 +2418,9 @@ fn cmd_init_hooks(dir: &std::path::Path) -> Result<bool> {
     std::fs::create_dir_all(&hooks_dir)
         .with_context(|| format!("creating {}", hooks_dir.display()))?;
 
-    // Resolve rivet binary path for the hook.
-    let rivet_bin = std::env::current_exe()
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|_| "rivet".to_string());
+    // Use PATH-based `rivet` so hooks work for any install method.
+    // Falls back to absolute path only if rivet is not in PATH.
+    let rivet_bin = which_rivet();
 
     // ── commit-msg hook ─────────────────────────────────────────────
     let commit_msg_path = hooks_dir.join("commit-msg");
@@ -2453,6 +2458,24 @@ fi
     println!("\nGit hooks installed. Rivet will validate commits automatically.");
     println!("Hooks chain with existing hooks via .prev files.");
     Ok(true)
+}
+
+/// Resolve the rivet binary for hooks: prefer PATH-based "rivet" if available,
+/// fall back to the current executable's absolute path.
+fn which_rivet() -> String {
+    // Check if `rivet` is in PATH by running `which rivet`.
+    if let Ok(output) = std::process::Command::new("which").arg("rivet").output() {
+        if output.status.success() {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path.is_empty() {
+                return path;
+            }
+        }
+    }
+    // Fallback: absolute path to current exe.
+    std::env::current_exe()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|_| "rivet".to_string())
 }
 
 /// Install a hook file, chaining with any existing hook.
@@ -3861,6 +3884,7 @@ fn cmd_export(
     prefix: &str,
     sexpr_filter: Option<&str>,
     shortcodes: bool,
+    clean: bool,
 ) -> Result<bool> {
     validate_format(
         format,
@@ -3874,7 +3898,15 @@ fn cmd_export(
         ],
     )?;
     if format == "zola" {
-        return cmd_export_zola(cli, output, prefix, sexpr_filter, shortcodes, baseline_name);
+        return cmd_export_zola(
+            cli,
+            output,
+            prefix,
+            sexpr_filter,
+            shortcodes,
+            clean,
+            baseline_name,
+        );
     }
     if format == "html" {
         return cmd_export_html(
@@ -3948,6 +3980,7 @@ fn cmd_export_zola(
     prefix: &str,
     sexpr_filter: Option<&str>,
     shortcodes: bool,
+    clean: bool,
     baseline_name: Option<&str>,
 ) -> Result<bool> {
     let ctx = ProjectContext::load_with_docs(cli)?;
@@ -3963,7 +3996,7 @@ fn cmd_export_zola(
         })?;
         store
             .iter()
-            .filter(|a| rivet_core::sexpr_eval::matches_filter(&expr, a, &graph))
+            .filter(|a| rivet_core::sexpr_eval::matches_filter_with_store(&expr, a, &graph, &store))
             .collect()
     } else {
         store.iter().collect()
@@ -3985,6 +4018,19 @@ fn cmd_export_zola(
     let content_dir = site_dir.join("content").join(prefix);
     let artifacts_dir = content_dir.join("artifacts");
     let data_dir = site_dir.join("data").join(prefix);
+
+    // REQ-049: --clean removes stale pages before writing.
+    if clean {
+        if content_dir.exists() {
+            std::fs::remove_dir_all(&content_dir)
+                .with_context(|| format!("cleaning {}", content_dir.display()))?;
+            println!("  cleaned {}", content_dir.display());
+        }
+        if data_dir.exists() {
+            std::fs::remove_dir_all(&data_dir)
+                .with_context(|| format!("cleaning {}", data_dir.display()))?;
+        }
+    }
 
     std::fs::create_dir_all(&artifacts_dir)
         .with_context(|| format!("creating {}", artifacts_dir.display()))?;
@@ -4184,6 +4230,27 @@ links_count = {links_count}
         data_dir.join("stats.json"),
         serde_json::to_string_pretty(&stats_output)?,
     )?;
+    // REQ-049: embed validation result so consumers can verify export freshness.
+    let diagnostics = rivet_core::validate::validate(&store, &ctx.schema, &graph);
+    let errors = diagnostics
+        .iter()
+        .filter(|d| d.severity == rivet_core::schema::Severity::Error)
+        .count();
+    let warnings = diagnostics
+        .iter()
+        .filter(|d| d.severity == rivet_core::schema::Severity::Warning)
+        .count();
+    let validation_output = serde_json::json!({
+        "result": if errors > 0 { "FAIL" } else { "PASS" },
+        "errors": errors,
+        "warnings": warnings,
+        "artifact_count": artifacts.len(),
+        "exported_at": export_date,
+    });
+    std::fs::write(
+        data_dir.join("validation.json"),
+        serde_json::to_string_pretty(&validation_output)?,
+    )?;
     println!("  wrote data files to {}", data_dir.display());
 
     // ── Shortcodes (optional) ───────────────────────────────────────
@@ -4310,6 +4377,28 @@ status = \"{status}\"
             "  wrote {doc_count} document pages to {}",
             docs_dir.display()
         );
+    }
+
+    // ── Fallback templates (only if missing) ──────────────────────
+    // Zola requires taxonomy templates when tags are used. If the site
+    // has no theme and no templates, generate minimal ones so `zola build` works.
+    let templates_dir = site_dir.join("templates");
+    let fallback_templates = [
+        (
+            "taxonomy_list.html",
+            "<html><body><h1>{{ taxonomy.name | title }}</h1><ul>{% for term in terms %}<li><a href=\"{{ term.permalink }}\">{{ term.name }}</a> ({{ term.pages | length }})</li>{% endfor %}</ul></body></html>",
+        ),
+        (
+            "taxonomy_single.html",
+            "<html><body><h1>{{ term.name }}</h1><ul>{% for page in term.pages %}<li><a href=\"{{ page.permalink }}\">{{ page.title }}</a></li>{% endfor %}</ul></body></html>",
+        ),
+    ];
+    for (name, content) in &fallback_templates {
+        let path = templates_dir.join(name);
+        if !path.exists() {
+            std::fs::create_dir_all(&templates_dir)?;
+            std::fs::write(&path, content)?;
+        }
     }
 
     // ── Instructions ────────────────────────────────────────────────
@@ -6987,6 +7076,36 @@ fn cmd_import_results_needs_json(file: &std::path::Path, output: &std::path::Pat
         artifacts.len(),
         out_path.display(),
     );
+
+    // REQ-050: verify link targets exist within the imported set.
+    let imported_ids: std::collections::HashSet<String> =
+        artifacts.iter().map(|a| a.id.clone()).collect();
+    let mut unresolved = Vec::new();
+    for artifact in &artifacts {
+        for link in &artifact.links {
+            if !imported_ids.contains(&link.target) {
+                unresolved.push(format!(
+                    "  {} --[{}]--> {} (not found)",
+                    artifact.id, link.link_type, link.target
+                ));
+            }
+        }
+    }
+    drop(imported_ids);
+
+    if !unresolved.is_empty() {
+        eprintln!(
+            "\nWarning: {} unresolved link target(s) in imported artifacts:",
+            unresolved.len()
+        );
+        for msg in &unresolved {
+            eprintln!("{msg}");
+        }
+        eprintln!("These links point to artifacts not present in the import.");
+        eprintln!(
+            "Run 'rivet validate' after adding to your project to check against existing artifacts."
+        );
+    }
 
     Ok(true)
 }

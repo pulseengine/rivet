@@ -135,4 +135,14 @@ commits:
      SC-VAR-001, SC-VAR-002, SC-VAR-003, SC-VAR-004, SC-VAR-005, SC-VAR-006, SC-VAR-007,
      UCA-VAR-001, UCA-VAR-002, UCA-VAR-003, UCA-VAR-004, UCA-VAR-005,
      CC-VAR-001, CC-VAR-002, CC-VAR-003, CC-VAR-004, CC-VAR-005,
-     LS-VAR-001, LS-VAR-002, LS-VAR-003, LS-VAR-004]
+     LS-VAR-001, LS-VAR-002, LS-VAR-003, LS-VAR-004,
+     # Tool qualification STPA artifacts
+     L-TQ-001, L-TQ-002, L-TQ-003,
+     H-TQ-001, H-TQ-002, H-TQ-003, H-TQ-004, H-TQ-005, H-TQ-006, H-TQ-007,
+     SC-TQ-001, SC-TQ-002, SC-TQ-003, SC-TQ-004, SC-TQ-005, SC-TQ-006, SC-TQ-007,
+     # Tool qualification STPA-Sec artifacts
+     SL-TQ-001, SL-TQ-002, SL-TQ-003, SL-TQ-004, SL-TQ-005,
+     SH-TQ-001, SH-TQ-002, SH-TQ-003,
+     SSC-TQ-001, SSC-TQ-002, SSC-TQ-003, SSC-TQ-004, SSC-TQ-005,
+     # Tool qualification requirements (draft, not yet implemented)
+     REQ-047, REQ-048, REQ-049, REQ-050, REQ-051, REQ-052, REQ-053]

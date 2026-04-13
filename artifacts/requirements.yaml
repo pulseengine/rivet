@@ -1158,3 +1158,185 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-6
       timestamp: 2026-04-12T12:00:00Z
+
+  - id: REQ-047
+    type: requirement
+    title: MCP mutation audit logging
+    status: draft
+    description: >
+      Every MCP write operation (rivet_add, rivet_modify, rivet_link,
+      rivet_unlink, rivet_remove) must produce a structured JSON log entry
+      containing: tool name, artifact ID, fields changed, old value,
+      new value, timestamp, and MCP session ID. The log must be append-only
+      and written to a configurable path (default: .rivet/mcp-audit.jsonl).
+      This enables forensic analysis of AI agent activity and rollback of
+      unintended changes. Without audit logging, a prompt-injected agent's
+      modifications cannot be detected or reversed.
+    tags: [mcp, security, audit, tool-qualification]
+    links:
+      - type: constraint-satisfies
+        target: SC-TQ-005
+      - type: constraint-satisfies
+        target: SSC-TQ-002
+    fields:
+      priority: must
+      category: security
+      baseline: v0.4.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
+
+  - id: REQ-048
+    type: requirement
+    title: Regex complexity bounds in s-expression evaluator
+    status: draft
+    description: >
+      The matches predicate in the s-expression evaluator must enforce
+      a size limit on compiled regex patterns (via regex::RegexBuilder::
+      size_limit) and a match timeout to prevent ReDoS attacks. Invalid
+      or oversized patterns must produce a clear diagnostic rather than
+      hanging. Default size limit: 1MB. Default match timeout: 1 second.
+    tags: [security, s-expression, tool-qualification]
+    links:
+      - type: constraint-satisfies
+        target: SC-TQ-001
+      - type: constraint-satisfies
+        target: SSC-TQ-001
+    fields:
+      priority: must
+      category: security
+      baseline: v0.4.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
+
+  - id: REQ-049
+    type: requirement
+    title: Export validation embedding
+    status: draft
+    description: >
+      The Zola and HTML export commands must embed the validation result
+      (PASS/FAIL, error count, warning count, timestamp, git commit) into
+      the exported output. For Zola: written to data/<prefix>/validation.json.
+      For HTML: embedded in the index page. Consumers can verify the export
+      was generated from a validated project state. A --clean flag must
+      remove stale content/<prefix>/ before writing to prevent deleted
+      artifacts from persisting as published pages.
+    tags: [export, validation, tool-qualification]
+    links:
+      - type: constraint-satisfies
+        target: SC-TQ-003
+      - type: constraint-satisfies
+        target: SSC-TQ-004
+    fields:
+      priority: must
+      category: functional
+      baseline: v0.4.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
+
+  - id: REQ-050
+    type: requirement
+    title: Import link-target verification
+    status: draft
+    description: >
+      After importing artifacts from needs-json or ReqIF, the import
+      command must verify that all link targets exist in the combined
+      store (existing project + imported artifacts). Unresolved targets
+      must be reported as warnings with the specific artifact ID and
+      link type. A --strict flag must promote unresolved warnings to
+      errors, blocking the import. This prevents crafted imports from
+      creating traceability links to non-existent artifacts.
+    tags: [import, validation, security, tool-qualification]
+    links:
+      - type: constraint-satisfies
+        target: SC-TQ-004
+      - type: constraint-satisfies
+        target: SSC-TQ-003
+    fields:
+      priority: must
+      category: security
+      baseline: v0.4.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
+
+  - id: REQ-051
+    type: requirement
+    title: CI-enforced traceability (hooks are convenience only)
+    status: draft
+    description: >
+      The CI pipeline must include rivet commits and rivet validate as
+      required checks, independent of local git hooks. Git hooks (commit-msg,
+      pre-commit) are convenience tooling that can be bypassed via
+      --no-verify. The system documentation must explicitly state that
+      hooks do not provide security assurance — only CI enforcement does.
+      A rivet validate --check-hooks flag should report whether hooks are
+      installed, but hook absence must not block local development.
+    tags: [ci, hooks, security, tool-qualification]
+    links:
+      - type: constraint-satisfies
+        target: SC-TQ-006
+      - type: constraint-satisfies
+        target: SSC-TQ-005
+    fields:
+      priority: must
+      category: non-functional
+      baseline: v0.4.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
+
+  - id: REQ-052
+    type: requirement
+    title: Variant solver fuzz testing
+    status: draft
+    description: >
+      The feature model constraint solver must be tested with randomly
+      generated feature models (proptest) to verify: (a) solver never
+      panics, (b) solver result is consistent with brute-force enumeration
+      for small models (≤10 features), (c) every resolved variant satisfies
+      all constraints when re-checked. This addresses the gap between the
+      12 hand-written unit tests and the combinatorial space of real
+      feature models.
+    tags: [variant, testing, tool-qualification]
+    links:
+      - type: constraint-satisfies
+        target: SC-TQ-002
+    fields:
+      priority: must
+      category: non-functional
+      baseline: v0.4.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
+
+  - id: REQ-053
+    type: requirement
+    title: Quantifier scope correctness testing
+    status: draft
+    description: >
+      The forall/exists evaluator must have tests that verify: adding an
+      artifact to the store changes quantifier results, removing an artifact
+      changes results, and the store parameter is the actual iteration set
+      (not a cached or global set). These tests must use different store
+      contents to confirm scoping, not just check the happy path.
+    tags: [s-expression, testing, tool-qualification]
+    links:
+      - type: constraint-satisfies
+        target: SC-TQ-007
+    fields:
+      priority: must
+      category: non-functional
+      baseline: v0.4.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
