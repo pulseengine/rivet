@@ -383,6 +383,10 @@ enum Command {
         /// Install rivet_* shortcode templates into templates/shortcodes/ (Zola only)
         #[arg(long)]
         shortcodes: bool,
+
+        /// Remove existing content/<prefix>/ before writing (prevents stale pages)
+        #[arg(long)]
+        clean: bool,
     },
 
     /// Introspect loaded schemas (types, links, rules)
@@ -965,6 +969,7 @@ fn run(cli: Cli) -> Result<bool> {
             prefix,
             filter,
             shortcodes,
+            clean,
         } => cmd_export(
             &cli,
             format,
@@ -979,6 +984,7 @@ fn run(cli: Cli) -> Result<bool> {
             prefix,
             filter.as_deref(),
             *shortcodes,
+            *clean,
         ),
         Command::Impact {
             since,
@@ -3878,6 +3884,7 @@ fn cmd_export(
     prefix: &str,
     sexpr_filter: Option<&str>,
     shortcodes: bool,
+    clean: bool,
 ) -> Result<bool> {
     validate_format(
         format,
@@ -3891,7 +3898,15 @@ fn cmd_export(
         ],
     )?;
     if format == "zola" {
-        return cmd_export_zola(cli, output, prefix, sexpr_filter, shortcodes, baseline_name);
+        return cmd_export_zola(
+            cli,
+            output,
+            prefix,
+            sexpr_filter,
+            shortcodes,
+            clean,
+            baseline_name,
+        );
     }
     if format == "html" {
         return cmd_export_html(
@@ -3965,6 +3980,7 @@ fn cmd_export_zola(
     prefix: &str,
     sexpr_filter: Option<&str>,
     shortcodes: bool,
+    clean: bool,
     baseline_name: Option<&str>,
 ) -> Result<bool> {
     let ctx = ProjectContext::load_with_docs(cli)?;
@@ -4002,6 +4018,19 @@ fn cmd_export_zola(
     let content_dir = site_dir.join("content").join(prefix);
     let artifacts_dir = content_dir.join("artifacts");
     let data_dir = site_dir.join("data").join(prefix);
+
+    // REQ-049: --clean removes stale pages before writing.
+    if clean {
+        if content_dir.exists() {
+            std::fs::remove_dir_all(&content_dir)
+                .with_context(|| format!("cleaning {}", content_dir.display()))?;
+            println!("  cleaned {}", content_dir.display());
+        }
+        if data_dir.exists() {
+            std::fs::remove_dir_all(&data_dir)
+                .with_context(|| format!("cleaning {}", data_dir.display()))?;
+        }
+    }
 
     std::fs::create_dir_all(&artifacts_dir)
         .with_context(|| format!("creating {}", artifacts_dir.display()))?;
@@ -4200,6 +4229,27 @@ links_count = {links_count}
     std::fs::write(
         data_dir.join("stats.json"),
         serde_json::to_string_pretty(&stats_output)?,
+    )?;
+    // REQ-049: embed validation result so consumers can verify export freshness.
+    let diagnostics = rivet_core::validate::validate(&store, &ctx.schema, &graph);
+    let errors = diagnostics
+        .iter()
+        .filter(|d| d.severity == rivet_core::schema::Severity::Error)
+        .count();
+    let warnings = diagnostics
+        .iter()
+        .filter(|d| d.severity == rivet_core::schema::Severity::Warning)
+        .count();
+    let validation_output = serde_json::json!({
+        "result": if errors > 0 { "FAIL" } else { "PASS" },
+        "errors": errors,
+        "warnings": warnings,
+        "artifact_count": artifacts.len(),
+        "exported_at": export_date,
+    });
+    std::fs::write(
+        data_dir.join("validation.json"),
+        serde_json::to_string_pretty(&validation_output)?,
     )?;
     println!("  wrote data files to {}", data_dir.display());
 
