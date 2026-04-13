@@ -7077,6 +7077,36 @@ fn cmd_import_results_needs_json(file: &std::path::Path, output: &std::path::Pat
         out_path.display(),
     );
 
+    // REQ-050: verify link targets exist within the imported set.
+    let imported_ids: std::collections::HashSet<String> =
+        artifacts.iter().map(|a| a.id.clone()).collect();
+    let mut unresolved = Vec::new();
+    for artifact in &artifacts {
+        for link in &artifact.links {
+            if !imported_ids.contains(&link.target) {
+                unresolved.push(format!(
+                    "  {} --[{}]--> {} (not found)",
+                    artifact.id, link.link_type, link.target
+                ));
+            }
+        }
+    }
+    drop(imported_ids);
+
+    if !unresolved.is_empty() {
+        eprintln!(
+            "\nWarning: {} unresolved link target(s) in imported artifacts:",
+            unresolved.len()
+        );
+        for msg in &unresolved {
+            eprintln!("{msg}");
+        }
+        eprintln!("These links point to artifacts not present in the import.");
+        eprintln!(
+            "Run 'rivet validate' after adding to your project to check against existing artifacts."
+        );
+    }
+
     Ok(true)
 }
 
