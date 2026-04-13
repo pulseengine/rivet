@@ -553,10 +553,7 @@ mod proofs {
     /// merely provides a concrete evaluation context.
     fn eval_test_artifact() -> Artifact {
         let mut fields = BTreeMap::new();
-        fields.insert(
-            "priority".into(),
-            serde_yaml::Value::String("must".into()),
-        );
+        fields.insert("priority".into(), serde_yaml::Value::String("must".into()));
         fields.insert(
             "category".into(),
             serde_yaml::Value::String("functional".into()),
@@ -619,10 +616,7 @@ mod proofs {
                 Accessor::Field("type".into()),
                 Value::Str("requirement".into()),
             ),
-            5 => Expr::Eq(
-                Accessor::Field("status".into()),
-                Value::Str("draft".into()),
-            ),
+            5 => Expr::Eq(Accessor::Field("status".into()), Value::Str("draft".into())),
             _ => unreachable!(),
         }
     }
@@ -650,10 +644,7 @@ mod proofs {
                 0 => Expr::Not(Box::new(arb_expr(depth - 1))),
                 1 => Expr::And(vec![arb_expr(depth - 1), arb_expr(depth - 1)]),
                 2 => Expr::Or(vec![arb_expr(depth - 1), arb_expr(depth - 1)]),
-                3 => Expr::Implies(
-                    Box::new(arb_expr(depth - 1)),
-                    Box::new(arb_expr(depth - 1)),
-                ),
+                3 => Expr::Implies(Box::new(arb_expr(depth - 1)), Box::new(arb_expr(depth - 1))),
                 _ => unreachable!(),
             }
         }
@@ -700,10 +691,7 @@ mod proofs {
         let b = arb_expr(2);
 
         let lhs = Expr::Not(Box::new(Expr::And(vec![a.clone(), b.clone()])));
-        let rhs = Expr::Or(vec![
-            Expr::Not(Box::new(a)),
-            Expr::Not(Box::new(b)),
-        ]);
+        let rhs = Expr::Or(vec![Expr::Not(Box::new(a)), Expr::Not(Box::new(b))]);
 
         kani::assert(
             sexpr_eval::check(&lhs, &ctx) == sexpr_eval::check(&rhs, &ctx),
