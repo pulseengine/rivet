@@ -1,7 +1,8 @@
 //! MCP integration tests for the Rivet MCP server.
 //!
 //! These tests spawn `rivet mcp` as a child process, connect via rmcp client,
-//! and exercise the 10 MCP tools plus resources over the stdio transport.
+//! and exercise all 15 MCP tools (read and write) plus resources over the stdio
+//! transport.
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -609,6 +610,272 @@ async fn test_rivet_reload() {
         Some(4),
         "expected 4 artifacts after reload; got: {json}"
     );
+
+    client.cancel().await.expect("cancel");
+}
+
+#[tokio::test]
+async fn test_query_filters_by_type() {
+    let tmp = tempfile::tempdir().unwrap();
+    create_test_project(tmp.path());
+
+    let client = spawn_mcp_client(tmp.path()).await;
+
+    // Query for only requirements using s-expression filter
+    let mut args = serde_json::Map::new();
+    args.insert(
+        "filter".to_string(),
+        Value::String("(= type \"requirement\")".to_string()),
+    );
+
+    let result = client
+        .call_tool(CallToolRequestParams::new("rivet_query").with_arguments(args))
+        .await
+        .expect("call_tool rivet_query");
+
+    let json = parse_result(&result);
+    assert_eq!(
+        json["count"].as_u64(),
+        Some(2),
+        "expected 2 requirements; got: {json}"
+    );
+
+    let artifacts = json["artifacts"].as_array().expect("artifacts array");
+    for artifact in artifacts {
+        assert_eq!(
+            artifact["type"].as_str(),
+            Some("requirement"),
+            "expected all artifacts to be requirements; got: {artifact}"
+        );
+    }
+
+    let ids: Vec<&str> = artifacts.iter().filter_map(|a| a["id"].as_str()).collect();
+    assert!(ids.contains(&"REQ-001"), "missing REQ-001");
+    assert!(ids.contains(&"REQ-002"), "missing REQ-002");
+    assert!(!ids.contains(&"DD-001"), "DD-001 should not be in results");
+
+    client.cancel().await.expect("cancel");
+}
+
+#[tokio::test]
+async fn test_modify_changes_status() {
+    let tmp = tempfile::tempdir().unwrap();
+    create_test_project(tmp.path());
+
+    let client = spawn_mcp_client(tmp.path()).await;
+
+    // Verify initial status is "draft"
+    let mut args = serde_json::Map::new();
+    args.insert("id".to_string(), Value::String("REQ-001".to_string()));
+    let result = client
+        .call_tool(CallToolRequestParams::new("rivet_get").with_arguments(args))
+        .await
+        .expect("call_tool rivet_get before modify");
+    let json = parse_result(&result);
+    assert_eq!(json["status"].as_str(), Some("draft"), "initial status");
+
+    // Modify status to "approved"
+    let mut args = serde_json::Map::new();
+    args.insert("id".to_string(), Value::String("REQ-001".to_string()));
+    args.insert("status".to_string(), Value::String("approved".to_string()));
+
+    let result = client
+        .call_tool(CallToolRequestParams::new("rivet_modify").with_arguments(args))
+        .await
+        .expect("call_tool rivet_modify");
+
+    let json = parse_result(&result);
+    assert_eq!(
+        json["modified"].as_str(),
+        Some("REQ-001"),
+        "modify response should confirm artifact ID"
+    );
+
+    // Reload so the in-memory state picks up the file change
+    let result = client
+        .call_tool(CallToolRequestParams::new("rivet_reload"))
+        .await
+        .expect("call_tool rivet_reload");
+    let json = parse_result(&result);
+    assert_eq!(json["reloaded"], Value::Bool(true));
+
+    // Verify the status changed via rivet_get
+    let mut args = serde_json::Map::new();
+    args.insert("id".to_string(), Value::String("REQ-001".to_string()));
+    let result = client
+        .call_tool(CallToolRequestParams::new("rivet_get").with_arguments(args))
+        .await
+        .expect("call_tool rivet_get after modify");
+    let json = parse_result(&result);
+    assert_eq!(
+        json["status"].as_str(),
+        Some("approved"),
+        "status should be updated to approved; got: {json}"
+    );
+
+    client.cancel().await.expect("cancel");
+}
+
+#[tokio::test]
+async fn test_link_and_unlink() {
+    let tmp = tempfile::tempdir().unwrap();
+    create_test_project(tmp.path());
+
+    let client = spawn_mcp_client(tmp.path()).await;
+
+    // Verify REQ-002 initially has no links
+    let mut args = serde_json::Map::new();
+    args.insert("id".to_string(), Value::String("REQ-002".to_string()));
+    let result = client
+        .call_tool(CallToolRequestParams::new("rivet_get").with_arguments(args))
+        .await
+        .expect("call_tool rivet_get before link");
+    let json = parse_result(&result);
+    let links = json["links"].as_array().expect("links array");
+    assert!(links.is_empty(), "REQ-002 should have no links initially");
+
+    // Add a link: REQ-002 --[satisfies]--> REQ-001
+    let mut args = serde_json::Map::new();
+    args.insert("source".to_string(), Value::String("REQ-002".to_string()));
+    args.insert(
+        "link_type".to_string(),
+        Value::String("satisfies".to_string()),
+    );
+    args.insert("target".to_string(), Value::String("REQ-001".to_string()));
+
+    let result = client
+        .call_tool(CallToolRequestParams::new("rivet_link").with_arguments(args))
+        .await
+        .expect("call_tool rivet_link");
+
+    let json = parse_result(&result);
+    assert!(
+        json["linked"].as_str().is_some(),
+        "link response should have 'linked' field; got: {json}"
+    );
+
+    // Reload
+    let result = client
+        .call_tool(CallToolRequestParams::new("rivet_reload"))
+        .await
+        .expect("call_tool rivet_reload after link");
+    let json = parse_result(&result);
+    assert_eq!(json["reloaded"], Value::Bool(true));
+
+    // Verify the link exists via rivet_get
+    let mut args = serde_json::Map::new();
+    args.insert("id".to_string(), Value::String("REQ-002".to_string()));
+    let result = client
+        .call_tool(CallToolRequestParams::new("rivet_get").with_arguments(args))
+        .await
+        .expect("call_tool rivet_get after link");
+    let json = parse_result(&result);
+    let links = json["links"].as_array().expect("links array after link");
+    assert_eq!(links.len(), 1, "REQ-002 should have 1 link; got: {json}");
+    assert_eq!(links[0]["type"].as_str(), Some("satisfies"));
+    assert_eq!(links[0]["target"].as_str(), Some("REQ-001"));
+
+    // Now unlink: REQ-002 --[satisfies]--> REQ-001
+    let mut args = serde_json::Map::new();
+    args.insert("source".to_string(), Value::String("REQ-002".to_string()));
+    args.insert(
+        "link_type".to_string(),
+        Value::String("satisfies".to_string()),
+    );
+    args.insert("target".to_string(), Value::String("REQ-001".to_string()));
+
+    let result = client
+        .call_tool(CallToolRequestParams::new("rivet_unlink").with_arguments(args))
+        .await
+        .expect("call_tool rivet_unlink");
+
+    let json = parse_result(&result);
+    assert!(
+        json["unlinked"].as_str().is_some(),
+        "unlink response should have 'unlinked' field; got: {json}"
+    );
+
+    // Reload again
+    let result = client
+        .call_tool(CallToolRequestParams::new("rivet_reload"))
+        .await
+        .expect("call_tool rivet_reload after unlink");
+    let json = parse_result(&result);
+    assert_eq!(json["reloaded"], Value::Bool(true));
+
+    // Verify the link is gone
+    let mut args = serde_json::Map::new();
+    args.insert("id".to_string(), Value::String("REQ-002".to_string()));
+    let result = client
+        .call_tool(CallToolRequestParams::new("rivet_get").with_arguments(args))
+        .await
+        .expect("call_tool rivet_get after unlink");
+    let json = parse_result(&result);
+    let links = json["links"].as_array().expect("links array after unlink");
+    assert!(
+        links.is_empty(),
+        "REQ-002 should have no links after unlink; got: {json}"
+    );
+
+    client.cancel().await.expect("cancel");
+}
+
+#[tokio::test]
+async fn test_remove_artifact() {
+    let tmp = tempfile::tempdir().unwrap();
+    create_test_project(tmp.path());
+
+    let client = spawn_mcp_client(tmp.path()).await;
+
+    // Verify initial count is 3
+    let result = client
+        .call_tool(CallToolRequestParams::new("rivet_list"))
+        .await
+        .expect("call_tool rivet_list before remove");
+    let json = parse_result(&result);
+    assert_eq!(json["count"].as_u64(), Some(3), "initial count should be 3");
+
+    // Remove REQ-002 (nothing links to it, so no force needed)
+    let mut args = serde_json::Map::new();
+    args.insert("id".to_string(), Value::String("REQ-002".to_string()));
+
+    let result = client
+        .call_tool(CallToolRequestParams::new("rivet_remove").with_arguments(args))
+        .await
+        .expect("call_tool rivet_remove");
+
+    let json = parse_result(&result);
+    assert_eq!(
+        json["removed"].as_str(),
+        Some("REQ-002"),
+        "remove response should confirm artifact ID; got: {json}"
+    );
+
+    // Reload
+    let result = client
+        .call_tool(CallToolRequestParams::new("rivet_reload"))
+        .await
+        .expect("call_tool rivet_reload after remove");
+    let json = parse_result(&result);
+    assert_eq!(json["reloaded"], Value::Bool(true));
+
+    // Verify artifact is gone from the list
+    let result = client
+        .call_tool(CallToolRequestParams::new("rivet_list"))
+        .await
+        .expect("call_tool rivet_list after remove");
+    let json = parse_result(&result);
+    assert_eq!(
+        json["count"].as_u64(),
+        Some(2),
+        "expected 2 artifacts after remove; got: {json}"
+    );
+
+    let artifacts = json["artifacts"].as_array().expect("artifacts array");
+    let ids: Vec<&str> = artifacts.iter().filter_map(|a| a["id"].as_str()).collect();
+    assert!(!ids.contains(&"REQ-002"), "REQ-002 should be removed");
+    assert!(ids.contains(&"REQ-001"), "REQ-001 should still exist");
+    assert!(ids.contains(&"DD-001"), "DD-001 should still exist");
 
     client.cancel().await.expect("cancel");
 }
