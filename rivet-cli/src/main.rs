@@ -3953,17 +3953,40 @@ sort_by = \"title\"
     std::fs::write(artifacts_dir.join("_index.md"), &artifacts_index)?;
 
     // ── Individual artifact pages ───────────────────────────────────
+    // Use provenance timestamp from first artifact that has one, or fallback.
+    let export_date = artifacts
+        .iter()
+        .filter_map(|a| a.provenance.as_ref()?.timestamp.as_deref())
+        .next()
+        .and_then(|ts| ts.get(..10)) // "2026-04-07T..." -> "2026-04-07"
+        .unwrap_or("2026-01-01");
     let mut artifact_count = 0;
     for artifact in &artifacts {
         let slug = artifact.id.to_lowercase().replace('.', "-");
         let status = artifact.status.as_deref().unwrap_or("unset");
-        let tags_toml: Vec<String> = artifact.tags.iter().map(|t| format!("\"{t}\"")).collect();
-        let description = artifact
-            .description
-            .as_deref()
-            .unwrap_or("")
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"");
+        let mut all_tags: Vec<String> = artifact.tags.iter().map(|t| format!("\"{t}\"")).collect();
+        all_tags.push(format!("\"{}\"", artifact.artifact_type));
+        all_tags.push(format!("\"{}\"", status));
+        let description_raw = artifact.description.as_deref().unwrap_or("");
+
+        // Use description as fallback title if title is empty.
+        let raw_title = if artifact.title.trim().is_empty() {
+            description_raw
+                .lines()
+                .find(|l| !l.trim().is_empty())
+                .unwrap_or(&artifact.id)
+                .trim()
+        } else {
+            artifact.title.as_str()
+        };
+
+        // Escape title for TOML (replace quotes, collapse to single line).
+        let title_escaped = raw_title
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', " ");
+        // Triple-quoted TOML strings can't contain """ so escape that edge case.
+        let description_toml = description_raw.replace("\"\"\"", "\\\"\\\"\\\"");
 
         let links_md: String = artifact
             .links
@@ -3977,44 +4000,62 @@ sort_by = \"title\"
             })
             .collect();
 
+        // Include diagram field as Mermaid code block if present.
+        let diagram_md = artifact
+            .fields
+            .get("diagram")
+            .and_then(|v| v.as_str())
+            .map(|d| format!("\n### Diagram\n\n```mermaid\n{d}\n```\n"))
+            .unwrap_or_default();
+
+        // Include rationale field if present (design decisions).
+        let rationale_md = artifact
+            .fields
+            .get("rationale")
+            .and_then(|v| v.as_str())
+            .map(|r| format!("\n### Rationale\n\n{r}\n"))
+            .unwrap_or_default();
+
         let page = format!(
             "\
 +++
 title = \"{id}: {title}\"
 slug = \"{slug}\"
 weight = {weight}
+date = {date}
 
 [taxonomies]
-artifact_type = [\"{art_type}\"]
-artifact_status = [\"{status}\"]
 tags = [{tags}]
 
 [extra]
 id = \"{id}\"
 artifact_type = \"{art_type}\"
 status = \"{status}\"
-description = \"{description}\"
+description = \"\"\"\n{description}\n\"\"\"
 links_count = {links_count}
 +++
 
 ## {id}: {title}
 
 {desc_body}
-
+{rationale}{diagram}
 ### Links
 
 {links_md}\
 ",
             id = artifact.id,
-            title = artifact.title.replace("\"", "\\\""),
+            title = title_escaped,
             slug = slug,
             weight = artifact_count,
+            date = export_date,
             art_type = artifact.artifact_type,
             status = status,
-            tags = tags_toml.join(", "),
-            description = description,
+            tags = all_tags.join(", "),
+            description = description_toml,
             links_count = artifact.links.len(),
-            desc_body = artifact.description.as_deref().unwrap_or(""),
+            desc_body = description_raw,
+            rationale = rationale_md,
+            diagram = diagram_md,
             links_md = if links_md.is_empty() {
                 "No links.".to_string()
             } else {
@@ -4134,13 +4175,7 @@ links_count = {links_count}
     println!("\nZola export complete ({prefix}).");
     println!("  Content: content/{prefix}/artifacts/");
     println!("  Data:    data/{prefix}/");
-    println!("\n  To enable taxonomy pages, add to your config.toml:");
-    println!("    [[taxonomies]]");
-    println!("    name = \"artifact_type\"");
-    println!("    ");
-    println!("    [[taxonomies]]");
-    println!("    name = \"artifact_status\"");
-    println!("    ");
+    println!("\n  Ensure your config.toml has a 'tags' taxonomy:");
     println!("    [[taxonomies]]");
     println!("    name = \"tags\"");
 
