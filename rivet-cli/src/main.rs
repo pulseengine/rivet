@@ -520,14 +520,14 @@ enum Command {
 
     /// Import test results or artifacts from external formats
     ImportResults {
-        /// Input format (currently: "junit")
+        /// Input format: "junit" (JUnit XML) or "needs-json" (sphinx-needs)
         #[arg(long)]
         format: String,
 
         /// Input file path
         file: PathBuf,
 
-        /// Output directory for results YAML (default: results/)
+        /// Output directory for YAML files (default: results/)
         #[arg(long, default_value = "results")]
         output: PathBuf,
     },
@@ -6890,62 +6890,105 @@ fn cmd_import(
     Ok(true)
 }
 
-/// Import test results from external formats (currently: JUnit XML).
+/// Import test results or artifacts from external formats.
 fn cmd_import_results(
     format: &str,
     file: &std::path::Path,
     output: &std::path::Path,
 ) -> Result<bool> {
+    match format {
+        "junit" => cmd_import_results_junit(file, output),
+        "needs-json" => cmd_import_results_needs_json(file, output),
+        other => {
+            anyhow::bail!("unknown import format: '{other}' (supported: junit, needs-json)")
+        }
+    }
+}
+
+/// Import JUnit XML test results.
+fn cmd_import_results_junit(file: &std::path::Path, output: &std::path::Path) -> Result<bool> {
     use rivet_core::junit::{ImportSummary, parse_junit_xml};
     use rivet_core::results::TestRunFile;
 
-    match format {
-        "junit" => {
-            let xml = std::fs::read_to_string(file)
-                .with_context(|| format!("failed to read {}", file.display()))?;
+    let xml = std::fs::read_to_string(file)
+        .with_context(|| format!("failed to read {}", file.display()))?;
 
-            let runs = parse_junit_xml(&xml)
-                .with_context(|| format!("failed to parse JUnit XML from {}", file.display()))?;
+    let runs = parse_junit_xml(&xml)
+        .with_context(|| format!("failed to parse JUnit XML from {}", file.display()))?;
 
-            if runs.is_empty() {
-                println!("No test suites found in {}", file.display());
-                return Ok(true);
-            }
-
-            std::fs::create_dir_all(output).with_context(|| {
-                format!("failed to create output directory {}", output.display())
-            })?;
-
-            for run in &runs {
-                let filename = format!("{}.yaml", run.run.id);
-                let out_path = output.join(&filename);
-                let run_file = TestRunFile {
-                    run: run.run.clone(),
-                    results: run.results.clone(),
-                };
-                let yaml =
-                    serde_yaml::to_string(&run_file).context("failed to serialize run to YAML")?;
-                std::fs::write(&out_path, &yaml)
-                    .with_context(|| format!("failed to write {}", out_path.display()))?;
-            }
-
-            let summary = ImportSummary::from_runs(&runs);
-            println!(
-                "Imported {} test results ({} pass, {} fail, {} error, {} skip) → {}",
-                summary.total,
-                summary.pass,
-                summary.fail,
-                summary.error,
-                summary.skip,
-                output.display(),
-            );
-
-            Ok(true)
-        }
-        other => {
-            anyhow::bail!("unknown import format: '{other}' (supported: junit)")
-        }
+    if runs.is_empty() {
+        println!("No test suites found in {}", file.display());
+        return Ok(true);
     }
+
+    std::fs::create_dir_all(output)
+        .with_context(|| format!("failed to create output directory {}", output.display()))?;
+
+    for run in &runs {
+        let filename = format!("{}.yaml", run.run.id);
+        let out_path = output.join(&filename);
+        let run_file = TestRunFile {
+            run: run.run.clone(),
+            results: run.results.clone(),
+        };
+        let yaml = serde_yaml::to_string(&run_file).context("failed to serialize run to YAML")?;
+        std::fs::write(&out_path, &yaml)
+            .with_context(|| format!("failed to write {}", out_path.display()))?;
+    }
+
+    let summary = ImportSummary::from_runs(&runs);
+    println!(
+        "Imported {} test results ({} pass, {} fail, {} error, {} skip) → {}",
+        summary.total,
+        summary.pass,
+        summary.fail,
+        summary.error,
+        summary.skip,
+        output.display(),
+    );
+
+    Ok(true)
+}
+
+/// Import sphinx-needs `needs.json` and write artifacts as generic YAML.
+fn cmd_import_results_needs_json(file: &std::path::Path, output: &std::path::Path) -> Result<bool> {
+    use rivet_core::formats::needs_json::{NeedsJsonConfig, import_needs_json};
+
+    let content = std::fs::read_to_string(file)
+        .with_context(|| format!("failed to read {}", file.display()))?;
+
+    let config = NeedsJsonConfig::default();
+    let artifacts = import_needs_json(&content, &config)
+        .with_context(|| format!("failed to parse needs.json from {}", file.display()))?;
+
+    if artifacts.is_empty() {
+        println!("No needs found in {}", file.display());
+        return Ok(true);
+    }
+
+    std::fs::create_dir_all(output)
+        .with_context(|| format!("failed to create output directory {}", output.display()))?;
+
+    // Export as generic YAML using the adapter's export function.
+    let adapter = rivet_core::formats::generic::GenericYamlAdapter::new();
+    let yaml = rivet_core::adapter::Adapter::export(
+        &adapter,
+        &artifacts,
+        &rivet_core::adapter::AdapterConfig::default(),
+    )
+    .context("failed to serialize artifacts to generic YAML")?;
+
+    let out_path = output.join("needs-import.yaml");
+    std::fs::write(&out_path, &yaml)
+        .with_context(|| format!("failed to write {}", out_path.display()))?;
+
+    println!(
+        "Imported {} artifacts from sphinx-needs → {}",
+        artifacts.len(),
+        out_path.display(),
+    );
+
+    Ok(true)
 }
 
 /// Parse a key=value pair for mutation commands.
