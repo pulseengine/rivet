@@ -976,6 +976,34 @@ fn tool_query(proj: &McpProject, params: &QueryParams) -> Result<Value> {
     }))
 }
 
+// ── MCP audit logging (REQ-047) ───────────────────────────────────────
+
+/// Append a structured audit log entry for MCP mutations.
+fn mcp_audit_log(project_dir: &Path, tool: &str, details: &Value) {
+    let log_dir = project_dir.join(".rivet");
+    let _ = std::fs::create_dir_all(&log_dir);
+    let log_path = log_dir.join("mcp-audit.jsonl");
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let entry = serde_json::json!({
+        "timestamp": timestamp,
+        "tool": tool,
+        "details": details,
+    });
+
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+    {
+        use std::io::Write;
+        let _ = writeln!(f, "{}", serde_json::to_string(&entry).unwrap_or_default());
+    }
+}
+
 // ── Mutation tool helpers ──────────────────────────────────────────────
 
 fn tool_modify(project_dir: &Path, p: &ModifyParams) -> Result<Value> {
@@ -1009,7 +1037,13 @@ fn tool_modify(project_dir: &Path, p: &ModifyParams) -> Result<Value> {
 
     mutate::modify_artifact_in_file(&p.id, &params, &source_file, &proj.store)?;
 
-    Ok(json!({ "modified": p.id, "file": source_file.display().to_string() }))
+    let result = json!({ "modified": p.id, "file": source_file.display().to_string() });
+    mcp_audit_log(
+        project_dir,
+        "rivet_modify",
+        &json!({"id": p.id, "status": p.status, "title": p.title}),
+    );
+    Ok(result)
 }
 
 fn tool_link(project_dir: &Path, source: &str, link_type: &str, target: &str) -> Result<Value> {
@@ -1030,9 +1064,13 @@ fn tool_link(project_dir: &Path, source: &str, link_type: &str, target: &str) ->
 
     mutate::add_link_to_file(source, &link, &source_file)?;
 
-    Ok(
-        json!({ "linked": format!("{source} --[{link_type}]--> {target}"), "file": source_file.display().to_string() }),
-    )
+    let result = json!({ "linked": format!("{source} --[{link_type}]--> {target}"), "file": source_file.display().to_string() });
+    mcp_audit_log(
+        project_dir,
+        "rivet_link",
+        &json!({"source": source, "link_type": link_type, "target": target}),
+    );
+    Ok(result)
 }
 
 fn tool_unlink(project_dir: &Path, source: &str, link_type: &str, target: &str) -> Result<Value> {
@@ -1047,9 +1085,13 @@ fn tool_unlink(project_dir: &Path, source: &str, link_type: &str, target: &str) 
 
     mutate::remove_link_from_file(source, link_type, target, &source_file)?;
 
-    Ok(
-        json!({ "unlinked": format!("{source} --[{link_type}]--> {target}"), "file": source_file.display().to_string() }),
-    )
+    let result = json!({ "unlinked": format!("{source} --[{link_type}]--> {target}"), "file": source_file.display().to_string() });
+    mcp_audit_log(
+        project_dir,
+        "rivet_unlink",
+        &json!({"source": source, "link_type": link_type, "target": target}),
+    );
+    Ok(result)
 }
 
 fn tool_remove(project_dir: &Path, id: &str, force: bool) -> Result<Value> {
@@ -1064,7 +1106,13 @@ fn tool_remove(project_dir: &Path, id: &str, force: bool) -> Result<Value> {
 
     mutate::remove_artifact_from_file(id, &source_file)?;
 
-    Ok(json!({ "removed": id, "file": source_file.display().to_string() }))
+    let result = json!({ "removed": id, "file": source_file.display().to_string() });
+    mcp_audit_log(
+        project_dir,
+        "rivet_remove",
+        &json!({"id": id, "force": force}),
+    );
+    Ok(result)
 }
 
 // ── Entry point ────────────────────────────────────────────────────────

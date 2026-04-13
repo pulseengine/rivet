@@ -169,7 +169,10 @@ pub fn check(expr: &Expr, ctx: &EvalContext) -> bool {
         Expr::Matches(acc, val) => {
             let text = resolve_str(acc, ctx.artifact);
             let pattern = value_to_str(val);
-            regex::Regex::new(&pattern)
+            // REQ-048: bound regex size to prevent ReDoS.
+            regex::RegexBuilder::new(&pattern)
+                .size_limit(1 << 20) // 1MB compiled size limit
+                .build()
                 .map(|re| re.is_match(&text))
                 .unwrap_or(false)
         }
@@ -853,6 +856,7 @@ mod tests {
     use super::*;
     use crate::links::LinkGraph;
     use crate::model::{Artifact, Link};
+    use crate::schema::Schema;
     use std::collections::BTreeMap;
     use std::path::PathBuf;
 
@@ -1119,5 +1123,120 @@ mod tests {
         let lhs = Expr::Excludes(Box::new(p.clone()), Box::new(q.clone()));
         let rhs = Expr::Not(Box::new(Expr::And(vec![p, q])));
         assert_eq!(run(&lhs, &a), run(&rhs, &a));
+    }
+
+    // ── Quantifier scope correctness (REQ-053) ─────────────────────
+
+    fn make_artifact(id: &str, art_type: &str, tags: &[&str]) -> Artifact {
+        Artifact {
+            id: id.into(),
+            artifact_type: art_type.into(),
+            title: format!("Title of {id}"),
+            description: None,
+            status: Some("approved".into()),
+            tags: tags.iter().map(|t| t.to_string()).collect(),
+            links: vec![],
+            fields: BTreeMap::new(),
+            provenance: None,
+            source_file: None,
+        }
+    }
+
+    fn store_with(artifacts: Vec<Artifact>) -> Store {
+        let mut store = Store::default();
+        for a in artifacts {
+            store.upsert(a);
+        }
+        store
+    }
+
+    #[test]
+    fn forall_uses_store_parameter() {
+        let a = make_artifact("REQ-001", "requirement", &["safety"]);
+        let b = make_artifact("REQ-002", "requirement", &["safety"]);
+        let c = make_artifact("REQ-003", "requirement", &[]); // no safety tag
+
+        // Store with all three: forall requirement has safety tag → false
+        let store_all = store_with(vec![a.clone(), b.clone(), c.clone()]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store_all, &schema);
+
+        let expr = Expr::Forall(
+            Box::new(Expr::Eq(
+                Accessor::Field("type".into()),
+                Value::Str("requirement".into()),
+            )),
+            Box::new(Expr::HasTag(Value::Str("safety".into()))),
+        );
+
+        // With full store (has REQ-003 without safety): forall is false
+        let ctx_all = EvalContext {
+            artifact: &a,
+            graph: &graph,
+            store: Some(&store_all),
+        };
+        assert!(!check(&expr, &ctx_all));
+
+        // With scoped store (only REQ-001, REQ-002): forall is true
+        let store_scoped = store_with(vec![a.clone(), b.clone()]);
+        let graph_scoped = LinkGraph::build(&store_scoped, &schema);
+        let ctx_scoped = EvalContext {
+            artifact: &a,
+            graph: &graph_scoped,
+            store: Some(&store_scoped),
+        };
+        assert!(check(&expr, &ctx_scoped));
+    }
+
+    #[test]
+    fn exists_uses_store_parameter() {
+        let a = make_artifact("REQ-001", "requirement", &["safety"]);
+        let b = make_artifact("FEAT-001", "feature", &[]);
+
+        let expr = Expr::Exists(
+            Box::new(Expr::Eq(
+                Accessor::Field("type".into()),
+                Value::Str("requirement".into()),
+            )),
+            Box::new(Expr::HasTag(Value::Str("safety".into()))),
+        );
+
+        let schema = Schema::merge(&[]);
+
+        // Store with requirement: exists is true
+        let store_with_req = store_with(vec![a.clone(), b.clone()]);
+        let graph = LinkGraph::build(&store_with_req, &schema);
+        let ctx = EvalContext {
+            artifact: &b,
+            graph: &graph,
+            store: Some(&store_with_req),
+        };
+        assert!(check(&expr, &ctx));
+
+        // Store without requirement: exists is false
+        let store_no_req = store_with(vec![b.clone()]);
+        let graph2 = LinkGraph::build(&store_no_req, &schema);
+        let ctx2 = EvalContext {
+            artifact: &b,
+            graph: &graph2,
+            store: Some(&store_no_req),
+        };
+        assert!(!check(&expr, &ctx2));
+    }
+
+    #[test]
+    fn quantifier_without_store_returns_false() {
+        let a = test_artifact();
+        let graph = empty_graph();
+
+        let expr = Expr::Forall(Box::new(Expr::BoolLit(true)), Box::new(Expr::BoolLit(true)));
+
+        // No store → forall returns false (safe default)
+        let ctx = EvalContext {
+            artifact: &a,
+            graph: &graph,
+            store: None,
+        };
+        assert!(!check(&expr, &ctx));
     }
 }
