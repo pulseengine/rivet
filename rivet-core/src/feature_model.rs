@@ -106,6 +106,58 @@ fn default_group() -> GroupType {
     GroupType::Leaf
 }
 
+/// Preprocess a feature constraint string: replace bare feature names
+/// with `(has-tag "name")` so the s-expression parser accepts them.
+/// The solver later interprets HasTag as "feature is selected".
+fn preprocess_feature_constraint(src: &str, features: &BTreeMap<String, Feature>) -> String {
+    let tokens = crate::sexpr::lex(src);
+    let mut result = String::new();
+    for token in &tokens {
+        if token.kind == crate::sexpr::SyntaxKind::Symbol {
+            let name = token.text;
+            // Known forms pass through unchanged.
+            if matches!(
+                name,
+                "and"
+                    | "or"
+                    | "not"
+                    | "implies"
+                    | "excludes"
+                    | "forall"
+                    | "exists"
+                    | "="
+                    | "!="
+                    | ">"
+                    | "<"
+                    | ">="
+                    | "<="
+                    | "has-tag"
+                    | "has-field"
+                    | "in"
+                    | "linked-by"
+                    | "linked-from"
+                    | "linked-to"
+                    | "links-count"
+                    | "matches"
+                    | "contains"
+                    | "reachable-from"
+                    | "reachable-to"
+                    | "count"
+            ) {
+                result.push_str(name);
+            } else if features.contains_key(name) {
+                // Bare feature name → (has-tag "name")
+                result.push_str(&format!("(has-tag \"{name}\")"));
+            } else {
+                result.push_str(name);
+            }
+        } else {
+            result.push_str(token.text);
+        }
+    }
+    result
+}
+
 impl FeatureModel {
     /// Parse a feature model from a YAML string.
     pub fn from_yaml(yaml: &str) -> Result<Self, Error> {
@@ -153,9 +205,13 @@ impl FeatureModel {
         }
 
         // Parse constraint s-expressions.
+        // Feature model constraints use bare symbols as feature names.
+        // Wrap them in (has-tag "name") so the parser accepts them —
+        // the solver interprets HasTag as "feature is selected".
         let mut constraints = Vec::new();
         for src in &raw.constraints {
-            let expr = sexpr_eval::parse_filter(src)
+            let preprocessed = preprocess_feature_constraint(src, &features);
+            let expr = sexpr_eval::parse_filter(&preprocessed)
                 .map_err(|errs| Error::Schema(format!("constraint `{src}`: {errs:?}")))?;
             constraints.push(expr);
         }
@@ -458,6 +514,7 @@ fn extract_feature_name(expr: &Expr) -> Option<String> {
             Some(val.clone())
         }
         Expr::HasField(sexpr_eval::Value::Str(name)) => Some(name.clone()),
+        Expr::HasTag(sexpr_eval::Value::Str(name)) => Some(name.clone()),
         _ => None,
     }
 }

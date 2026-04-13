@@ -1,0 +1,14 @@
+bindings:
+  pedestrian-detection:
+    artifacts: [REQ-042, REQ-043]
+    source: ["src/perception/pedestrian/**"]
+  lane-keeping:
+    artifacts: [REQ-050]
+    source: ["src/control/lane_keep/**"]
+  adaptive-cruise:
+    artifacts: [REQ-051]
+    source: ["src/control/cruise/**"]
+  eu:
+    artifacts: [REQ-200]
+  asil-c:
+    artifacts: [REQ-101]

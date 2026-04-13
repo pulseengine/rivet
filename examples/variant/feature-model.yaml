@@ -1,0 +1,65 @@
+kind: feature-model
+root: vehicle-platform
+
+features:
+  vehicle-platform:
+    group: mandatory
+    children: [market, safety-level, feature-set]
+
+  market:
+    group: alternative
+    children: [eu, us, cn]
+
+  eu:
+    group: leaf
+  us:
+    group: leaf
+  cn:
+    group: leaf
+
+  safety-level:
+    group: alternative
+    children: [qm, asil-a, asil-b, asil-c, asil-d]
+
+  qm:
+    group: leaf
+  asil-a:
+    group: leaf
+  asil-b:
+    group: leaf
+  asil-c:
+    group: leaf
+  asil-d:
+    group: leaf
+
+  feature-set:
+    group: or
+    children: [base, adas, autonomous]
+
+  base:
+    group: leaf
+
+  adas:
+    group: mandatory
+    children: [lane-keeping, adaptive-cruise, pedestrian-detection]
+
+  lane-keeping:
+    group: leaf
+  adaptive-cruise:
+    group: leaf
+  pedestrian-detection:
+    group: leaf
+
+  autonomous:
+    group: mandatory
+    children: [path-planning, sensor-fusion]
+
+  path-planning:
+    group: leaf
+  sensor-fusion:
+    group: leaf
+
+constraints:
+  - (implies eu pedestrian-detection)
+  - (implies autonomous (and adas asil-d))
+  - (implies adas (or asil-b asil-c asil-d))

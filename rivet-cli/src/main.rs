@@ -496,6 +496,12 @@ enum Command {
         action: SnapshotAction,
     },
 
+    /// Product line variant management (feature model + constraint solver)
+    Variant {
+        #[command(subcommand)]
+        action: VariantAction,
+    },
+
     /// Import artifacts using a custom WASM adapter component
     #[cfg(feature = "wasm")]
     Import {
@@ -759,6 +765,52 @@ enum SnapshotAction {
     List,
 }
 
+#[derive(Subcommand)]
+enum VariantAction {
+    /// Check a variant configuration against a feature model
+    Check {
+        /// Path to feature model YAML file
+        #[arg(long)]
+        model: PathBuf,
+
+        /// Path to variant configuration YAML file
+        #[arg(long)]
+        variant: PathBuf,
+
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+    /// List features in a feature model
+    List {
+        /// Path to feature model YAML file
+        #[arg(long)]
+        model: PathBuf,
+
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+    /// Solve: propagate a variant selection and show effective features
+    Solve {
+        /// Path to feature model YAML file
+        #[arg(long)]
+        model: PathBuf,
+
+        /// Path to variant configuration YAML file
+        #[arg(long)]
+        variant: PathBuf,
+
+        /// Path to binding model YAML file (optional)
+        #[arg(long)]
+        binding: Option<PathBuf>,
+
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
 
@@ -974,6 +1026,20 @@ fn run(cli: Cli) -> Result<bool> {
                 cmd_snapshot_diff(&cli, baseline.as_deref(), format)
             }
             SnapshotAction::List => cmd_snapshot_list(&cli),
+        },
+        Command::Variant { action } => match action {
+            VariantAction::Check {
+                model,
+                variant,
+                format,
+            } => cmd_variant_check(model, variant, format),
+            VariantAction::List { model, format } => cmd_variant_list(model, format),
+            VariantAction::Solve {
+                model,
+                variant,
+                binding,
+                format,
+            } => cmd_variant_solve(&cli, model, variant, binding.as_deref(), format),
         },
         #[cfg(feature = "wasm")]
         Command::Import {
@@ -6270,6 +6336,222 @@ fn cmd_snapshot_list(cli: &Cli) -> Result<bool> {
                 );
             } else {
                 println!("  {} (invalid)", entry.file_name().to_string_lossy());
+            }
+        }
+    }
+
+    Ok(true)
+}
+
+// ── Variant commands ────────────────────────────────────────────────────
+
+/// Check a variant configuration against a feature model.
+fn cmd_variant_check(
+    model_path: &std::path::Path,
+    variant_path: &std::path::Path,
+    format: &str,
+) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
+
+    let model_yaml = std::fs::read_to_string(model_path)
+        .with_context(|| format!("reading {}", model_path.display()))?;
+    let model = rivet_core::feature_model::FeatureModel::from_yaml(&model_yaml)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    let variant_yaml = std::fs::read_to_string(variant_path)
+        .with_context(|| format!("reading {}", variant_path.display()))?;
+    let variant: rivet_core::feature_model::VariantConfig =
+        serde_yaml::from_str(&variant_yaml).context("parsing variant config")?;
+
+    match rivet_core::feature_model::solve(&model, &variant) {
+        Ok(resolved) => {
+            if format == "json" {
+                let output = serde_json::json!({
+                    "result": "PASS",
+                    "variant": resolved.name,
+                    "effective_features": resolved.effective_features,
+                    "feature_count": resolved.effective_features.len(),
+                });
+                println!("{}", serde_json::to_string_pretty(&output)?);
+            } else {
+                println!("Variant '{}': PASS", resolved.name);
+                println!(
+                    "Effective features ({}):",
+                    resolved.effective_features.len()
+                );
+                for f in &resolved.effective_features {
+                    println!("  {f}");
+                }
+            }
+            Ok(true)
+        }
+        Err(errors) => {
+            if format == "json" {
+                let errs: Vec<String> = errors.iter().map(|e| format!("{e:?}")).collect();
+                let output = serde_json::json!({
+                    "result": "FAIL",
+                    "variant": variant.name,
+                    "errors": errs,
+                });
+                println!("{}", serde_json::to_string_pretty(&output)?);
+            } else {
+                eprintln!("Variant '{}': FAIL", variant.name);
+                for err in &errors {
+                    eprintln!("  {err:?}");
+                }
+            }
+            Ok(false)
+        }
+    }
+}
+
+/// List features in a feature model.
+fn cmd_variant_list(model_path: &std::path::Path, format: &str) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
+
+    let model_yaml = std::fs::read_to_string(model_path)
+        .with_context(|| format!("reading {}", model_path.display()))?;
+    let model = rivet_core::feature_model::FeatureModel::from_yaml(&model_yaml)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    if format == "json" {
+        let features: Vec<serde_json::Value> = model
+            .features
+            .values()
+            .map(|f| {
+                serde_json::json!({
+                    "name": f.name,
+                    "group": format!("{:?}", f.group).to_lowercase(),
+                    "children": f.children,
+                    "parent": f.parent,
+                })
+            })
+            .collect();
+        let output = serde_json::json!({
+            "root": model.root,
+            "feature_count": model.features.len(),
+            "constraint_count": model.constraints.len(),
+            "features": features,
+        });
+        println!("{}", serde_json::to_string_pretty(&output)?);
+    } else {
+        println!("Feature model (root: {})", model.root);
+        println!(
+            "{} features, {} constraints\n",
+            model.features.len(),
+            model.constraints.len()
+        );
+        print_feature_tree(&model, &model.root, 0);
+    }
+
+    Ok(true)
+}
+
+fn print_feature_tree(model: &rivet_core::feature_model::FeatureModel, name: &str, depth: usize) {
+    use rivet_core::feature_model::GroupType;
+    let indent = "  ".repeat(depth);
+    if let Some(f) = model.features.get(name) {
+        let group_label = match f.group {
+            GroupType::Mandatory => " [mandatory]",
+            GroupType::Optional => " [optional]",
+            GroupType::Alternative => " [alternative]",
+            GroupType::Or => " [or]",
+            GroupType::Leaf => "",
+        };
+        println!("{indent}{name}{group_label}");
+        for child in &f.children {
+            print_feature_tree(model, child, depth + 1);
+        }
+    }
+}
+
+/// Solve a variant and optionally show bound artifacts.
+fn cmd_variant_solve(
+    cli: &Cli,
+    model_path: &std::path::Path,
+    variant_path: &std::path::Path,
+    binding_path: Option<&std::path::Path>,
+    format: &str,
+) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
+
+    let model_yaml = std::fs::read_to_string(model_path)
+        .with_context(|| format!("reading {}", model_path.display()))?;
+    let model = rivet_core::feature_model::FeatureModel::from_yaml(&model_yaml)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    let variant_yaml = std::fs::read_to_string(variant_path)
+        .with_context(|| format!("reading {}", variant_path.display()))?;
+    let variant: rivet_core::feature_model::VariantConfig =
+        serde_yaml::from_str(&variant_yaml).context("parsing variant config")?;
+
+    let resolved = rivet_core::feature_model::solve(&model, &variant).map_err(|errs| {
+        let msgs: Vec<String> = errs.iter().map(|e| format!("{e:?}")).collect();
+        anyhow::anyhow!("variant check failed:\n  {}", msgs.join("\n  "))
+    })?;
+
+    let binding = if let Some(bp) = binding_path {
+        let yaml =
+            std::fs::read_to_string(bp).with_context(|| format!("reading {}", bp.display()))?;
+        let b: rivet_core::feature_model::FeatureBinding =
+            serde_yaml::from_str(&yaml).context("parsing binding")?;
+        Some(b)
+    } else {
+        None
+    };
+
+    let bound_artifacts: Vec<String> = if let Some(ref b) = binding {
+        resolved
+            .effective_features
+            .iter()
+            .flat_map(|f| {
+                b.bindings
+                    .get(f)
+                    .map(|bind| bind.artifacts.clone())
+                    .unwrap_or_default()
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    if format == "json" {
+        let output = serde_json::json!({
+            "variant": resolved.name,
+            "effective_features": resolved.effective_features,
+            "feature_count": resolved.effective_features.len(),
+            "bound_artifacts": bound_artifacts,
+            "bound_artifact_count": bound_artifacts.len(),
+        });
+        println!("{}", serde_json::to_string_pretty(&output)?);
+    } else {
+        println!("Variant '{}': PASS", resolved.name);
+        let features_list: Vec<&str> = resolved
+            .effective_features
+            .iter()
+            .map(|s| s.as_str())
+            .collect();
+        println!(
+            "Effective features ({}): {}",
+            features_list.len(),
+            features_list.join(", ")
+        );
+
+        if !bound_artifacts.is_empty() {
+            println!("\nBound artifacts ({}):", bound_artifacts.len());
+            for id in &bound_artifacts {
+                println!("  {id}");
+            }
+
+            if let Ok(ctx) = ProjectContext::load(cli) {
+                let found = bound_artifacts
+                    .iter()
+                    .filter(|id| ctx.store.get(id).is_some())
+                    .count();
+                println!(
+                    "\nVariant scope: {found}/{} artifacts resolved in project",
+                    bound_artifacts.len()
+                );
             }
         }
     }
