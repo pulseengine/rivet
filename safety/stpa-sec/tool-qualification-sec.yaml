@@ -1,0 +1,262 @@
+# =============================================================================
+# STPA-Sec Analysis — Tool Qualification Security Hazards
+# =============================================================================
+#
+# Security analysis for rivet as a qualification tool. Assumes an adversary
+# who wants to compromise the traceability evidence chain to either:
+# (a) hide safety gaps in a certified product, or
+# (b) inject false requirements/evidence to influence design decisions.
+#
+# Adversary model (extended for tool qualification):
+#   - Insider attacker: authorized developer who wants to bypass traceability
+#   - Supply-chain: compromised external artifact source (needs-json, ReqIF)
+#   - AI agent: LLM-based agent using MCP that hallucinates or is prompt-injected
+#   - CI attacker: compromises CI pipeline to bypass hook checks
+#
+# Reference: STPA Handbook security extension, IEC 62443
+# =============================================================================
+
+artifacts:
+  # ── Security Losses ──────────────────────────────────────────────────
+
+  - id: SL-TQ-001
+    type: sec-loss
+    title: Integrity loss — s-expression injection via crafted YAML
+    status: approved
+    description: >
+      An attacker crafts artifact YAML with field values that, when used
+      in s-expression filter evaluation, produce unexpected boolean results.
+      Example: an artifact with title containing s-expression syntax that
+      is evaluated rather than treated as data. This could cause the
+      evaluator to include/exclude artifacts based on injected logic rather
+      than actual field values.
+    fields:
+      cia-impact: [integrity]
+      adversary: supply-chain
+      attack-vector: adjacent
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
+
+  - id: SL-TQ-002
+    type: sec-loss
+    title: Integrity loss — MCP tool abuse by prompt-injected AI agent
+    status: approved
+    description: >
+      An AI agent connected via MCP is prompt-injected (via artifact content
+      containing adversarial instructions) and uses rivet_modify, rivet_link,
+      or rivet_remove to alter artifacts in ways that weaken the safety
+      argument. The agent has full CRUD access with no approval gate — changes
+      are written directly to YAML files. A compromised agent could remove
+      safety-critical links, change statuses from "draft" to "approved", or
+      delete hazard artifacts.
+    fields:
+      cia-impact: [integrity]
+      adversary: ai-agent
+      attack-vector: local
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
+
+  - id: SL-TQ-003
+    type: sec-loss
+    title: Integrity loss — poisoned needs-json import introduces false traceability
+    status: approved
+    description: >
+      An attacker provides a crafted needs.json file that contains artifacts
+      with fabricated links. The import adapter trusts the link targets in the
+      JSON without verifying they exist in the target project. After import,
+      rivet validate reports PASS because the links point to real artifacts
+      that happen to exist, but the link semantics are wrong (e.g., a
+      "satisfies" link that doesn't actually represent satisfaction).
+    fields:
+      cia-impact: [integrity]
+      adversary: supply-chain
+      attack-vector: network
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
+
+  - id: SL-TQ-004
+    type: sec-loss
+    title: Integrity loss — git hook bypass via --no-verify
+    status: approved
+    description: >
+      A developer bypasses the pre-commit (rivet validate) and commit-msg
+      (trailer check) hooks using git commit --no-verify. This is trivial
+      and well-known. If CI does not independently verify traceability,
+      commits without trailers reach the main branch permanently. The
+      hook is a convenience, not a security control — without CI
+      enforcement, it provides no assurance.
+    fields:
+      cia-impact: [integrity]
+      adversary: insider
+      attack-vector: local
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
+
+  - id: SL-TQ-005
+    type: sec-loss
+    title: Integrity loss — Zola export serves stale compliance evidence
+    status: approved
+    description: >
+      The Zola export is additive-only — it never deletes pages. If an
+      artifact is removed from the project but the Zola site is not
+      regenerated from scratch, the deleted artifact's page persists in
+      the published site. An auditor reviewing the site sees artifacts that
+      no longer exist in the validated project. This is a time-of-check-
+      time-of-use (TOCTOU) issue between export and publication.
+    fields:
+      cia-impact: [integrity]
+      adversary: none
+      attack-vector: local
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
+
+  # ── Security Hazards ─────────────────────────────────────────────────
+
+  - id: SH-TQ-001
+    type: sec-hazard
+    title: S-expression evaluator trusts field values as data
+    description: >
+      The evaluator reads artifact field values (title, description, status,
+      custom fields) and compares them as strings. It does not interpret
+      field values as code. However, the regex predicate (matches) compiles
+      user-provided regex patterns at runtime. A crafted regex (ReDoS) in
+      a filter expression could cause denial of service.
+    fields:
+      cia-impact: [availability, integrity]
+    links:
+      - type: leads-to-sec-loss
+        target: SL-TQ-001
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
+
+  - id: SH-TQ-002
+    type: sec-hazard
+    title: MCP tools have no authorization or rate limiting
+    description: >
+      All 15 MCP tools are available to any connected client with no
+      authentication, authorization, or rate limiting. A prompt-injected
+      AI agent or a malicious MCP client can call rivet_remove in a loop
+      to delete all artifacts, or rivet_modify to change all statuses.
+    fields:
+      cia-impact: [integrity, availability]
+    links:
+      - type: leads-to-sec-loss
+        target: SL-TQ-002
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
+
+  - id: SH-TQ-003
+    type: sec-hazard
+    title: Import adapter does not verify link target existence
+    description: >
+      The needs-json import creates Link structs with target IDs from the
+      JSON file. These targets are not checked against the project store
+      at import time. A crafted JSON could create links pointing to
+      non-existent artifacts that happen to match IDs later added to the
+      project, creating unintended traceability relationships.
+    fields:
+      cia-impact: [integrity]
+    links:
+      - type: leads-to-sec-loss
+        target: SL-TQ-003
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
+
+  # ── Security Constraints ─────────────────────────────────────────────
+
+  - id: SSC-TQ-001
+    type: sec-constraint
+    title: S-expression regex patterns must be bounded
+    description: >
+      The matches predicate must enforce a timeout or complexity limit on
+      regex compilation and execution to prevent ReDoS. Consider using
+      regex::RegexBuilder::size_limit() and a match timeout.
+    links:
+      - type: prevents-sec-hazard
+        target: SH-TQ-001
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
+
+  - id: SSC-TQ-002
+    type: sec-constraint
+    title: MCP write tools must log all mutations
+    description: >
+      Every MCP mutation (modify, link, unlink, remove) must produce a
+      structured log entry with: tool name, artifact ID, field changed,
+      old value, new value, timestamp, and client identifier. This log
+      must be tamper-evident (append-only, or signed). Without logging,
+      a compromised agent's changes cannot be audited or rolled back.
+    links:
+      - type: prevents-sec-hazard
+        target: SH-TQ-002
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
+
+  - id: SSC-TQ-003
+    type: sec-constraint
+    title: Import must warn on link targets not found in project
+    description: >
+      After needs-json or ReqIF import, the import command must run a
+      link-target check against the project store and report unresolved
+      targets as warnings. This gives the user a chance to review
+      suspicious links before committing the imported artifacts.
+    links:
+      - type: prevents-sec-hazard
+        target: SH-TQ-003
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
+
+  - id: SSC-TQ-004
+    type: sec-constraint
+    title: Zola export must support clean rebuild (not just additive)
+    description: >
+      The export command must support a --clean flag that removes existing
+      content/<prefix>/ before writing, preventing stale pages from
+      persisting. When used in CI, --clean should be the default. Without
+      --clean, deleted artifacts remain as published pages indefinitely.
+    links:
+      - type: prevents-sec-hazard
+        target: SH-TQ-001
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
+
+  - id: SSC-TQ-005
+    type: sec-constraint
+    title: CI must independently verify traceability (hooks are not security controls)
+    description: >
+      Git hooks are convenience tooling, not security controls. --no-verify
+      trivially bypasses them. The CI pipeline must run rivet commits and
+      rivet validate independently. This CI check must be a required status
+      check on the main branch. Without CI enforcement, hook-based
+      traceability is theater.
+    links:
+      - type: prevents-sec-hazard
+        target: SH-TQ-001
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z

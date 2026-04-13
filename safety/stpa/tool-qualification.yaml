@@ -1,0 +1,272 @@
+# =============================================================================
+# STPA Analysis — Tool Qualification Hazards
+# =============================================================================
+#
+# Rivet is used to validate traceability for safety-critical systems
+# certified under ISO 26262, DO-178C, IEC 62304, and ASPICE. As a
+# qualification tool (ISO 26262 §11.4.7, DO-178C §12.2), rivet must not
+# introduce errors that silently degrade the safety argument.
+#
+# This analysis covers hazards introduced by features added in v0.4.0:
+# s-expression evaluator, variant/PLE system, Zola export, needs-json
+# import, MCP write tools, and git hook integration.
+#
+# Tool Confidence Level (TCL): TCL 1 (highest) — rivet's output is
+# directly used as compliance evidence. A false PASS from rivet can
+# prevent detection of a safety-critical gap.
+#
+# Reference: STPA Handbook §2.3, ISO 26262-8 §11.4.7
+# =============================================================================
+
+# ── Step 1a: Losses specific to tool qualification context ──────────────
+
+losses:
+  - id: L-TQ-001
+    title: False assurance — tool reports PASS when traceability gaps exist
+    description: >
+      Rivet reports validation PASS (zero errors) or 100% coverage when the
+      actual artifact set has gaps. This is the highest-severity tool
+      qualification loss: engineers and auditors trust rivet's output as
+      compliance evidence. If the evidence is wrong, the certified product
+      ships with undetected safety gaps. Unlike a false FAIL (which blocks
+      and is investigated), a false PASS is silent and may persist through
+      the entire product lifecycle until a field incident.
+    stakeholders: [safety-engineers, certification-authorities]
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
+
+  - id: L-TQ-002
+    title: Evidence divergence — exported compliance docs don't match project state
+    description: >
+      The Zola export, HTML export, or ReqIF export produces documentation
+      that does not reflect the actual validated state of the project.
+      Artifacts may be missing, have wrong statuses, broken links, or stale
+      data. An auditor reviewing the exported site sees a compliant picture
+      that differs from what rivet validate would report on the source files.
+    stakeholders: [certification-authorities, safety-engineers]
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
+
+  - id: L-TQ-003
+    title: Migration corruption — imported artifacts have wrong semantics
+    description: >
+      When importing from external formats (sphinx-needs JSON, ReqIF),
+      semantic distortion in the mapping (wrong link types, lost status
+      values, type mismatches) means the imported project validates
+      differently than the source project. Teams migrate from sphinx-needs
+      trusting rivet to preserve meaning, but subtle mapping errors change
+      the traceability argument.
+    stakeholders: [safety-engineers, developers]
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
+
+# ── Step 1b: Hazards ────────────────────────────────────────────────────
+
+hazards:
+  - id: H-TQ-001
+    title: S-expression evaluator returns wrong boolean for a predicate
+    description: >
+      A bug in the check() function causes a predicate to evaluate
+      incorrectly. This affects every downstream consumer: --filter shows
+      wrong artifacts, traceability rules pass/fail incorrectly, variant
+      scoping includes/excludes wrong artifacts, and coverage percentages
+      are computed on the wrong artifact set. Because the evaluator is the
+      single point of truth for all query and validation logic, any bug
+      here propagates everywhere.
+    losses: [L-TQ-001, L-1, L-5]
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
+
+  - id: H-TQ-002
+    title: Variant solver accepts invalid configuration or rejects valid one
+    description: >
+      The constraint solver has an unsound propagation (accepts configs
+      that violate constraints) or is incomplete (rejects valid configs).
+      Unsound = false PASS on variant check, leading to validation on a
+      wrong artifact scope. Incomplete = false FAIL, blocking engineers
+      but detectable. Unsoundness is the dangerous case.
+    losses: [L-TQ-001, L-4]
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
+
+  - id: H-TQ-003
+    title: Zola export omits artifacts or shows stale data
+    description: >
+      The Zola export writes artifact pages that don't match the current
+      project state. Causes: filter applied during export excludes artifacts
+      that should be included, TOML frontmatter truncates or corrupts data,
+      wiki-link resolution points to wrong targets, or stale data from a
+      previous export run persists (additive-only means old pages aren't
+      deleted when artifacts are removed).
+    losses: [L-TQ-002, L-2]
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
+
+  - id: H-TQ-004
+    title: needs-json import maps links or types incorrectly
+    description: >
+      The sphinx-needs import adapter maps a sphinx-needs link type to the
+      wrong rivet link type (e.g., "links" mapped as "satisfies" when the
+      source project uses them as "traces-to"), or maps a sphinx-needs type
+      to a rivet type with different validation rules. The imported project
+      validates PASS under rivet's rules but has semantically wrong
+      traceability compared to the source project.
+    losses: [L-TQ-003, L-1]
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
+
+  - id: H-TQ-005
+    title: MCP write tool modifies artifacts without validation
+    description: >
+      The rivet_modify, rivet_link, or rivet_remove MCP tools change
+      artifact files in ways that break validation but the user is not
+      informed until a later explicit rivet validate run. If an AI agent
+      uses MCP to bulk-modify artifacts, it could introduce widespread
+      link breakage that isn't caught until the next CI run.
+    losses: [L-1, L-6]
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
+
+  - id: H-TQ-006
+    title: Git hooks bypassed — untraced commits reach protected branch
+    description: >
+      The pre-commit hook (rivet validate) or commit-msg hook (trailer
+      check) is not installed, not executable, bypassed via --no-verify,
+      or fails silently. Commits modifying traced paths without artifact
+      trailers reach the main branch, breaking the commit traceability
+      chain that auditors rely on.
+    losses: [L-1, L-6]
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
+
+  - id: H-TQ-007
+    title: Forall/exists quantifier evaluates on wrong scope
+    description: >
+      The forall or exists quantifier iterates over the wrong artifact set
+      (entire store vs variant-scoped subset, or stale cached set vs current).
+      A forall that should check "every requirement in variant X has a spec"
+      instead checks "every requirement in the entire project" — which may
+      pass even when the variant subset has gaps.
+    losses: [L-TQ-001, L-5]
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
+
+# ── Step 1c: System constraints ─────────────────────────────────────────
+
+system-constraints:
+  - id: SC-TQ-001
+    title: Evaluator correctness must be verified by property-based and formal methods
+    hazards: [H-TQ-001]
+    description: >
+      The s-expression evaluator must have (a) proptest properties for all
+      logical equivalences (De Morgan, double negation, implies, excludes),
+      (b) Kani bounded model checking proofs for panic freedom and soundness,
+      and (c) unit tests for every predicate type. Current state: proptest
+      (8 properties, 200 cases each), Kani (5 harnesses), 23 unit tests.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
+
+  - id: SC-TQ-002
+    title: Variant solver soundness must be tested for all group types
+    hazards: [H-TQ-002]
+    description: >
+      The constraint solver must have tests covering: mandatory propagation,
+      alternative (XOR) violation, or-group validation, implies chaining,
+      excludes detection, ancestor propagation, cycle detection, and unknown
+      feature rejection. Current state: 12 unit tests in feature_model.rs.
+      Missing: fuzz testing of random feature models, and verification that
+      solver result matches brute-force enumeration for small models.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
+
+  - id: SC-TQ-003
+    title: Export must be re-validated after generation
+    hazards: [H-TQ-003]
+    description: >
+      After Zola or HTML export, the exported artifact set must be verifiable
+      against the source. Recommended: export includes a manifest (checksums
+      of source files + export date) so consumers can detect stale exports.
+      Alternatively, the export command should run rivet validate internally
+      and embed the validation result in the export.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
+
+  - id: SC-TQ-004
+    title: Import must produce artifacts that validate identically to source
+    hazards: [H-TQ-004]
+    description: >
+      After importing from needs-json, the imported YAML must validate PASS
+      under rivet's rules if the source project was valid under sphinx-needs'
+      rules. Type and link mappings must be documented and configurable.
+      A "dry-run" mode should show the mapping before writing files.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
+
+  - id: SC-TQ-005
+    title: MCP write tools must validate before writing
+    hazards: [H-TQ-005]
+    description: >
+      Every MCP mutation (modify, link, unlink, remove) must run schema
+      validation before writing to disk. The current implementation calls
+      mutate::validate_* before file writes — this must not be bypassed.
+      MCP responses must include validation status so the caller knows
+      whether a reload is safe.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
+
+  - id: SC-TQ-006
+    title: Hook bypass must be detectable in CI
+    hazards: [H-TQ-006]
+    description: >
+      CI must independently verify commit traceability (rivet commits) even
+      if local hooks are bypassed. The rivet commits command already does
+      this — it must be a required CI check. Hook installation status should
+      be detectable via rivet validate --check-hooks.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
+
+  - id: SC-TQ-007
+    title: Quantifier scope must match the documented semantics
+    hazards: [H-TQ-007]
+    description: >
+      The forall/exists evaluator must iterate over exactly the artifacts
+      passed via the store parameter, not a cached or global set. When used
+      with --variant, the store must be the variant-scoped subset. Tests
+      must verify that adding an artifact to the store changes quantifier
+      results.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-6
+      timestamp: 2026-04-13T12:00:00Z
