@@ -14,6 +14,7 @@ pub mod embedded;
 pub mod error;
 pub mod export;
 pub mod externals;
+pub mod feature_model;
 pub mod formats;
 pub mod impact;
 pub mod junit;
