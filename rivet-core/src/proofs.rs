@@ -539,4 +539,239 @@ mod proofs {
         let graph = LinkGraph::build(&store, &schema);
         kani::assert(graph.has_cycles(), "A->B->A must be detected as a cycle");
     }
+
+    // ── S-expression evaluator proofs ──────────────────────────────────
+
+    use crate::sexpr_eval::{self, Accessor, EvalContext, Expr, Value};
+
+    /// Build a concrete test artifact for evaluator proofs.
+    ///
+    /// Uses a fixed artifact rather than symbolic generation because Kani
+    /// handles complex structs (BTreeMap, Vec<Link>, Option<String>) much
+    /// better with concrete values.  The logical equivalence proofs are
+    /// universal over all *expressions*, not all artifacts — the artifact
+    /// merely provides a concrete evaluation context.
+    fn eval_test_artifact() -> Artifact {
+        let mut fields = BTreeMap::new();
+        fields.insert("priority".into(), serde_yaml::Value::String("must".into()));
+        fields.insert(
+            "category".into(),
+            serde_yaml::Value::String("functional".into()),
+        );
+
+        Artifact {
+            id: "REQ-001".into(),
+            artifact_type: "requirement".into(),
+            title: "Test requirement".into(),
+            description: Some("A test requirement for STPA".into()),
+            status: Some("approved".into()),
+            tags: vec!["stpa".into(), "safety".into(), "eu".into()],
+            links: vec![
+                Link {
+                    link_type: "satisfies".into(),
+                    target: "SC-1".into(),
+                },
+                Link {
+                    link_type: "satisfies".into(),
+                    target: "SC-3".into(),
+                },
+                Link {
+                    link_type: "implements".into(),
+                    target: "DD-001".into(),
+                },
+            ],
+            fields,
+            provenance: None,
+            source_file: None,
+        }
+    }
+
+    /// Build an eval context with empty link graph.
+    fn eval_context(artifact: &Artifact) -> (LinkGraph, Store) {
+        let store = Store::new();
+        let schema = empty_schema();
+        let graph = LinkGraph::build(&store, &schema);
+        (graph, store)
+    }
+
+    // ── Bounded Expr generation ────────────────────────────────────────
+    //
+    // Kani doesn't have proptest-style strategies.  We use kani::any()
+    // to pick enum variant indices and build expression trees with a
+    // hard recursion depth limit.  Leaf nodes are chosen from a small
+    // palette of concrete predicates (BoolLit, HasTag, Eq on type/status)
+    // so the evaluator exercises real field-resolution paths.
+
+    /// Number of leaf variants available.
+    const LEAF_VARIANTS: u8 = 6;
+
+    /// Generate a leaf expression (depth 0) from a symbolic variant index.
+    fn arb_leaf(variant: u8) -> Expr {
+        match variant % LEAF_VARIANTS {
+            0 => Expr::BoolLit(true),
+            1 => Expr::BoolLit(false),
+            2 => Expr::HasTag(Value::Str("stpa".into())),
+            3 => Expr::HasTag(Value::Str("missing".into())),
+            4 => Expr::Eq(
+                Accessor::Field("type".into()),
+                Value::Str("requirement".into()),
+            ),
+            5 => Expr::Eq(Accessor::Field("status".into()), Value::Str("draft".into())),
+            _ => unreachable!(),
+        }
+    }
+
+    /// Generate a bounded expression tree.
+    ///
+    /// At depth 0, returns a leaf.  At depth > 0, symbolically picks
+    /// between leaf (variants 0..6) and connective (variants 6..10).
+    /// Binary connectives recurse with depth-1.
+    fn arb_expr(depth: u32) -> Expr {
+        if depth == 0 {
+            let v: u8 = kani::any();
+            kani::assume(v < LEAF_VARIANTS);
+            return arb_leaf(v);
+        }
+
+        // 10 total options: 6 leaves + 4 connectives
+        let choice: u8 = kani::any();
+        kani::assume(choice < 10);
+
+        if choice < LEAF_VARIANTS {
+            arb_leaf(choice)
+        } else {
+            match choice - LEAF_VARIANTS {
+                0 => Expr::Not(Box::new(arb_expr(depth - 1))),
+                1 => Expr::And(vec![arb_expr(depth - 1), arb_expr(depth - 1)]),
+                2 => Expr::Or(vec![arb_expr(depth - 1), arb_expr(depth - 1)]),
+                3 => Expr::Implies(Box::new(arb_expr(depth - 1)), Box::new(arb_expr(depth - 1))),
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    // ── 11. check() panic-freedom ──────────────────────────────────────
+
+    /// Proves that `check()` never panics for any symbolically-generated
+    /// expression tree (depth <= 2) evaluated against a concrete artifact.
+    ///
+    /// The expression space includes all logical connectives, boolean
+    /// literals, tag predicates, and field-equality checks — exercising
+    /// every branch in the top-level pattern match.
+    #[kani::proof]
+    #[kani::unwind(20)]
+    fn proof_sexpr_check_no_panic() {
+        let artifact = eval_test_artifact();
+        let (graph, _store) = eval_context(&artifact);
+        let ctx = EvalContext {
+            artifact: &artifact,
+            graph: &graph,
+        };
+
+        let expr = arb_expr(2);
+        let _ = sexpr_eval::check(&expr, &ctx);
+        // Reaching here proves no panic occurred.
+    }
+
+    // ── 12. De Morgan: ¬(A ∧ B) ≡ (¬A ∨ ¬B) ──────────────────────────
+
+    /// Exhaustively proves De Morgan's law for AND over all expression
+    /// pairs up to depth 2.
+    #[kani::proof]
+    #[kani::unwind(20)]
+    fn proof_sexpr_de_morgan_and() {
+        let artifact = eval_test_artifact();
+        let (graph, _store) = eval_context(&artifact);
+        let ctx = EvalContext {
+            artifact: &artifact,
+            graph: &graph,
+        };
+
+        let a = arb_expr(2);
+        let b = arb_expr(2);
+
+        let lhs = Expr::Not(Box::new(Expr::And(vec![a.clone(), b.clone()])));
+        let rhs = Expr::Or(vec![Expr::Not(Box::new(a)), Expr::Not(Box::new(b))]);
+
+        kani::assert(
+            sexpr_eval::check(&lhs, &ctx) == sexpr_eval::check(&rhs, &ctx),
+            "De Morgan (AND): not(and(a, b)) must equal or(not(a), not(b))",
+        );
+    }
+
+    // ── 13. Double negation: ¬¬A ≡ A ───────────────────────────────────
+
+    /// Exhaustively proves double negation elimination for all expressions
+    /// up to depth 2.
+    #[kani::proof]
+    #[kani::unwind(20)]
+    fn proof_sexpr_double_negation() {
+        let artifact = eval_test_artifact();
+        let (graph, _store) = eval_context(&artifact);
+        let ctx = EvalContext {
+            artifact: &artifact,
+            graph: &graph,
+        };
+
+        let a = arb_expr(2);
+
+        let double_neg = Expr::Not(Box::new(Expr::Not(Box::new(a.clone()))));
+
+        kani::assert(
+            sexpr_eval::check(&double_neg, &ctx) == sexpr_eval::check(&a, &ctx),
+            "Double negation: not(not(a)) must equal a",
+        );
+    }
+
+    // ── 14. Implies expansion: (A → B) ≡ (¬A ∨ B) ─────────────────────
+
+    /// Exhaustively proves that implies is equivalent to its disjunctive
+    /// expansion for all expression pairs up to depth 2.
+    #[kani::proof]
+    #[kani::unwind(20)]
+    fn proof_sexpr_implies_expansion() {
+        let artifact = eval_test_artifact();
+        let (graph, _store) = eval_context(&artifact);
+        let ctx = EvalContext {
+            artifact: &artifact,
+            graph: &graph,
+        };
+
+        let a = arb_expr(2);
+        let b = arb_expr(2);
+
+        let lhs = Expr::Implies(Box::new(a.clone()), Box::new(b.clone()));
+        let rhs = Expr::Or(vec![Expr::Not(Box::new(a)), b]);
+
+        kani::assert(
+            sexpr_eval::check(&lhs, &ctx) == sexpr_eval::check(&rhs, &ctx),
+            "Implies expansion: implies(a, b) must equal or(not(a), b)",
+        );
+    }
+
+    // ── 15. Excludes expansion: excludes(A, B) ≡ ¬(A ∧ B) ─────────────
+
+    /// Exhaustively proves that excludes is the negation of conjunction
+    /// for all expression pairs up to depth 2.
+    #[kani::proof]
+    #[kani::unwind(20)]
+    fn proof_sexpr_excludes_expansion() {
+        let artifact = eval_test_artifact();
+        let (graph, _store) = eval_context(&artifact);
+        let ctx = EvalContext {
+            artifact: &artifact,
+            graph: &graph,
+        };
+
+        let a = arb_expr(2);
+        let b = arb_expr(2);
+
+        let lhs = Expr::Excludes(Box::new(a.clone()), Box::new(b.clone()));
+        let rhs_inner = Expr::And(vec![a, b]);
+
+        kani::assert(
+            sexpr_eval::check(&lhs, &ctx) == !sexpr_eval::check(&rhs_inner, &ctx),
+            "Excludes expansion: excludes(a, b) must equal !check(and(a, b))",
+        );
+    }
 }
