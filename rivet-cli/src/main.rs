@@ -3318,7 +3318,9 @@ fn cmd_list(
             anyhow::anyhow!("invalid filter: {}", msgs.join("; "))
         })?;
         let graph = rivet_core::links::LinkGraph::build(&store, &ctx.schema);
-        results.retain(|a| rivet_core::sexpr_eval::matches_filter(&expr, a, &graph));
+        results.retain(|a| {
+            rivet_core::sexpr_eval::matches_filter_with_store(&expr, a, &graph, &store)
+        });
     }
 
     if format == "json" {
@@ -3379,7 +3381,7 @@ fn cmd_stats(
         })?;
         let mut filtered = rivet_core::store::Store::default();
         for a in store.iter() {
-            if rivet_core::sexpr_eval::matches_filter(&expr, a, &graph) {
+            if rivet_core::sexpr_eval::matches_filter_with_store(&expr, a, &graph, &store) {
                 filtered.upsert(a.clone());
             }
         }
@@ -3480,7 +3482,7 @@ fn cmd_coverage(
         })?;
         let mut filtered = rivet_core::store::Store::default();
         for a in store.iter() {
-            if rivet_core::sexpr_eval::matches_filter(&expr, a, &graph) {
+            if rivet_core::sexpr_eval::matches_filter_with_store(&expr, a, &graph, &store) {
                 filtered.upsert(a.clone());
             }
         }

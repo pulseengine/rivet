@@ -942,7 +942,12 @@ fn tool_query(proj: &McpProject, params: &QueryParams) -> Result<Value> {
     let mut results: Vec<Value> = Vec::new();
 
     for artifact in proj.store.iter() {
-        if !rivet_core::sexpr_eval::matches_filter(&expr, artifact, &proj.graph) {
+        if !rivet_core::sexpr_eval::matches_filter_with_store(
+            &expr,
+            artifact,
+            &proj.graph,
+            &proj.store,
+        ) {
             continue;
         }
         let links_json: Vec<Value> = artifact

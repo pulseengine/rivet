@@ -9,6 +9,7 @@
 
 use crate::links::LinkGraph;
 use crate::model::Artifact;
+use crate::store::Store;
 
 // ── Typed AST ───────────────────────────────────────────────────────────
 
@@ -63,6 +64,23 @@ pub enum Expr {
     /// `(links-count "satisfies" > 2)` — cardinality check.
     LinksCount(Value, CompOp, Value),
 
+    // ── Quantifiers (require Store access) ────────────────────────
+    /// `(forall <scope> <predicate>)` — all artifacts in scope satisfy predicate.
+    /// Scope is a filter expression; predicate is checked per matching artifact.
+    Forall(Box<Expr>, Box<Expr>),
+    /// `(exists <scope> <predicate>)` — at least one artifact in scope satisfies predicate.
+    Exists(Box<Expr>, Box<Expr>),
+    /// `(count <scope>)` — number of artifacts matching scope (compared via parent).
+    Count(Box<Expr>),
+
+    // ── Graph traversal ─────────────────────────────────────────────
+    /// `(reachable-from "REQ-001" "satisfies")` — true if current artifact is
+    /// reachable from the given start via the given link type.
+    ReachableFrom(Value, Value),
+    /// `(reachable-to "TEST-090" "verifies")` — true if the given target is
+    /// reachable from the current artifact via the given link type.
+    ReachableTo(Value, Value),
+
     // ── Literal ─────────────────────────────────────────────────────
     /// Constant boolean (useful after constant folding).
     BoolLit(bool),
@@ -101,9 +119,14 @@ pub enum CompOp {
 // ── Evaluation context ──────────────────────────────────────────────────
 
 /// Context needed to check a predicate against one artifact.
+///
+/// For quantifier expressions (forall, exists, count), the `store` field
+/// must be set. Single-artifact predicates work without it.
 pub struct EvalContext<'a> {
     pub artifact: &'a Artifact,
     pub graph: &'a LinkGraph,
+    /// Required for quantifier expressions. None = quantifiers return false.
+    pub store: Option<&'a Store>,
 }
 
 // ── Predicate checker ───────────────────────────────────────────────────
@@ -190,6 +213,67 @@ pub fn check(expr: &Expr, ctx: &EvalContext) -> bool {
                 CompOp::Eq => count == threshold,
                 CompOp::Ne => count != threshold,
             }
+        }
+
+        // Quantifiers
+        Expr::Forall(scope, predicate) => {
+            let Some(store) = ctx.store else {
+                return false;
+            };
+            store.iter().all(|a| {
+                let scope_ctx = EvalContext {
+                    artifact: a,
+                    graph: ctx.graph,
+                    store: ctx.store,
+                };
+                // If artifact doesn't match scope, it's vacuously true
+                if !check(scope, &scope_ctx) {
+                    return true;
+                }
+                check(predicate, &scope_ctx)
+            })
+        }
+        Expr::Exists(scope, predicate) => {
+            let Some(store) = ctx.store else {
+                return false;
+            };
+            store.iter().any(|a| {
+                let scope_ctx = EvalContext {
+                    artifact: a,
+                    graph: ctx.graph,
+                    store: ctx.store,
+                };
+                check(scope, &scope_ctx) && check(predicate, &scope_ctx)
+            })
+        }
+        Expr::Count(_scope) => {
+            // Count is not a boolean predicate on its own — it's used
+            // inside comparison expressions. Return true if count > 0.
+            let Some(store) = ctx.store else {
+                return false;
+            };
+            store.iter().any(|a| {
+                let scope_ctx = EvalContext {
+                    artifact: a,
+                    graph: ctx.graph,
+                    store: ctx.store,
+                };
+                check(_scope, &scope_ctx)
+            })
+        }
+
+        // Graph traversal
+        Expr::ReachableFrom(start_id, link_type) => {
+            let start = value_to_str(start_id);
+            let lt = value_to_str(link_type);
+            let reachable = ctx.graph.reachable(&start, &lt);
+            reachable.contains(&ctx.artifact.id)
+        }
+        Expr::ReachableTo(target_id, link_type) => {
+            let target = value_to_str(target_id);
+            let lt = value_to_str(link_type);
+            let reachable = ctx.graph.reachable(&ctx.artifact.id, &lt);
+            reachable.contains(&target)
         }
 
         Expr::BoolLit(b) => *b,
@@ -341,7 +425,26 @@ pub fn parse_filter(source: &str) -> Result<Expr, Vec<FilterError>> {
 
 /// Convenience: parse a filter and check it against one artifact.
 pub fn matches_filter(expr: &Expr, artifact: &Artifact, graph: &LinkGraph) -> bool {
-    let ctx = EvalContext { artifact, graph };
+    let ctx = EvalContext {
+        artifact,
+        graph,
+        store: None,
+    };
+    check(expr, &ctx)
+}
+
+/// Check a filter with full store access (needed for quantifiers).
+pub fn matches_filter_with_store(
+    expr: &Expr,
+    artifact: &Artifact,
+    graph: &LinkGraph,
+    store: &Store,
+) -> bool {
+    let ctx = EvalContext {
+        artifact,
+        graph,
+        store: Some(store),
+    };
     check(expr, &ctx)
 }
 
@@ -594,6 +697,71 @@ fn lower_list(node: &crate::sexpr::SyntaxNode, errors: &mut Vec<LowerError>) -> 
             Some(Expr::LinksCount(lt, op, val))
         }
 
+        // Quantifiers
+        "forall" => {
+            if args.len() != 2 {
+                errors.push(LowerError {
+                    offset,
+                    message: "'forall' requires exactly 2 arguments (scope predicate)".into(),
+                });
+                return None;
+            }
+            let scope = lower_child(&args[0], errors)?;
+            let pred = lower_child(&args[1], errors)?;
+            Some(Expr::Forall(Box::new(scope), Box::new(pred)))
+        }
+        "exists" => {
+            if args.len() != 2 {
+                errors.push(LowerError {
+                    offset,
+                    message: "'exists' requires exactly 2 arguments (scope predicate)".into(),
+                });
+                return None;
+            }
+            let scope = lower_child(&args[0], errors)?;
+            let pred = lower_child(&args[1], errors)?;
+            Some(Expr::Exists(Box::new(scope), Box::new(pred)))
+        }
+        "count" => {
+            if args.len() != 1 {
+                errors.push(LowerError {
+                    offset,
+                    message: "'count' requires exactly 1 argument (scope)".into(),
+                });
+                return None;
+            }
+            let scope = lower_child(&args[0], errors)?;
+            Some(Expr::Count(Box::new(scope)))
+        }
+
+        // Graph traversal
+        "reachable-from" => {
+            if args.len() != 2 {
+                errors.push(LowerError {
+                    offset,
+                    message: "'reachable-from' requires exactly 2 arguments (start-id link-type)"
+                        .into(),
+                });
+                return None;
+            }
+            let start = extract_value(&args[0])?;
+            let lt = extract_value(&args[1])?;
+            Some(Expr::ReachableFrom(start, lt))
+        }
+        "reachable-to" => {
+            if args.len() != 2 {
+                errors.push(LowerError {
+                    offset,
+                    message: "'reachable-to' requires exactly 2 arguments (target-id link-type)"
+                        .into(),
+                });
+                return None;
+            }
+            let target = extract_value(&args[0])?;
+            let lt = extract_value(&args[1])?;
+            Some(Expr::ReachableTo(target, lt))
+        }
+
         unknown => {
             errors.push(LowerError {
                 offset,
@@ -741,6 +909,7 @@ mod tests {
         let ctx = EvalContext {
             artifact,
             graph: &graph,
+            store: None,
         };
         check(expr, &ctx)
     }
