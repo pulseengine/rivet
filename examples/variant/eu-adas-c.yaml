@@ -1,0 +1,5 @@
+name: eu-adas-c
+selects:
+  - eu
+  - adas
+  - asil-c
