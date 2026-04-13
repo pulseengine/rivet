@@ -2412,10 +2412,9 @@ fn cmd_init_hooks(dir: &std::path::Path) -> Result<bool> {
     std::fs::create_dir_all(&hooks_dir)
         .with_context(|| format!("creating {}", hooks_dir.display()))?;
 
-    // Resolve rivet binary path for the hook.
-    let rivet_bin = std::env::current_exe()
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|_| "rivet".to_string());
+    // Use PATH-based `rivet` so hooks work for any install method.
+    // Falls back to absolute path only if rivet is not in PATH.
+    let rivet_bin = which_rivet();
 
     // ── commit-msg hook ─────────────────────────────────────────────
     let commit_msg_path = hooks_dir.join("commit-msg");
@@ -2453,6 +2452,24 @@ fi
     println!("\nGit hooks installed. Rivet will validate commits automatically.");
     println!("Hooks chain with existing hooks via .prev files.");
     Ok(true)
+}
+
+/// Resolve the rivet binary for hooks: prefer PATH-based "rivet" if available,
+/// fall back to the current executable's absolute path.
+fn which_rivet() -> String {
+    // Check if `rivet` is in PATH by running `which rivet`.
+    if let Ok(output) = std::process::Command::new("which").arg("rivet").output() {
+        if output.status.success() {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path.is_empty() {
+                return path;
+            }
+        }
+    }
+    // Fallback: absolute path to current exe.
+    std::env::current_exe()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|_| "rivet".to_string())
 }
 
 /// Install a hook file, chaining with any existing hook.
@@ -3963,7 +3980,7 @@ fn cmd_export_zola(
         })?;
         store
             .iter()
-            .filter(|a| rivet_core::sexpr_eval::matches_filter(&expr, a, &graph))
+            .filter(|a| rivet_core::sexpr_eval::matches_filter_with_store(&expr, a, &graph, &store))
             .collect()
     } else {
         store.iter().collect()
@@ -4310,6 +4327,28 @@ status = \"{status}\"
             "  wrote {doc_count} document pages to {}",
             docs_dir.display()
         );
+    }
+
+    // ── Fallback templates (only if missing) ──────────────────────
+    // Zola requires taxonomy templates when tags are used. If the site
+    // has no theme and no templates, generate minimal ones so `zola build` works.
+    let templates_dir = site_dir.join("templates");
+    let fallback_templates = [
+        (
+            "taxonomy_list.html",
+            "<html><body><h1>{{ taxonomy.name | title }}</h1><ul>{% for term in terms %}<li><a href=\"{{ term.permalink }}\">{{ term.name }}</a> ({{ term.pages | length }})</li>{% endfor %}</ul></body></html>",
+        ),
+        (
+            "taxonomy_single.html",
+            "<html><body><h1>{{ term.name }}</h1><ul>{% for page in term.pages %}<li><a href=\"{{ page.permalink }}\">{{ page.title }}</a></li>{% endfor %}</ul></body></html>",
+        ),
+    ];
+    for (name, content) in &fallback_templates {
+        let path = templates_dir.join(name);
+        if !path.exists() {
+            std::fs::create_dir_all(&templates_dir)?;
+            std::fs::write(&path, content)?;
+        }
     }
 
     // ── Instructions ────────────────────────────────────────────────
