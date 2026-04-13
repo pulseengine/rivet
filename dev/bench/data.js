@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1776084650241,
+  "lastUpdate": 1776103886139,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "ca97dd9f1c4554c0efa1aa159745abfaa697f3fb",
-          "message": "feat: document embeds Phase 1 — parser, renderers, CLI, provenance (#95)\n\n* feat(core): add EmbedRequest parser and error types\n\nIntroduces rivet-core::embed module with EmbedRequest::parse() for\nunified {{name:arg key=val}} syntax. EmbedError renders visible HTML\nper SC-EMBED-3.\n\nRefs: FEAT-074\n\n* feat(core): add stats and coverage embed renderers\n\nImplements render_stats() and render_coverage() in the embed module,\ndispatched via resolve_embed(). Renders HTML tables with type counts,\nstatus groups, validation summary, and per-rule coverage percentages.\n\nRefs: FEAT-074\n\n* refactor(core): add embed_resolver closure to render_to_html\n\nThread embed_resolver through render_to_html → resolve_inline.\nLegacy embeds (artifact/links/table) keep inline logic. New computed\nembeds (stats/coverage) dispatch through the closure. All call sites\nupdated.\n\nRefs: FEAT-074\n\n* feat(cli): add 'rivet embed' command for computed embed queries\n\nResolves embed queries (stats, coverage) from CLI with text or HTML\noutput. Useful for scripting and testing embed resolution.\n\n3 integration tests: stats:types, coverage, unknown embed error.\n\n* feat(export): resolve embeds with provenance stamps in HTML export\n\nComputed embeds in exported documents now include a provenance footer\nwith commit hash and timestamp (SC-EMBED-4). Export warns on stderr\nwhen the working tree is dirty (SC-EMBED-1).\n\nSatisfies: SC-EMBED-1, SC-EMBED-4\n\n* test: end-to-end coverage for embed resolution\n\nAdds integration tests for embed resolution in serve and CLI,\nplus parser edge-case unit tests for backward compatibility with\nexisting artifact/links/table embed syntax. Playwright tests verify\nno embed-error spans appear in rendered documents.\n\nVerifies: SC-EMBED-3\n\n* fix: clippy lints in export and documents render\n\nAdd #[allow(clippy::too_many_arguments)] for export functions and\nremove needless borrow in documents embed resolver.\n\n---------\n\nCo-authored-by: Test <test@test.com>",
-          "timestamp": "2026-04-01T23:04:38+02:00",
-          "tree_id": "eed397bc485727d8349acac5259abf6e77e7a755",
-          "url": "https://github.com/pulseengine/rivet/commit/ca97dd9f1c4554c0efa1aa159745abfaa697f3fb"
-        },
-        "date": 1775077862690,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 80964,
-            "range": "± 416",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 848054,
-            "range": "± 3386",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 10878958,
-            "range": "± 357041",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2010,
-            "range": "± 4",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 24479,
-            "range": "± 86",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 364793,
-            "range": "± 2089",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 99,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 98,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 98,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 906767,
-            "range": "± 7522",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 167904,
-            "range": "± 698",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1920555,
-            "range": "± 13926",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 25883542,
-            "range": "± 188443",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 41406,
-            "range": "± 117",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 459451,
-            "range": "± 2380",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 5184757,
-            "range": "± 21355",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4457,
-            "range": "± 37",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 44693,
-            "range": "± 253",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 749654,
-            "range": "± 23201",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 64063,
-            "range": "± 442",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 713300,
-            "range": "± 8656",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 8206426,
-            "range": "± 342777",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 743,
-            "range": "± 4",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 6345,
-            "range": "± 15",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 91618,
-            "range": "± 423",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 21639,
-            "range": "± 54",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 147162,
-            "range": "± 671",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1366075,
-            "range": "± 20457",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1512125,
             "range": "± 16771",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5a590dc5b8f29f50922ddbc347e7ff065f05987f",
+          "message": "feat(cli): variant subcommand — check, list, solve with bindings\n\nNew CLI commands for product line variant management:\n  rivet variant list --model feature-model.yaml\n  rivet variant check --model feature-model.yaml --variant eu-adas-c.yaml\n  rivet variant solve --model fm.yaml --variant v.yaml --binding bindings.yaml\n\nFeatures:\n- Feature tree visualization with group labels\n- Constraint propagation with feature name preprocessing\n- Binding resolution showing bound artifact IDs\n- Project scope validation (which bound artifacts exist)\n- JSON output format for all commands\n- Example files in examples/variant/\n\nImplements: REQ-042, REQ-043, REQ-044, REQ-046\nRefs: FEAT-110, FEAT-111, FEAT-112, FEAT-113\n\nCo-authored-by: Claude Opus 4.6 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-04-13T13:05:12-05:00",
+          "tree_id": "66c6e93ee646f71ae062d8721a9e83d7bc212755",
+          "url": "https://github.com/pulseengine/rivet/commit/5a590dc5b8f29f50922ddbc347e7ff065f05987f"
+        },
+        "date": 1776103885391,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 81333,
+            "range": "± 3130",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 859229,
+            "range": "± 7312",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 13017368,
+            "range": "± 893132",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2169,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 26174,
+            "range": "± 192",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 366824,
+            "range": "± 1904",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1011591,
+            "range": "± 26364",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 166608,
+            "range": "± 4512",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1888846,
+            "range": "± 11999",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 28046623,
+            "range": "± 3260254",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 109053,
+            "range": "± 601",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 899543,
+            "range": "± 5613",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 11047447,
+            "range": "± 1035202",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4346,
+            "range": "± 26",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 61953,
+            "range": "± 287",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 763383,
+            "range": "± 4507",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 59288,
+            "range": "± 1592",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 663294,
+            "range": "± 3099",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7723718,
+            "range": "± 460016",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 828,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7799,
+            "range": "± 32",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 111860,
+            "range": "± 1872",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 22952,
+            "range": "± 157",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 161213,
+            "range": "± 1218",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1488831,
+            "range": "± 24341",
             "unit": "ns/iter"
           }
         ]
