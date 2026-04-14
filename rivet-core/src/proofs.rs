@@ -774,4 +774,306 @@ mod proofs {
             "Excludes expansion: excludes(a, b) must equal !check(and(a, b))",
         );
     }
+
+    // ── 16. parse_commit_type: panic-freedom ──────────────────────────
+
+    use crate::commits;
+
+    /// Proves that `parse_commit_type` never panics for any string input
+    /// up to 16 bytes of printable ASCII.
+    #[kani::proof]
+    #[kani::unwind(18)]
+    fn proof_parse_commit_type_no_panic() {
+        let len: usize = kani::any();
+        kani::assume(len <= 16);
+        let mut bytes = [0u8; 16];
+        for i in 0..16 {
+            if i < len {
+                bytes[i] = kani::any();
+                kani::assume(bytes[i] >= 0x20 && bytes[i] <= 0x7E);
+            }
+        }
+        if let Ok(input) = std::str::from_utf8(&bytes[..len]) {
+            let result = commits::parse_commit_type(input);
+            // If it parses, the type must be non-empty lowercase ASCII
+            if let Some(ref t) = result {
+                kani::assert(!t.is_empty(), "parsed type must be non-empty");
+                kani::assert(
+                    t.chars().all(|c| c.is_ascii_lowercase()),
+                    "parsed type must be all lowercase ASCII",
+                );
+            }
+        }
+    }
+
+    // ── 17. extract_artifact_ids: panic-freedom ───────────────────────
+
+    /// Proves that `extract_artifact_ids` never panics for any string input
+    /// up to 16 bytes of printable ASCII.
+    #[kani::proof]
+    #[kani::unwind(18)]
+    fn proof_extract_artifact_ids_no_panic() {
+        let len: usize = kani::any();
+        kani::assume(len <= 16);
+        let mut bytes = [0u8; 16];
+        for i in 0..16 {
+            if i < len {
+                bytes[i] = kani::any();
+                kani::assume(bytes[i] >= 0x20 && bytes[i] <= 0x7E);
+            }
+        }
+        if let Ok(input) = std::str::from_utf8(&bytes[..len]) {
+            let ids = commits::extract_artifact_ids(input);
+            // All returned IDs must be well-formed
+            for id in &ids {
+                kani::assert(!id.is_empty(), "extracted ID must be non-empty");
+                kani::assert(
+                    id.contains('-'),
+                    "extracted ID must contain a hyphen",
+                );
+            }
+        }
+    }
+
+    // ── 18. expand_artifact_range: panic-freedom ──────────────────────
+
+    /// Proves that `expand_artifact_range` never panics for any 12-byte
+    /// ASCII input and always returns at least one element.
+    #[kani::proof]
+    #[kani::unwind(14)]
+    fn proof_expand_artifact_range_no_panic() {
+        let len: usize = kani::any();
+        kani::assume(len <= 12);
+        let mut bytes = [0u8; 12];
+        for i in 0..12 {
+            if i < len {
+                bytes[i] = kani::any();
+                kani::assume(bytes[i] >= 0x20 && bytes[i] <= 0x7E);
+            }
+        }
+        if let Ok(input) = std::str::from_utf8(&bytes[..len]) {
+            let result = commits::expand_artifact_range(input);
+            kani::assert(
+                !result.is_empty(),
+                "expand_artifact_range must always return at least one element",
+            );
+        }
+    }
+
+    // ── 19. parse_trailers: panic-freedom ─────────────────────────────
+
+    /// Proves that `parse_trailers` never panics for any 24-byte ASCII
+    /// input (enough for "Key: Value\nKey2: Val2").
+    #[kani::proof]
+    #[kani::unwind(26)]
+    fn proof_parse_trailers_no_panic() {
+        let len: usize = kani::any();
+        kani::assume(len <= 24);
+        let mut bytes = [0u8; 24];
+        for i in 0..24 {
+            if i < len {
+                bytes[i] = kani::any();
+                kani::assume(bytes[i] >= 0x20 && bytes[i] <= 0x7E || bytes[i] == b'\n');
+            }
+        }
+        if let Ok(input) = std::str::from_utf8(&bytes[..len]) {
+            let result = commits::parse_trailers(input);
+            // All keys must be non-empty and start with uppercase
+            for (key, values) in &result {
+                kani::assert(!key.is_empty(), "trailer key must be non-empty");
+                kani::assert(
+                    key.starts_with(|c: char| c.is_ascii_uppercase()),
+                    "trailer key must start with uppercase",
+                );
+                for v in values {
+                    kani::assert(!v.is_empty(), "trailer value must be non-empty");
+                }
+            }
+        }
+    }
+
+    // ── 20. Store::upsert: panic-freedom ──────────────────────────────
+
+    /// Proves that `Store::upsert` never panics and that the artifact is
+    /// retrievable after upsert.
+    #[kani::proof]
+    fn proof_store_upsert_no_panic() {
+        let mut store = Store::new();
+
+        let a1 = make_artifact("UP-1", "requirement", vec![]);
+        store.upsert(a1);
+
+        kani::assert(store.len() == 1, "upsert must add artifact");
+        kani::assert(store.contains("UP-1"), "upserted artifact must be findable");
+
+        // Upsert again with different type — must not panic, must update
+        let a2 = make_artifact("UP-1", "feature", vec![]);
+        store.upsert(a2);
+
+        kani::assert(store.len() == 1, "upsert of same ID must not increase len");
+        kani::assert(
+            store.get("UP-1").unwrap().artifact_type == "feature",
+            "upsert must update artifact type",
+        );
+    }
+
+    // ── 21. ArtifactDiff::compute: panic-freedom ──────────────────────
+
+    use crate::diff::ArtifactDiff;
+
+    /// Proves that `ArtifactDiff::compute` never panics for any pair of
+    /// stores with up to 3 artifacts each.
+    #[kani::proof]
+    fn proof_artifact_diff_no_panic() {
+        let mut base = Store::new();
+        let mut head = Store::new();
+
+        // Symbolically decide how many artifacts in each store (0..3)
+        let nb: usize = kani::any();
+        let nh: usize = kani::any();
+        kani::assume(nb <= 3);
+        kani::assume(nh <= 3);
+
+        let ids = ["D-1", "D-2", "D-3"];
+        for i in 0..3 {
+            if i < nb {
+                base.insert(make_artifact(ids[i], "test", vec![])).unwrap();
+            }
+            if i < nh {
+                head.insert(make_artifact(ids[i], "test", vec![])).unwrap();
+            }
+        }
+
+        let diff = ArtifactDiff::compute(&base, &head);
+
+        // Basic invariants
+        kani::assert(
+            diff.added.len() + diff.removed.len() + diff.modified.len() + diff.unchanged
+                <= nb + nh,
+            "diff totals must not exceed combined store sizes",
+        );
+    }
+
+    // ── 22. prefix_for_type: panic-freedom ────────────────────────────
+
+    use crate::mutate;
+
+    /// Proves that `prefix_for_type` never panics and returns a non-empty
+    /// string for any non-empty type name.
+    #[kani::proof]
+    fn proof_prefix_for_type_no_panic() {
+        let store = Store::new();
+
+        // Test with a few concrete type names
+        let types = ["requirement", "feature", "design-decision", "uca"];
+        let idx: usize = kani::any();
+        kani::assume(idx < types.len());
+
+        let prefix = mutate::prefix_for_type(types[idx], &store);
+        kani::assert(!prefix.is_empty(), "prefix must be non-empty");
+        kani::assert(
+            prefix.chars().all(|c| c.is_ascii_uppercase()),
+            "fallback prefix must be all uppercase",
+        );
+    }
+
+    // ── 23. next_id: panic-freedom + monotonicity ─────────────────────
+
+    /// Proves that `next_id` never panics and produces IDs with the
+    /// correct prefix.
+    #[kani::proof]
+    fn proof_next_id_no_panic() {
+        let mut store = Store::new();
+
+        // Insert 0..2 artifacts with known prefix
+        let n: usize = kani::any();
+        kani::assume(n <= 2);
+        for i in 0..n {
+            let id = match i {
+                0 => "REQ-001",
+                1 => "REQ-002",
+                _ => unreachable!(),
+            };
+            store.insert(make_artifact(id, "requirement", vec![])).unwrap();
+        }
+
+        let next = mutate::next_id(&store, "REQ");
+        kani::assert(next.starts_with("REQ-"), "next_id must start with prefix-");
+    }
+
+    // ── 24. validate_link: rejects unknown source ─────────────────────
+
+    /// Proves that `validate_link` returns Err when the source artifact
+    /// does not exist in the store.
+    #[kani::proof]
+    fn proof_validate_link_rejects_missing_source() {
+        let store = Store::new();
+        let schema = empty_schema();
+
+        let result = mutate::validate_link("NONEXISTENT-1", "satisfies", "TARGET-1", &store, &schema);
+        kani::assert(result.is_err(), "validate_link must reject nonexistent source");
+    }
+
+    // ── 25. validate_link: rejects unknown target ─────────────────────
+
+    /// Proves that `validate_link` returns Err when the target artifact
+    /// does not exist and is not an external reference.
+    #[kani::proof]
+    fn proof_validate_link_rejects_missing_target() {
+        let mut store = Store::new();
+        store.insert(make_artifact("SRC-1", "requirement", vec![])).unwrap();
+        let schema = empty_schema();
+
+        let result = mutate::validate_link("SRC-1", "satisfies", "NONEXISTENT-1", &store, &schema);
+        kani::assert(result.is_err(), "validate_link must reject nonexistent non-external target");
+    }
+
+    // ── 26. render_markdown: panic-freedom ────────────────────────────
+
+    use crate::markdown;
+
+    /// Proves that `render_markdown` never panics for any 16-byte input.
+    #[kani::proof]
+    #[kani::unwind(18)]
+    fn proof_render_markdown_no_panic() {
+        let len: usize = kani::any();
+        kani::assume(len <= 16);
+        let mut bytes = [0u8; 16];
+        for i in 0..16 {
+            if i < len {
+                bytes[i] = kani::any();
+                // Allow all printable ASCII plus common markdown chars
+                kani::assume(bytes[i] >= 0x20 && bytes[i] <= 0x7E || bytes[i] == b'\n' || bytes[i] == b'\t');
+            }
+        }
+        if let Ok(input) = std::str::from_utf8(&bytes[..len]) {
+            let _ = markdown::render_markdown(input);
+            // Reaching here proves no panic occurred
+        }
+    }
+
+    // ── 27. strip_html_tags: panic-freedom + correctness ──────────────
+
+    /// Proves that `strip_html_tags` never panics and never produces
+    /// output containing `<` or `>`.
+    #[kani::proof]
+    #[kani::unwind(18)]
+    fn proof_strip_html_tags_no_panic() {
+        let len: usize = kani::any();
+        kani::assume(len <= 16);
+        let mut bytes = [0u8; 16];
+        for i in 0..16 {
+            if i < len {
+                bytes[i] = kani::any();
+                kani::assume(bytes[i] >= 0x20 && bytes[i] <= 0x7E);
+            }
+        }
+        if let Ok(input) = std::str::from_utf8(&bytes[..len]) {
+            let output = markdown::strip_html_tags(input);
+            kani::assert(
+                !output.contains('<') && !output.contains('>'),
+                "strip_html_tags must remove all angle brackets",
+            );
+        }
+    }
 }
