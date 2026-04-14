@@ -209,6 +209,18 @@ enum Command {
         /// Track failure convergence across runs to detect agent retry loops
         #[arg(long)]
         track_convergence: bool,
+
+        /// Path to feature model YAML file (enables variant-scoped validation)
+        #[arg(long)]
+        model: Option<PathBuf>,
+
+        /// Path to variant configuration YAML file
+        #[arg(long)]
+        variant: Option<PathBuf>,
+
+        /// Path to feature-to-artifact binding YAML file
+        #[arg(long)]
+        binding: Option<PathBuf>,
     },
 
     /// Show a single artifact by ID
@@ -898,6 +910,9 @@ fn run(cli: Cli) -> Result<bool> {
             skip_external_validation,
             baseline,
             track_convergence,
+            model,
+            variant,
+            binding,
         } => cmd_validate(
             &cli,
             format,
@@ -905,6 +920,9 @@ fn run(cli: Cli) -> Result<bool> {
             *skip_external_validation,
             baseline.as_deref(),
             *track_convergence,
+            model.as_deref(),
+            variant.as_deref(),
+            binding.as_deref(),
         ),
         Command::List {
             r#type,
@@ -2880,6 +2898,7 @@ fn cmd_stpa(
 }
 
 /// Validate a full project (with rivet.yaml).
+#[allow(clippy::too_many_arguments)]
 fn cmd_validate(
     cli: &Cli,
     format: &str,
@@ -2887,6 +2906,9 @@ fn cmd_validate(
     skip_external_validation: bool,
     baseline_name: Option<&str>,
     track_convergence: bool,
+    model_path: Option<&std::path::Path>,
+    variant_path: Option<&std::path::Path>,
+    binding_path: Option<&std::path::Path>,
 ) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
     check_for_updates();
@@ -2916,16 +2938,83 @@ fn cmd_validate(
         (store, graph)
     };
 
+    // Apply variant scoping if --model + --variant + --binding are all provided
+    let (store, graph, variant_scope_name) = if let (Some(mp), Some(vp), Some(bp)) =
+        (model_path, variant_path, binding_path)
+    {
+        let model_yaml = std::fs::read_to_string(mp)
+            .with_context(|| format!("reading feature model {}", mp.display()))?;
+        let fm = rivet_core::feature_model::FeatureModel::from_yaml(&model_yaml)
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+        let variant_yaml = std::fs::read_to_string(vp)
+            .with_context(|| format!("reading variant config {}", vp.display()))?;
+        let vc: rivet_core::feature_model::VariantConfig =
+            serde_yaml::from_str(&variant_yaml).context("parsing variant config")?;
+
+        let resolved = rivet_core::feature_model::solve(&fm, &vc).map_err(|errs| {
+            let msgs: Vec<String> = errs.iter().map(|e| format!("{e}")).collect();
+            anyhow::anyhow!("variant solve failed:\n  {}", msgs.join("\n  "))
+        })?;
+
+        let binding_yaml = std::fs::read_to_string(bp)
+            .with_context(|| format!("reading binding {}", bp.display()))?;
+        let fb: rivet_core::feature_model::FeatureBinding =
+            serde_yaml::from_str(&binding_yaml).context("parsing feature binding")?;
+
+        // Collect bound artifact IDs from effective features
+        let bound_ids: std::collections::BTreeSet<String> = resolved
+            .effective_features
+            .iter()
+            .flat_map(|f| {
+                fb.bindings
+                    .get(f)
+                    .map(|b| b.artifacts.clone())
+                    .unwrap_or_default()
+            })
+            .collect();
+
+        // Build a scoped store containing only bound artifacts
+        let mut scoped = Store::new();
+        for id in &bound_ids {
+            if let Some(art) = store.get(id) {
+                scoped.upsert(art.clone());
+            }
+        }
+        let scoped_graph = LinkGraph::build(&scoped, &schema);
+        let vname = resolved.name.clone();
+        (scoped, scoped_graph, Some((vname, bound_ids.len())))
+    } else if model_path.is_some() || variant_path.is_some() || binding_path.is_some() {
+        anyhow::bail!(
+            "--model, --variant, and --binding must all be provided together for variant-scoped validation"
+        );
+    } else {
+        (store, graph, None)
+    };
+
     let doc_store = doc_store.unwrap_or_default();
 
+    // Print variant scope header (text mode only; JSON includes it in the output object)
+    if let Some((ref vname, bound_count)) = variant_scope_name {
+        if format != "json" {
+            println!(
+                "Variant '{}': {} artifacts in scope, {} resolved in project\n",
+                vname,
+                bound_count,
+                store.len()
+            );
+        }
+    }
+
     // Core validation: use salsa incremental by default, --direct for legacy path.
-    // When baseline scoping is active, salsa validates ALL files and we filter
-    // the resulting diagnostics to only include artifacts in the scoped store.
+    // When baseline or variant scoping is active, salsa validates ALL files and
+    // we filter the resulting diagnostics to only include artifacts in the scoped store.
+    let is_scoped = baseline_name.is_some() || variant_scope_name.is_some();
     let mut diagnostics = if direct {
         validate::validate(&store, &schema, &graph)
     } else {
         let all_diags = run_salsa_validation(cli, &config)?;
-        if baseline_name.is_some() {
+        if is_scoped {
             // Filter diagnostics to only those relevant to the scoped store.
             all_diags
                 .into_iter()
@@ -3088,7 +3177,7 @@ fn cmd_validate(
             .collect();
         let total_errors = errors + cross_errors;
         let result_str = if total_errors > 0 { "FAIL" } else { "PASS" };
-        let output = serde_json::json!({
+        let mut output = serde_json::json!({
             "result": result_str,
             "command": "validate",
             "errors": errors,
@@ -3106,6 +3195,13 @@ fn cmd_validate(
             "version_conflict_details": conflicts_json,
             "lifecycle_coverage": lifecycle_json,
         });
+        if let Some((ref vname, bound_count)) = variant_scope_name {
+            output["variant"] = serde_json::json!({
+                "name": vname,
+                "bound_artifacts": bound_count,
+                "resolved_artifacts": store.len(),
+            });
+        }
         println!("{}", serde_json::to_string_pretty(&output).unwrap());
     } else {
         if !doc_store.is_empty() {
@@ -4817,6 +4913,9 @@ fn cmd_diff(
                         skip_external_validation: false,
                         baseline: None,
                         track_convergence: false,
+                        model: None,
+                        variant: None,
+                        binding: None,
                     },
                 };
                 let head_cli = Cli {
@@ -4829,6 +4928,9 @@ fn cmd_diff(
                         skip_external_validation: false,
                         baseline: None,
                         track_convergence: false,
+                        model: None,
+                        variant: None,
+                        binding: None,
                     },
                 };
                 let bc = ProjectContext::load(&base_cli)?;
