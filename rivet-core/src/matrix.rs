@@ -60,40 +60,32 @@ pub fn compute_matrix(
     let mut covered = 0;
 
     for id in source_ids {
-        let artifact = store.get(id).unwrap();
+        let Some(artifact) = store.get(id) else {
+            continue;
+        };
         let targets: Vec<MatrixTarget> = match direction {
             Direction::Forward => graph
                 .links_from(id)
                 .iter()
                 .filter(|l| l.link_type == link_type)
-                .filter(|l| {
-                    store
-                        .get(&l.target)
-                        .is_some_and(|t| t.artifact_type == target_type)
-                })
-                .map(|l| {
-                    let t = store.get(&l.target).unwrap();
-                    MatrixTarget {
+                .filter_map(|l| {
+                    let t = store.get(&l.target)?;
+                    (t.artifact_type == target_type).then(|| MatrixTarget {
                         id: t.id.clone(),
                         title: t.title.clone(),
-                    }
+                    })
                 })
                 .collect(),
             Direction::Backward => graph
                 .backlinks_to(id)
                 .iter()
                 .filter(|bl| bl.link_type == link_type)
-                .filter(|bl| {
-                    store
-                        .get(&bl.source)
-                        .is_some_and(|s| s.artifact_type == target_type)
-                })
-                .map(|bl| {
-                    let s = store.get(&bl.source).unwrap();
-                    MatrixTarget {
+                .filter_map(|bl| {
+                    let s = store.get(&bl.source)?;
+                    (s.artifact_type == target_type).then(|| MatrixTarget {
                         id: s.id.clone(),
                         title: s.title.clone(),
-                    }
+                    })
                 })
                 .collect(),
         };

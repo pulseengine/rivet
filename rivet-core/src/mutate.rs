@@ -198,7 +198,12 @@ pub fn validate_link(
     }
 
     // Check for duplicate link
-    let source = store.get(source_id).unwrap();
+    let Some(source) = store.get(source_id) else {
+        return Err(Error::Validation(format!(
+            "source artifact '{}' not found in store",
+            source_id
+        )));
+    };
     if source
         .links
         .iter()
@@ -478,6 +483,7 @@ mod tests {
                 example: None,
                 yaml_section: None,
                 yaml_sections: vec![],
+                yaml_section_suffix: None,
                 shorthand_links: std::collections::BTreeMap::new(),
             },
             ArtifactTypeDef {
@@ -490,6 +496,7 @@ mod tests {
                 example: None,
                 yaml_section: None,
                 yaml_sections: vec![],
+                yaml_section_suffix: None,
                 shorthand_links: std::collections::BTreeMap::new(),
             },
         ];

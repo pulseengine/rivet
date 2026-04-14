@@ -289,7 +289,7 @@ jobs:
     name: Mutation Testing
     needs: [test]
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -300,16 +300,26 @@ jobs:
           tool: cargo-mutants
       - name: Run cargo-mutants on rivet-core
         run: cargo mutants -p rivet-core --timeout 120 --jobs 4 --output mutants-out -- --lib || true
+      - name: Run cargo-mutants on rivet-cli
+        run: cargo mutants -p rivet-cli --timeout 120 --jobs 4 --output mutants-cli-out -- --lib || true
       - name: Check surviving mutants
         run: |
           MISSED=0
-          if [ -f mutants-out/missed.txt ]; then
-            MISSED=$(wc -l < mutants-out/missed.txt | tr -d ' ')
-          fi
+          for dir in mutants-out mutants-cli-out; do
+            if [ -f "$dir/missed.txt" ]; then
+              COUNT=$(wc -l < "$dir/missed.txt" | tr -d ' ')
+              MISSED=$((MISSED + COUNT))
+            fi
+          done
           echo "Surviving mutants: $MISSED"
           if [ "$MISSED" -gt 0 ]; then
             echo "::error::$MISSED mutant(s) survived — add tests to kill them"
-            cat mutants-out/missed.txt | head -30
+            for dir in mutants-out mutants-cli-out; do
+              if [ -f "$dir/missed.txt" ]; then
+                echo "--- $dir ---"
+                head -30 "$dir/missed.txt"
+              fi
+            done
             exit 1
           fi
       - name: Upload mutants report
@@ -317,7 +327,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mutants-report
-          path: mutants-out/
+          path: |
+            mutants-out/
+            mutants-cli-out/
 
   # ── Fuzz testing (main only — too slow for PRs) ───────────────────
   fuzz:
@@ -371,14 +383,59 @@ jobs:
       - name: Check supply chain
         run: cargo vet --locked
 
-  # ── Kani bounded model checking (enable when Kani is available) ────
-  # kani:
-  #   name: Kani Proofs
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v6
-  #     - uses: model-checking/kani-github-action@v1
-  #     - run: cargo kani -p rivet-core
+  # ── Kani bounded model checking ────────────────────────────────────
+  kani:
+    name: Kani Proofs
+    needs: [test]
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: model-checking/kani-github-action@v1
+      - run: cargo kani -p rivet-core
+
+  # ── Verus SMT verification ──────────────────────────────────────────
+  verus:
+    name: Verus Proofs
+    needs: [test]
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Bazel
+        uses: bazel-contrib/setup-bazel@0.14.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}
+          repository-cache: true
+      - name: Verify Verus specs
+        working-directory: verus
+        run: bazel test //:rivet_specs_verify
+
+  # ── Rocq metamodel proofs ─────────────────────────────────────────
+  rocq:
+    name: Rocq Proofs
+    needs: [test]
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Bazel
+        uses: bazel-contrib/setup-bazel@0.14.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}
+          repository-cache: true
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+      - name: Verify Rocq proofs
+        working-directory: proofs/rocq
+        run: bazel test //:rivet_metamodel_test
 
   # ── MSRV check ──────────────────────────────────────────────────────
   msrv:

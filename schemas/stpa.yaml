@@ -143,6 +143,9 @@ artifact-types:
       An action issued by a controller to a controlled process or another
       controller.
     yaml-section: control-actions
+    shorthand-links:
+      target: acts-on
+      source: issued-by
     fields:
       - name: action
         type: string
@@ -163,24 +166,7 @@ artifact-types:
   # ── Step 3 ──────────────────────────────────────────────────────────────
   - name: uca
     yaml-section: ucas
-    yaml-sections:
-      - core-ucas
-      - oslc-ucas
-      - reqif-ucas
-      - cli-ucas
-      - ci-ucas
-      - dashboard-ucas
-      - incremental-ucas
-      - parser-ucas
-      - dashboard-rendering-ucas
-      - commit-ucas
-      - cross-repo-ucas
-      - wasm-ucas
-      - lifecycle-ucas
-      - document-validation-ucas
-      - external-sync-ucas
-      - lsp-ucas
-      - mcp-ucas
+    yaml-section-suffix: "-ucas"
     shorthand-links:
       hazards: leads-to-hazard
       controller: issued-by
