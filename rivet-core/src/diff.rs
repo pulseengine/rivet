@@ -71,8 +71,9 @@ impl ArtifactDiff {
         let mut unchanged: usize = 0;
 
         for id in &common {
-            let b = base.get(id).unwrap();
-            let h = head.get(id).unwrap();
+            let (Some(b), Some(h)) = (base.get(id), head.get(id)) else {
+                continue;
+            };
 
             let title_changed = if b.title != h.title {
                 Some((b.title.clone(), h.title.clone()))

@@ -350,7 +350,9 @@ pub fn validate_structural(store: &Store, schema: &Schema, graph: &LinkGraph) ->
     // 7. Check traceability rules (forward + backlink coverage)
     for rule in &schema.traceability_rules {
         for id in store.by_type(&rule.source_type) {
-            let artifact = store.get(id).unwrap();
+            let Some(artifact) = store.get(id) else {
+                continue;
+            };
 
             // Draft artifacts get downgraded to Info for traceability rule violations.
             // Active and approved artifacts receive full error-level enforcement.
