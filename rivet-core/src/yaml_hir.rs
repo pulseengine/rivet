@@ -159,6 +159,8 @@ pub fn extract_schema_driven(
 
     // Build section map: yaml_section_name → (artifact_type_name, shorthand_links)
     let mut section_map: HashMap<&str, (&str, &BTreeMap<String, String>)> = HashMap::new();
+    // Suffix patterns for auto-discovery: suffix → (type_name, shorthand_links)
+    let mut suffix_patterns: Vec<(&str, &str, &BTreeMap<String, String>)> = Vec::new();
     for t in schema.artifact_types.values() {
         let entry = (t.name.as_str(), &t.shorthand_links);
         if let Some(s) = t.yaml_section.as_deref() {
@@ -166,6 +168,9 @@ pub fn extract_schema_driven(
         }
         for s in &t.yaml_sections {
             section_map.insert(s.as_str(), entry);
+        }
+        if let Some(ref suffix) = t.yaml_section_suffix {
+            suffix_patterns.push((suffix.as_str(), t.name.as_str(), &t.shorthand_links));
         }
     }
 
@@ -194,7 +199,18 @@ pub fn extract_schema_driven(
                     }
                 }
             }
-        } else if let Some(&(type_name, shorthand_links)) = section_map.get(key_text.as_str()) {
+        } else if let Some((type_name, shorthand_links)) =
+            section_map.get(key_text.as_str()).copied().or_else(|| {
+                // Fall back to suffix pattern matching for auto-discovered sections
+                suffix_patterns.iter().find_map(|&(suffix, tn, sl)| {
+                    if key_text.ends_with(suffix) {
+                        Some((tn, sl))
+                    } else {
+                        None
+                    }
+                })
+            })
+        {
             // Schema-driven section extraction
             let Some(value_node) = child_of_kind(&entry, SyntaxKind::Value) else {
                 continue;
@@ -202,6 +218,14 @@ pub fn extract_schema_driven(
             if let Some(seq) = child_of_kind(&value_node, SyntaxKind::Sequence) {
                 // Direct sequence: section → [items]
                 extract_sequence_items(&seq, type_name, shorthand_links, source_path, &mut result);
+                // Extract nested artifacts from within each item (e.g., control-actions inside controllers)
+                extract_nested_sub_artifacts(
+                    &seq,
+                    &section_map,
+                    &suffix_patterns,
+                    source_path,
+                    &mut result,
+                );
             } else if let Some(mapping) = child_of_kind(&value_node, SyntaxKind::Mapping) {
                 // Nested mapping: section → {group → [items], ...}
                 // Handles UCAs grouped by type (not-providing, providing, etc.)
@@ -275,6 +299,115 @@ pub fn extract_schema_driven(
     }
 
     result
+}
+
+/// Extract nested artifacts from within sequence items.
+///
+/// Handles cases like control-actions embedded within controllers:
+/// ```yaml
+/// controllers:
+///   - id: CTRL-DEV
+///     control-actions:            # ← this matches yaml-section "control-actions"
+///       - ca: CA-DEV-1
+///         action: Create files
+/// ```
+///
+/// For each SequenceItem, walks its mapping entries and checks if any key
+/// matches a known `yaml-section` or suffix pattern for another artifact type.
+/// If so, extracts the sub-items as separate artifacts of that type.
+fn extract_nested_sub_artifacts(
+    parent_seq: &SyntaxNode,
+    section_map: &HashMap<&str, (&str, &BTreeMap<String, String>)>,
+    suffix_patterns: &[(&str, &str, &BTreeMap<String, String>)],
+    source_path: Option<&Path>,
+    result: &mut ParsedYamlFile,
+) {
+    for item in parent_seq.children() {
+        if node_kind(&item) != SyntaxKind::SequenceItem {
+            continue;
+        }
+        let Some(mapping) = child_of_kind(&item, SyntaxKind::Mapping) else {
+            continue;
+        };
+
+        // Collect the parent artifact's ID for linking (e.g., controller ID)
+        let parent_id = mapping.children().find_map(|entry| {
+            if node_kind(&entry) != SyntaxKind::MappingEntry {
+                return None;
+            }
+            let k = child_of_kind(&entry, SyntaxKind::Key)?;
+            let k_text = scalar_text(&k)?;
+            if k_text == "id" {
+                let v = child_of_kind(&entry, SyntaxKind::Value)?;
+                scalar_text(&v)
+            } else {
+                None
+            }
+        });
+
+        // Walk mapping entries looking for sub-sections
+        for entry in mapping.children() {
+            if node_kind(&entry) != SyntaxKind::MappingEntry {
+                continue;
+            }
+            let Some(k) = child_of_kind(&entry, SyntaxKind::Key) else {
+                continue;
+            };
+            let Some(k_text) = scalar_text(&k) else {
+                continue;
+            };
+            let Some(v) = child_of_kind(&entry, SyntaxKind::Value) else {
+                continue;
+            };
+
+            // Check if this key matches a known yaml-section for another type
+            let sub_type = section_map.get(k_text.as_str()).copied().or_else(|| {
+                suffix_patterns.iter().find_map(|&(suffix, tn, sl)| {
+                    if k_text.ends_with(suffix) {
+                        Some((tn, sl))
+                    } else {
+                        None
+                    }
+                })
+            });
+
+            if let Some((nested_type_name, nested_shorthand)) = sub_type {
+                if let Some(nested_seq) = child_of_kind(&v, SyntaxKind::Sequence) {
+                    let before_count = result.artifacts.len();
+                    extract_sequence_items(
+                        &nested_seq,
+                        nested_type_name,
+                        nested_shorthand,
+                        source_path,
+                        result,
+                    );
+
+                    // If the parent has an ID and the nested type has a shorthand
+                    // for the parent's section, add a link from each nested artifact
+                    // back to the parent (e.g., control-action → issued-by → CTRL-DEV)
+                    if let Some(ref pid) = parent_id {
+                        for sa in result.artifacts[before_count..].iter_mut() {
+                            // Check if any link field references the parent type
+                            let has_parent_link =
+                                sa.artifact.links.iter().any(|l| l.target == *pid);
+                            if !has_parent_link {
+                                // Look for a shorthand link that maps to the parent
+                                if let Some(link_type) = nested_shorthand
+                                    .get("controller")
+                                    .or_else(|| nested_shorthand.get("source"))
+                                {
+                                    sa.artifact.links.push(Link {
+                                        link_type: link_type.clone(),
+                                        target: pid.clone(),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Extract all artifacts from a Sequence node's SequenceItem children.
@@ -416,7 +549,8 @@ fn extract_section_item(
         }
 
         match key_text.as_str() {
-            "id" => {
+            // "ca" is an alias for "id" in STPA control-action items
+            "id" | "ca" => {
                 if let Some(text) = scalar_text(&value_node) {
                     id = Some(text);
                     id_span = value_span;

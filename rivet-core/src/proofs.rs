@@ -82,6 +82,7 @@ mod proofs {
                 example: None,
                 yaml_section: None,
                 yaml_sections: vec![],
+                yaml_section_suffix: None,
                 shorthand_links: std::collections::BTreeMap::new(),
             }],
             link_types: vec![LinkTypeDef {
@@ -306,6 +307,7 @@ mod proofs {
                 example: None,
                 yaml_section: None,
                 yaml_sections: vec![],
+                yaml_section_suffix: None,
                 shorthand_links: std::collections::BTreeMap::new(),
             }],
             link_types: vec![],
@@ -420,6 +422,7 @@ mod proofs {
                 example: None,
                 yaml_section: None,
                 yaml_sections: vec![],
+                yaml_section_suffix: None,
                 shorthand_links: std::collections::BTreeMap::new(),
             }],
             link_types: vec![LinkTypeDef {

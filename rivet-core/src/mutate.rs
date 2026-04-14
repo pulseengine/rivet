@@ -483,6 +483,7 @@ mod tests {
                 example: None,
                 yaml_section: None,
                 yaml_sections: vec![],
+                yaml_section_suffix: None,
                 shorthand_links: std::collections::BTreeMap::new(),
             },
             ArtifactTypeDef {
@@ -495,6 +496,7 @@ mod tests {
                 example: None,
                 yaml_section: None,
                 yaml_sections: vec![],
+                yaml_section_suffix: None,
                 shorthand_links: std::collections::BTreeMap::new(),
             },
         ];

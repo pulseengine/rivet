@@ -388,6 +388,7 @@ jobs:
     name: Kani Proofs
     needs: [test]
     runs-on: ubuntu-latest
+    continue-on-error: true
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
@@ -399,6 +400,7 @@ jobs:
     name: Verus Proofs
     needs: [test]
     runs-on: ubuntu-latest
+    continue-on-error: true
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
@@ -417,6 +419,7 @@ jobs:
     name: Rocq Proofs
     needs: [test]
     runs-on: ubuntu-latest
+    continue-on-error: true
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6

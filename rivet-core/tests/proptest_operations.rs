@@ -100,6 +100,7 @@ fn test_schema() -> Schema {
                 example: None,
                 yaml_section: None,
                 yaml_sections: vec![],
+                yaml_section_suffix: None,
                 shorthand_links: BTreeMap::new(),
             })
             .collect(),

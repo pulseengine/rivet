@@ -74,6 +74,14 @@ pub struct ArtifactTypeDef {
     /// maps to the same artifact type with the same shorthand-link conversions.
     #[serde(default, rename = "yaml-sections")]
     pub yaml_sections: Vec<String>,
+    /// Suffix pattern for auto-discovering YAML section names.
+    ///
+    /// When set, any top-level YAML key ending with this suffix (e.g., `-ucas`)
+    /// is treated as an additional section for this artifact type, even if not
+    /// listed in `yaml-sections`.  This avoids hardcoding project-specific
+    /// section names in the schema.
+    #[serde(default, rename = "yaml-section-suffix")]
+    pub yaml_section_suffix: Option<String>,
     /// Maps shorthand array fields to link types for format-specific parsing.
     ///
     /// Example: `{losses: leads-to-loss}` means `losses: [L-1]` in YAML becomes
@@ -1037,6 +1045,7 @@ mod tests {
             example: None,
             yaml_section: None,
             yaml_sections: vec![],
+            yaml_section_suffix: None,
             shorthand_links: Default::default(),
         });
         schema_file.conditional_rules.push(ConditionalRule {
@@ -1094,6 +1103,7 @@ mod tests {
             example: None,
             yaml_section: None,
             yaml_sections: vec![],
+            yaml_section_suffix: None,
             shorthand_links: Default::default(),
         });
         schema_file.conditional_rules.push(ConditionalRule {
@@ -1149,6 +1159,7 @@ mod tests {
             example: None,
             yaml_section: None,
             yaml_sections: vec![],
+            yaml_section_suffix: None,
             shorthand_links: Default::default(),
         });
         schema_file.conditional_rules.push(ConditionalRule {
@@ -1208,6 +1219,7 @@ mod tests {
             example: None,
             yaml_section: None,
             yaml_sections: vec![],
+            yaml_section_suffix: None,
             shorthand_links: Default::default(),
         });
         schema_file.conditional_rules.push(ConditionalRule {
