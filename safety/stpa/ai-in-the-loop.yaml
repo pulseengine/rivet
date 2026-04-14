@@ -1,0 +1,102 @@
+# STPA Analysis — AI-in-the-Loop Hazards
+# Rivet is developed with Claude Opus 4.6. The AI writes code, tests,
+# and safety analysis — creating a circular trust problem.
+
+losses:
+  - id: L-AI-001
+    title: Circular validation — AI tests mask AI-introduced defects
+    description: >
+      Same model writes code AND tests AND STPA. Shared blind spots
+      propagate through all three layers undetected.
+    stakeholders: [safety-engineers, certification-authorities]
+    provenance: { created-by: ai-assisted, model: claude-opus-4-6, timestamp: "2026-04-13T18:00:00Z" }
+  - id: L-AI-002
+    title: Provenance erosion — cannot determine which artifacts are AI-generated
+    description: >
+      Over time AI and human artifacts become indistinguishable. Provenance
+      stamp lacks prompt context and review depth.
+    stakeholders: [certification-authorities, safety-engineers]
+    provenance: { created-by: ai-assisted, model: claude-opus-4-6, timestamp: "2026-04-13T18:00:00Z" }
+  - id: L-AI-003
+    title: Hallucinated traceability — plausible but semantically wrong links
+    description: >
+      AI creates links that pass schema validation but don't represent real
+      engineering relationships. Fluent output lowers review barrier.
+    stakeholders: [safety-engineers, certification-authorities, developers]
+    provenance: { created-by: ai-assisted, model: claude-opus-4-6, timestamp: "2026-04-13T18:00:00Z" }
+
+hazards:
+  - id: H-AI-001
+    title: AI writes test that validates the bug instead of catching it
+    losses: [L-AI-001, L-TQ-001]
+    description: >
+      AI implements buggy logic then asserts buggy behavior as correct.
+      Proptest mitigates via mathematical properties independent of impl.
+    provenance: { created-by: ai-assisted, model: claude-opus-4-6, timestamp: "2026-04-13T18:00:00Z" }
+  - id: H-AI-002
+    title: AI generates plausible STPA but misses domain-specific hazards
+    losses: [L-AI-001, L-5]
+    description: >
+      Well-structured STPA artifacts that read convincingly but miss hazards
+      requiring operational experience with the system.
+    provenance: { created-by: ai-assisted, model: claude-opus-4-6, timestamp: "2026-04-13T18:00:00Z" }
+  - id: H-AI-003
+    title: Bulk artifact creation introduces copy-paste semantic errors
+    losses: [L-AI-003, L-1]
+    description: >
+      When creating many artifacts quickly, subtle errors in link targets,
+      descriptions, or field values are hard to catch in review.
+    provenance: { created-by: ai-assisted, model: claude-opus-4-6, timestamp: "2026-04-13T18:00:00Z" }
+  - id: H-AI-004
+    title: AI code has confident but wrong runtime assumptions
+    losses: [L-TQ-001, L-5]
+    description: >
+      AI writes code based on potentially outdated knowledge of library
+      behavior. Cannot test on actual hardware or observe runtime.
+    provenance: { created-by: ai-assisted, model: claude-opus-4-6, timestamp: "2026-04-13T18:00:00Z" }
+  - id: H-AI-005
+    title: Human review degradation — reviewer trusts AI without verification
+    losses: [L-AI-001, L-AI-002, L-2]
+    description: >
+      As reviewer becomes accustomed to high-quality AI output, review depth
+      decreases. 20 PRs merged in one session — unsustainable review ratio.
+    provenance: { created-by: ai-assisted, model: claude-opus-4-6, timestamp: "2026-04-13T18:00:00Z" }
+  - id: H-AI-006
+    title: Model version drift — same prompt produces different code later
+    losses: [L-AI-002, L-4]
+    description: >
+      AI-specific idioms accumulate without institutional knowledge of why.
+      Future model versions may not reproduce or understand the patterns.
+    provenance: { created-by: ai-assisted, model: claude-opus-4-6, timestamp: "2026-04-13T18:00:00Z" }
+
+system-constraints:
+  - id: SC-AI-001
+    title: AI tests must be supplemented by independent verification (proptest, Kani)
+    hazards: [H-AI-001]
+    description: Property-based tests and formal proofs test math, not implementation.
+    provenance: { created-by: ai-assisted, model: claude-opus-4-6, timestamp: "2026-04-13T18:00:00Z" }
+  - id: SC-AI-002
+    title: STPA must be reviewed by domain expert, not just the AI
+    hazards: [H-AI-002]
+    description: AI-generated STPA is input to the safety argument, not the argument itself.
+    provenance: { created-by: ai-assisted, model: claude-opus-4-6, timestamp: "2026-04-13T18:00:00Z" }
+  - id: SC-AI-003
+    title: Bulk artifacts must pass semantic review checklist
+    hazards: [H-AI-003]
+    description: Title matches description, link targets semantically correct, no template residue.
+    provenance: { created-by: ai-assisted, model: claude-opus-4-6, timestamp: "2026-04-13T18:00:00Z" }
+  - id: SC-AI-004
+    title: AI code must document key assumptions in header comments
+    hazards: [H-AI-004]
+    description: Enables future maintainers to verify assumptions still hold.
+    provenance: { created-by: ai-assisted, model: claude-opus-4-6, timestamp: "2026-04-13T18:00:00Z" }
+  - id: SC-AI-005
+    title: PR review depth must be proportional to risk
+    hazards: [H-AI-005]
+    description: Safety-critical paths need manual edge case checks. Non-critical can be lighter.
+    provenance: { created-by: ai-assisted, model: claude-opus-4-6, timestamp: "2026-04-13T18:00:00Z" }
+  - id: SC-AI-006
+    title: Provenance must include model ID and session context
+    hazards: [H-AI-006]
+    description: Co-Authored-By trailer + session logs provide traceability to AI decisions.
+    provenance: { created-by: ai-assisted, model: claude-opus-4-6, timestamp: "2026-04-13T18:00:00Z" }
