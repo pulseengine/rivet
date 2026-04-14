@@ -827,10 +827,7 @@ mod proofs {
             // All returned IDs must be well-formed
             for id in &ids {
                 kani::assert(!id.is_empty(), "extracted ID must be non-empty");
-                kani::assert(
-                    id.contains('-'),
-                    "extracted ID must contain a hyphen",
-                );
+                kani::assert(id.contains('-'), "extracted ID must contain a hyphen");
             }
         }
     }
@@ -948,8 +945,7 @@ mod proofs {
 
         // Basic invariants
         kani::assert(
-            diff.added.len() + diff.removed.len() + diff.modified.len() + diff.unchanged
-                <= nb + nh,
+            diff.added.len() + diff.removed.len() + diff.modified.len() + diff.unchanged <= nb + nh,
             "diff totals must not exceed combined store sizes",
         );
     }
@@ -994,7 +990,9 @@ mod proofs {
                 1 => "REQ-002",
                 _ => unreachable!(),
             };
-            store.insert(make_artifact(id, "requirement", vec![])).unwrap();
+            store
+                .insert(make_artifact(id, "requirement", vec![]))
+                .unwrap();
         }
 
         let next = mutate::next_id(&store, "REQ");
@@ -1010,8 +1008,12 @@ mod proofs {
         let store = Store::new();
         let schema = empty_schema();
 
-        let result = mutate::validate_link("NONEXISTENT-1", "satisfies", "TARGET-1", &store, &schema);
-        kani::assert(result.is_err(), "validate_link must reject nonexistent source");
+        let result =
+            mutate::validate_link("NONEXISTENT-1", "satisfies", "TARGET-1", &store, &schema);
+        kani::assert(
+            result.is_err(),
+            "validate_link must reject nonexistent source",
+        );
     }
 
     // ── 25. validate_link: rejects unknown target ─────────────────────
@@ -1021,11 +1023,16 @@ mod proofs {
     #[kani::proof]
     fn proof_validate_link_rejects_missing_target() {
         let mut store = Store::new();
-        store.insert(make_artifact("SRC-1", "requirement", vec![])).unwrap();
+        store
+            .insert(make_artifact("SRC-1", "requirement", vec![]))
+            .unwrap();
         let schema = empty_schema();
 
         let result = mutate::validate_link("SRC-1", "satisfies", "NONEXISTENT-1", &store, &schema);
-        kani::assert(result.is_err(), "validate_link must reject nonexistent non-external target");
+        kani::assert(
+            result.is_err(),
+            "validate_link must reject nonexistent non-external target",
+        );
     }
 
     // ── 26. render_markdown: panic-freedom ────────────────────────────
@@ -1043,7 +1050,9 @@ mod proofs {
             if i < len {
                 bytes[i] = kani::any();
                 // Allow all printable ASCII plus common markdown chars
-                kani::assume(bytes[i] >= 0x20 && bytes[i] <= 0x7E || bytes[i] == b'\n' || bytes[i] == b'\t');
+                kani::assume(
+                    bytes[i] >= 0x20 && bytes[i] <= 0x7E || bytes[i] == b'\n' || bytes[i] == b'\t',
+                );
             }
         }
         if let Ok(input) = std::str::from_utf8(&bytes[..len]) {

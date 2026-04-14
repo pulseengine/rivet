@@ -117,7 +117,17 @@
       "Bash(curl -s \"https://api.github.com/repos/useblocks/sphinx-needs/branches\")",
       "Bash(curl -s \"https://api.github.com/repos/useblocks/sphinx-needs/git/refs/heads/master\")",
       "Bash(chmod +x:*)",
-      "Bash(yamllint -d relaxed artifacts/v040-decisions.yaml artifacts/v040-features.yaml safety/stpa/variant-hazards.yaml schemas/eu-ai-act.yaml)"
+      "Bash(yamllint -d relaxed artifacts/v040-decisions.yaml artifacts/v040-features.yaml safety/stpa/variant-hazards.yaml schemas/eu-ai-act.yaml)",
+      "Bash(rivet modify:*)",
+      "Bash(rivet batch:*)",
+      "Bash(rivet stats:*)",
+      "Bash(wc:*)",
+      "Bash(xargs -I {} basename {})",
+      "WebFetch(domain:pulseengine.eu)",
+      "Skill(commit-commands:commit)",
+      "Bash(cat)",
+      "Read(//tmp/**)",
+      "Skill(commit-commands:commit-push-pr)"
     ]
   }
 }

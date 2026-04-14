@@ -130,9 +130,20 @@ fn test_schema() -> Schema {
 /// An operation on the store.
 #[derive(Debug, Clone)]
 enum Op {
-    Insert { id: String, artifact_type: String },
-    Upsert { id: String, artifact_type: String },
-    InsertWithLink { id: String, artifact_type: String, link_type: String, target: String },
+    Insert {
+        id: String,
+        artifact_type: String,
+    },
+    Upsert {
+        id: String,
+        artifact_type: String,
+    },
+    InsertWithLink {
+        id: String,
+        artifact_type: String,
+        link_type: String,
+        target: String,
+    },
     ValidateAndCheck,
 }
 
@@ -149,14 +160,14 @@ fn arb_op() -> impl Strategy<Value = Op> {
             artifact_type: t
         }),
         // 30% inserts with links
-        (arb_id(), arb_type(), arb_link_type(), arb_id()).prop_map(
-            |(id, t, lt, target)| Op::InsertWithLink {
+        (arb_id(), arb_type(), arb_link_type(), arb_id()).prop_map(|(id, t, lt, target)| {
+            Op::InsertWithLink {
                 id,
                 artifact_type: t,
                 link_type: lt,
                 target,
             }
-        ),
+        }),
         // 10% validate
         Just(Op::ValidateAndCheck),
     ]
@@ -179,14 +190,8 @@ fn check_store_invariants(store: &Store, expected_ids: &BTreeSet<String>) {
 
     // Invariant 2: every expected ID is retrievable
     for id in expected_ids {
-        assert!(
-            store.get(id).is_some(),
-            "store.get({id}) must return Some"
-        );
-        assert!(
-            store.contains(id),
-            "store.contains({id}) must be true"
-        );
+        assert!(store.get(id).is_some(), "store.get({id}) must return Some");
+        assert!(store.contains(id), "store.contains({id}) must be true");
     }
 
     // Invariant 3: types_total == len

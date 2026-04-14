@@ -33,8 +33,7 @@ fn arb_artifact_type() -> impl Strategy<Value = String> {
 
 /// Generate a safe plain scalar value for YAML (no special characters).
 fn arb_safe_value() -> impl Strategy<Value = String> {
-    "[a-zA-Z][a-zA-Z0-9 _.]{0,40}"
-        .prop_filter("no trailing spaces", |s| !s.ends_with(' '))
+    "[a-zA-Z][a-zA-Z0-9 _.]{0,40}".prop_filter("no trailing spaces", |s| !s.ends_with(' '))
 }
 
 /// Generate optional status field.
@@ -48,11 +47,14 @@ fn arb_status() -> impl Strategy<Value = Option<String>> {
 
 /// Generate a single artifact as YAML text and its expected field values.
 fn arb_artifact_yaml() -> impl Strategy<Value = (String, ExpectedArtifact)> {
-    (arb_artifact_id(), arb_artifact_type(), arb_safe_value(), arb_status())
+    (
+        arb_artifact_id(),
+        arb_artifact_type(),
+        arb_safe_value(),
+        arb_status(),
+    )
         .prop_map(|(id, atype, title, status)| {
-            let mut yaml = format!(
-                "  - id: {id}\n    type: {atype}\n    title: {title}\n"
-            );
+            let mut yaml = format!("  - id: {id}\n    type: {atype}\n    title: {title}\n");
             if let Some(ref s) = status {
                 yaml.push_str(&format!("    status: {s}\n"));
             }
