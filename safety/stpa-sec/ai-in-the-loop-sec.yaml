@@ -1,0 +1,100 @@
+# STPA-Sec — AI-in-the-Loop Security Hazards
+
+artifacts:
+  - id: SL-AI-001
+    type: sec-loss
+    title: Integrity loss — AI introduces subtle logic errors via confident code
+    status: approved
+    description: >
+      AI generates polished code regardless of correctness. Lower review
+      barrier for fluent output means subtle logic errors pass undetected.
+    fields:
+      cia-impact: [integrity]
+      adversary: none
+      attack-vector: local
+    provenance: { created-by: ai-assisted, model: claude-opus-4-6, timestamp: "2026-04-13T18:00:00Z" }
+
+  - id: SL-AI-002
+    type: sec-loss
+    title: Integrity loss — prompt injection via artifact content
+    status: approved
+    description: >
+      Artifact descriptions loaded into AI context (MCP, rivet context) can
+      contain adversarial instructions that influence AI agent behavior.
+    fields:
+      cia-impact: [integrity]
+      adversary: insider
+      attack-vector: local
+    provenance: { created-by: ai-assisted, model: claude-opus-4-6, timestamp: "2026-04-13T18:00:00Z" }
+
+  - id: SL-AI-003
+    type: sec-loss
+    title: Availability loss — context exhaustion causes incomplete analysis
+    status: approved
+    description: >
+      In long sessions (20 PRs), earlier context is compacted. AI may
+      contradict earlier decisions or re-introduce fixed bugs.
+    fields:
+      cia-impact: [availability, integrity]
+      adversary: none
+      attack-vector: local
+    provenance: { created-by: ai-assisted, model: claude-opus-4-6, timestamp: "2026-04-13T18:00:00Z" }
+
+  - id: SH-AI-001
+    type: sec-hazard
+    title: Self-referential blind spot in AI-generated STPA
+    description: >
+      This analysis is AI-generated. The AI cannot reliably identify its
+      own failure modes. Must be treated as starting point, not authority.
+    fields:
+      cia-impact: [integrity]
+    links:
+      - type: leads-to-sec-loss
+        target: SL-AI-001
+    provenance: { created-by: ai-assisted, model: claude-opus-4-6, timestamp: "2026-04-13T18:00:00Z" }
+
+  - id: SH-AI-002
+    type: sec-hazard
+    title: MCP tools expose AI-writable surface without content sanitization
+    description: >
+      Artifact content read via MCP can influence AI decisions. No
+      sanitization between artifact data and AI-driven tool calls.
+    fields:
+      cia-impact: [integrity]
+    links:
+      - type: leads-to-sec-loss
+        target: SL-AI-002
+    provenance: { created-by: ai-assisted, model: claude-opus-4-6, timestamp: "2026-04-13T18:00:00Z" }
+
+  - id: SSC-AI-001
+    type: sec-constraint
+    title: AI safety artifacts must be draft until human-reviewed
+    description: >
+      All AI-generated STPA must have status draft and created-by ai-assisted
+      until human expert reviews and approves with reviewed-by field.
+    links:
+      - type: prevents-sec-hazard
+        target: SH-AI-001
+    provenance: { created-by: ai-assisted, model: claude-opus-4-6, timestamp: "2026-04-13T18:00:00Z" }
+
+  - id: SSC-AI-002
+    type: sec-constraint
+    title: MCP read results must not directly become tool call arguments
+    description: >
+      AI agents must validate artifact content before using it in mutations.
+      Audit log (REQ-047) provides forensic data for detecting violations.
+    links:
+      - type: prevents-sec-hazard
+        target: SH-AI-002
+    provenance: { created-by: ai-assisted, model: claude-opus-4-6, timestamp: "2026-04-13T18:00:00Z" }
+
+  - id: SSC-AI-003
+    type: sec-constraint
+    title: Long AI sessions must be split into reviewable chunks
+    description: >
+      Sessions >10 PRs should be split. Context compaction events noted
+      in commits. Session transcripts referenced in PR descriptions.
+    links:
+      - type: prevents-sec-hazard
+        target: SH-AI-001
+    provenance: { created-by: ai-assisted, model: claude-opus-4-6, timestamp: "2026-04-13T18:00:00Z" }
