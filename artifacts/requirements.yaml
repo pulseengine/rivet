@@ -1180,7 +1180,7 @@ artifacts:
         target: SSC-TQ-002
     fields:
       priority: must
-      category: security
+      category: non-functional
       baseline: v0.4.0
     provenance:
       created-by: ai-assisted
@@ -1205,7 +1205,7 @@ artifacts:
         target: SSC-TQ-001
     fields:
       priority: must
-      category: security
+      category: non-functional
       baseline: v0.4.0
     provenance:
       created-by: ai-assisted
@@ -1259,7 +1259,7 @@ artifacts:
         target: SSC-TQ-003
     fields:
       priority: must
-      category: security
+      category: non-functional
       baseline: v0.4.0
     provenance:
       created-by: ai-assisted
@@ -1340,3 +1340,94 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-6
       timestamp: 2026-04-13T12:00:00Z
+
+  - id: REQ-054
+    type: requirement
+    title: Independent verification for AI-generated tests
+    status: draft
+    description: >
+      Every safety-critical module with AI-generated tests must also have proptest properties and/or Kani proofs verifying mathematical invariants.
+
+    tags: [ai, testing, tool-qualification]
+    fields:
+      baseline: v0.4.0
+      category: non-functional
+      priority: must
+    links:
+      - type: constraint-satisfies
+        target: SC-AI-001
+
+  - id: REQ-055
+    type: requirement
+    title: Human review gate for AI-generated STPA
+    status: draft
+    description: >
+      AI STPA must remain draft until human domain expert reviews.
+    tags: [ai, stpa, tool-qualification]
+    fields:
+      baseline: v0.4.0
+      category: non-functional
+      priority: must
+    links:
+      - type: constraint-satisfies
+        target: SC-AI-002
+
+  - id: REQ-056
+    type: requirement
+    title: Semantic review checklist for bulk AI artifact creation
+    status: draft
+    description: >
+      More than 5 artifacts in one session needs semantic review checklist.
+    tags: [ai, review, tool-qualification]
+    fields:
+      baseline: v0.4.0
+      category: non-functional
+      priority: should
+    links:
+      - type: constraint-satisfies
+        target: SC-AI-003
+
+  - id: REQ-057
+    type: requirement
+    title: Assumption documentation in AI-generated modules
+    status: draft
+    description: >
+      AI-written modules must document runtime assumptions in headers.
+    tags: [ai, documentation, tool-qualification]
+    fields:
+      baseline: v0.4.0
+      category: non-functional
+      priority: should
+    links:
+      - type: constraint-satisfies
+        target: SC-AI-004
+
+  - id: REQ-058
+    type: requirement
+    title: Risk-proportional PR review for AI-generated code
+    status: draft
+    description: >
+      Safety-critical paths need manual edge case checks.
+    tags: [ai, review, tool-qualification]
+    fields:
+      baseline: v0.4.0
+      category: non-functional
+      priority: must
+    links:
+      - type: constraint-satisfies
+        target: SC-AI-005
+
+  - id: REQ-059
+    type: requirement
+    title: AI provenance with model ID and session context
+    status: draft
+    description: >
+      Provenance must include model ID, Co-Authored-By, and session refs.
+    tags: [ai, provenance, tool-qualification]
+    fields:
+      baseline: v0.4.0
+      category: non-functional
+      priority: must
+    links:
+      - type: constraint-satisfies
+        target: SC-AI-006

@@ -145,4 +145,5 @@ commits:
      SH-TQ-001, SH-TQ-002, SH-TQ-003,
      SSC-TQ-001, SSC-TQ-002, SSC-TQ-003, SSC-TQ-004, SSC-TQ-005,
      # Tool qualification requirements (draft, not yet implemented)
-     REQ-047, REQ-048, REQ-049, REQ-050, REQ-051, REQ-052, REQ-053]
+     REQ-047, REQ-048, REQ-049, REQ-050, REQ-051, REQ-052, REQ-053,
+     REQ-054, REQ-055, REQ-056, REQ-057, REQ-058, REQ-059]
