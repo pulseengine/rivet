@@ -717,8 +717,179 @@ traceability links added separately to avoid orphans.
 
 ---
 
+## S-Expression Filtering
+
+Filter artifacts using s-expressions — one syntax for CLI, API, constraints, and queries.
+
+```bash
+# Basic filtering
+rivet list --filter '(= type "requirement")'
+rivet list --filter '(and (has-tag "stpa") (= status "approved"))'
+rivet list --filter '(not (= status "draft"))'
+
+# Link predicates
+rivet list --filter '(linked-by "satisfies" _)'
+rivet list --filter '(links-count "satisfies" > 2)'
+
+# Quantifiers (checks across all artifacts)
+rivet list --filter '(exists (= type "requirement") (has-tag "safety"))'
+
+# Graph traversal
+rivet list --filter '(reachable-from "REQ-004" "satisfies")'
+
+# Combine with other flags
+rivet stats --filter '(= type "feature")'
+rivet coverage --filter '(has-tag "safety")'
+```
+
+Available predicates: `=`, `!=`, `>`, `<`, `>=`, `<=`, `in`, `has-tag`, `has-field`,
+`matches` (regex), `contains`, `linked-by`, `linked-from`, `linked-to`, `links-count`.
+
+Logical: `and`, `or`, `not`, `implies`, `excludes`.
+
+Quantifiers: `forall`, `exists`, `count`.
+
+Graph: `reachable-from`, `reachable-to`.
+
+---
+
+## Variant Management (Product Line Engineering)
+
+Manage product variants with feature models, constraint solving, and artifact scoping.
+
+### Feature Model
+
+Define your product line as a YAML feature tree:
+
+```yaml
+# feature-model.yaml
+kind: feature-model
+root: vehicle-platform
+features:
+  vehicle-platform:
+    group: mandatory
+    children: [market, safety-level, feature-set]
+  market:
+    group: alternative
+    children: [eu, us, cn]
+  eu:
+    group: leaf
+  # ... more features
+constraints:
+  - (implies eu pedestrian-detection)
+  - (implies autonomous (and adas asil-d))
+```
+
+Group types: `mandatory` (all children), `alternative` (exactly one), `or` (at least one), `optional`, `leaf`.
+
+### Variant Configuration
+
+```yaml
+# eu-adas-c.yaml
+name: eu-adas-c
+selects: [eu, adas, asil-c]
+```
+
+### Commands
+
+```bash
+# List feature tree
+rivet variant list --model feature-model.yaml
+
+# Check variant validity (constraint solving)
+rivet variant check --model feature-model.yaml --variant eu-adas-c.yaml
+
+# Solve and show bound artifacts
+rivet variant solve --model fm.yaml --variant v.yaml --binding bindings.yaml
+
+# Validate only variant-scoped artifacts
+rivet validate --model fm.yaml --variant v.yaml --binding bindings.yaml
+```
+
+---
+
+## Zola Export
+
+Export artifacts to an existing Zola static site. Additive-only, namespaced by prefix.
+
+```bash
+# Export all artifacts
+rivet export --format zola --output /path/to/zola-site --prefix rivet
+
+# Export only requirements
+rivet export --format zola --output ./site --prefix rivet \
+  --filter '(= type "requirement")'
+
+# Export STPA analysis as a separate section
+rivet export --format zola --output ./site --prefix safety \
+  --filter '(has-tag "stpa")'
+
+# Include shortcodes + clean stale pages
+rivet export --format zola --output ./site --prefix rivet \
+  --shortcodes --clean
+```
+
+Generated structure:
+- `content/<prefix>/artifacts/*.md` — one page per artifact with TOML frontmatter
+- `content/<prefix>/docs/*.md` — documents with resolved `[[ID]]` wiki-links
+- `data/<prefix>/artifacts.json` — full data for `load_data()`
+- `data/<prefix>/validation.json` — PASS/FAIL status for export freshness
+
+Shortcodes (with `--shortcodes`):
+- `{{ rivet_artifact(id="REQ-001", prefix="rivet") }}` — inline artifact card
+- `{{ rivet_stats(prefix="rivet") }}` — type/status breakdown
+
+---
+
+## Migrating from Sphinx-Needs
+
+Import sphinx-needs `needs.json` exports:
+
+```bash
+rivet import-results --format needs-json needs.json --output artifacts/
+rivet validate  # verify imported artifacts
+```
+
+The importer:
+- Normalizes IDs (`REQ_001` to `REQ-001`)
+- Maps links to `satisfies` (configurable)
+- Preserves tags, status, description
+- Warns about unresolved link targets
+
+---
+
+## MCP Server (AI Agent Integration)
+
+Rivet exposes 15 tools via the Model Context Protocol:
+
+```bash
+rivet mcp  # stdio transport
+```
+
+Tools: `rivet_validate`, `rivet_list`, `rivet_get`, `rivet_stats`, `rivet_coverage`,
+`rivet_schema`, `rivet_embed`, `rivet_snapshot_capture`, `rivet_add`, `rivet_query`,
+`rivet_modify`, `rivet_link`, `rivet_unlink`, `rivet_remove`, `rivet_reload`.
+
+All mutations are audit-logged to `.rivet/mcp-audit.jsonl`.
+
+---
+
+## Git Hooks
+
+```bash
+rivet init --hooks  # installs commit-msg + pre-commit hooks
+```
+
+**Important**: Git hooks are convenience tooling, not security controls.
+`git commit --no-verify` bypasses them. CI must independently run
+`rivet commits` and `rivet validate` as required checks.
+
+---
+
 ## Next Steps
 
 - Read the [schema reference](schemas.md) for full details on all built-in schemas
 - Browse the `artifacts/` directory in the repo for real-world examples
 - Run `rivet validate` on your own project to see it in action
+- Try `rivet export --format zola` to publish your artifacts as a static site
+- Use `rivet variant` to manage product line configurations
