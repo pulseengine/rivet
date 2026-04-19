@@ -250,17 +250,17 @@ fn parse_suites(xml: &str) -> Result<Vec<ParsedSuite>, Error> {
                 }
             }
 
-            Ok(Event::Text(ref e)) => {
-                if text_ctx == TextContext::Failure || text_ctx == TextContext::Error {
-                    if let Some(ref mut c) = current_case {
-                        if c.body.is_none() {
-                            let text = e
-                                .unescape()
-                                .map(|s| s.trim().to_string())
-                                .unwrap_or_default();
-                            if !text.is_empty() {
-                                c.body = Some(text);
-                            }
+            Ok(Event::Text(ref e))
+                if text_ctx == TextContext::Failure || text_ctx == TextContext::Error =>
+            {
+                if let Some(ref mut c) = current_case {
+                    if c.body.is_none() {
+                        let text = e
+                            .unescape()
+                            .map(|s| s.trim().to_string())
+                            .unwrap_or_default();
+                        if !text.is_empty() {
+                            c.body = Some(text);
                         }
                     }
                 }
