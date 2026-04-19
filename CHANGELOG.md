@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.4.0] — 2026-04-19
+
+### Features
+
+- **Verification pyramid** — STPA-Sec test suite (16 tests), differential YAML parsing (rowan vs serde_yaml), operation-sequence property tests, Kani BMC expanded from 15 to 27 harnesses covering the core public API, Verus/Rocq jobs wired into CI via Bazel (#150)
+- **Variant / Product-Line Engineering** — feature-model schema, constraint solver, `rivet variant check/list/solve`, s-expression query language with forall/exists quantifiers and reachable graph traversal
+- **Zola static-site export** — multi-project filtered export with `--prefix` namespacing, wiki-link resolution, JSON data files, TOML escaping
+- **Sphinx-needs JSON import adapter** — migration path from sphinx-needs projects
+- **LSP code actions** — quick-fix for missing-link diagnostics
+- **MCP CRUD + integration tests** — query, modify, link, unlink, remove
+- **AI-in-the-loop STPA + security analysis**
+- **`rivet validate --variant`** — variant-scoped validation
+- **EU AI Act runtime evidence**
+
+### Fixes
+
+- **STPA extraction** — suffix-based UCA discovery (e.g. `*-ucas` sections) and nested `control-actions` inside controllers; previously 0 control-action artifacts on real STPA projects, now extracted correctly (#150)
+- **`rivet-core` unwrap hardening** — 12 production `unwrap()` sites replaced with safe `let Some(_) = _ else` patterns in validate, matrix, diff, mutate
+- **Zola export** — TOML escaping, title fallback, date handling, mermaid block rendering
+- **Playwright regressions** — coverage-view strict-mode violation, control-action title assumptions, `/graph` timeout handling (#151)
+- **Deps** — rustls-webpki 0.103.12 (patches RUSTSEC-2026-0098 / -0099) (#151)
+- **Clippy** — junit.rs `collapsible-match` from Rust 1.95 (#151)
+- **Tool qualification** — STPA, requirements, MCP audit, regex bounds, `export --clean`, import verification
+
+### Testing
+
+- **27 Kani BMC harnesses** — up from 15, covering commit parsing, artifact IDs/ranges, trailer parsing, store upsert, diff, validation guards, markdown render, HTML strip
+- **Differential YAML parser tests** — 6 tests comparing the rowan parser against serde_yaml for equivalence
+- **Proptest operation sequences** — 3 tests fuzzing random insert/upsert/validate sequences against store invariants
+- **Dual-crate mutation testing** — rivet-cli now covered alongside rivet-core, 40-minute CI timeout
+
+### CI
+
+- **Kani job enabled** — previously commented out
+- **Verus + Rocq jobs** — added via Bazel (marked `continue-on-error: true` pending toolchain stabilization)
+- **CLI mutation testing** — added alongside core
+
 ## [0.2.0] — 2026-03-21
 
 ### Features
