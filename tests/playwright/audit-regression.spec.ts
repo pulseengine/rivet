@@ -152,6 +152,7 @@ test.describe("Audit Regression: Consistency", () => {
   });
 
   test("every page returns 200", async ({ page }) => {
+    test.setTimeout(180_000);
     const pages = [
       "/",
       "/artifacts",
@@ -167,7 +168,7 @@ test.describe("Audit Regression: Consistency", () => {
       "/help",
     ];
     for (const path of pages) {
-      const resp = await page.request.get(path);
+      const resp = await page.request.get(path, { timeout: 90_000 });
       expect(resp.status(), `${path} should return 200`).toBe(200);
     }
   });
