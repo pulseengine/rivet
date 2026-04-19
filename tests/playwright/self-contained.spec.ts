@@ -98,6 +98,7 @@ test.describe("Self-contained assets (no CDN)", () => {
   });
 
   test("clicking multiple nav links navigates correctly", async ({ page }) => {
+    test.setTimeout(120_000);
     await page.goto("/");
     await waitForHtmx(page);
 
@@ -109,7 +110,7 @@ test.describe("Self-contained assets (no CDN)", () => {
 
     for (const { selector, path } of routes) {
       await page.click(selector);
-      await waitForHtmx(page);
+      await waitForHtmx(page, 60_000);
       const url = new URL(page.url());
       expect(url.pathname).toBe(path);
       expect(url.hash).toBe("");

@@ -1,10 +1,10 @@
 import { Page, expect } from "@playwright/test";
 
 /** Wait for HTMX to finish all pending requests. */
-export async function waitForHtmx(page: Page) {
+export async function waitForHtmx(page: Page, timeout = 10_000) {
   await page.waitForFunction(
     () => !document.querySelector(".htmx-request"),
-    { timeout: 10_000 },
+    { timeout },
   );
 }
 

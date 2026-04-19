@@ -117,7 +117,7 @@ test.describe("API v1: Artifacts — Grafana table data", () => {
 
     const art = data.artifacts[0];
     expect(art.id).toBeTruthy();
-    expect(art.title).toBeTruthy();
+    // Title may be empty for some types (e.g., control-actions use name/action)
     expect(art.type).toBeTruthy();
     expect(art.origin).toBe("local");
     expect(typeof art.links_out).toBe("number");

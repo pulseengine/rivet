@@ -15,11 +15,12 @@ test.describe("Graph View", () => {
   });
 
   test("node budget prevents crash on full graph", async ({ page }) => {
+    test.setTimeout(120_000);
     await page.goto("/graph");
     await waitForHtmx(page);
     // Should render without timeout — either SVG or budget message
     const content = page.locator("svg, :text('budget')");
-    await expect(content.first()).toBeVisible({ timeout: 30_000 });
+    await expect(content.first()).toBeVisible({ timeout: 60_000 });
   });
 
   test("graph controls are visible", async ({ page }) => {

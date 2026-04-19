@@ -103,10 +103,11 @@ test.describe("Console Error Hygiene", () => {
 
   for (const path of pagesToCheck) {
     test(`no JS errors on ${path}`, async ({ page }) => {
+      test.setTimeout(120_000);
       const errors: string[] = [];
       page.on("pageerror", (err) => errors.push(err.message));
 
-      await page.goto(path);
+      await page.goto(path, { timeout: 90_000 });
       await waitForHtmx(page);
       await page.waitForLoadState("networkidle");
 

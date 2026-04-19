@@ -26,8 +26,8 @@ test.describe("Coverage View", () => {
   test("shows coverage table with rule details", async ({ page }) => {
     await page.goto("/coverage");
     await waitForHtmx(page);
-    const table = page.locator("table");
-    const tableCount = await table.count();
+    const tables = page.locator("table");
+    const tableCount = await tables.count();
     if (tableCount === 0) {
       // No traceability rules defined — the card message should explain
       await expect(page.locator("body")).toContainText(
@@ -35,6 +35,8 @@ test.describe("Coverage View", () => {
       );
       return;
     }
+    // Use first table — the coverage rules table
+    const table = tables.first();
     // Table should have expected columns
     await expect(table.locator("thead")).toContainText("Rule");
     await expect(table.locator("thead")).toContainText("Source Type");
@@ -44,14 +46,14 @@ test.describe("Coverage View", () => {
   test("coverage bars have progress indicators", async ({ page }) => {
     await page.goto("/coverage");
     await waitForHtmx(page);
-    const table = page.locator("table");
-    const tableCount = await table.count();
+    const tables = page.locator("table");
+    const tableCount = await tables.count();
     if (tableCount === 0) {
       test.skip();
       return;
     }
-    // Each row should have a progress bar div
-    const rows = page.locator("table tbody tr");
+    // Each row in the first table should have a progress bar div
+    const rows = tables.first().locator("tbody tr");
     const rowCount = await rows.count();
     expect(rowCount).toBeGreaterThan(0);
   });
@@ -59,8 +61,8 @@ test.describe("Coverage View", () => {
   test("coverage badges link to artifact types", async ({ page }) => {
     await page.goto("/coverage");
     await waitForHtmx(page);
-    const table = page.locator("table");
-    const tableCount = await table.count();
+    const tables = page.locator("table");
+    const tableCount = await tables.count();
     if (tableCount === 0) {
       test.skip();
       return;

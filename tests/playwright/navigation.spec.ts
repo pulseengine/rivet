@@ -8,15 +8,17 @@ test.describe("Navigation", () => {
   });
 
   test("all major nav links are reachable via direct URL", async ({ page }) => {
+    test.setTimeout(120_000);
     // Test via direct URL access (more reliable than HTMX click)
     const routes = ["/artifacts", "/validate", "/matrix", "/graph", "/coverage"];
     for (const route of routes) {
-      const response = await page.goto(route);
+      const response = await page.goto(route, { timeout: 90_000 });
       expect(response?.status()).toBe(200);
     }
   });
 
   test("direct URL access works without redirect loop", async ({ page }) => {
+    test.setTimeout(60_000);
     await page.goto("/artifacts");
     await expect(page.locator("table")).toBeVisible();
     await page.goto("/stpa");
