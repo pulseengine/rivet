@@ -26,8 +26,9 @@ Import ListNotations.
 
 Require Import Schema.
 
-Open Scope string_scope.
-Open Scope list_scope.
+(* Mirroring Schema.v: no `Open Scope string_scope` — it shadows
+ * List.length / List.app. All string literals in this file carry
+ * an explicit `%string` scope annotation. *)
 
 (* ========================================================================= *)
 (** * Section 1: Validation as a Pure Function                                *)
@@ -117,7 +118,7 @@ Proof.
   - simpl in Hin. destruct Hin as [Heq | Hin_rest].
     + subst h. simpl.
       rewrite Habs.
-      exists (mkDiagnostic SevError (Some (art_id a)) "broken-link" (link_target l)).
+      exists (mkDiagnostic SevError (Some (art_id a)) "broken-link"%string (link_target l)).
       split.
       * apply in_or_app. left. left. reflexivity.
       * simpl. split; reflexivity.

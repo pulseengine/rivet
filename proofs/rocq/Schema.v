@@ -24,8 +24,12 @@ Require Import Coq.Bool.Bool.
 Require Import Coq.Arith.Arith.
 Import ListNotations.
 
-Open Scope string_scope.
-Open Scope list_scope.
+(* We deliberately do NOT `Open Scope string_scope.` here: string_scope
+ * shadows `length` (picks String.length over List.length) and `++`
+ * (picks String.append over List.app), which silently mis-type every
+ * Store operation in this file. All strings used here appear either
+ * as quoted literals or via fully-qualified `String.eqb`, so the
+ * default list_scope is what we want. *)
 
 (* ========================================================================= *)
 (** * Section 1: Domain Types                                                 *)
