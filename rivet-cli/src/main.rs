@@ -2504,8 +2504,6 @@ fn which_rivet() -> String {
 ///
 /// This allows coexistence with pre-commit, husky, lefthook, etc.
 fn install_hook(path: &std::path::Path, content: &str) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-
     if path.exists() {
         let prev = path.with_extension("prev");
         // Don't overwrite an existing .prev (user may have modified it)
@@ -2530,8 +2528,13 @@ fn install_hook(path: &std::path::Path, content: &str) -> Result<()> {
 
     let final_content = format!("{content}{chain_snippet}");
     std::fs::write(path, &final_content).with_context(|| format!("writing {}", path.display()))?;
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))
-        .with_context(|| format!("setting permissions on {}", path.display()))?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))
+            .with_context(|| format!("setting permissions on {}", path.display()))?;
+    }
     Ok(())
 }
 
