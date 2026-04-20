@@ -284,7 +284,7 @@ Qed.
     is bounded by |store| * |rules| * max_links. *)
 
 Definition validation_work (s : Store) (rules : list TraceRule) : nat :=
-  length s * length rules.
+  List.length s * List.length rules.
 
 (** The empty store requires zero work. *)
 Lemma validation_empty_store : forall rules,
@@ -304,7 +304,7 @@ Qed.
 (** Adding one artifact adds at most |rules| checks. *)
 Lemma validation_work_add_one : forall s a rules,
   validation_work (s ++ [a]) rules =
-  validation_work s rules + length rules.
+  validation_work s rules + List.length rules.
 Proof.
   intros. unfold validation_work.
   rewrite app_length. simpl.
@@ -559,7 +559,7 @@ Qed.
 
 (** Count how many artifacts of a given kind lack the required link. *)
 Definition count_violations (s : Store) (r : TraceRule) : nat :=
-  length (filter
+  List.length (filter
     (fun a => artifact_kind_eqb (art_kind a) (rule_source_kind r) &&
               negb (existsb
                 (fun l => link_kind_eqb (link_kind l) (rule_link_kind r) &&

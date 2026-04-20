@@ -173,7 +173,7 @@ Qed.
 (** The number of diagnostics is bounded by store size * (max_links + rules). *)
 
 Lemma check_broken_links_length : forall s a,
-  length (check_broken_links s a) <= length (art_links a).
+  List.length (check_broken_links s a) <= List.length (art_links a).
 Proof.
   intros s a.
   unfold check_broken_links.
@@ -186,7 +186,7 @@ Proof.
 Qed.
 
 Lemma check_artifact_rules_length : forall s a rules,
-  length (check_artifact_rules s a rules) <= length rules.
+  List.length (check_artifact_rules s a rules) <= List.length rules.
 Proof.
   intros s a rules.
   unfold check_artifact_rules.
