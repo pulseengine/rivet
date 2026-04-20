@@ -390,18 +390,11 @@ jobs:
       - uses: model-checking/kani-github-action@v1
       - run: cargo kani -p rivet-core
 
-  # ── Verus SMT verification ──────────────────────────────────────────
-  # TODO: flip to hard gate once the upstream hub-repo bug in rules_verus
-  # is fixed. Currently the `:all` alias points to only the first platform's
-  # toolchain rather than registering toolchain() rules for each platform,
-  # so `register_toolchains("@verus_toolchains//:all")` resolves to a
-  # non-toolchain target and resolution fails.
-  # Upstream: https://github.com/pulseengine/rules_verus
+  # ── Verus SMT verification (hard gate) ───────────────────────────────
   verus:
     name: Verus Proofs
     needs: [test]
     runs-on: ubuntu-latest
-    continue-on-error: true
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
