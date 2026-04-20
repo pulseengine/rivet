@@ -506,7 +506,7 @@ Proof.
   intros s r1 r2 a1 a2 Hr1 Hr2 Hin1 Hk1 Hchain Hin2 Hk2 Hsat1 Hsat2.
   unfold artifact_satisfies_rule in Hsat1.
   destruct Hsat1 as [l1 [Hl1_in [Hl1_kind [t1 [Ht1_in [Ht1_id Ht1_kind]]]]]].
-  apply reach_direct.
+  eapply reach_direct.
   exists a1. split; [exact Hin1 |].
   split; [reflexivity |].
   unfold has_link_to.
