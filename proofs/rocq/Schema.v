@@ -487,7 +487,24 @@ Inductive reachable (s : Store) : string -> string -> Prop :=
       reachable s src tgt.
 
 (** If two consecutive rules are satisfied and there exist matching artifacts,
-    then the source of the first rule can reach the target of the second. *)
+    then the source of the first rule can reach the target of the second.
+
+    Honest status: this theorem is currently [Admitted]. As stated, it is
+    under-constrained — the proof needs to connect the anonymous link
+    target [t1] (the artifact satisfying [a1]'s outgoing [r1] link) to the
+    named [a2] (the intermediate the caller supplied). Without an
+    additional hypothesis [art_id t1 = art_id a2] or a lemma forcing
+    artifact-id uniqueness, the chain doesn't close.
+
+    The correct strengthening is likely one of:
+      1. Add [art_id t1 = art_id a2] as an explicit premise.
+      2. Quantify existentially over the middle artifact rather than
+         taking [a2] as a parameter.
+      3. Prove an "ID-uniqueness" lemma and use it to identify t1 with a2.
+
+    Leaving Admitted with this note rather than claiming a proof we
+    don't have. All other theorems in Schema.v and Validation.v are
+    Qed'd. *)
 Theorem vmodel_chain_two_steps :
   forall s r1 r2 a1 a2,
     rule_satisfied s r1 ->
@@ -503,16 +520,7 @@ Theorem vmodel_chain_two_steps :
     artifact_satisfies_rule s a2 r2 ->
     reachable s (art_id a1) (art_id a2).
 Proof.
-  intros s r1 r2 a1 a2 Hr1 Hr2 Hin1 Hk1 Hchain Hin2 Hk2 Hsat1 Hsat2.
-  unfold artifact_satisfies_rule in Hsat1.
-  destruct Hsat1 as [l1 [Hl1_in [Hl1_kind [t1 [Ht1_in [Ht1_id Ht1_kind]]]]]].
-  eapply reach_direct.
-  exists a1. split; [exact Hin1 |].
-  split; [reflexivity |].
-  unfold has_link_to.
-  exists l1. split; [exact Hl1_in |].
-  split; [exact Ht1_id | exact Hl1_kind].
-Qed.
+Admitted.
 
 (* ========================================================================= *)
 (** * Section 11: Conditional Rule Support                                    *)
