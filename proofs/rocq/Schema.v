@@ -25,6 +25,7 @@ Require Import Coq.Arith.Arith.
 Import ListNotations.
 
 Open Scope string_scope.
+Open Scope list_scope.
 
 (* ========================================================================= *)
 (** * Section 1: Domain Types                                                 *)

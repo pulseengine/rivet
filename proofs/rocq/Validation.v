@@ -27,6 +27,7 @@ Import ListNotations.
 Require Import Schema.
 
 Open Scope string_scope.
+Open Scope list_scope.
 
 (* ========================================================================= *)
 (** * Section 1: Validation as a Pure Function                                *)
