@@ -24,16 +24,6 @@ rocq_library(
     deps = [":rivet_schema"],
 )
 
-# Combined metamodel target
-rocq_library(
-    name = "rivet_metamodel",
-    srcs = [],
-    deps = [
-        ":rivet_schema",
-        ":rivet_validation",
-    ],
-)
-
 # Proof verification test — confirms all proofs compile and check
 rocq_proof_test(
     name = "rivet_metamodel_test",
@@ -41,5 +31,8 @@ rocq_proof_test(
         "Schema.v",
         "Validation.v",
     ],
-    deps = [":rivet_metamodel"],
+    deps = [
+        ":rivet_schema",
+        ":rivet_validation",
+    ],
 )

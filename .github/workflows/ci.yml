@@ -286,51 +286,46 @@ jobs:
           PROPTEST_CASES: "1000"
 
   # ── Mutation testing (hard gate — zero surviving mutants) ────────────
+  # Split per-crate into parallel jobs so each has its own 45-min budget.
   mutants:
-    name: Mutation Testing
+    name: Mutation Testing (${{ matrix.crate }})
     needs: [test]
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        crate: [rivet-core, rivet-cli]
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: mutants-${{ matrix.crate }}
       - name: Install cargo-mutants
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-mutants
-      - name: Run cargo-mutants on rivet-core
-        run: cargo mutants -p rivet-core --timeout 120 --jobs 4 --output mutants-out -- --lib || true
-      - name: Run cargo-mutants on rivet-cli
-        run: cargo mutants -p rivet-cli --timeout 120 --jobs 4 --output mutants-cli-out -- --lib || true
+      - name: Run cargo-mutants
+        run: cargo mutants -p ${{ matrix.crate }} --timeout 90 --jobs 4 --output mutants-out -- --lib || true
       - name: Check surviving mutants
         run: |
           MISSED=0
-          for dir in mutants-out mutants-cli-out; do
-            if [ -f "$dir/missed.txt" ]; then
-              COUNT=$(wc -l < "$dir/missed.txt" | tr -d ' ')
-              MISSED=$((MISSED + COUNT))
-            fi
-          done
-          echo "Surviving mutants: $MISSED"
+          if [ -f "mutants-out/missed.txt" ]; then
+            MISSED=$(wc -l < "mutants-out/missed.txt" | tr -d ' ')
+          fi
+          echo "Surviving mutants in ${{ matrix.crate }}: $MISSED"
           if [ "$MISSED" -gt 0 ]; then
-            echo "::error::$MISSED mutant(s) survived — add tests to kill them"
-            for dir in mutants-out mutants-cli-out; do
-              if [ -f "$dir/missed.txt" ]; then
-                echo "--- $dir ---"
-                head -30 "$dir/missed.txt"
-              fi
-            done
+            echo "::error::$MISSED mutant(s) survived in ${{ matrix.crate }} — add tests to kill them"
+            head -30 mutants-out/missed.txt
             exit 1
           fi
       - name: Upload mutants report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mutants-report
-          path: |
-            mutants-out/
-            mutants-cli-out/
+          name: mutants-report-${{ matrix.crate }}
+          path: mutants-out/
 
   # ── Fuzz testing (main only — too slow for PRs) ───────────────────
   fuzz:
@@ -384,12 +379,11 @@ jobs:
       - name: Check supply chain
         run: cargo vet --locked
 
-  # ── Kani bounded model checking ────────────────────────────────────
+  # ── Kani bounded model checking (hard gate) ─────────────────────────
   kani:
     name: Kani Proofs
     needs: [test]
     runs-on: ubuntu-latest
-    continue-on-error: true
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
@@ -397,6 +391,12 @@ jobs:
       - run: cargo kani -p rivet-core
 
   # ── Verus SMT verification ──────────────────────────────────────────
+  # TODO: flip to hard gate once the upstream hub-repo bug in rules_verus
+  # is fixed. Currently the `:all` alias points to only the first platform's
+  # toolchain rather than registering toolchain() rules for each platform,
+  # so `register_toolchains("@verus_toolchains//:all")` resolves to a
+  # non-toolchain target and resolution fails.
+  # Upstream: https://github.com/pulseengine/rules_verus
   verus:
     name: Verus Proofs
     needs: [test]
@@ -415,12 +415,11 @@ jobs:
         working-directory: verus
         run: bazel test //:rivet_specs_verify
 
-  # ── Rocq metamodel proofs ─────────────────────────────────────────
+  # ── Rocq metamodel proofs (hard gate) ─────────────────────────────
   rocq:
     name: Rocq Proofs
     needs: [test]
     runs-on: ubuntu-latest
-    continue-on-error: true
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6

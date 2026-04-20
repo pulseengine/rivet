@@ -669,6 +669,7 @@ mod proofs {
         let ctx = EvalContext {
             artifact: &artifact,
             graph: &graph,
+            store: None,
         };
 
         let expr = arb_expr(2);
@@ -688,6 +689,7 @@ mod proofs {
         let ctx = EvalContext {
             artifact: &artifact,
             graph: &graph,
+            store: None,
         };
 
         let a = arb_expr(2);
@@ -714,6 +716,7 @@ mod proofs {
         let ctx = EvalContext {
             artifact: &artifact,
             graph: &graph,
+            store: None,
         };
 
         let a = arb_expr(2);
@@ -738,6 +741,7 @@ mod proofs {
         let ctx = EvalContext {
             artifact: &artifact,
             graph: &graph,
+            store: None,
         };
 
         let a = arb_expr(2);
@@ -764,6 +768,7 @@ mod proofs {
         let ctx = EvalContext {
             artifact: &artifact,
             graph: &graph,
+            store: None,
         };
 
         let a = arb_expr(2);
