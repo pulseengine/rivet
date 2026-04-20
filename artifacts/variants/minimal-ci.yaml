@@ -1,0 +1,28 @@
+# Minimal CI variant of rivet.
+#
+# Matches `cargo build --release -p rivet-cli` with default features:
+# rowan-yaml + aadl on, no optional cargo features, pure one-shot CLI
+# use (no dashboard, LSP, or MCP server process).
+#
+# Verify with:
+#   rivet variant check --model artifacts/feature-model.yaml \
+#                       --variant artifacts/variants/minimal-ci.yaml
+name: minimal-ci
+selects:
+  - rowan-yaml
+  - cli-only
+  - stpa-yaml-adapter
+  - generic-yaml-adapter
+  - aadl-adapter
+  - needs-json-adapter
+  - junit-adapter
+  - reqif-adapter
+  - reqif-export
+  - generic-yaml-export
+  - html-export
+  - zola-export
+  - junit-import
+  - needs-json-import
+  - preset-dev
+  - preset-aadl
+  - preset-stpa
