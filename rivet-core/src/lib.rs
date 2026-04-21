@@ -20,6 +20,7 @@ pub mod impact;
 pub mod junit;
 pub mod lifecycle;
 pub mod links;
+pub mod managed_section;
 pub mod markdown;
 pub mod matrix;
 pub mod model;
