@@ -528,9 +528,19 @@ fn extract_section_item(
 
         // Check if this key is a shorthand link field
         if let Some(link_type) = shorthand_links.get(&key_text) {
+            // `losses: null` / `losses: ~` / `losses: ""` mean "no link",
+            // not "a link to an artifact literally named `null`."
+            // Without this guard the YAML footgun fuzzer produces phantom
+            // links that silently pollute the trace graph.
+            if is_null_or_empty_scalar(&value_node) {
+                continue;
+            }
             // Convert shorthand: `hazards: [H-1, H-2]` → links
             let targets = extract_string_list(&value_node);
             for target in targets {
+                if target.is_empty() {
+                    continue;
+                }
                 links.push(Link {
                     link_type: link_type.clone(),
                     target,
@@ -539,10 +549,12 @@ fn extract_section_item(
             // Also handle single-value shorthand: `uca: UCA-1`
             if targets_is_empty_but_scalar(&value_node) {
                 if let Some(target) = scalar_text(&value_node) {
-                    links.push(Link {
-                        link_type: link_type.clone(),
-                        target,
-                    });
+                    if !target.is_empty() {
+                        links.push(Link {
+                            link_type: link_type.clone(),
+                            target,
+                        });
+                    }
                 }
             }
             continue;
@@ -660,6 +672,23 @@ fn targets_is_empty_but_scalar(value_node: &SyntaxNode) -> bool {
     child_of_kind(value_node, SyntaxKind::Sequence).is_none()
         && child_of_kind(value_node, SyntaxKind::FlowSequence).is_none()
         && scalar_text(value_node).is_some()
+}
+
+/// True if the scalar under `value_node` is the YAML null token
+/// (`null`, `Null`, `NULL`, `~`) or an empty scalar (including the
+/// empty quoted string `""` / `''`).
+///
+/// Used to prevent emitting phantom shorthand links like
+/// `Link { target: "null" }` when the user wrote `losses: null` to mean
+/// "no link" rather than "a link to an artifact literally named null."
+fn is_null_or_empty_scalar(value_node: &SyntaxNode) -> bool {
+    match scalar_text(value_node) {
+        None => true,
+        Some(text) => {
+            let trimmed = text.trim();
+            trimmed.is_empty() || trimmed == "~" || trimmed.eq_ignore_ascii_case("null")
+        }
+    }
 }
 
 /// Extract text from a value node (handles block scalars and plain scalars).
@@ -1896,6 +1925,84 @@ artifacts:
             desc_str.contains("\u{65e5}\u{672c}\u{8a9e}"),
             "expected Japanese chars, got: {:?}",
             desc_str
+        );
+    }
+
+    // ── Null / empty shorthand value must not produce a phantom link ──
+
+    /// rivet: fixes REQ-028
+    #[test]
+    fn shorthand_null_does_not_emit_phantom_link() {
+        // `losses: null` on a hazard must not produce a link with target="null".
+        let source = "\
+hazards:
+  - id: H-001
+    title: Unintended acceleration
+    losses: null
+";
+        let schema = test_schema();
+        let result = extract_schema_driven(source, &schema, None);
+        assert_eq!(result.artifacts.len(), 1);
+        let art = &result.artifacts[0].artifact;
+        let phantoms = art
+            .links
+            .iter()
+            .filter(|l| l.target == "null" || l.target == "~" || l.target.is_empty())
+            .count();
+        assert_eq!(
+            phantoms, 0,
+            "null shorthand must not yield a phantom link; got links={:?}",
+            art.links
+        );
+    }
+
+    /// rivet: fixes REQ-028
+    #[test]
+    fn shorthand_tilde_does_not_emit_phantom_link() {
+        let source = "\
+hazards:
+  - id: H-001
+    title: Unintended acceleration
+    losses: ~
+";
+        let schema = test_schema();
+        let result = extract_schema_driven(source, &schema, None);
+        assert_eq!(result.artifacts.len(), 1);
+        let art = &result.artifacts[0].artifact;
+        let phantoms = art
+            .links
+            .iter()
+            .filter(|l| l.target == "null" || l.target == "~" || l.target.is_empty())
+            .count();
+        assert_eq!(
+            phantoms, 0,
+            "~ shorthand must not yield a phantom link; got links={:?}",
+            art.links
+        );
+    }
+
+    /// rivet: fixes REQ-028
+    #[test]
+    fn shorthand_empty_string_does_not_emit_phantom_link() {
+        let source = "\
+hazards:
+  - id: H-001
+    title: Unintended acceleration
+    losses: \"\"
+";
+        let schema = test_schema();
+        let result = extract_schema_driven(source, &schema, None);
+        assert_eq!(result.artifacts.len(), 1);
+        let art = &result.artifacts[0].artifact;
+        let phantoms = art
+            .links
+            .iter()
+            .filter(|l| l.target == "null" || l.target == "~" || l.target.is_empty())
+            .count();
+        assert_eq!(
+            phantoms, 0,
+            "empty-string shorthand must not yield a phantom link; got links={:?}",
+            art.links
         );
     }
 }

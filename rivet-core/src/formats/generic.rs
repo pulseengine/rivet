@@ -103,7 +103,12 @@ impl Adapter for GenericYamlAdapter {
     }
 }
 
+// `deny_unknown_fields` is deliberate: without it, typos like `artifact:`
+// (singular) or `Artifacts:` (wrong case) silently deserialize to an empty
+// `GenericFile`, and the offending top-level block becomes invisible to the
+// trace graph. The YAML footgun fuzzer confirmed this class of bug.
 #[derive(Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 struct GenericFile {
     artifacts: Vec<GenericArtifact>,
 }
@@ -223,6 +228,64 @@ mod tests {
         assert!(
             msg.contains("exceeds"),
             "expected size-limit error, got: {msg}"
+        );
+    }
+
+    /// When a file has both a correct `artifacts:` key AND a typo-ed
+    /// companion key, `serde_yaml` without `deny_unknown_fields` would
+    /// silently drop the typo-ed key — losing any artifacts the user
+    /// accidentally placed there. Discovered by the YAML footgun fuzzer.
+    ///
+    /// rivet: fixes REQ-004 verifies REQ-010
+    #[test]
+    fn typo_companion_key_produces_parse_error() {
+        // Both keys at top level: `artifacts:` is valid but `artifact:`
+        // (singular typo) contains artifacts the user meant to include.
+        // Without deny_unknown_fields, this parses Ok and the typo'd
+        // block is invisible.
+        let yaml = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: Valid entry
+artifact:
+  - id: REQ-002
+    type: requirement
+    title: Typo'd entry
+";
+        let result = parse_generic_yaml(yaml, None);
+        assert!(
+            result.is_err(),
+            "parse must fail on unknown top-level key 'artifact'; got Ok({:?})",
+            result.as_ref().ok()
+        );
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("artifact") || msg.contains("unknown field"),
+            "error message should mention the offending key, got: {msg}"
+        );
+    }
+
+    /// A file with `Artifacts:` (wrong case) alongside `artifacts:`.
+    ///
+    /// rivet: fixes REQ-004 verifies REQ-010
+    #[test]
+    fn capitalized_artifacts_companion_key_produces_parse_error() {
+        let yaml = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: Valid entry
+Artifacts:
+  - id: REQ-002
+    type: requirement
+    title: Wrong-case typo
+";
+        let result = parse_generic_yaml(yaml, None);
+        assert!(
+            result.is_err(),
+            "parse must fail on wrong-case top-level key 'Artifacts'; got Ok({:?})",
+            result.as_ref().ok()
         );
     }
 }

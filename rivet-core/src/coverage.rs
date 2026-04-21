@@ -106,7 +106,10 @@ pub fn compute_coverage(store: &Store, schema: &Schema, graph: &LinkGraph) -> Co
                 CoverageDirection::Forward => graph
                     .links_from(id)
                     .iter()
-                    .filter(|l| l.link_type == link_type)
+                    // Self-satisfying links (DD-001 → DD-001) must not count:
+                    // an author could otherwise close the loop on their own
+                    // artifact and pass coverage with zero upstream trace.
+                    .filter(|l| l.link_type == link_type && l.target != *id)
                     .any(|l| {
                         if target_types.is_empty() {
                             true
@@ -119,7 +122,10 @@ pub fn compute_coverage(store: &Store, schema: &Schema, graph: &LinkGraph) -> Co
                 CoverageDirection::Backward => graph
                     .backlinks_to(id)
                     .iter()
-                    .filter(|bl| bl.link_type == link_type)
+                    // Same reasoning as forward: a backlink from the artifact
+                    // to itself (self-referential link) cannot count as
+                    // "satisfied by a different artifact."
+                    .filter(|bl| bl.link_type == link_type && bl.source != *id)
                     .any(|bl| {
                         if target_types.is_empty() {
                             true
@@ -286,5 +292,93 @@ mod tests {
         let json = report.to_json().expect("serialize");
         assert!(json.contains("req-coverage"));
         assert!(json.contains("dd-justification"));
+    }
+
+    /// Self-satisfying links (`source == target`, e.g. `DD-001 → DD-001`)
+    /// must not count as satisfying a traceability rule. Otherwise an
+    /// author can close the loop on their own artifact and pass CI without
+    /// any real upstream trace.
+    ///
+    /// rivet: fixes REQ-004
+    #[test]
+    fn self_link_does_not_satisfy_forward_rule() {
+        // Rule: every DD must satisfy *any* artifact (target_types empty).
+        // Without the fix, a DD that points to itself would count.
+        let mut file = minimal_schema("test");
+        file.traceability_rules = vec![TraceabilityRule {
+            name: "dd-needs-upstream".into(),
+            description: "Every DD must satisfy something upstream".into(),
+            source_type: "design-decision".into(),
+            required_link: Some("satisfies".into()),
+            required_backlink: None,
+            target_types: vec![], // match any — makes the self-link trap reachable
+            from_types: vec![],
+            severity: Severity::Error,
+        }];
+        let schema = Schema::merge(&[file]);
+
+        let mut store = Store::new();
+        // DD-001 "satisfies" itself.
+        store
+            .insert(artifact_with_links(
+                "DD-001",
+                "design-decision",
+                &[("satisfies", "DD-001")],
+            ))
+            .unwrap();
+
+        let graph = LinkGraph::build(&store, &schema);
+        let report = compute_coverage(&store, &schema, &graph);
+        let entry = &report.entries[0];
+        assert_eq!(entry.rule_name, "dd-needs-upstream");
+        assert_eq!(
+            entry.covered, 0,
+            "DD-001 self-satisfying link must not count as covered"
+        );
+        assert_eq!(entry.total, 1);
+        assert_eq!(entry.uncovered_ids, vec!["DD-001"]);
+    }
+
+    /// Backlink direction of the same bug: a DD that claims its own
+    /// requirement (e.g. REQ-X backlinked by REQ-X via some self-link)
+    /// must not count.
+    ///
+    /// rivet: fixes REQ-004
+    #[test]
+    fn self_link_does_not_satisfy_backlink_rule() {
+        let mut file = minimal_schema("test");
+        file.traceability_rules = vec![TraceabilityRule {
+            name: "req-needs-downstream".into(),
+            description: "Every req must be satisfied by something".into(),
+            source_type: "requirement".into(),
+            required_link: None,
+            required_backlink: Some("satisfies".into()),
+            target_types: vec![],
+            from_types: vec![], // match any
+            severity: Severity::Warning,
+        }];
+        let schema = Schema::merge(&[file]);
+
+        let mut store = Store::new();
+        // REQ-001 has a self-satisfies link (i.e. REQ-001 → REQ-001).
+        // The backlink REQ-001 ← REQ-001 must not count as "satisfied by
+        // a downstream artifact."
+        store
+            .insert(artifact_with_links(
+                "REQ-001",
+                "requirement",
+                &[("satisfies", "REQ-001")],
+            ))
+            .unwrap();
+
+        let graph = LinkGraph::build(&store, &schema);
+        let report = compute_coverage(&store, &schema, &graph);
+        let entry = &report.entries[0];
+        assert_eq!(entry.rule_name, "req-needs-downstream");
+        assert_eq!(
+            entry.covered, 0,
+            "self-backlink must not count REQ-001 as covered"
+        );
+        assert_eq!(entry.total, 1);
     }
 }

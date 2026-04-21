@@ -363,13 +363,21 @@ pub fn validate_structural(store: &Store, schema: &Schema, graph: &LinkGraph) ->
                     rule.severity
                 };
 
-            // Forward link check
+            // Forward link check.
+            //
+            // Empty `target_types` means "match any artifact type" — same
+            // convention used by `coverage::compute_coverage` and by
+            // `LinkFieldDef` checks (validate.rs ~L310). Without this
+            // unification, `rivet validate` and `rivet coverage` disagree on
+            // the same rule + data: validate would report a false-positive
+            // violation while coverage would count the link as satisfying.
             if let Some(required_link) = &rule.required_link {
                 let has_link = artifact.links.iter().any(|l| {
                     l.link_type == *required_link
-                        && store
-                            .get(&l.target)
-                            .is_some_and(|t| rule.target_types.contains(&t.artifact_type))
+                        && (rule.target_types.is_empty()
+                            || store
+                                .get(&l.target)
+                                .is_some_and(|t| rule.target_types.contains(&t.artifact_type)))
                 });
                 if !has_link {
                     diagnostics.push(Diagnostic {
@@ -387,13 +395,15 @@ pub fn validate_structural(store: &Store, schema: &Schema, graph: &LinkGraph) ->
                 }
             }
 
-            // Backlink check (coverage)
+            // Backlink check (coverage). Empty `from_types` means "match any"
+            // — same convention as `coverage::compute_coverage`.
             if let Some(required_backlink) = &rule.required_backlink {
                 let has_backlink = graph.backlinks_to(id).iter().any(|bl| {
                     bl.link_type == *required_backlink
-                        && store
-                            .get(&bl.source)
-                            .is_some_and(|s| rule.from_types.contains(&s.artifact_type))
+                        && (rule.from_types.is_empty()
+                            || store
+                                .get(&bl.source)
+                                .is_some_and(|s| rule.from_types.contains(&s.artifact_type)))
                 });
                 if !has_backlink {
                     diagnostics.push(Diagnostic {
@@ -1271,6 +1281,180 @@ then:
         assert!(
             coercion_diags.is_empty(),
             "should NOT emit coercion warning when field type is boolean"
+        );
+    }
+
+    // ── Cross-consumer semantics: validate vs coverage on empty target/from types ──
+
+    /// Before the Mythos fix, `validate::validate` and `coverage::compute_coverage`
+    /// disagreed on rules where `target-types` / `from-types` were empty:
+    ///
+    /// - validate: empty ⇒ "match nothing" (false-positive violation)
+    /// - coverage: empty ⇒ "match any"      (reports fully covered)
+    ///
+    /// This test pins that they must never contradict each other on the same
+    /// schema + artifact set.
+    ///
+    /// rivet: fixes REQ-004 verifies REQ-010
+    #[test]
+    fn validate_and_coverage_agree_on_empty_target_types_forward_rule() {
+        // A traceability rule with `required-link` but no `target-types` — the
+        // ambiguous shape that caused the contradiction.
+        let mut file = minimal_schema("test");
+        file.artifact_types = vec![
+            ArtifactTypeDef {
+                name: "design-decision".to_string(),
+                description: "DD".to_string(),
+                fields: vec![],
+                link_fields: vec![],
+                aspice_process: None,
+                common_mistakes: vec![],
+                example: None,
+                yaml_section: None,
+                yaml_sections: vec![],
+                yaml_section_suffix: None,
+                shorthand_links: std::collections::BTreeMap::new(),
+            },
+            ArtifactTypeDef {
+                name: "requirement".to_string(),
+                description: "REQ".to_string(),
+                fields: vec![],
+                link_fields: vec![],
+                aspice_process: None,
+                common_mistakes: vec![],
+                example: None,
+                yaml_section: None,
+                yaml_sections: vec![],
+                yaml_section_suffix: None,
+                shorthand_links: std::collections::BTreeMap::new(),
+            },
+        ];
+        file.traceability_rules = vec![TraceabilityRule {
+            name: "dd-needs-satisfies-any".into(),
+            description: "Every DD must satisfy something".into(),
+            source_type: "design-decision".into(),
+            required_link: Some("satisfies".into()),
+            required_backlink: None,
+            target_types: vec![], // empty — the ambiguous case
+            from_types: vec![],
+            severity: Severity::Error,
+        }];
+        let schema = Schema::merge(&[file]);
+
+        let mut store = Store::new();
+        let mut dd = minimal_artifact("DD-001", "design-decision");
+        dd.status = Some("approved".to_string());
+        dd.links = vec![Link {
+            link_type: "satisfies".to_string(),
+            target: "REQ-001".to_string(),
+        }];
+        store.insert(dd).unwrap();
+        store
+            .insert(minimal_artifact("REQ-001", "requirement"))
+            .unwrap();
+
+        let graph = LinkGraph::build(&store, &schema);
+        let diags = validate_structural(&store, &schema, &graph);
+        let rule_diags: Vec<_> = diags
+            .iter()
+            .filter(|d| d.rule == "dd-needs-satisfies-any")
+            .collect();
+
+        let coverage = crate::coverage::compute_coverage(&store, &schema, &graph);
+        let entry = coverage
+            .entries
+            .iter()
+            .find(|e| e.rule_name == "dd-needs-satisfies-any")
+            .expect("rule should produce a coverage entry");
+
+        // DD-001 has a satisfies link to REQ-001. Both tools must agree.
+        let validate_says_covered = rule_diags.is_empty();
+        let coverage_says_covered = entry.covered == entry.total && entry.total > 0;
+        assert_eq!(
+            validate_says_covered, coverage_says_covered,
+            "validate and coverage must agree (validate_covered={}, coverage={}/{})",
+            validate_says_covered, entry.covered, entry.total
+        );
+    }
+
+    /// Same contradiction test but for the backlink path (empty `from-types`).
+    ///
+    /// rivet: fixes REQ-004 verifies REQ-010
+    #[test]
+    fn validate_and_coverage_agree_on_empty_from_types_backlink_rule() {
+        let mut file = minimal_schema("test");
+        file.artifact_types = vec![
+            ArtifactTypeDef {
+                name: "requirement".to_string(),
+                description: "REQ".to_string(),
+                fields: vec![],
+                link_fields: vec![],
+                aspice_process: None,
+                common_mistakes: vec![],
+                example: None,
+                yaml_section: None,
+                yaml_sections: vec![],
+                yaml_section_suffix: None,
+                shorthand_links: std::collections::BTreeMap::new(),
+            },
+            ArtifactTypeDef {
+                name: "design-decision".to_string(),
+                description: "DD".to_string(),
+                fields: vec![],
+                link_fields: vec![],
+                aspice_process: None,
+                common_mistakes: vec![],
+                example: None,
+                yaml_section: None,
+                yaml_sections: vec![],
+                yaml_section_suffix: None,
+                shorthand_links: std::collections::BTreeMap::new(),
+            },
+        ];
+        file.traceability_rules = vec![TraceabilityRule {
+            name: "req-backlinked-by-any".into(),
+            description: "Every req must be satisfied by something".into(),
+            source_type: "requirement".into(),
+            required_link: None,
+            required_backlink: Some("satisfies".into()),
+            target_types: vec![],
+            from_types: vec![], // empty — the ambiguous case
+            severity: Severity::Error,
+        }];
+        let schema = Schema::merge(&[file]);
+
+        let mut store = Store::new();
+        store
+            .insert(minimal_artifact("REQ-001", "requirement"))
+            .unwrap();
+        let mut dd = minimal_artifact("DD-001", "design-decision");
+        dd.status = Some("approved".to_string());
+        dd.links = vec![Link {
+            link_type: "satisfies".to_string(),
+            target: "REQ-001".to_string(),
+        }];
+        store.insert(dd).unwrap();
+
+        let graph = LinkGraph::build(&store, &schema);
+        let diags = validate_structural(&store, &schema, &graph);
+        let rule_diags: Vec<_> = diags
+            .iter()
+            .filter(|d| d.rule == "req-backlinked-by-any")
+            .collect();
+
+        let coverage = crate::coverage::compute_coverage(&store, &schema, &graph);
+        let entry = coverage
+            .entries
+            .iter()
+            .find(|e| e.rule_name == "req-backlinked-by-any")
+            .expect("rule should produce a coverage entry");
+
+        let validate_says_covered = rule_diags.is_empty();
+        let coverage_says_covered = entry.covered == entry.total && entry.total > 0;
+        assert_eq!(
+            validate_says_covered, coverage_says_covered,
+            "validate and coverage must agree (validate_covered={}, coverage={}/{})",
+            validate_says_covered, entry.covered, entry.total
         );
     }
 }
