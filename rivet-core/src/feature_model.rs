@@ -449,16 +449,28 @@ pub fn solve(
         }
     }
 
-    // Check `excludes` constraints: (excludes A B) means NOT (A AND B).
+    // Check every cross-tree constraint as a boolean assertion over the
+    // propagated selection. This catches violations that propagation
+    // cannot (e.g. `(implies X (not Y))`, where the consequent is a
+    // negation rather than a feature to be auto-selected).
     for constraint in &model.constraints {
+        // `excludes` produces a dedicated message to preserve pre-fix
+        // diagnostics; all other constraint shapes fall through to the
+        // generic evaluator.
         if let Expr::Excludes(a, b) = constraint {
-            if is_feature_selected(a, &selected) && is_feature_selected(b, &selected) {
+            if eval_constraint(a, &selected) && eval_constraint(b, &selected) {
                 errors.push(SolveError::ConstraintViolation(format!(
                     "excludes({}, {})",
                     describe_expr(a),
                     describe_expr(b),
                 )));
             }
+            continue;
+        }
+        if !eval_constraint(constraint, &selected) {
+            errors.push(SolveError::ConstraintViolation(describe_constraint(
+                constraint,
+            )));
         }
     }
 
@@ -525,6 +537,65 @@ fn describe_expr(expr: &Expr) -> String {
         name
     } else {
         format!("{expr:?}")
+    }
+}
+
+/// Describe a top-level constraint for a `ConstraintViolation` message.
+///
+/// Renders the common logical shapes as human-readable text; falls back
+/// to the `Debug` representation for anything exotic.
+fn describe_constraint(expr: &Expr) -> String {
+    match expr {
+        Expr::Implies(a, b) => format!("implies({}, {})", describe_expr(a), describe_expr(b)),
+        Expr::Excludes(a, b) => format!("excludes({}, {})", describe_expr(a), describe_expr(b)),
+        Expr::Not(inner) => format!("not({})", describe_expr(inner)),
+        Expr::And(children) => format!(
+            "and({})",
+            children
+                .iter()
+                .map(describe_expr)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Expr::Or(children) => format!(
+            "or({})",
+            children
+                .iter()
+                .map(describe_expr)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        _ => describe_expr(expr),
+    }
+}
+
+/// Evaluate a constraint expression as a boolean over the selected set.
+///
+/// Distinct from `is_feature_selected` in two ways:
+///   - `Implies(a, b)` evaluates to `(not a) or b` — the standard
+///     propositional semantics — rather than recursing structurally.
+///   - `Excludes(a, b)` evaluates to `not (a and b)`.
+///
+/// Leaves (feature-name equality, `HasTag`, `HasField` on a known name)
+/// are resolved via `extract_feature_name` + membership in `selected`.
+/// Unknown expression shapes evaluate to `true` so the solver remains
+/// permissive for constraint flavours it does not understand (forward
+/// compatibility with richer predicates).
+fn eval_constraint(expr: &Expr, selected: &BTreeSet<String>) -> bool {
+    if let Some(name) = extract_feature_name(expr) {
+        return selected.contains(&name);
+    }
+    match expr {
+        Expr::And(children) => children.iter().all(|c| eval_constraint(c, selected)),
+        Expr::Or(children) => children.iter().any(|c| eval_constraint(c, selected)),
+        Expr::Not(inner) => !eval_constraint(inner, selected),
+        Expr::Implies(a, b) => !eval_constraint(a, selected) || eval_constraint(b, selected),
+        Expr::Excludes(a, b) => !(eval_constraint(a, selected) && eval_constraint(b, selected)),
+        Expr::BoolLit(v) => *v,
+        // Unknown / artifact-oriented predicates (link queries, regex
+        // matches, etc.) are not meaningful over a feature selection;
+        // treat as satisfied so we do not raise spurious violations.
+        _ => true,
     }
 }
 
@@ -808,6 +879,109 @@ constraints: []
         let resolved = solve(&model, &config).unwrap();
         assert_eq!(resolved.effective_features.len(), 1);
         assert!(resolved.effective_features.contains("single"));
+    }
+
+    /// Shared model for cross-tree constraint tests: `system` is a
+    /// mandatory parent containing an optional subtree with two
+    /// independently selectable siblings, so we can test variants where
+    /// only one of {feature-x, feature-y} is selected.
+    fn cross_tree_model_yaml() -> &'static str {
+        r#"
+kind: feature-model
+root: system
+features:
+  system:
+    group: mandatory
+    children: [base, extras]
+  base:
+    group: leaf
+  extras:
+    group: optional
+    children: [feature-x, feature-y]
+  feature-x:
+    group: leaf
+  feature-y:
+    group: leaf
+constraints:
+  - (implies feature-x (not feature-y))
+"#
+    }
+
+    #[test]
+    fn cross_tree_implies_not_violation_detected() {
+        // Regression: `(implies X (not Y))` with both X and Y selected
+        // must produce a ConstraintViolation. Before the fix, the solver
+        // only used `implies` for forward propagation (selecting
+        // consequent features when antecedent was selected) and had no
+        // code path that actually evaluated the implication as a logical
+        // assertion — so a negated consequent with a selected Y was
+        // silently accepted as PASS.
+        let model = FeatureModel::from_yaml(cross_tree_model_yaml()).unwrap();
+        let config = VariantConfig {
+            name: "both-x-and-y".into(),
+            selects: vec!["feature-x".into(), "feature-y".into()],
+        };
+        let result = solve(&model, &config);
+        assert!(
+            result.is_err(),
+            "expected FAIL for `(implies feature-x (not feature-y))` with both selected, got PASS: {result:?}"
+        );
+        let errors = result.unwrap_err();
+        assert!(
+            errors.iter().any(|e| matches!(
+                e,
+                SolveError::ConstraintViolation(msg) if msg.contains("implies")
+            )),
+            "expected ConstraintViolation for implies, got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn cross_tree_implies_not_allows_valid_variant() {
+        // Companion to the regression test above: when Y is NOT selected,
+        // `(implies X (not Y))` must PASS. This guards against an
+        // over-eager fix that flags every `implies (not ...)` as a
+        // violation.
+        let model = FeatureModel::from_yaml(cross_tree_model_yaml()).unwrap();
+        let config = VariantConfig {
+            name: "x-only".into(),
+            selects: vec!["feature-x".into()],
+        };
+        let result = solve(&model, &config);
+        assert!(result.is_ok(), "expected PASS for x-only, got: {result:?}");
+    }
+
+    #[test]
+    fn cross_tree_implies_positive_propagates() {
+        // `(implies feature-x feature-y)` + select only X: the solver
+        // propagates Y into the selection and returns PASS. This guards
+        // against the fix breaking forward propagation.
+        let yaml = r#"
+kind: feature-model
+root: system
+features:
+  system:
+    group: mandatory
+    children: [base, extras]
+  base:
+    group: leaf
+  extras:
+    group: optional
+    children: [feature-x, feature-y]
+  feature-x:
+    group: leaf
+  feature-y:
+    group: leaf
+constraints:
+  - (implies feature-x feature-y)
+"#;
+        let model = FeatureModel::from_yaml(yaml).unwrap();
+        let config = VariantConfig {
+            name: "x-only".into(),
+            selects: vec!["feature-x".into()],
+        };
+        let resolved = solve(&model, &config).unwrap();
+        assert!(resolved.effective_features.contains("feature-y"));
     }
 
     #[test]
