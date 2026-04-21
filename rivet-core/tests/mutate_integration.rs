@@ -501,6 +501,7 @@ fn test_validate_modify_rejects_invalid_field() {
     let params = mutate::ModifyParams {
         set_status: None,
         set_title: None,
+        set_description: None,
         add_tags: vec![],
         remove_tags: vec![],
         set_fields: vec![("priority".to_string(), "critical".to_string())],
@@ -513,6 +514,42 @@ fn test_validate_modify_rejects_invalid_field() {
         err.contains("not in allowed values"),
         "error should mention allowed values, got: {err}"
     );
+}
+
+// ── Test: set_fields rejects reserved top-level keys (Fixes: REQ-002) ────
+
+// rivet: verifies REQ-002
+#[test]
+fn test_validate_modify_rejects_reserved_top_level_in_set_fields() {
+    let schema = load_schema_files(&["common", "dev"]);
+    let mut store = Store::new();
+
+    store
+        .insert(make_artifact(
+            "REQ-001",
+            "requirement",
+            "First",
+            vec![],
+            BTreeMap::new(),
+        ))
+        .unwrap();
+
+    for reserved in mutate::RESERVED_TOP_LEVEL_KEYS {
+        let params = mutate::ModifyParams {
+            set_fields: vec![((*reserved).to_string(), "x".to_string())],
+            ..Default::default()
+        };
+        let result = mutate::validate_modify("REQ-001", &params, &store, &schema);
+        assert!(
+            result.is_err(),
+            "set_fields must reject reserved key '{reserved}'"
+        );
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains(reserved) && err.contains("reserved"),
+            "error for '{reserved}' should mention 'reserved', got: {err}"
+        );
+    }
 }
 
 // ── Test: validate_unlink rejects missing link ───────────────────────────

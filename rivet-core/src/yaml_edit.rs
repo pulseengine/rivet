@@ -165,6 +165,10 @@ impl YamlEditor {
     /// If the field already exists, its value is replaced (including any
     /// block-scalar continuation lines). If it does not exist, a new line
     /// is inserted at the correct indentation.
+    ///
+    /// `value` may contain embedded `\n` characters — each becomes its own
+    /// line. This supports rendering of YAML block-literal scalars where
+    /// the caller pre-indents continuation lines (see `yaml_render_scalar_value`).
     pub fn set_field(&mut self, id: &str, key: &str, value: &str) -> Result<(), String> {
         let (block_start, block_end) = self
             .find_artifact_block(id)
@@ -173,20 +177,26 @@ impl YamlEditor {
         let field_indent = self.field_indent(block_start);
         let indent_str = " ".repeat(field_indent);
 
+        // Render the field as one or more lines. The first line is
+        // `<indent><key>: <first-value-line>`; subsequent value lines (if the
+        // value contains '\n') are kept verbatim — callers are responsible
+        // for their indentation (block-literal continuation lines must be
+        // indented deeper than the key).
+        let rendered = format!("{indent_str}{key}: {value}");
+        let new_lines: Vec<String> = rendered.split('\n').map(str::to_string).collect();
+
         if let Some(field_line) = self.find_field_in_block(block_start, block_end, key) {
-            // Replace existing field (and any block-scalar continuation)
+            // Replace existing field (and any block-scalar continuation).
             let scalar_end = self.block_scalar_end(field_line, block_end);
-            let new_line = format!("{indent_str}{key}: {value}");
-            // Replace the range [field_line, scalar_end) with the single new line
-            self.lines
-                .splice(field_line..scalar_end, std::iter::once(new_line));
+            self.lines.splice(field_line..scalar_end, new_lines);
         } else {
             // Insert new field. Place it after the last simple field before
             // any `links:`, `fields:`, or `tags:` section — or at the end
             // of the block.
             let insert_at = self.find_insert_position(block_start, block_end, key);
-            let new_line = format!("{indent_str}{key}: {value}");
-            self.lines.insert(insert_at, new_line);
+            for (i, line) in new_lines.into_iter().enumerate() {
+                self.lines.insert(insert_at + i, line);
+            }
         }
 
         Ok(())
@@ -517,6 +527,147 @@ use std::path::Path;
 
 use super::mutate::ModifyParams;
 
+/// Return `true` if a YAML scalar requires explicit quoting to be parsed back
+/// as a plain string.
+///
+/// This errs on the safe side: any of the YAML "plain scalar" pitfalls
+/// (leading indicators, `#`, `:`, `-`, `?`, quotes, commas, brackets, braces,
+/// `&`, `*`, `!`, `|`, `>`, `@`, `` ` ``, `%`), values that look like YAML
+/// 1.1 reserved words (`true`/`false`/`yes`/`no`/`null`/`~`), leading/trailing
+/// whitespace, or things that parse as numbers — all force quoting.
+fn yaml_plain_scalar_needs_quoting(s: &str) -> bool {
+    if s.is_empty() {
+        return true;
+    }
+    // Any control char / newline / tab → quote (caller of inline variant
+    // should have picked block scalar; defensive).
+    if s.chars().any(|c| c.is_control()) {
+        return true;
+    }
+    // Leading whitespace is ambiguous.
+    if s.starts_with(' ') || s.ends_with(' ') {
+        return true;
+    }
+    // YAML indicator chars at the start.
+    let first = s.chars().next().unwrap();
+    if matches!(
+        first,
+        '#' | '&'
+            | '*'
+            | '!'
+            | '|'
+            | '>'
+            | '\''
+            | '"'
+            | '%'
+            | '@'
+            | '`'
+            | ','
+            | '['
+            | ']'
+            | '{'
+            | '}'
+            | '?'
+            | ':'
+            | '-'
+    ) {
+        return true;
+    }
+    // `: ` or ` #` anywhere breaks plain scalars.
+    if s.contains(": ") || s.contains(" #") {
+        return true;
+    }
+    // Trailing colon → mapping key confusion.
+    if s.ends_with(':') {
+        return true;
+    }
+    // YAML 1.1 boolean / null literals (case-insensitive).
+    let lower = s.to_ascii_lowercase();
+    if matches!(
+        lower.as_str(),
+        "true" | "false" | "yes" | "no" | "on" | "off" | "null" | "~"
+    ) {
+        return true;
+    }
+    // Pure number → would parse as number, not string.
+    if s.parse::<f64>().is_ok() {
+        return true;
+    }
+    false
+}
+
+/// Emit a YAML scalar suitable for use inline on the same line as a key
+/// (e.g. `title: <value>`). Never produces a block scalar; multi-line input
+/// is double-quoted with `\n` escapes. Callers that want block scalars for
+/// multi-line text should use [`yaml_render_scalar_value`] instead.
+fn yaml_quote_inline_scalar(s: &str) -> String {
+    if yaml_plain_scalar_needs_quoting(s) || s.contains('\n') {
+        yaml_double_quote(s)
+    } else {
+        s.to_string()
+    }
+}
+
+/// Double-quote a YAML scalar, escaping backslash/double-quote/control chars
+/// using the YAML double-quoted style.
+fn yaml_double_quote(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '\0' => out.push_str("\\0"),
+            c if (c as u32) < 0x20 => {
+                out.push_str(&format!("\\x{:02X}", c as u32));
+            }
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// Render a YAML scalar value for use as the right-hand side of a key at
+/// `field_indent`. Multi-line values use a block-literal scalar (`|`) with
+/// continuation lines indented by `field_indent + 2`; single-line values
+/// fall through to [`yaml_quote_inline_scalar`].
+///
+/// The returned string begins with the value — for multi-line it starts with
+/// `|\n<indented content>`; for single-line it is the value or its quoted
+/// form. The caller is expected to concatenate `"{key}: "` + result.
+fn yaml_render_scalar_value(s: &str, field_indent: usize) -> String {
+    if !s.contains('\n') {
+        return yaml_quote_inline_scalar(s);
+    }
+    // Block-literal scalar preserves newlines exactly.
+    let content_indent = " ".repeat(field_indent + 2);
+    // Handle trailing newline: YAML's default chomp keeps a single trailing
+    // newline; use `|-` if there is no trailing newline so round-tripping is
+    // exact.
+    let chomped = if s.ends_with('\n') { "|" } else { "|-" };
+    let mut out = String::from(chomped);
+    for line in s.split('\n') {
+        out.push('\n');
+        if line.is_empty() {
+            // Blank lines must still appear; a literal empty line is fine
+            // (it's just a newline at content_indent depth — YAML accepts a
+            // truly empty line between block-scalar content lines).
+        } else {
+            out.push_str(&content_indent);
+            out.push_str(line);
+        }
+    }
+    // Strip the trailing empty-line artifact if the source ended in `\n`:
+    // `split('\n')` on "a\n" yields ["a", ""], which our loop emits as
+    // "\n{indent}a\n" — the trailing blank line is intentional because the
+    // block-literal's default-chomp behaviour keeps exactly one newline.
+    out
+}
+
 /// Modify an artifact in its YAML file using the safe editor.
 pub fn modify_artifact_in_file(
     id: &str,
@@ -553,15 +704,31 @@ pub fn modify_artifact_yaml(
 
     // Set title
     if let Some(ref new_title) = params.set_title {
+        let quoted = yaml_quote_inline_scalar(new_title);
         editor
-            .set_field(id, "title", new_title)
+            .set_field(id, "title", &quoted)
             .map_err(Error::Validation)?;
     }
 
     // Set status
     if let Some(ref new_status) = params.set_status {
+        let quoted = yaml_quote_inline_scalar(new_status);
         editor
-            .set_field(id, "status", new_status)
+            .set_field(id, "status", &quoted)
+            .map_err(Error::Validation)?;
+    }
+
+    // Set description (top-level). Multi-line values are emitted as a YAML
+    // block-literal scalar; single-line values that contain YAML-significant
+    // characters are double-quoted.
+    if let Some(ref new_desc) = params.set_description {
+        let (block_start, _) = editor
+            .find_artifact_block(id)
+            .ok_or_else(|| Error::Validation(format!("artifact '{id}' not found")))?;
+        let field_indent = editor.field_indent(block_start);
+        let rendered = yaml_render_scalar_value(new_desc, field_indent);
+        editor
+            .set_field(id, "description", &rendered)
             .map_err(Error::Validation)?;
     }
 
@@ -1206,5 +1373,107 @@ artifacts:
         let result = editor.set_provenance("NOPE-999", "human", None, None, None, None);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not found"));
+    }
+
+    // ── YAML-safe scalar quoting (Fixes: REQ-002) ─────────────────────
+
+    // rivet: verifies REQ-002
+    #[test]
+    fn test_yaml_quote_inline_scalar_plain() {
+        // Safe plain scalars remain unquoted.
+        assert_eq!(yaml_quote_inline_scalar("hello world"), "hello world");
+        assert_eq!(yaml_quote_inline_scalar("Foo"), "Foo");
+        assert_eq!(yaml_quote_inline_scalar("abc123"), "abc123");
+    }
+
+    // rivet: verifies REQ-002
+    #[test]
+    fn test_yaml_quote_inline_scalar_needs_quoting() {
+        // Anything with YAML-significant characters gets double-quoted.
+        assert_eq!(yaml_quote_inline_scalar("- foo"), "\"- foo\"");
+        assert_eq!(yaml_quote_inline_scalar("yes"), "\"yes\"");
+        assert_eq!(yaml_quote_inline_scalar("42"), "\"42\"");
+        assert_eq!(yaml_quote_inline_scalar(""), "\"\"");
+        // Backticks at the start trigger quoting; interior backticks are fine.
+        assert_eq!(yaml_quote_inline_scalar("`x"), "\"`x\"");
+        assert_eq!(
+            yaml_quote_inline_scalar("uses `x` inside"),
+            "uses `x` inside"
+        );
+        // `: ` anywhere is ambiguous.
+        assert_eq!(yaml_quote_inline_scalar("key: value"), "\"key: value\"");
+    }
+
+    // rivet: verifies REQ-002
+    #[test]
+    fn test_yaml_render_scalar_value_multiline_block_literal() {
+        let input = "Line one\nLine two\nLine three";
+        let out = yaml_render_scalar_value(input, 4);
+        // Starts with |- (no trailing newline in input)
+        assert!(
+            out.starts_with("|-\n"),
+            "expected block literal, got: {out:?}"
+        );
+        assert!(out.contains("      Line one"));
+        assert!(out.contains("      Line two"));
+        assert!(out.contains("      Line three"));
+    }
+
+    // rivet: verifies REQ-002
+    #[test]
+    fn test_set_field_writes_multiline_description_as_block_scalar() {
+        let content = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: First
+    description: old one-liner
+    status: draft";
+
+        let mut editor = YamlEditor::parse(content);
+        let rendered = yaml_render_scalar_value("First line\nSecond line `with backticks`", 4);
+        editor
+            .set_field("REQ-001", "description", &rendered)
+            .unwrap();
+        let output = editor.to_string();
+
+        // Must parse back as YAML — no unquoted-scalar corruption.
+        let parsed: serde_yaml::Value = serde_yaml::from_str(&output)
+            .unwrap_or_else(|e| panic!("output must parse as YAML: {e}\n---\n{output}"));
+        let desc = &parsed["artifacts"][0]["description"];
+        let s = desc.as_str().expect("description should be a string");
+        assert!(s.contains("First line"));
+        assert!(s.contains("Second line"));
+        assert!(s.contains("`with backticks`"));
+
+        // The old one-liner is gone.
+        assert!(!output.contains("old one-liner"));
+    }
+
+    // rivet: verifies REQ-002
+    #[test]
+    fn test_set_field_writes_description_with_backticks_as_quoted_scalar() {
+        // Single-line value with backticks at start → double-quoted.
+        let content = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: First
+    status: draft";
+
+        let mut editor = YamlEditor::parse(content);
+        let rendered = yaml_render_scalar_value("`rivet validate` is handy", 4);
+        editor
+            .set_field("REQ-001", "description", &rendered)
+            .unwrap();
+        let output = editor.to_string();
+
+        // Must parse back cleanly.
+        let parsed: serde_yaml::Value = serde_yaml::from_str(&output)
+            .unwrap_or_else(|e| panic!("output must parse as YAML: {e}\n---\n{output}"));
+        assert_eq!(
+            parsed["artifacts"][0]["description"].as_str(),
+            Some("`rivet validate` is handy")
+        );
     }
 }

@@ -243,13 +243,52 @@ pub fn validate_unlink(
     Ok(())
 }
 
+/// Reserved top-level artifact keys that must never be written via `set_fields`.
+///
+/// These live at the top level of an artifact mapping (not under `fields:`)
+/// and each has a dedicated path: base struct members (`id`, `type`, `title`,
+/// `description`, `status`, `tags`, `links`), the domain `fields:` sub-map
+/// itself, `provenance:` metadata, and the `source-file:` loader hint.
+///
+/// If a caller passes one of these through `set_fields`, `validate_modify`
+/// returns an error rather than silently nesting it under `fields:` (which
+/// would corrupt the artifact shape) or emitting an unquoted top-level scalar
+/// whose content (backticks, newlines) could break YAML parsing.
+pub const RESERVED_TOP_LEVEL_KEYS: &[&str] = &[
+    "id",
+    "type",
+    "title",
+    "description",
+    "status",
+    "tags",
+    "links",
+    "fields",
+    "provenance",
+    "source-file",
+];
+
 /// Parameters for a modify operation.
+///
+/// `set_fields` targets the **domain `fields:` sub-map only**. Top-level
+/// metadata (title, status, description, ...) has dedicated setters to
+/// avoid ambiguity and to enable value-type-specific YAML emission.
 #[derive(Debug, Default)]
 pub struct ModifyParams {
     pub set_status: Option<String>,
     pub set_title: Option<String>,
+    /// Set the top-level `description:` of the artifact.
+    ///
+    /// Values are emitted with YAML-safe quoting — newlines trigger a
+    /// block-literal scalar, special characters trigger a double-quoted
+    /// scalar. See [`crate::yaml_edit`] for the emitter.
+    pub set_description: Option<String>,
     pub add_tags: Vec<String>,
     pub remove_tags: Vec<String>,
+    /// Domain-specific fields under the artifact's `fields:` map.
+    ///
+    /// Keys must not collide with [`RESERVED_TOP_LEVEL_KEYS`]; use
+    /// `set_title`, `set_status`, `set_description`, `add_tags`, etc. for
+    /// those instead. Validated by [`validate_modify`].
     pub set_fields: Vec<(String, String)>,
 }
 
@@ -272,6 +311,24 @@ pub fn validate_modify(
                 artifact.artifact_type
             ))
         })?;
+
+    // Reject attempts to write reserved top-level keys through `set_fields`.
+    // See [`RESERVED_TOP_LEVEL_KEYS`] for the rationale (scope + YAML safety).
+    for (key, _) in &params.set_fields {
+        if RESERVED_TOP_LEVEL_KEYS.contains(&key.as_str()) {
+            let hint = match key.as_str() {
+                "title" => " — use the `title` / `set_title` parameter",
+                "status" => " — use the `status` / `set_status` parameter",
+                "description" => " — use the `description` / `set_description` parameter",
+                "tags" => " — use the `add_tags` / `remove_tags` parameters",
+                _ => "",
+            };
+            return Err(Error::Validation(format!(
+                "'{key}' is a reserved top-level artifact key and cannot be set via \
+                 `set_fields` (which targets the `fields:` sub-map){hint}"
+            )));
+        }
+    }
 
     // Validate field allowed values
     for (key, value) in &params.set_fields {

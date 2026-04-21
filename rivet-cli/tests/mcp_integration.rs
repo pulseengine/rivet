@@ -879,3 +879,215 @@ async fn test_remove_artifact() {
 
     client.cancel().await.expect("cancel");
 }
+
+// ── Bug: set_fields scope — reserved top-level keys (Fixes: REQ-002) ────
+//
+// `set_fields` targets the `fields:` sub-map on an artifact. It must refuse
+// to write keys that collide with reserved top-level keys (id, type, title,
+// description, status, tags, links, fields, provenance, source-file),
+// because otherwise it either silently nests them under `fields:` (breaking
+// the artifact's shape) or, worse, emits unquoted scalars that break YAML
+// parsing when the value contains backticks or newlines.
+
+#[tokio::test]
+async fn test_set_fields_rejects_reserved_description() {
+    let tmp = tempfile::tempdir().unwrap();
+    create_test_project(tmp.path());
+
+    let client = spawn_mcp_client(tmp.path()).await;
+
+    // Attempt to smuggle a top-level `description` via `set_fields`.
+    let mut args = serde_json::Map::new();
+    args.insert("id".to_string(), Value::String("REQ-001".to_string()));
+    args.insert(
+        "set_fields".to_string(),
+        Value::Array(vec![Value::String(
+            "description=Top-level description via set_fields".to_string(),
+        )]),
+    );
+
+    let result = client
+        .call_tool(CallToolRequestParams::new("rivet_modify").with_arguments(args))
+        .await;
+
+    assert!(
+        result.is_err(),
+        "set_fields must refuse reserved key 'description'; got: {result:?}"
+    );
+    let err = format!("{:?}", result.unwrap_err());
+    assert!(
+        err.contains("description") && (err.contains("reserved") || err.contains("top-level")),
+        "error should mention reserved/top-level description; got: {err}"
+    );
+
+    // The file must not have been touched with a nested `description:` under `fields:`.
+    let content =
+        std::fs::read_to_string(tmp.path().join("artifacts").join("requirements.yaml")).unwrap();
+    assert!(
+        !content.contains("Top-level description via set_fields"),
+        "set_fields should not have written the value; file:\n{content}"
+    );
+
+    client.cancel().await.expect("cancel");
+}
+
+#[tokio::test]
+async fn test_set_fields_rejects_all_reserved_top_level_keys() {
+    let tmp = tempfile::tempdir().unwrap();
+    create_test_project(tmp.path());
+
+    let client = spawn_mcp_client(tmp.path()).await;
+
+    for reserved in &[
+        "id",
+        "type",
+        "title",
+        "description",
+        "status",
+        "tags",
+        "links",
+        "fields",
+        "provenance",
+        "source-file",
+    ] {
+        let mut args = serde_json::Map::new();
+        args.insert("id".to_string(), Value::String("REQ-001".to_string()));
+        args.insert(
+            "set_fields".to_string(),
+            Value::Array(vec![Value::String(format!("{reserved}=x"))]),
+        );
+
+        let result = client
+            .call_tool(CallToolRequestParams::new("rivet_modify").with_arguments(args))
+            .await;
+
+        assert!(
+            result.is_err(),
+            "set_fields must refuse reserved key '{reserved}'; got: {result:?}"
+        );
+    }
+
+    client.cancel().await.expect("cancel");
+}
+
+// ── Bug 2: set_metadata tool for top-level fields (Fixes: REQ-002) ─────
+//
+// Exposes `description` on `rivet_modify` so that top-level metadata is
+// reachable from MCP. Handles YAML-safe scalar quoting for values containing
+// backticks, newlines, or other special characters.
+
+#[tokio::test]
+async fn test_modify_sets_top_level_description() {
+    let tmp = tempfile::tempdir().unwrap();
+    create_test_project(tmp.path());
+
+    let client = spawn_mcp_client(tmp.path()).await;
+
+    // Set a plain top-level description.
+    let mut args = serde_json::Map::new();
+    args.insert("id".to_string(), Value::String("REQ-001".to_string()));
+    args.insert(
+        "description".to_string(),
+        Value::String("A plain description".to_string()),
+    );
+
+    let result = client
+        .call_tool(CallToolRequestParams::new("rivet_modify").with_arguments(args))
+        .await
+        .expect("call_tool rivet_modify with description");
+
+    let json = parse_result(&result);
+    assert_eq!(json["modified"].as_str(), Some("REQ-001"));
+
+    // Reload and verify via rivet_get.
+    client
+        .call_tool(CallToolRequestParams::new("rivet_reload"))
+        .await
+        .expect("reload");
+
+    let mut args = serde_json::Map::new();
+    args.insert("id".to_string(), Value::String("REQ-001".to_string()));
+    let result = client
+        .call_tool(CallToolRequestParams::new("rivet_get").with_arguments(args))
+        .await
+        .expect("rivet_get after modify");
+    let json = parse_result(&result);
+    assert_eq!(
+        json["description"].as_str(),
+        Some("A plain description"),
+        "top-level description should round-trip; got: {json}"
+    );
+
+    // And it must not have been nested under `fields:` (regression check).
+    let content =
+        std::fs::read_to_string(tmp.path().join("artifacts").join("requirements.yaml")).unwrap();
+    // The file should still validate: run rivet_validate.
+    let result = client
+        .call_tool(CallToolRequestParams::new("rivet_validate"))
+        .await
+        .expect("rivet_validate");
+    let json = parse_result(&result);
+    assert_eq!(
+        json["result"].as_str(),
+        Some("PASS"),
+        "validation should still pass after setting top-level description; file:\n{content}\n\
+         diagnostics: {json}"
+    );
+
+    client.cancel().await.expect("cancel");
+}
+
+#[tokio::test]
+async fn test_modify_description_with_backticks_and_newlines() {
+    let tmp = tempfile::tempdir().unwrap();
+    create_test_project(tmp.path());
+
+    let client = spawn_mcp_client(tmp.path()).await;
+
+    // Value contains backticks, newlines, and a trailing colon — the old
+    // unquoted `format!("description: {value}")` path would blow up parsing.
+    let tricky = "Use `rivet validate` to check.\nSecond line: ok?\n\nWith blank line.";
+
+    let mut args = serde_json::Map::new();
+    args.insert("id".to_string(), Value::String("REQ-001".to_string()));
+    args.insert("description".to_string(), Value::String(tricky.to_string()));
+
+    let result = client
+        .call_tool(CallToolRequestParams::new("rivet_modify").with_arguments(args))
+        .await
+        .expect("rivet_modify with tricky description");
+    let json = parse_result(&result);
+    assert_eq!(json["modified"].as_str(), Some("REQ-001"));
+
+    // The resulting file must still parse as YAML.
+    let content =
+        std::fs::read_to_string(tmp.path().join("artifacts").join("requirements.yaml")).unwrap();
+    let _parsed: serde_yaml::Value = serde_yaml::from_str(&content).unwrap_or_else(|e| {
+        panic!("file should parse as YAML after tricky description: {e}\n{content}")
+    });
+
+    // Reload and check round-trip.
+    client
+        .call_tool(CallToolRequestParams::new("rivet_reload"))
+        .await
+        .expect("reload");
+
+    let mut args = serde_json::Map::new();
+    args.insert("id".to_string(), Value::String("REQ-001".to_string()));
+    let result = client
+        .call_tool(CallToolRequestParams::new("rivet_get").with_arguments(args))
+        .await
+        .expect("rivet_get after tricky modify");
+    let json = parse_result(&result);
+    let got = json["description"].as_str().unwrap_or("");
+    assert!(
+        got.contains("`rivet validate`"),
+        "description should preserve backticks; got: {got:?}"
+    );
+    assert!(
+        got.contains("Second line"),
+        "description should preserve newlines; got: {got:?}"
+    );
+
+    client.cancel().await.expect("cancel");
+}

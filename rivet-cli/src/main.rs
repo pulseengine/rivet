@@ -7653,6 +7653,7 @@ fn cmd_modify(
     let params = ModifyParams {
         set_status: set_status.map(|s| s.to_string()),
         set_title: set_title.map(|s| s.to_string()),
+        set_description: None,
         add_tags: add_tags.to_vec(),
         remove_tags: remove_tags.to_vec(),
         set_fields: set_fields.to_vec(),
