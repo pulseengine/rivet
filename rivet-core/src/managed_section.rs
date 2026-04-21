@@ -307,9 +307,7 @@ trailer line
         let existing = "# Downstream manual content\nline 2\n";
         let out = migrate_wrap(existing, "gen body\n");
         assert!(out.starts_with(BEGIN_MARKER));
-        let (managed, below) = out
-            .split_once(END_MARKER)
-            .expect("END marker must appear");
+        let (managed, below) = out.split_once(END_MARKER).expect("END marker must appear");
         assert!(managed.contains("gen body"));
         assert!(below.contains("# Downstream manual content"));
         assert!(below.contains("line 2"));

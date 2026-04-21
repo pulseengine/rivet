@@ -2896,14 +2896,13 @@ fn write_managed_file(
         let mut out = String::new();
         out.push_str(fresh_preamble);
         out.push_str(&wrap_fresh(managed_body));
-        std::fs::write(path, out)
-            .with_context(|| format!("writing {}", path.display()))?;
+        std::fs::write(path, out).with_context(|| format!("writing {}", path.display()))?;
         println!("  created {}", path.display());
         return Ok(());
     }
 
-    let existing = std::fs::read_to_string(path)
-        .with_context(|| format!("reading {}", path.display()))?;
+    let existing =
+        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
 
     // Fast-path detection so error precedence matches the design doc:
     // `--migrate` only applies when the file has no markers at all; if
@@ -2911,8 +2910,7 @@ fn write_managed_file(
     if !has_markers(&existing) {
         if migrate {
             let out = migrate_wrap(&existing, managed_body);
-            std::fs::write(path, out)
-                .with_context(|| format!("writing {}", path.display()))?;
+            std::fs::write(path, out).with_context(|| format!("writing {}", path.display()))?;
             println!(
                 "  migrated {} (wrapped existing content; managed section now on top, prior content preserved below)",
                 path.display()
@@ -2927,8 +2925,7 @@ fn write_managed_file(
             let mut out = String::new();
             out.push_str(fresh_preamble);
             out.push_str(&wrap_fresh(managed_body));
-            std::fs::write(path, out)
-                .with_context(|| format!("writing {}", path.display()))?;
+            std::fs::write(path, out).with_context(|| format!("writing {}", path.display()))?;
             println!("  force-regenerated {}", path.display());
             return Ok(());
         }
@@ -2952,7 +2949,10 @@ fn write_managed_file(
         Ok(new_content) => {
             std::fs::write(path, new_content)
                 .with_context(|| format!("writing {}", path.display()))?;
-            println!("  updated {} (managed section only; other content preserved)", path.display());
+            println!(
+                "  updated {} (managed section only; other content preserved)",
+                path.display()
+            );
             Ok(())
         }
         Err(ManagedSectionError::MultipleBeginMarkers(lines)) => {
