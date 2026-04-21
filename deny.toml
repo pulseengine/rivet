@@ -21,6 +21,12 @@ ignore = [
     "RUSTSEC-2026-0094",
     "RUSTSEC-2026-0095",
     "RUSTSEC-2026-0096",
+    # thin-vec 0.2.14 Double-Free / UAF in IntoIter::drop / ThinVec::clear.
+    # Pulled in transitively by salsa 0.26.0. No rivet call site directly
+    # constructs or iterates thin_vec::ThinVec. Upstream: wait for salsa to
+    # bump its thin-vec dependency, or upstream fix in thin-vec >= 0.2.15.
+    # TODO: remove when salsa >= 0.27 lands or thin-vec fix is released.
+    "RUSTSEC-2026-0103",
 ]
 
 [licenses]
