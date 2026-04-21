@@ -686,9 +686,7 @@ fn is_null_or_empty_scalar(value_node: &SyntaxNode) -> bool {
         None => true,
         Some(text) => {
             let trimmed = text.trim();
-            trimmed.is_empty()
-                || trimmed == "~"
-                || trimmed.eq_ignore_ascii_case("null")
+            trimmed.is_empty() || trimmed == "~" || trimmed.eq_ignore_ascii_case("null")
         }
     }
 }
