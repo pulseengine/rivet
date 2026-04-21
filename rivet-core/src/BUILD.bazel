@@ -1,0 +1,9 @@
+# Bazel package marker for rivet-core/src.
+#
+# This file exists solely so that //verus:rivet_specs_verify can
+# reference `//rivet-core/src:verus_specs.rs` as a Bazel label.
+# The crate itself is built via cargo, not Bazel.
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["verus_specs.rs"])
