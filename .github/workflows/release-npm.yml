@@ -1,0 +1,179 @@
+name: Release NPM
+
+# Runs after the main Release workflow (release.yml) publishes a GitHub
+# Release with the per-target binary archives. Downloads those archives,
+# assembles one npm platform package per target, publishes them, and finally
+# publishes the root @pulseengine/rivet package that depends on them via
+# optionalDependencies.
+#
+# Platform packages MUST be published before the root package so npm can
+# resolve optionalDependencies on the first install after tag.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag to publish (e.g. v0.4.0)"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish-platform-packages:
+    name: Publish platform package (${{ matrix.platform }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            platform: darwin-arm64
+            binary: rivet
+            archive_ext: tar.gz
+          - target: x86_64-apple-darwin
+            platform: darwin-x64
+            binary: rivet
+            archive_ext: tar.gz
+          - target: aarch64-unknown-linux-gnu
+            platform: linux-arm64
+            binary: rivet
+            archive_ext: tar.gz
+          - target: x86_64-unknown-linux-gnu
+            platform: linux-x64
+            binary: rivet
+            archive_ext: tar.gz
+          - target: x86_64-pc-windows-msvc
+            platform: win32-x64
+            binary: rivet.exe
+            archive_ext: zip
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Resolve version
+        id: version
+        env:
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ github.event.inputs.version }}
+        run: |
+          TAG="${EVENT_TAG:-$INPUT_TAG}"
+          if [ -z "$TAG" ]; then
+            echo "No tag provided" >&2
+            exit 1
+          fi
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Download release asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+          TARGET: ${{ matrix.target }}
+          PLATFORM: ${{ matrix.platform }}
+          BINARY: ${{ matrix.binary }}
+          ARCHIVE_EXT: ${{ matrix.archive_ext }}
+        run: |
+          ASSET="rivet-${TAG}-${TARGET}.${ARCHIVE_EXT}"
+          mkdir -p staging
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$ASSET" --dir staging
+          ls -la staging
+          if [ "$ARCHIVE_EXT" = "zip" ]; then
+            unzip -q "staging/$ASSET" -d staging
+          else
+            tar -xzf "staging/$ASSET" -C staging
+          fi
+          cp "staging/$BINARY" "platform-packages/$PLATFORM/$BINARY"
+          if [ "$ARCHIVE_EXT" != "zip" ]; then
+            chmod +x "platform-packages/$PLATFORM/$BINARY"
+          fi
+
+      - name: Update package version
+        working-directory: platform-packages/${{ matrix.platform }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          jq --arg v "$VERSION" '.version = $v' package.json > package.json.tmp
+          mv package.json.tmp package.json
+          cat package.json
+
+      - name: Publish to npm
+        working-directory: platform-packages/${{ matrix.platform }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public
+
+  publish-root-package:
+    name: Publish root package (@pulseengine/rivet)
+    needs: publish-platform-packages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Resolve version
+        id: version
+        env:
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ github.event.inputs.version }}
+        run: |
+          TAG="${EVENT_TAG:-$INPUT_TAG}"
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Update root package version and optionalDependencies
+        working-directory: npm
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          jq --arg v "$VERSION" '
+            .version = $v |
+            .optionalDependencies = {
+              "@pulseengine/rivet-darwin-arm64": $v,
+              "@pulseengine/rivet-darwin-x64":   $v,
+              "@pulseengine/rivet-linux-arm64":  $v,
+              "@pulseengine/rivet-linux-x64":    $v,
+              "@pulseengine/rivet-win32-x64":    $v
+            }
+          ' package.json > package.json.tmp
+          mv package.json.tmp package.json
+          cat package.json
+
+      - name: Publish to npm
+        working-directory: npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public
+
+      - name: Summary
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          {
+            echo "## NPM packages published";
+            echo "";
+            echo "- \`@pulseengine/rivet@$VERSION\`";
+            echo "- \`@pulseengine/rivet-darwin-arm64@$VERSION\`";
+            echo "- \`@pulseengine/rivet-darwin-x64@$VERSION\`";
+            echo "- \`@pulseengine/rivet-linux-arm64@$VERSION\`";
+            echo "- \`@pulseengine/rivet-linux-x64@$VERSION\`";
+            echo "- \`@pulseengine/rivet-win32-x64@$VERSION\`";
+            echo "";
+            echo "### Usage";
+            echo '```bash';
+            echo "npx @pulseengine/rivet --version";
+            echo "claude mcp add rivet npx -y @pulseengine/rivet mcp";
+            echo '```';
+          } >> "$GITHUB_STEP_SUMMARY"

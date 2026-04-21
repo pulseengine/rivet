@@ -1,0 +1,41 @@
+{
+  "name": "@pulseengine/rivet-linux-arm64",
+  "version": "0.4.0",
+  "description": "Rivet CLI binary for Linux ARM64 (glibc)",
+  "main": "index.js",
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "libc": [
+    "glibc"
+  ],
+  "keywords": [
+    "rivet",
+    "sdlc",
+    "traceability",
+    "mcp",
+    "binary",
+    "linux",
+    "arm64"
+  ],
+  "author": "PulseEngine <https://github.com/pulseengine>",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pulseengine/rivet.git"
+  },
+  "homepage": "https://github.com/pulseengine/rivet#readme",
+  "bugs": {
+    "url": "https://github.com/pulseengine/rivet/issues"
+  },
+  "files": [
+    "index.js",
+    "rivet"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
