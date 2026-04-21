@@ -61,6 +61,26 @@ pub struct SchemaInputSet {
     pub schemas: Vec<SchemaInput>,
 }
 
+/// Container for artifacts that are produced by non-YAML adapters
+/// (AADL, ReqIF, needs-json, WASM components).
+///
+/// These adapters read binary formats, directory trees, or run external
+/// analyses — their output cannot be represented as a `SourceFile`'s YAML
+/// content. The CLI invokes them once per validation run (they are not
+/// incremental yet) and feeds the resulting artifacts into this input so
+/// that `build_store` can merge them with YAML-parsed artifacts before
+/// the link graph is built.
+///
+/// Without this, links such as `modeled-by -> AADL-*` or
+/// `analyzes -> AADL-*` whose targets live only in adapter output would be
+/// reported as `broken-link` diagnostics in the salsa (default) validation
+/// path while passing cleanly in the `--direct` legacy path. See
+/// `fix/salsa-aadl-phantom-broken-links`.
+#[salsa::input]
+pub struct ExtraArtifactSet {
+    pub artifacts: Vec<Artifact>,
+}
+
 // ── Tracked functions ───────────────────────────────────────────────────
 
 /// Parse artifacts from a single source file.
@@ -273,6 +293,49 @@ pub fn validate_all(
     diagnostics
 }
 
+/// Run full validation including artifacts loaded from non-YAML adapters.
+///
+/// Identical to [`validate_all`] but also merges the artifacts carried by
+/// `extra_set` into the store before link-graph construction. This is the
+/// path the CLI takes when a project has `format: aadl` / `reqif` /
+/// `needs-json` sources — the adapter is invoked outside salsa (since it
+/// reads binary / multi-file inputs) and its output is injected so that
+/// cross-format links (e.g. YAML artifact `modeled-by -> AADL-*`) resolve.
+#[salsa::tracked]
+pub fn validate_all_with_extras(
+    db: &dyn salsa::Database,
+    source_set: SourceFileSet,
+    schema_set: SchemaInputSet,
+    extra_set: ExtraArtifactSet,
+) -> Vec<Diagnostic> {
+    // Parse errors come first — if a file can't be parsed, its artifacts
+    // are missing and will cause cascading broken-link errors.
+    //
+    // When rowan-yaml is enabled, use the rowan CST parser for error
+    // detection. The generic serde_yaml parser (`collect_parse_errors`)
+    // only understands files with a top-level `artifacts:` key and
+    // produces false errors for STPA section-based files.
+    #[cfg(feature = "rowan-yaml")]
+    let mut diagnostics = collect_rowan_parse_errors(db, source_set);
+    #[cfg(not(feature = "rowan-yaml"))]
+    let mut diagnostics = collect_parse_errors(db, source_set);
+
+    let (store, schema, graph) = build_pipeline_with_extras(db, source_set, schema_set, extra_set);
+
+    // Structural validation (phases 1-7)
+    diagnostics.extend(crate::validate::validate_structural(
+        &store, &schema, &graph,
+    ));
+
+    // Conditional rules (phase 8) — separate tracked query for finer
+    // invalidation granularity.
+    diagnostics.extend(evaluate_conditional_rules_with_extras(
+        db, source_set, schema_set, extra_set,
+    ));
+
+    diagnostics
+}
+
 /// Evaluate conditional validation rules as a separate tracked query.
 ///
 /// This function is cached independently from structural validation.
@@ -327,6 +390,46 @@ pub fn evaluate_conditional_rules(
     diagnostics
 }
 
+/// Conditional-rule evaluation that also honours adapter-imported artifacts.
+#[salsa::tracked]
+pub fn evaluate_conditional_rules_with_extras(
+    db: &dyn salsa::Database,
+    source_set: SourceFileSet,
+    schema_set: SchemaInputSet,
+    extra_set: ExtraArtifactSet,
+) -> Vec<Diagnostic> {
+    let (store, schema, _graph) = build_pipeline_with_extras(db, source_set, schema_set, extra_set);
+
+    let mut diagnostics = Vec::new();
+
+    // Check rule consistency first (duplicate names, overlapping requirements)
+    diagnostics.extend(crate::schema::check_conditional_consistency(
+        &schema.conditional_rules,
+    ));
+
+    // Evaluate each conditional rule against each artifact (pre-compile regexes)
+    for rule in &schema.conditional_rules {
+        let compiled_re = rule.when.compile_regex();
+        let condition_re = rule.condition.as_ref().and_then(|c| c.compile_regex());
+        for artifact in store.iter() {
+            // If a precondition is set, it must also match
+            if let Some(cond) = &rule.condition {
+                if !cond.matches_artifact_with(artifact, condition_re.as_ref()) {
+                    continue;
+                }
+            }
+            if rule
+                .when
+                .matches_artifact_with(artifact, compiled_re.as_ref())
+            {
+                diagnostics.extend(rule.then.check(artifact, &rule.name, rule.severity));
+            }
+        }
+    }
+
+    diagnostics
+}
+
 /// Build the link graph as a tracked function.
 ///
 /// This is memoized by salsa — when `build_link_graph` is called from
@@ -347,6 +450,19 @@ pub fn build_link_graph(
     LinkGraph::build(&store, &schema)
 }
 
+/// Link-graph construction that also honours adapter-imported artifacts.
+#[salsa::tracked]
+pub fn build_link_graph_with_extras(
+    db: &dyn salsa::Database,
+    source_set: SourceFileSet,
+    schema_set: SchemaInputSet,
+    extra_set: ExtraArtifactSet,
+) -> LinkGraph {
+    let store = build_store_with_extras(db, source_set, schema_set, extra_set);
+    let schema = build_schema(db, schema_set);
+    LinkGraph::build(&store, &schema)
+}
+
 /// Compute traceability coverage as a tracked function.
 ///
 /// Results are memoized by salsa and only recomputed when source files
@@ -361,6 +477,20 @@ pub fn compute_coverage_tracked(
     let store = build_store(db, source_set, schema_set);
     let schema = build_schema(db, schema_set);
     let graph = build_link_graph(db, source_set, schema_set);
+    coverage::compute_coverage(&store, &schema, &graph)
+}
+
+/// Coverage computation that also honours adapter-imported artifacts.
+#[salsa::tracked]
+pub fn compute_coverage_tracked_with_extras(
+    db: &dyn salsa::Database,
+    source_set: SourceFileSet,
+    schema_set: SchemaInputSet,
+    extra_set: ExtraArtifactSet,
+) -> CoverageReport {
+    let store = build_store_with_extras(db, source_set, schema_set, extra_set);
+    let schema = build_schema(db, schema_set);
+    let graph = build_link_graph_with_extras(db, source_set, schema_set, extra_set);
     coverage::compute_coverage(&store, &schema, &graph)
 }
 
@@ -415,6 +545,28 @@ pub fn filter_artifact_ids(
         .collect()
 }
 
+/// Filter-evaluation that also honours adapter-imported artifacts.
+#[salsa::tracked]
+pub fn filter_artifact_ids_with_extras(
+    db: &dyn salsa::Database,
+    source_set: SourceFileSet,
+    schema_set: SchemaInputSet,
+    filter: FilterInput,
+    extra_set: ExtraArtifactSet,
+) -> Vec<String> {
+    let expr = match parse_filter_expr(db, filter) {
+        Some(e) => e,
+        None => return Vec::new(), // no filter = empty (caller uses full store)
+    };
+    let store = build_store_with_extras(db, source_set, schema_set, extra_set);
+    let graph = build_link_graph_with_extras(db, source_set, schema_set, extra_set);
+    store
+        .iter()
+        .filter(|a| crate::sexpr_eval::matches_filter_with_store(&expr, a, &graph, &store))
+        .map(|a| a.id.clone())
+        .collect()
+}
+
 // ── Internal helpers (non-tracked) ──────────────────────────────────────
 
 /// Build the full Store + Schema + LinkGraph pipeline from salsa inputs.
@@ -431,6 +583,20 @@ fn build_pipeline(
     let store = build_store(db, source_set, schema_set);
     let schema = build_schema(db, schema_set);
     let graph = build_link_graph(db, source_set, schema_set);
+    (store, schema, graph)
+}
+
+/// Build the Store + Schema + LinkGraph pipeline including artifacts
+/// produced by non-YAML adapters.
+fn build_pipeline_with_extras(
+    db: &dyn salsa::Database,
+    source_set: SourceFileSet,
+    schema_set: SchemaInputSet,
+    extra_set: ExtraArtifactSet,
+) -> (Store, Schema, LinkGraph) {
+    let store = build_store_with_extras(db, source_set, schema_set, extra_set);
+    let schema = build_schema(db, schema_set);
+    let graph = build_link_graph_with_extras(db, source_set, schema_set, extra_set);
     (store, schema, graph)
 }
 
@@ -459,6 +625,24 @@ fn build_store(
         for artifact in artifacts {
             store.upsert(artifact);
         }
+    }
+    store
+}
+
+/// Build an artifact `Store` from YAML source files *and* artifacts
+/// supplied by non-YAML adapters (AADL, ReqIF, needs-json).
+///
+/// Adapter artifacts are inserted last, so conflicting IDs are resolved
+/// in favour of the adapter — matching the direct-path ordering.
+fn build_store_with_extras(
+    db: &dyn salsa::Database,
+    source_set: SourceFileSet,
+    schema_set: SchemaInputSet,
+    extra_set: ExtraArtifactSet,
+) -> Store {
+    let mut store = build_store(db, source_set, schema_set);
+    for artifact in extra_set.artifacts(db) {
+        store.upsert(artifact);
     }
     store
 }
@@ -519,6 +703,60 @@ impl RivetDatabase {
             .map(|(path, content)| SourceFile::new(self, path.to_string(), content.to_string()))
             .collect();
         SourceFileSet::new(self, inputs)
+    }
+
+    /// Load a set of pre-parsed artifacts produced by non-YAML adapters
+    /// (AADL, ReqIF, needs-json, WASM components).
+    ///
+    /// Returns an `ExtraArtifactSet` handle that can be passed to the
+    /// `_with_extras` tracked functions (or the equivalent helpers on this
+    /// database, e.g. [`RivetDatabase::diagnostics_with_extras`]).
+    pub fn load_extras(&self, artifacts: Vec<Artifact>) -> ExtraArtifactSet {
+        ExtraArtifactSet::new(self, artifacts)
+    }
+
+    /// Validation with adapter-imported extras.
+    ///
+    /// Identical to [`RivetDatabase::diagnostics`] but merges `extra_set`
+    /// into the store before link validation so that links targeting
+    /// adapter-only artifacts (e.g. `modeled-by -> AADL-*`) resolve.
+    pub fn diagnostics_with_extras(
+        &self,
+        source_set: SourceFileSet,
+        schema_set: SchemaInputSet,
+        extra_set: ExtraArtifactSet,
+    ) -> Vec<Diagnostic> {
+        validate_all_with_extras(self, source_set, schema_set, extra_set)
+    }
+
+    /// Current store view including adapter-imported extras.
+    pub fn store_with_extras(
+        &self,
+        source_set: SourceFileSet,
+        schema_set: SchemaInputSet,
+        extra_set: ExtraArtifactSet,
+    ) -> Store {
+        build_store_with_extras(self, source_set, schema_set, extra_set)
+    }
+
+    /// Link graph view including adapter-imported extras.
+    pub fn link_graph_with_extras(
+        &self,
+        source_set: SourceFileSet,
+        schema_set: SchemaInputSet,
+        extra_set: ExtraArtifactSet,
+    ) -> LinkGraph {
+        build_link_graph_with_extras(self, source_set, schema_set, extra_set)
+    }
+
+    /// Coverage report including adapter-imported extras.
+    pub fn coverage_with_extras(
+        &self,
+        source_set: SourceFileSet,
+        schema_set: SchemaInputSet,
+        extra_set: ExtraArtifactSet,
+    ) -> CoverageReport {
+        compute_coverage_tracked_with_extras(self, source_set, schema_set, extra_set)
     }
 
     /// Update a single source file's content within an existing set.
@@ -1267,6 +1505,156 @@ artifacts:
         assert_eq!(
             report_a, report_b,
             "repeated coverage calls must produce identical reports"
+        );
+    }
+
+    // ── Regression: salsa path must see adapter-imported artifacts ──────
+    //
+    // Bug report: on a project that mixes YAML source files (generic-yaml)
+    // with a non-YAML adapter source (aadl / reqif / needs-json), the
+    // default salsa validation path reported phantom "link target does
+    // not exist" diagnostics for AADL-style link types (`modeled-by`,
+    // `analyzes`) because the adapter artifacts never reached the salsa
+    // store — only YAML files were fed in as `SourceFile` inputs. The
+    // `--direct` path, which uses `ProjectContext::load`, correctly
+    // dispatched to the AADL adapter, so users were forced to add
+    // `--direct` to every CI invocation.
+    //
+    // This test reconstructs the scenario at the core level:
+    //   * A YAML artifact `ARCH-CORE-001` (type `sw-arch-component`) has
+    //     a `modeled-by` link to `AADL-Foo-Bar`.
+    //   * `AADL-Foo-Bar` is supplied as an "extra" artifact (the way a
+    //     non-YAML adapter would contribute).
+    //   * Before the fix the salsa-only path (`diagnostics`) reports a
+    //     `broken-link` diagnostic for `ARCH-CORE-001 -> AADL-Foo-Bar`
+    //     while the `_with_extras` path does not.
+    //   * After the fix the `_with_extras` path resolves the link and
+    //     produces zero broken-link diagnostics — matching the direct
+    //     (`validate::validate`) result.
+    //
+    // We assert that the number of `broken-link` diagnostics from
+    // `diagnostics_with_extras` matches the direct `validate::validate`
+    // baseline.
+
+    const AADL_SCHEMA: &str = r#"
+schema:
+  name: aadl-bridge
+  version: "0.1.0"
+artifact-types:
+  - name: sw-arch-component
+    description: Software architecture component
+    fields: []
+    link-fields:
+      - name: modeled-by
+        link-type: modeled-by
+        target-types: [aadl-component]
+        required: false
+        cardinality: zero-or-many
+  - name: aadl-component
+    description: AADL component (adapter-produced)
+    fields: []
+    link-fields: []
+link-types:
+  - name: modeled-by
+    inverse: models
+    description: Arch component is modeled by an AADL component
+    source-types: [sw-arch-component]
+    target-types: [aadl-component]
+"#;
+
+    const SOURCE_ARCH_WITH_AADL_LINK: &str = r#"
+artifacts:
+  - id: ARCH-CORE-001
+    type: sw-arch-component
+    title: Core subsystem
+    links:
+      - type: modeled-by
+        target: AADL-Foo-Bar
+"#;
+
+    fn make_aadl_component() -> Artifact {
+        use std::collections::BTreeMap;
+        Artifact {
+            id: "AADL-Foo-Bar".into(),
+            artifact_type: "aadl-component".into(),
+            title: "aadl Bar (type)".into(),
+            description: None,
+            status: Some("imported".into()),
+            tags: vec!["aadl".into()],
+            links: vec![],
+            fields: BTreeMap::new(),
+            provenance: None,
+            source_file: None,
+        }
+    }
+
+    // rivet: verifies REQ-029, REQ-004
+    #[test]
+    fn salsa_path_matches_direct_on_adapter_only_targets() {
+        // Direct path: store contains both the YAML artifact AND the
+        // adapter artifact.
+        let mut direct_store = Store::new();
+        for a in parse_generic_yaml(
+            SOURCE_ARCH_WITH_AADL_LINK,
+            Some(std::path::Path::new("arch.yaml")),
+        )
+        .expect("parse yaml")
+        {
+            direct_store.upsert(a);
+        }
+        direct_store.upsert(make_aadl_component());
+        let direct_schema: Schema = {
+            let file: crate::schema::SchemaFile =
+                serde_yaml::from_str(AADL_SCHEMA).expect("parse schema");
+            Schema::merge(&[file])
+        };
+        let direct_graph = LinkGraph::build(&direct_store, &direct_schema);
+        let direct_diags = crate::validate::validate(&direct_store, &direct_schema, &direct_graph);
+        let direct_broken = direct_diags
+            .iter()
+            .filter(|d| d.rule == "broken-link")
+            .count();
+
+        // Salsa path WITHOUT extras — this demonstrates the bug. Before
+        // the fix the CLI default took this path and produced one phantom
+        // broken-link per AADL target, so we pin its behaviour here.
+        let db = RivetDatabase::new();
+        let sources = db.load_sources(&[("arch.yaml", SOURCE_ARCH_WITH_AADL_LINK)]);
+        let schemas = db.load_schemas(&[("aadl-bridge", AADL_SCHEMA)]);
+        let salsa_no_extras = db.diagnostics(sources, schemas);
+        let salsa_no_extras_broken = salsa_no_extras
+            .iter()
+            .filter(|d| d.rule == "broken-link")
+            .count();
+
+        // Salsa path WITH extras — the post-fix CLI default goes through
+        // here and must match the direct-path diagnostic count.
+        let extras = db.load_extras(vec![make_aadl_component()]);
+        let salsa_with_extras = db.diagnostics_with_extras(sources, schemas, extras);
+        let salsa_with_extras_broken = salsa_with_extras
+            .iter()
+            .filter(|d| d.rule == "broken-link")
+            .count();
+
+        // Direct: link resolves -> 0 broken.
+        assert_eq!(
+            direct_broken, 0,
+            "direct path must not report broken-link for AADL-Foo-Bar: {direct_diags:?}"
+        );
+
+        // Salsa without extras: target artifact missing -> 1 broken.
+        // This captures the pre-fix bug and guards against a regression
+        // of the `diagnostics()` (no-extras) API if the fix later folds
+        // the logic together.
+        assert_eq!(
+            salsa_no_extras_broken, 1,
+            "bug reproduction: salsa path without extras must see the phantom broken link, got: {salsa_no_extras:?}"
+        );
+
+        // Salsa with extras: matches direct.
+        assert_eq!(
+            salsa_with_extras_broken, direct_broken,
+            "salsa-with-extras broken-link count must match the direct path; direct={direct_broken}, salsa_with_extras={salsa_with_extras_broken}. diagnostics: {salsa_with_extras:?}"
         );
     }
 }
