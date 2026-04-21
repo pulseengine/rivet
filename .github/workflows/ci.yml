@@ -423,8 +423,7 @@ jobs:
           disk-cache: ${{ github.workflow }}
           repository-cache: true
       - name: Verify Verus specs
-        working-directory: verus
-        run: bazel test //:rivet_specs_verify
+        run: bazel test //verus:rivet_specs_verify
 
   # ── Rocq metamodel proofs ─────────────────────────────────────────
   # Not yet a hard gate: the proofs were written against an older Rocq and
@@ -452,8 +451,7 @@ jobs:
         with:
           nix_path: nixpkgs=channel:nixos-unstable
       - name: Verify Rocq proofs
-        working-directory: proofs/rocq
-        run: bazel test //:rivet_metamodel_test
+        run: bazel test //proofs/rocq:rivet_metamodel_test
 
   # ── MSRV check ──────────────────────────────────────────────────────
   msrv:
