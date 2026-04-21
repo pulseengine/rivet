@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1776797927095,
+  "lastUpdate": 1776798272512,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "fd99574e3a79502a222524ff82a69e8c5570bae4",
-          "message": "feat: rowan HIR extraction (Phase 2) + MCP 9 tools + pre-commit hook (#119)\n\n* feat(mcp): expand to 9 tools — get, coverage, schema, embed, snapshot, add (#98)\n\nMCP server now exposes 9 tools over stdio:\n- rivet_validate, rivet_list, rivet_stats (existing)\n- rivet_get — single artifact lookup\n- rivet_coverage — traceability coverage with optional rule filter\n- rivet_schema — schema introspection (types, links, rules)\n- rivet_embed — resolve computed embeds\n- rivet_snapshot_capture — capture project snapshot\n- rivet_add — create new artifact with auto-ID\n\nAll tools have proper JSON Schema inputSchema.\n\n* feat(yaml): HIR extraction from rowan CST (Phase 2)\n\nWalks rowan YAML CST to extract Vec<SpannedArtifact> with precise\nbyte spans for every field. Cross-validated against parse_generic_yaml().\n\nTypes: Span, SpannedArtifact, ParseDiagnostic, ParsedYamlFile\nEntry: extract_generic_artifacts(source) -> ParsedYamlFile\nScalar conversion follows YAML 1.2 rules (true/false only, not yes/no).\n\n10 tests: cross-validation, span accuracy, links, fields, tags,\nempty list, missing id, quoted values, block span, null/tilde.\n\n* feat: HIR extraction (Phase 2), MCP 9 tools, pre-commit hook, clippy fix\n\nPhase 2 rowan HIR: extract_generic_artifacts() walks CST to produce\nVec<SpannedArtifact> with byte spans. 10 tests, cross-validated.\n\nMCP server expanded to 9 tools: get, coverage, schema, embed,\nsnapshot_capture, add (+ original validate, list, stats).\n\nPre-commit hook script: scripts/pre-commit (cargo fmt + clippy).\nClippy allow for cloned_ref_to_slice_refs in convergence tests.",
-          "timestamp": "2026-04-03T01:20:04+02:00",
-          "tree_id": "2bb320b4d6e7ca5c66338ce31984f8ddbac9f5c4",
-          "url": "https://github.com/pulseengine/rivet/commit/fd99574e3a79502a222524ff82a69e8c5570bae4"
-        },
-        "date": 1775172480080,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 78427,
-            "range": "± 322",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 824810,
-            "range": "± 7248",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 11097601,
-            "range": "± 1257630",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2325,
-            "range": "± 8",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 25553,
-            "range": "± 160",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 389640,
-            "range": "± 1740",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 939794,
-            "range": "± 8046",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 164794,
-            "range": "± 509",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1904891,
-            "range": "± 10674",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 25344925,
-            "range": "± 2470062",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 66856,
-            "range": "± 393",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 865471,
-            "range": "± 2880",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 10252876,
-            "range": "± 1676422",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4481,
-            "range": "± 9",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 60407,
-            "range": "± 212",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 761870,
-            "range": "± 5319",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 61763,
-            "range": "± 606",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 675682,
-            "range": "± 16866",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7575825,
-            "range": "± 393704",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 812,
-            "range": "± 7",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 7487,
-            "range": "± 47",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 131225,
-            "range": "± 1737",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 23177,
-            "range": "± 170",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 160054,
-            "range": "± 944",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1462919,
-            "range": "± 22254",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1239036,
             "range": "± 12518",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "60d728a29a18f3e2ba744128fdd274f2df0ee9a1",
+          "message": "fix(validate): salsa path silently drops adapter + external artifacts (#157)\n\n* fix(validate): inject adapter/external artifacts into salsa store\n\nThe default (salsa-incremental) validation path only fed YAML source\nfiles into the salsa database — it silently dropped artifacts produced\nby non-YAML adapters (aadl, reqif, needs-json, wasm) and never loaded\nexternal-project artifacts at all. Any link whose target lived in\nadapter output (e.g. a YAML artifact with `modeled-by -> AADL-Foo-Bar`\nor `analyzes -> AADL-*`) or in an external project (`spar:SPAR-*`) was\nflagged as a phantom \"link target does not exist\" broken-link\ndiagnostic. The only workaround was `rivet validate --direct`, which\nbypasses salsa and loads everything through `ProjectContext::load`.\n\nFix:\n\n* rivet-core/src/db.rs: add a new `ExtraArtifactSet` salsa input\n  that carries pre-parsed artifacts contributed by non-YAML adapters,\n  and `_with_extras` variants of `validate_all`,\n  `evaluate_conditional_rules`, `build_link_graph`,\n  `compute_coverage_tracked`, and `filter_artifact_ids` that merge\n  those artifacts into the store before link-graph construction. The\n  original (no-extras) entry points keep their exact bodies so\n  existing callers and memoization behaviour are preserved.\n\n* rivet-cli/src/main.rs (run_salsa_validation): invoke\n  `load_artifacts` for non-YAML source formats and\n  `load_all_externals` for externals, feed the results through the\n  new `db.load_extras(..)` / `db.diagnostics_with_extras(..)` API.\n  Also removes an unconditional duplicate `collect_yaml_files` call\n  that was traversing each YAML source twice.\n\nRegression test `salsa_path_matches_direct_on_adapter_only_targets`\npins three things at the core level:\n  1. Direct path resolves the modeled-by link and reports zero\n     broken-link diagnostics.\n  2. Salsa path without extras reproduces the original bug and\n     reports one phantom broken-link (guards the no-extras API from\n     silently drifting).\n  3. Salsa path with extras matches the direct path exactly.\n\nOn the rivet dogfood project, `rivet validate` and\n`rivet validate --direct` now produce identical diagnostic counts\n(6 errors, 9 warnings, 0 broken cross-refs) where the default path\npreviously differed.\n\nFixes: REQ-029, REQ-004\nVerifies: REQ-004\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n* fix(deps): ignore RUSTSEC-2026-0103 (thin-vec UAF in transitive salsa)\n\nthin-vec 0.2.14 has a Double-Free / UAF in IntoIter::drop and\nThinVec::clear. Pulled in transitively via salsa 0.26.0. Rivet does\nnot directly construct or iterate thin_vec::ThinVec — the exposure is\nthrough salsa's internal data structures.\n\nIgnore in both cargo-deny and cargo-audit until either salsa bumps\nits thin-vec dependency or thin-vec 0.2.15 lands upstream.\n\nTrace: skip\n\n* fix(tests): wait for /api/v1/health 200 before fetching\n\nserve_integration::start_server() previously returned as soon as TCP\naccept succeeded. Under PROPTEST_CASES=1000 CI load, the socket binds\nbefore the artifact store finishes loading, so fetch() races and hits\nthe server mid-load — the HTTP connection gets closed or returns an\nempty response, parsed as status=0.\n\nSeen intermittently as:\n  api_artifacts_unfiltered ... FAILED\n    assertion `left == right` failed: left=0 right=200\n  api_artifacts_search ... FAILED (same shape)\n\nFix: poll /api/v1/health until it returns HTTP/1.1 200 before declaring\nthe server ready. The health handler only becomes reachable after\nrouting is fully initialized.\n\nTrace: skip\n\n---------\n\nCo-authored-by: Claude Opus 4.7 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-04-21T13:57:49-05:00",
+          "tree_id": "95c6e288c97716c36213ca5f857509b21ad6d9ff",
+          "url": "https://github.com/pulseengine/rivet/commit/60d728a29a18f3e2ba744128fdd274f2df0ee9a1"
+        },
+        "date": 1776798271356,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 75139,
+            "range": "± 275",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 872940,
+            "range": "± 2350",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 15045716,
+            "range": "± 645992",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1681,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 19280,
+            "range": "± 48",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 351144,
+            "range": "± 1443",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 85,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 85,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 85,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 915887,
+            "range": "± 5580",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 159195,
+            "range": "± 1377",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1838157,
+            "range": "± 39897",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 39814510,
+            "range": "± 2597180",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 106027,
+            "range": "± 1092",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 969781,
+            "range": "± 18513",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 15671235,
+            "range": "± 1313077",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 3917,
+            "range": "± 15",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 41331,
+            "range": "± 88",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 759772,
+            "range": "± 3850",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 53071,
+            "range": "± 128",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 584274,
+            "range": "± 2706",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 9092814,
+            "range": "± 591331",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 619,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 5174,
+            "range": "± 14",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 140485,
+            "range": "± 1097",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 20122,
+            "range": "± 47",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 139241,
+            "range": "± 1029",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1291464,
+            "range": "± 6158",
             "unit": "ns/iter"
           }
         ]
