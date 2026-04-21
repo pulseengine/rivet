@@ -405,17 +405,14 @@ jobs:
       - run: cargo kani -p rivet-core
 
   # ── Verus SMT verification ──────────────────────────────────────────
-  # Not yet a hard gate. Upstream chain blocks us: rules_verus (pinned at
-  # pulseengine/rules_verus@5bc96f39, our fix for the :all alias bug)
-  # depends on rules_rust 0.56.0, which uses the removed `CcInfo` symbol
-  # and fails to load in current Bazel. Needs either a rules_rust bump
-  # in rules_verus or a wrapper around the removed symbol before this
-  # can be flipped back to a hard gate.
+  # Hard gate as of pulseengine/rules_verus@fc7b636: that commit bumped
+  # the rules_rust minimum to 0.58.0, the floor where CcInfo is loaded
+  # from @rules_cc//cc/common:cc_info.bzl rather than the removed Bazel
+  # built-in. With that fix, rules_verus loads cleanly on current Bazel.
   verus:
     name: Verus Proofs
     needs: [test]
     runs-on: ubuntu-latest
-    continue-on-error: true
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
