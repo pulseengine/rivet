@@ -11,6 +11,8 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 rivet-core = { path = "../rivet-core", default-features = false }
 serde_yaml = "0.9"
+serde_json = "1"
+arbitrary = { version = "1.4", features = ["derive"] }
 
 # Prevent this from being included in workspace
 [workspace]
@@ -39,3 +41,34 @@ doc = false
 name = "fuzz_needs_json_import"
 path = "fuzz_targets/fuzz_needs_json_import.rs"
 doc = false
+
+[[bin]]
+name = "yaml_footguns"
+path = "fuzz_targets/yaml_footguns.rs"
+doc = false
+test = false
+bench = false
+
+[[bin]]
+name = "cli_argv"
+path = "fuzz_targets/cli_argv.rs"
+doc = false
+test = false
+bench = false
+
+[[bin]]
+name = "artifact_ids"
+path = "fuzz_targets/artifact_ids.rs"
+doc = false
+test = false
+bench = false
+
+# Non-fuzz smoke harness: runs the same oracle invariants against a
+# fixed set of Mythos-predicted footgun inputs.  Useful when libfuzzer
+# is unavailable and as a reproducibility anchor for findings.
+[[example]]
+name = "oracle_smoke"
+path = "examples/oracle_smoke.rs"
+doc = false
+test = false
+bench = false

@@ -1,0 +1,92 @@
+name: fuzz
+
+# YAML-footgun and CLI fuzz targets.  Separate workflow from `ci.yml` because
+# fuzz budgets are measured in minutes, not seconds.
+#
+# We run:
+#   * on every push to main (post-merge confirmation)
+#   * on a nightly schedule (06:17 UTC) so corpus growth is cumulative
+# We do NOT run on PRs — too expensive for the critical path.
+#
+# Each target gets a 15-minute time budget.  The job is marked
+# `continue-on-error: true` so a single crash does not block other work;
+# crashes are surfaced as artifact uploads.
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # Daily at 06:17 UTC.  Offset from round hour to spread CI load.
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  fuzz:
+    name: fuzz ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - yaml_footguns
+          - cli_argv
+          - artifact_ids
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      - name: Build rivet binary (for cli_argv)
+        if: matrix.target == 'cli_argv'
+        run: cargo build --release --bin rivet
+
+      - name: Cache fuzz corpora
+        uses: actions/cache@v4
+        with:
+          path: |
+            fuzz/corpus/${{ matrix.target }}
+            fuzz/artifacts/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.sha }}
+          restore-keys: |
+            fuzz-corpus-${{ matrix.target }}-
+
+      - name: Run fuzz target for 15 minutes
+        env:
+          TARGET: ${{ matrix.target }}
+          RIVET_BIN: ${{ github.workspace }}/target/release/rivet
+        run: |
+          cd fuzz
+          cargo +nightly fuzz run "$TARGET" -- \
+            -max_total_time=900 \
+            -timeout=30 \
+            -rss_limit_mb=2048
+
+      - name: Upload crash artifacts
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashes-${{ matrix.target }}
+          path: |
+            fuzz/artifacts/${{ matrix.target }}/
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Upload corpus snapshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-corpus-${{ matrix.target }}
+          path: fuzz/corpus/${{ matrix.target }}/
+          if-no-files-found: ignore
+          retention-days: 14
