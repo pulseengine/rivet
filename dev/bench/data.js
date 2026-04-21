@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1776802892032,
+  "lastUpdate": 1776804040086,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "bd0d729a386d771123e90b7e5390f15cb79faf6d",
-          "message": "feat: salsa integration (Phase 5) + dogfood tracking (#121)\n\n* chore: track batch 2 features as rivet artifacts (FEAT-093 to FEAT-105)\n\n13 features: rowan Phases 1-3, 6 domain schemas, MCP expansion,\nschema validate, docs refresh, pre-commit hook.\n\n573 total artifacts.\n\n* feat(salsa): wire schema-driven rowan parser into salsa DB (Phase 5)\n\nparse_artifacts_v2() tracked function uses extract_schema_driven()\nfrom the rowan HIR layer. Schema is a transitive salsa dependency —\nschema changes invalidate all artifact extraction, source changes\nonly re-extract that file.\n\nFeature flag 'rowan-yaml' (default on). Debug builds log warnings\nif old and new parsers produce different artifact IDs.\n\nbuild_store() now takes schema_set parameter for the new code path.\nAll 7 db.store() call sites updated.",
-          "timestamp": "2026-04-03T01:57:29+02:00",
-          "tree_id": "05c855c15115ee0abf7dbc22d733ff23402cef79",
-          "url": "https://github.com/pulseengine/rivet/commit/bd0d729a386d771123e90b7e5390f15cb79faf6d"
-        },
-        "date": 1775174682415,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 75066,
-            "range": "± 473",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 847816,
-            "range": "± 16864",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 11767160,
-            "range": "± 583254",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1682,
-            "range": "± 10",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 19412,
-            "range": "± 37",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 353335,
-            "range": "± 896",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 87,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 87,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 87,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 862841,
-            "range": "± 6055",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 160626,
-            "range": "± 285",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1846847,
-            "range": "± 11253",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 35093682,
-            "range": "± 1716710",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 63821,
-            "range": "± 98",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 847356,
-            "range": "± 3827",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 12647500,
-            "range": "± 733994",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4009,
-            "range": "± 9",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 40491,
-            "range": "± 72",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 768404,
-            "range": "± 10016",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 55656,
-            "range": "± 1332",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 576629,
-            "range": "± 2807",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 6714861,
-            "range": "± 149155",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 684,
-            "range": "± 4",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 5604,
-            "range": "± 27",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 142991,
-            "range": "± 464",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 20939,
-            "range": "± 60",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 148753,
-            "range": "± 228",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1377463,
-            "range": "± 13544",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1363793,
             "range": "± 15222",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a7dcc30efc7bd0a4197283b533c656fe67d1bd0b",
+          "message": "fix(init): preserve manual content in AGENTS.md / CLAUDE.md via managed-section markers (#167)\n\n* wip(init): managed-section markers for AGENTS.md regen (INCOMPLETE)\n\nThe stalled Mythos agent got about 60% through this task before\nhitting a 600s watchdog timeout. Saving the WIP so it isn't lost:\n\n- New rivet-core/src/managed_section.rs: splice_managed_section() with\n  the BEGIN rivet-managed / END rivet-managed HTML-comment scheme, plus\n  error types for NoMarkers and MultipleMarkers.\n- rivet-cli/src/main.rs: --migrate and --force-regen flags wired into\n  cmd_init_agents (partial).\n\n**Not yet done** (pickup list for whoever takes this over):\n- Integration tests in rivet-cli/tests/init_integration.rs\n- CLAUDE.md regen path (confirm whether init --agents touches it)\n- Migrate rivet's own AGENTS.md to use markers\n- Confirm cargo build + cargo test pass\n\n**Why it matters**: without this, `rivet init --agents` silently\noverwrites downstream consumers' manual AGENTS.md content. Sigil\nships a \"don't regenerate\" warning comment as a workaround.\n\nDo not merge this commit; pick up where it left off or restart\nwith a tighter agent scope.\n\nTrace: skip\n\n* test(init): integration tests for AGENTS.md / CLAUDE.md marker semantics\n\nSeven end-to-end tests that exercise `rivet init --agents` against the\nfull CLI binary, covering every branch of the write_managed_file state\nmachine:\n\n- agents_md_fresh_file_has_markers — non-existent file gets exactly one\n  BEGIN/END rivet-managed pair on first write.\n- agents_md_preserves_manual_section_outside_markers — prose above and\n  below the markers survives regeneration; only the managed region is\n  replaced.\n- agents_md_refuses_no_markers_default — pre-existing file with no\n  markers and no flag -> exit 1, file untouched byte-for-byte.\n- agents_md_force_regen_overwrites_no_markers — --force-regen discards\n  prior content, emits a stderr warning.\n- agents_md_migrate_wraps_existing_content — --migrate puts the managed\n  section on top, preserves prior content below, and a subsequent plain\n  regen splices cleanly.\n- agents_md_multiple_markers_rejected — two BEGIN/END pairs -> exit 1,\n  file untouched.\n- claude_md_preserves_manual_section_outside_markers — the same splice\n  semantics apply to CLAUDE.md.\n\nThe existing 11 unit tests in rivet-core/src/managed_section.rs already\ncover the pure-function surface (splice, wrap_fresh, migrate_wrap,\nhas_markers, and the error cases NoMarkers, MultipleBeginMarkers,\nUnclosedMarker, OrphanEndMarker), so these integration tests focus on\nthe CLI wiring and filesystem side-effects rather than duplicating\nthe unit coverage.\n\nFixes: REQ-007\nVerifies: REQ-007\nRefs: FEAT-026\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n* docs: wrap rivet's AGENTS.md and CLAUDE.md in rivet-managed markers\n\nSelf-host the managed-section scheme so a future `rivet init --agents`\nrun on the rivet repo itself splices the auto-generated region cleanly\ninstead of tripping the new no-marker refusal path.\n\nAGENTS.md:\n- Project overview, artifact-type table, link-type table, and the\n  Conventions block (all currently regenerated by `cmd_init_agents`)\n  are wrapped inside a single BEGIN/END rivet-managed pair.\n- The hand-expanded Commit Traceability reference (trailer table,\n  choosing-the-right-artifacts guide, and the retroactive traceability\n  map) is moved below the END marker so it survives regeneration. The\n  generator emits a much shorter commits section; keeping the rich\n  reference outside the markers lets us expand it without fighting the\n  regenerator.\n\nCLAUDE.md:\n- The entire hand-authored content (validation/queries, commit\n  traceability quick reference, hook security model, AI provenance)\n  now lives above the markers and will be preserved verbatim.\n- The managed region is committed as an empty stub with an explanatory\n  comment; the next `rivet init --agents` will populate it with the\n  generated CLAUDE.md shim.\n\nCLAUDE.md scope check: `rivet init --agents` is the only code path in\nrivet-cli that writes CLAUDE.md (grep for `CLAUDE\\.md` in\nrivet-cli/src confirms no other write site), and it already uses the\nsame `write_managed_file` helper as AGENTS.md via d66dee2. No\nadditional code change is needed for CLAUDE.md support.\n\nFixes: REQ-007\nRefs: FEAT-026\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.7 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-04-21T14:44:37-05:00",
+          "tree_id": "1ff2c3b57ba8f4f590b24faece23d5657b117076",
+          "url": "https://github.com/pulseengine/rivet/commit/a7dcc30efc7bd0a4197283b533c656fe67d1bd0b"
+        },
+        "date": 1776804038969,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 80654,
+            "range": "± 688",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 845428,
+            "range": "± 3857",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 11299768,
+            "range": "± 492945",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2326,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 26299,
+            "range": "± 893",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 371481,
+            "range": "± 16722",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 94,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 94,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1009052,
+            "range": "± 17434",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 160365,
+            "range": "± 3710",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1885560,
+            "range": "± 30228",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 23595600,
+            "range": "± 629379",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 111921,
+            "range": "± 699",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 957520,
+            "range": "± 9987",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 9595695,
+            "range": "± 144843",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4275,
+            "range": "± 16",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 60777,
+            "range": "± 360",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 779545,
+            "range": "± 67119",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 60655,
+            "range": "± 446",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 681048,
+            "range": "± 10004",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7528352,
+            "range": "± 77415",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 776,
+            "range": "± 8",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7583,
+            "range": "± 26",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 116179,
+            "range": "± 2541",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 23359,
+            "range": "± 439",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 165904,
+            "range": "± 1761",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1505011,
+            "range": "± 12636",
             "unit": "ns/iter"
           }
         ]
