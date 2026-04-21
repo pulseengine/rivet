@@ -44,19 +44,38 @@ fn start_server() -> (Child, u16) {
         .spawn()
         .expect("failed to start rivet serve");
 
-    // Wait for server to be ready (up to 30s — 20 integration tests each
-    // spawn a server, so system resources can be tight under CI/coverage).
+    // Wait for server to be ready. TCP accept alone is insufficient — the
+    // socket binds before the artifact store finishes loading, so `fetch()`
+    // can race and hit the server mid-load, getting a closed connection or
+    // empty response (previous failure mode: status=0 on
+    // api_artifacts_unfiltered / api_artifacts_search under Proptest load).
+    //
+    // Fix: wait for /api/v1/health to return 200 OK. That handler only
+    // becomes reachable after routing is fully initialized and the store
+    // is populated.
     let addr = format!("127.0.0.1:{port}");
     for _ in 0..300 {
-        if std::net::TcpStream::connect(&addr).is_ok() {
-            return (child, port);
+        if let Ok(mut stream) = std::net::TcpStream::connect(&addr) {
+            use std::io::{Read, Write};
+            let req = format!(
+                "GET /api/v1/health HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
+            );
+            if stream.write_all(req.as_bytes()).is_ok() {
+                let _ = stream.set_read_timeout(Some(Duration::from_millis(500)));
+                let mut buf = [0u8; 32];
+                if let Ok(n) = stream.read(&mut buf) {
+                    if n >= 12 && &buf[..12] == b"HTTP/1.1 200" {
+                        return (child, port);
+                    }
+                }
+            }
         }
         std::thread::sleep(Duration::from_millis(100));
     }
     // Kill the child before panicking to avoid zombie processes.
     let _ = child.kill();
     let _ = child.wait();
-    panic!("server did not start within 30 seconds on port {port}");
+    panic!("server did not become healthy within 30 seconds on port {port}");
 }
 
 /// Fetch a page via HTTP. If `htmx` is true, sends the HX-Request header

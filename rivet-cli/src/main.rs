@@ -3355,27 +3355,80 @@ fn run_salsa_validation(cli: &Cli, config: &ProjectConfig) -> Result<Vec<validat
     let schema_contents =
         rivet_core::embedded::load_schema_contents(&config.project.schemas, &schemas_dir);
 
-    // ── Collect source file content ─────────────────────────────────────
+    // Merge schema files up-front so the non-YAML adapters that need a
+    // schema (e.g. stpa-yaml for schema-driven extraction) can be invoked
+    // identically to the direct path.
+    let merged_schema = rivet_core::load_schemas(&config.project.schemas, &schemas_dir)
+        .context("loading schemas for salsa validation")?;
+
+    // ── Collect source file content and adapter-imported artifacts ──────
+    //
+    // YAML-based formats are fed to salsa as `SourceFile` inputs so every
+    // file becomes an incrementally-tracked parse unit. Non-YAML formats
+    // (aadl, reqif, needs-json, wasm) can't be represented that way —
+    // their adapters operate on directories, binary blobs, or run external
+    // tools. We invoke those adapters once here and inject the resulting
+    // artifacts into the salsa store via `ExtraArtifactSet` so that
+    // cross-format links (e.g. a YAML artifact `modeled-by -> AADL-*`)
+    // resolve against the full set of artifacts — matching the direct
+    // (`--direct`) path and eliminating the class of phantom
+    // "link target does not exist" diagnostics that the salsa path used
+    // to report for AADL / ReqIF / needs-json targets.
     let mut source_contents: Vec<(String, String)> = Vec::new();
+    let mut extra_artifacts: Vec<rivet_core::model::Artifact> = Vec::new();
     for source in &config.sources {
         let source_path = cli.project.join(&source.path);
-        // All YAML-based formats are handled by parse_artifacts_v2 via schema-driven extraction.
         match source.format.as_str() {
             "generic" | "generic-yaml" | "stpa-yaml" => {
                 rivet_core::collect_yaml_files(&source_path, &mut source_contents)
                     .with_context(|| format!("reading source '{}'", source.path))?;
             }
             _ => {
-                // Non-YAML formats (reqif, aadl, needs-json) still need their own adapters.
-                log::debug!(
-                    "salsa: skipping non-YAML source '{}' (format: {})",
-                    source.path,
-                    source.format,
-                );
+                // Non-YAML formats: run the adapter now, inject the
+                // resulting artifacts into the salsa store so links to
+                // them resolve.
+                match rivet_core::load_artifacts(source, &cli.project, &merged_schema) {
+                    Ok(artifacts) => extra_artifacts.extend(artifacts),
+                    Err(e) => {
+                        return Err(anyhow::anyhow!(
+                            "loading adapter source '{}' (format: {}): {}",
+                            source.path,
+                            source.format,
+                            e
+                        ));
+                    }
+                }
             }
         }
-        rivet_core::collect_yaml_files(&source_path, &mut source_contents)
-            .with_context(|| format!("reading source '{}'", source.path))?;
+    }
+
+    // Externals: the direct path (ProjectContext::load) injects external
+    // project artifacts with their prefix into the store. The salsa path
+    // must do the same or cross-repo link targets become phantom broken
+    // links. This mirrors the loop in ProjectContext::load.
+    if let Some(ref externals) = config.externals {
+        if !externals.is_empty() {
+            match rivet_core::externals::load_all_externals(externals, &cli.project) {
+                Ok(resolved) => {
+                    for ext in resolved {
+                        let ext_ids: std::collections::HashSet<String> =
+                            ext.artifacts.iter().map(|a| a.id.clone()).collect();
+                        for mut artifact in ext.artifacts {
+                            artifact.id = format!("{}:{}", ext.prefix, artifact.id);
+                            for link in &mut artifact.links {
+                                if ext_ids.contains(&link.target) {
+                                    link.target = format!("{}:{}", ext.prefix, link.target);
+                                }
+                            }
+                            extra_artifacts.push(artifact);
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::warn!("could not load externals for salsa validation: {e}");
+                }
+            }
+        }
     }
 
     // ── Build salsa database and run validation ─────────────────────────
@@ -3393,14 +3446,17 @@ fn run_salsa_validation(cli: &Cli, config: &ProjectConfig) -> Result<Vec<validat
     let t_start = Instant::now();
     let schema_set = db.load_schemas(&schema_refs);
     let source_set = db.load_sources(&source_refs);
-    let diagnostics = db.diagnostics(source_set, schema_set);
+    let extra_count = extra_artifacts.len();
+    let extra_set = db.load_extras(extra_artifacts);
+    let diagnostics = db.diagnostics_with_extras(source_set, schema_set, extra_set);
     let t_elapsed = t_start.elapsed();
 
     if cli.verbose > 0 {
         eprintln!(
-            "[salsa] validation: {:.1}ms ({} source files, {} schemas, {} diagnostics)",
+            "[salsa] validation: {:.1}ms ({} source files, {} adapter artifacts, {} schemas, {} diagnostics)",
             t_elapsed.as_secs_f64() * 1000.0,
             source_contents.len(),
+            extra_count,
             schema_contents.len(),
             diagnostics.len(),
         );
