@@ -221,10 +221,35 @@ jobs:
           name: test-evidence
           path: rivet-*-test-evidence.tar.gz
 
+  # ── VS Code Extension VSIX ────────────────────────────────────────────
+  # Builds the VSIX so it can be attached to the GitHub Release and
+  # separately published to the VS Code Marketplace.
+  build-vsix:
+    name: Build VS Code Extension VSIX
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install extension dependencies
+        working-directory: vscode-rivet
+        run: npm ci
+      - name: Compile extension
+        working-directory: vscode-rivet
+        run: npm run compile
+      - name: Package VSIX
+        working-directory: vscode-rivet
+        run: npx @vscode/vsce package --no-dependencies
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsix
+          path: vscode-rivet/*.vsix
+
   # ── Create GitHub Release ─────────────────────────────────────────────
   create-release:
     name: Create GitHub Release
-    needs: [build-binaries, build-compliance, build-test-evidence]
+    needs: [build-binaries, build-compliance, build-test-evidence, build-vsix]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -237,7 +262,7 @@ jobs:
       - name: Collect assets
         run: |
           mkdir -p release
-          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec mv {} release/ \;
+          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.vsix" \) -exec mv {} release/ \;
           ls -la release/
 
       - name: Generate checksums
@@ -255,3 +280,32 @@ jobs:
             --title "Rivet $VERSION" \
             --generate-notes \
             release/*
+
+  # ── Publish VS Code Extension to Marketplace ──────────────────────────
+  # Runs after create-release so the VSIX is always on the Release page
+  # even if Marketplace publish fails or VSCE_PAT isn't set. The
+  # conditional guard prints a visible warning rather than silently
+  # skipping, which is how the previous ci.yml flow made "rivet extension
+  # never reaches Marketplace" invisible.
+  publish-vsix-marketplace:
+    name: Publish VSIX to VS Code Marketplace
+    needs: [create-release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: vsix
+          path: vsix
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Publish to Marketplace
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          if [ -z "$VSCE_PAT" ]; then
+            echo "::warning::VSCE_PAT secret is not configured. VSIX is attached to the GitHub Release but WILL NOT be published to the Marketplace."
+            echo "::warning::See https://code.visualstudio.com/api/working-with-extensions/publishing-extension for PAT setup."
+            exit 0
+          fi
+          npx @vscode/vsce publish --packagePath vsix/*.vsix
