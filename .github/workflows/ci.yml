@@ -422,6 +422,15 @@ jobs:
           bazelisk-cache: true
           disk-cache: ${{ github.workflow }}
           repository-cache: true
+      # Nix is required because the unified root MODULE.bazel registers
+      # the Rocq toolchain, which depends on rules_nixpkgs_core. Bazel
+      # resolves all registered toolchains at analysis time regardless
+      # of which target is being built, so Nix must be on PATH even for
+      # Verus-only invocations.
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
       - name: Verify Verus specs
         run: bazel test //verus:rivet_specs_verify
 
