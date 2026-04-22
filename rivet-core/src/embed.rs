@@ -293,9 +293,21 @@ fn extract_balanced_parens(s: &str) -> Option<(&str, &str)> {
 
 // ── Stats renderer ──────────────────────────────────────────────────────
 
-/// Render `{{stats}}` / `{{stats:types}}` / `{{stats:status}}` / `{{stats:validation}}`.
+/// Render one of:
+/// - `{{stats}}`              — full statistics panel (types + status + validation)
+/// - `{{stats:types}}`        — just the type-count table
+/// - `{{stats:status}}`       — just the status-count table
+/// - `{{stats:validation}}`   — just the per-severity table
+/// - `{{stats:type:NAME}}`    — single count for the named artifact type
 fn render_stats(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> String {
     let section = request.args.first().map(|s| s.as_str());
+    let target_type = request.args.get(1).map(|s| s.as_str());
+
+    // Granular form: {{stats:type:requirement}} → single-cell count.
+    if section == Some("type") {
+        return render_stats_single_type(target_type.unwrap_or(""), ctx);
+    }
+
     let mut html = String::from("<div class=\"embed-stats\">\n");
 
     let show_types = section.is_none() || section == Some("types");
@@ -314,6 +326,32 @@ fn render_stats(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> String {
 
     html.push_str("</div>\n");
     html
+}
+
+/// Render `{{stats:type:NAME}}` — just the count for a single artifact type.
+///
+/// Rendered as a compact single-row table so it still looks like the rest of
+/// the stats family.  Unknown types render a zero-count row rather than an
+/// error: this is the "embed never disappears silently" rule (SC-EMBED-3).
+fn render_stats_single_type(type_name: &str, ctx: &EmbedContext<'_>) -> String {
+    let name = type_name.trim();
+    if name.is_empty() {
+        return "<div class=\"embed-stats\"><span class=\"embed-error\">stats:type requires a type name, e.g. <code>{{stats:type:requirement}}</code></span></div>\n".to_string();
+    }
+    let count = ctx
+        .store
+        .iter()
+        .filter(|a| a.artifact_type == name)
+        .count();
+
+    format!(
+        "<div class=\"embed-stats embed-stats-single\">\n\
+         <table class=\"embed-table\"><thead><tr><th>Type</th><th>Count</th></tr></thead><tbody>\n\
+         <tr><td>{typ}</td><td>{count}</td></tr>\n\
+         </tbody></table>\n\
+         </div>\n",
+        typ = document::html_escape(name),
+    )
 }
 
 fn render_stats_types(ctx: &EmbedContext<'_>) -> String {
@@ -1363,4 +1401,61 @@ mod tests {
         assert!(matches!(err.kind, EmbedErrorKind::MalformedSyntax(_)));
     }
 
+    // ── stats:type:NAME granular form ───────────────────────────────
+
+    #[test]
+    fn stats_type_single_name_counts_correctly() {
+        let store = make_store(vec![
+            plain("A", "requirement", None, &[]),
+            plain("B", "requirement", None, &[]),
+            plain("C", "feature", None, &[]),
+        ]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let html = run_embed("stats:type:requirement", &store, &schema, &graph).unwrap();
+        assert!(html.contains("embed-stats-single"), "got: {html}");
+        // The single-type row must show count = 2 for requirement.
+        assert!(html.contains("<td>requirement</td>"), "got: {html}");
+        assert!(html.contains("<td>2</td>"), "got: {html}");
+        // Must NOT contain the full stats table sections.
+        assert!(!html.contains("embed-stats-validation"), "got: {html}");
+        assert!(!html.contains("embed-stats-status"), "got: {html}");
+    }
+
+    #[test]
+    fn stats_type_unknown_type_renders_zero_not_error() {
+        let store = make_store(vec![plain("A", "requirement", None, &[])]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let html = run_embed("stats:type:nonexistent", &store, &schema, &graph).unwrap();
+        // Still renders a table cell (SC-EMBED-3: no silent disappearance).
+        assert!(html.contains("<td>nonexistent</td>"), "got: {html}");
+        assert!(html.contains("<td>0</td>"), "got: {html}");
+    }
+
+    #[test]
+    fn stats_type_empty_name_renders_embed_error() {
+        let store = Store::new();
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        // `{{stats:type}}` with no third arg — flag as user error, visibly.
+        let html = run_embed("stats:type", &store, &schema, &graph).unwrap();
+        assert!(html.contains("embed-error"), "got: {html}");
+    }
+
+    #[test]
+    fn stats_type_does_not_break_existing_stats_types() {
+        // Regression: the previous {{stats:types}} form must still render
+        // the full table.
+        let store = make_store(vec![
+            plain("A", "requirement", None, &[]),
+            plain("B", "feature", None, &[]),
+        ]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let html = run_embed("stats:types", &store, &schema, &graph).unwrap();
+        assert!(html.contains("<table"));
+        assert!(html.contains("requirement"));
+        assert!(html.contains("feature"));
+    }
 }
