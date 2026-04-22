@@ -280,7 +280,38 @@ pub fn extract_schema_driven(
                 }
             }
         }
-        // Unknown keys are silently skipped (comments, metadata, etc.)
+        else {
+            // Unknown top-level keys: most are legitimate (project metadata
+            // like `name:`, `version:`, free-form fields). But a key whose
+            // *singular* form matches a known section (e.g. user wrote
+            // `control-action:` instead of `control-actions:`) is almost
+            // certainly a typo of a schema-defined section — surface it as
+            // a Warning so misspellings stop being silently dropped.
+            // We deliberately keep this advisory (not Error) so genuine
+            // metadata keys don't break existing files.
+            let known_sections: Vec<&str> = section_map.keys().copied().collect();
+            let candidate_singular = key_text.strip_suffix('s').unwrap_or(&key_text);
+            let candidate_plural = format!("{key_text}s");
+            let suspected_typo = known_sections.iter().any(|s| {
+                let s_singular = s.strip_suffix('s').unwrap_or(s);
+                s_singular == candidate_singular
+                    || *s == candidate_plural
+                    || (key_text.len() > 4 && s.contains(candidate_singular))
+            });
+            if suspected_typo {
+                let span = Span::from_text_range(key_node.text_range());
+                result.diagnostics.push(ParseDiagnostic {
+                    span,
+                    message: format!(
+                        "unknown top-level key '{key_text}' looks like a typo of a \
+                         known schema section — known: {}",
+                        known_sections.join(", ")
+                    ),
+                    severity: Severity::Warning,
+                });
+            }
+            // Otherwise: silently skip (legitimate metadata).
+        }
     }
 
     // Set source_file on all artifacts and detect duplicates
@@ -1064,6 +1095,24 @@ fn extract_string_list(value_node: &SyntaxNode) -> Vec<String> {
                         items.push(unquote_scalar(k, t.text()));
                     }
                     _ => {}
+                }
+            }
+        }
+        // If the CST produced no scalar tokens but the source clearly
+        // wasn't an empty `[]`, fall back to serde_yaml so unusual flow
+        // shapes (anchors, refs, quoted commas) don't silently drop to
+        // an empty list. Same defensive pattern as extract_links.
+        if items.is_empty() {
+            let text = flow.text().to_string();
+            let trimmed = text.trim();
+            let is_empty_brackets = trimmed == "[]"
+                || trimmed
+                    .strip_prefix('[')
+                    .and_then(|s| s.strip_suffix(']'))
+                    .is_some_and(|inner| inner.trim().is_empty());
+            if !is_empty_brackets {
+                if let Ok(parsed) = serde_yaml::from_str::<Vec<String>>(trimmed) {
+                    items = parsed;
                 }
             }
         }

@@ -770,7 +770,28 @@ fn lower_list(node: &crate::sexpr::SyntaxNode, errors: &mut Vec<LowerError>) -> 
                 return None;
             }
             let lt = extract_value(&args[0])?;
-            let op_str = extract_symbol(&args[1]).unwrap_or_default();
+            // Reject empty/whitespace operators with a clear message instead
+            // of falling through the `_` arm with an "invalid operator ''"
+            // string that confuses users who supplied a non-symbol literal.
+            let Some(op_str) = extract_symbol(&args[1]) else {
+                errors.push(LowerError {
+                    offset,
+                    message: "'links-count' second argument must be one of \
+                              the comparison operators >, <, >=, <=, =, != \
+                              (got a non-symbol literal)"
+                        .into(),
+                });
+                return None;
+            };
+            if op_str.trim().is_empty() {
+                errors.push(LowerError {
+                    offset,
+                    message: "'links-count' second argument is empty — \
+                              expected one of >, <, >=, <=, =, !="
+                        .into(),
+                });
+                return None;
+            }
             let op = match op_str.as_str() {
                 ">" => CompOp::Gt,
                 "<" => CompOp::Lt,
@@ -781,7 +802,10 @@ fn lower_list(node: &crate::sexpr::SyntaxNode, errors: &mut Vec<LowerError>) -> 
                 _ => {
                     errors.push(LowerError {
                         offset,
-                        message: format!("invalid operator '{op_str}' in links-count"),
+                        message: format!(
+                            "'links-count' invalid operator '{op_str}' — \
+                             expected one of >, <, >=, <=, =, !="
+                        ),
                     });
                     return None;
                 }

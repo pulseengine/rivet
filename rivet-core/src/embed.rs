@@ -344,9 +344,9 @@ impl EmbedRequest {
 pub fn resolve_embed(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> Result<String, EmbedError> {
     match request.name.as_str() {
         "stats" => Ok(render_stats(request, ctx)),
-        "coverage" => Ok(render_coverage(request, ctx)),
-        "diagnostics" => Ok(render_diagnostics(request, ctx)),
-        "matrix" => Ok(render_matrix(request, ctx)),
+        "coverage" => render_coverage(request, ctx),
+        "diagnostics" => render_diagnostics(request, ctx),
+        "matrix" => render_matrix(request, ctx),
         "query" => render_query(request, ctx),
         "group" => render_group(request, ctx),
         // Legacy embeds (artifact, links, table) are rendered by
@@ -564,9 +564,35 @@ fn severity_rank(s: crate::schema::Severity) -> u8 {
 // ── Coverage renderer ───────────────────────────────────────────────────
 
 /// Render `{{coverage}}` or `{{coverage:RULE_NAME}}`.
-fn render_coverage(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> String {
+fn render_coverage(
+    request: &EmbedRequest,
+    ctx: &EmbedContext<'_>,
+) -> Result<String, EmbedError> {
     let report = coverage::compute_coverage(ctx.store, ctx.schema, ctx.graph);
     let filter_rule = request.args.first().map(|s| s.as_str());
+
+    // If the user named a specific rule, verify it exists in the report
+    // before silently returning an empty table. A typo'd rule name used
+    // to render as "no coverage rules defined" — indistinguishable from
+    // a project that genuinely has no rules.
+    if let Some(name) = filter_rule {
+        let exists = report.entries.iter().any(|e| e.rule_name == name);
+        if !exists {
+            let known: Vec<&str> =
+                report.entries.iter().map(|e| e.rule_name.as_str()).collect();
+            let hint = if known.is_empty() {
+                "no traceability rules are defined in the loaded schemas".to_string()
+            } else {
+                format!("known rules: {}", known.join(", "))
+            };
+            return Err(EmbedError {
+                kind: EmbedErrorKind::MalformedSyntax(format!(
+                    "coverage rule '{name}' not found — {hint}"
+                )),
+                raw_text: format!("{request:?}"),
+            });
+        }
+    }
 
     let entries: Vec<_> = report
         .entries
@@ -575,7 +601,7 @@ fn render_coverage(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> String {
         .collect();
 
     if entries.is_empty() {
-        return "<div class=\"embed-coverage\"><p class=\"embed-no-data\">No coverage rules defined.</p></div>\n".to_string();
+        return Ok("<div class=\"embed-coverage\"><p class=\"embed-no-data\">No coverage rules defined.</p></div>\n".to_string());
     }
 
     let mut html = String::from(
@@ -630,7 +656,7 @@ fn render_coverage(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> String {
     }
 
     html.push_str("</div>\n");
-    html
+    Ok(html)
 }
 
 // ── Diagnostics renderer ────────────────────────────────────────────────
@@ -638,10 +664,26 @@ fn render_coverage(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> String {
 /// Render `{{diagnostics}}` or `{{diagnostics:SEVERITY}}`.
 ///
 /// Without args: all diagnostics. With severity arg: filtered by severity.
-fn render_diagnostics(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> String {
+/// Unknown severity strings are rejected (regression guard for v0.4.1
+/// silent-accept where `{{diagnostics:warnings}}` returned everything).
+fn render_diagnostics(
+    request: &EmbedRequest,
+    ctx: &EmbedContext<'_>,
+) -> Result<String, EmbedError> {
     use crate::schema::Severity;
 
     let filter_severity = request.args.first().map(|s| s.as_str());
+    if let Some(sev) = filter_severity {
+        if !matches!(sev, "error" | "warning" | "info") {
+            return Err(EmbedError {
+                kind: EmbedErrorKind::MalformedSyntax(format!(
+                    "diagnostics severity '{sev}' is not recognised — \
+                     use 'error', 'warning', or 'info'"
+                )),
+                raw_text: format!("{request:?}"),
+            });
+        }
+    }
 
     let filtered: Vec<_> = ctx
         .diagnostics
@@ -656,9 +698,9 @@ fn render_diagnostics(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> String 
 
     if filtered.is_empty() {
         let scope = filter_severity.unwrap_or("any");
-        return format!(
+        return Ok(format!(
             "<div class=\"embed-diagnostics\"><p class=\"embed-no-data\">No diagnostics ({scope} severity).</p></div>\n"
-        );
+        ));
     }
 
     let mut html = String::from(
@@ -722,7 +764,7 @@ fn render_diagnostics(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> String 
     );
 
     html.push_str("</div>\n");
-    html
+    Ok(html)
 }
 
 // ── Matrix renderer ─────────────────────────────────────────────────────
@@ -731,9 +773,44 @@ fn render_diagnostics(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> String 
 ///
 /// Without args: renders one matrix per traceability rule in the schema.
 /// With args: renders a specific matrix for the given source→target types.
-fn render_matrix(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> String {
+/// Unknown artifact-type names are rejected so a typo no longer renders
+/// a silent blank table.
+fn render_matrix(
+    request: &EmbedRequest,
+    ctx: &EmbedContext<'_>,
+) -> Result<String, EmbedError> {
     let from_type = request.args.first().map(|s| s.as_str());
     let to_type = request.args.get(1).map(|s| s.as_str());
+
+    // Validate explicit type names against the loaded schema before
+    // rendering anything — silent acceptance of an unknown type used to
+    // render an empty matrix indistinguishable from "rule applies but
+    // nothing covered yet". The user couldn't tell their typo from a
+    // genuine coverage gap.
+    for (label, maybe_name) in [("from", from_type), ("to", to_type)] {
+        if let Some(name) = maybe_name {
+            if !ctx.schema.artifact_types.contains_key(name) {
+                let mut known: Vec<&str> = ctx
+                    .schema
+                    .artifact_types
+                    .keys()
+                    .map(String::as_str)
+                    .collect();
+                known.sort();
+                let hint = if known.is_empty() {
+                    "no artifact types are loaded".to_string()
+                } else {
+                    format!("known: {}", known.join(", "))
+                };
+                return Err(EmbedError {
+                    kind: EmbedErrorKind::MalformedSyntax(format!(
+                        "matrix {label}-type '{name}' is not a known artifact type — {hint}"
+                    )),
+                    raw_text: format!("{request:?}"),
+                });
+            }
+        }
+    }
 
     let mut html = String::from("<div class=\"embed-matrix\">\n");
 
@@ -804,7 +881,7 @@ fn render_matrix(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> String {
     }
 
     html.push_str("</div>\n");
-    html
+    Ok(html)
 }
 
 /// Render a single traceability matrix as an HTML table.
@@ -1440,6 +1517,66 @@ mod tests {
         let req = EmbedRequest::parse("matrix").unwrap();
         let result = resolve_embed(&req, &EmbedContext::empty());
         assert!(result.is_ok(), "matrix should be a known embed type");
+    }
+
+    #[test]
+    fn matrix_embed_rejects_unknown_from_type() {
+        // Regression: {{matrix:UnknownType:OtherType}} used to render a
+        // blank table (silent accept). Now must error with a hint listing
+        // known types.
+        let ctx = EmbedContext::empty();
+        let req = EmbedRequest::parse("matrix:does-not-exist:other").unwrap();
+        let err = resolve_embed(&req, &ctx).unwrap_err();
+        let msg = match &err.kind {
+            EmbedErrorKind::MalformedSyntax(m) => m.clone(),
+            other => panic!("expected MalformedSyntax, got {other:?}"),
+        };
+        assert!(
+            msg.contains("does-not-exist"),
+            "error must name the unknown type: {msg}"
+        );
+        assert!(
+            msg.contains("from-type"),
+            "error must clarify which arg was wrong: {msg}"
+        );
+    }
+
+    #[test]
+    fn diagnostics_embed_rejects_unknown_severity() {
+        // Regression: {{diagnostics:warnings}} (typo) used to silently
+        // return ALL diagnostics because the severity match fell to the
+        // `_ => true` arm.
+        let ctx = EmbedContext::empty();
+        let req = EmbedRequest::parse("diagnostics:warnings").unwrap();
+        let err = resolve_embed(&req, &ctx).unwrap_err();
+        match &err.kind {
+            EmbedErrorKind::MalformedSyntax(m) => {
+                assert!(
+                    m.contains("warnings") && m.contains("warning"),
+                    "error must name the bad input and the correct value: {m}"
+                );
+            }
+            other => panic!("expected MalformedSyntax, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn coverage_embed_rejects_unknown_filter_rule() {
+        // Regression: {{coverage:typo-rule}} used to render "no coverage
+        // rules defined" — indistinguishable from a project that has no
+        // rules. Now errors with a list of known rule names.
+        let ctx = EmbedContext::empty();
+        let req = EmbedRequest::parse("coverage:does-not-exist").unwrap();
+        let err = resolve_embed(&req, &ctx).unwrap_err();
+        match &err.kind {
+            EmbedErrorKind::MalformedSyntax(m) => {
+                assert!(
+                    m.contains("does-not-exist"),
+                    "error must name the unknown rule: {m}"
+                );
+            }
+            other => panic!("expected MalformedSyntax, got {other:?}"),
+        }
     }
 
     #[test]
