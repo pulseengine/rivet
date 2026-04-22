@@ -694,12 +694,7 @@ pub fn parse_reqif(xml: &str, type_map: &HashMap<String, String>) -> Result<Vec<
                         }
                     }
                     "tags" | "TAGS" => {
-                        tags = av
-                            .the_value
-                            .split(',')
-                            .map(|s| s.trim().to_string())
-                            .filter(|s| !s.is_empty())
-                            .collect();
+                        tags = decode_tags(&av.the_value);
                     }
                     "artifact-type" => {
                         if !av.the_value.is_empty() {
@@ -785,11 +780,7 @@ pub fn parse_reqif(xml: &str, type_map: &HashMap<String, String>) -> Result<Vec<
                             status = Some(value);
                         }
                         "tags" | "TAGS" => {
-                            tags = value
-                                .split(',')
-                                .map(|s| s.trim().to_string())
-                                .filter(|s| !s.is_empty())
-                                .collect();
+                            tags = decode_tags(&value);
                         }
                         _ => {
                             fields.insert(attr_name.to_string(), serde_yaml::Value::String(value));
@@ -1029,7 +1020,7 @@ pub fn build_reqif(artifacts: &[Artifact]) -> ReqIfRoot {
                     },
                 },
                 AttributeValueString {
-                    the_value: a.tags.join(", "),
+                    the_value: encode_tags(&a.tags),
                     definition: AttrDefinitionRef {
                         attr_def_ref: ATTR_DEF_TAGS.into(),
                     },
@@ -1141,6 +1132,39 @@ pub fn build_reqif(artifacts: &[Artifact]) -> ReqIfRoot {
             },
         },
     }
+}
+
+/// Encode `tags` as a JSON array string for ReqIF transport.
+///
+/// The previous implementation joined with `", "` and split on `,` — any
+/// tag containing a comma (e.g. `"safety, critical"`) or leading
+/// whitespace got mangled on round-trip.  JSON array form is predictable,
+/// reversible, and uses a well-known escaping convention that all ReqIF
+/// consumers understand as a plain string.
+///
+/// For backward compatibility the importer also accepts the legacy
+/// comma-joined form, so files produced by older rivet versions or other
+/// tools keep working (see `decode_tags`).
+fn encode_tags(tags: &[String]) -> String {
+    if tags.is_empty() {
+        return String::new();
+    }
+    serde_json::to_string(tags).unwrap_or_default()
+}
+
+/// Decode a tags attribute value.  Preferred form is a JSON array;
+/// falls back to comma-split for backward compatibility.
+fn decode_tags(s: &str) -> Vec<String> {
+    let trimmed = s.trim_start();
+    if trimmed.starts_with('[') {
+        if let Ok(v) = serde_json::from_str::<Vec<String>>(s) {
+            return v;
+        }
+    }
+    s.split(',')
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty())
+        .collect()
 }
 
 /// Encode a `serde_yaml::Value` as a ReqIF ATTRIBUTE-VALUE-STRING string.
@@ -1594,6 +1618,57 @@ mod tests {
         assert_eq!(re.len(), 1);
         // Null is not present after round-trip (attribute omitted).
         assert!(re[0].fields.get("deprecated").is_none());
+    }
+
+    /// Tags containing commas or leading whitespace must round-trip intact.
+    /// Regression for the bug at `reqif.rs:953-958` vs `reqif.rs:672-679`:
+    /// previously the exporter joined with `, ` and the importer split on
+    /// `,`, so any tag with a comma was silently split on re-import.
+    // rivet: verifies REQ-025
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_tags_with_special_chars_roundtrip() {
+        let art = Artifact {
+            id: "REQ-TAGS".into(),
+            artifact_type: "requirement".into(),
+            title: "Tags with specials".into(),
+            description: None,
+            status: None,
+            tags: vec![
+                "safety, critical".into(), // contains comma
+                " leading-space".into(),   // leading whitespace
+                "plain".into(),
+                "with \"quotes\"".into(),
+            ],
+            links: vec![],
+            fields: BTreeMap::new(),
+            provenance: None,
+            source_file: None,
+        };
+
+        let adapter = ReqIfAdapter::new();
+        let config = AdapterConfig::default();
+        let bytes = adapter.export(&[art.clone()], &config).unwrap();
+        let re = adapter
+            .import(&AdapterSource::Bytes(bytes), &config)
+            .unwrap();
+        assert_eq!(re.len(), 1);
+        assert_eq!(
+            re[0].tags, art.tags,
+            "tags with commas/whitespace lost on round-trip"
+        );
+    }
+
+    /// Legacy comma-joined tags (from older rivet exports or other tools)
+    /// are still parsed correctly on import — backward-compat contract.
+    // rivet: verifies REQ-025
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_tags_legacy_comma_form_parses() {
+        assert_eq!(
+            decode_tags("alpha, beta , gamma"),
+            vec!["alpha".to_string(), "beta".to_string(), "gamma".to_string()]
+        );
     }
 
     /// Files without any provenance attributes parse back to `None` — the
