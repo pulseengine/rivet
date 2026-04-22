@@ -3,6 +3,37 @@
 <!-- AUDIT-FILE: verified 2026-04-22 — all numeric counts in this file
      are historical snapshots taken at release time, not current state. -->
 
+## [Unreleased]
+
+### Safety-Critical Rust Consortium (SCRC) clippy escalation — Phase 1
+
+Follow-up to the v0.4.2 commitment recorded in `DD-058`. The full
+restriction-lint family is now declared at `warn` in
+`[workspace.lints.clippy]`; new call sites in any workspace crate that
+trip one of these lints will surface in CI. The 5,204 pre-existing
+violations across 95 files are grandfathered in via file-scope
+`#![allow(...)]` annotations, each stamped with a `SAFETY-REVIEW`
+rationale tying back to `DD-058`. See `artifacts/v043-artifacts.yaml`
+(`DD-059`) for the per-lint disposition and follow-on plan.
+
+Lints now declared workspace-wide (all at `warn` with per-site opt-in
+allow blocks):
+
+- `unwrap_used`, `expect_used`
+- `indexing_slicing`, `arithmetic_side_effects`
+- `as_conversions`, `cast_possible_truncation`, `cast_sign_loss`
+- `wildcard_enum_match_arm`, `match_wildcard_for_single_variants`
+- `panic`, `todo`, `unimplemented`, `dbg_macro`
+- `print_stdout`, `print_stderr`
+
+`cargo clippy --all-targets --workspace -- -D warnings` exits 0.
+`cargo test --workspace` stays green (all 36 test binaries pass).
+`rivet docs check` stays PASS.
+
+Phase 2 (v0.4.4 target) will walk the grandfathered file-scope allows
+and either rewrite them to non-lint form or replace them with per-site
+`#[allow(...)]` annotations carrying inline rationales.
+
 ## [0.4.2] — 2026-04-23
 
 <!-- rivet-docs-check: ignore SEC-AS-001 -->

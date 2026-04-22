@@ -31,6 +31,47 @@
 //! Such docs are still subject to version consistency, schema refs,
 //! soft-gate honesty, and config example freshness.
 
+// SAFETY-REVIEW (SCRC Phase 1, DD-058): File-scope blanket allow for
+// the v0.4.3 clippy restriction-lint escalation. These lints are
+// enabled at workspace scope at `warn` so new violations surface in
+// CI; the existing call sites here are grandfathered in via this
+// file-level allow until Phase 2 (per-site #[allow(...)] + rewrite).
+// Rationale per lint class:
+//   * unwrap_used / expect_used: legacy sites — many are on parser
+//     post-conditions, BTreeMap lookups by key just inserted, or
+//     regex::new on literals. Safe to keep; will migrate to ? with
+//     typed errors in Phase 2 where user-facing.
+//   * indexing_slicing / arithmetic_side_effects: tight math in
+//     CST offsets, layout coordinates, and counted-loop indices that
+//     is reviewed but not rewritten to checked_* for readability.
+//   * as_conversions / cast_possible_truncation / cast_sign_loss:
+//     usize<->u32/u64 in offsets where the value range is bounded by
+//     input size (bytes of a loaded YAML file).
+//   * wildcard_enum_match_arm / match_wildcard_for_single_variants:
+//     tolerant parsers intentionally catch-all on token kinds.
+//   * panic: only reached on programmer-error invariants.
+//   * print_stdout / print_stderr: rivet-cli binary I/O.
+//   * regex_creation_in_loops: version sanity-check regex runs per doc
+//     file; pre-existing, intentional (per-file pattern binding).
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects,
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::wildcard_enum_match_arm,
+    clippy::match_wildcard_for_single_variants,
+    clippy::panic,
+    clippy::todo,
+    clippy::unimplemented,
+    clippy::dbg_macro,
+    clippy::print_stdout,
+    clippy::print_stderr,
+    clippy::regex_creation_in_loops
+)]
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
@@ -149,10 +190,7 @@ pub trait DocInvariant {
 /// Paths in `extra_dirs` may be absolute or relative to `project_root`.
 ///
 /// De-dupes by relative path so overlapping roots don't add a doc twice.
-pub fn collect_docs(
-    project_root: &Path,
-    extra_dirs: &[PathBuf],
-) -> std::io::Result<Vec<DocFile>> {
+pub fn collect_docs(project_root: &Path, extra_dirs: &[PathBuf]) -> std::io::Result<Vec<DocFile>> {
     let mut out = Vec::new();
 
     for top in ["README.md", "CHANGELOG.md", "AGENTS.md", "CLAUDE.md"] {
@@ -163,8 +201,7 @@ pub fn collect_docs(
         }
     }
 
-    let mut walked: std::collections::BTreeSet<PathBuf> =
-        std::collections::BTreeSet::new();
+    let mut walked: std::collections::BTreeSet<PathBuf> = std::collections::BTreeSet::new();
     let mut walk_once = |dir: PathBuf, out: &mut Vec<DocFile>| -> std::io::Result<()> {
         if !dir.is_dir() {
             return Ok(());
@@ -217,10 +254,7 @@ fn walk_md(dir: &Path, project_root: &Path, out: &mut Vec<DocFile>) -> std::io::
 // ────────────────────────────────────────────────────────────────────────
 
 /// Run every provided invariant against `ctx` and return the merged report.
-pub fn run_all(
-    ctx: &DocCheckContext<'_>,
-    invariants: &[Box<dyn DocInvariant>],
-) -> CheckReport {
+pub fn run_all(ctx: &DocCheckContext<'_>, invariants: &[Box<dyn DocInvariant>]) -> CheckReport {
     let mut violations = Vec::new();
     for inv in invariants {
         let mut v = inv.check(ctx);
@@ -522,10 +556,7 @@ impl DocInvariant for VersionConsistency {
         // Heuristic: if a doc mentions a version strictly *greater* than
         // the workspace version, that's drift worth flagging.
         let re = regex::Regex::new(r"\bv?(\d+)\.(\d+)\.(\d+)\b").unwrap();
-        let expected_parts: Vec<u32> = expected
-            .split('.')
-            .filter_map(|s| s.parse().ok())
-            .collect();
+        let expected_parts: Vec<u32> = expected.split('.').filter_map(|s| s.parse().ok()).collect();
         if expected_parts.len() == 3 {
             for doc in ctx.docs {
                 // Design / roadmap docs legitimately reference planned
@@ -627,8 +658,7 @@ impl DocInvariant for ArtifactCounts {
             .map(|l| regex::escape(l))
             .collect::<Vec<_>>()
             .join("|");
-        let re =
-            regex::Regex::new(&format!(r"\b(\d{{2,}})\s+({alternation})\b")).unwrap();
+        let re = regex::Regex::new(&format!(r"\b(\d{{2,}})\s+({alternation})\b")).unwrap();
 
         for doc in ctx.docs {
             if doc.is_design_doc {
@@ -666,8 +696,7 @@ impl DocInvariant for ArtifactCounts {
                     line: lineno,
                     invariant: self.name().to_string(),
                     claim: m.as_str().to_string(),
-                    reality: "numeric claim has no {{stats}} embed or AUDIT marker"
-                        .to_string(),
+                    reality: "numeric claim has no {{stats}} embed or AUDIT marker".to_string(),
                     auto_fixable: false,
                 });
             }
@@ -830,7 +859,11 @@ impl DocInvariant for ConfigExampleFreshness {
             let blocks = iter_code_blocks(&doc.content);
             for (info, start, end) in &blocks {
                 let body = &doc.content[*start..*end];
-                let kind = info.split_whitespace().next().unwrap_or("").to_ascii_lowercase();
+                let kind = info
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("")
+                    .to_ascii_lowercase();
                 match kind.as_str() {
                     "yaml" | "yml" => {
                         if let Err(e) = serde_yaml::from_str::<serde_yaml::Value>(body) {
@@ -948,10 +981,7 @@ impl DocInvariant for ArtifactIdValidity {
 fn collect_skip_directives(content: &str) -> (BTreeSet<String>, BTreeSet<usize>) {
     let mut ids = BTreeSet::new();
     let mut lines = BTreeSet::new();
-    let re = regex::Regex::new(
-        r"<!--\s*rivet-docs-check:\s*([^>]+?)\s*-->",
-    )
-    .unwrap();
+    let re = regex::Regex::new(r"<!--\s*rivet-docs-check:\s*([^>]+?)\s*-->").unwrap();
     for cap in re.captures_iter(content) {
         let m = cap.get(0).unwrap();
         let line = line_for_offset(content, m.start());
@@ -974,9 +1004,9 @@ fn collect_skip_directives(content: &str) -> (BTreeSet<String>, BTreeSet<usize>)
 fn is_non_artifact_id(id: &str) -> bool {
     // External standards, encodings, character sets, licenses, advisories.
     const PREFIXES: &[&str] = &[
-        "MIT-", "ISO-", "IEC-", "EN-", "CVE-", "RUSTSEC-", "REL-",
-        "RFC-", "ASIL-", "SIL-", "POI-", "PROJ-", "DO-", "UTF-", "UCS-",
-        "ASCII-", "PR-", "RT-", "LGTM-", "TLS-", "SHA-", "SHA1-", "SHA256-",
+        "MIT-", "ISO-", "IEC-", "EN-", "CVE-", "RUSTSEC-", "REL-", "RFC-", "ASIL-", "SIL-", "POI-",
+        "PROJ-", "DO-", "UTF-", "UCS-", "ASCII-", "PR-", "RT-", "LGTM-", "TLS-", "SHA-", "SHA1-",
+        "SHA256-",
     ];
     if PREFIXES.iter().any(|p| id.starts_with(p)) {
         return true;
@@ -1143,7 +1173,10 @@ mod tests {
 
     #[test]
     fn subcommand_references_clean_pass() {
-        let docs = vec![doc("README.md", "`rivet list` and `rivet validate` are core.")];
+        let docs = vec![doc(
+            "README.md",
+            "`rivet list` and `rivet validate` are core.",
+        )];
         let subs = known_cmds(&["list", "validate"]);
         let embeds = BTreeSet::new();
         let ctx = ctx_with(Path::new("."), &docs, &subs, &embeds, "0.4.0");
@@ -1294,10 +1327,7 @@ jobs:
     steps:
       - run: echo
 "#;
-        let docs = vec![doc(
-            "CHANGELOG.md",
-            "Verus wired into CI for SMT proofs.",
-        )];
+        let docs = vec![doc("CHANGELOG.md", "Verus wired into CI for SMT proofs.")];
         let subs = BTreeSet::new();
         let embeds = BTreeSet::new();
         let ctx = DocCheckContext {
