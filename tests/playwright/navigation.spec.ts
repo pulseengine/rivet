@@ -39,4 +39,29 @@ test.describe("Navigation", () => {
     const btn = page.locator('button:has-text("Reload")');
     await expect(btn).toBeVisible();
   });
+
+  // Regression: clicking Reload used to target #content only via
+  // HX-Location, so the sidebar badges (artifact count, doc count,
+  // variant count, STPA count) stayed stale after reload. Now uses
+  // HX-Redirect to drive a full browser navigation that re-renders
+  // the whole shell. We can't make the file-system change the backend
+  // reads in this test, so we pin the contract instead: the reload
+  // response must arrive as an HX-Redirect (full navigation), not an
+  // HX-Location (partial swap). That's what keeps the sidebar fresh.
+  test("reload triggers full-page navigation (HX-Redirect, not HX-Location)", async ({
+    page,
+  }) => {
+    await page.goto("/artifacts");
+    const resp = page.waitForResponse(
+      (r) => r.url().endsWith("/reload") && r.request().method() === "POST",
+    );
+    await page.locator('button:has-text("Reload")').click();
+    const response = await resp;
+    expect(response.status()).toBe(200);
+    const headers = response.headers();
+    // Either-or: the old bad shape (HX-Location targeting #content)
+    // would leave the sidebar stale. The fix is a full navigation.
+    expect(headers["hx-redirect"]).toBeDefined();
+    expect(headers["hx-location"]).toBeUndefined();
+  });
 });
