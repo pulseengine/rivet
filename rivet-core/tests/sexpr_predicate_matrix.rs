@@ -467,6 +467,77 @@ fn linked_from_rejects_wrong_arity() {
     assert!(errs.iter().any(|e| e.message.contains("'linked-from'")));
 }
 
+/// Regression: the source-filter argument of `linked-from` was silently
+/// ignored. `(linked-from "satisfies" "REQ-A")` must only match when
+/// REQ-A is actually the source of an incoming satisfies link.
+#[test]
+fn linked_from_source_filter_is_honoured() {
+    // Two different requirements both link into SC-1 via satisfies.
+    let req_a = Artifact {
+        id: "REQ-A".into(),
+        artifact_type: "requirement".into(),
+        title: "A".into(),
+        description: None,
+        status: None,
+        tags: vec![],
+        links: vec![Link {
+            link_type: "satisfies".into(),
+            target: "SC-1".into(),
+        }],
+        fields: BTreeMap::new(),
+        provenance: None,
+        source_file: None,
+    };
+    let req_b = Artifact {
+        id: "REQ-B".into(),
+        artifact_type: "requirement".into(),
+        title: "B".into(),
+        description: None,
+        status: None,
+        tags: vec![],
+        links: vec![Link {
+            link_type: "satisfies".into(),
+            target: "SC-1".into(),
+        }],
+        fields: BTreeMap::new(),
+        provenance: None,
+        source_file: None,
+    };
+    let sc = Artifact {
+        id: "SC-1".into(),
+        artifact_type: "system-constraint".into(),
+        title: "SC".into(),
+        description: None,
+        status: None,
+        tags: vec![],
+        links: vec![],
+        fields: BTreeMap::new(),
+        provenance: None,
+        source_file: None,
+    };
+    let mut store = Store::default();
+    store.upsert(req_a);
+    store.upsert(req_b);
+    store.upsert(sc.clone());
+    let graph = LinkGraph::build(&store, &Schema::merge(&[]));
+
+    // Specific existing source → matches.
+    let specific = sexpr_eval::parse_filter(r#"(linked-from "satisfies" "REQ-A")"#).unwrap();
+    assert!(matches_filter_with_store(&specific, &sc, &graph, &store));
+
+    // Wildcard also matches.
+    let wild = sexpr_eval::parse_filter(r#"(linked-from "satisfies" _)"#).unwrap();
+    assert!(matches_filter_with_store(&wild, &sc, &graph, &store));
+
+    // Non-existent source MUST not match — this is the bug fix.
+    let missing =
+        sexpr_eval::parse_filter(r#"(linked-from "satisfies" "REQ-NOPE")"#).unwrap();
+    assert!(
+        !matches_filter_with_store(&missing, &sc, &graph, &store),
+        "`(linked-from \"satisfies\" \"REQ-NOPE\")` must not match when no such source exists"
+    );
+}
+
 // ── links-count ────────────────────────────────────────────────────────
 
 #[test]

@@ -58,6 +58,8 @@ pub enum Expr {
     /// `(linked-by "satisfies" _)` — has outgoing link of type.
     LinkedBy(Value, Value),
     /// `(linked-from "implements" _)` — has incoming link of type.
+    /// Second argument restricts the source: `_` matches any source,
+    /// otherwise the incoming link's source id must match exactly.
     LinkedFrom(Value, Value),
     /// `(linked-to "SPEC-021")` — has a link targeting specific ID.
     LinkedTo(Value),
@@ -190,10 +192,13 @@ pub fn check(expr: &Expr, ctx: &EvalContext) -> bool {
                 l.link_type == lt && (matches!(target, Value::Wildcard) || l.target == tgt)
             })
         }
-        Expr::LinkedFrom(link_type, _source) => {
+        Expr::LinkedFrom(link_type, source) => {
             let lt = value_to_str(link_type);
             let backlinks = ctx.graph.backlinks_to(&ctx.artifact.id);
-            backlinks.iter().any(|bl| bl.link_type == lt)
+            backlinks.iter().any(|bl| {
+                bl.link_type == lt
+                    && (matches!(source, Value::Wildcard) || bl.source == value_to_str(source))
+            })
         }
         Expr::LinkedTo(target_id) => {
             let tgt = value_to_str(target_id);
