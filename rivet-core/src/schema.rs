@@ -642,7 +642,20 @@ impl Schema {
 
         for file in files {
             for at in &file.artifact_types {
-                artifact_types.insert(at.name.clone(), at.clone());
+                let mut at = at.clone();
+                // Populate shorthand_links from link_fields so the YAML
+                // parser recognises named-field forms like `targets: [X]`
+                // as equivalent to `links: [{type: threatens, target: X}]`.
+                // Without this, cardinality validation silently skips the
+                // named-field form and "required" links appear absent.
+                for lf in &at.link_fields {
+                    if lf.name != "links" {
+                        at.shorthand_links
+                            .entry(lf.name.clone())
+                            .or_insert_with(|| lf.link_type.clone());
+                    }
+                }
+                artifact_types.insert(at.name.clone(), at);
             }
             for lt in &file.link_types {
                 if let Some(inv) = &lt.inverse {

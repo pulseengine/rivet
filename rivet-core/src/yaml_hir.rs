@@ -912,8 +912,14 @@ fn extract_links(value_node: &SyntaxNode) -> Vec<Link> {
     let mut links = Vec::new();
 
     // Links is a Sequence of Mappings: each with "type" + "target".
+    // If the CST didn't produce a block Sequence (e.g. the user wrote
+    // flow-style `links: [{type: X, target: Y}]`, which the CST parser
+    // records as FlowSequence without nested FlowMapping nodes), fall back
+    // to a serde_yaml reparse of the value text — this guarantees flow
+    // and block styles produce identical links and prevents silent
+    // under-counting by the cardinality validator.
     let Some(seq) = child_of_kind(value_node, SyntaxKind::Sequence) else {
-        return links;
+        return extract_links_via_serde(value_node);
     };
 
     for item in seq.children() {
@@ -961,6 +967,37 @@ fn extract_links(value_node: &SyntaxNode) -> Vec<Link> {
     }
 
     links
+}
+
+/// Fallback parser for `links:` values the CST didn't recognise as a block
+/// `Sequence` — most importantly flow-style `[{type: X, target: Y}, ...]`.
+/// Re-parses the value text via serde_yaml and converts `type` + `target`
+/// into `Link`s. Unknown shapes and parse errors silently produce no
+/// links (matching the permissive behaviour of the primary path).
+fn extract_links_via_serde(value_node: &SyntaxNode) -> Vec<Link> {
+    #[derive(serde::Deserialize)]
+    struct RawLink {
+        #[serde(rename = "type")]
+        link_type: Option<String>,
+        target: Option<String>,
+    }
+    let text = value_node.text().to_string();
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+    let Ok(raws) = serde_yaml::from_str::<Vec<RawLink>>(trimmed) else {
+        return Vec::new();
+    };
+    raws.into_iter()
+        .filter_map(|r| match (r.link_type, r.target) {
+            (Some(t), Some(tgt)) if !t.is_empty() && !tgt.is_empty() => Some(Link {
+                link_type: t,
+                target: tgt,
+            }),
+            _ => None,
+        })
+        .collect()
 }
 
 // ── Provenance extraction ─────────────────────────────────────────────
@@ -1466,6 +1503,47 @@ artifacts:
         assert_eq!(links[0].target, "B-1");
         assert_eq!(links[1].link_type, "derives-from");
         assert_eq!(links[1].target, "B-2");
+    }
+
+    /// 3b. Flow-style link syntax produces identical links to block-style.
+    /// Regression guard: v0.4.1 parsed flow-style but the cardinality counter
+    /// saw zero links, so required-link validation silently passed even when
+    /// the required link was missing (the flow-style version was accepted).
+    #[test]
+    fn links_extraction_flow_style_matches_block_style() {
+        let flow = "\
+artifacts:
+  - id: A-1
+    type: req
+    title: Flow style
+    links: [{ type: satisfies, target: B-1 }, { type: derives-from, target: B-2 }]
+";
+        let block = "\
+artifacts:
+  - id: A-1
+    type: req
+    title: Block style
+    links:
+      - type: satisfies
+        target: B-1
+      - type: derives-from
+        target: B-2
+";
+        let flow_hir = extract_generic_artifacts(flow);
+        let block_hir = extract_generic_artifacts(block);
+        assert_eq!(flow_hir.artifacts.len(), 1, "flow: no artifact parsed");
+        assert_eq!(block_hir.artifacts.len(), 1, "block: no artifact parsed");
+        let flow_links = &flow_hir.artifacts[0].artifact.links;
+        let block_links = &block_hir.artifacts[0].artifact.links;
+        assert_eq!(
+            flow_links, block_links,
+            "flow-style and block-style must yield identical links — got flow={flow_links:?} block={block_links:?}",
+        );
+        assert_eq!(
+            flow_links.len(),
+            2,
+            "flow-style links under-counted: got {flow_links:?}"
+        );
     }
 
     /// 4. Custom fields stored as serde_yaml::Value correctly.
