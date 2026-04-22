@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1776841345088,
+  "lastUpdate": 1776841901825,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "80d9e66e28a478a62e25b53230ed72158612b7f4",
-          "message": "test(mcp): integration tests for query, modify, link, unlink, remove\n\nVerifies: REQ-007\n\nCo-authored-by: Claude Opus 4.6 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-04-13T13:05:16-05:00",
-          "tree_id": "999d0796b1f4e57152c7333dedc3aa291f617d87",
-          "url": "https://github.com/pulseengine/rivet/commit/80d9e66e28a478a62e25b53230ed72158612b7f4"
-        },
-        "date": 1776103893963,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 81749,
-            "range": "± 20279",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 869325,
-            "range": "± 5500",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 13543137,
-            "range": "± 734560",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2113,
-            "range": "± 8",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 25603,
-            "range": "± 321",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 379059,
-            "range": "± 2507",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 96,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1019421,
-            "range": "± 12852",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 166214,
-            "range": "± 783",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1899250,
-            "range": "± 29385",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 30398616,
-            "range": "± 1469412",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 109051,
-            "range": "± 594",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 904643,
-            "range": "± 12004",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 12318391,
-            "range": "± 805830",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4409,
-            "range": "± 16",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 60901,
-            "range": "± 886",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 767849,
-            "range": "± 6347",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 61221,
-            "range": "± 227",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 682518,
-            "range": "± 6426",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 8421940,
-            "range": "± 572168",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 844,
-            "range": "± 31",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 8069,
-            "range": "± 34",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 113476,
-            "range": "± 666",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 23407,
-            "range": "± 82",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 161209,
-            "range": "± 641",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1505030,
-            "range": "± 16411",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1549161,
             "range": "± 28067",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ec093ec1eb089e236fd7cbf6bd3bfec177a37fd3",
+          "message": "fix(v0.4.1): 5 user-reported pain points (#3, #4, #6, #7, #8) (#174)\n\n* docs+feat(variant): feature-model schema reference + init scaffolder\n\nPain point: users reverse-engineer the feature-model YAML schema because\n`rivet variant --help` has no field reference and `selects:` vs\n`selected:` / group types / s-expression constraint syntax / bindings\nfile shape are undocumented.\n\nChanges:\n- Add docs/feature-model-schema.md: top-level reference for feature\n  model YAML (root, features, group types, constraint syntax) with a\n  worked example.\n- Add docs/feature-model-bindings.md: dedicated binding file reference.\n- Link both from docs/getting-started.md.\n- Variant subcommand doc-comment now points at the schema reference so\n  `rivet variant --help` surfaces it.\n- Add `rivet variant init <name>` scaffolder that writes a starter\n  feature-model.yaml + bindings/<name>.yaml with comments documenting\n  every field.\n\nTests: 3 new integration tests in rivet-cli/tests/variant_init.rs\ncovering scaffolded file contents, overwrite protection, and that the\nscaffolded template parses clean via `rivet variant list`.\n\nImplements: REQ-042, REQ-043, REQ-044\nRefs: REQ-046\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n* fix(hooks): pre-commit hook walks up to find rivet.yaml (marker discovery)\n\nPain point: `rivet init --hooks` emitted a pre-commit hook that ran\n`rivet validate` at the git root. If the rivet project is relocated\ninside the working tree (e.g. moved to subdir/), the hook either\nsilently validates the wrong directory or fails to find rivet.yaml.\n\nFix: the installed pre-commit hook now walks up from $PWD until it\nfinds a directory containing rivet.yaml, then cd's there before\ninvoking `rivet validate`. If no rivet.yaml exists in the ancestor\nchain, the hook exits 0 silently so it does not block commits in\nunrelated repositories.\n\nTests: rivet-cli/tests/hooks_install.rs adds 2 integration tests — one\nverifies the hook body does not embed a hard-coded -p/--project flag and\nuses the walk-up pattern; one stages a fresh project, moves rivet.yaml\ninto a subdirectory, and confirms the hook still discovers it when run\nfrom a nested path.\n\nFixes: REQ-051\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n* feat(variant): check-all + optional --variant on validate (API ergonomics)\n\nPain point: variant-scoped validation required --model, --variant, and\n--binding to be passed together — there was no way to validate just\nmodel/binding consistency, and no single-invocation way to assert a\nwhole batch of variants is valid.\n\nChanges:\n- `rivet validate --model X --binding Y` (no --variant) now parses the\n  model, parses the binding, and checks that every feature referenced\n  in the binding exists in the model. Reports a clear diagnostic on\n  unknown feature names instead of the old \"must all be provided\n  together\" error. The full --model + --variant + --binding mode is\n  unchanged.\n- `rivet variant check-all --model M --binding B` iterates every\n  variant declared under `variants:` in the binding file, prints a\n  PASS/FAIL line per variant, and exits non-zero if any fail.\n- `FeatureBinding` in rivet-core grows an optional `variants:` field\n  (default empty) so the same file can carry bindings and declared\n  variants without schema churn.\n\nTests: 5 new integration tests in rivet-cli/tests/variant_scoped_api.rs\ncover the no-variant validate mode, the unknown-feature diagnostic,\ncheck-all exit codes for mixed/all-pass fixtures, and JSON output shape.\nExisting feature_model unit tests still pass (binding YAML is\nbackward-compatible — `variants:` defaults to empty).\n\nImplements: REQ-044, REQ-045, REQ-046\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n* fix(sexpr): semantic notes on filter parse errors\n\nPain point: `[FilterError { offset: 14, message: \"unexpected atom at\ntop level\" }]` exposed parser internals. Users writing `A and B`,\n`and A B`, or `(bogus A B)` got a positional offset with no hint that\nthey were using the wrong syntax.\n\nFix: extend `FilterError` with an optional `note` field, populated by a\nclassifier that inspects the source before parsing. Three common shapes\nget a semantic nudge:\n  - bare infix (`A and B`) → suggest `(and A B)`.\n  - missing outer parens (`and A B`) → suggest wrapping it.\n  - unknown head (`(bogus …)`) → reference the supported form list.\n`FilterError::Display` renders the positional detail followed by the\nnote on a new line. Feature-model constraint errors now format via\nDisplay instead of Debug, so the note bubbles out through\n`rivet variant check` / `rivet validate --model` paths.\n\nTests: 4 new unit tests in sexpr_eval covering the three error shapes\nplus a success case that must carry no note. All pre-existing tests\nunchanged.\n\nFixes: REQ-043\nImplements: REQ-042\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n* feat(variant-solve): per-feature origin tracking (selected vs mandatory vs implied)\n\nPain point: `rivet variant solve` output mixed user-picked features with\nones the solver added via mandatory-group propagation or constraint\nimplication. A flat list like `base, auth, oauth, token-cache, metrics`\ndidn't tell the user which features were their intent and which were\ndownstream effects.\n\nMinimum-impact change per scope-limits brief (risk of conflict with\nPR #156 cross-tree constraint work):\n- Extend `ResolvedVariant` with a per-feature `origins: BTreeMap<String,\n  FeatureOrigin>` where FeatureOrigin is UserSelected / Mandatory /\n  ImpliedBy(name) / AllowedButUnbound.\n- Populate origins alongside the existing selected-set fixpoint loop —\n  no algorithmic changes. First-reason-wins on insertion so user\n  selection beats later mandatory/implied discoveries.\n- Text output of `rivet variant solve` prints one feature per line,\n  prefixed with `+`, labeled (mandatory) / (selected) / (implied by X).\n- JSON output is strictly additive: `effective_features` + `feature_count`\n  preserved, new `origins` object keyed by feature name.\n\nTests:\n- 4 new unit tests in rivet-core/src/feature_model.rs covering each\n  origin variant.\n- 2 new integration tests in rivet-cli/tests/variant_solve_origins.rs\n  asserting text prefixes/labels and JSON backwards compatibility.\n- All 15 pre-existing feature_model unit tests still pass; all 6\n  proptest_feature_model properties still hold.\n\nImplements: REQ-043, REQ-046\nRefs: REQ-052\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.7 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-04-22T00:32:13-05:00",
+          "tree_id": "a752f13702e3de6aea7757c820a5549510722dda",
+          "url": "https://github.com/pulseengine/rivet/commit/ec093ec1eb089e236fd7cbf6bd3bfec177a37fd3"
+        },
+        "date": 1776841901385,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 80953,
+            "range": "± 666",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 856517,
+            "range": "± 7367",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 12537279,
+            "range": "± 648516",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2205,
+            "range": "± 9",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 26488,
+            "range": "± 132",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 376680,
+            "range": "± 6983",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1003470,
+            "range": "± 11170",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 160605,
+            "range": "± 1496",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1894233,
+            "range": "± 15650",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 24722751,
+            "range": "± 589888",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 109140,
+            "range": "± 466",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 919630,
+            "range": "± 6164",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 10029428,
+            "range": "± 280437",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4265,
+            "range": "± 42",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 59637,
+            "range": "± 315",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 758953,
+            "range": "± 3808",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 63192,
+            "range": "± 340",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 689828,
+            "range": "± 5949",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7627965,
+            "range": "± 156473",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 775,
+            "range": "± 8",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7516,
+            "range": "± 40",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 120861,
+            "range": "± 1266",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 22560,
+            "range": "± 91",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 157621,
+            "range": "± 1656",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1483546,
+            "range": "± 23154",
             "unit": "ns/iter"
           }
         ]
