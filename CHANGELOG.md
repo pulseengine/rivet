@@ -30,9 +30,9 @@ allow blocks):
 `cargo test --workspace` stays green (all 36 test binaries pass).
 `rivet docs check` stays PASS.
 
-Phase 2 (v0.4.4 target) will walk the grandfathered file-scope allows
-and either rewrite them to non-lint form or replace them with per-site
-`#[allow(...)]` annotations carrying inline rationales.
+Phase 2 (tracked as DD-060) will walk the grandfathered file-scope
+allows and either rewrite them to non-lint form or replace them with
+per-site `#[allow(...)]` annotations carrying inline rationales.
 
 ## [0.4.2] — 2026-04-23
 

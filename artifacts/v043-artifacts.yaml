@@ -3,7 +3,7 @@
 # Phase 1 of the staged roadmap committed in DD-058: add the full SCRC
 # restriction-lint family at workspace-lints.clippy level `warn`, with
 # file-scope blanket #![allow(...)] + SAFETY-REVIEW rationale for every
-# grandfathered call site. Phase 2 (v0.4.4 target) will rewrite or
+# grandfathered call site. Phase 2 (tracked in DD-060) will rewrite or
 # replace those file-scope allows with per-site #[allow(...)] blocks.
 
 artifacts:
