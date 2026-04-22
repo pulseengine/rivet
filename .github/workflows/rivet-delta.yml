@@ -7,6 +7,13 @@ name: Rivet Delta
 # for deep inspection. The comment is updated in place on subsequent
 # pushes via a hidden marker (<!-- rivet-delta-bot -->).
 #
+# v0.4.3: the mermaid diagram is also pre-rendered to SVG and pushed to
+# an orphan branch (`rivet-delta-renders`) so the graph shows up in email
+# notifications and the GitHub mobile app — both of which display
+# ```mermaid fenced blocks as raw source rather than rendering them.
+# The interactive mermaid block is still preserved in a collapsed
+# <details> below the image for the GitHub web UI.
+#
 # This is informational — the workflow never blocks a merge. If the diff
 # can't be computed (parse errors, missing base, etc.) it posts a
 # warning comment instead of failing.
@@ -23,7 +30,10 @@ on:
       - "scripts/diff-to-markdown.mjs"
 
 permissions:
-  contents: read
+  # `contents: write` needed for the SVG-to-orphan-branch push step.
+  # Everything else stays read-only; pull-requests:write is for the
+  # comment bot only.
+  contents: write
   pull-requests: write
 
 concurrency:
@@ -43,6 +53,7 @@ jobs:
       BASE_SHA: ${{ github.event.pull_request.base.sha }}
       RUN_ID: ${{ github.run_id }}
       REPO: ${{ github.repository }}
+      RENDERS_BRANCH: rivet-delta-renders
     steps:
       - name: Checkout head
         uses: actions/checkout@v6
@@ -99,8 +110,10 @@ jobs:
             --version-label "pr-$PR_NUMBER" \
             --offline || echo "export failed" > delta-out/export.err
 
-      - name: Generate markdown summary
-        id: summary
+      # Pass 1 — generate markdown AND extract mermaid source to a file.
+      # The --svg-url is intentionally omitted; the second pass fills it in
+      # once we have the raw URL.
+      - name: Generate markdown (pass 1 — emit mermaid source)
         working-directory: head
         run: |
           set -euo pipefail
@@ -110,7 +123,116 @@ jobs:
             --pr "$PR_NUMBER" \
             --run "$RUN_ID" \
             --repo "$REPO" \
+            --mmd-out delta-out/diagram.mmd \
             > delta-out/comment.md
+
+      # Render the mermaid source to SVG only if the first pass emitted a
+      # diagram (empty diffs don't write diagram.mmd).
+      - name: Render mermaid → SVG
+        id: render
+        working-directory: head
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          if [ ! -s delta-out/diagram.mmd ]; then
+            echo "no diagram to render (empty diff)"
+            echo "rendered=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          npx -y -p @mermaid-js/mermaid-cli@11.4.2 mmdc \
+            -i delta-out/diagram.mmd \
+            -o delta-out/diagram.svg \
+            -b transparent
+          echo "rendered=true" >> "$GITHUB_OUTPUT"
+
+      # Push the SVG to a dedicated orphan branch so we get permanent,
+      # auth-free raw.githubusercontent.com URLs the email client and
+      # mobile app can fetch. Each PR-run gets its own path; history of
+      # prior renders stays viewable but can be GC'd by a separate
+      # workflow if the branch grows unwieldy.
+      - name: Push SVG to renders branch
+        if: steps.render.outputs.rendered == 'true'
+        id: push_svg
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          RENDERS_DIR="$RUNNER_TEMP/renders"
+          TARGET_DIR="pr-${PR_NUMBER}/run-${RUN_ID}"
+          SVG_PATH="${TARGET_DIR}/diagram.svg"
+
+          # Fetch the orphan branch if it exists; otherwise create it.
+          git clone --depth 1 --branch "$RENDERS_BRANCH" \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${REPO}.git" \
+            "$RENDERS_DIR" 2>/dev/null || {
+              git clone --depth 1 \
+                "https://x-access-token:${GITHUB_TOKEN}@github.com/${REPO}.git" \
+                "$RENDERS_DIR"
+              cd "$RENDERS_DIR"
+              git checkout --orphan "$RENDERS_BRANCH"
+              git rm -rf . 2>/dev/null || true
+              cat > README.md <<'EOF'
+          # rivet-delta-renders
+
+          Pre-rendered SVG diagrams for `rivet-delta` PR comments.
+          Paths: `pr-<N>/run-<RUN_ID>/diagram.svg`.
+
+          This branch is written by `.github/workflows/rivet-delta.yml`
+          so the graph embedded in PR comments renders in email
+          notifications and the GitHub mobile app (both of which show
+          `\`\`\`mermaid` fenced blocks as raw source).
+
+          Safe to prune old directories if size becomes a problem —
+          the only consumers are the comment `<img src>` references,
+          which become broken on deletion but don't block anything.
+          EOF
+              git add README.md
+              git commit -m "chore: initialize rivet-delta-renders branch"
+              git push origin "$RENDERS_BRANCH"
+          }
+
+          cd "$RENDERS_DIR"
+          mkdir -p "$TARGET_DIR"
+          cp "$GITHUB_WORKSPACE/head/delta-out/diagram.svg" "$SVG_PATH"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$SVG_PATH"
+          git commit -m "render: PR #${PR_NUMBER} run ${RUN_ID}"
+          git push origin "$RENDERS_BRANCH"
+
+          SVG_URL="https://raw.githubusercontent.com/${REPO}/${RENDERS_BRANCH}/${SVG_PATH}"
+          echo "svg_url=${SVG_URL}" >> "$GITHUB_OUTPUT"
+
+      # Pass 2 — re-generate the markdown with --svg-url so the comment
+      # body includes an <img> tag pointing at the raw URL. If the SVG
+      # render/push failed we skip this pass and the original
+      # mermaid-only comment stays.
+      - name: Generate markdown (pass 2 — inject SVG)
+        id: summary
+        if: steps.push_svg.outputs.svg_url != ''
+        working-directory: head
+        env:
+          SVG_URL: ${{ steps.push_svg.outputs.svg_url }}
+        run: |
+          set -euo pipefail
+          node scripts/diff-to-markdown.mjs \
+            --diff delta-out/diff.json \
+            --impact delta-out/impact.json \
+            --pr "$PR_NUMBER" \
+            --run "$RUN_ID" \
+            --repo "$REPO" \
+            --svg-url "$SVG_URL" \
+            > delta-out/comment.md
+          echo "comment_file=head/delta-out/comment.md" >> "$GITHUB_OUTPUT"
+
+      # Fallback path — if pass 2 was skipped (no SVG), use the pass-1
+      # comment we already generated.
+      - name: Expose pass-1 comment as fallback
+        if: steps.push_svg.outputs.svg_url == ''
+        id: summary_fallback
+        working-directory: head
+        run: |
           echo "comment_file=head/delta-out/comment.md" >> "$GITHUB_OUTPUT"
 
       - name: Upload delta artifacts
@@ -134,4 +256,4 @@ jobs:
           issue-number: ${{ github.event.pull_request.number }}
           comment-id: ${{ steps.find_comment.outputs.comment-id }}
           edit-mode: replace
-          body-path: ${{ steps.summary.outputs.comment_file }}
+          body-path: ${{ steps.summary.outputs.comment_file || steps.summary_fallback.outputs.comment_file }}

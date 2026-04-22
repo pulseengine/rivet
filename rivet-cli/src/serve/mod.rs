@@ -1242,10 +1242,15 @@ async fn reload_handler(
 
     match result {
         Ok(()) => {
-            // Redirect back to wherever the user was (HTMX sends HX-Current-URL).
-            // Extract the path portion from the full URL (e.g. "http://localhost:3001/documents/DOC-001" → "/documents/DOC-001").
-            // Navigate back to wherever the user was (HTMX sends HX-Current-URL).
-            // HX-Location does a client-side HTMX navigation (fetch + swap + push-url).
+            // Use HX-Redirect (full browser navigation) instead of
+            // HX-Location targeting #content. The sidebar badges
+            // (artifact count, document count, variant count, STPA
+            // count, diagnostic count) live OUTSIDE #content, so a
+            // partial swap left them stale after every reload. A full
+            // page navigation re-renders the whole shell — cheap
+            // because HTMX does the redirect in the same browser
+            // session and the prior page state was fetched just moments
+            // earlier.
             let redirect_url = headers
                 .get("HX-Current-URL")
                 .and_then(|v| v.to_str().ok())
@@ -1260,14 +1265,9 @@ async fn reload_handler(
                 })
                 .unwrap_or_else(|| "/".to_owned());
 
-            let location_json = format!(
-                "{{\"path\":\"{}\",\"target\":\"#content\"}}",
-                redirect_url.replace('"', "\\\"")
-            );
-
             (
                 axum::http::StatusCode::OK,
-                [("HX-Location", location_json)],
+                [("HX-Redirect", redirect_url)],
                 "reloaded".to_owned(),
             )
         }
@@ -1275,10 +1275,7 @@ async fn reload_handler(
             eprintln!("reload error: {e:#}");
             (
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                [(
-                    "HX-Location",
-                    "{\"path\":\"/\",\"target\":\"#content\"}".to_owned(),
-                )],
+                [("HX-Redirect", "/".to_owned())],
                 format!("reload failed: {e}"),
             )
         }

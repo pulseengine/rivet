@@ -6,11 +6,23 @@
 //   node scripts/diff-to-markdown.mjs \
 //     --diff path/to/diff.json \
 //     --impact path/to/impact.json \
-//     --pr 123 --run 456 --repo owner/name
+//     --pr 123 --run 456 --repo owner/name \
+//     [--mmd-out path/to/diagram.mmd] \
+//     [--svg-url https://raw.githubusercontent.com/.../diagram.svg]
 //
 // Emits markdown on stdout. The first line is a hidden HTML comment
 // marker (<!-- rivet-delta-bot -->) so the workflow can find-and-replace
 // the same comment on subsequent pushes.
+//
+// Two-pass invocation pattern in the workflow:
+//   1. First pass with --mmd-out to extract the mermaid source for the
+//      CLI renderer. Script emits the mermaid fenced block as usual.
+//   2. After SVG is rendered and pushed to the orphan branch, a second
+//      pass with --svg-url inserts an <img> reference above the mermaid
+//      block so the image shows up in email + mobile app (where
+//      mermaid fenced blocks render as raw source). The mermaid block
+//      stays wrapped in <details> so GitHub web users still get the
+//      interactive version.
 //
 // Guarantees:
 //   * Never throws on malformed input — emits a warning comment instead.
@@ -19,7 +31,7 @@
 //   * All inputs sanitised with `escapeMd` before rendering so artifact
 //     IDs or titles containing markdown metacharacters cannot break out.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { argv, stdout, stderr } from "node:process";
 
 const MARKER = "<!-- rivet-delta-bot -->";
@@ -35,6 +47,8 @@ function parseArgs(argv) {
     else if (arg === "--pr") out.pr = argv[++i];
     else if (arg === "--run") out.run = argv[++i];
     else if (arg === "--repo") out.repo = argv[++i];
+    else if (arg === "--mmd-out") out.mmdOut = argv[++i];
+    else if (arg === "--svg-url") out.svgUrl = argv[++i];
   }
   return out;
 }
@@ -99,12 +113,18 @@ function renderCountsTable({ added, removed, modified, impacted }) {
 }
 
 function renderMermaid({ added, removed, modified }) {
+  // Classification priority: added/removed > modified. If an ID shows up
+  // in more than one set (shouldn't happen from rivet diff, but defensive
+  // against malformed inputs), the terminal classification (it existed
+  // only on one side) wins over "modified in both". Earlier versions of
+  // this script had the opposite order and miscoloured new-file
+  // artifacts as modified.
   const nodes = new Map(); // id → class
-  for (const id of added) nodes.set(String(id), "added");
-  for (const id of removed) nodes.set(String(id), "removed");
   for (const m of modified) {
     if (m && m.id) nodes.set(String(m.id), "modified");
   }
+  for (const id of added) nodes.set(String(id), "added");
+  for (const id of removed) nodes.set(String(id), "removed");
 
   const total = nodes.size;
   if (total === 0) {
@@ -266,7 +286,39 @@ function main() {
   const { md: graph, truncated, total: nodeCount } = renderMermaid(n);
   if (graph) {
     md += "### Graph\n\n";
-    md += graph;
+
+    // If the workflow has already rendered the diagram to SVG and pushed
+    // it to the orphan branch, surface the image FIRST (renders in email
+    // notifications and the GitHub mobile app). The interactive mermaid
+    // block stays available below in a collapsed <details> for readers
+    // on the GitHub web UI.
+    if (args.svgUrl) {
+      md += `![Rivet artifact delta graph](${args.svgUrl})\n\n`;
+      md += "<details><summary>Interactive graph (mermaid source)</summary>\n\n";
+      md += graph;
+      md += "\n</details>\n\n";
+    } else {
+      md += graph;
+    }
+
+    // Write the mermaid source to disk for the workflow's SVG renderer.
+    // Only meaningful on the first pass (when --mmd-out is supplied);
+    // the second pass with --svg-url already has the SVG, so it will
+    // still write the file but the workflow ignores it.
+    if (args.mmdOut) {
+      try {
+        // Extract raw mermaid source from the fenced block (strip the
+        // ```mermaid and ``` fences so the CLI renderer sees pure
+        // graph syntax).
+        const m = graph.match(/```mermaid\n([\s\S]*?)```/);
+        if (m) {
+          writeFileSync(args.mmdOut, m[1]);
+        }
+      } catch (e) {
+        stderr.write(`diff-to-markdown: failed to write ${args.mmdOut}: ${e.message}\n`);
+      }
+    }
+
     if (truncated) {
       md += `\n_Showing first ${MERMAID_NODE_CAP} of ${nodeCount} changed artifacts; full list below._\n\n`;
     }
