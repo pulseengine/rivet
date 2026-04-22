@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1776894624135,
+  "lastUpdate": 1776895239534,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "60d728a29a18f3e2ba744128fdd274f2df0ee9a1",
-          "message": "fix(validate): salsa path silently drops adapter + external artifacts (#157)\n\n* fix(validate): inject adapter/external artifacts into salsa store\n\nThe default (salsa-incremental) validation path only fed YAML source\nfiles into the salsa database — it silently dropped artifacts produced\nby non-YAML adapters (aadl, reqif, needs-json, wasm) and never loaded\nexternal-project artifacts at all. Any link whose target lived in\nadapter output (e.g. a YAML artifact with `modeled-by -> AADL-Foo-Bar`\nor `analyzes -> AADL-*`) or in an external project (`spar:SPAR-*`) was\nflagged as a phantom \"link target does not exist\" broken-link\ndiagnostic. The only workaround was `rivet validate --direct`, which\nbypasses salsa and loads everything through `ProjectContext::load`.\n\nFix:\n\n* rivet-core/src/db.rs: add a new `ExtraArtifactSet` salsa input\n  that carries pre-parsed artifacts contributed by non-YAML adapters,\n  and `_with_extras` variants of `validate_all`,\n  `evaluate_conditional_rules`, `build_link_graph`,\n  `compute_coverage_tracked`, and `filter_artifact_ids` that merge\n  those artifacts into the store before link-graph construction. The\n  original (no-extras) entry points keep their exact bodies so\n  existing callers and memoization behaviour are preserved.\n\n* rivet-cli/src/main.rs (run_salsa_validation): invoke\n  `load_artifacts` for non-YAML source formats and\n  `load_all_externals` for externals, feed the results through the\n  new `db.load_extras(..)` / `db.diagnostics_with_extras(..)` API.\n  Also removes an unconditional duplicate `collect_yaml_files` call\n  that was traversing each YAML source twice.\n\nRegression test `salsa_path_matches_direct_on_adapter_only_targets`\npins three things at the core level:\n  1. Direct path resolves the modeled-by link and reports zero\n     broken-link diagnostics.\n  2. Salsa path without extras reproduces the original bug and\n     reports one phantom broken-link (guards the no-extras API from\n     silently drifting).\n  3. Salsa path with extras matches the direct path exactly.\n\nOn the rivet dogfood project, `rivet validate` and\n`rivet validate --direct` now produce identical diagnostic counts\n(6 errors, 9 warnings, 0 broken cross-refs) where the default path\npreviously differed.\n\nFixes: REQ-029, REQ-004\nVerifies: REQ-004\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n* fix(deps): ignore RUSTSEC-2026-0103 (thin-vec UAF in transitive salsa)\n\nthin-vec 0.2.14 has a Double-Free / UAF in IntoIter::drop and\nThinVec::clear. Pulled in transitively via salsa 0.26.0. Rivet does\nnot directly construct or iterate thin_vec::ThinVec — the exposure is\nthrough salsa's internal data structures.\n\nIgnore in both cargo-deny and cargo-audit until either salsa bumps\nits thin-vec dependency or thin-vec 0.2.15 lands upstream.\n\nTrace: skip\n\n* fix(tests): wait for /api/v1/health 200 before fetching\n\nserve_integration::start_server() previously returned as soon as TCP\naccept succeeded. Under PROPTEST_CASES=1000 CI load, the socket binds\nbefore the artifact store finishes loading, so fetch() races and hits\nthe server mid-load — the HTTP connection gets closed or returns an\nempty response, parsed as status=0.\n\nSeen intermittently as:\n  api_artifacts_unfiltered ... FAILED\n    assertion `left == right` failed: left=0 right=200\n  api_artifacts_search ... FAILED (same shape)\n\nFix: poll /api/v1/health until it returns HTTP/1.1 200 before declaring\nthe server ready. The health handler only becomes reachable after\nrouting is fully initialized.\n\nTrace: skip\n\n---------\n\nCo-authored-by: Claude Opus 4.7 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-04-21T13:57:49-05:00",
-          "tree_id": "95c6e288c97716c36213ca5f857509b21ad6d9ff",
-          "url": "https://github.com/pulseengine/rivet/commit/60d728a29a18f3e2ba744128fdd274f2df0ee9a1"
-        },
-        "date": 1776798271356,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 75139,
-            "range": "± 275",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 872940,
-            "range": "± 2350",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 15045716,
-            "range": "± 645992",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1681,
-            "range": "± 4",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 19280,
-            "range": "± 48",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 351144,
-            "range": "± 1443",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 85,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 85,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 85,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 915887,
-            "range": "± 5580",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 159195,
-            "range": "± 1377",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1838157,
-            "range": "± 39897",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 39814510,
-            "range": "± 2597180",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 106027,
-            "range": "± 1092",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 969781,
-            "range": "± 18513",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 15671235,
-            "range": "± 1313077",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 3917,
-            "range": "± 15",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 41331,
-            "range": "± 88",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 759772,
-            "range": "± 3850",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 53071,
-            "range": "± 128",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 584274,
-            "range": "± 2706",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 9092814,
-            "range": "± 591331",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 619,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 5174,
-            "range": "± 14",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 140485,
-            "range": "± 1097",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 20122,
-            "range": "± 47",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 139241,
-            "range": "± 1029",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1291464,
-            "range": "± 6158",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1618850,
             "range": "± 19278",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b5ccfbcd7ef4a67047be0a8fab590a1ffec88bc4",
+          "message": "feat(sexpr): count-compare lowering + matches parse-time regex check + doc clarifications (#196)\n\nThree followups from the v0.4.3 sexpr audit:\n\n1. `(> (count <scope>) N)` now lowers to a new `CountCompare` expr\n   variant that evaluates the count against the store once and\n   compares to an integer threshold. Previously the audit documented\n   `(count ...)` as \"meant for numeric comparisons\" but no lowering\n   existed — you could only use it as a standalone predicate\n   (equivalent to `(exists <scope> true)`). Now every comparison\n   operator (>, <, >=, <=, =, !=) accepts a `(count ...)` LHS with an\n   integer RHS.\n\n2. `(matches <field> \"<regex>\")` validates the regex at lower time\n   instead of silently returning false at runtime on malformed\n   patterns. Closes the \"mysterious empty result\" footgun the audit\n   flagged — users typing `(matches id \"[\")` used to see nothing\n   match and spend time debugging; now they get a parse error with\n   the compiler's message. Non-literal patterns (rare; from field\n   interpolation) still use the runtime-lenient path.\n\n3. docs/getting-started.md gains dedicated sections for count\n   comparisons and regex validation, plus a note that dotted\n   accessors like `links.satisfies.target` are not supported — use\n   the purpose-built `linked-by` / `linked-from` / `linked-to` /\n   `links-count` predicates. Closes the doc drift where the filter\n   language's scope was implicit.\n\nRegression tests:\n- count_compare_gt_threshold — basic shape lowers\n- count_compare_requires_integer_rhs — string on the right errors\n- count_compare_all_six_operators_lower — all six comparison ops\n- matches_rejects_invalid_regex_at_lower_time — unclosed brackets\n  produce parse error\n- matches_accepts_valid_regex — good patterns still work\n\nUpdated sexpr_fuzz.rs expr_to_sexpr pretty-printer to handle the new\nExpr::CountCompare variant (fuzz roundtrip stays equivalent).\n\nUpdated sexpr_predicate_matrix.rs test that pinned the old lenient\nregex behavior to the new strict behavior.\n\nImplements: REQ-004\nRefs: DD-058\n\nCo-authored-by: Claude Opus 4.7 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-04-22T16:54:16-05:00",
+          "tree_id": "0bdb6ba59ca339a9e5c8dbd2ca96f81705143d24",
+          "url": "https://github.com/pulseengine/rivet/commit/b5ccfbcd7ef4a67047be0a8fab590a1ffec88bc4"
+        },
+        "date": 1776895238824,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 80539,
+            "range": "± 1358",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 845653,
+            "range": "± 31799",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 14035204,
+            "range": "± 1856911",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2220,
+            "range": "± 8",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25694,
+            "range": "± 221",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 386531,
+            "range": "± 40802",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 93,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 93,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 93,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1021799,
+            "range": "± 94338",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 165427,
+            "range": "± 1116",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1920088,
+            "range": "± 22492",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 40299562,
+            "range": "± 8955655",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 122904,
+            "range": "± 1706",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1041307,
+            "range": "± 20600",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 17206498,
+            "range": "± 4321468",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4233,
+            "range": "± 22",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 58783,
+            "range": "± 814",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 772094,
+            "range": "± 48935",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 59910,
+            "range": "± 401",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 687171,
+            "range": "± 3397",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7582377,
+            "range": "± 165947",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 776,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7309,
+            "range": "± 43",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 108298,
+            "range": "± 1632",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 25697,
+            "range": "± 111",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 182824,
+            "range": "± 671",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1750799,
+            "range": "± 19362",
             "unit": "ns/iter"
           }
         ]
