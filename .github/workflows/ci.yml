@@ -128,55 +128,12 @@ jobs:
         env:
           DISPLAY: ':99.0'
 
-  # ── Build VS Code VSIX (release tags only) ───────────────────────────
-  build-vsix:
-    name: Build VS Code Extension VSIX
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Install extension dependencies
-        working-directory: vscode-rivet
-        run: npm ci
-      - name: Compile extension
-        working-directory: vscode-rivet
-        run: npm run compile
-      - name: Package VSIX
-        working-directory: vscode-rivet
-        run: npx @vscode/vsce package --no-dependencies
-      - uses: actions/upload-artifact@v4
-        with:
-          name: vsix
-          path: vscode-rivet/*.vsix
-
-  # ── Publish VS Code Extension to Marketplace (release tags only) ─────
-  publish-vsix:
-    name: Publish to VS Code Marketplace
-    needs: [build-vsix, release-results]
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: vsix
-          path: vsix
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Publish to Marketplace
-        # Requires VSCE_PAT secret in GitHub repo settings.
-        # See: https://code.visualstudio.com/api/working-with-extensions/publishing-extension
-        run: |
-          if [ -n "$VSCE_PAT" ]; then
-            npx @vscode/vsce publish --packagePath vsix/*.vsix
-          else
-            echo "VSCE_PAT not set, skipping marketplace publish"
-          fi
-        env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+  # VSIX build + publish live in release.yml now so the extension attaches
+  # to the GitHub Release on tag push AND flows to the Marketplace in the
+  # same pipeline. The previous `publish-vsix` here depended on a
+  # non-existent `release-results` job, so the Marketplace push never
+  # actually ran (which is why only the spar extension is currently on the
+  # Marketplace — its workflow is scoped differently). See release.yml.
 
   # ── Security audits ──────────────────────────────────────────────────
   audit:
