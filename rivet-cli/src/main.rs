@@ -233,6 +233,12 @@ enum Command {
         /// Path to feature-to-artifact binding YAML file
         #[arg(long)]
         binding: Option<PathBuf>,
+
+        /// Minimum severity that causes exit code 1. Values: "error" (default),
+        /// "warning", "info". E.g. --fail-on warning tightens the gate so any
+        /// warning (or error) fails the run.
+        #[arg(long, default_value = "error")]
+        fail_on: String,
     },
 
     /// Show a single artifact by ID
@@ -927,6 +933,7 @@ fn run(cli: Cli) -> Result<bool> {
             model,
             variant,
             binding,
+            fail_on,
         } => cmd_validate(
             &cli,
             format,
@@ -937,6 +944,7 @@ fn run(cli: Cli) -> Result<bool> {
             model.as_deref(),
             variant.as_deref(),
             binding.as_deref(),
+            fail_on,
         ),
         Command::List {
             r#type,
@@ -3091,8 +3099,10 @@ fn cmd_validate(
     model_path: Option<&std::path::Path>,
     variant_path: Option<&std::path::Path>,
     binding_path: Option<&std::path::Path>,
+    fail_on: &str,
 ) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
+    let fail_on_threshold = parse_fail_on(fail_on)?;
     check_for_updates();
 
     let ctx = ProjectContext::load_with_docs(cli)?;
@@ -3511,7 +3521,33 @@ fn cmd_validate(
         }
     }
 
-    Ok(errors == 0 && cross_errors == 0)
+    // Exit-code gate: fail if any diagnostic at or above the configured
+    // severity threshold is present. Cross-repo broken refs are always
+    // treated as errors for this purpose (they aren't classified by
+    // severity today).
+    let has_threshold_hit = match fail_on_threshold {
+        Severity::Error => errors > 0 || cross_errors > 0,
+        Severity::Warning => errors > 0 || cross_errors > 0 || warnings > 0,
+        Severity::Info => {
+            errors > 0 || cross_errors > 0 || warnings > 0 || infos > 0
+        }
+    };
+    Ok(!has_threshold_hit)
+}
+
+/// Parse the `--fail-on` flag into a `Severity` threshold.
+///
+/// Accepts `error` (default), `warning`, `info` (case-insensitive).
+fn parse_fail_on(value: &str) -> Result<Severity> {
+    match value.to_ascii_lowercase().as_str() {
+        "error" => Ok(Severity::Error),
+        "warning" | "warn" => Ok(Severity::Warning),
+        "info" => Ok(Severity::Info),
+        other => anyhow::bail!(
+            "invalid --fail-on value '{}' — valid options: error, warning, info",
+            other
+        ),
+    }
 }
 
 /// Run core validation via the salsa incremental database.
@@ -5154,6 +5190,7 @@ fn cmd_diff(
                         model: None,
                         variant: None,
                         binding: None,
+                        fail_on: "error".to_string(),
                     },
                 };
                 let head_cli = Cli {
@@ -5169,6 +5206,7 @@ fn cmd_diff(
                         model: None,
                         variant: None,
                         binding: None,
+                        fail_on: "error".to_string(),
                     },
                 };
                 let bc = ProjectContext::load(&base_cli)?;

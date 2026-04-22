@@ -1322,3 +1322,141 @@ fn all_json_outputs_are_valid() {
         );
     }
 }
+
+// ── rivet validate --fail-on <severity> ─────────────────────────────────
+
+/// Build a small project with a single requirement that has no backlink
+/// from a feature. The dev schema's `requirement-coverage` rule is a
+/// warning — so validation emits 0 errors and 1 warning. This is the
+/// fixture used by the `--fail-on` tests.
+///
+/// Returns the tempdir so the caller controls its lifetime.
+fn warning_only_project() -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let dir = tmp.path();
+
+    // Init the dev preset (which seeds REQ-001 satisfied by FEAT-001),
+    // then overwrite the sample with a requirement that has no
+    // satisfying feature so the coverage warning fires.
+    let init = Command::new(rivet_bin())
+        .args(["init", "--preset", "dev", "--dir", dir.to_str().unwrap()])
+        .output()
+        .expect("init");
+    assert!(
+        init.status.success(),
+        "init must succeed: {}",
+        String::from_utf8_lossy(&init.stderr)
+    );
+
+    let artifacts = dir.join("artifacts").join("requirements.yaml");
+    // `active` status keeps rule severity at its declared level
+    // (warning for `requirement-coverage`). Draft would downgrade to info.
+    std::fs::write(
+        &artifacts,
+        "artifacts:\n  - id: REQ-001\n    type: requirement\n    \
+         title: Orphan requirement\n    status: active\n    \
+         description: >\n      Unsatisfied — triggers \
+         requirement-coverage warning.\n    tags: [core]\n    \
+         fields:\n      priority: must\n      category: functional\n",
+    )
+    .expect("write fixture");
+
+    tmp
+}
+
+/// `rivet validate --fail-on error` (the default) must exit 0 on a
+/// project that only emits warnings.
+#[test]
+fn validate_fail_on_error_ignores_warnings() {
+    let tmp = warning_only_project();
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            tmp.path().to_str().unwrap(),
+            "validate",
+            "--format",
+            "json",
+            "--fail-on",
+            "error",
+        ])
+        .output()
+        .expect("validate");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("validate JSON");
+
+    // Sanity: 0 errors, at least 1 warning.
+    assert_eq!(
+        parsed.get("errors").and_then(|v| v.as_u64()).unwrap_or(99),
+        0,
+        "expected 0 errors, got:\n{stdout}"
+    );
+    assert!(
+        parsed
+            .get("warnings")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0)
+            >= 1,
+        "expected >=1 warning, got:\n{stdout}"
+    );
+
+    assert!(
+        out.status.success(),
+        "--fail-on error must exit 0 when there are only warnings.\n\
+         stdout: {stdout}\nstderr: {stderr}"
+    );
+}
+
+/// `rivet validate --fail-on warning` must exit 1 on the same project
+/// (warnings promote to failures).
+#[test]
+fn validate_fail_on_warning_fails_on_warnings() {
+    let tmp = warning_only_project();
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            tmp.path().to_str().unwrap(),
+            "validate",
+            "--format",
+            "json",
+            "--fail-on",
+            "warning",
+        ])
+        .output()
+        .expect("validate");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "--fail-on warning must exit non-zero when warnings are present.\n\
+         stdout: {stdout}\nstderr: {stderr}"
+    );
+}
+
+/// An invalid `--fail-on` value is rejected up-front.
+#[test]
+fn validate_fail_on_invalid_value_rejected() {
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "validate",
+            "--fail-on",
+            "bogus",
+        ])
+        .output()
+        .expect("validate");
+
+    assert!(
+        !out.status.success(),
+        "--fail-on bogus must fail"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("bogus") || stderr.contains("fail-on"),
+        "error must mention the bad value, got: {stderr}"
+    );
+}
