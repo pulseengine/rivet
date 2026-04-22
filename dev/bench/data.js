@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1776832821181,
+  "lastUpdate": 1776834397784,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "51f2054a0a78744eaef88998e4571344a232be0f",
-          "message": "feat: s-expression query language, MCP CRUD, variant/PLE artifacts, EU AI Act runtime evidence (#126)\n\n## Summary\n\n- S-expression query/constraint language with rowan CST parser, typed AST evaluator, CLI `--filter` on list/stats/coverage, dashboard API `?filter=`, and salsa caching\n- 8 proptest logical equivalence properties (De Morgan, double negation, commutativity, implies, excludes)\n- MCP server expanded from 10 to 15 tools (add query, modify, link, unlink, remove)\n- `rivet init --hooks` installs git hooks with chain-to-existing support\n- EU AI Act `runtime-evidence` artifact type with hash-chain integrity (#99)\n- 47 v0.4.0 artifacts (REQ-041..046, DD-048..051, FEAT-106..114) + STPA variant analysis\n- Tracking issue #128 for full PLE/variant system\n\n## CI Notes\n\nCargo Deny, Security Audit, and Miri failures are pre-existing upstream advisory/compatibility issues not caused by this PR. All code-quality gates pass (Format, Clippy, Test, Proptest, MSRV, Supply Chain, YAML Lint).",
-          "timestamp": "2026-04-12T11:15:39-05:00",
-          "tree_id": "5a1d450b15162e438d33c23dedfe7dde18f290cc",
-          "url": "https://github.com/pulseengine/rivet/commit/51f2054a0a78744eaef88998e4571344a232be0f"
-        },
-        "date": 1776011152496,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 82167,
-            "range": "± 322",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 883761,
-            "range": "± 6448",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 13132298,
-            "range": "± 820473",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1943,
-            "range": "± 19",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 24416,
-            "range": "± 874",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 360134,
-            "range": "± 2158",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 98,
-            "range": "± 3",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 98,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 98,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1003967,
-            "range": "± 15512",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 166976,
-            "range": "± 1113",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1913936,
-            "range": "± 26763",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 26661137,
-            "range": "± 856177",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 106875,
-            "range": "± 506",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 921569,
-            "range": "± 5121",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 10101250,
-            "range": "± 401741",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4290,
-            "range": "± 9",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 45652,
-            "range": "± 888",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 754223,
-            "range": "± 8215",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 56378,
-            "range": "± 123",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 693985,
-            "range": "± 10351",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7693053,
-            "range": "± 160481",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 784,
-            "range": "± 4",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 6943,
-            "range": "± 14",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 91637,
-            "range": "± 387",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 21805,
-            "range": "± 53",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 150204,
-            "range": "± 1117",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1369984,
-            "range": "± 19070",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1532476,
             "range": "± 21741",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "571816f0fb78743a0654de158ec8f137e646fe96",
+          "message": "fix(serve): Cmd+K search URL persistence + embed discoverability design (#159)\n\n* fix(serve): persist Cmd+K search term in URL so reload preserves it\n\nThe Cmd+K overlay used vanilla fetch() with no history write, so a page\nreload (Cmd+R) silently dropped any in-flight search. Now we sync the\ncurrent query into the URL via history.replaceState as ?cmdk=...; on\nload, if ?cmdk= is present we re-open the overlay pre-filled with the\nsaved term and re-run the search. Using cmdk (not q) avoids colliding\nwith the existing /artifacts?q=... filter-bar state.\n\nThe /artifacts filter-bar search input was already wired with\nhx-push-url=\"true\" via components::search_input — this change adds a\nregression test asserting that typing into it updates the URL and the\nvalue survives a reload.\n\nFixes: REQ-007\n\n* docs(design): embed discoverability, {{query:...}} MVP, mermaid, rivet query\n\nDesign note only — no code changes. Covers four UX gaps reported from\ndogfooding in a single note so the trade-offs are visible side-by-side:\n\n1. Mermaid in artifact descriptions (one-function fix in markdown.rs).\n2. {{query:<sexpr>}} embed — reuses existing sexpr_eval; read-only MVP.\n3. rivet docs embeds + table-driven registry for resolve_embed.\n4. rivet query CLI — thin mirror of MCP's rivet_query.\n\nEach section cites exact file paths and line numbers where changes\nwould land. Ends with a priority-ordered recommendation table so the\nimplementation sequence is unambiguous.\n\nExempt type: docs (no trailer required).",
+          "timestamp": "2026-04-21T23:19:53-05:00",
+          "tree_id": "25c3b523bb50ae55c0ba073b29386a56b5465d79",
+          "url": "https://github.com/pulseengine/rivet/commit/571816f0fb78743a0654de158ec8f137e646fe96"
+        },
+        "date": 1776834397075,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 65346,
+            "range": "± 499",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 702590,
+            "range": "± 3980",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 10122271,
+            "range": "± 362822",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1475,
+            "range": "± 9",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 18463,
+            "range": "± 37",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 265125,
+            "range": "± 1804",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 75,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 75,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 75,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 769017,
+            "range": "± 2168",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 129223,
+            "range": "± 877",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1472888,
+            "range": "± 15526",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 21156466,
+            "range": "± 311145",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 83228,
+            "range": "± 360",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 732151,
+            "range": "± 3463",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 8385718,
+            "range": "± 139945",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 3199,
+            "range": "± 7",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 34614,
+            "range": "± 355",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 560685,
+            "range": "± 6804",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 47444,
+            "range": "± 80",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 515789,
+            "range": "± 2510",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 6011153,
+            "range": "± 47701",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 568,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 5042,
+            "range": "± 10",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 69334,
+            "range": "± 172",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 16739,
+            "range": "± 69",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 117089,
+            "range": "± 327",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1082997,
+            "range": "± 5475",
             "unit": "ns/iter"
           }
         ]
