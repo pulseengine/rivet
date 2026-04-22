@@ -3,28 +3,87 @@
 // All route handler functions and their associated param structs.
 
 use axum::extract::{Path, Query, State};
-use axum::response::Html;
+use axum::http::StatusCode;
+use axum::response::{Html, IntoResponse, Response};
 
 use super::components::ViewParams;
 use super::layout;
-use super::{AppState, SharedState};
+use super::{AppState, SharedState, VariantScope};
+
+/// Small helper that returns a 400 page when the variant name is
+/// invalid. Preserves HTMX semantics by returning HTML the target can
+/// swap in.
+fn variant_error_response(msg: &str) -> Response {
+    let body = format!(
+        "<div class=\"card\" style=\"margin:2rem\">\
+         <h2 style=\"margin-top:0;color:#b91c1c\">Invalid variant scope</h2>\
+         <p>{}</p>\
+         <p><a href=\"/variants\" hx-get=\"/variants\" hx-target=\"#content\" \
+         hx-push-url=\"true\">See all declared variants</a> \
+         or <a href=\"?\">clear the filter</a>.</p>\
+         </div>",
+        rivet_core::document::html_escape(msg),
+    );
+    (StatusCode::BAD_REQUEST, Html(body)).into_response()
+}
+
+/// Try to build a variant scope from the request param.
+///
+/// Returns:
+/// * `Ok(None)` — no `variant` param, render unscoped.
+/// * `Ok(Some(scope))` — scope built, render against its store/graph.
+/// * `Err(resp)` — render the error response directly.
+#[allow(clippy::result_large_err)]
+fn try_build_scope(
+    state: &AppState,
+    variant: &Option<String>,
+) -> Result<Option<VariantScope>, Response> {
+    let name = match variant.as_deref() {
+        Some(n) if !n.is_empty() => n,
+        _ => return Ok(None),
+    };
+    match state.build_variant_scope(name) {
+        Ok(Some(scope)) => Ok(Some(scope)),
+        // Project has no feature model — silently ignore rather than error,
+        // so bookmarked URLs degrade gracefully. The layout banner will
+        // flag that the filter is ignored.
+        Ok(None) => Ok(None),
+        Err(msg) => Err(variant_error_response(&msg)),
+    }
+}
 
 // ── Routes ───────────────────────────────────────────────────────────────
 
-pub(crate) async fn index(State(state): State<SharedState>) -> Html<String> {
+pub(crate) async fn index(
+    State(state): State<SharedState>,
+    Query(params): Query<ViewParams>,
+) -> Response {
     let state = state.read().await;
-    let inner = stats_partial(&state);
-    layout::page_layout(&inner, &state)
+    let scope = match try_build_scope(&state, &params.variant) {
+        Ok(s) => s,
+        Err(resp) => return resp,
+    };
+    let inner = match scope.as_ref() {
+        Some(s) => crate::render::stats::render_stats(&s.render_context(&state)),
+        None => crate::render::stats::render_stats(&state.as_render_context()),
+    };
+    layout::page_layout_with_variant(&inner, &state, params.variant.as_deref()).into_response()
 }
 
-pub(crate) async fn stats_view(State(state): State<SharedState>) -> Html<String> {
+pub(crate) async fn stats_view(
+    State(state): State<SharedState>,
+    Query(params): Query<ViewParams>,
+) -> Response {
     let state = state.read().await;
-    Html(stats_partial(&state))
-}
-
-fn stats_partial(state: &AppState) -> String {
-    let ctx = state.as_render_context();
-    crate::render::stats::render_stats(&ctx)
+    let scope = match try_build_scope(&state, &params.variant) {
+        Ok(s) => s,
+        Err(resp) => return resp,
+    };
+    let html = match scope.as_ref() {
+        Some(s) => crate::render::stats::render_stats(&s.render_context(&state)),
+        None => crate::render::stats::render_stats(&state.as_render_context()),
+    };
+    Html(html).into_response()
 }
 
 // ── Externals ────────────────────────────────────────────────────────────
@@ -53,12 +112,23 @@ pub(crate) async fn external_detail(
 pub(crate) async fn artifacts_list(
     State(state): State<SharedState>,
     Query(params): Query<ViewParams>,
-) -> Html<String> {
+) -> Response {
     let state = state.read().await;
-    let ctx = state.as_render_context();
-    Html(crate::render::artifacts::render_artifacts_list(
-        &ctx, &params,
-    ))
+    let scope = match try_build_scope(&state, &params.variant) {
+        Ok(s) => s,
+        Err(resp) => return resp,
+    };
+    let html = match scope.as_ref() {
+        Some(s) => {
+            let ctx = s.render_context(&state);
+            crate::render::artifacts::render_artifacts_list(&ctx, &params)
+        }
+        None => {
+            let ctx = state.as_render_context();
+            crate::render::artifacts::render_artifacts_list(&ctx, &params)
+        }
+    };
+    Html(html).into_response()
 }
 
 /// Compact preview tooltip for an artifact — loaded on hover.
@@ -144,10 +214,17 @@ pub(crate) async fn artifact_graph(
 pub(crate) async fn validate_view(
     State(state): State<SharedState>,
     Query(params): Query<ViewParams>,
-) -> Html<String> {
+) -> Response {
     let state = state.read().await;
-    let ctx = state.as_render_context();
-    Html(crate::render::validate::render_validate(&ctx, &params))
+    let scope = match try_build_scope(&state, &params.variant) {
+        Ok(s) => s,
+        Err(resp) => return resp,
+    };
+    let html = match scope.as_ref() {
+        Some(s) => crate::render::validate::render_validate(&s.render_context(&state), &params),
+        None => crate::render::validate::render_validate(&state.as_render_context(), &params),
+    };
+    Html(html).into_response()
 }
 
 // ── Traceability Matrix ──────────────────────────────────────────────────
@@ -158,21 +235,29 @@ pub(crate) struct MatrixParams {
     to: Option<String>,
     link: Option<String>,
     direction: Option<String>,
+    variant: Option<String>,
 }
 
 pub(crate) async fn matrix_view(
     State(state): State<SharedState>,
     Query(params): Query<MatrixParams>,
-) -> Html<String> {
+) -> Response {
     let state = state.read().await;
-    let ctx = state.as_render_context();
+    let scope = match try_build_scope(&state, &params.variant) {
+        Ok(s) => s,
+        Err(resp) => return resp,
+    };
     let rparams = crate::render::matrix::MatrixParams {
         from: params.from,
         to: params.to,
         link: params.link,
         direction: params.direction,
     };
-    Html(crate::render::matrix::render_matrix_view(&ctx, &rparams))
+    let html = match scope.as_ref() {
+        Some(s) => crate::render::matrix::render_matrix_view(&s.render_context(&state), &rparams),
+        None => crate::render::matrix::render_matrix_view(&state.as_render_context(), &rparams),
+    };
+    Html(html).into_response()
 }
 
 // ── Matrix cell drill-down ────────────────────────────────────────────────
@@ -205,10 +290,20 @@ pub(crate) async fn matrix_cell_detail(
 
 // ── Coverage ─────────────────────────────────────────────────────────────
 
-pub(crate) async fn coverage_view(State(state): State<SharedState>) -> Html<String> {
+pub(crate) async fn coverage_view(
+    State(state): State<SharedState>,
+    Query(params): Query<ViewParams>,
+) -> Response {
     let state = state.read().await;
-    let ctx = state.as_render_context();
-    Html(crate::render::coverage::render_coverage_view(&ctx))
+    let scope = match try_build_scope(&state, &params.variant) {
+        Ok(s) => s,
+        Err(resp) => return resp,
+    };
+    let html = match scope.as_ref() {
+        Some(s) => crate::render::coverage::render_coverage_view(&s.render_context(&state)),
+        None => crate::render::coverage::render_coverage_view(&state.as_render_context()),
+    };
+    Html(html).into_response()
 }
 
 // ── Documents ────────────────────────────────────────────────────────────
@@ -261,10 +356,17 @@ pub(crate) async fn verification_view(State(state): State<SharedState>) -> Html<
 pub(crate) async fn stpa_view(
     State(state): State<SharedState>,
     Query(params): Query<ViewParams>,
-) -> Html<String> {
+) -> Response {
     let state = state.read().await;
-    let ctx = state.as_render_context();
-    Html(crate::render::stpa::render_stpa(&ctx, &params))
+    let scope = match try_build_scope(&state, &params.variant) {
+        Ok(s) => s,
+        Err(resp) => return resp,
+    };
+    let html = match scope.as_ref() {
+        Some(s) => crate::render::stpa::render_stpa(&s.render_context(&state), &params),
+        None => crate::render::stpa::render_stpa(&state.as_render_context(), &params),
+    };
+    Html(html).into_response()
 }
 
 // ── EU AI Act ────────────────────────────────────────────────────────────
@@ -429,4 +531,13 @@ pub(crate) async fn help_rules_view(State(state): State<SharedState>) -> Html<St
     let state = state.read().await;
     let ctx = state.as_render_context();
     Html(crate::render::help::render_rules(&ctx))
+}
+
+// ── Variants overview ─────────────────────────────────────────────────────
+
+/// GET /variants — list every declared variant with validation status
+/// and quick-picks into the scoped views.
+pub(crate) async fn variants_list(State(state): State<SharedState>) -> Html<String> {
+    let state = state.read().await;
+    Html(layout::render_variants_overview(&state))
 }

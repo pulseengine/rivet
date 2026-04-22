@@ -214,6 +214,8 @@ pub(crate) struct AppState {
     pub(crate) salsa: Mutex<SalsaState>,
     /// Project configuration (needed for incremental reload).
     pub(crate) config: ProjectConfig,
+    /// Variant/feature-model data discovered from disk (may be empty).
+    pub(crate) variants: variant::ProjectVariants,
 }
 
 impl AppState {
@@ -230,6 +232,93 @@ impl AppState {
             externals: &self.externals,
             project_path: &self.project_path_buf,
             schemas_dir: &self.schemas_dir,
+            baseline: None,
+        }
+    }
+
+    /// Build a scoped `VariantScope` for the given variant name.
+    ///
+    /// Returns `Ok(Some(scope))` when scoping succeeded,
+    /// `Ok(None)` when the project has no feature model configured, and
+    /// `Err(msg)` when the variant name is unknown or the solver fails.
+    ///
+    /// The returned `VariantScope` owns a filtered `Store` + `LinkGraph`
+    /// so that callers can then borrow them via
+    /// [`VariantScope::render_context`] for the duration of a render.
+    pub(crate) fn build_variant_scope(
+        &self,
+        variant_name: &str,
+    ) -> Result<Option<VariantScope>, String> {
+        if !self.variants.has_model() {
+            return Ok(None);
+        }
+        let scope = self.variants.resolve(variant_name)?;
+
+        // Build a filtered store that contains only the bound artifacts.
+        let mut scoped_store = rivet_core::store::Store::new();
+        for id in &scope.artifact_ids {
+            if let Some(a) = self.store.get(id) {
+                scoped_store.upsert(a.clone());
+            }
+        }
+        let scoped_graph = rivet_core::links::LinkGraph::build(&scoped_store, &self.schema);
+
+        // Filter cached diagnostics to only those referring to in-scope artifacts.
+        let scoped_diags: Vec<rivet_core::validate::Diagnostic> = self
+            .cached_diagnostics
+            .iter()
+            .filter(|d| {
+                d.artifact_id
+                    .as_ref()
+                    .map(|id| scoped_store.contains(id))
+                    .unwrap_or(false)
+            })
+            .cloned()
+            .collect();
+
+        Ok(Some(VariantScope {
+            name: variant_name.to_string(),
+            feature_count: scope.resolved.effective_features.len(),
+            artifact_count: scoped_store.len(),
+            store: scoped_store,
+            graph: scoped_graph,
+            diagnostics: scoped_diags,
+        }))
+    }
+}
+
+/// A variant-scoped view over the project's store + graph + diagnostics.
+///
+/// Owns its filtered collections so callers can hold a `RenderContext`
+/// borrowing from it for the duration of a render call.
+pub(crate) struct VariantScope {
+    pub(crate) name: String,
+    pub(crate) feature_count: usize,
+    pub(crate) artifact_count: usize,
+    pub(crate) store: rivet_core::store::Store,
+    pub(crate) graph: rivet_core::links::LinkGraph,
+    pub(crate) diagnostics: Vec<rivet_core::validate::Diagnostic>,
+}
+
+impl VariantScope {
+    /// Borrow this scope as a `RenderContext`, using the passed-in
+    /// `AppState` only for fields that are variant-independent (docs,
+    /// results, externals, project context).
+    pub(crate) fn render_context<'a>(
+        &'a self,
+        state: &'a AppState,
+    ) -> crate::render::RenderContext<'a> {
+        crate::render::RenderContext {
+            store: &self.store,
+            schema: &state.schema,
+            graph: &self.graph,
+            doc_store: &state.doc_store,
+            result_store: &state.result_store,
+            diagnostics: &self.diagnostics,
+            context: &state.context,
+            externals: &state.externals,
+            project_path: &state.project_path_buf,
+            schemas_dir: &state.schemas_dir,
             baseline: None,
         }
     }
@@ -386,6 +475,7 @@ pub(crate) fn reload_state(
     // ── Load non-salsa state (docs, results, externals) ──────────────
     let (doc_store, result_store, doc_dirs) = load_docs_and_results(&config, project_path)?;
     let externals = load_externals(&config, project_path);
+    let variants = variant::ProjectVariants::discover(project_path, &config);
 
     let git = capture_git_info(project_path);
     let loaded_at = std::process::Command::new("date")
@@ -426,6 +516,7 @@ pub(crate) fn reload_state(
             schema_set,
         }),
         config,
+        variants,
     })
 }
 
@@ -532,6 +623,9 @@ fn reload_state_incremental(state: &mut AppState) -> Result<()> {
         .filter(|o| o.status.success())
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .unwrap_or_else(|| "unknown".into());
+
+    // Re-discover variant definitions (they live on disk too).
+    state.variants = variant::ProjectVariants::discover(&project_path, &config);
 
     state.config = config;
 
@@ -782,6 +876,7 @@ pub async fn run(app_state: AppState, bind: String, watch: bool) -> Result<()> {
         .route("/help/rules", get(views::help_rules_view))
         .route("/externals", get(views::externals_list))
         .route("/externals/{prefix}", get(views::external_detail))
+        .route("/variants", get(views::variants_list))
         .route("/docs-asset/{*path}", get(docs_asset))
         .route("/assets/htmx.js", get(htmx_asset))
         .route("/assets/mermaid.js", get(mermaid_asset))
@@ -899,10 +994,33 @@ async fn wrap_full_page(
         if is_embed {
             return layout::embed_layout(&content, &app).into_response();
         }
-        return layout::page_layout(&content, &app).into_response();
+        let active_variant = extract_variant_from_query(&query);
+        return layout::page_layout_with_variant(&content, &app, active_variant.as_deref())
+            .into_response();
     }
 
     response
+}
+
+/// Extract the `variant=...` value from a URL-encoded query string.
+///
+/// Used to render the variant dropdown + banner on full-page loads so
+/// that a bookmarked URL like `/coverage?variant=asil-d` reliably
+/// reflects the selected variant.
+fn extract_variant_from_query(query: &str) -> Option<String> {
+    for pair in query.split('&') {
+        if let Some(val) = pair.strip_prefix("variant=") {
+            if val.is_empty() {
+                return None;
+            }
+            return Some(
+                urlencoding::decode(val)
+                    .map(|s| s.into_owned())
+                    .unwrap_or_else(|_| val.to_string()),
+            );
+        }
+    }
+    None
 }
 
 /// GET /api/links/{id} — return JSON array of AADL-prefixed artifact IDs linked
@@ -1220,4 +1338,5 @@ pub(crate) mod components;
 pub(crate) mod js;
 pub(crate) mod layout;
 pub(crate) mod styles;
+pub(crate) mod variant;
 pub(crate) mod views;
