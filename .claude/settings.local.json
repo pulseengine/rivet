@@ -157,7 +157,14 @@
       "Bash(cargo tree *)",
       "Bash(git restore *)",
       "Bash(awk -F'\\\\t' '{print $4}')",
-      "Bash(awk -F'\\\\t' '{print $1, $2}')"
+      "Bash(awk -F'\\\\t' '{print $1, $2}')",
+      "Bash(gh workflow *)",
+      "Bash(perl -i -pe 's/\\(ci_yaml: \\(None|Some\\\\\\(ci\\\\\\)\\),\\)/$1\\\\n            external_namespaces: &[],\\\\n            ignore_patterns: &[],/g' rivet-core/src/doc_check.rs)",
+      "Bash(xargs -I{} gh api {} --jq '.jobs[] | \"\\\\\\(.conclusion // \"running\"\\): \\\\\\(.name\\)\"')",
+      "Bash(perl -0777 -i -pe 's/\\(TraceabilityRule \\\\{[^}]*severity: [^,}]+,\\)\\(\\\\s*\\\\}\\)/$1\\\\n            alternate_backlinks: vec![],$2/g' rivet-core/src/coverage.rs rivet-core/src/export.rs rivet-core/src/proofs.rs rivet-core/src/lifecycle.rs rivet-core/src/validate.rs)",
+      "Bash(perl -0777 -i -pe 's/\\(TraceabilityRule \\\\{[^}]*severity: [^,}]+,\\)\\(\\\\s*\\\\}\\)/$1\\\\n            alternate_backlinks: vec![],$2/g' rivet-core/tests/proptest_operations.rs)",
+      "Bash(node scripts/diff-to-markdown.mjs --diff /tmp/malformed.json --pr 1 --run 1 --repo x/y)",
+      "Bash(node -e \"require\\('typescript'\\).transpileModule\\(require\\('fs'\\).readFileSync\\('rivet-delta.spec.ts','utf8'\\), { compilerOptions: { target: 'es2022', module: 'nodenext' } }\\)\")"
     ]
   }
 }

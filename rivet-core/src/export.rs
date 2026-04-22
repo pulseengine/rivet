@@ -2985,6 +2985,7 @@ mod tests {
             target_types: vec![],
             from_types: vec!["design-decision".into()],
             severity: Severity::Warning,
+            alternate_backlinks: vec![],
         }];
         Schema::merge(&[file])
     }

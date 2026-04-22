@@ -561,6 +561,15 @@ impl<'src> Parser<'src> {
                 ) => {
                     self.parse_mapping_entry(indent);
                 }
+                Some(SyntaxKind::Comment) => {
+                    // Indent-aligned comment line (e.g. `  # explanation`).
+                    // Eat the comment and any trailing newline; do not flag
+                    // as an error or interrupt the mapping.
+                    self.bump();
+                    if self.at(SyntaxKind::Newline) {
+                        self.bump();
+                    }
+                }
                 Some(SyntaxKind::Dash) if indent == min_indent => {
                     // Sequence at same indent — we're done with this mapping
                     break;
@@ -1012,6 +1021,25 @@ mod tests {
     #[test]
     fn simple_mapping() {
         parse_and_check("key: value\n");
+    }
+
+    /// Regression: a comment-only line inside a mapping must not produce
+    /// "expected mapping key, found Some(Comment)". The LSP YAML parser
+    /// surfaced a false-positive diagnostic on every CI workflow file
+    /// (.github/workflows/*.yml) where line-leading comments are common.
+    #[test]
+    fn mapping_with_comment_only_line() {
+        parse_and_check("key1: value1\n# leading comment line\nkey2: value2\n");
+    }
+
+    #[test]
+    fn mapping_with_indented_comment_line() {
+        parse_and_check("parent:\n  child1: 1\n  # mid comment\n  child2: 2\n");
+    }
+
+    #[test]
+    fn mapping_with_inline_trailing_comment_on_value() {
+        parse_and_check("key: value # trailing\n");
     }
 
     #[test]

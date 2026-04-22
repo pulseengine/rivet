@@ -13,6 +13,7 @@ use crate::error::Error;
 
 /// Top-level structure of a schema YAML file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SchemaFile {
     pub schema: SchemaMetadata,
     #[serde(default, rename = "base-fields")]
@@ -28,6 +29,7 @@ pub struct SchemaFile {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SchemaMetadata {
     pub name: String,
     pub version: String,
@@ -46,6 +48,7 @@ pub struct SchemaMetadata {
 // ── Artifact type definition ─────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ArtifactTypeDef {
     pub name: String,
     pub description: String,
@@ -92,6 +95,7 @@ pub struct ArtifactTypeDef {
 
 /// A common mistake entry with problem description and fix command.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MistakeGuide {
     pub problem: String,
     #[serde(default, rename = "fix-command")]
@@ -99,6 +103,7 @@ pub struct MistakeGuide {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FieldDef {
     pub name: String,
     #[serde(rename = "type")]
@@ -112,6 +117,7 @@ pub struct FieldDef {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LinkFieldDef {
     pub name: String,
     #[serde(rename = "link-type")]
@@ -122,6 +128,9 @@ pub struct LinkFieldDef {
     pub required: bool,
     #[serde(default)]
     pub cardinality: Cardinality,
+    /// Free-form description shown in schema docs and AI hints.
+    #[serde(default)]
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -137,6 +146,7 @@ pub enum Cardinality {
 // ── Link type definition ─────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LinkTypeDef {
     pub name: String,
     #[serde(default)]
@@ -151,6 +161,7 @@ pub struct LinkTypeDef {
 // ── Traceability rule ────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TraceabilityRule {
     pub name: String,
     pub description: String,
@@ -166,6 +177,22 @@ pub struct TraceabilityRule {
     pub from_types: Vec<String>,
     #[serde(default)]
     pub severity: Severity,
+    /// Alternative backlink shapes that satisfy this rule. Each entry
+    /// is a `(link-type, from-types)` pair — used by safety-case schemas
+    /// to express "supported-by OR decomposed-by OR has-sub-goal" without
+    /// duplicating the whole rule.
+    #[serde(default, rename = "alternate-backlinks")]
+    pub alternate_backlinks: Vec<AlternateBacklink>,
+}
+
+/// One alternative backlink shape inside a TraceabilityRule.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AlternateBacklink {
+    #[serde(rename = "link-type")]
+    pub link_type: String,
+    #[serde(default, rename = "from-types")]
+    pub from_types: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -189,6 +216,7 @@ fn default_severity() -> Severity {
 /// rule to fire. This enables compound rules like "AI-generated artifacts with
 /// active status must have a reviewer".
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ConditionalRule {
     pub name: String,
     #[serde(default)]
@@ -642,7 +670,20 @@ impl Schema {
 
         for file in files {
             for at in &file.artifact_types {
-                artifact_types.insert(at.name.clone(), at.clone());
+                let mut at = at.clone();
+                // Populate shorthand_links from link_fields so the YAML
+                // parser recognises named-field forms like `targets: [X]`
+                // as equivalent to `links: [{type: threatens, target: X}]`.
+                // Without this, cardinality validation silently skips the
+                // named-field form and "required" links appear absent.
+                for lf in &at.link_fields {
+                    if lf.name != "links" {
+                        at.shorthand_links
+                            .entry(lf.name.clone())
+                            .or_insert_with(|| lf.link_type.clone());
+                    }
+                }
+                artifact_types.insert(at.name.clone(), at);
             }
             for lt in &file.link_types {
                 if let Some(inv) = &lt.inverse {
@@ -662,6 +703,62 @@ impl Schema {
             traceability_rules,
             conditional_rules,
         }
+    }
+
+    /// Return schema-internal consistency issues as human-readable messages.
+    /// Callers should surface these as errors — a schema with dangling
+    /// link-field references silently breaks cardinality enforcement for
+    /// every artifact that uses the undeclared link type, so the schema
+    /// should not reach production without review.
+    ///
+    /// Checks:
+    /// - Every `link-field.link_type` is declared in `link-types:`.
+    /// - Every `link-field.target_types` names a known artifact type.
+    /// - Every traceability rule's `from_types` and target types exist.
+    pub fn validate_consistency(&self) -> Vec<String> {
+        let mut issues = Vec::new();
+        let type_names: std::collections::HashSet<&str> =
+            self.artifact_types.keys().map(String::as_str).collect();
+        let link_names: std::collections::HashSet<&str> =
+            self.link_types.keys().map(String::as_str).collect();
+
+        for at in self.artifact_types.values() {
+            for lf in &at.link_fields {
+                if !link_names.contains(lf.link_type.as_str()) {
+                    issues.push(format!(
+                        "type '{}': link-field '{}' references unknown link type '{}'",
+                        at.name, lf.name, lf.link_type
+                    ));
+                }
+                for tt in &lf.target_types {
+                    if !type_names.contains(tt.as_str()) {
+                        issues.push(format!(
+                            "type '{}': link-field '{}' target type '{}' is not a known artifact type",
+                            at.name, lf.name, tt
+                        ));
+                    }
+                }
+            }
+        }
+        for rule in &self.traceability_rules {
+            for from in &rule.from_types {
+                if !type_names.contains(from.as_str()) {
+                    issues.push(format!(
+                        "rule '{}': from-type '{}' is not a known artifact type",
+                        rule.name, from
+                    ));
+                }
+            }
+            for target in &rule.target_types {
+                if !type_names.contains(target.as_str()) {
+                    issues.push(format!(
+                        "rule '{}': target-type '{}' is not a known artifact type",
+                        rule.name, target
+                    ));
+                }
+            }
+        }
+        issues
     }
 
     /// Look up an artifact type definition by name.

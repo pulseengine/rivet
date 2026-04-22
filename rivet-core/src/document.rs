@@ -487,15 +487,22 @@ pub fn render_to_html(
                 html.push_str("</blockquote>\n");
                 in_blockquote = false;
             }
-            let text = &trimmed[level as usize + 1..];
+            let raw_text = &trimmed[level as usize + 1..];
             let text = resolve_inline(
-                text,
+                raw_text,
                 &artifact_exists,
                 &artifact_info,
                 &document_exists,
                 &embed_resolver,
             );
-            html.push_str(&format!("<h{level}>{text}</h{level}>\n"));
+            // Slugify the heading text so in-page TOC links and external
+            // anchors (#section-name) actually navigate. Strip embedded
+            // HTML the inline resolver injected so anchors stay stable
+            // across embed-content changes.
+            let slug = slugify_heading(raw_text);
+            html.push_str(&format!(
+                "<h{level} id=\"{slug}\">{text}</h{level}>\n"
+            ));
             continue;
         }
 
@@ -661,6 +668,47 @@ pub fn render_to_html(
                 &embed_resolver,
             );
             html.push_str(&format!("<li>{text}</li>\n"));
+            continue;
+        }
+
+        // Standalone block-level embed — a line that is *entirely* a single
+        // `{{...}}` token emits block HTML (<table>, <div>, etc.) and must
+        // NOT be wrapped in <p>, which produces invalid nesting. Falls back
+        // to inline handling if the line also contains other text.
+        if trimmed.starts_with("{{")
+            && trimmed.ends_with("}}")
+            && trimmed.matches("{{").count() == 1
+            && trimmed.matches("}}").count() == 1
+        {
+            if in_paragraph {
+                html.push_str("</p>\n");
+                in_paragraph = false;
+            }
+            if in_list {
+                html.push_str("</ul>\n");
+                in_list = false;
+            }
+            if in_ordered_list {
+                html.push_str("</ol>\n");
+                in_ordered_list = false;
+            }
+            if in_table {
+                html.push_str("</tbody></table>\n");
+                in_table = false;
+                table_header_done = false;
+            }
+            if in_blockquote {
+                html.push_str("</blockquote>\n");
+                in_blockquote = false;
+            }
+            html.push_str(&resolve_inline(
+                trimmed,
+                &artifact_exists,
+                &artifact_info,
+                &document_exists,
+                &embed_resolver,
+            ));
+            html.push('\n');
             continue;
         }
 
@@ -965,6 +1013,43 @@ pub fn html_escape(s: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+}
+
+/// Convert a markdown heading text to a stable URL slug.
+///
+/// Used as the `id=` attribute on `<h*>` elements so in-page TOC links
+/// (`[Section](#section-name)`) and external `#anchor` URLs actually
+/// navigate. Strips embedded HTML (the inline resolver may have
+/// substituted artifact cards), lowercases, replaces non-alphanumerics
+/// with hyphens, and collapses runs.
+pub fn slugify_heading(raw: &str) -> String {
+    // Strip any HTML tags the inline resolver may have left in the text.
+    let mut without_tags = String::with_capacity(raw.len());
+    let mut in_tag = false;
+    for ch in raw.chars() {
+        match (ch, in_tag) {
+            ('<', _) => in_tag = true,
+            ('>', true) => in_tag = false,
+            (_, false) => without_tags.push(ch),
+            _ => {}
+        }
+    }
+    let lowered = without_tags.to_lowercase();
+    let mut slug = String::with_capacity(lowered.len());
+    let mut prev_dash = true; // suppress leading hyphens
+    for ch in lowered.chars() {
+        if ch.is_ascii_alphanumeric() {
+            slug.push(ch);
+            prev_dash = false;
+        } else if !prev_dash {
+            slug.push('-');
+            prev_dash = true;
+        }
+    }
+    while slug.ends_with('-') {
+        slug.pop();
+    }
+    slug
 }
 
 // ---------------------------------------------------------------------------
@@ -1667,9 +1752,10 @@ See frontmatter.
     fn render_html_headings() {
         let doc = parse_document(SAMPLE_DOC, None).unwrap();
         let html = render_to_html(&doc, |_| true, |_| None, |_| false, noop_embed);
-        assert!(html.contains("<h1>"));
-        assert!(html.contains("<h2>"));
-        assert!(html.contains("<h3>"));
+        // Headings now carry id="..." for TOC anchors — match the open tag.
+        assert!(html.contains("<h1 id="));
+        assert!(html.contains("<h2 id="));
+        assert!(html.contains("<h3 id="));
     }
 
     // rivet: verifies REQ-033
@@ -1962,6 +2048,55 @@ See frontmatter.
         assert!(
             !html.contains("artifact-embed-header"),
             "links-only should not have card header"
+        );
+    }
+
+    // rivet: verifies REQ-008
+    #[test]
+    fn headings_get_id_attributes_for_toc_anchors() {
+        // Without id= on headings, in-page [text](#anchor) links don't
+        // navigate. Pin the slug shape: lowercase, non-alnum to dashes,
+        // no trailing dashes, embedded HTML stripped.
+        let content = "---\nid: DOC-A\ntitle: T\n---\n# Top Level\n\n## Section One!\n\n### A `code` heading & more\n";
+        let doc = parse_document(content, None).unwrap();
+        let html = render_to_html(&doc, |_| true, rich_info_fn, |_| false, noop_embed);
+        assert!(html.contains("<h1 id=\"top-level\">"), "got: {html}");
+        assert!(html.contains("<h2 id=\"section-one\">"), "got: {html}");
+        assert!(
+            html.contains("<h3 id=\"a-code-heading-more\">"),
+            "got: {html}",
+        );
+    }
+
+    #[test]
+    fn slugify_heading_handles_edge_cases() {
+        use super::slugify_heading;
+        assert_eq!(slugify_heading("Top Level"), "top-level");
+        assert_eq!(slugify_heading("  spaces  "), "spaces");
+        assert_eq!(slugify_heading("Multi --- dashes"), "multi-dashes");
+        assert_eq!(slugify_heading("with `code` span"), "with-code-span");
+        assert_eq!(slugify_heading("Section 1.2.3"), "section-1-2-3");
+        assert_eq!(slugify_heading(""), "");
+    }
+
+    // rivet: verifies REQ-033
+    #[test]
+    fn standalone_embed_line_not_wrapped_in_paragraph() {
+        // Regression guard: when `{{table:...}}`, `{{artifact:ID}}`, or
+        // `{{links:ID}}` appears on its own line, the resolved block-level
+        // HTML must emit directly — NOT inside a <p>, which produces
+        // invalid nesting like <p><table>...</table></p>.
+        let content =
+            "---\nid: DOC-BE\ntitle: Blocks\n---\n{{artifact:REQ-001}}\n\n{{links:REQ-001}}\n";
+        let doc = parse_document(content, None).unwrap();
+        let html = render_to_html(&doc, |_| true, rich_info_fn, |_| false, noop_embed);
+        assert!(
+            !html.contains("<p><div"),
+            "artifact embed must not be wrapped in <p>: {html}"
+        );
+        assert!(
+            !html.contains("<p><table"),
+            "links embed must not be wrapped in <p>: {html}"
         );
     }
 

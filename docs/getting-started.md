@@ -332,6 +332,32 @@ incoming link of the specified type from one of the listed `from-types`.
 Severity levels: `error` (validation fails), `warning` (reported but passes),
 `info` (informational).
 
+### Conditional rules
+
+`conditional-rules:` apply a `then:` requirement only when a `when:`
+condition matches. Use this when a check should fire for a subset of
+artifacts (e.g. only approved status, only a specific type).
+
+```yaml
+artifact-types:
+  - name: design-decision
+    fields:
+      - { name: approver, type: string }
+    conditional-rules:
+      - name: valid-doc-requires-approver
+        description: Approved decisions must name an approver
+        when:
+          equals:
+            field: status
+            value: approved
+        then:
+          required-fields: [approver]
+        severity: error
+```
+
+Conditions: `equals` (exact value), `field-present` (any non-empty),
+`field-absent`. Requirements: `required-fields`, `required-links`.
+
 ---
 
 ## Link Types
@@ -809,6 +835,36 @@ rivet variant solve --model fm.yaml --variant v.yaml --binding bindings.yaml
 rivet validate --model fm.yaml --variant v.yaml --binding bindings.yaml
 ```
 
+### Variants in the dashboard
+
+`rivet serve` auto-discovers variant configuration when these files exist
+(under `artifacts/` or any `source.path` from `rivet.yaml`):
+
+- `feature-model.yaml` or `feature_model.yaml`
+- `bindings.yaml` or `feature-bindings.yaml`
+- `variants/*.yaml` — one file per variant
+
+When a feature model is found, the dashboard exposes:
+
+1. **Sidebar "Variants" entry** with a count badge (declared variants).
+2. **Variant selector** in the header — picking one scopes every artifact
+   list, the link graph, and the coverage matrix to artifacts bound to
+   the variant's active features.
+3. **`/variants` overview page** — every declared variant with PASS/FAIL
+   constraint-solver status and the bound artifact set.
+
+If no feature model is present, the dashboard renders normally and
+`/variants` shows a friendly hint on how to create one.
+
+#### Filtering artifacts by variant
+
+In the dashboard via the header dropdown. On the CLI:
+
+```bash
+rivet list --variant eu-adas-c --format json
+rivet coverage --variant eu-adas-c
+```
+
 ---
 
 ## Zola Export
@@ -886,6 +942,75 @@ rivet init --hooks  # installs commit-msg + pre-commit hooks
 **Important**: Git hooks are convenience tooling, not security controls.
 `git commit --no-verify` bypasses them. CI must independently run
 `rivet commits` and `rivet validate` as required checks.
+
+---
+
+## Documentation gates (`rivet docs check`)
+
+`rivet docs check` runs invariants over the project's markdown to catch
+drift between docs and the code/artifact reality. Eight invariants
+(see `rivet-core/src/doc_check.rs` for the full list), three of which
+have user-visible escape hatches.
+
+### `AUDIT:` marker — accept a numeric claim without a generated source
+
+`ArtifactCounts` flags prose like "42 requirements" unless either
+(a) a `{{stats:...}}` embed produces the number, or (b) an audit
+marker on the same line attests to a manual review:
+
+```markdown
+We currently track 42 requirements <!-- AUDIT: verified 2026-04-22 -->.
+```
+
+Use sparingly — the marker is a manual override, not an embed
+substitute. Audit dates are not parsed; the marker only suppresses the
+violation. Best practice: refresh the date when you re-verify.
+
+### `<!-- rivet-docs-check: ... -->` skip directives
+
+Surgical exemptions for `ArtifactIdValidity` (the "artifact not found
+in store" check). Use these when a doc legitimately references
+external IDs that aren't in the local store:
+
+```markdown
+This requirement traces to GNV-396 <!-- rivet-docs-check: ignore GNV-396 -->.
+
+Or skip every ID on a single line:
+External refs: GNV-396, FOO-20819 <!-- rivet-docs-check: ignore-line -->
+```
+
+For project-wide exemption, prefer `rivet.yaml: docs-check.external-namespaces`:
+
+```yaml
+docs-check:
+  external-namespaces: [GNV, GNR, HZO, UC]   # any prefix here is exempt
+  ignore-patterns: ["^TEMP-\\d+$"]            # free-form regex escape hatch
+```
+
+### `<!-- rivet-docs-check: design-doc-aspirational-ok -->`
+
+Marks a doc as aspirational — `SubcommandReferences`, `EmbedTokenReferences`,
+and `ArtifactIdValidity` are skipped for that file. Used in `docs/design/*`
+where future-tense planning should not break the gate.
+
+### Re-running `rivet init --agents`
+
+The generated AGENTS.md/CLAUDE.md content is wrapped between
+`<!-- BEGIN rivet-managed -->` and `<!-- END rivet-managed -->` markers.
+Content **outside** those markers is preserved across regeneration —
+the file is never overwritten end-to-end as long as the markers exist.
+
+If you're upgrading a hand-written AGENTS.md to the managed format,
+use `rivet init --agents --migrate` once: it wraps the existing content
+below a fresh managed section without losing anything.
+
+`--force-regen` exists for unrecoverable cases where the markers got
+deleted, but it is **destructive** — it overwrites the entire file. To
+guard against accidental triggering, it now requires `--yes`:
+
+```bash
+rivet init --agents --force-regen --yes   # destroys current AGENTS.md
+```
 
 ---
 

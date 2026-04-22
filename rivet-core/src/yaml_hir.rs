@@ -280,7 +280,38 @@ pub fn extract_schema_driven(
                 }
             }
         }
-        // Unknown keys are silently skipped (comments, metadata, etc.)
+        else {
+            // Unknown top-level keys: most are legitimate (project metadata
+            // like `name:`, `version:`, free-form fields). But a key whose
+            // *singular* form matches a known section (e.g. user wrote
+            // `control-action:` instead of `control-actions:`) is almost
+            // certainly a typo of a schema-defined section — surface it as
+            // a Warning so misspellings stop being silently dropped.
+            // We deliberately keep this advisory (not Error) so genuine
+            // metadata keys don't break existing files.
+            let known_sections: Vec<&str> = section_map.keys().copied().collect();
+            let candidate_singular = key_text.strip_suffix('s').unwrap_or(&key_text);
+            let candidate_plural = format!("{key_text}s");
+            let suspected_typo = known_sections.iter().any(|s| {
+                let s_singular = s.strip_suffix('s').unwrap_or(s);
+                s_singular == candidate_singular
+                    || *s == candidate_plural
+                    || (key_text.len() > 4 && s.contains(candidate_singular))
+            });
+            if suspected_typo {
+                let span = Span::from_text_range(key_node.text_range());
+                result.diagnostics.push(ParseDiagnostic {
+                    span,
+                    message: format!(
+                        "unknown top-level key '{key_text}' looks like a typo of a \
+                         known schema section — known: {}",
+                        known_sections.join(", ")
+                    ),
+                    severity: Severity::Warning,
+                });
+            }
+            // Otherwise: silently skip (legitimate metadata).
+        }
     }
 
     // Set source_file on all artifacts and detect duplicates
@@ -912,8 +943,14 @@ fn extract_links(value_node: &SyntaxNode) -> Vec<Link> {
     let mut links = Vec::new();
 
     // Links is a Sequence of Mappings: each with "type" + "target".
+    // If the CST didn't produce a block Sequence (e.g. the user wrote
+    // flow-style `links: [{type: X, target: Y}]`, which the CST parser
+    // records as FlowSequence without nested FlowMapping nodes), fall back
+    // to a serde_yaml reparse of the value text — this guarantees flow
+    // and block styles produce identical links and prevents silent
+    // under-counting by the cardinality validator.
     let Some(seq) = child_of_kind(value_node, SyntaxKind::Sequence) else {
-        return links;
+        return extract_links_via_serde(value_node);
     };
 
     for item in seq.children() {
@@ -961,6 +998,37 @@ fn extract_links(value_node: &SyntaxNode) -> Vec<Link> {
     }
 
     links
+}
+
+/// Fallback parser for `links:` values the CST didn't recognise as a block
+/// `Sequence` — most importantly flow-style `[{type: X, target: Y}, ...]`.
+/// Re-parses the value text via serde_yaml and converts `type` + `target`
+/// into `Link`s. Unknown shapes and parse errors silently produce no
+/// links (matching the permissive behaviour of the primary path).
+fn extract_links_via_serde(value_node: &SyntaxNode) -> Vec<Link> {
+    #[derive(serde::Deserialize)]
+    struct RawLink {
+        #[serde(rename = "type")]
+        link_type: Option<String>,
+        target: Option<String>,
+    }
+    let text = value_node.text().to_string();
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+    let Ok(raws) = serde_yaml::from_str::<Vec<RawLink>>(trimmed) else {
+        return Vec::new();
+    };
+    raws.into_iter()
+        .filter_map(|r| match (r.link_type, r.target) {
+            (Some(t), Some(tgt)) if !t.is_empty() && !tgt.is_empty() => Some(Link {
+                link_type: t,
+                target: tgt,
+            }),
+            _ => None,
+        })
+        .collect()
 }
 
 // ── Provenance extraction ─────────────────────────────────────────────
@@ -1027,6 +1095,24 @@ fn extract_string_list(value_node: &SyntaxNode) -> Vec<String> {
                         items.push(unquote_scalar(k, t.text()));
                     }
                     _ => {}
+                }
+            }
+        }
+        // If the CST produced no scalar tokens but the source clearly
+        // wasn't an empty `[]`, fall back to serde_yaml so unusual flow
+        // shapes (anchors, refs, quoted commas) don't silently drop to
+        // an empty list. Same defensive pattern as extract_links.
+        if items.is_empty() {
+            let text = flow.text().to_string();
+            let trimmed = text.trim();
+            let is_empty_brackets = trimmed == "[]"
+                || trimmed
+                    .strip_prefix('[')
+                    .and_then(|s| s.strip_suffix(']'))
+                    .is_some_and(|inner| inner.trim().is_empty());
+            if !is_empty_brackets {
+                if let Ok(parsed) = serde_yaml::from_str::<Vec<String>>(trimmed) {
+                    items = parsed;
                 }
             }
         }
@@ -1466,6 +1552,47 @@ artifacts:
         assert_eq!(links[0].target, "B-1");
         assert_eq!(links[1].link_type, "derives-from");
         assert_eq!(links[1].target, "B-2");
+    }
+
+    /// 3b. Flow-style link syntax produces identical links to block-style.
+    /// Regression guard: v0.4.1 parsed flow-style but the cardinality counter
+    /// saw zero links, so required-link validation silently passed even when
+    /// the required link was missing (the flow-style version was accepted).
+    #[test]
+    fn links_extraction_flow_style_matches_block_style() {
+        let flow = "\
+artifacts:
+  - id: A-1
+    type: req
+    title: Flow style
+    links: [{ type: satisfies, target: B-1 }, { type: derives-from, target: B-2 }]
+";
+        let block = "\
+artifacts:
+  - id: A-1
+    type: req
+    title: Block style
+    links:
+      - type: satisfies
+        target: B-1
+      - type: derives-from
+        target: B-2
+";
+        let flow_hir = extract_generic_artifacts(flow);
+        let block_hir = extract_generic_artifacts(block);
+        assert_eq!(flow_hir.artifacts.len(), 1, "flow: no artifact parsed");
+        assert_eq!(block_hir.artifacts.len(), 1, "block: no artifact parsed");
+        let flow_links = &flow_hir.artifacts[0].artifact.links;
+        let block_links = &block_hir.artifacts[0].artifact.links;
+        assert_eq!(
+            flow_links, block_links,
+            "flow-style and block-style must yield identical links — got flow={flow_links:?} block={block_links:?}",
+        );
+        assert_eq!(
+            flow_links.len(),
+            2,
+            "flow-style links under-counted: got {flow_links:?}"
+        );
     }
 
     /// 4. Custom fields stored as serde_yaml::Value correctly.

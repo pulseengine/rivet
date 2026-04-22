@@ -180,6 +180,7 @@ mod tests {
                 target_types: vec![],
                 from_types: vec!["design-decision".into()],
                 severity: Severity::Warning,
+            alternate_backlinks: vec![],
             },
             TraceabilityRule {
                 name: "dd-justification".into(),
@@ -190,6 +191,7 @@ mod tests {
                 target_types: vec!["requirement".into()],
                 from_types: vec![],
                 severity: Severity::Error,
+            alternate_backlinks: vec![],
             },
         ];
         Schema::merge(&[file])
@@ -314,6 +316,7 @@ mod tests {
             target_types: vec![], // match any — makes the self-link trap reachable
             from_types: vec![],
             severity: Severity::Error,
+            alternate_backlinks: vec![],
         }];
         let schema = Schema::merge(&[file]);
 
@@ -356,6 +359,7 @@ mod tests {
             target_types: vec![],
             from_types: vec![], // match any
             severity: Severity::Warning,
+            alternate_backlinks: vec![],
         }];
         let schema = Schema::merge(&[file]);
 

@@ -166,6 +166,7 @@ mod tests {
             target_types: vec![],
             from_types: vec!["feature".into()],
             severity: Severity::Warning,
+            alternate_backlinks: vec![],
         }]);
         let artifacts = vec![make_artifact(
             "REQ-001",
@@ -191,6 +192,7 @@ mod tests {
             target_types: vec![],
             from_types: vec!["feature".into()],
             severity: Severity::Warning,
+            alternate_backlinks: vec![],
         }]);
         let artifacts = vec![
             make_artifact("REQ-001", "requirement", Some("implemented"), vec![]),
@@ -223,6 +225,7 @@ mod tests {
             target_types: vec![],
             from_types: vec!["feature".into()],
             severity: Severity::Warning,
+            alternate_backlinks: vec![],
         }]);
         let artifacts = vec![make_artifact(
             "REQ-001",
@@ -247,6 +250,7 @@ mod tests {
             target_types: vec![],
             from_types: vec!["feature".into(), "design-decision".into()],
             severity: Severity::Warning,
+            alternate_backlinks: vec![],
         }]);
         let artifacts = vec![
             make_artifact("REQ-001", "requirement", Some("implemented"), vec![]),

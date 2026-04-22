@@ -139,6 +139,44 @@ test.describe("Documents", () => {
     }
   });
 
+  // B1: every <h*> in a rendered document body must carry an `id`
+  // attribute so in-page TOC links navigate. Catches regressions where
+  // `<h2>Section</h2>` slips back in without `id="section"`.
+  test("rendered document headings have id attributes for TOC anchors", async ({
+    page,
+  }) => {
+    await page.goto("/documents");
+    await waitForHtmx(page);
+    const docLinks = await page
+      .locator("a[href^='/documents/']")
+      .evaluateAll((els) =>
+        els
+          .map((el) => el.getAttribute("href"))
+          .filter((h): h is string => !!h),
+      );
+    if (docLinks.length === 0) {
+      test.skip();
+      return;
+    }
+    await page.goto(docLinks[0]);
+    await waitForHtmx(page);
+    const headings = await page
+      .locator("article h2, article h3, article h4, main h2, main h3, main h4")
+      .evaluateAll((els) =>
+        els.map((el) => ({
+          tag: el.tagName.toLowerCase(),
+          id: el.getAttribute("id"),
+          text: el.textContent?.trim() ?? "",
+        })),
+      );
+    if (headings.length === 0) {
+      test.skip();
+      return;
+    }
+    const missingId = headings.filter((h) => !h.id);
+    expect(missingId).toEqual([]);
+  });
+
   test("embed-stats renders a table when present", async ({ page }) => {
     // Visit each document looking for embed-stats divs
     await page.goto("/documents");

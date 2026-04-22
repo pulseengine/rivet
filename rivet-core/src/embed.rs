@@ -265,6 +265,16 @@ impl EmbedRequest {
             for token in tail.split_whitespace() {
                 if let Some((key, val)) = token.split_once('=') {
                     options.insert(key.to_string(), val.to_string());
+                } else {
+                    // Reject colon-prefixed syntax and other non-`key=value`
+                    // tokens so they don't get silently dropped (SC-EMBED-3).
+                    return Err(EmbedError {
+                        kind: EmbedErrorKind::MalformedSyntax(format!(
+                            "unrecognized option `{token}` — use `key=value` form \
+                             (e.g. `limit=10`, not `:limit 10`)"
+                        )),
+                        raw_text: input.to_string(),
+                    });
                 }
             }
             return Ok(EmbedRequest {
@@ -334,17 +344,27 @@ impl EmbedRequest {
 pub fn resolve_embed(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> Result<String, EmbedError> {
     match request.name.as_str() {
         "stats" => Ok(render_stats(request, ctx)),
-        "coverage" => Ok(render_coverage(request, ctx)),
-        "diagnostics" => Ok(render_diagnostics(request, ctx)),
-        "matrix" => Ok(render_matrix(request, ctx)),
+        "coverage" => render_coverage(request, ctx),
+        "diagnostics" => render_diagnostics(request, ctx),
+        "matrix" => render_matrix(request, ctx),
         "query" => render_query(request, ctx),
         "group" => render_group(request, ctx),
-        // Legacy embeds (artifact, links, table) are still handled by
-        // resolve_inline in document.rs — they should never reach here.
+        // Legacy embeds (artifact, links, table) are rendered by
+        // `resolve_inline` while a markdown document is being processed —
+        // not by this top-level resolver. So `rivet embed table:foo:bar`
+        // can't produce a card on its own; it only renders correctly when
+        // the token appears inside a doc that runs through the markdown
+        // pipeline (rivet serve, rivet export --format html, embeds in
+        // rendered prose). Inform the caller plainly so they don't waste
+        // time chasing the empty result.
         "artifact" | "links" | "table" => Err(EmbedError {
-            kind: EmbedErrorKind::MalformedSyntax(
-                "artifact/links/table embeds are handled inline".into(),
-            ),
+            kind: EmbedErrorKind::MalformedSyntax(format!(
+                "{} embed renders inside markdown documents (rivet serve / \
+                 rivet export --format html). The CLI `rivet embed` command \
+                 can't render it standalone — embed it in a doc and view \
+                 the rendered output instead.",
+                request.name
+            )),
             raw_text: format!("{request:?}"),
         }),
         other => Err(EmbedError {
@@ -544,9 +564,35 @@ fn severity_rank(s: crate::schema::Severity) -> u8 {
 // ── Coverage renderer ───────────────────────────────────────────────────
 
 /// Render `{{coverage}}` or `{{coverage:RULE_NAME}}`.
-fn render_coverage(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> String {
+fn render_coverage(
+    request: &EmbedRequest,
+    ctx: &EmbedContext<'_>,
+) -> Result<String, EmbedError> {
     let report = coverage::compute_coverage(ctx.store, ctx.schema, ctx.graph);
     let filter_rule = request.args.first().map(|s| s.as_str());
+
+    // If the user named a specific rule, verify it exists in the report
+    // before silently returning an empty table. A typo'd rule name used
+    // to render as "no coverage rules defined" — indistinguishable from
+    // a project that genuinely has no rules.
+    if let Some(name) = filter_rule {
+        let exists = report.entries.iter().any(|e| e.rule_name == name);
+        if !exists {
+            let known: Vec<&str> =
+                report.entries.iter().map(|e| e.rule_name.as_str()).collect();
+            let hint = if known.is_empty() {
+                "no traceability rules are defined in the loaded schemas".to_string()
+            } else {
+                format!("known rules: {}", known.join(", "))
+            };
+            return Err(EmbedError {
+                kind: EmbedErrorKind::MalformedSyntax(format!(
+                    "coverage rule '{name}' not found — {hint}"
+                )),
+                raw_text: format!("{request:?}"),
+            });
+        }
+    }
 
     let entries: Vec<_> = report
         .entries
@@ -555,7 +601,7 @@ fn render_coverage(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> String {
         .collect();
 
     if entries.is_empty() {
-        return "<div class=\"embed-coverage\"><p class=\"embed-no-data\">No coverage rules defined.</p></div>\n".to_string();
+        return Ok("<div class=\"embed-coverage\"><p class=\"embed-no-data\">No coverage rules defined.</p></div>\n".to_string());
     }
 
     let mut html = String::from(
@@ -610,7 +656,7 @@ fn render_coverage(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> String {
     }
 
     html.push_str("</div>\n");
-    html
+    Ok(html)
 }
 
 // ── Diagnostics renderer ────────────────────────────────────────────────
@@ -618,27 +664,51 @@ fn render_coverage(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> String {
 /// Render `{{diagnostics}}` or `{{diagnostics:SEVERITY}}`.
 ///
 /// Without args: all diagnostics. With severity arg: filtered by severity.
-fn render_diagnostics(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> String {
+/// Unknown severity strings are rejected (regression guard for v0.4.1
+/// silent-accept where `{{diagnostics:warnings}}` returned everything).
+fn render_diagnostics(
+    request: &EmbedRequest,
+    ctx: &EmbedContext<'_>,
+) -> Result<String, EmbedError> {
     use crate::schema::Severity;
 
     let filter_severity = request.args.first().map(|s| s.as_str());
+    if let Some(sev) = filter_severity {
+        if !matches!(sev, "error" | "warning" | "info") {
+            return Err(EmbedError {
+                kind: EmbedErrorKind::MalformedSyntax(format!(
+                    "diagnostics severity '{sev}' is not recognised — \
+                     use 'error', 'warning', or 'info'"
+                )),
+                raw_text: format!("{request:?}"),
+            });
+        }
+    }
 
     let filtered: Vec<_> = ctx
         .diagnostics
         .iter()
         .filter(|d| match filter_severity {
+            // The early validation pass at the top of render_diagnostics
+            // rejects unknown severities, so we know `filter_severity` is
+            // either None or one of the three supported strings here.
             Some("error") => d.severity == Severity::Error,
             Some("warning") => d.severity == Severity::Warning,
             Some("info") => d.severity == Severity::Info,
-            _ => true,
+            None => true,
+            // Defensive: any other value would have been rejected upstream.
+            // If this arm fires, there's a contract bug — fail loudly.
+            Some(other) => unreachable!(
+                "render_diagnostics severity filter '{other}' should have been rejected upstream",
+            ),
         })
         .collect();
 
     if filtered.is_empty() {
         let scope = filter_severity.unwrap_or("any");
-        return format!(
+        return Ok(format!(
             "<div class=\"embed-diagnostics\"><p class=\"embed-no-data\">No diagnostics ({scope} severity).</p></div>\n"
-        );
+        ));
     }
 
     let mut html = String::from(
@@ -702,7 +772,7 @@ fn render_diagnostics(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> String 
     );
 
     html.push_str("</div>\n");
-    html
+    Ok(html)
 }
 
 // ── Matrix renderer ─────────────────────────────────────────────────────
@@ -711,9 +781,44 @@ fn render_diagnostics(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> String 
 ///
 /// Without args: renders one matrix per traceability rule in the schema.
 /// With args: renders a specific matrix for the given source→target types.
-fn render_matrix(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> String {
+/// Unknown artifact-type names are rejected so a typo no longer renders
+/// a silent blank table.
+fn render_matrix(
+    request: &EmbedRequest,
+    ctx: &EmbedContext<'_>,
+) -> Result<String, EmbedError> {
     let from_type = request.args.first().map(|s| s.as_str());
     let to_type = request.args.get(1).map(|s| s.as_str());
+
+    // Validate explicit type names against the loaded schema before
+    // rendering anything — silent acceptance of an unknown type used to
+    // render an empty matrix indistinguishable from "rule applies but
+    // nothing covered yet". The user couldn't tell their typo from a
+    // genuine coverage gap.
+    for (label, maybe_name) in [("from", from_type), ("to", to_type)] {
+        if let Some(name) = maybe_name {
+            if !ctx.schema.artifact_types.contains_key(name) {
+                let mut known: Vec<&str> = ctx
+                    .schema
+                    .artifact_types
+                    .keys()
+                    .map(String::as_str)
+                    .collect();
+                known.sort();
+                let hint = if known.is_empty() {
+                    "no artifact types are loaded".to_string()
+                } else {
+                    format!("known: {}", known.join(", "))
+                };
+                return Err(EmbedError {
+                    kind: EmbedErrorKind::MalformedSyntax(format!(
+                        "matrix {label}-type '{name}' is not a known artifact type — {hint}"
+                    )),
+                    raw_text: format!("{request:?}"),
+                });
+            }
+        }
+    }
 
     let mut html = String::from("<div class=\"embed-matrix\">\n");
 
@@ -784,7 +889,7 @@ fn render_matrix(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> String {
     }
 
     html.push_str("</div>\n");
-    html
+    Ok(html)
 }
 
 /// Render a single traceability matrix as an HTML table.
@@ -919,6 +1024,22 @@ fn render_query(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> Result<String
         .unwrap_or(QUERY_EMBED_DEFAULT_LIMIT)
         .min(QUERY_EMBED_MAX_LIMIT);
 
+    // Resolve column list from `fields=id,title,asil` (comma-separated).
+    // Defaults to the classic 4-column shape. Each field is resolved via
+    // `read_artifact_field` so custom YAML fields work without plumbing.
+    const DEFAULT_FIELDS: &[&str] = &["id", "type", "title", "status"];
+    let fields: Vec<String> = request
+        .options
+        .get("fields")
+        .map(|s| {
+            s.split(',')
+                .map(|p| p.trim().to_string())
+                .filter(|p| !p.is_empty())
+                .collect()
+        })
+        .filter(|v: &Vec<String>| !v.is_empty())
+        .unwrap_or_else(|| DEFAULT_FIELDS.iter().map(|s| s.to_string()).collect());
+
     let mut matches: Vec<&crate::model::Artifact> = Vec::new();
     let mut total = 0usize;
     for artifact in ctx.store.iter() {
@@ -937,20 +1058,28 @@ fn render_query(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> Result<String
         return Ok(html);
     }
 
-    html.push_str(
-        "<table class=\"embed-table\"><thead><tr>\
-         <th>ID</th><th>Type</th><th>Title</th><th>Status</th>\
-         </tr></thead><tbody>\n",
-    );
-    for a in &matches {
-        let _ = writeln!(
+    html.push_str("<table class=\"embed-table\"><thead><tr>");
+    for f in &fields {
+        let _ = write!(
             html,
-            "<tr><td><code>{id}</code></td><td>{typ}</td><td>{title}</td><td>{status}</td></tr>",
-            id = document::html_escape(&a.id),
-            typ = document::html_escape(&a.artifact_type),
-            title = document::html_escape(&a.title),
-            status = document::html_escape(a.status.as_deref().unwrap_or("-")),
+            "<th>{}</th>",
+            document::html_escape(&column_heading(f))
         );
+    }
+    html.push_str("</tr></thead><tbody>\n");
+    for a in &matches {
+        html.push_str("<tr>");
+        for f in &fields {
+            let raw = read_artifact_field(a, f);
+            let cell = if raw.is_empty() { "-".to_string() } else { raw };
+            let wrapped = if f == "id" {
+                format!("<code>{}</code>", document::html_escape(&cell))
+            } else {
+                document::html_escape(&cell)
+            };
+            let _ = write!(html, "<td>{wrapped}</td>");
+        }
+        html.push_str("</tr>\n");
     }
     html.push_str("</tbody></table>\n");
 
@@ -980,13 +1109,14 @@ fn render_query(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> Result<String
 /// - `{{group:status}}` — counts of draft / approved / shipped / unset
 /// - `{{group:type}}` — like `{{stats:types}}` without schema pre-population
 /// - `{{group:asil}}` — per-ASIL counts from a custom field
+/// - `{{group:TYPE:FIELD}}` — group only TYPE artifacts by FIELD
+///   (e.g. `{{group:requirement:asil}}` → ASIL distribution across requirements)
 ///
-/// The "meaning" of this embed is not fully pinned down by prior docs —
-/// this implementation picks the most useful reading (count-by-value) and
-/// documents it alongside the output.  Unset / missing values are bucketed
-/// as "unset" so the totals line up with the project artifact count.
+/// Unset / missing values are bucketed as "unset" so the totals line up with
+/// the project artifact count (or the type-scoped subset count for the
+/// two-arg form).
 fn render_group(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> Result<String, EmbedError> {
-    let Some(field) = request.args.first() else {
+    let Some(first) = request.args.first() else {
         return Err(EmbedError {
             kind: EmbedErrorKind::MalformedSyntax(
                 "group embed requires a field name: {{group:status}}".into(),
@@ -994,16 +1124,28 @@ fn render_group(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> Result<String
             raw_text: format!("{request:?}"),
         });
     };
-    let field = field.trim();
-    if field.is_empty() {
+    let first = first.trim();
+    if first.is_empty() {
         return Err(EmbedError {
             kind: EmbedErrorKind::MalformedSyntax("group field cannot be empty".into()),
             raw_text: format!("{request:?}"),
         });
     }
 
+    // Two-arg form: {{group:TYPE:FIELD}} — first arg scopes to artifact type,
+    // second is the field to group by. One-arg form groups every artifact.
+    let (type_filter, field) = match request.args.get(1).map(|s| s.trim()) {
+        Some(second) if !second.is_empty() => (Some(first), second),
+        _ => (None, first),
+    };
+
     let mut counts: BTreeMap<String, usize> = BTreeMap::new();
     for a in ctx.store.iter() {
+        if let Some(t) = type_filter
+            && a.artifact_type != t
+        {
+            continue;
+        }
         let raw = read_artifact_field(a, field);
         // Treat empty/missing as "unset" so the totals always add up.
         let bucket = if raw.is_empty() {
@@ -1042,6 +1184,22 @@ fn render_group(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> Result<String
     );
     html.push_str("</tbody></table>\n</div>\n");
     Ok(html)
+}
+
+/// Format a field name for use as a table column heading.
+/// Capitalizes top-level well-known fields and preserves user custom field
+/// names (ASIL → "asil" → "Asil"; tags → "Tags"). Keeps IDs visually prominent.
+fn column_heading(name: &str) -> String {
+    match name {
+        "id" => "ID".to_string(),
+        _ => {
+            let mut chars = name.chars();
+            match chars.next() {
+                Some(c) => c.to_ascii_uppercase().to_string() + chars.as_str(),
+                None => String::new(),
+            }
+        }
+    }
 }
 
 /// Read a single string value for an artifact field by name.
@@ -1370,6 +1528,66 @@ mod tests {
     }
 
     #[test]
+    fn matrix_embed_rejects_unknown_from_type() {
+        // Regression: {{matrix:UnknownType:OtherType}} used to render a
+        // blank table (silent accept). Now must error with a hint listing
+        // known types.
+        let ctx = EmbedContext::empty();
+        let req = EmbedRequest::parse("matrix:does-not-exist:other").unwrap();
+        let err = resolve_embed(&req, &ctx).unwrap_err();
+        let msg = match &err.kind {
+            EmbedErrorKind::MalformedSyntax(m) => m.clone(),
+            other => panic!("expected MalformedSyntax, got {other:?}"),
+        };
+        assert!(
+            msg.contains("does-not-exist"),
+            "error must name the unknown type: {msg}"
+        );
+        assert!(
+            msg.contains("from-type"),
+            "error must clarify which arg was wrong: {msg}"
+        );
+    }
+
+    #[test]
+    fn diagnostics_embed_rejects_unknown_severity() {
+        // Regression: {{diagnostics:warnings}} (typo) used to silently
+        // return ALL diagnostics because the severity match fell to the
+        // `_ => true` arm.
+        let ctx = EmbedContext::empty();
+        let req = EmbedRequest::parse("diagnostics:warnings").unwrap();
+        let err = resolve_embed(&req, &ctx).unwrap_err();
+        match &err.kind {
+            EmbedErrorKind::MalformedSyntax(m) => {
+                assert!(
+                    m.contains("warnings") && m.contains("warning"),
+                    "error must name the bad input and the correct value: {m}"
+                );
+            }
+            other => panic!("expected MalformedSyntax, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn coverage_embed_rejects_unknown_filter_rule() {
+        // Regression: {{coverage:typo-rule}} used to render "no coverage
+        // rules defined" — indistinguishable from a project that has no
+        // rules. Now errors with a list of known rule names.
+        let ctx = EmbedContext::empty();
+        let req = EmbedRequest::parse("coverage:does-not-exist").unwrap();
+        let err = resolve_embed(&req, &ctx).unwrap_err();
+        match &err.kind {
+            EmbedErrorKind::MalformedSyntax(m) => {
+                assert!(
+                    m.contains("does-not-exist"),
+                    "error must name the unknown rule: {m}"
+                );
+            }
+            other => panic!("expected MalformedSyntax, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn matrix_with_types_parses() {
         let req = EmbedRequest::parse("matrix:requirement:feature").unwrap();
         assert_eq!(req.name, "matrix");
@@ -1618,6 +1836,56 @@ mod tests {
         assert!(matches!(err.kind, EmbedErrorKind::MalformedSyntax(_)));
     }
 
+    #[test]
+    fn query_embed_fields_option_customizes_columns() {
+        // `fields=id,title,asil` should produce the three columns in order.
+        let mut a = plain("REQ-1", "requirement", Some("Auth"), &[]);
+        a.fields
+            .insert("asil".into(), serde_yaml::Value::String("ASIL-B".into()));
+        let store = make_store(vec![a]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let html = run_embed(
+            "query:(= type \"requirement\") fields=id,title,asil",
+            &store,
+            &schema,
+            &graph,
+        )
+        .unwrap();
+        assert!(html.contains("<th>ID</th>"), "expected ID column: {html}");
+        assert!(
+            html.contains("<th>Title</th>"),
+            "expected Title column: {html}"
+        );
+        assert!(
+            html.contains("<th>Asil</th>"),
+            "expected Asil column: {html}"
+        );
+        assert!(html.contains("ASIL-B"), "custom field value missing: {html}");
+        // Default Status column must be absent when `fields=` is overridden.
+        assert!(
+            !html.contains("<th>Status</th>"),
+            "Status column should be suppressed when fields= is set: {html}"
+        );
+    }
+
+    #[test]
+    fn query_embed_rejects_colon_prefixed_option_syntax() {
+        // Regression guard: `:limit 10` used to be silently dropped because
+        // the parser only recognized `key=value` tokens. Now it is rejected
+        // with a hint steering the user to the correct syntax.
+        let err = EmbedRequest::parse("query:(= type \"requirement\") :limit 10")
+            .unwrap_err();
+        let msg = match &err.kind {
+            EmbedErrorKind::MalformedSyntax(m) => m.clone(),
+            other => panic!("expected MalformedSyntax, got {other:?}"),
+        };
+        assert!(
+            msg.contains("key=value"),
+            "error should explain the correct syntax, got: {msg}"
+        );
+    }
+
     // ── stats:type:NAME granular form ───────────────────────────────
 
     #[test]
@@ -1735,6 +2003,42 @@ mod tests {
         assert!(html.contains("ASIL-B"), "got: {html}");
         assert!(html.contains("<td>2</td>"), "got: {html}");
         assert!(html.contains("unset"), "got: {html}");
+    }
+
+    #[test]
+    fn group_embed_two_arg_scopes_by_type() {
+        // Two-arg form: {{group:TYPE:FIELD}} — scope to artifacts of TYPE,
+        // group those by FIELD. Regression guard for the silent-accept bug
+        // where the second arg was discarded and every artifact fell into
+        // bucket "unset" because FIELD was read as the literal type name.
+        let mut req_a = plain("REQ-1", "requirement", None, &[]);
+        req_a.fields.insert(
+            "asil".into(),
+            serde_yaml::Value::String("ASIL-B".into()),
+        );
+        let mut req_b = plain("REQ-2", "requirement", None, &[]);
+        req_b.fields.insert(
+            "asil".into(),
+            serde_yaml::Value::String("ASIL-D".into()),
+        );
+        // Non-requirement artifact — should be excluded by type filter.
+        let mut test_a = plain("TEST-1", "test", None, &[]);
+        test_a.fields.insert(
+            "asil".into(),
+            serde_yaml::Value::String("ASIL-B".into()),
+        );
+        let store = make_store(vec![req_a, req_b, test_a]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let html =
+            run_embed("group:requirement:asil", &store, &schema, &graph).unwrap();
+        assert!(html.contains("ASIL-B"), "got: {html}");
+        assert!(html.contains("ASIL-D"), "got: {html}");
+        // Total must be 2 (only the two requirements), not 3.
+        assert!(
+            html.contains("<strong>2</strong>"),
+            "type filter did not exclude non-requirement artifact — got: {html}"
+        );
     }
 
     #[test]

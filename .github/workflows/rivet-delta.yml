@@ -1,0 +1,137 @@
+name: Rivet Delta
+
+# Runs on every PR that touches artifacts, schemas, or `rivet.yaml`.
+# Produces a graphical diff of the Rivet artifact graph between the PR's
+# merge base and the PR head, posts a markdown summary as a PR comment,
+# and uploads the full HTML dashboard + diff JSON as workflow artifacts
+# for deep inspection. The comment is updated in place on subsequent
+# pushes via a hidden marker (<!-- rivet-delta-bot -->).
+#
+# This is informational — the workflow never blocks a merge. If the diff
+# can't be computed (parse errors, missing base, etc.) it posts a
+# warning comment instead of failing.
+
+on:
+  pull_request:
+    paths:
+      - "artifacts/**"
+      - "schemas/**"
+      - "rivet.yaml"
+      - "rivet-core/**"
+      - "rivet-cli/**"
+      - ".github/workflows/rivet-delta.yml"
+      - "scripts/diff-to-markdown.mjs"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: rivet-delta-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  delta:
+    name: Artifact delta
+    runs-on: ubuntu-latest
+    # All user-derived fields are captured into env vars at job scope so
+    # no `run:` step interpolates untrusted input into a shell context.
+    # base.sha is a 40-char SHA (safe) but enving everything is the
+    # GitHub-recommended pattern for workflows that accept PR input.
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      RUN_ID: ${{ github.run_id }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Checkout head
+        uses: actions/checkout@v6
+        with:
+          path: head
+          fetch-depth: 0
+
+      - name: Checkout base
+        uses: actions/checkout@v6
+        with:
+          path: base
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 1
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: head
+
+      - name: Build rivet (release)
+        working-directory: head
+        run: cargo build --release -p rivet-cli
+
+      - name: Run diff (base vs head)
+        working-directory: head
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          mkdir -p delta-out
+          ./target/release/rivet diff \
+            --base "$GITHUB_WORKSPACE/base" \
+            --head "$GITHUB_WORKSPACE/head" \
+            --format json > delta-out/diff.json 2> delta-out/diff.stderr
+
+      - name: Run impact (since base)
+        working-directory: head
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          ./target/release/rivet impact \
+            --since "$BASE_SHA" \
+            --depth 5 \
+            --format json > delta-out/impact.json 2> delta-out/impact.stderr || \
+            echo '{"impacts": [], "error": "impact analysis failed"}' > delta-out/impact.json
+
+      - name: Export HTML dashboard for head
+        working-directory: head
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          ./target/release/rivet export \
+            --format html \
+            --output delta-out/html \
+            --version-label "pr-$PR_NUMBER" \
+            --offline || echo "export failed" > delta-out/export.err
+
+      - name: Generate markdown summary
+        id: summary
+        working-directory: head
+        run: |
+          set -euo pipefail
+          node scripts/diff-to-markdown.mjs \
+            --diff delta-out/diff.json \
+            --impact delta-out/impact.json \
+            --pr "$PR_NUMBER" \
+            --run "$RUN_ID" \
+            --repo "$REPO" \
+            > delta-out/comment.md
+          echo "comment_file=head/delta-out/comment.md" >> "$GITHUB_OUTPUT"
+
+      - name: Upload delta artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rivet-delta-pr-${{ github.event.pull_request.number }}
+          path: head/delta-out/
+          retention-days: 14
+
+      - name: Find previous delta comment
+        id: find_comment
+        uses: peter-evans/find-comment@v3
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: github-actions[bot]
+          body-includes: "<!-- rivet-delta-bot -->"
+
+      - name: Post or update delta comment
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-id: ${{ steps.find_comment.outputs.comment-id }}
+          edit-mode: replace
+          body-path: ${{ steps.summary.outputs.comment_file }}

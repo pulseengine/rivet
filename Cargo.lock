@@ -2705,6 +2705,7 @@ dependencies = [
  "lsp-types",
  "notify",
  "petgraph 0.7.1",
+ "regex",
  "rivet-core",
  "rmcp",
  "rowan 0.16.2",

@@ -11,6 +11,7 @@ pub const TRACED_STATUSES: &[&str] = &["implemented", "done", "approved", "accep
 
 /// A typed, directional link from one artifact to another.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct Link {
     /// Semantic type of this link (e.g., "leads-to-loss", "verifies").
     pub link_type: String,
@@ -24,6 +25,7 @@ pub struct Link {
 /// workflow, along with optional details about the model, session, and
 /// human reviewer.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct Provenance {
     /// Origin of the artifact: "human", "ai", or "ai-assisted".
     #[serde(rename = "created-by")]
@@ -266,6 +268,31 @@ pub struct ProjectConfig {
     /// Order matters: earlier baselines are cumulatively included in later ones.
     #[serde(default)]
     pub baselines: Option<Vec<BaselineConfig>>,
+    /// Optional `rivet docs check` configuration — exemptions, ignore lists, etc.
+    #[serde(default, rename = "docs-check")]
+    pub docs_check: Option<DocsCheckConfig>,
+}
+
+/// Configuration block for `rivet docs check`. Mapped from `rivet.yaml`'s
+/// top-level `docs-check:` key. Used to exempt legitimate external IDs
+/// (Jira tickets, Polarion requirements, hazard catalogs, etc.) from the
+/// `ArtifactIdValidity` invariant so that StakeholderRequirements docs
+/// can reference upstream IDs without breaking the gate.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct DocsCheckConfig {
+    /// External-namespace prefixes that are valid IDs even though no
+    /// matching artifact exists in the local store. Example:
+    /// `external-namespaces: [GNV, GNR, HZO, UC, FOO]` exempts every
+    /// `GNV-396`, `GNR-968`, `HZO-189`, `UC-1`, `FOO-20819` from the
+    /// "artifact not found" violation. Match is on the prefix up to
+    /// the first `-`.
+    #[serde(default, rename = "external-namespaces")]
+    pub external_namespaces: Vec<String>,
+    /// Free-form regex patterns to skip — escape hatch when the
+    /// namespace mechanism isn't enough. Patterns are applied to the
+    /// matched ID text and skip the violation when any one matches.
+    #[serde(default, rename = "ignore-patterns")]
+    pub ignore_patterns: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

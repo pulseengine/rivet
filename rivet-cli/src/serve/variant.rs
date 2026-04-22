@@ -277,6 +277,7 @@ mod tests {
             commits: None,
             externals: None,
             baselines: None,
+            docs_check: None,
         }
     }
 

@@ -285,6 +285,17 @@ pub fn check(expr: &Expr, ctx: &EvalContext) -> bool {
 
 // ── Field resolution ────────────────────────────────────────────────────
 
+/// Resolve a field accessor to a string value for s-expression comparisons.
+///
+/// Missing fields intentionally resolve to the empty string so filters like
+/// `(= asil "ASIL-D")` naturally exclude artifacts without an `asil` field
+/// rather than erroring out. This is filter semantics, not silent-accept:
+/// the caller wants "show artifacts whose asil = ASIL-D", and an artifact
+/// without `asil` correctly does NOT match. Reject-on-missing would make
+/// every cross-type query unusable.
+///
+/// Typos in field names should be caught by the schema layer
+/// (`deny_unknown_fields`) at YAML load time, not by the query evaluator.
 fn resolve_str(acc: &Accessor, artifact: &Artifact) -> String {
     match acc {
         Accessor::Field(name) => match name.as_str() {
@@ -770,7 +781,28 @@ fn lower_list(node: &crate::sexpr::SyntaxNode, errors: &mut Vec<LowerError>) -> 
                 return None;
             }
             let lt = extract_value(&args[0])?;
-            let op_str = extract_symbol(&args[1]).unwrap_or_default();
+            // Reject empty/whitespace operators with a clear message instead
+            // of falling through the `_` arm with an "invalid operator ''"
+            // string that confuses users who supplied a non-symbol literal.
+            let Some(op_str) = extract_symbol(&args[1]) else {
+                errors.push(LowerError {
+                    offset,
+                    message: "'links-count' second argument must be one of \
+                              the comparison operators >, <, >=, <=, =, != \
+                              (got a non-symbol literal)"
+                        .into(),
+                });
+                return None;
+            };
+            if op_str.trim().is_empty() {
+                errors.push(LowerError {
+                    offset,
+                    message: "'links-count' second argument is empty — \
+                              expected one of >, <, >=, <=, =, !="
+                        .into(),
+                });
+                return None;
+            }
             let op = match op_str.as_str() {
                 ">" => CompOp::Gt,
                 "<" => CompOp::Lt,
@@ -781,7 +813,10 @@ fn lower_list(node: &crate::sexpr::SyntaxNode, errors: &mut Vec<LowerError>) -> 
                 _ => {
                     errors.push(LowerError {
                         offset,
-                        message: format!("invalid operator '{op_str}' in links-count"),
+                        message: format!(
+                            "'links-count' invalid operator '{op_str}' — \
+                             expected one of >, <, >=, <=, =, !="
+                        ),
                     });
                     return None;
                 }
