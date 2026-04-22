@@ -30,13 +30,7 @@
 
 Spar parses. Etch renders. Meld fuses. **Rivet binds.**
 
-**Rivet is the audit substrate for AI-assisted engineering — every artifact, link, and decision carries evidence a human can review in a pull request.**
-
-AI agents draft the requirements, hazards, design decisions, test specs, and variant bindings. Rivet stamps them with provenance (model, session, timestamp), validates them against mergeable schemas (STPA, ASPICE, ISO/PAS 8800, IEC 61508, IEC 62304, DO-178C, EN 50128, EU AI Act, GSN), and lets a human approve or reject the change in a single git diff. The MCP server exposes the artifact graph to Claude, Cursor, and other agents as typed tools; every mutation is server-side validated before it lands.
-
-One schema system, many domains — TDD, ASPICE, safety analysis, requirements, variants, GSN safety cases. One linker, many workflows. **No database, no external service — text files, git, and a fast Rust CLI.**
-
-See **[docs/what-is-rivet.md](docs/what-is-rivet.md)** for the positioning frame — who it is for, the per-situation playbook, and explicit limits.
+**Rivet: because AI agents still don't remember why.** The faster AI agents produce code, the more it matters to prove *why* each line exists — and AI systems reliably fail to maintain the traceability that ISO 26262, DO-178C, and the EU AI Act require. Rivet keeps the chain from requirement to test to evidence as YAML in git — machine-readable, agent-writable, validated in CI, provenance-stamped on every mutation, and reviewed by a human in the pull request. Today rivet dogfoods 219+ artifacts across 27 schemas (STPA, ASPICE, ISO/PAS 8800, IEC 61508, IEC 62304, DO-178C, EN 50128, EU AI Act, GSN), backed by 27 Kani BMC harnesses and 324 Playwright end-to-end tests — see **[docs/what-is-rivet.md](docs/what-is-rivet.md)** for the frame, the per-situation playbook, and explicit limits.
 
 ## Features
 
