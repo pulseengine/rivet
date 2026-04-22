@@ -1,6 +1,6 @@
 {
   "name": "@pulseengine/rivet-darwin-x64",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Rivet CLI binary for macOS x64 (Intel)",
   "main": "index.js",
   "os": [
