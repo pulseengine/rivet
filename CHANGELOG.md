@@ -1,7 +1,78 @@
 # Changelog
 
-<!-- AUDIT-FILE: verified 2026-04-19 — all numeric counts in this file
+<!-- AUDIT-FILE: verified 2026-04-22 — all numeric counts in this file
      are historical snapshots taken at release time, not current state. -->
+
+## [0.4.1] — 2026-04-22
+
+### Correctness fixes (HIGH)
+
+- **`rivet variant check` silently passed on cross-tree constraint violations** — `(implies X (not Y))` with both selected returned `Ok` because the solver only propagated bare-feature consequents and never evaluated compound expressions. Added a generic `eval_constraint` pass after propagation with proper propositional semantics (#156)
+- **`rivet validate` (salsa default mode) silently dropped AADL + external artifacts** — non-YAML adapter sources (`aadl`/`reqif`/`needs-json`/`wasm`) fell through a `log::debug!` in `run_salsa_validation`, so every link into them was a phantom broken-link. Users had to pass `--direct` to get correct results. New `ExtraArtifactSet` salsa input + `_with_extras` query variants; default and `--direct` modes now produce identical diagnostic counts (#157)
+
+### Silent-accept bugs fixed (from Mythos discovery + YAML fuzzer)
+
+- **`yaml_hir.rs`**: null/`~`/empty shorthand-link values no longer emit phantom `Link { target: "null" }` (#168)
+- **`formats/generic.rs`**: `GenericFile` now rejects unknown top-level keys (`artifact:` typo → error instead of silent `Ok(vec![])`) (#168)
+- **`coverage.rs`**: self-satisfying links (`DD-001 → DD-001`) no longer inflate coverage (#168)
+- **`validate.rs` + `coverage.rs`**: empty `from_types`/`target_types` on `TraceabilityRule` unified to "match any" semantics — was contradictory between the two reports (#168)
+
+### ReqIF fidelity (6 round-trip bugs)
+
+- **Provenance** (`created-by`, `model`, `timestamp`, `reviewed-by`, `reviewed-timestamp`) now round-trips via `rivet:*` string attributes — was unconditionally dropped (#175)
+- **Non-string `fields` values** encoded typed (bool/number/list/mapping) — was `format!("{:?}", …)` garbage (#175)
+- **Tags** serialized as JSON array with comma/whitespace safety (#175)
+- **CREATION-TIME** header stamped with ISO 8601 UTC — was hardcoded empty (#175)
+- **`DATATYPE-DEFINITION-ENUMERATION`** emitted when schema declares `allowed-values:` (opt-in via `ReqIfAdapter::with_schema`) (#175)
+- **Dangling `SPEC-RELATION` targets** rejected with `Error::Adapter` — was silent phantom-link creation (#175)
+
+### New features
+
+- **`rivet variant init <name>`** — scaffolds `feature-model.yaml` + `bindings.yaml` with commented starter config (#174)
+- **`rivet variant check-all --model M --binding B`** — iterates every declared binding; exits 0 iff all pass (#174)
+- **`rivet validate --fail-on <error|warning|info>`** — configurable exit-code gate (#177)
+- **`rivet coverage --fail-under N`** — CI gate on overall coverage (#177)
+- **`rivet query --sexpr "..."`** — CLI mirror of MCP `rivet_query` (#180)
+- **`rivet docs embeds`** — lists every registered embed token with signature + example (#180)
+- **`rivet docs check`** — 8-invariant doc-vs-reality release gate (required CI + release job) (#178)
+- **`rivet schema list-json` / `get-json`** — JSON schemas for CLI outputs (`validate-output`, `stats-output`, `coverage-output`, `list-output`) (#177)
+- **Serve dashboard: variant selector + `/variants` overview + per-route filtering** — `?variant=<name>` on `/artifacts`, `/coverage`, `/stpa`, `/matrix`, `/stats`. Banner when filter active. (#179)
+- **Embeds**: `{{query:(sexpr)}}`, `{{stats:type:NAME}}`, `{{group:FIELD}}` (#180)
+- **Mermaid renders inline** in artifact descriptions (pulldown-cmark event-mapper) (#180)
+- **Managed-section markers** for `rivet init --agents` — AGENTS.md/CLAUDE.md regen preserves content between `<!-- BEGIN rivet-managed -->` markers; `--migrate` and `--force-regen` flags for existing files (#167)
+
+### Distribution
+
+- **npm**: `@pulseengine/rivet` with per-platform `optionalDependencies` (linux x64/arm64, darwin x64/arm64, win32 x64). Publishes on tag with `NPM_TOKEN`. Enables `npx @pulseengine/rivet mcp` for Claude Code MCP integration (#166)
+- **VS Code extension**: VSIX now attached to every GitHub Release; Marketplace publish wired correctly (previous `release-results` dependency pointed at a non-existent job in a different workflow — that's why the extension never shipped to Marketplace before) (#163)
+
+### Developer ergonomics
+
+- **Pre-commit hook**: marker discovery (walks up for `rivet.yaml`) — survives `rivet.yaml` relocation (#174)
+- **`FilterError` messages**: semantic notes ("expected s-expression form: `(implies A B)`; got infix") on common user-error shapes (#174)
+- **`rivet variant solve` output**: distinguishes `UserSelected` / `Mandatory` / `ImpliedBy(name)` / `Allowed` origins (#174)
+- **Search URL persistence**: Cmd+K overlay now pushes `?cmdk=<q>` via `history.replaceState`, reload preserves (#159)
+
+### Documentation
+
+- `docs/what-is-rivet.md` — positioning doc in the v0.1.0 blog cadence (Problem → Answer → Evidence per use-case). README intro rewritten (#172)
+- `docs/design/doc-reality-audit.md` — one-time register of 28 doc-vs-reality mismatches (#171)
+- `docs/design/ai-evidence-trend-research.md` — competitive landscape; top-3 parallels (pharaoh, Continue.dev, SpecStory); EU AI Act / ISO/IEC 42001 / safety-standards update drivers (#173)
+- `docs/design/ai-safety-cyber-hitl.md` — "AI proposes, qualified human owns judgment" frame + 4-point HITL contract + FAQ (#176)
+- `docs/design/iso26262-artifact-mapping.md` — gap register (32.5% EXACT / 42.5% APPROX / 25% ABSENT) (#164)
+- `docs/design/polarion-reqif-fidelity.md` — field-by-field fidelity for Polarion REST vs ReqIF paths (#169)
+- `docs/design/sexpr-artifact-format.md` — Option-A-through-D cost analysis for s-expr as second format (#162)
+- `docs/design/cli-gaps-2026-04.md` — 5 missing CLI features + ranked backlog (#161)
+- `docs/design/release-channels.md` — npm/brew/cargo/docker/Marketplace distribution plan (#166)
+- `docs/feature-model-schema.md` + `docs/feature-model-bindings.md` — feature-model YAML reference (#174)
+
+### Testing
+
+- **YAML footgun fuzzer**: 3 libfuzzer targets + `oracle_smoke` harness. 5 empirical silent-accept bugs found on the v0.4.0 corpus before fixes landed (#160)
+- **Docs-check gate** now required on every PR + release tag (#178)
+
+### Dependencies
+- `rustls-webpki 0.103.12` (RUSTSEC-2026-0098 / 2026-0099); `thin_vec` UAF (RUSTSEC-2026-0103) ignored via deny.toml (transitive via `salsa 0.26.0`, no direct use)
 
 ## [0.4.0] — 2026-04-19
 

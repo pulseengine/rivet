@@ -1,6 +1,6 @@
 {
   "name": "@pulseengine/rivet-linux-arm64",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Rivet CLI binary for Linux ARM64 (glibc)",
   "main": "index.js",
   "os": [
