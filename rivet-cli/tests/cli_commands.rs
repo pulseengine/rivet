@@ -1436,6 +1436,83 @@ fn validate_fail_on_warning_fails_on_warnings() {
     );
 }
 
+/// `rivet stats --format json` exposes diagnostic counts so consumers
+/// don't need a second `rivet validate --format json` call just to
+/// get the severity breakdown.
+#[test]
+fn stats_json_includes_diagnostic_counts() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "stats",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("stats");
+
+    assert!(
+        output.status.success(),
+        "rivet stats must exit 0: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("stats JSON must be valid");
+
+    // Backward-compat: existing fields still present.
+    assert!(parsed.get("total").is_some(), "'total' still present");
+    assert!(parsed.get("types").is_some(), "'types' still present");
+
+    // New fields, numeric, >=0.
+    for field in ["errors", "warnings", "infos"] {
+        let v = parsed.get(field);
+        assert!(
+            v.is_some(),
+            "stats JSON must include '{field}' count, got: {stdout}"
+        );
+        assert!(
+            v.unwrap().is_u64(),
+            "'{field}' must be a number, got: {}",
+            v.unwrap()
+        );
+    }
+}
+
+/// Counts in `rivet stats --format json` must match what
+/// `rivet validate --format json` reports for the same project.
+#[test]
+fn stats_json_counts_match_validate() {
+    let root = project_root();
+    let root_str = root.to_str().unwrap();
+
+    let stats = Command::new(rivet_bin())
+        .args(["--project", root_str, "stats", "--format", "json"])
+        .output()
+        .expect("stats");
+    assert!(stats.status.success());
+    let stats_json: serde_json::Value =
+        serde_json::from_slice(&stats.stdout).expect("stats JSON");
+
+    let validate = Command::new(rivet_bin())
+        .args(["--project", root_str, "validate", "--format", "json"])
+        .output()
+        .expect("validate");
+    let validate_json: serde_json::Value =
+        serde_json::from_slice(&validate.stdout).expect("validate JSON");
+
+    for field in ["errors", "warnings", "infos"] {
+        let s = stats_json.get(field).and_then(|v| v.as_u64());
+        let v = validate_json.get(field).and_then(|v| v.as_u64());
+        assert_eq!(
+            s, v,
+            "stats vs validate disagree on '{field}': stats={s:?} validate={v:?}"
+        );
+    }
+}
+
 /// An invalid `--fail-on` value is rejected up-front.
 #[test]
 fn validate_fail_on_invalid_value_rejected() {

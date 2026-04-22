@@ -3869,6 +3869,27 @@ fn cmd_stats(
     // Compute stats once — both formats share the same data.
     let stats = compute_stats(&store, &graph);
 
+    // Diagnostic counts (errors/warnings/infos) — same shape as
+    // `rivet validate --format json` emits, so consumers don't need a
+    // second call to get the severity breakdown.
+    //
+    // We use the direct validator on the (already scoped) store so the
+    // counts line up with the visible artifact set when --filter or
+    // --baseline is in effect.
+    let diagnostics = validate::validate(&store, &ctx.schema, &graph);
+    let errors = diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Error)
+        .count();
+    let warnings = diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Warning)
+        .count();
+    let infos = diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Info)
+        .count();
+
     if format == "json" {
         let mut types = serde_json::Map::new();
         for (name, count) in &stats.type_counts {
@@ -3880,6 +3901,9 @@ fn cmd_stats(
             "types": types,
             "orphans": stats.orphans,
             "broken_links": stats.broken_links,
+            "errors": errors,
+            "warnings": warnings,
+            "infos": infos,
         });
         println!("{}", serde_json::to_string_pretty(&output).unwrap());
     } else {
@@ -3899,6 +3923,12 @@ fn cmd_stats(
         if stats.broken_links > 0 {
             println!("\nBroken links: {}", stats.broken_links);
         }
+
+        // Diagnostic summary — same numbers as the JSON output.
+        println!(
+            "\nDiagnostics: {} error(s), {} warning(s), {} info(s)",
+            errors, warnings, infos
+        );
     }
 
     Ok(true)
