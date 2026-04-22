@@ -152,6 +152,7 @@ pub(crate) fn render_page(
                 link_types: None,
                 depth: 0,
                 focus: None,
+                limit: None,
             };
             RenderResult {
                 html: graph::render_graph_view(ctx, &params),
@@ -166,6 +167,7 @@ pub(crate) fn render_page(
                 link_types: None,
                 depth: 0,
                 focus: None,
+                limit: None,
             };
             RenderResult {
                 html: graph::render_graph_view(ctx, &params),

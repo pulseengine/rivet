@@ -89,6 +89,8 @@ pub(crate) struct GraphParams {
     #[serde(default = "default_depth")]
     depth: usize,
     focus: Option<String>,
+    /// Optional override of the node render budget. Capped in the renderer.
+    limit: Option<usize>,
 }
 
 fn default_depth() -> usize {
@@ -107,6 +109,7 @@ pub(crate) async fn graph_view(
         link_types: params.link_types,
         depth: params.depth,
         focus: params.focus,
+        limit: params.limit,
     };
     Html(crate::render::graph::render_graph_view(&ctx, &rparams))
 }

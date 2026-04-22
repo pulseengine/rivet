@@ -1,0 +1,494 @@
+# Artifacts for what actually shipped in v0.4.0 (2026-04-19):
+# verification pyramid, STPA extraction fixes, Zola export, Windows build.
+#
+# Authored retroactively on 2026-04-19 to close the audit gap where
+# v0.4.0 merged without artifacts covering the real release content.
+# v040-features.yaml was last touched 2026-04-12 and described the
+# variant/PLE work (FEAT-106..114), not the verification work.
+artifacts:
+
+  # ── Design decisions ────────────────────────────────────────────────
+
+  - id: DD-052
+    type: design-decision
+    title: Four-layer verification pyramid (Rocq / Verus / Kani / dynamic)
+    status: approved
+    description: >
+      Core validation and extraction algorithms are verified at four
+      layers, each addressing a different failure mode.
+      Layer 1 — Rocq/coq-of-rust metamodel proofs (schemas/links consistency).
+      Layer 2 — Verus SMT functional correctness (validation soundness).
+      Layer 3 — Kani bounded model checking (panic freedom over bounded input).
+      Layer 4 — proptest + differential + mutation testing (coverage of
+      behaviour not expressible in formal contracts).
+      No single layer is sufficient: Rocq proves the schema model, Verus
+      proves the algorithm against its contract, Kani proves the actual
+      compiled Rust does not panic, and dynamic testing catches gaps in
+      the specs themselves.
+    tags: [verification, formal-methods, tool-qualification]
+    links:
+      - type: satisfies
+        target: REQ-030
+      - type: satisfies
+        target: REQ-012
+    fields:
+      rationale: >
+        Tool qualification for ISO 26262 TCL 1 requires evidence that
+        the tool produces correct output under all inputs it is exposed
+        to. Any one verification technique has known blind spots:
+        Kani cannot prove properties beyond a bounded depth, Verus
+        requires manual loop invariants that drift from the real code,
+        Rocq proves the model but not the implementation, and tests
+        cover only exercised paths. Stacking the four layers gives
+        coverage that compounds: a bug that slips past one is typically
+        caught by another. The v0.4.0 release wires all four into CI
+        so every PR runs them (though Kani/Verus/Rocq jobs are
+        non-blocking — see DD-054).
+      alternatives: >
+        (1) Tests only. Rejected: cannot claim tool qualification, no
+        coverage of unexercised edge cases. (2) Kani only. Rejected:
+        bounded depth means unbounded-input algorithms (parsers) aren't
+        covered past the bound. (3) Full Verus proofs of everything.
+        Rejected: proof-engineering cost is prohibitive, many Rust
+        patterns (trait objects, async) aren't yet supported. (4) One
+        external formal-verification consultant. Rejected: doesn't
+        scale to a daily-commit OSS project; proofs must live with the
+        code.
+      source-ref: >
+        AWS s2n-tls uses a similar pyramid: SAW proofs for crypto
+        primitives, Dafny for protocol state machines, libFuzzer for
+        wire format. The Rust compiler ships with Kani, Miri,
+        proptest, and compiletest in the same stack. docs/verification.md
+        describes the rivet instantiation.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-19T12:00:00Z
+
+  - id: DD-053
+    type: design-decision
+    title: Suffix-based yaml-section matching for sub-artifact discovery
+    status: approved
+    description: >
+      Schemas may declare yaml-section-suffix in addition to the existing
+      yaml-section. Any top-level YAML key that ends with the declared
+      suffix (e.g. *-ucas) matches the artifact type. This replaces the
+      previous hardcoded section-name list that silently dropped
+      artifacts in projects using custom section names.
+    tags: [schema, yaml, extraction, stpa]
+    links:
+      - type: satisfies
+        target: REQ-002
+      - type: satisfies
+        target: REQ-010
+    fields:
+      rationale: >
+        Real STPA projects group UCAs by controller (e.g.
+        isle-rewriter-ucas, tower-supervisor-ucas). The pre-v0.4.0
+        extractor only matched an exact "ucas" key, so these projects
+        reported 0 UCAs despite having dozens defined. Switching to a
+        suffix-based match keeps the canonical "ucas" working while
+        covering any per-controller grouping the project chooses,
+        without the schema having to enumerate every possible section
+        name. The same mechanism generalises to other STPA artifact
+        types with per-controller grouping (e.g. *-scenarios).
+      alternatives: >
+        (1) Keep the exact-match list, tell projects to rename their
+        sections. Rejected: breaks dogfooding for projects like loom
+        that predate rivet. (2) Full regex. Rejected: overkill,
+        anchor-escaping footguns, slower. (3) Per-project config file
+        listing extra section names. Rejected: duplicates information
+        already implicit in the suffix convention and creates a
+        second source of truth.
+      source-ref: >
+        See rivet-core/src/yaml_hir.rs suffix_patterns (introduced
+        2026-04-14 in 9a27a53) and schemas/stpa.yaml uca type.
+        Closes #129.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-19T12:00:00Z
+
+  - id: DD-055
+    type: design-decision
+    title: Gate platform-specific syscalls behind cfg attributes, not runtime detection
+    status: approved
+    description: >
+      Platform-specific code paths (POSIX permissions, fork/exec,
+      symlinks, signal handlers) are gated at compile time with
+      #[cfg(unix)] / #[cfg(windows)] rather than probed at runtime.
+      The default is "do the cross-platform thing unconditionally";
+      the cfg branch only adds POSIX-specific extras when they apply.
+    tags: [platform, cross-platform, architecture]
+    links:
+      - type: satisfies
+        target: REQ-060
+      - type: satisfies
+        target: REQ-007
+    fields:
+      rationale: >
+        Compile-time gating catches platform bugs at build time on
+        each target, not in runtime logs on a user's machine. Runtime
+        probes (cfg!(unix), std::env::consts::OS) still compile the
+        POSIX-only type paths on Windows, producing "unresolved
+        import std::os::unix" errors — exactly the bug fixed in
+        aa706fc. The v0.4.0 Windows release binary failed precisely
+        because install_hook unconditionally imported PermissionsExt.
+        Gating with #[cfg(unix)] removes the import on non-Unix
+        targets and forces the author to think about the non-Unix
+        code path explicitly.
+      alternatives: >
+        (1) Runtime OS detection with cfg!(unix). Rejected: the
+        std::os::unix imports still need to compile on Windows,
+        defeating the purpose. (2) Wrapper crate abstracting
+        permissions. Rejected: overkill for one call site; introduces
+        a dependency to hide a three-line cfg branch. (3) Unix-only
+        builds. Rejected: we ship a Windows binary; dropping Windows
+        is not an option.
+      source-ref: >
+        rivet-cli/src/main.rs install_hook() (post-aa706fc state).
+        PR #153 retroactively links here.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-19T12:00:00Z
+
+  - id: DD-054
+    type: design-decision
+    title: Non-blocking (continue-on-error) framing for formal-verification CI jobs
+    status: approved
+    description: >
+      The Kani, Verus, and Rocq CI jobs are wired with
+      continue-on-error: true. A failing formal job does not block
+      merges; a failing test/clippy/audit job still does. This is a
+      deliberate trade-off while the underlying toolchains (rules_verus,
+      rules_rocq_rust, kani-verifier GitHub Action) stabilise on
+      GitHub Actions runners.
+    tags: [ci, formal-methods, workflow, verification]
+    links:
+      - type: satisfies
+        target: REQ-012
+      - type: satisfies
+        target: REQ-030
+    fields:
+      rationale: >
+        Rivet depends on bleeding-edge formal-verification toolchains
+        whose Bazel+nix CI recipes have known transient failures
+        (cache misses, sandbox issues, occasional rules_verus
+        incompatibilities with nightly Rust). Blocking merges on these
+        would grind development to a halt for reasons unrelated to
+        correctness. Running them non-blocking still gives (a) regression
+        signal (PR author sees the red check), (b) trend data in the
+        Actions history, and (c) a path to flipping the gate once the
+        toolchains stabilise. Honest caveat: as of v0.4.0 none of the
+        three formal jobs have executed green end-to-end on CI; the
+        current state is "wired up, actively stabilising". This
+        decision and the caveat are documented so future auditors are
+        not misled by the green overall CI badge.
+      alternatives: >
+        (1) Hard gate from day one. Rejected: would have blocked the
+        v0.4.0 release on toolchain flakes unrelated to the artifacts
+        being verified. (2) Run formal jobs only on schedule (nightly).
+        Rejected: loses per-PR feedback, signal becomes stale.
+        (3) Omit from CI entirely until stable. Rejected: removes the
+        forcing function that drives stabilisation and removes
+        evidence for tool qualification that the proofs exist.
+      source-ref: >
+        .github/workflows/ci.yml jobs kani, verus, rocq (all carry
+        continue-on-error: true as of v0.4.0).
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-19T12:00:00Z
+
+  # ── Features ────────────────────────────────────────────────────────
+
+  - id: FEAT-115
+    type: feature
+    title: Kani bounded model checking expanded to 27 harnesses
+    status: approved
+    description: >
+      The Kani proof suite in rivet-core/src/proofs.rs grew from 15 to
+      27 #[kani::proof] harnesses covering the core public API that
+      handles user-supplied input: commit trailer parsing
+      (parse_commit_type, extract_artifact_ids, expand_artifact_range,
+      parse_trailers), store upsert panic-freedom and retrievability
+      after type change, ArtifactDiff::compute over stores up to size 3,
+      mutation helpers (prefix_for_type, next_id, validate_link),
+      markdown rendering (render_markdown panic-freedom,
+      strip_html_tags invariant that output contains no angle brackets),
+      plus the previously existing 15 harnesses. Each harness proves
+      panic-freedom over all bounded inputs via exhaustive symbolic
+      execution.
+    tags: [verification, kani, formal-methods, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-030
+      - type: implements
+        target: DD-052
+      - type: verifies
+        target: REQ-004
+    fields:
+      baseline: v0.4.0
+      acceptance-criteria:
+        - "Given the rivet-core crate, When cargo kani -p rivet-core runs, Then 27 harnesses are discovered"
+        - "Given any input in the bounded domain of each harness, When Kani enumerates it symbolically, Then no panic is reached"
+        - "Given strip_html_tags, When called on any bounded ASCII input, Then the output contains no '<' or '>'"
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-19T12:00:00Z
+
+  - id: FEAT-116
+    type: feature
+    title: Differential YAML parser tests (rowan vs serde_yaml)
+    status: approved
+    description: >
+      Six differential tests in rivet-core/tests/differential_yaml.rs
+      feed the same YAML input to both the new rowan-based CST parser
+      and serde_yaml, then assert the extracted artifact set (IDs,
+      types, links) is equivalent. Catches silent regressions between
+      the two parsers during the rowan migration tail and documents
+      expected divergences (comments, formatting) as explicit
+      test fixtures.
+    tags: [verification, differential-testing, yaml, parser, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-030
+      - type: verifies
+        target: REQ-028
+      - type: verifies
+        target: REQ-034
+      - type: implements
+        target: DD-052
+    fields:
+      baseline: v0.4.0
+      acceptance-criteria:
+        - "Given the same YAML artifact file, When parsed by rowan and by serde_yaml, Then the extracted artifact sets are equal"
+        - "Given a known divergence (e.g. comment preservation), When the differential runs, Then the divergence is asserted explicitly rather than surprising the reader"
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-19T12:00:00Z
+
+  - id: FEAT-117
+    type: feature
+    title: Operation-sequence property tests for the artifact store
+    status: approved
+    description: >
+      Three proptest properties in
+      rivet-core/tests/proptest_operations.rs fuzz random sequences of
+      insert/upsert/validate operations against store invariants.
+      Shrinks failing cases to minimal reproducers. Catches ordering
+      bugs, index-consistency violations, and state-corruption
+      regressions that unit tests miss because they exercise pre-chosen
+      call sequences. Runs 1000 cases per property in CI via
+      PROPTEST_CASES=1000.
+    tags: [verification, proptest, property-based, fuzzing, phase-3]
+    links:
+      - type: satisfies
+        target: REQ-030
+      - type: verifies
+        target: REQ-004
+      - type: verifies
+        target: REQ-014
+      - type: implements
+        target: DD-052
+    fields:
+      baseline: v0.4.0
+      acceptance-criteria:
+        - "Given an arbitrary sequence of insert/upsert/validate operations, When the sequence runs against a store, Then all documented invariants hold at every step"
+        - "Given a failing sequence, When proptest shrinks, Then the minimal reproducer is reported"
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-19T12:00:00Z
+
+  - id: FEAT-118
+    type: feature
+    title: STPA-Sec verification test suite
+    status: approved
+    description: >
+      Sixteen #[test] functions in
+      rivet-core/tests/stpa_sec_verification.rs implement the test
+      cases catalogued in docs/verification.md §12. Coverage includes
+      XSS prevention in artifact rendering, commit-trailer traceability
+      round-trip, git-hook install/uninstall idempotency, document
+      embed resolution boundaries, and schema-level defences for the
+      STPA-Sec artifact types introduced in earlier releases. Provides
+      running evidence that the security-relevant controls described
+      in STPA-Sec artifacts are actually implemented.
+    tags: [verification, stpa-sec, security, phase-3]
+    links:
+      - type: verifies
+        target: REQ-004
+      - type: verifies
+        target: REQ-002
+      - type: satisfies
+        target: REQ-030
+      - type: implements
+        target: DD-052
+    fields:
+      baseline: v0.4.0
+      acceptance-criteria:
+        - "Given the rivet-core crate, When cargo test --test stpa_sec_verification runs, Then 16 tests execute"
+        - "Given each STPA-Sec security control described in docs/verification.md §12, Then at least one test asserts the control is in place"
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-19T12:00:00Z
+
+  - id: FEAT-119
+    type: feature
+    title: Suffix-based STPA UCA extraction
+    status: approved
+    description: >
+      yaml_hir.rs builds a suffix_patterns table from schema types that
+      declare yaml-section-suffix and matches any top-level key whose
+      name ends with the declared suffix. schemas/stpa.yaml registers
+      yaml-section-suffix: "-ucas" for the uca type. Fixes #129:
+      projects that group UCAs per controller (e.g.
+      isle-rewriter-ucas, tower-supervisor-ucas) previously reported
+      0 UCAs because the extractor only matched exact "ucas". Now all
+      *-ucas sections are discovered.
+    tags: [stpa, yaml, extraction, bugfix]
+    links:
+      - type: implements
+        target: DD-053
+      - type: satisfies
+        target: REQ-002
+      - type: satisfies
+        target: REQ-010
+    fields:
+      baseline: v0.4.0
+      acceptance-criteria:
+        - "Given a YAML file with an *-ucas top-level section, When rivet extracts artifacts, Then the entries are registered as uca type"
+        - "Given a YAML file with the canonical 'ucas' section, When rivet extracts, Then behaviour is unchanged (no regression)"
+        - "Given the loom project with isle-rewriter-ucas, When rivet validate runs, Then UCA artifacts are discovered (regression test for #129)"
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-19T12:00:00Z
+
+  - id: FEAT-120
+    type: feature
+    title: Nested control-action extraction from STPA controllers
+    status: approved
+    description: >
+      yaml_hir.rs recursively traverses controller items and extracts
+      embedded control-actions: [{ca: ..., ...}] entries as first-class
+      control-action artifacts, automatically creating an issued-by
+      link back to the parent controller. Recognises "ca" as an ID
+      field alias. Closes #130: previously, projects that nested
+      control-actions inside controllers (the natural YAML structure)
+      reported 0 control-action artifacts.
+    tags: [stpa, yaml, extraction, bugfix]
+    links:
+      - type: implements
+        target: DD-053
+      - type: satisfies
+        target: REQ-002
+      - type: satisfies
+        target: REQ-010
+    fields:
+      baseline: v0.4.0
+      acceptance-criteria:
+        - "Given a controller item with nested control-actions, When rivet extracts artifacts, Then each nested ca is a separate control-action artifact"
+        - "Given a nested control-action in controller X, When rivet extracts, Then the artifact has an issued-by link to X"
+        - "Given a real STPA project using the nested form, When rivet validate runs, Then the control-action count is non-zero (regression test for #130)"
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-19T12:00:00Z
+
+  - id: FEAT-121
+    type: feature
+    title: Zola static-site export with multi-project namespacing
+    status: approved
+    description: >
+      rivet export --format zola renders the artifact store as a Zola
+      content tree with per-artifact pages, resolved [[wiki-links]],
+      CommonMark rendering (including mermaid blocks), TOML
+      front-matter with escaped strings and date handling, and
+      per-project prefixing via --prefix so multiple rivet projects
+      can be unioned into one Zola site without ID collisions.
+      Validation results are written to data/<prefix>/validation.json
+      per REQ-049. The export is additive to existing HTML export
+      (FEAT-066) and does not replace it.
+    tags: [export, zola, static-site, documentation]
+    links:
+      - type: satisfies
+        target: REQ-036
+      - type: satisfies
+        target: REQ-049
+      - type: satisfies
+        target: REQ-007
+    fields:
+      baseline: v0.4.0
+      acceptance-criteria:
+        - "Given a rivet project, When rivet export --format zola --prefix foo runs, Then a Zola content tree is produced under content/foo/"
+        - "Given artifacts containing [[IDs]], When exported, Then wiki-links resolve to relative Zola paths"
+        - "Given a title containing TOML-special characters, When exported, Then the front-matter is still valid TOML"
+        - "Given validation results, When exported, Then data/foo/validation.json contains PASS/FAIL, counts, timestamp, and git commit"
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-19T12:00:00Z
+
+  - id: FEAT-122
+    type: feature
+    title: Windows cross-platform support for hook installation
+    status: approved
+    description: >
+      install_hook() in rivet-cli/src/main.rs gates the POSIX
+      set_permissions(0o755) call behind #[cfg(unix)], so the Windows
+      build no longer fails with E0433/E0599 on
+      std::os::unix::fs::PermissionsExt. On Windows, Git-Bash runs
+      hooks via its own shim regardless of NTFS executable bits, so
+      skipping the chmod is semantically correct. Unblocks the v0.4.0
+      cross-platform release binary for Windows.
+    tags: [platform, windows, bugfix]
+    links:
+      - type: satisfies
+        target: REQ-060
+      - type: implements
+        target: DD-055
+      - type: satisfies
+        target: REQ-051
+    fields:
+      baseline: v0.4.0
+      acceptance-criteria:
+        - "Given a Windows build of rivet, When cargo build --release runs, Then the build succeeds"
+        - "Given rivet init --hooks on Windows, When run in a git repo, Then the hook files are created under .git/hooks/ without a permissions error"
+        - "Given rivet init --hooks on Linux/macOS, When run, Then hooks are still installed with 0o755 (no regression)"
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-19T12:00:00Z
+
+  # ── Requirements ────────────────────────────────────────────────────
+
+  - id: REQ-060
+    type: requirement
+    title: Cross-platform binary support
+    status: approved
+    description: >
+      Rivet must build and run on Linux, macOS, and Windows. Platform-
+      specific code must be gated behind cfg attributes rather than
+      assumed. The release workflow must publish binaries for all
+      three platforms. Integration tests that exercise platform-
+      specific paths (file permissions, path separators, process
+      spawning) must be gated behind the matching cfg so they compile
+      on every supported target.
+    tags: [platform, cross-platform, release]
+    links:
+      - type: satisfies
+        target: REQ-007
+    fields:
+      priority: must
+      category: non-functional
+      baseline: v0.4.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-19T12:00:00Z

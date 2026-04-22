@@ -590,7 +590,7 @@ mod proofs {
     }
 
     /// Build an eval context with empty link graph.
-    fn eval_context(artifact: &Artifact) -> (LinkGraph, Store) {
+    fn eval_context(_artifact: &Artifact) -> (LinkGraph, Store) {
         let store = Store::new();
         let schema = empty_schema();
         let graph = LinkGraph::build(&store, &schema);
@@ -669,6 +669,7 @@ mod proofs {
         let ctx = EvalContext {
             artifact: &artifact,
             graph: &graph,
+            store: None,
         };
 
         let expr = arb_expr(2);
@@ -688,6 +689,7 @@ mod proofs {
         let ctx = EvalContext {
             artifact: &artifact,
             graph: &graph,
+            store: None,
         };
 
         let a = arb_expr(2);
@@ -714,6 +716,7 @@ mod proofs {
         let ctx = EvalContext {
             artifact: &artifact,
             graph: &graph,
+            store: None,
         };
 
         let a = arb_expr(2);
@@ -738,6 +741,7 @@ mod proofs {
         let ctx = EvalContext {
             artifact: &artifact,
             graph: &graph,
+            store: None,
         };
 
         let a = arb_expr(2);
@@ -764,6 +768,7 @@ mod proofs {
         let ctx = EvalContext {
             artifact: &artifact,
             graph: &graph,
+            store: None,
         };
 
         let a = arb_expr(2);

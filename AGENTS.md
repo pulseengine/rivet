@@ -189,6 +189,31 @@ added as trailers without rewriting git history):
 | `c5ff64c8` | #96 | Embed phases 2+5 (diagnostics, matrix, snapshots) | Implements REQ-033 |
 | `cc4cc1c1` | #94 | oEmbed provider and Grafana JSON API | Implements FEAT-001 |
 | `adcf0bc1` | #28 | Phase 3 (30+ features, 402 tests, formal verification) | Implements REQ-004, REQ-012 |
+| `51f2054a` | #126 | S-expression query language, MCP CRUD, variant/PLE artifacts, EU AI Act runtime evidence | Implements REQ-041, REQ-042, REQ-043, REQ-044, REQ-045, REQ-046, REQ-047, REQ-048, FEAT-106..108 |
+| `f958a7ef` | — | `fix(ci):` — Miri, cargo-deny, cargo-audit CI failures | Exempt: `ci` type (rivet-commits mis-classifies `fix(ci):` as non-exempt; treat as exempt per CLAUDE.md) |
+| `75521b85` | #44 | `rivet sync` — replace incompatible `git clone --config` | Fixes REQ-017 (external reference resolution) |
+
+### v0.4.0 Release PRs (2026-04-14 … 2026-04-19)
+
+PR-level merge commits for v0.4.0. The individual non-merge commits that feed
+these PRs already carry trailers (or `Trace: skip` for release/test/platform
+work). This table exists so auditors can trace the PR titles they see on
+GitHub to the artifacts that document the work.
+
+| Commit | PR | Summary | Artifacts |
+|--------|----|---------|-----------|
+| `912530c5` | #150 | Verification pyramid + STPA bug fixes (merge) | Implements FEAT-115, FEAT-116, FEAT-117, FEAT-118, FEAT-119, FEAT-120, DD-052, DD-053, DD-054; Fixes REQ-002, REQ-004; Verifies REQ-030 |
+| `913ce295` | #151 | Playwright regression fixes + rustls-webpki 0.103.12 + junit clippy (merge; `Trace: skip` on sub-commits) | Verifies FEAT-001 (dashboard E2E); Refs REQ-025 (junit adapter); deps-only otherwise |
+| `9a46e86e` | #152 | `chore(release): v0.4.0` | Exempt: `chore` type |
+| `aa706fc7` | #153 | Windows chmod gating (merge; `Trace: skip`) | Implements FEAT-122; Satisfies REQ-060; Refs DD-055 |
+
+### Commits that are genuinely unmappable
+
+- `ca97dd9f` (#95) — still carries broken refs to `SC-EMBED-1`/`-3`/`-4`
+  which do not exist in any artifacts file. Preserving for historical record;
+  the intended artifacts appear never to have been authored. An auditor
+  should treat the `satisfies SC-EMBED-*` trailers on that commit as
+  aspirational, not as evidence.
 
 ### Current Coverage
 

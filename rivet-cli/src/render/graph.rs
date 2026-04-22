@@ -19,7 +19,19 @@ pub(crate) struct GraphParams {
     pub(crate) link_types: Option<String>,
     pub(crate) depth: usize,
     pub(crate) focus: Option<String>,
+    /// Per-request override of the node budget. Capped at `MAX_NODE_BUDGET`.
+    pub(crate) limit: Option<usize>,
 }
+
+/// Default node budget for the full-graph render. Above this, we refuse to
+/// run layout + SVG (which is O(n log n) + O(n^2) on the rivet dogfood
+/// dataset of ~1800 artifacts, taking ~57s and producing ~1MB of HTML).
+/// Users can override via `?limit=NNN` up to `MAX_NODE_BUDGET`.
+pub(crate) const DEFAULT_NODE_BUDGET: usize = 200;
+
+/// Hard ceiling on the node budget, even with explicit `?limit=` override.
+/// Gives power users headroom but still caps worst-case render time.
+pub(crate) const MAX_NODE_BUDGET: usize = 2000;
 
 pub(crate) struct EgoParams {
     pub(crate) hops: usize,
@@ -169,6 +181,94 @@ fn default_layout_opts() -> LayoutOptions {
     }
 }
 
+/// Render a short HTML page explaining the node budget was exceeded and
+/// pointing the user at the filter controls (types / focus / limit). The
+/// Playwright regression locator `svg, :text('budget')` matches the word
+/// "budget" in the body here.
+fn render_budget_message(
+    store: &Store,
+    node_count: usize,
+    budget: usize,
+    type_filter: &Option<Vec<String>>,
+    params: &GraphParams,
+) -> String {
+    let mut html = String::from("<h2>Traceability Graph</h2>");
+
+    // Re-render the same filter form so users can scope the view without
+    // hand-editing the URL. Keep this in sync with the main render form.
+    html.push_str("<div class=\"card\">");
+    html.push_str(
+        "<form class=\"form-row\" hx-get=\"/graph\" hx-target=\"#content\" hx-push-url=\"true\">",
+    );
+
+    let mut all_types: Vec<&str> = store.types().collect();
+    all_types.sort();
+    html.push_str("<div><label>Types</label><div class=\"filter-grid\">");
+    for t in &all_types {
+        let checked = match type_filter {
+            Some(f) if f.iter().any(|x| x == *t) => " checked",
+            _ => "",
+        };
+        html.push_str(&format!(
+            "<label><input type=\"checkbox\" name=\"types\" value=\"{t}\"{checked}> {t}</label>"
+        ));
+    }
+    html.push_str("</div></div>");
+
+    let focus_val = params.focus.as_deref().unwrap_or("");
+    html.push_str(&format!(
+        "<div><label for=\"focus\">Focus</label><br>\
+         <input name=\"focus\" id=\"focus\" value=\"{}\" placeholder=\"e.g. REQ-001\" list=\"artifact-ids\"></div>",
+        html_escape(focus_val)
+    ));
+
+    html.push_str("<datalist id=\"artifact-ids\">");
+    for a in store.iter() {
+        html.push_str(&format!("<option value=\"{}\">", html_escape(&a.id)));
+    }
+    html.push_str("</datalist>");
+
+    let depth_val = if params.depth > 0 { params.depth } else { 3 };
+    html.push_str(&format!(
+        "<div><label for=\"depth\">Depth: <span id=\"depth-val\">{depth_val}</span></label><br>\
+         <input type=\"range\" name=\"depth\" id=\"depth\" min=\"1\" max=\"10\" value=\"{depth_val}\" \
+         oninput=\"document.getElementById('depth-val').textContent=this.value\"></div>"
+    ));
+
+    let lt_val = params.link_types.as_deref().unwrap_or("");
+    html.push_str(&format!(
+        "<div><label for=\"link_types\">Link types</label><br>\
+         <input name=\"link_types\" id=\"link_types\" value=\"{}\" placeholder=\"e.g. satisfies,implements\"></div>",
+        html_escape(lt_val)
+    ));
+
+    html.push_str(&format!(
+        "<div><label for=\"limit\">Limit</label><br>\
+         <input type=\"number\" name=\"limit\" id=\"limit\" min=\"1\" max=\"{MAX_NODE_BUDGET}\" value=\"{budget}\" placeholder=\"{DEFAULT_NODE_BUDGET}\"></div>"
+    ));
+
+    html.push_str("<div><label>&nbsp;</label><br><button type=\"submit\">Apply</button></div>");
+    html.push_str("</form>");
+    html.push_str("</div>");
+
+    html.push_str(&format!(
+        "<div class=\"card\" style=\"padding:1.25rem;margin-top:1rem\">\
+           <h3 style=\"margin-top:0\">Graph above node budget</h3>\
+           <p>Graph has <strong>{node_count}</strong> artifacts &mdash; above the render budget of <strong>{budget}</strong> nodes. \
+           Rendering the full graph is disabled here because layout and SVG generation would take tens of seconds and produce ~1MB of HTML.</p>\
+           <p>Narrow the view before the graph will render:</p>\
+           <ul>\
+             <li>Filter by artifact type with the checkboxes above, or <code>?types=requirement,test</code> in the URL.</li>\
+             <li>Focus on a single artifact and its neighborhood with <code>?focus=REQ-001&amp;depth=2</code>.</li>\
+             <li>Raise the budget for this request with <code>?limit=NNN</code> (capped at {MAX_NODE_BUDGET}).</li>\
+           </ul>\
+           <p class=\"meta\">Once the filtered subgraph is under the budget, the full graph renders normally.</p>\
+         </div>"
+    ));
+
+    html
+}
+
 pub(crate) fn render_graph_view(ctx: &RenderContext, params: &GraphParams) -> String {
     let store = ctx.store;
     let link_graph = ctx.graph;
@@ -199,6 +299,21 @@ pub(crate) fn render_graph_view(ctx: &RenderContext, params: &GraphParams) -> St
     } else {
         build_filtered_subgraph(pg, store, node_map, &type_filter, &link_filter)
     };
+
+    // ── Node budget safety valve ─────────────────────────────────────────
+    // Layout + SVG is ~O(n^2) on the layered layout engine. On the rivet
+    // dogfood dataset (~1800 artifacts) it takes ~57s and produces ~1MB
+    // of HTML. If the caller hasn't narrowed the view to something
+    // renderable, short-circuit with an explanatory message that points
+    // them at the filter controls. REQ-007: dashboard must stay responsive.
+    let effective_budget = params
+        .limit
+        .unwrap_or(DEFAULT_NODE_BUDGET)
+        .clamp(1, MAX_NODE_BUDGET);
+    let node_count = sub.node_count();
+    if node_count > effective_budget {
+        return render_budget_message(store, node_count, effective_budget, &type_filter, params);
+    }
 
     let colors = type_color_map();
     let svg_opts = SvgOptions {

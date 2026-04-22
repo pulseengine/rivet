@@ -1,0 +1,8 @@
+# Repo-root BUILD file. Exists to mark the repo root as a Bazel
+# package so sibling subpackages (verus/, proofs/rocq/, rivet-core/src/)
+# resolve cleanly under a unified workspace.
+#
+# No targets live here — Bazel in this repo is scoped to
+# formal-verification surfaces under verus/ and proofs/rocq/.
+
+package(default_visibility = ["//visibility:public"])

@@ -1,0 +1,50 @@
+# Full desktop developer variant of rivet.
+#
+# Everything a developer interactively uses: CLI + dashboard + LSP
+# (for vscode-rivet) + MCP server (for Claude Code / other MCP hosts),
+# every export format, every init preset, every adapter, and the
+# optional wasm + oslc cargo features opted in.
+#
+# Build with: cargo build --release -p rivet-cli --features wasm
+# (and enable rivet-core `oslc` via workspace).
+#
+# Verify with:
+#   rivet variant check --model artifacts/feature-model.yaml \
+#                       --variant artifacts/variants/full-desktop.yaml
+name: full-desktop
+selects:
+  - rowan-yaml
+  - cli-only
+  - dashboard
+  - lsp-server
+  - mcp-server
+  - stpa-yaml-adapter
+  - generic-yaml-adapter
+  - aadl-adapter
+  - needs-json-adapter
+  - junit-adapter
+  - reqif-adapter
+  - oslc-client
+  - wasm-adapter
+  - reqif-export
+  - generic-yaml-export
+  - html-export
+  - zola-export
+  - junit-import
+  - needs-json-import
+  - preset-dev
+  - preset-aspice
+  - preset-stpa
+  - preset-stpa-ai
+  - preset-cybersecurity
+  - preset-aadl
+  - preset-eu-ai-act
+  - preset-safety-case
+  - preset-do-178c
+  - preset-en-50128
+  - preset-iec-61508
+  - preset-iec-62304
+  - preset-iso-pas-8800
+  - preset-sotif
+  - feat-oslc
+  - feat-wasm

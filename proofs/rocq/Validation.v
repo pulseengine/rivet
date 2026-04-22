@@ -26,7 +26,9 @@ Import ListNotations.
 
 Require Import Schema.
 
-Open Scope string_scope.
+(* Mirroring Schema.v: no `Open Scope string_scope` — it shadows
+ * List.length / List.app. All string literals in this file carry
+ * an explicit `%string` scope annotation. *)
 
 (* ========================================================================= *)
 (** * Section 1: Validation as a Pure Function                                *)
@@ -116,7 +118,7 @@ Proof.
   - simpl in Hin. destruct Hin as [Heq | Hin_rest].
     + subst h. simpl.
       rewrite Habs.
-      exists (mkDiagnostic SevError (Some (art_id a)) "broken-link" (link_target l)).
+      exists (mkDiagnostic SevError (Some (art_id a)) "broken-link"%string (link_target l)).
       split.
       * apply in_or_app. left. left. reflexivity.
       * simpl. split; reflexivity.
@@ -171,7 +173,7 @@ Qed.
 (** The number of diagnostics is bounded by store size * (max_links + rules). *)
 
 Lemma check_broken_links_length : forall s a,
-  length (check_broken_links s a) <= length (art_links a).
+  List.length (check_broken_links s a) <= List.length (art_links a).
 Proof.
   intros s a.
   unfold check_broken_links.
@@ -184,7 +186,7 @@ Proof.
 Qed.
 
 Lemma check_artifact_rules_length : forall s a rules,
-  length (check_artifact_rules s a rules) <= length rules.
+  List.length (check_artifact_rules s a rules) <= List.length rules.
 Proof.
   intros s a rules.
   unfold check_artifact_rules.

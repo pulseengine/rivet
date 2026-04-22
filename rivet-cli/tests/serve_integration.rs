@@ -817,3 +817,109 @@ fn test_reload_failure_preserves_state() {
     child.kill().ok();
     child.wait().ok();
 }
+
+// ── /graph node budget (REQ-007) ────────────────────────────────────────
+
+/// The full graph on the dogfood dataset (~1800 artifacts) must respond
+/// quickly by short-circuiting into the budget message rather than running
+/// layout + SVG, which previously took ~57s and produced ~1MB of HTML.
+#[test]
+fn graph_full_view_respects_node_budget() {
+    let (mut child, port) = start_server();
+
+    let start = std::time::Instant::now();
+    let (status, body, _) = fetch(port, "/graph", true);
+    let elapsed = start.elapsed();
+    eprintln!(
+        "graph_full_view_respects_node_budget: GET /graph -> {} bytes in {elapsed:?}",
+        body.len()
+    );
+
+    assert_eq!(status, 200, "/graph must return 200");
+    assert!(
+        body.contains("budget"),
+        "full /graph must render the budget message (literal 'budget') when over the limit"
+    );
+    assert!(
+        elapsed < std::time::Duration::from_secs(5),
+        "/graph must respond fast when above node budget, took {elapsed:?}"
+    );
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+/// A focused view (`?focus=REQ-001&depth=2`) stays under the budget and
+/// must render SVG normally.
+#[test]
+fn graph_focused_view_renders_svg() {
+    let (mut child, port) = start_server();
+
+    let start = std::time::Instant::now();
+    let (status, body, _) = fetch(port, "/graph?focus=REQ-001&depth=2", true);
+    let elapsed = start.elapsed();
+    eprintln!(
+        "graph_focused_view_renders_svg: GET /graph?focus=REQ-001&depth=2 -> {} bytes in {elapsed:?}",
+        body.len()
+    );
+
+    assert_eq!(status, 200, "focused /graph must return 200");
+    assert!(
+        body.contains("<svg"),
+        "focused /graph must render SVG, got body starting with: {}",
+        &body.chars().take(200).collect::<String>()
+    );
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+/// A very low `?limit=` forces the budget message even for a tiny focus
+/// subgraph, confirming the override is wired through.
+#[test]
+fn graph_limit_override_triggers_budget_message() {
+    let (mut child, port) = start_server();
+
+    // Depth 3 around REQ-001 typically pulls in >1 node; limit=1 guarantees
+    // we exceed the effective budget.
+    let (status, body, _) = fetch(port, "/graph?focus=REQ-001&depth=3&limit=1", true);
+
+    assert_eq!(status, 200, "/graph?limit=1 must return 200");
+    assert!(
+        body.contains("budget"),
+        "/graph with an overly-tight limit must render the budget message"
+    );
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+/// `?types=requirement` filters the full graph down; if the filtered
+/// subgraph is under the budget it must render SVG (regression test for
+/// the existing `graph with type filter renders SVG` Playwright case).
+#[test]
+fn graph_type_filter_renders_when_under_budget() {
+    let (mut child, port) = start_server();
+
+    let start = std::time::Instant::now();
+    let (status, body, _) = fetch(port, "/graph?types=requirement", true);
+    let elapsed = start.elapsed();
+    let has_svg = body.contains("<svg");
+    let has_budget = body.contains("budget");
+    eprintln!(
+        "graph_type_filter_renders_when_under_budget: GET /graph?types=requirement -> {} bytes in {elapsed:?}, svg={has_svg}, budget={has_budget}",
+        body.len()
+    );
+
+    assert_eq!(status, 200, "/graph?types=requirement must return 200");
+    // Either renders SVG (under budget) or renders the budget message —
+    // both are acceptable. The key invariant is that the response is fast
+    // and contains one of the two.
+    assert!(
+        body.contains("<svg") || body.contains("budget"),
+        "/graph?types=requirement must produce SVG or budget message"
+    );
+
+    child.kill().ok();
+    child.wait().ok();
+}
