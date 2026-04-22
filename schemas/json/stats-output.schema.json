@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pulseengine.github.io/rivet/schemas/json/stats-output.schema.json",
+  "title": "rivet stats --format json",
+  "description": "Machine-readable output produced by `rivet stats --format json`.",
+  "type": "object",
+  "required": [
+    "command",
+    "total",
+    "types",
+    "orphans",
+    "broken_links",
+    "errors",
+    "warnings",
+    "infos"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "command": {
+      "type": "string",
+      "const": "stats"
+    },
+    "total": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total artifacts in the scoped store (post-filter, post-baseline)."
+    },
+    "types": {
+      "type": "object",
+      "description": "Per-artifact-type counts; keys are artifact-type names.",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "orphans": {
+      "type": "array",
+      "description": "Artifact IDs with no incoming or outgoing links.",
+      "items": { "type": "string" }
+    },
+    "broken_links": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Count of links whose target does not exist in the store."
+    },
+    "errors": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Diagnostic count, severity 'error'. Added in v0.4.1."
+    },
+    "warnings": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Diagnostic count, severity 'warning'. Added in v0.4.1."
+    },
+    "infos": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Diagnostic count, severity 'info'. Added in v0.4.1."
+    }
+  }
+}

@@ -1322,3 +1322,576 @@ fn all_json_outputs_are_valid() {
         );
     }
 }
+
+// ── rivet validate --fail-on <severity> ─────────────────────────────────
+
+/// Build a small project with a single requirement that has no backlink
+/// from a feature. The dev schema's `requirement-coverage` rule is a
+/// warning — so validation emits 0 errors and 1 warning. This is the
+/// fixture used by the `--fail-on` tests.
+///
+/// Returns the tempdir so the caller controls its lifetime.
+fn warning_only_project() -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let dir = tmp.path();
+
+    // Init the dev preset (which seeds REQ-001 satisfied by FEAT-001),
+    // then overwrite the sample with a requirement that has no
+    // satisfying feature so the coverage warning fires.
+    let init = Command::new(rivet_bin())
+        .args(["init", "--preset", "dev", "--dir", dir.to_str().unwrap()])
+        .output()
+        .expect("init");
+    assert!(
+        init.status.success(),
+        "init must succeed: {}",
+        String::from_utf8_lossy(&init.stderr)
+    );
+
+    let artifacts = dir.join("artifacts").join("requirements.yaml");
+    // `active` status keeps rule severity at its declared level
+    // (warning for `requirement-coverage`). Draft would downgrade to info.
+    std::fs::write(
+        &artifacts,
+        "artifacts:\n  - id: REQ-001\n    type: requirement\n    \
+         title: Orphan requirement\n    status: active\n    \
+         description: >\n      Unsatisfied — triggers \
+         requirement-coverage warning.\n    tags: [core]\n    \
+         fields:\n      priority: must\n      category: functional\n",
+    )
+    .expect("write fixture");
+
+    tmp
+}
+
+/// `rivet validate --fail-on error` (the default) must exit 0 on a
+/// project that only emits warnings.
+#[test]
+fn validate_fail_on_error_ignores_warnings() {
+    let tmp = warning_only_project();
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            tmp.path().to_str().unwrap(),
+            "validate",
+            "--format",
+            "json",
+            "--fail-on",
+            "error",
+        ])
+        .output()
+        .expect("validate");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("validate JSON");
+
+    // Sanity: 0 errors, at least 1 warning.
+    assert_eq!(
+        parsed.get("errors").and_then(|v| v.as_u64()).unwrap_or(99),
+        0,
+        "expected 0 errors, got:\n{stdout}"
+    );
+    assert!(
+        parsed
+            .get("warnings")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0)
+            >= 1,
+        "expected >=1 warning, got:\n{stdout}"
+    );
+
+    assert!(
+        out.status.success(),
+        "--fail-on error must exit 0 when there are only warnings.\n\
+         stdout: {stdout}\nstderr: {stderr}"
+    );
+}
+
+/// `rivet validate --fail-on warning` must exit 1 on the same project
+/// (warnings promote to failures).
+#[test]
+fn validate_fail_on_warning_fails_on_warnings() {
+    let tmp = warning_only_project();
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            tmp.path().to_str().unwrap(),
+            "validate",
+            "--format",
+            "json",
+            "--fail-on",
+            "warning",
+        ])
+        .output()
+        .expect("validate");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "--fail-on warning must exit non-zero when warnings are present.\n\
+         stdout: {stdout}\nstderr: {stderr}"
+    );
+}
+
+// ── rivet coverage --fail-under ─────────────────────────────────────────
+
+/// `rivet coverage --format json` echoes the threshold block when
+/// `--fail-under` is set. Consumers can check `threshold.passed` to
+/// distinguish a clean run from a gated failure without parsing stderr.
+#[test]
+fn coverage_json_echoes_threshold() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "coverage",
+            "--format",
+            "json",
+            "--fail-under",
+            "0",
+        ])
+        .output()
+        .expect("coverage");
+    assert!(output.status.success());
+    let parsed: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("coverage JSON");
+    let threshold = parsed
+        .get("threshold")
+        .expect("threshold block present when --fail-under set");
+    assert_eq!(
+        threshold
+            .get("fail_under")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(-1.0),
+        0.0
+    );
+    assert_eq!(
+        threshold.get("passed").and_then(|v| v.as_bool()),
+        Some(true)
+    );
+}
+
+/// `rivet coverage --fail-under 0` always succeeds (any coverage ≥ 0%).
+#[test]
+fn coverage_fail_under_zero_passes() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "coverage",
+            "--fail-under",
+            "0",
+        ])
+        .output()
+        .expect("coverage");
+
+    assert!(
+        output.status.success(),
+        "--fail-under 0 must always pass. stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// `rivet coverage --fail-under 101` always fails (no project has > 100%).
+#[test]
+fn coverage_fail_under_above_100_fails() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "coverage",
+            "--fail-under",
+            "101",
+        ])
+        .output()
+        .expect("coverage");
+
+    assert!(
+        !output.status.success(),
+        "--fail-under 101 must fail. stdout:\n{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("below threshold") || stderr.contains("coverage"),
+        "error message should mention threshold, got:\n{stderr}"
+    );
+}
+
+/// Without `--fail-under`, coverage is report-only — a low-coverage
+/// project still exits 0.
+#[test]
+fn coverage_without_fail_under_is_report_only() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "coverage",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("coverage");
+
+    assert!(
+        output.status.success(),
+        "coverage without --fail-under must exit 0. stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// `rivet stats --format json` exposes diagnostic counts so consumers
+/// don't need a second `rivet validate --format json` call just to
+/// get the severity breakdown.
+#[test]
+fn stats_json_includes_diagnostic_counts() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "stats",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("stats");
+
+    assert!(
+        output.status.success(),
+        "rivet stats must exit 0: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("stats JSON must be valid");
+
+    // Backward-compat: existing fields still present.
+    assert!(parsed.get("total").is_some(), "'total' still present");
+    assert!(parsed.get("types").is_some(), "'types' still present");
+
+    // New fields, numeric, >=0.
+    for field in ["errors", "warnings", "infos"] {
+        let v = parsed.get(field);
+        assert!(
+            v.is_some(),
+            "stats JSON must include '{field}' count, got: {stdout}"
+        );
+        assert!(
+            v.unwrap().is_u64(),
+            "'{field}' must be a number, got: {}",
+            v.unwrap()
+        );
+    }
+}
+
+/// Counts in `rivet stats --format json` must match what
+/// `rivet validate --format json` reports for the same project.
+#[test]
+fn stats_json_counts_match_validate() {
+    let root = project_root();
+    let root_str = root.to_str().unwrap();
+
+    let stats = Command::new(rivet_bin())
+        .args(["--project", root_str, "stats", "--format", "json"])
+        .output()
+        .expect("stats");
+    assert!(stats.status.success());
+    let stats_json: serde_json::Value =
+        serde_json::from_slice(&stats.stdout).expect("stats JSON");
+
+    let validate = Command::new(rivet_bin())
+        .args(["--project", root_str, "validate", "--format", "json"])
+        .output()
+        .expect("validate");
+    let validate_json: serde_json::Value =
+        serde_json::from_slice(&validate.stdout).expect("validate JSON");
+
+    for field in ["errors", "warnings", "infos"] {
+        let s = stats_json.get(field).and_then(|v| v.as_u64());
+        let v = validate_json.get(field).and_then(|v| v.as_u64());
+        assert_eq!(
+            s, v,
+            "stats vs validate disagree on '{field}': stats={s:?} validate={v:?}"
+        );
+    }
+}
+
+// ── rivet schema list-json / get-json ───────────────────────────────────
+
+/// `rivet schema list-json --format json` lists all shipped JSON
+/// schemas describing `--format json` output shapes.
+#[test]
+fn schema_list_json_produces_valid_output() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "schema",
+            "list-json",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("schema list-json");
+
+    assert!(
+        output.status.success(),
+        "schema list-json must succeed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let parsed: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("valid JSON");
+    assert_eq!(
+        parsed.get("command").and_then(|v| v.as_str()),
+        Some("schema-list-json"),
+    );
+    let schemas = parsed
+        .get("schemas")
+        .and_then(|v| v.as_array())
+        .expect("schemas array");
+    let names: Vec<&str> = schemas
+        .iter()
+        .filter_map(|e| e.get("name").and_then(|v| v.as_str()))
+        .collect();
+    for expected in ["validate", "stats", "coverage", "list"] {
+        assert!(
+            names.contains(&expected),
+            "expected '{expected}' in list, got {names:?}"
+        );
+    }
+    // Every shipped schema must resolve to an existing file on disk.
+    for entry in schemas {
+        assert_eq!(
+            entry.get("exists").and_then(|v| v.as_bool()),
+            Some(true),
+            "schema entry must exist on disk: {entry}"
+        );
+    }
+}
+
+/// `rivet schema get-json <name>` prints the path to the schema file,
+/// and `--content` reads the schema.
+#[test]
+fn schema_get_json_returns_path_and_content() {
+    let root_str = project_root();
+    let root_str = root_str.to_str().unwrap();
+
+    for name in ["validate", "stats", "coverage", "list"] {
+        // Path mode
+        let out = Command::new(rivet_bin())
+            .args([
+                "--project",
+                root_str,
+                "schema",
+                "get-json",
+                name,
+            ])
+            .output()
+            .expect("get-json path");
+        assert!(
+            out.status.success(),
+            "get-json {name} must succeed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let path_str = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        let path = std::path::PathBuf::from(&path_str);
+        assert!(
+            path.exists(),
+            "path '{path_str}' printed by get-json {name} must exist"
+        );
+
+        // Content mode — verify it's valid JSON and looks like a schema.
+        let out = Command::new(rivet_bin())
+            .args([
+                "--project",
+                root_str,
+                "schema",
+                "get-json",
+                name,
+                "--content",
+            ])
+            .output()
+            .expect("get-json --content");
+        assert!(out.status.success());
+        let content: serde_json::Value =
+            serde_json::from_slice(&out.stdout).expect("schema JSON parseable");
+        assert_eq!(
+            content.get("$schema").and_then(|v| v.as_str()),
+            Some("https://json-schema.org/draft/2020-12/schema"),
+            "{name} schema must declare draft-2020-12"
+        );
+        assert!(
+            content.get("title").and_then(|v| v.as_str()).is_some(),
+            "{name} schema must have a title"
+        );
+    }
+}
+
+/// An unknown schema name is rejected with a helpful message.
+#[test]
+fn schema_get_json_unknown_name_rejected() {
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "schema",
+            "get-json",
+            "bogus",
+        ])
+        .output()
+        .expect("get-json");
+
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("unknown") || stderr.contains("valid names"),
+        "error must list valid names, got: {stderr}"
+    );
+}
+
+/// Every shipped JSON schema file must itself be parseable as JSON
+/// (catches hand-written typos at CI time).
+#[test]
+fn shipped_json_schemas_are_valid_json() {
+    let schemas_dir = project_root().join("schemas").join("json");
+    for name in [
+        "validate-output.schema.json",
+        "stats-output.schema.json",
+        "coverage-output.schema.json",
+        "list-output.schema.json",
+    ] {
+        let path = schemas_dir.join(name);
+        let content = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        let parsed: serde_json::Value = serde_json::from_str(&content)
+            .unwrap_or_else(|e| panic!("{} is not valid JSON: {e}", path.display()));
+        // Minimal well-formed JSON Schema: must be an object with $schema,
+        // title, type.
+        assert!(parsed.is_object(), "{name} must be a JSON object");
+        for key in ["$schema", "title", "type"] {
+            assert!(
+                parsed.get(key).is_some(),
+                "{name} must declare '{key}'"
+            );
+        }
+    }
+}
+
+/// The `rivet validate --format json` output must conform to the shipped
+/// schema — this catches drift between the CLI output shape and the
+/// published schema.
+#[test]
+fn validate_json_output_matches_shipped_schema() {
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "validate",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("validate");
+
+    let parsed: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("validate JSON");
+
+    // Light-weight schema conformance (no external crate): check the
+    // required fields listed in validate-output.schema.json are all
+    // present with the expected types.
+    let schema_path = project_root()
+        .join("schemas")
+        .join("json")
+        .join("validate-output.schema.json");
+    let schema: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(&schema_path).expect("read schema"),
+    )
+    .expect("schema JSON");
+    let required = schema
+        .get("required")
+        .and_then(|v| v.as_array())
+        .expect("required array");
+    for req in required {
+        let key = req.as_str().expect("required[] is string");
+        assert!(
+            parsed.get(key).is_some(),
+            "validate JSON missing required field '{key}'"
+        );
+    }
+    // `command` field must match the const in the schema.
+    assert_eq!(
+        parsed.get("command").and_then(|v| v.as_str()),
+        Some("validate"),
+    );
+}
+
+/// Same conformance check for `rivet stats --format json`.
+#[test]
+fn stats_json_output_matches_shipped_schema() {
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "stats",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("stats");
+
+    let parsed: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("stats JSON");
+
+    let schema_path = project_root()
+        .join("schemas")
+        .join("json")
+        .join("stats-output.schema.json");
+    let schema: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(&schema_path).expect("read schema"),
+    )
+    .expect("schema JSON");
+    let required = schema
+        .get("required")
+        .and_then(|v| v.as_array())
+        .expect("required array");
+    for req in required {
+        let key = req.as_str().expect("required[] is string");
+        assert!(
+            parsed.get(key).is_some(),
+            "stats JSON missing required field '{key}'"
+        );
+    }
+    assert_eq!(
+        parsed.get("command").and_then(|v| v.as_str()),
+        Some("stats")
+    );
+}
+
+/// An invalid `--fail-on` value is rejected up-front.
+#[test]
+fn validate_fail_on_invalid_value_rejected() {
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "validate",
+            "--fail-on",
+            "bogus",
+        ])
+        .output()
+        .expect("validate");
+
+    assert!(
+        !out.status.success(),
+        "--fail-on bogus must fail"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("bogus") || stderr.contains("fail-on"),
+        "error must mention the bad value, got: {stderr}"
+    );
+}

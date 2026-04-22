@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pulseengine.github.io/rivet/schemas/json/coverage-output.schema.json",
+  "title": "rivet coverage --format json",
+  "description": "Machine-readable output produced by `rivet coverage --format json`.",
+  "type": "object",
+  "required": ["command", "rules", "overall"],
+  "additionalProperties": true,
+  "properties": {
+    "command": {
+      "type": "string",
+      "const": "coverage"
+    },
+    "rules": {
+      "type": "array",
+      "description": "One entry per traceability rule covered by the report.",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "source_type",
+          "covered",
+          "total",
+          "percentage"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "name": { "type": "string" },
+          "description": { "type": ["string", "null"] },
+          "source_type": { "type": "string" },
+          "link_type": { "type": ["string", "null"] },
+          "direction": { "type": ["string", "null"] },
+          "covered": { "type": "integer", "minimum": 0 },
+          "total": { "type": "integer", "minimum": 0 },
+          "percentage": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "uncovered_ids": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "overall": {
+      "type": "object",
+      "required": ["covered", "total", "percentage"],
+      "properties": {
+        "covered": { "type": "integer", "minimum": 0 },
+        "total": { "type": "integer", "minimum": 0 },
+        "percentage": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        }
+      }
+    },
+    "threshold": {
+      "type": "object",
+      "description": "Present when --fail-under is set. Added in v0.4.1.",
+      "required": ["fail_under", "passed"],
+      "properties": {
+        "fail_under": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "passed": { "type": "boolean" }
+      }
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pulseengine.github.io/rivet/schemas/json/list-output.schema.json",
+  "title": "rivet list --format json",
+  "description": "Machine-readable output produced by `rivet list --format json`.",
+  "type": "object",
+  "required": ["command", "count", "artifacts"],
+  "additionalProperties": true,
+  "properties": {
+    "command": {
+      "type": "string",
+      "const": "list"
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "type", "title"],
+        "additionalProperties": true,
+        "properties": {
+          "id": { "type": "string" },
+          "type": { "type": "string" },
+          "title": { "type": "string" },
+          "status": {
+            "type": "string",
+            "description": "Status string, or '-' if unset."
+          },
+          "links": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of outgoing links from this artifact."
+          }
+        }
+      }
+    }
+  }
+}

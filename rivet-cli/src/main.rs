@@ -233,6 +233,12 @@ enum Command {
         /// Path to feature-to-artifact binding YAML file
         #[arg(long)]
         binding: Option<PathBuf>,
+
+        /// Minimum severity that causes exit code 1. Values: "error" (default),
+        /// "warning", "info". E.g. --fail-on warning tightens the gate so any
+        /// warning (or error) fails the run.
+        #[arg(long, default_value = "error")]
+        fail_on: String,
     },
 
     /// Show a single artifact by ID
@@ -756,6 +762,27 @@ enum SchemaAction {
         #[arg(short, long, default_value = "text")]
         format: String,
     },
+    /// List JSON schemas describing `--format json` CLI outputs
+    ///
+    /// Rivet ships draft-2020-12 JSON Schemas for every `--format json`
+    /// output (validate, stats, coverage, list). Consumers can pipe
+    /// the CLI output through a JSON Schema validator to catch
+    /// regressions when CLI fields are added or removed.
+    ListJson {
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+    /// Print the path (or content) of a JSON schema for a given CLI output
+    ///
+    /// Valid output names: validate, stats, coverage, list.
+    GetJson {
+        /// Output name (validate | stats | coverage | list)
+        name: String,
+        /// Print the schema content instead of just its path
+        #[arg(long)]
+        content: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -962,6 +989,7 @@ fn run(cli: Cli) -> Result<bool> {
             model,
             variant,
             binding,
+            fail_on,
         } => cmd_validate(
             &cli,
             format,
@@ -972,6 +1000,7 @@ fn run(cli: Cli) -> Result<bool> {
             model.as_deref(),
             variant.as_deref(),
             binding.as_deref(),
+            fail_on,
         ),
         Command::List {
             r#type,
@@ -3151,8 +3180,10 @@ fn cmd_validate(
     model_path: Option<&std::path::Path>,
     variant_path: Option<&std::path::Path>,
     binding_path: Option<&std::path::Path>,
+    fail_on: &str,
 ) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
+    let fail_on_threshold = parse_fail_on(fail_on)?;
     check_for_updates();
 
     let ctx = ProjectContext::load_with_docs(cli)?;
@@ -3614,7 +3645,33 @@ fn cmd_validate(
         }
     }
 
-    Ok(errors == 0 && cross_errors == 0)
+    // Exit-code gate: fail if any diagnostic at or above the configured
+    // severity threshold is present. Cross-repo broken refs are always
+    // treated as errors for this purpose (they aren't classified by
+    // severity today).
+    let has_threshold_hit = match fail_on_threshold {
+        Severity::Error => errors > 0 || cross_errors > 0,
+        Severity::Warning => errors > 0 || cross_errors > 0 || warnings > 0,
+        Severity::Info => {
+            errors > 0 || cross_errors > 0 || warnings > 0 || infos > 0
+        }
+    };
+    Ok(!has_threshold_hit)
+}
+
+/// Parse the `--fail-on` flag into a `Severity` threshold.
+///
+/// Accepts `error` (default), `warning`, `info` (case-insensitive).
+fn parse_fail_on(value: &str) -> Result<Severity> {
+    match value.to_ascii_lowercase().as_str() {
+        "error" => Ok(Severity::Error),
+        "warning" | "warn" => Ok(Severity::Warning),
+        "info" => Ok(Severity::Info),
+        other => anyhow::bail!(
+            "invalid --fail-on value '{}' — valid options: error, warning, info",
+            other
+        ),
+    }
 }
 
 /// Run core validation via the salsa incremental database.
@@ -3936,6 +3993,27 @@ fn cmd_stats(
     // Compute stats once — both formats share the same data.
     let stats = compute_stats(&store, &graph);
 
+    // Diagnostic counts (errors/warnings/infos) — same shape as
+    // `rivet validate --format json` emits, so consumers don't need a
+    // second call to get the severity breakdown.
+    //
+    // We use the direct validator on the (already scoped) store so the
+    // counts line up with the visible artifact set when --filter or
+    // --baseline is in effect.
+    let diagnostics = validate::validate(&store, &ctx.schema, &graph);
+    let errors = diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Error)
+        .count();
+    let warnings = diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Warning)
+        .count();
+    let infos = diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Info)
+        .count();
+
     if format == "json" {
         let mut types = serde_json::Map::new();
         for (name, count) in &stats.type_counts {
@@ -3947,6 +4025,9 @@ fn cmd_stats(
             "types": types,
             "orphans": stats.orphans,
             "broken_links": stats.broken_links,
+            "errors": errors,
+            "warnings": warnings,
+            "infos": infos,
         });
         println!("{}", serde_json::to_string_pretty(&output).unwrap());
     } else {
@@ -3966,6 +4047,12 @@ fn cmd_stats(
         if stats.broken_links > 0 {
             println!("\nBroken links: {}", stats.broken_links);
         }
+
+        // Diagnostic summary — same numbers as the JSON output.
+        println!(
+            "\nDiagnostics: {} error(s), {} warning(s), {} info(s)",
+            errors, warnings, infos
+        );
     }
 
     Ok(true)
@@ -4057,7 +4144,8 @@ fn cmd_coverage(
         let total: usize = report.entries.iter().map(|e| e.total).sum();
         let covered: usize = report.entries.iter().map(|e| e.covered).sum();
         let overall_pct = (report.overall_coverage() * 10.0).round() / 10.0;
-        let output = serde_json::json!({
+        let mut output = serde_json::json!({
+            "command": "coverage",
             "rules": rules_json,
             "overall": {
                 "covered": covered,
@@ -4065,6 +4153,16 @@ fn cmd_coverage(
                 "percentage": overall_pct,
             },
         });
+        // Echo the threshold + pass/fail result when --fail-under is in
+        // effect so CI consumers can programmatically distinguish a
+        // clean run from a gated failure without parsing stderr.
+        if let Some(&threshold) = fail_under {
+            let passed = report.overall_coverage() >= threshold;
+            output["threshold"] = serde_json::json!({
+                "fail_under": threshold,
+                "passed": passed,
+            });
+        }
         println!("{}", serde_json::to_string_pretty(&output).unwrap());
     } else {
         println!("Traceability Coverage Report\n");
@@ -4108,10 +4206,15 @@ fn cmd_coverage(
         let overall = report.overall_coverage();
         if overall < threshold {
             eprintln!(
-                "\nerror: overall coverage {:.1}% is below threshold {:.1}%",
+                "\nerror: overall coverage {:.1}% is below threshold {:.1}% (--fail-under)",
                 overall, threshold
             );
             return Ok(false);
+        } else if format != "json" {
+            println!(
+                "\n\u{2714} coverage {:.1}% meets threshold {:.1}%",
+                overall, threshold
+            );
         }
     }
 
@@ -5257,6 +5360,7 @@ fn cmd_diff(
                         model: None,
                         variant: None,
                         binding: None,
+                        fail_on: "error".to_string(),
                     },
                 };
                 let head_cli = Cli {
@@ -5272,6 +5376,7 @@ fn cmd_diff(
                         model: None,
                         variant: None,
                         binding: None,
+                        fail_on: "error".to_string(),
                     },
                 };
                 let bc = ProjectContext::load(&base_cli)?;
@@ -5853,6 +5958,20 @@ fn cmd_docs(
 
 /// Introspect loaded schemas.
 fn cmd_schema(cli: &Cli, action: &SchemaAction) -> Result<bool> {
+    // `list-json` / `get-json` don't need the project schema graph —
+    // they describe CLI output shapes, not artifact types. Handle them
+    // before the expensive load.
+    match action {
+        SchemaAction::ListJson { format } => {
+            validate_format(format, &["text", "json"])?;
+            return cmd_schema_list_json(cli, format);
+        }
+        SchemaAction::GetJson { name, content } => {
+            return cmd_schema_get_json(cli, name, *content);
+        }
+        _ => {}
+    }
+
     let schemas_dir = resolve_schemas_dir(cli);
     let config_path = cli.project.join("rivet.yaml");
     let schema_names = if config_path.exists() {
@@ -5894,8 +6013,123 @@ fn cmd_schema(cli: &Cli, action: &SchemaAction) -> Result<bool> {
             };
             schema_cmd::cmd_info(&schema_file, format)
         }
+        SchemaAction::ListJson { .. } | SchemaAction::GetJson { .. } => unreachable!(),
     };
     print!("{output}");
+    Ok(true)
+}
+
+/// The four CLI subcommands that emit machine-readable JSON along with the
+/// JSON schema file that describes their output.
+const JSON_SCHEMA_REGISTRY: &[(&str, &str, &str)] = &[
+    (
+        "validate",
+        "schemas/json/validate-output.schema.json",
+        "rivet validate --format json",
+    ),
+    (
+        "stats",
+        "schemas/json/stats-output.schema.json",
+        "rivet stats --format json",
+    ),
+    (
+        "coverage",
+        "schemas/json/coverage-output.schema.json",
+        "rivet coverage --format json",
+    ),
+    (
+        "list",
+        "schemas/json/list-output.schema.json",
+        "rivet list --format json",
+    ),
+];
+
+/// Resolve a schema file path against `--schemas` (if set) or the
+/// bundled repo-relative `schemas/` directory. We need a slightly
+/// different heuristic than `resolve_schemas_dir` — JSON schemas live
+/// under `schemas/json/` regardless of whether the user overrode the
+/// YAML schemas path.
+fn resolve_json_schema(cli: &Cli, relative: &str) -> PathBuf {
+    // Strip the leading "schemas/" — we'll reattach it whether we use
+    // the override or the default.
+    let sub = relative.strip_prefix("schemas/").unwrap_or(relative);
+    if let Some(ref s) = cli.schemas {
+        return s.join(sub);
+    }
+    // Prefer the sibling of the current project dir (`<project>/schemas`)
+    // when the project has one; fall back to repo-local.
+    let project_schemas = cli.project.join("schemas").join(sub);
+    if project_schemas.exists() {
+        return project_schemas;
+    }
+    PathBuf::from(relative)
+}
+
+fn cmd_schema_list_json(cli: &Cli, format: &str) -> Result<bool> {
+    let entries: Vec<(String, PathBuf, String, bool)> = JSON_SCHEMA_REGISTRY
+        .iter()
+        .map(|(name, rel, desc)| {
+            let path = resolve_json_schema(cli, rel);
+            let exists = path.exists();
+            (name.to_string(), path, desc.to_string(), exists)
+        })
+        .collect();
+
+    if format == "json" {
+        let items: Vec<serde_json::Value> = entries
+            .iter()
+            .map(|(name, path, desc, exists)| {
+                serde_json::json!({
+                    "name": name,
+                    "path": path.display().to_string(),
+                    "describes": desc,
+                    "exists": exists,
+                })
+            })
+            .collect();
+        let output = serde_json::json!({
+            "command": "schema-list-json",
+            "count": items.len(),
+            "schemas": items,
+        });
+        println!("{}", serde_json::to_string_pretty(&output).unwrap());
+    } else {
+        println!("JSON schemas for rivet --format json outputs:\n");
+        let header = format!(
+            "  {:<12} {:<72} {}",
+            "Name", "Path", "Describes"
+        );
+        println!("{header}");
+        let sep = "-".repeat(110);
+        println!("  {sep}");
+        for (name, path, desc, exists) in &entries {
+            let marker = if *exists { " " } else { "!" };
+            let path_str = path.display().to_string();
+            println!("  {marker} {name:<10} {path_str:<72} {desc}");
+        }
+        println!("\nUse: rivet schema get-json <name>            # print path");
+        println!("     rivet schema get-json <name> --content   # print schema JSON");
+    }
+    Ok(true)
+}
+
+fn cmd_schema_get_json(cli: &Cli, name: &str, print_content: bool) -> Result<bool> {
+    let Some((_, rel, _)) = JSON_SCHEMA_REGISTRY.iter().find(|(n, _, _)| *n == name) else {
+        let valid: Vec<&str> = JSON_SCHEMA_REGISTRY.iter().map(|(n, _, _)| *n).collect();
+        anyhow::bail!(
+            "unknown JSON schema '{}' — valid names: {}",
+            name,
+            valid.join(", ")
+        );
+    };
+    let path = resolve_json_schema(cli, rel);
+    if print_content {
+        let content = std::fs::read_to_string(&path)
+            .with_context(|| format!("reading {}", path.display()))?;
+        print!("{content}");
+    } else {
+        println!("{}", path.display());
+    }
     Ok(true)
 }
 
