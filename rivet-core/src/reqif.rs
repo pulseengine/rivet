@@ -868,6 +868,14 @@ pub fn parse_reqif(xml: &str, type_map: &HashMap<String, String>) -> Result<Vec<
         .collect();
 
     // Parse SPEC-RELATIONS into Links on source artifacts.
+    //
+    // Two-pass to guarantee we can detect dangling targets: the first pass
+    // (above) collected all IDs, and `artifact_ids` serves as the reference
+    // set.  Each SpecRelation whose source OR target doesn't resolve to an
+    // existing SpecObject is collected into `dangling`; the whole import is
+    // rejected if any are seen, rather than silently creating phantom Links
+    // that would show up as broken edges in the LinkGraph.
+    let mut dangling: Vec<String> = Vec::new();
     for rel in &content.spec_relations.relations {
         let link_type = rel
             .relation_type_ref
@@ -888,12 +896,39 @@ pub fn parse_reqif(xml: &str, type_map: &HashMap<String, String>) -> Result<Vec<
             .get(&rel.target.spec_object_ref)
             .unwrap_or(&rel.target.spec_object_ref);
 
-        if let Some(&idx) = artifact_ids.get(source_id.as_str()) {
+        let source_idx = artifact_ids.get(source_id.as_str()).copied();
+        let target_known = artifact_ids.contains_key(target_id.as_str());
+
+        if source_idx.is_none() || !target_known {
+            dangling.push(format!(
+                "SPEC-RELATION {} -> {} (role={}): {}",
+                rel.source.spec_object_ref,
+                rel.target.spec_object_ref,
+                link_type,
+                match (source_idx.is_none(), !target_known) {
+                    (true, true) => "source and target unknown",
+                    (true, false) => "source unknown",
+                    (false, true) => "target unknown",
+                    (false, false) => unreachable!(),
+                }
+            ));
+            continue;
+        }
+
+        if let Some(idx) = source_idx {
             artifacts[idx].links.push(Link {
                 link_type,
                 target: target_id.clone(),
             });
         }
+    }
+
+    if !dangling.is_empty() {
+        return Err(Error::Adapter(format!(
+            "ReqIF import rejected {} dangling SPEC-RELATION target(s): {}",
+            dangling.len(),
+            dangling.join("; ")
+        )));
     }
 
     Ok(artifacts)
@@ -1997,6 +2032,93 @@ mod tests {
             !xml.contains("DATATYPE-DEFINITION-ENUMERATION"),
             "unexpected ENUMERATION emitted without schema: {xml}"
         );
+    }
+
+    /// SpecRelation targets that don't resolve to any SpecObject must be
+    /// rejected rather than silently creating a phantom Link.  Regression
+    /// for the "silent dangle" row in the fidelity scorecard.
+    // rivet: verifies REQ-025
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_dangling_spec_relation_rejected() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<REQ-IF xmlns="http://www.omg.org/spec/ReqIF/20110401/reqif.xsd">
+  <THE-HEADER>
+    <REQ-IF-HEADER IDENTIFIER="dangle-test"/>
+  </THE-HEADER>
+  <CORE-CONTENT>
+    <REQ-IF-CONTENT>
+      <DATATYPES/>
+      <SPEC-TYPES>
+        <SPEC-OBJECT-TYPE IDENTIFIER="SOT-req" LONG-NAME="requirement"/>
+        <SPEC-RELATION-TYPE IDENTIFIER="SRT-traces-to" LONG-NAME="traces-to"/>
+      </SPEC-TYPES>
+      <SPEC-OBJECTS>
+        <SPEC-OBJECT IDENTIFIER="R-1" LONG-NAME="Source req">
+          <TYPE><SPEC-OBJECT-TYPE-REF>SOT-req</SPEC-OBJECT-TYPE-REF></TYPE>
+        </SPEC-OBJECT>
+      </SPEC-OBJECTS>
+      <SPEC-RELATIONS>
+        <SPEC-RELATION IDENTIFIER="REL-1">
+          <TYPE><SPEC-RELATION-TYPE-REF>SRT-traces-to</SPEC-RELATION-TYPE-REF></TYPE>
+          <SOURCE><SPEC-OBJECT-REF>R-1</SPEC-OBJECT-REF></SOURCE>
+          <TARGET><SPEC-OBJECT-REF>DOES-NOT-EXIST</SPEC-OBJECT-REF></TARGET>
+        </SPEC-RELATION>
+      </SPEC-RELATIONS>
+    </REQ-IF-CONTENT>
+  </CORE-CONTENT>
+</REQ-IF>"#;
+
+        let err =
+            parse_reqif(xml, &HashMap::new()).expect_err("dangling target should be rejected");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("dangling"),
+            "error should mention 'dangling': {msg}"
+        );
+        assert!(
+            msg.contains("DOES-NOT-EXIST"),
+            "error should name the missing target: {msg}"
+        );
+        assert!(
+            msg.contains("traces-to"),
+            "error should carry the link role: {msg}"
+        );
+    }
+
+    /// When the source of a SpecRelation doesn't exist, we also reject
+    /// the import rather than dropping the relation on the floor.
+    // rivet: verifies REQ-025
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_dangling_source_rejected() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<REQ-IF xmlns="http://www.omg.org/spec/ReqIF/20110401/reqif.xsd">
+  <THE-HEADER>
+    <REQ-IF-HEADER IDENTIFIER="dangle-src"/>
+  </THE-HEADER>
+  <CORE-CONTENT>
+    <REQ-IF-CONTENT>
+      <DATATYPES/>
+      <SPEC-TYPES>
+        <SPEC-OBJECT-TYPE IDENTIFIER="SOT-req" LONG-NAME="requirement"/>
+      </SPEC-TYPES>
+      <SPEC-OBJECTS>
+        <SPEC-OBJECT IDENTIFIER="R-1" LONG-NAME="Existing">
+          <TYPE><SPEC-OBJECT-TYPE-REF>SOT-req</SPEC-OBJECT-TYPE-REF></TYPE>
+        </SPEC-OBJECT>
+      </SPEC-OBJECTS>
+      <SPEC-RELATIONS>
+        <SPEC-RELATION IDENTIFIER="REL-1">
+          <SOURCE><SPEC-OBJECT-REF>MISSING-SRC</SPEC-OBJECT-REF></SOURCE>
+          <TARGET><SPEC-OBJECT-REF>R-1</SPEC-OBJECT-REF></TARGET>
+        </SPEC-RELATION>
+      </SPEC-RELATIONS>
+    </REQ-IF-CONTENT>
+  </CORE-CONTENT>
+</REQ-IF>"#;
+        let err = parse_reqif(xml, &HashMap::new()).expect_err("dangling source rejected");
+        assert!(err.to_string().contains("MISSING-SRC"));
     }
 
     /// Legacy comma-joined tags (from older rivet exports or other tools)
