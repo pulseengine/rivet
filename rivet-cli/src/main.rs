@@ -425,9 +425,11 @@ enum Command {
         action: SchemaAction,
     },
 
-    /// Built-in documentation (topics, search)
+    /// Built-in documentation (topics, search) — `check` subcommand verifies
+    /// docs-vs-reality invariants.
     Docs {
-        /// Topic slug to display (omit for topic list)
+        /// Topic slug to display, or `check` to run the doc invariant engine
+        /// (omit for topic list).
         topic: Option<String>,
 
         /// List available topics (same as `rivet docs` with no args)
@@ -445,6 +447,10 @@ enum Command {
         /// Context lines around grep matches
         #[arg(short = 'C', long, default_value = "2")]
         context: usize,
+
+        /// (check only) apply auto-fixes for fixable violations in place
+        #[arg(long)]
+        fix: bool,
     },
 
     /// Generate .rivet/agent-context.md from current project state
@@ -974,8 +980,12 @@ fn run(cli: Cli) -> Result<bool> {
         grep,
         format,
         context,
+        fix,
     } = &cli.command
     {
+        if matches!(topic.as_deref(), Some("check")) {
+            return cmd_docs_check(&cli, format, *fix);
+        }
         return cmd_docs(topic.as_deref(), *list, grep.as_deref(), format, *context);
     }
     if let Command::Context = &cli.command {
@@ -5986,6 +5996,161 @@ fn cmd_docs(
         print!("{}", docs::list_topics(format));
     }
     Ok(true)
+}
+
+/// Run `rivet docs check` — assert documentation matches reality.
+fn cmd_docs_check(cli: &Cli, format: &str, fix: bool) -> Result<bool> {
+    use clap::CommandFactory;
+    use rivet_core::doc_check::{
+        apply_fixes, collect_docs, default_invariants, run_all, DocCheckContext,
+    };
+    use std::collections::BTreeSet;
+
+    validate_format(format, &["text", "json"])?;
+
+    let project_root = cli.project.canonicalize().unwrap_or_else(|_| cli.project.clone());
+
+    // 1. Collect docs.
+    let docs = collect_docs(&project_root)
+        .with_context(|| format!("scanning docs under {}", project_root.display()))?;
+
+    // 2. Build known-subcommand set from clap metadata (keeps check in sync
+    //    with the actual CLI at compile time).
+    let mut known_subcommands: BTreeSet<String> = Cli::command()
+        .get_subcommands()
+        .map(|s| s.get_name().to_string())
+        .collect();
+    // Also include aliases / hyphenated forms the user is likely to write.
+    known_subcommands.insert("import-results".to_string());
+    known_subcommands.insert("commit-msg-check".to_string());
+    known_subcommands.insert("next-id".to_string());
+
+    // 3. Known embed set — kept in sync with rivet-core/src/embed.rs.  The
+    //    "legacy" inline embeds (artifact/links/table) plus the modern
+    //    computed embeds (stats/coverage/diagnostics/matrix).
+    let mut known_embeds: BTreeSet<String> = BTreeSet::new();
+    for e in [
+        "stats",
+        "coverage",
+        "diagnostics",
+        "matrix",
+        "artifact",
+        "links",
+        "table",
+    ] {
+        known_embeds.insert(e.to_string());
+    }
+
+    // 4. Workspace version from CARGO_PKG_VERSION (the CLI shares the
+    //    workspace version via `version.workspace = true`).
+    let workspace_version = env!("CARGO_PKG_VERSION");
+
+    // 5. Load artifact store if possible (invariants that need it will
+    //    skip themselves if absent).
+    let loaded = rivet_core::load_project_full(&project_root).ok();
+    let store = loaded.as_ref().map(|l| &l.store);
+
+    // 6. Load CI YAML for soft-gate checks.
+    let ci_path = project_root.join(".github/workflows/ci.yml");
+    let ci_yaml_owned = std::fs::read_to_string(&ci_path).ok();
+
+    let ctx = DocCheckContext {
+        project_root: &project_root,
+        docs: &docs,
+        known_subcommands: &known_subcommands,
+        known_embeds: &known_embeds,
+        workspace_version,
+        store,
+        ci_yaml: ci_yaml_owned.as_deref(),
+    };
+
+    let invariants = default_invariants();
+    let mut report = run_all(&ctx, &invariants);
+
+    if fix {
+        let applied = apply_fixes(&ctx, &report)
+            .with_context(|| "applying auto-fixes")?;
+        if applied > 0 {
+            eprintln!("doc-check: applied {applied} auto-fix(es); re-running");
+            // Rebuild and rerun since auto-fixes may have removed some
+            // violations.
+            report = run_all(&ctx, &invariants);
+        }
+    }
+
+    match format {
+        "json" => print!("{}", render_docs_check_json(&report)),
+        _ => print!("{}", render_docs_check_text(&report)),
+    }
+
+    Ok(!report.has_violations())
+}
+
+fn render_docs_check_text(report: &rivet_core::doc_check::CheckReport) -> String {
+    use std::fmt::Write as _;
+    let mut s = String::new();
+    if report.violations.is_empty() {
+        let _ = writeln!(
+            s,
+            "doc-check: PASS ({} files scanned, 0 violations)",
+            report.scanned_files.len()
+        );
+        return s;
+    }
+    for v in &report.violations {
+        let _ = writeln!(
+            s,
+            "{}:{} [{}] {} -- {}",
+            v.file.display(),
+            v.line,
+            v.invariant,
+            v.claim,
+            v.reality
+        );
+    }
+    let _ = writeln!(
+        s,
+        "\ndoc-check: FAIL — {} violation(s) across {} file(s)",
+        report.violations.len(),
+        report
+            .violations
+            .iter()
+            .map(|v| v.file.clone())
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+    );
+    let _ = writeln!(s, "by invariant:");
+    for (name, count) in report.by_invariant() {
+        let _ = writeln!(s, "  {name}: {count}");
+    }
+    s
+}
+
+fn render_docs_check_json(report: &rivet_core::doc_check::CheckReport) -> String {
+    let items: Vec<serde_json::Value> = report
+        .violations
+        .iter()
+        .map(|v| {
+            serde_json::json!({
+                "file": v.file.display().to_string(),
+                "line": v.line,
+                "invariant": v.invariant,
+                "claim": v.claim,
+                "reality": v.reality,
+                "auto_fixable": v.auto_fixable,
+            })
+        })
+        .collect();
+    let payload = serde_json::json!({
+        "status": if report.violations.is_empty() { "pass" } else { "fail" },
+        "scanned_file_count": report.scanned_files.len(),
+        "violation_count": report.violations.len(),
+        "violations": items,
+        "by_invariant": report.by_invariant(),
+    });
+    let mut out = serde_json::to_string_pretty(&payload).unwrap_or_default();
+    out.push('\n');
+    out
 }
 
 /// Introspect loaded schemas.
