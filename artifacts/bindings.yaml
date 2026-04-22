@@ -1,0 +1,7 @@
+bindings:
+  core-cli:
+    artifacts: [REQ-001, REQ-004, REQ-007]
+  dashboard:
+    artifacts: [FEAT-001, FEAT-010, REQ-007]
+  minimal:
+    artifacts: [REQ-001]

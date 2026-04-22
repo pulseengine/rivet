@@ -849,6 +849,43 @@ fn graph_full_view_respects_node_budget() {
     child.wait().ok();
 }
 
+// ── Variant scoping ──────────────────────────────────────────────────────
+
+#[test]
+fn api_artifacts_variant_scope_reduces_total() {
+    // Uses the test variants declared under `artifacts/variants/` in the
+    // project root (minimal-ci → 1 artifact; dashboard-only → 3).
+    let (mut child, port) = start_server();
+
+    let (s1, b1, _) = fetch(port, "/api/v1/artifacts?limit=1000", false);
+    assert_eq!(s1, 200);
+    let j1: serde_json::Value = serde_json::from_str(&b1).unwrap();
+    let total_unscoped = j1["total"].as_u64().unwrap();
+    assert!(total_unscoped > 5, "sanity: project has many artifacts");
+
+    // minimal-ci is defined with just a single bound artifact (REQ-001).
+    let (s2, b2, _) = fetch(
+        port,
+        "/api/v1/artifacts?variant=minimal-ci&limit=1000",
+        false,
+    );
+    assert_eq!(s2, 200);
+    let j2: serde_json::Value = serde_json::from_str(&b2).unwrap();
+    let scoped_total = j2["total"].as_u64().unwrap();
+    assert_eq!(scoped_total, 1, "minimal-ci binds exactly REQ-001");
+
+    let ids: Vec<String> = j2["artifacts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["id"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(ids, vec!["REQ-001".to_string()]);
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
 /// A focused view (`?focus=REQ-001&depth=2`) stays under the budget and
 /// must render SVG normally.
 #[test]
@@ -874,6 +911,42 @@ fn graph_focused_view_renders_svg() {
     child.wait().ok();
 }
 
+#[test]
+fn api_artifacts_unknown_variant_returns_400_json() {
+    let (mut child, port) = start_server();
+    let (status, body, _) = fetch(port, "/api/v1/artifacts?variant=does-not-exist", false);
+    assert_eq!(status, 400, "unknown variant must be 400");
+    let j: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(j["error"], "invalid_variant");
+    assert!(
+        j["message"].as_str().unwrap().contains("not found"),
+        "error message should mention the variant isn't found: {}",
+        j["message"]
+    );
+    child.kill().ok();
+    child.wait().ok();
+}
+
+#[test]
+fn api_stats_variant_scope_smaller_than_full() {
+    let (mut child, port) = start_server();
+
+    let (s1, b1, _) = fetch(port, "/api/v1/stats", false);
+    assert_eq!(s1, 200);
+    let j1: serde_json::Value = serde_json::from_str(&b1).unwrap();
+    let total = j1["total_artifacts"].as_u64().unwrap();
+
+    let (s2, b2, _) = fetch(port, "/api/v1/stats?variant=minimal-ci", false);
+    assert_eq!(s2, 200);
+    let j2: serde_json::Value = serde_json::from_str(&b2).unwrap();
+    let scoped_total = j2["total_artifacts"].as_u64().unwrap();
+    assert!(scoped_total < total, "scoped total must be strictly smaller");
+    assert_eq!(scoped_total, 1);
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
 /// A very low `?limit=` forces the budget message even for a tiny focus
 /// subgraph, confirming the override is wired through.
 #[test]
@@ -887,9 +960,29 @@ fn graph_limit_override_triggers_budget_message() {
     assert_eq!(status, 200, "/graph?limit=1 must return 200");
     assert!(
         body.contains("budget"),
-        "/graph with an overly-tight limit must render the budget message"
+        "low /graph?limit must short-circuit to budget message"
     );
 
+    child.kill().ok();
+    child.wait().ok();
+}
+
+#[test]
+fn api_coverage_honors_variant() {
+    let (mut child, port) = start_server();
+    let (status, body, _) = fetch(port, "/api/v1/coverage?variant=minimal-ci", false);
+    assert_eq!(status, 200);
+    let j: serde_json::Value = serde_json::from_str(&body).unwrap();
+    // The scope only contains REQ-001 — most coverage rules will have
+    // a total of at most 1.
+    let rules = j["rules"].as_array().unwrap();
+    assert!(!rules.is_empty(), "coverage report must have entries");
+    // At least one rule's total must be <= 1 (from the 1-artifact scope)
+    // even if the full project had hundreds of entries for that rule.
+    assert!(
+        rules.iter().any(|r| r["total"].as_u64().unwrap_or(u64::MAX) <= 1),
+        "scoped coverage must produce small totals"
+    );
     child.kill().ok();
     child.wait().ok();
 }
@@ -920,6 +1013,70 @@ fn graph_type_filter_renders_when_under_budget() {
         "/graph?types=requirement must produce SVG or budget message"
     );
 
+    child.kill().ok();
+    child.wait().ok();
+}
+
+#[test]
+fn variants_page_lists_declared_variants() {
+    let (mut child, port) = start_server();
+    let (status, body, _) = fetch(port, "/variants", false);
+    assert_eq!(status, 200, "/variants must be 200");
+    assert!(
+        body.contains("minimal-ci"),
+        "overview must list minimal-ci"
+    );
+    assert!(
+        body.contains("dashboard-only"),
+        "overview must list dashboard-only"
+    );
+    assert!(
+        body.contains("PASS"),
+        "overview must render PASS status for solved variants"
+    );
+    child.kill().ok();
+    child.wait().ok();
+}
+
+#[test]
+fn dashboard_includes_variant_dropdown_when_model_present() {
+    let (mut child, port) = start_server();
+    let (status, body, _) = fetch(port, "/", false);
+    assert_eq!(status, 200);
+    assert!(
+        body.contains("variant-selector"),
+        "dropdown must render when feature model is configured"
+    );
+    // All declared variants must appear as <option> values.
+    assert!(
+        body.contains("value=\"minimal-ci\""),
+        "minimal-ci option missing"
+    );
+    assert!(
+        body.contains("value=\"dashboard-only\""),
+        "dashboard-only option missing"
+    );
+    child.kill().ok();
+    child.wait().ok();
+}
+
+#[test]
+fn stats_page_shows_variant_banner_when_scoped() {
+    let (mut child, port) = start_server();
+    let (status, body, _) = fetch(port, "/stats?variant=minimal-ci", false);
+    assert_eq!(status, 200);
+    assert!(
+        body.contains("Filtered to variant"),
+        "banner must appear when ?variant is set"
+    );
+    assert!(
+        body.contains("minimal-ci"),
+        "banner must name the active variant"
+    );
+    assert!(
+        body.contains("Clear filter"),
+        "banner must offer a Clear filter link"
+    );
     child.kill().ok();
     child.wait().ok();
 }
