@@ -754,10 +754,7 @@ pub fn parse_reqif(xml: &str, type_map: &HashMap<String, String>) -> Result<Vec<
                         }
                     }
                     _ => {
-                        fields.insert(
-                            attr_name.to_string(),
-                            serde_yaml::Value::String(av.the_value.clone()),
-                        );
+                        fields.insert(attr_name.to_string(), decode_field_value(&av.the_value));
                     }
                 }
             }
@@ -1070,16 +1067,14 @@ pub fn build_reqif(artifacts: &[Artifact]) -> ReqIfRoot {
             }
 
             for (key, value) in &a.fields {
-                let val_str = match value {
-                    serde_yaml::Value::String(s) => s.clone(),
-                    other => format!("{other:?}"),
-                };
-                string_values.push(AttributeValueString {
-                    the_value: val_str,
-                    definition: AttrDefinitionRef {
-                        attr_def_ref: format!("ATTR-{key}"),
-                    },
-                });
+                if let Some(val_str) = encode_field_value(value) {
+                    string_values.push(AttributeValueString {
+                        the_value: val_str,
+                        definition: AttrDefinitionRef {
+                            attr_def_ref: format!("ATTR-{key}"),
+                        },
+                    });
+                }
             }
 
             SpecObject {
@@ -1146,6 +1141,67 @@ pub fn build_reqif(artifacts: &[Artifact]) -> ReqIfRoot {
             },
         },
     }
+}
+
+/// Encode a `serde_yaml::Value` as a ReqIF ATTRIBUTE-VALUE-STRING string.
+///
+/// ReqIF 1.2's STRING attribute only carries text, so we apply explicit
+/// type-aware conversions rather than Rust's `Debug` format (which emitted
+/// gibberish like `"Bool(true)"` or `"Sequence [String(\"a\")]"`).
+///
+/// Conventions:
+/// - `String(s)` → `s` verbatim.
+/// - `Bool(b)`   → `"true"` / `"false"`.
+/// - `Number(n)` → decimal string representation.
+/// - `Sequence`  → JSON array representation (lossless, reversible).
+/// - `Mapping`   → JSON object representation (ReqIF has no native map type).
+/// - `Null`      → attribute omitted (returns `None`).
+/// - `Tagged(t)` → recurse into inner value, tag itself is not preserved.
+fn encode_field_value(value: &serde_yaml::Value) -> Option<String> {
+    match value {
+        serde_yaml::Value::Null => None,
+        serde_yaml::Value::String(s) => Some(s.clone()),
+        serde_yaml::Value::Bool(b) => Some(if *b { "true".into() } else { "false".into() }),
+        serde_yaml::Value::Number(n) => Some(n.to_string()),
+        serde_yaml::Value::Sequence(_) | serde_yaml::Value::Mapping(_) => {
+            // JSON is both a well-understood interchange form and a YAML
+            // subset, so the string remains valid input to serde_yaml on
+            // import.
+            serde_json::to_string(value).ok()
+        }
+        serde_yaml::Value::Tagged(t) => encode_field_value(&t.value),
+    }
+}
+
+/// Attempt to recover the original `serde_yaml::Value` type from a ReqIF
+/// ATTRIBUTE-VALUE-STRING written by `encode_field_value`.
+///
+/// This is best-effort type recovery for round-trip fidelity: values that
+/// unambiguously parse as JSON booleans, numbers, arrays, or objects are
+/// reconstructed as the matching YAML variant.  Anything that doesn't
+/// parse — the common case for free-form text — is kept as a string.
+fn decode_field_value(s: &str) -> serde_yaml::Value {
+    // Strings that happen to round-trip through JSON unchanged (plain text
+    // without a leading quote) must not be re-typed, so we only attempt
+    // JSON recovery for content that looks like a JSON scalar/compound.
+    let trimmed = s.trim_start();
+    let looks_structured = trimmed.starts_with('{')
+        || trimmed.starts_with('[')
+        || trimmed == "true"
+        || trimmed == "false"
+        || trimmed
+            .chars()
+            .next()
+            .is_some_and(|c| c == '-' || c.is_ascii_digit());
+
+    if looks_structured {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
+            if let Ok(yaml_v) = serde_yaml::to_value(&v) {
+                return yaml_v;
+            }
+        }
+    }
+    serde_yaml::Value::String(s.to_string())
 }
 
 /// Serialize a ReqIF document to XML bytes.
@@ -1420,6 +1476,124 @@ mod tests {
 
         assert_eq!(re.len(), 1);
         assert_eq!(re[0].provenance, art.provenance);
+    }
+
+    /// Non-string `fields` values must round-trip without Rust-`Debug`
+    /// coercion.  Regression test for `reqif.rs:968-970` flagged in
+    /// `docs/design/polarion-reqif-fidelity.md`: previously a bool field
+    /// emitted `"Bool(true)"` instead of `"true"`, a list emitted the
+    /// Rust-internal `Sequence[String("…")]` form.
+    // rivet: verifies REQ-025
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_non_string_fields_roundtrip() {
+        let mut fields: BTreeMap<String, serde_yaml::Value> = BTreeMap::new();
+        fields.insert("safety-critical".into(), serde_yaml::Value::Bool(true));
+        fields.insert(
+            "asil-level".into(),
+            serde_yaml::Value::Number(serde_yaml::Number::from(3i64)),
+        );
+        fields.insert(
+            "confidence".into(),
+            serde_yaml::Value::Number(serde_yaml::Number::from(0.85f64)),
+        );
+        fields.insert(
+            "aliases".into(),
+            serde_yaml::Value::Sequence(vec![
+                serde_yaml::Value::String("req-a".into()),
+                serde_yaml::Value::String("req-b".into()),
+            ]),
+        );
+
+        let art = Artifact {
+            id: "REQ-FIELDS".into(),
+            artifact_type: "requirement".into(),
+            title: "Typed fields".into(),
+            description: None,
+            status: None,
+            tags: vec![],
+            links: vec![],
+            fields: fields.clone(),
+            provenance: None,
+            source_file: None,
+        };
+
+        let adapter = ReqIfAdapter::new();
+        let config = AdapterConfig::default();
+        let bytes = adapter.export(&[art], &config).unwrap();
+
+        // The raw XML must not contain Rust `Debug` form artefacts like
+        // `Bool(`, `Number(`, or `Sequence[`.  Those would indicate the bug
+        // has regressed.
+        let xml = std::str::from_utf8(&bytes).unwrap();
+        assert!(
+            !xml.contains("Bool("),
+            "Debug-form Bool leaked into XML: {xml}"
+        );
+        assert!(
+            !xml.contains("Sequence ["),
+            "Debug-form Sequence leaked into XML: {xml}"
+        );
+        assert!(!xml.contains("Number("), "Debug-form Number leaked");
+
+        let re = adapter
+            .import(&AdapterSource::Bytes(bytes), &config)
+            .unwrap();
+        assert_eq!(re.len(), 1);
+        assert_eq!(
+            re[0].fields.get("safety-critical"),
+            Some(&serde_yaml::Value::Bool(true))
+        );
+        // Integer equality via Number.
+        let asil = re[0].fields.get("asil-level").unwrap();
+        if let serde_yaml::Value::Number(n) = asil {
+            assert_eq!(n.as_i64(), Some(3));
+        } else {
+            panic!("asil-level lost its number type: {asil:?}");
+        }
+        // Float equality.
+        let conf = re[0].fields.get("confidence").unwrap();
+        if let serde_yaml::Value::Number(n) = conf {
+            assert!((n.as_f64().unwrap() - 0.85).abs() < 1e-9);
+        } else {
+            panic!("confidence lost its number type: {conf:?}");
+        }
+        // Sequence recovered.
+        let aliases = re[0].fields.get("aliases").unwrap();
+        if let serde_yaml::Value::Sequence(items) = aliases {
+            assert_eq!(items.len(), 2);
+        } else {
+            panic!("aliases did not round-trip as sequence: {aliases:?}");
+        }
+    }
+
+    /// Null field values are dropped (not emitted as empty attributes).
+    // rivet: verifies REQ-025
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_null_field_dropped_on_export() {
+        let mut fields: BTreeMap<String, serde_yaml::Value> = BTreeMap::new();
+        fields.insert("deprecated".into(), serde_yaml::Value::Null);
+        let art = Artifact {
+            id: "REQ-NULL".into(),
+            artifact_type: "requirement".into(),
+            title: "Null field".into(),
+            description: None,
+            status: None,
+            tags: vec![],
+            links: vec![],
+            fields,
+            provenance: None,
+            source_file: None,
+        };
+        let adapter = ReqIfAdapter::new();
+        let bytes = adapter.export(&[art], &AdapterConfig::default()).unwrap();
+        let re = adapter
+            .import(&AdapterSource::Bytes(bytes), &AdapterConfig::default())
+            .unwrap();
+        assert_eq!(re.len(), 1);
+        // Null is not present after round-trip (attribute omitted).
+        assert!(re[0].fields.get("deprecated").is_none());
     }
 
     /// Files without any provenance attributes parse back to `None` — the
