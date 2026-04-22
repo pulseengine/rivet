@@ -448,6 +448,12 @@ pub(crate) const GRAPH_JS: &str = r#"
 "#;
 
 // ── Cmd+K search JS ──────────────────────────────────────────────────────
+//
+// URL persistence (fixes search-url-persistence bug):
+// When the user types in Cmd+K, the current URL is updated in-place with
+// a `cmdk` query param (via history.replaceState) so that a page reload
+// preserves the search term and re-opens the overlay with results. We use
+// `cmdk` (not `q`) to avoid colliding with /artifacts?q=... filter state.
 
 pub(crate) const SEARCH_JS: &str = r#"
 <script>
@@ -458,18 +464,46 @@ pub(crate) const SEARCH_JS: &str = r#"
   var timer=null;
   var activeIdx=-1;
   var items=[];
+  var emptyHtml='<div class="cmd-k-empty">Type to search artifacts and documents</div>';
 
-  function open(){
+  // Update the URL's `cmdk` query param without navigating.
+  // Empty string clears the param so the URL stays clean.
+  function syncUrl(q){
+    try {
+      var u=new URL(window.location.href);
+      if(q && q.length>0){ u.searchParams.set('cmdk', q); }
+      else { u.searchParams.delete('cmdk'); }
+      history.replaceState(history.state, '', u.toString());
+    } catch(_){ /* replaceState is best-effort; never throw into UI */ }
+  }
+
+  function runSearch(q){
+    fetch('/search?q='+encodeURIComponent(q))
+      .then(function(r){return r.text()})
+      .then(function(html){
+        // html is server-rendered search-results fragment (html_escape'd).
+        results.innerHTML=html;
+        items=results.querySelectorAll('.cmd-k-item');
+        activeIdx=-1;
+        setActive(-1);
+      });
+  }
+
+  function open(prefill){
     overlay.classList.add('open');
-    input.value='';
-    results.innerHTML='<div class="cmd-k-empty">Type to search artifacts and documents</div>';
-    activeIdx=-1;
-    items=[];
-    setTimeout(function(){input.focus()},20);
+    var q=(prefill==null?'':String(prefill));
+    input.value=q;
+    if(q){ runSearch(q); syncUrl(q); }
+    else {
+      results.innerHTML=emptyHtml;
+      activeIdx=-1; items=[];
+    }
+    setTimeout(function(){input.focus();if(input.select)input.select();},20);
   }
   function close(){
     overlay.classList.remove('open');
     input.blur();
+    syncUrl('');
   }
 
   // Keyboard shortcut: Cmd+K / Ctrl+K
@@ -492,25 +526,19 @@ pub(crate) const SEARCH_JS: &str = r#"
   var hint=document.getElementById('nav-search-hint');
   if(hint) hint.addEventListener('click',function(){open()});
 
-  // Debounced search
+  // Debounced search. URL sync fires immediately (not debounced) so the
+  // address bar is always in sync with what the user typed — reload
+  // preserves the search term.
   input.addEventListener('input',function(){
     clearTimeout(timer);
     var q=input.value.trim();
+    syncUrl(q);
     if(!q){
-      results.innerHTML='<div class="cmd-k-empty">Type to search artifacts and documents</div>';
+      results.innerHTML=emptyHtml;
       activeIdx=-1;items=[];
       return;
     }
-    timer=setTimeout(function(){
-      fetch('/search?q='+encodeURIComponent(q))
-        .then(function(r){return r.text()})
-        .then(function(html){
-          results.innerHTML=html;
-          items=results.querySelectorAll('.cmd-k-item');
-          activeIdx=-1;
-          setActive(-1);
-        });
-    },200);
+    timer=setTimeout(function(){runSearch(q);},200);
   });
 
   // Arrow navigation
@@ -551,6 +579,23 @@ pub(crate) const SEARCH_JS: &str = r#"
     var item=e.target.closest('.cmd-k-item');
     if(item) navigate(item);
   });
+
+  // On initial page load, if the URL carries ?cmdk=..., re-open the overlay
+  // with the saved query so Cmd+R preserves an in-flight search.
+  function restoreFromUrl(){
+    try {
+      var u=new URL(window.location.href);
+      var q=u.searchParams.get('cmdk');
+      if(q && q.length>0 && !overlay.classList.contains('open')){
+        open(q);
+      }
+    } catch(_){ /* no-op */ }
+  }
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded',restoreFromUrl);
+  } else {
+    restoreFromUrl();
+  }
 })();
 </script>
 "#;

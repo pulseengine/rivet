@@ -212,4 +212,69 @@ test.describe("Artifacts Filter/Sort/Pagination", () => {
     );
     expect(realErrors).toEqual([]);
   });
+
+  // ── Search URL persistence (Fixes: REQ-007) ─────────────────────────────
+  //
+  // Regression tests for the bug where typing in the search input did not
+  // update the URL, so Cmd+R reload discarded the search term.
+  //
+  // Two surfaces to cover:
+  //   1. /artifacts filter-bar search input (HTMX-driven, hx-push-url="true")
+  //   2. Cmd+K global search overlay (JS-driven, history.replaceState)
+
+  test("typing in /artifacts search input updates the URL (hx-push-url)", async ({
+    page,
+  }) => {
+    await page.goto("/artifacts");
+    await waitForHtmx(page);
+
+    const searchInput = page.locator(
+      ".filter-bar input[name='q'], .filter-bar input[type='search']",
+    );
+    await expect(searchInput).toBeVisible();
+
+    // Verify the input is wired for URL push-on-type.
+    await expect(searchInput).toHaveAttribute("hx-push-url", "true");
+
+    // Type a query — HTMX fires a debounced hx-get and pushes the URL.
+    await searchInput.fill("OSLC");
+    await waitForHtmx(page);
+
+    // URL must now carry ?q=OSLC.
+    await expect(page).toHaveURL(/[?&]q=OSLC/);
+
+    // Reload the page: the search term survives.
+    await page.reload();
+    await waitForHtmx(page);
+    await expect(page).toHaveURL(/[?&]q=OSLC/);
+    await expect(searchInput).toHaveValue("OSLC");
+  });
+
+  test("typing in Cmd+K updates the URL with ?cmdk= (replaceState)", async ({
+    page,
+  }) => {
+    await page.goto("/artifacts");
+    await waitForHtmx(page);
+
+    // Open Cmd+K overlay.
+    const isMac = process.platform === "darwin";
+    await page.keyboard.press(isMac ? "Meta+k" : "Control+k");
+
+    const cmdKInput = page.locator("#cmd-k-input");
+    await expect(cmdKInput).toBeVisible();
+
+    await cmdKInput.fill("OSLC");
+    // Let the 200ms debounce fire.
+    await page.waitForTimeout(300);
+
+    // URL should have been updated in-place (no navigation) with ?cmdk=OSLC.
+    await expect(page).toHaveURL(/[?&]cmdk=OSLC/);
+
+    // Reload: the overlay re-opens pre-filled with the saved query.
+    await page.reload();
+    await waitForHtmx(page);
+    await expect(page).toHaveURL(/[?&]cmdk=OSLC/);
+    await expect(page.locator("#cmd-k-input")).toHaveValue("OSLC");
+    await expect(page.locator("#cmd-k-overlay")).toHaveClass(/open/);
+  });
 });
