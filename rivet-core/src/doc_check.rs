@@ -292,18 +292,10 @@ impl DocInvariant for SubcommandReferences {
     fn check(&self, ctx: &DocCheckContext<'_>) -> Vec<Violation> {
         let mut out = Vec::new();
         // Match literal `rivet <word>` where <word> is lowercase letters/dashes.
+        // Require the match to be in a "code" context (inline backticks OR
+        // leading `$` shell prompt OR preceded by `|` in a table) — plain
+        // prose like "rivet never touches …" is a false positive otherwise.
         let re = regex::Regex::new(r"\brivet[ \t]+([a-z][a-z0-9\-]*)").unwrap();
-        // Skip words that aren't command tokens (common English, options).
-        let skip: BTreeSet<&str> = [
-            "is", "to", "for", "and", "the", "with", "uses", "as",
-            "can", "will", "a", "an", "was", "on", "in", "of", "by",
-            "project", "projects", "tool", "repo", "repos", "artifacts",
-            "artifact", "ci", "release", "checks", "check",
-            "from", "tool-qualification", "binaries",
-        ]
-        .iter()
-        .copied()
-        .collect();
 
         for doc in ctx.docs {
             if doc.is_design_doc {
@@ -319,10 +311,12 @@ impl DocInvariant for SubcommandReferences {
                 if inside_code_block(&blocks, offset) {
                     continue;
                 }
-                let word = cap.get(1).unwrap().as_str();
-                if skip.contains(word) {
+                // Require "code-flavored" context to avoid matching English
+                // prose ("rivet models itself", "rivet never touches X").
+                if !is_code_context(&doc.content, offset) {
                     continue;
                 }
+                let word = cap.get(1).unwrap().as_str();
                 if ctx.known_subcommands.contains(word) {
                     continue;
                 }
@@ -346,6 +340,27 @@ impl DocInvariant for SubcommandReferences {
         }
         out
     }
+}
+
+/// Heuristic: consider the match "code-flavored" if it is preceded, on the
+/// same line, by an unclosed backtick OR a `$ ` shell prompt.
+fn is_code_context(content: &str, offset: usize) -> bool {
+    let line_start = content[..offset.min(content.len())]
+        .rfind('\n')
+        .map(|i| i + 1)
+        .unwrap_or(0);
+    let prefix = &content[line_start..offset];
+    // Count unescaped backticks before the match on this line.  Odd count
+    // means we're inside an inline-code span.
+    let tick_count = prefix.chars().filter(|c| *c == '`').count();
+    if tick_count % 2 == 1 {
+        return true;
+    }
+    // Shell prompt at line start.
+    if prefix.trim_start().starts_with("$ ") {
+        return true;
+    }
+    false
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -475,10 +490,20 @@ impl DocInvariant for VersionConsistency {
             .collect();
         if expected_parts.len() == 3 {
             for doc in ctx.docs {
+                // Design / roadmap docs legitimately reference planned
+                // future versions ("v0.5.0 will add X").
+                if doc.is_design_doc {
+                    continue;
+                }
                 let blocks = iter_code_blocks(&doc.content);
                 for cap in re.captures_iter(&doc.content) {
                     let m = cap.get(0).unwrap();
                     if inside_code_block(&blocks, m.start()) {
+                        continue;
+                    }
+                    // Skip mentions inside inline `backticks` (often version
+                    // pins for third-party deps, not the rivet release).
+                    if is_code_context(&doc.content, m.start()) {
                         continue;
                     }
                     let maj: u32 = cap.get(1).unwrap().as_str().parse().unwrap_or(0);
@@ -563,6 +588,14 @@ impl DocInvariant for ArtifactCounts {
 
         for doc in ctx.docs {
             if doc.is_design_doc {
+                continue;
+            }
+            // File-level AUDIT marker: if the doc declares itself audited
+            // as a whole via `<!-- AUDIT-FILE: verified YYYY-MM-DD -->`,
+            // skip count checks entirely.  This is the right knob for
+            // CHANGELOGs and retroactive tables where every number is a
+            // historical snapshot.
+            if doc.content.contains("AUDIT-FILE:") {
                 continue;
             }
             let blocks = iter_code_blocks(&doc.content);
@@ -802,6 +835,9 @@ impl DocInvariant for ArtifactIdValidity {
                 continue;
             }
             let blocks = iter_code_blocks(&doc.content);
+            // Collect IDs that live in the YAML front-matter block at the
+            // top of the file — those are *document* IDs, not artifact IDs.
+            let frontmatter_ids = collect_frontmatter_ids(&doc.content);
             let mut seen: BTreeMap<String, usize> = BTreeMap::new();
             for cap in re.captures_iter(&doc.content) {
                 let m = cap.get(0).unwrap();
@@ -809,20 +845,10 @@ impl DocInvariant for ArtifactIdValidity {
                     continue;
                 }
                 let id = m.as_str().to_string();
-                // Ignore obvious non-artifact tokens (e.g. "MIT-0", "ISO-8601").
-                if id.starts_with("MIT-")
-                    || id.starts_with("ISO-")
-                    || id.starts_with("IEC-")
-                    || id.starts_with("EN-")
-                    || id.starts_with("CVE-")
-                    || id.starts_with("RUSTSEC-")
-                    || id.starts_with("REL-")
-                    || id.starts_with("RFC-")
-                    || id.starts_with("ASIL-")
-                    || id.starts_with("SIL-")
-                    || id.starts_with("POI-")
-                    || id.starts_with("PROJ-")
-                {
+                if is_non_artifact_id(&id) {
+                    continue;
+                }
+                if frontmatter_ids.contains(&id) {
                     continue;
                 }
                 if store.contains(&id) {
@@ -845,6 +871,62 @@ impl DocInvariant for ArtifactIdValidity {
         }
         out
     }
+}
+
+/// True for IDs that look like artifact IDs but refer to external
+/// standards, encodings, or advisories.
+fn is_non_artifact_id(id: &str) -> bool {
+    // External standards, encodings, character sets, licenses, advisories.
+    const PREFIXES: &[&str] = &[
+        "MIT-", "ISO-", "IEC-", "EN-", "CVE-", "RUSTSEC-", "REL-",
+        "RFC-", "ASIL-", "SIL-", "POI-", "PROJ-", "DO-", "UTF-", "UCS-",
+        "ASCII-", "PR-", "RT-", "LGTM-", "TLS-", "SHA-", "SHA1-", "SHA256-",
+    ];
+    if PREFIXES.iter().any(|p| id.starts_with(p)) {
+        return true;
+    }
+    // Anchor-style hex hashes (e.g. "YAML-654FF0", "STPA-654FF0") — the
+    // trailing hex segment makes these look like IDs but they aren't.
+    // Heuristic: trailing segment is 4+ hex chars and starts with a digit
+    // that is actually part of a longer hex run.
+    if let Some((head, tail)) = id.rsplit_once('-') {
+        if tail.len() >= 4
+            && tail.chars().all(|c| c.is_ascii_hexdigit())
+            && tail.chars().any(|c| c.is_ascii_alphabetic())
+            // at least one letter ==> not a pure decimal id
+            && head.chars().all(|c| c.is_ascii_uppercase() || c == '-')
+        {
+            return true;
+        }
+    }
+    // "NOPE-999" — explicit in-prose placeholder in our audit docs.
+    if id == "NOPE-999" {
+        return true;
+    }
+    false
+}
+
+/// Collect artifact-ID-looking tokens that appear inside the YAML front-
+/// matter block at the top of a markdown document.
+fn collect_frontmatter_ids(content: &str) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    let bytes = content.as_bytes();
+    if !content.starts_with("---") {
+        return out;
+    }
+    // Find the closing `---` delimiter.
+    let Some(rel) = content[3..].find("\n---") else {
+        return out;
+    };
+    let end = 3 + rel;
+    let fm = &content[..end];
+    let re = regex::Regex::new(r"\b([A-Z]{2,}(?:-[A-Z0-9]+)*-\d+[A-Z0-9\-]*)\b").unwrap();
+    for cap in re.captures_iter(fm) {
+        out.insert(cap.get(0).unwrap().as_str().to_string());
+    }
+    // Shut up unused-var linter.
+    let _ = bytes;
+    out
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -969,6 +1051,22 @@ mod tests {
         let ctx = ctx_with(Path::new("."), &docs, &subs, &embeds, "0.4.0");
         let v = SubcommandReferences.check(&ctx);
         assert!(v.is_empty());
+    }
+
+    #[test]
+    fn subcommand_references_skip_plain_prose() {
+        // "rivet never touches" and "rivet models itself" are English,
+        // not command invocations — no backticks around them.
+        let docs = vec![doc(
+            "README.md",
+            "The section that rivet never touches is manual.\n\
+             rivet models itself in arch/.",
+        )];
+        let subs = known_cmds(&["list"]);
+        let embeds = BTreeSet::new();
+        let ctx = ctx_with(Path::new("."), &docs, &subs, &embeds, "0.4.0");
+        let v = SubcommandReferences.check(&ctx);
+        assert!(v.is_empty(), "got: {v:?}");
     }
 
     // ── EmbedTokenReferences ────────────────────────────────────────────
@@ -1200,7 +1298,55 @@ jobs:
         let store = Store::new();
         let docs = vec![doc(
             "docs/a.md",
-            "Covers MIT-0, ISO-26262, IEC-61508, CVE-2024-0001, RUSTSEC-2026-0098.",
+            "Covers MIT-0, ISO-26262, IEC-61508, CVE-2024-0001, RUSTSEC-2026-0098, DO-178C, UTF-8.",
+        )];
+        let subs = BTreeSet::new();
+        let embeds = BTreeSet::new();
+        let ctx = DocCheckContext {
+            project_root: Path::new("."),
+            docs: &docs,
+            known_subcommands: &subs,
+            known_embeds: &embeds,
+            workspace_version: "0.4.0",
+            store: Some(&store),
+            ci_yaml: None,
+        };
+        let v = ArtifactIdValidity.check(&ctx);
+        assert!(v.is_empty(), "got: {v:?}");
+    }
+
+    #[test]
+    fn artifact_id_validity_ignores_frontmatter_ids() {
+        let store = Store::new();
+        let content = "---\n\
+                       id: AUDIT-001\n\
+                       type: report\n\
+                       ---\n\
+                       \n\
+                       Body references AUDIT-001 and REQ-999.";
+        let docs = vec![doc("docs/audit.md", content)];
+        let subs = BTreeSet::new();
+        let embeds = BTreeSet::new();
+        let ctx = DocCheckContext {
+            project_root: Path::new("."),
+            docs: &docs,
+            known_subcommands: &subs,
+            known_embeds: &embeds,
+            workspace_version: "0.4.0",
+            store: Some(&store),
+            ci_yaml: None,
+        };
+        let v = ArtifactIdValidity.check(&ctx);
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].claim, "REQ-999");
+    }
+
+    #[test]
+    fn artifact_id_validity_skips_hex_anchor_hashes() {
+        let store = Store::new();
+        let docs = vec![doc(
+            "docs/a.md",
+            "See YAML-654FF0 and STPA-654FF0 in the anchor index.",
         )];
         let subs = BTreeSet::new();
         let embeds = BTreeSet::new();

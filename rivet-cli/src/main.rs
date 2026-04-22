@@ -6024,6 +6024,10 @@ fn cmd_docs_check(cli: &Cli, format: &str, fix: bool) -> Result<bool> {
     known_subcommands.insert("import-results".to_string());
     known_subcommands.insert("commit-msg-check".to_string());
     known_subcommands.insert("next-id".to_string());
+    // `import` is behind the `wasm` feature — recognise it unconditionally
+    // so docs mentioning it don't break the check when the gate is built
+    // without that feature.
+    known_subcommands.insert("import".to_string());
 
     // 3. Known embed set — kept in sync with rivet-core/src/embed.rs.  The
     //    "legacy" inline embeds (artifact/links/table) plus the modern
