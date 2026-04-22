@@ -3,7 +3,7 @@ use std::path::Path;
 
 use axum::Json;
 use axum::extract::{Query, State};
-use axum::response::IntoResponse;
+use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
 
 use rivet_core::coverage::compute_coverage;
@@ -176,27 +176,66 @@ struct CoverageStats {
     percentage: f64,
 }
 
-pub(crate) async fn stats(State(state): State<SharedState>) -> impl IntoResponse {
+#[derive(Deserialize, Default)]
+pub(crate) struct StatsParams {
+    #[serde(default)]
+    variant: Option<String>,
+}
+
+pub(crate) async fn stats(
+    State(state): State<SharedState>,
+    Query(params): Query<StatsParams>,
+) -> Response {
     let guard = state.read().await;
+
+    // Optional variant scope for the stats reply. Error bubbles to 400 JSON.
+    let variant_scope = match params.variant.as_deref() {
+        Some(n) if !n.is_empty() => match guard.build_variant_scope(n) {
+            Ok(Some(s)) => Some(s),
+            Ok(None) => None,
+            Err(msg) => {
+                return (
+                    axum::http::StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({
+                        "error": "invalid_variant",
+                        "message": msg,
+                    })),
+                )
+                    .into_response();
+            }
+        },
+        _ => None,
+    };
+    let (store_ref, graph_ref, diags_ref): (
+        &rivet_core::store::Store,
+        &rivet_core::links::LinkGraph,
+        &[rivet_core::validate::Diagnostic],
+    ) = match variant_scope.as_ref() {
+        Some(s) => (&s.store, &s.graph, &s.diagnostics),
+        None => (&guard.store, &guard.graph, &guard.cached_diagnostics),
+    };
 
     // by_type: include all schema types (even zero-count) + any types in store
     let mut by_type = BTreeMap::new();
     for type_name in guard.schema.artifact_types.keys() {
         by_type.insert(type_name.clone(), 0usize);
     }
-    for artifact in guard.store.iter() {
+    for artifact in store_ref.iter() {
         *by_type.entry(artifact.artifact_type.clone()).or_default() += 1;
     }
     let local_count: usize = by_type.values().sum();
 
-    // external artifact counts
+    // external artifact counts (skipped when variant-scoped — externals
+    // are not variant-aware, so mixing them in would inflate totals).
     let mut by_origin = BTreeMap::new();
     by_origin.insert("local".to_string(), local_count);
-    for ext in &guard.externals {
-        let ext_count = ext.store.len();
-        by_origin.insert(format!("external:{}", ext.prefix), ext_count);
-        for artifact in ext.store.iter() {
-            *by_type.entry(artifact.artifact_type.clone()).or_default() += 1;
+    if variant_scope.is_none() {
+        for ext in &guard.externals {
+            let ext_count = ext.store.len();
+            by_origin.insert(format!("external:{}", ext.prefix), ext_count);
+            for artifact in ext.store.iter() {
+                *by_type.entry(artifact.artifact_type.clone()).or_default() += 1;
+            }
         }
     }
 
@@ -204,20 +243,22 @@ pub(crate) async fn stats(State(state): State<SharedState>) -> impl IntoResponse
 
     // by_status
     let mut by_status = BTreeMap::new();
-    for artifact in guard.store.iter() {
+    for artifact in store_ref.iter() {
         let key = artifact.status.as_deref().unwrap_or("unset").to_string();
         *by_status.entry(key).or_default() += 1;
     }
-    for ext in &guard.externals {
-        for artifact in ext.store.iter() {
-            let key = artifact.status.as_deref().unwrap_or("unset").to_string();
-            *by_status.entry(key).or_default() += 1;
+    if variant_scope.is_none() {
+        for ext in &guard.externals {
+            for artifact in ext.store.iter() {
+                let key = artifact.status.as_deref().unwrap_or("unset").to_string();
+                *by_status.entry(key).or_default() += 1;
+            }
         }
     }
 
     // validation: count artifacts by worst diagnostic severity
     let mut worst: BTreeMap<String, Severity> = BTreeMap::new();
-    for diag in &guard.cached_diagnostics {
+    for diag in diags_ref {
         if let Some(ref id) = diag.artifact_id {
             let entry = worst.entry(id.clone()).or_insert(Severity::Info);
             if severity_rank(diag.severity) > severity_rank(*entry) {
@@ -231,7 +272,7 @@ pub(crate) async fn stats(State(state): State<SharedState>) -> impl IntoResponse
         info: 0,
         clean: 0,
     };
-    let all_ids: Vec<String> = guard.store.iter().map(|a| a.id.clone()).collect();
+    let all_ids: Vec<String> = store_ref.iter().map(|a| a.id.clone()).collect();
     for id in &all_ids {
         match worst.get(id) {
             Some(Severity::Error) => validation.error += 1,
@@ -240,12 +281,15 @@ pub(crate) async fn stats(State(state): State<SharedState>) -> impl IntoResponse
             None => validation.clean += 1,
         }
     }
-    // External artifacts have no local diagnostics — count as clean
-    let ext_count: usize = guard.externals.iter().map(|e| e.store.len()).sum();
-    validation.clean += ext_count;
+    // External artifacts have no local diagnostics — count as clean.
+    // Skip when variant-scoped (externals are not variant-aware).
+    if variant_scope.is_none() {
+        let ext_count: usize = guard.externals.iter().map(|e| e.store.len()).sum();
+        validation.clean += ext_count;
+    }
 
     // coverage
-    let report = compute_coverage(&guard.store, &guard.schema, &guard.graph);
+    let report = compute_coverage(store_ref, &guard.schema, graph_ref);
     let coverage: Vec<CoverageStats> = report
         .entries
         .iter()
@@ -268,6 +312,7 @@ pub(crate) async fn stats(State(state): State<SharedState>) -> impl IntoResponse
         coverage,
         by_origin,
     })
+    .into_response()
 }
 
 fn severity_rank(s: Severity) -> u8 {
@@ -304,6 +349,7 @@ fn resolve_source_file(
     })
 }
 
+#[allow(dead_code)]
 fn to_api_artifact(
     artifact: &rivet_core::model::Artifact,
     origin: &str,
@@ -336,6 +382,9 @@ pub(crate) struct ArtifactsParams {
     limit: u32,
     #[serde(default)]
     offset: u32,
+    /// Scope the results to a variant (from the feature model).
+    #[serde(default)]
+    variant: Option<String>,
 }
 
 fn default_limit() -> u32 {
@@ -351,10 +400,30 @@ struct ArtifactsResponse {
 pub(crate) async fn artifacts(
     State(state): State<SharedState>,
     Query(params): Query<ArtifactsParams>,
-) -> impl IntoResponse {
+) -> Response {
     let guard = state.read().await;
     let limit = params.limit.min(1000) as usize;
     let offset = params.offset as usize;
+
+    // Variant scoping (optional). A bad variant name returns 400 JSON
+    // so clients can distinguish "no results" from "invalid filter".
+    let variant_scope = match params.variant.as_deref() {
+        Some(n) if !n.is_empty() => match guard.build_variant_scope(n) {
+            Ok(Some(s)) => Some(s),
+            Ok(None) => None, // no feature model — ignore silently
+            Err(msg) => {
+                return (
+                    axum::http::StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({
+                        "error": "invalid_variant",
+                        "message": msg,
+                    })),
+                )
+                    .into_response();
+            }
+        },
+        _ => None,
+    };
 
     // Parse s-expression filter once before iterating.
     let sexpr_filter = params
@@ -375,21 +444,32 @@ pub(crate) async fn artifacts(
         .as_deref()
         .is_none_or(|o| o == "all" || o == "local");
     if include_local {
-        for artifact in guard.store.iter() {
+        // Choose between the full store+graph and the variant-scoped ones.
+        let (store_ref, graph_ref) = match variant_scope.as_ref() {
+            Some(s) => (&s.store, &s.graph),
+            None => (&guard.store, &guard.graph),
+        };
+        for artifact in store_ref.iter() {
             if !matches_filters(artifact, &params) {
                 continue;
             }
             if let Some(ref expr) = sexpr_filter {
                 if !rivet_core::sexpr_eval::matches_filter_with_store(
-                    expr,
-                    artifact,
-                    &guard.graph,
-                    &guard.store,
+                    expr, artifact, graph_ref, store_ref,
                 ) {
                     continue;
                 }
             }
-            results.push(to_api_artifact(artifact, "local", &guard));
+            results.push(ApiArtifact {
+                id: artifact.id.clone(),
+                title: artifact.title.clone(),
+                r#type: artifact.artifact_type.clone(),
+                status: artifact.status.clone(),
+                origin: "local".to_string(),
+                links_out: graph_ref.links_from(&artifact.id).len(),
+                links_in: graph_ref.backlinks_to(&artifact.id).len(),
+                source_file: resolve_source_file(artifact, &guard.project_path_buf),
+            });
         }
     }
 
@@ -427,6 +507,7 @@ pub(crate) async fn artifacts(
         total,
         artifacts: page,
     })
+    .into_response()
 }
 
 // ── Diagnostics ─────────────────────────────────────────────────────────
@@ -563,9 +644,40 @@ struct CoverageResponse {
     rules: Vec<ApiCoverageRule>,
 }
 
-pub(crate) async fn coverage(State(state): State<SharedState>) -> impl IntoResponse {
+#[derive(Deserialize, Default)]
+pub(crate) struct CoverageApiParams {
+    #[serde(default)]
+    variant: Option<String>,
+}
+
+pub(crate) async fn coverage(
+    State(state): State<SharedState>,
+    Query(params): Query<CoverageApiParams>,
+) -> Response {
     let guard = state.read().await;
-    let report = compute_coverage(&guard.store, &guard.schema, &guard.graph);
+    let variant_scope = match params.variant.as_deref() {
+        Some(n) if !n.is_empty() => match guard.build_variant_scope(n) {
+            Ok(Some(s)) => Some(s),
+            Ok(None) => None,
+            Err(msg) => {
+                return (
+                    axum::http::StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({
+                        "error": "invalid_variant",
+                        "message": msg,
+                    })),
+                )
+                    .into_response();
+            }
+        },
+        _ => None,
+    };
+    let (store_ref, graph_ref): (&rivet_core::store::Store, &rivet_core::links::LinkGraph) =
+        match variant_scope.as_ref() {
+            Some(s) => (&s.store, &s.graph),
+            None => (&guard.store, &guard.graph),
+        };
+    let report = compute_coverage(store_ref, &guard.schema, graph_ref);
 
     let rules: Vec<ApiCoverageRule> = report
         .entries
@@ -587,7 +699,7 @@ pub(crate) async fn coverage(State(state): State<SharedState>) -> impl IntoRespo
         })
         .collect();
 
-    Json(CoverageResponse { rules })
+    Json(CoverageResponse { rules }).into_response()
 }
 
 fn matches_filters(artifact: &rivet_core::model::Artifact, params: &ArtifactsParams) -> bool {

@@ -25,6 +25,10 @@ pub(crate) struct ViewParams {
     pub open: Option<String>,
     /// Print mode flag (`1` = printable layout).
     pub print: Option<String>,
+    /// Active variant scope (by name). When set, the `store` +
+    /// `graph` in the render context are filtered to artifacts bound
+    /// to the variant's effective features.
+    pub variant: Option<String>,
 }
 
 impl ViewParams {
@@ -79,6 +83,11 @@ impl ViewParams {
         if let Some(ref v) = self.print {
             if v == "1" {
                 parts.push("print=1".to_string());
+            }
+        }
+        if let Some(ref v) = self.variant {
+            if !v.is_empty() {
+                parts.push(format!("variant={}", urlencoding::encode(v)));
             }
         }
         parts.join("&")
@@ -708,6 +717,16 @@ mod tests {
             ..Default::default()
         };
         assert!(!p2.is_print());
+    }
+
+    #[test]
+    fn query_string_includes_variant() {
+        let p = ViewParams {
+            variant: Some("minimal-ci".into()),
+            ..Default::default()
+        };
+        let qs = p.to_query_string();
+        assert!(qs.contains("variant=minimal-ci"));
     }
 
     #[test]

@@ -8,7 +8,24 @@ use super::AppState;
 use super::js;
 use super::styles;
 
+/// Full-page layout with no active variant scope.
+#[allow(dead_code)]
 pub(crate) fn page_layout(content: &str, state: &AppState) -> Html<String> {
+    page_layout_with_variant(content, state, None)
+}
+
+/// Render the full page layout, optionally displaying the variant
+/// selector + filter banner for the named variant.
+///
+/// When `active_variant` is `Some`, a banner is injected above the main
+/// content showing the scope and a "Clear filter" link. The variant
+/// dropdown itself is rendered regardless of whether one is currently
+/// active (or hidden entirely if the project has no feature model).
+pub(crate) fn page_layout_with_variant(
+    content: &str,
+    state: &AppState,
+    active_variant: Option<&str>,
+) -> Html<String> {
     let artifact_count = state.store.len();
     let error_count = state
         .cached_diagnostics
@@ -134,12 +151,61 @@ pub(crate) fn page_layout(content: &str, state: &AppState) -> Html<String> {
         s.push_str("</div></details></span>");
         s
     };
+    // Variant selector: only rendered when the project has a feature model.
+    let variant_selector_html = if state.variants.has_model() {
+        let mut s = String::from(
+            "<span class=\"ctx-sep\">/</span>\
+             <select id=\"variant-selector\" name=\"variant\" \
+             onchange=\"(function(sel){var u=new URL(window.location.href);\
+             if(sel.value){u.searchParams.set('variant',sel.value)}else{u.searchParams.delete('variant')}\
+             window.location.href=u.toString()})(this)\" \
+             style=\"padding:.2rem .5rem;font-size:.72rem;font-family:var(--mono);\
+             background:var(--surface);color:var(--text);border:1px solid var(--border);\
+             border-radius:4px;max-width:220px\" \
+             title=\"Filter the dashboard to a variant scope\">",
+        );
+        let none_sel = if active_variant.is_none() {
+            " selected"
+        } else {
+            ""
+        };
+        s.push_str(&format!(
+            "<option value=\"\"{none_sel}>Unscoped (all artifacts)</option>"
+        ));
+        for v in &state.variants.variants {
+            let sel = if active_variant == Some(v.name.as_str()) {
+                " selected"
+            } else {
+                ""
+            };
+            s.push_str(&format!(
+                "<option value=\"{val}\"{sel}>variant: {name}</option>",
+                val = html_escape(&v.name),
+                name = html_escape(&v.name),
+            ));
+        }
+        s.push_str("</select>");
+        // Link to the /variants overview page — lets the user discover and
+        // jump into any variant without hunting the dropdown.
+        s.push_str(
+            "<a hx-get=\"/variants\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/variants\" \
+             style=\"margin-left:.25rem;padding:.15rem .5rem;font-size:.72rem;\
+             font-family:var(--mono);background:transparent;color:var(--text-secondary);\
+             border:1px solid var(--border);border-radius:4px;text-decoration:none\" \
+             title=\"See all declared variants\">variants</a>",
+        );
+        s
+    } else {
+        String::new()
+    };
+
     let context_bar = format!(
         "<div class=\"context-bar\">\
          <span class=\"ctx-project\">{project}</span>{switcher_html}\
          <span class=\"ctx-sep\">/</span>\
          <span>{path}</span>\
          {git_html}\
+         {variant_selector_html}\
          <span class=\"ctx-time\">Loaded {loaded_at}</span>\
          <button hx-post=\"/reload\" style=\"margin-left:.5rem;padding:.15rem .5rem;font-size:.72rem;\
          font-family:var(--mono);background:rgba(58,134,255,.08);color:var(--accent);border:1px solid var(--accent);\
@@ -161,6 +227,16 @@ pub(crate) fn page_layout(content: &str, state: &AppState) -> Html<String> {
         path = html_escape(&ctx.project_path),
         loaded_at = html_escape(&ctx.loaded_at),
     );
+    // Variant banner: rendered above the content when a variant filter is
+    // active. Combines the scope summary with a "Clear filter" link that
+    // removes the `?variant` query param from the current URL.
+    //
+    // NOTE: JS below (variant-sync script) keeps the dropdown in sync with
+    // the URL after HTMX navigations, and reloads the page when the URL's
+    // variant param no longer matches the banner content — so the banner
+    // reflects the currently active scope even after in-place swaps.
+    let variant_banner = render_variant_banner(state, active_variant);
+
     Html(format!(
         r##"<!DOCTYPE html>
 <html lang="en">
@@ -176,6 +252,30 @@ mermaid.initialize({{startOnLoad:false,theme:'neutral',securityLevel:'strict'}})
 function renderMermaid(){{mermaid.run({{querySelector:'.mermaid'}}).catch(function(){{}})}}
 document.addEventListener('htmx:afterSwap',renderMermaid);
 document.addEventListener('DOMContentLoaded',renderMermaid);
+
+// Variant selector sync: after HTMX pushes a new URL, re-check `?variant=`
+// and either update the dropdown selection or reload the page so the
+// banner is recomputed server-side.
+(function(){{
+  function getUrlVariant(){{return new URL(window.location.href).searchParams.get('variant')||''}}
+  function getDropdownVariant(){{var s=document.getElementById('variant-selector');return s?s.value:''}}
+  function sync(){{
+    var url=getUrlVariant(), drop=getDropdownVariant();
+    if(url===drop) return;
+    // Mismatch: if there's a banner rendered server-side, the truth
+    // lives in the URL, so reload to refresh the banner.  Otherwise
+    // we can safely just update the dropdown client-side.
+    var banner=document.querySelector('.variant-banner');
+    if(banner){{
+      window.location.reload();
+    }} else {{
+      var s=document.getElementById('variant-selector');
+      if(s){{s.value=url}}
+    }}
+  }}
+  document.addEventListener('htmx:afterSettle',sync);
+  document.addEventListener('htmx:pushedIntoHistory',sync);
+}})();
 </script>
 </head>
 <body>
@@ -214,6 +314,7 @@ document.addEventListener('DOMContentLoaded',renderMermaid);
 </nav>
 <div class="content-area">
 {context_bar}
+{variant_banner}
 <main id="content" role="main" hx-swap="innerHTML transition:true">
 {content}
 <div class="footer">Powered by Rivet v{version}</div>
@@ -242,6 +343,207 @@ document.addEventListener('DOMContentLoaded',renderMermaid);
         search_js = js::SEARCH_JS,
         aadl_js = js::AADL_JS,
     ))
+}
+
+// ── Variant banner + overview ─────────────────────────────────────────────
+
+/// Render the "Filtered to variant: X (N of M artifacts shown)" banner
+/// injected above the main content when a variant filter is active.
+///
+/// Returns an empty string when no variant is selected or when the
+/// selected variant is unknown/unresolvable (so the user gets a clean
+/// page; the `/variants` page surfaces the error explicitly).
+fn render_variant_banner(state: &AppState, active_variant: Option<&str>) -> String {
+    let Some(name) = active_variant else {
+        return String::new();
+    };
+    if !state.variants.has_model() {
+        return format!(
+            "<div class=\"variant-banner variant-banner-err\" role=\"alert\" \
+             style=\"margin:.75rem 2rem 0 2rem;padding:.6rem .9rem;font-size:.82rem;\
+             background:#fef3c7;color:#78350f;border:1px solid #f59e0b;border-radius:6px\">\
+             <strong>Variant filter ignored:</strong> this project has no feature model. \
+             <a href=\"?\" style=\"color:inherit;text-decoration:underline\">Clear filter</a>\
+             </div>",
+        );
+    }
+    let total = state.store.len();
+    match state.build_variant_scope(name) {
+        Ok(Some(scope)) => format!(
+            "<div class=\"variant-banner\" role=\"status\" \
+             style=\"margin:.75rem 2rem 0 2rem;padding:.6rem .9rem;font-size:.82rem;\
+             background:rgba(58,134,255,.08);color:var(--accent);\
+             border:1px solid var(--accent);border-radius:6px;\
+             display:flex;align-items:center;gap:.75rem;flex-wrap:wrap\">\
+             <span><svg width=\"14\" height=\"14\" viewBox=\"0 0 16 16\" fill=\"none\" \
+             stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" \
+             stroke-linejoin=\"round\" style=\"vertical-align:middle;margin-right:.35rem\">\
+             <path d=\"M2 4h12l-4.5 5v4l-3 1.5V9z\"/></svg>\
+             Filtered to variant: <strong>{name}</strong> \
+             ({count} of {total} artifacts shown, {feats} features effective)</span>\
+             <a id=\"variant-clear\" href=\"{clear_href}\" \
+             style=\"margin-left:auto;color:inherit;text-decoration:underline;font-weight:600\" \
+             title=\"Remove the variant filter\">Clear filter</a>\
+             </div>",
+            name = html_escape(&scope.name),
+            count = scope.artifact_count,
+            total = total,
+            feats = scope.feature_count,
+            clear_href = "?",
+        ),
+        Ok(None) => String::new(),
+        Err(msg) => format!(
+            "<div class=\"variant-banner variant-banner-err\" role=\"alert\" \
+             style=\"margin:.75rem 2rem 0 2rem;padding:.6rem .9rem;font-size:.82rem;\
+             background:#fee2e2;color:#7f1d1d;border:1px solid #ef4444;border-radius:6px\">\
+             <strong>Variant error:</strong> {msg} \
+             <a href=\"?\" style=\"color:inherit;text-decoration:underline\">Clear filter</a>\
+             </div>",
+            msg = html_escape(&msg),
+        ),
+    }
+}
+
+/// Render the `/variants` overview page: a table of every declared
+/// variant with its validation status, feature count, and artifact
+/// count. Each row links to the scoped view for that variant.
+pub(crate) fn render_variants_overview(state: &AppState) -> String {
+    use super::variant::VariantStatus;
+
+    if !state.variants.has_model() {
+        return String::from(
+            "<div class=\"card\" style=\"margin:2rem\">\
+             <h2 style=\"margin-top:0\">Variants</h2>\
+             <p>This project has no feature model. Run \
+             <code>rivet variant init</code> to scaffold one, or place a \
+             <code>feature-model.yaml</code> under <code>artifacts/</code>.</p>\
+             <p style=\"color:var(--text-muted)\">See the \
+             <a href=\"/help/docs/variants\" hx-get=\"/help/docs/variants\" \
+             hx-target=\"#content\" hx-push-url=\"true\">variant documentation</a> \
+             for details.</p>\
+             </div>",
+        );
+    }
+
+    let total = state.store.len();
+    let mut html = String::from(
+        "<div style=\"padding:1.5rem 2rem;max-width:1100px\">\
+         <h2 style=\"margin-top:0\">Variants</h2>\
+         <p style=\"color:var(--text-secondary);margin-bottom:1rem\">\
+         Declared variants for this project's feature model. \
+         Select one to scope the dashboard to just the artifacts bound to \
+         its effective features.</p>",
+    );
+    if let Some(ref p) = state.variants.model_path {
+        html.push_str(&format!(
+            "<div style=\"font-size:.78rem;color:var(--text-muted);margin-bottom:.5rem\">\
+             Feature model: <code>{}</code></div>",
+            html_escape(&p.display().to_string()),
+        ));
+    }
+
+    if state.variants.variants.is_empty() {
+        html.push_str(
+            "<div class=\"card\"><p>No variant configurations discovered. \
+             Add YAML files to <code>artifacts/variants/</code>.</p></div>",
+        );
+        html.push_str("</div>");
+        return html;
+    }
+
+    html.push_str(
+        "<table class=\"data-table\" style=\"width:100%;margin-top:.5rem\">\
+         <thead><tr>\
+         <th>Name</th><th>Status</th><th style=\"text-align:right\">Features</th>\
+         <th style=\"text-align:right\">Artifacts</th>\
+         <th style=\"text-align:right\">% of total</th><th>Actions</th>\
+         </tr></thead><tbody>",
+    );
+
+    for v in &state.variants.variants {
+        let status = state.variants.validation_status(&v.name);
+        let (status_label, status_style, feature_count, artifact_count) = match &status {
+            VariantStatus::Pass {
+                feature_count,
+                artifact_count,
+            } => (
+                "PASS".to_string(),
+                "color:#065f46;background:#d1fae5;padding:.15rem .5rem;border-radius:4px;font-weight:700",
+                *feature_count as i64,
+                *artifact_count as i64,
+            ),
+            VariantStatus::Fail(_) => (
+                "FAIL".to_string(),
+                "color:#7f1d1d;background:#fee2e2;padding:.15rem .5rem;border-radius:4px;font-weight:700",
+                -1,
+                -1,
+            ),
+            VariantStatus::Missing => (
+                "missing".to_string(),
+                "color:#78350f;background:#fef3c7;padding:.15rem .5rem;border-radius:4px",
+                -1,
+                -1,
+            ),
+            VariantStatus::NoModel => (
+                "no model".to_string(),
+                "color:var(--text-muted)",
+                -1,
+                -1,
+            ),
+        };
+        let pct = if total > 0 && artifact_count > 0 {
+            format!("{:.1}%", (artifact_count as f64) * 100.0 / (total as f64))
+        } else if artifact_count == 0 {
+            "0.0%".to_string()
+        } else {
+            "—".to_string()
+        };
+        let feat_disp = if feature_count >= 0 {
+            feature_count.to_string()
+        } else {
+            "—".to_string()
+        };
+        let art_disp = if artifact_count >= 0 {
+            artifact_count.to_string()
+        } else {
+            "—".to_string()
+        };
+
+        html.push_str(&format!(
+            "<tr>\
+             <td><strong>{name}</strong></td>\
+             <td><span style=\"{status_style}\">{status_label}</span></td>\
+             <td style=\"text-align:right;font-variant-numeric:tabular-nums\">{feat_disp}</td>\
+             <td style=\"text-align:right;font-variant-numeric:tabular-nums\">{art_disp}</td>\
+             <td style=\"text-align:right;font-variant-numeric:tabular-nums\">{pct}</td>\
+             <td>\
+               <a href=\"/stats?variant={v_enc}\" \
+                  hx-get=\"/stats?variant={v_enc}\" hx-target=\"#content\" hx-push-url=\"true\" \
+                  style=\"font-size:.78rem;margin-right:.5rem\">scope dashboard</a>\
+               <a href=\"/coverage?variant={v_enc}\" \
+                  hx-get=\"/coverage?variant={v_enc}\" hx-target=\"#content\" hx-push-url=\"true\" \
+                  style=\"font-size:.78rem;margin-right:.5rem\">coverage</a>\
+               <a href=\"/artifacts?variant={v_enc}\" \
+                  hx-get=\"/artifacts?variant={v_enc}\" hx-target=\"#content\" hx-push-url=\"true\" \
+                  style=\"font-size:.78rem\">artifacts</a>\
+             </td>\
+             </tr>",
+            name = html_escape(&v.name),
+            v_enc = urlencoding::encode(&v.name),
+        ));
+
+        if let VariantStatus::Fail(errs) = status {
+            let msg = errs.join("; ");
+            html.push_str(&format!(
+                "<tr><td colspan=\"6\" style=\"font-size:.78rem;color:#7f1d1d;\
+                 background:#fef2f2;padding:.4rem .75rem\">{}</td></tr>",
+                html_escape(&msg),
+            ));
+        }
+    }
+    html.push_str("</tbody></table>");
+    html.push_str("</div>");
+    html
 }
 
 // ── Print layout ──────────────────────────────────────────────────────────
