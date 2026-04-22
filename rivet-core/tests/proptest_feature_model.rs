@@ -1,3 +1,27 @@
+// SAFETY-REVIEW (SCRC Phase 1, DD-058): Integration test / bench code.
+// Tests legitimately use unwrap/expect/panic/assert-indexing patterns
+// because a test failure should panic with a clear stack. Blanket-allow
+// the Phase 1 restriction lints at crate scope; real risk analysis for
+// these lints is carried by production code in rivet-core/src and
+// rivet-cli/src, not by the test harnesses.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects,
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::wildcard_enum_match_arm,
+    clippy::match_wildcard_for_single_variants,
+    clippy::panic,
+    clippy::todo,
+    clippy::unimplemented,
+    clippy::dbg_macro,
+    clippy::print_stdout,
+    clippy::print_stderr
+)]
+
 //! Property-based tests for the feature-model constraint solver.
 //!
 //! Verifies solver invariants via randomly generated feature models and
