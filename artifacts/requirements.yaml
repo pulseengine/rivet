@@ -1356,6 +1356,10 @@ artifacts:
     links:
       - type: constraint-satisfies
         target: SC-AI-001
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-22T20:29:48Z
 
   - id: REQ-055
     type: requirement
@@ -1371,6 +1375,10 @@ artifacts:
     links:
       - type: constraint-satisfies
         target: SC-AI-002
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-22T20:29:48Z
 
   - id: REQ-056
     type: requirement
@@ -1386,6 +1394,10 @@ artifacts:
     links:
       - type: constraint-satisfies
         target: SC-AI-003
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-22T20:29:48Z
 
   - id: REQ-057
     type: requirement
@@ -1401,6 +1413,10 @@ artifacts:
     links:
       - type: constraint-satisfies
         target: SC-AI-004
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-22T20:29:48Z
 
   - id: REQ-058
     type: requirement
@@ -1416,6 +1432,10 @@ artifacts:
     links:
       - type: constraint-satisfies
         target: SC-AI-005
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-22T20:29:48Z
 
   - id: REQ-059
     type: requirement
@@ -1431,3 +1451,7 @@ artifacts:
     links:
       - type: constraint-satisfies
         target: SC-AI-006
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-22T20:29:48Z

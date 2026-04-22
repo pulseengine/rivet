@@ -8687,11 +8687,16 @@ fn cmd_stamp(
     }
 
     if missing_provenance {
+        // Provenance is a first-class Option<Provenance> struct field on
+        // Artifact, not a custom entry in the `fields:` BTreeMap.
+        // Checking `fields.get("provenance")` always returned None,
+        // making this filter a no-op and causing
+        // `rivet stamp all --missing-provenance` to overwrite timestamps
+        // on every existing artifact — silent-accept of a buggy filter.
         ids.retain(|aid| {
             store
                 .get(aid)
-                .and_then(|a| a.fields.get("provenance"))
-                .is_none()
+                .is_some_and(|a| a.provenance.is_none())
         });
     }
 
@@ -8715,28 +8720,47 @@ fn cmd_stamp(
         // Skip artifacts without source files (externals, etc.)
     }
 
+    let mut skipped: Vec<(String, String)> = Vec::new();
     for (file_path, artifact_ids) in &by_file {
         let content = std::fs::read_to_string(file_path)
             .with_context(|| format!("reading {}", file_path.display()))?;
 
         let mut editor = rivet_core::yaml_edit::YamlEditor::parse(&content);
+        let mut file_touched = false;
 
         for aid in artifact_ids {
-            editor
-                .set_provenance(
-                    aid,
-                    created_by,
-                    model,
-                    session_id,
-                    Some(&timestamp),
-                    reviewed_by,
-                )
-                .map_err(|e| anyhow::anyhow!("{e}"))?;
-            stamped += 1;
+            // Nested artifacts (e.g. STPA control-actions inside a
+            // controller entry) can be visible to the store walk but
+            // invisible to the YamlEditor CST walk. Warn and skip
+            // instead of bailing the whole batch — the caller usually
+            // wants "stamp everything I can" not "stamp everything or
+            // nothing".
+            match editor.set_provenance(
+                aid,
+                created_by,
+                model,
+                session_id,
+                Some(&timestamp),
+                reviewed_by,
+            ) {
+                Ok(()) => {
+                    stamped += 1;
+                    file_touched = true;
+                }
+                Err(e) => skipped.push((aid.clone(), e.to_string())),
+            }
         }
 
-        std::fs::write(file_path, editor.to_string())
-            .with_context(|| format!("writing {}", file_path.display()))?;
+        if file_touched {
+            std::fs::write(file_path, editor.to_string())
+                .with_context(|| format!("writing {}", file_path.display()))?;
+        }
+    }
+    if !skipped.is_empty() {
+        eprintln!("stamp: skipped {} artifact(s):", skipped.len());
+        for (aid, reason) in &skipped {
+            eprintln!("  {aid}: {reason}");
+        }
     }
 
     if stamped == 1 {
