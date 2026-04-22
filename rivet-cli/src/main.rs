@@ -6010,8 +6010,19 @@ fn cmd_docs_check(cli: &Cli, format: &str, fix: bool) -> Result<bool> {
 
     let project_root = cli.project.canonicalize().unwrap_or_else(|_| cli.project.clone());
 
+    // Read project config so the docs scan honors any `docs:` paths from
+    // `rivet.yaml` (e.g. `rivet/docs`, `crates/*/docs`) — otherwise the gate
+    // silently misses every markdown file outside the top-level `docs/`.
+    // Missing or unreadable config degrades to the default `docs/` scan.
+    let extra_doc_dirs: Vec<std::path::PathBuf> = rivet_core::load_project_config(
+        &project_root.join("rivet.yaml"),
+    )
+    .ok()
+    .map(|c| c.docs.iter().map(std::path::PathBuf::from).collect())
+    .unwrap_or_default();
+
     // 1. Collect docs.
-    let docs = collect_docs(&project_root)
+    let docs = collect_docs(&project_root, &extra_doc_dirs)
         .with_context(|| format!("scanning docs under {}", project_root.display()))?;
 
     // 2. Build known-subcommand set from clap metadata (keeps check in sync

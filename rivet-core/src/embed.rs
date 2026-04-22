@@ -265,6 +265,16 @@ impl EmbedRequest {
             for token in tail.split_whitespace() {
                 if let Some((key, val)) = token.split_once('=') {
                     options.insert(key.to_string(), val.to_string());
+                } else {
+                    // Reject colon-prefixed syntax and other non-`key=value`
+                    // tokens so they don't get silently dropped (SC-EMBED-3).
+                    return Err(EmbedError {
+                        kind: EmbedErrorKind::MalformedSyntax(format!(
+                            "unrecognized option `{token}` — use `key=value` form \
+                             (e.g. `limit=10`, not `:limit 10`)"
+                        )),
+                        raw_text: input.to_string(),
+                    });
                 }
             }
             return Ok(EmbedRequest {
@@ -919,6 +929,22 @@ fn render_query(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> Result<String
         .unwrap_or(QUERY_EMBED_DEFAULT_LIMIT)
         .min(QUERY_EMBED_MAX_LIMIT);
 
+    // Resolve column list from `fields=id,title,asil` (comma-separated).
+    // Defaults to the classic 4-column shape. Each field is resolved via
+    // `read_artifact_field` so custom YAML fields work without plumbing.
+    const DEFAULT_FIELDS: &[&str] = &["id", "type", "title", "status"];
+    let fields: Vec<String> = request
+        .options
+        .get("fields")
+        .map(|s| {
+            s.split(',')
+                .map(|p| p.trim().to_string())
+                .filter(|p| !p.is_empty())
+                .collect()
+        })
+        .filter(|v: &Vec<String>| !v.is_empty())
+        .unwrap_or_else(|| DEFAULT_FIELDS.iter().map(|s| s.to_string()).collect());
+
     let mut matches: Vec<&crate::model::Artifact> = Vec::new();
     let mut total = 0usize;
     for artifact in ctx.store.iter() {
@@ -937,20 +963,28 @@ fn render_query(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> Result<String
         return Ok(html);
     }
 
-    html.push_str(
-        "<table class=\"embed-table\"><thead><tr>\
-         <th>ID</th><th>Type</th><th>Title</th><th>Status</th>\
-         </tr></thead><tbody>\n",
-    );
-    for a in &matches {
-        let _ = writeln!(
+    html.push_str("<table class=\"embed-table\"><thead><tr>");
+    for f in &fields {
+        let _ = write!(
             html,
-            "<tr><td><code>{id}</code></td><td>{typ}</td><td>{title}</td><td>{status}</td></tr>",
-            id = document::html_escape(&a.id),
-            typ = document::html_escape(&a.artifact_type),
-            title = document::html_escape(&a.title),
-            status = document::html_escape(a.status.as_deref().unwrap_or("-")),
+            "<th>{}</th>",
+            document::html_escape(&column_heading(f))
         );
+    }
+    html.push_str("</tr></thead><tbody>\n");
+    for a in &matches {
+        html.push_str("<tr>");
+        for f in &fields {
+            let raw = read_artifact_field(a, f);
+            let cell = if raw.is_empty() { "-".to_string() } else { raw };
+            let wrapped = if f == "id" {
+                format!("<code>{}</code>", document::html_escape(&cell))
+            } else {
+                document::html_escape(&cell)
+            };
+            let _ = write!(html, "<td>{wrapped}</td>");
+        }
+        html.push_str("</tr>\n");
     }
     html.push_str("</tbody></table>\n");
 
@@ -980,13 +1014,14 @@ fn render_query(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> Result<String
 /// - `{{group:status}}` — counts of draft / approved / shipped / unset
 /// - `{{group:type}}` — like `{{stats:types}}` without schema pre-population
 /// - `{{group:asil}}` — per-ASIL counts from a custom field
+/// - `{{group:TYPE:FIELD}}` — group only TYPE artifacts by FIELD
+///   (e.g. `{{group:requirement:asil}}` → ASIL distribution across requirements)
 ///
-/// The "meaning" of this embed is not fully pinned down by prior docs —
-/// this implementation picks the most useful reading (count-by-value) and
-/// documents it alongside the output.  Unset / missing values are bucketed
-/// as "unset" so the totals line up with the project artifact count.
+/// Unset / missing values are bucketed as "unset" so the totals line up with
+/// the project artifact count (or the type-scoped subset count for the
+/// two-arg form).
 fn render_group(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> Result<String, EmbedError> {
-    let Some(field) = request.args.first() else {
+    let Some(first) = request.args.first() else {
         return Err(EmbedError {
             kind: EmbedErrorKind::MalformedSyntax(
                 "group embed requires a field name: {{group:status}}".into(),
@@ -994,16 +1029,28 @@ fn render_group(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> Result<String
             raw_text: format!("{request:?}"),
         });
     };
-    let field = field.trim();
-    if field.is_empty() {
+    let first = first.trim();
+    if first.is_empty() {
         return Err(EmbedError {
             kind: EmbedErrorKind::MalformedSyntax("group field cannot be empty".into()),
             raw_text: format!("{request:?}"),
         });
     }
 
+    // Two-arg form: {{group:TYPE:FIELD}} — first arg scopes to artifact type,
+    // second is the field to group by. One-arg form groups every artifact.
+    let (type_filter, field) = match request.args.get(1).map(|s| s.trim()) {
+        Some(second) if !second.is_empty() => (Some(first), second),
+        _ => (None, first),
+    };
+
     let mut counts: BTreeMap<String, usize> = BTreeMap::new();
     for a in ctx.store.iter() {
+        if let Some(t) = type_filter
+            && a.artifact_type != t
+        {
+            continue;
+        }
         let raw = read_artifact_field(a, field);
         // Treat empty/missing as "unset" so the totals always add up.
         let bucket = if raw.is_empty() {
@@ -1042,6 +1089,22 @@ fn render_group(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> Result<String
     );
     html.push_str("</tbody></table>\n</div>\n");
     Ok(html)
+}
+
+/// Format a field name for use as a table column heading.
+/// Capitalizes top-level well-known fields and preserves user custom field
+/// names (ASIL → "asil" → "Asil"; tags → "Tags"). Keeps IDs visually prominent.
+fn column_heading(name: &str) -> String {
+    match name {
+        "id" => "ID".to_string(),
+        _ => {
+            let mut chars = name.chars();
+            match chars.next() {
+                Some(c) => c.to_ascii_uppercase().to_string() + chars.as_str(),
+                None => String::new(),
+            }
+        }
+    }
 }
 
 /// Read a single string value for an artifact field by name.
@@ -1618,6 +1681,56 @@ mod tests {
         assert!(matches!(err.kind, EmbedErrorKind::MalformedSyntax(_)));
     }
 
+    #[test]
+    fn query_embed_fields_option_customizes_columns() {
+        // `fields=id,title,asil` should produce the three columns in order.
+        let mut a = plain("REQ-1", "requirement", Some("Auth"), &[]);
+        a.fields
+            .insert("asil".into(), serde_yaml::Value::String("ASIL-B".into()));
+        let store = make_store(vec![a]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let html = run_embed(
+            "query:(= type \"requirement\") fields=id,title,asil",
+            &store,
+            &schema,
+            &graph,
+        )
+        .unwrap();
+        assert!(html.contains("<th>ID</th>"), "expected ID column: {html}");
+        assert!(
+            html.contains("<th>Title</th>"),
+            "expected Title column: {html}"
+        );
+        assert!(
+            html.contains("<th>Asil</th>"),
+            "expected Asil column: {html}"
+        );
+        assert!(html.contains("ASIL-B"), "custom field value missing: {html}");
+        // Default Status column must be absent when `fields=` is overridden.
+        assert!(
+            !html.contains("<th>Status</th>"),
+            "Status column should be suppressed when fields= is set: {html}"
+        );
+    }
+
+    #[test]
+    fn query_embed_rejects_colon_prefixed_option_syntax() {
+        // Regression guard: `:limit 10` used to be silently dropped because
+        // the parser only recognized `key=value` tokens. Now it is rejected
+        // with a hint steering the user to the correct syntax.
+        let err = EmbedRequest::parse("query:(= type \"requirement\") :limit 10")
+            .unwrap_err();
+        let msg = match &err.kind {
+            EmbedErrorKind::MalformedSyntax(m) => m.clone(),
+            other => panic!("expected MalformedSyntax, got {other:?}"),
+        };
+        assert!(
+            msg.contains("key=value"),
+            "error should explain the correct syntax, got: {msg}"
+        );
+    }
+
     // ── stats:type:NAME granular form ───────────────────────────────
 
     #[test]
@@ -1735,6 +1848,42 @@ mod tests {
         assert!(html.contains("ASIL-B"), "got: {html}");
         assert!(html.contains("<td>2</td>"), "got: {html}");
         assert!(html.contains("unset"), "got: {html}");
+    }
+
+    #[test]
+    fn group_embed_two_arg_scopes_by_type() {
+        // Two-arg form: {{group:TYPE:FIELD}} — scope to artifacts of TYPE,
+        // group those by FIELD. Regression guard for the silent-accept bug
+        // where the second arg was discarded and every artifact fell into
+        // bucket "unset" because FIELD was read as the literal type name.
+        let mut req_a = plain("REQ-1", "requirement", None, &[]);
+        req_a.fields.insert(
+            "asil".into(),
+            serde_yaml::Value::String("ASIL-B".into()),
+        );
+        let mut req_b = plain("REQ-2", "requirement", None, &[]);
+        req_b.fields.insert(
+            "asil".into(),
+            serde_yaml::Value::String("ASIL-D".into()),
+        );
+        // Non-requirement artifact — should be excluded by type filter.
+        let mut test_a = plain("TEST-1", "test", None, &[]);
+        test_a.fields.insert(
+            "asil".into(),
+            serde_yaml::Value::String("ASIL-B".into()),
+        );
+        let store = make_store(vec![req_a, req_b, test_a]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let html =
+            run_embed("group:requirement:asil", &store, &schema, &graph).unwrap();
+        assert!(html.contains("ASIL-B"), "got: {html}");
+        assert!(html.contains("ASIL-D"), "got: {html}");
+        // Total must be 2 (only the two requirements), not 3.
+        assert!(
+            html.contains("<strong>2</strong>"),
+            "type filter did not exclude non-requirement artifact — got: {html}"
+        );
     }
 
     #[test]

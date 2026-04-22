@@ -423,10 +423,21 @@ pub(crate) fn render_artifact_detail(ctx: &RenderContext, id: &str) -> RenderRes
     }
     html.push_str("</dl></div>");
 
-    // Diagram field — render mermaid or AADL diagram if present
+    // Diagram field — render mermaid or AADL diagram if present.
+    // Wraps in .svg-viewer so the toolbar (zoom-fit / fullscreen / popout)
+    // applies uniformly to artifact diagrams, graph views, and doc-linkage —
+    // same visual language regardless of where the diagram is shown.
     if let Some(serde_yaml::Value::String(diagram)) = artifact.fields.get("diagram") {
         html.push_str("<div class=\"card artifact-diagram\">");
         html.push_str("<h3>Diagram</h3>");
+        html.push_str(
+            "<div class=\"svg-viewer\">\
+             <div class=\"svg-viewer-toolbar\">\
+               <button onclick=\"svgZoomFit(this)\" title=\"Zoom to fit\">\u{229e}</button>\
+               <button onclick=\"svgFullscreen(this)\" title=\"Fullscreen\">\u{26f6}</button>\
+               <button onclick=\"svgPopout(this)\" title=\"Open in new window\">\u{2197}</button>\
+             </div>",
+        );
         let trimmed = diagram.trim();
         if trimmed.starts_with("root:") {
             // AADL diagram
@@ -441,7 +452,8 @@ pub(crate) fn render_artifact_detail(ctx: &RenderContext, id: &str) -> RenderRes
             html.push_str(&html_escape(trimmed));
             html.push_str("</pre>");
         }
-        html.push_str("</div>");
+        html.push_str("</div>"); // .svg-viewer
+        html.push_str("</div>"); // .card
     }
 
     // Forward links
@@ -504,6 +516,41 @@ pub(crate) fn render_artifact_detail(ctx: &RenderContext, id: &str) -> RenderRes
                 "<tr><td><span class=\"link-pill\">{}</span></td>\
                  <td><a hx-get=\"/artifacts/{source_esc}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{source_esc}\">{source_esc}</a></td></tr>",
                 html_escape(label),
+            ));
+        }
+        html.push_str("</tbody></table></div>");
+    }
+
+    // Documents referencing this artifact — reverse index from DocumentStore.
+    // Groups [[ID]] occurrences per document so the user can jump from an
+    // artifact to every doc that cites it.
+    let mut doc_refs: Vec<(&rivet_core::document::Document, Vec<&rivet_core::document::DocReference>)> =
+        Vec::new();
+    for doc in ctx.doc_store.iter() {
+        let matching: Vec<_> = doc
+            .references
+            .iter()
+            .filter(|r| r.artifact_id == artifact.id)
+            .collect();
+        if !matching.is_empty() {
+            doc_refs.push((doc, matching));
+        }
+    }
+    if !doc_refs.is_empty() {
+        html.push_str("<div class=\"card\"><h3>Referenced in Documents</h3>\
+             <table><thead><tr><th>Document</th><th>Title</th><th>Occurrences</th></tr></thead><tbody>");
+        for (doc, refs) in &doc_refs {
+            let doc_id = html_escape(&doc.id);
+            let lines: Vec<String> = refs
+                .iter()
+                .map(|r| format!("L{}", r.line))
+                .collect();
+            html.push_str(&format!(
+                "<tr><td><a hx-get=\"/documents/{doc_id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/documents/{doc_id}\">{doc_id}</a></td>\
+                 <td>{title}</td>\
+                 <td><span class=\"meta\">{lines}</span></td></tr>",
+                title = html_escape(&doc.title),
+                lines = lines.join(", "),
             ));
         }
         html.push_str("</tbody></table></div>");

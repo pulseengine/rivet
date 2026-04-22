@@ -51,9 +51,19 @@ pub(crate) fn render_help(ctx: &RenderContext) -> String {
     ));
     html.push_str("</div>");
 
-    // Schema linkage diagram (Mermaid) — traceability rules + link type relationships
+    // Schema linkage diagram (Mermaid) — traceability rules + link type relationships.
+    // Wraps in .svg-viewer so the diagram gets the same zoom/fullscreen/popout
+    // toolbar as the graph and doc-linkage views.
     html.push_str("<div class=\"card\" style=\"padding:1.25rem;margin-top:1rem\">");
     html.push_str("<h3 style=\"margin:0 0 1rem\">Schema Linkage</h3>");
+    html.push_str(
+        "<div class=\"svg-viewer\">\
+         <div class=\"svg-viewer-toolbar\">\
+           <button onclick=\"svgZoomFit(this)\" title=\"Zoom to fit\">\u{229e}</button>\
+           <button onclick=\"svgFullscreen(this)\" title=\"Fullscreen\">\u{26f6}</button>\
+           <button onclick=\"svgPopout(this)\" title=\"Open in new window\">\u{2197}</button>\
+         </div>",
+    );
     html.push_str("<pre class=\"mermaid\">\ngraph LR\n");
 
     // Group artifact types by domain for subgraphs
@@ -191,7 +201,8 @@ pub(crate) fn render_help(ctx: &RenderContext) -> String {
     }
 
     html.push_str("</pre>");
-    html.push_str("</div>");
+    html.push_str("</div>"); // .svg-viewer
+    html.push_str("</div>"); // .card
 
     // CLI quick reference
     html.push_str(
@@ -562,6 +573,14 @@ pub(crate) fn render_schema_show(ctx: &RenderContext, name: &str) -> RenderResul
     if !diagram_edges.is_empty() {
         html.push_str("<div class=\"card\" style=\"padding:1.25rem;margin-bottom:1rem\">");
         html.push_str("<h3 style=\"margin:0 0 .75rem\">Linkage Diagram</h3>");
+        html.push_str(
+            "<div class=\"svg-viewer\">\
+             <div class=\"svg-viewer-toolbar\">\
+               <button onclick=\"svgZoomFit(this)\" title=\"Zoom to fit\">\u{229e}</button>\
+               <button onclick=\"svgFullscreen(this)\" title=\"Fullscreen\">\u{26f6}</button>\
+               <button onclick=\"svgPopout(this)\" title=\"Open in new window\">\u{2197}</button>\
+             </div>",
+        );
         html.push_str("<pre class=\"mermaid\">\ngraph LR\n");
         // Current type node (highlighted)
         html.push_str(&format!("    {}\n", type_node));
@@ -573,7 +592,9 @@ pub(crate) fn render_schema_show(ctx: &RenderContext, name: &str) -> RenderResul
             html.push_str(edge);
             html.push('\n');
         }
-        html.push_str("</pre></div>");
+        html.push_str("</pre>");
+        html.push_str("</div>"); // .svg-viewer
+        html.push_str("</div>"); // .card
     }
 
     // ── Example YAML ─────────────────────────────────────────────────────

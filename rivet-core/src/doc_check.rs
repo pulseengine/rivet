@@ -136,8 +136,16 @@ pub trait DocInvariant {
 // ────────────────────────────────────────────────────────────────────────
 
 /// Collect candidate doc files: `README.md`, `CHANGELOG.md`, `AGENTS.md`,
-/// and every `*.md` under `docs/`.
-pub fn collect_docs(project_root: &Path) -> std::io::Result<Vec<DocFile>> {
+/// `CLAUDE.md` at the project root, every `*.md` under `docs/`, and every
+/// `*.md` under the `extra_dirs` passed by the caller (typically the
+/// project's `rivet.yaml` `docs:` list — e.g. `rivet/docs`, `crates/*/docs`).
+/// Paths in `extra_dirs` may be absolute or relative to `project_root`.
+///
+/// De-dupes by relative path so overlapping roots don't add a doc twice.
+pub fn collect_docs(
+    project_root: &Path,
+    extra_dirs: &[PathBuf],
+) -> std::io::Result<Vec<DocFile>> {
     let mut out = Vec::new();
 
     for top in ["README.md", "CHANGELOG.md", "AGENTS.md", "CLAUDE.md"] {
@@ -148,10 +156,33 @@ pub fn collect_docs(project_root: &Path) -> std::io::Result<Vec<DocFile>> {
         }
     }
 
-    let docs_dir = project_root.join("docs");
-    if docs_dir.is_dir() {
-        walk_md(&docs_dir, project_root, &mut out)?;
+    let mut walked: std::collections::BTreeSet<PathBuf> =
+        std::collections::BTreeSet::new();
+    let mut walk_once = |dir: PathBuf, out: &mut Vec<DocFile>| -> std::io::Result<()> {
+        if !dir.is_dir() {
+            return Ok(());
+        }
+        let canonical = dir.canonicalize().unwrap_or_else(|_| dir.clone());
+        if !walked.insert(canonical) {
+            return Ok(());
+        }
+        walk_md(&dir, project_root, out)
+    };
+
+    walk_once(project_root.join("docs"), &mut out)?;
+    for extra in extra_dirs {
+        let resolved = if extra.is_absolute() {
+            extra.clone()
+        } else {
+            project_root.join(extra)
+        };
+        walk_once(resolved, &mut out)?;
     }
+
+    // Final de-dupe by rel_path in case a doc was reachable via both the
+    // default `docs/` and a configured extra that points at the same tree.
+    out.sort_by(|a, b| a.rel_path.cmp(&b.rel_path));
+    out.dedup_by(|a, b| a.rel_path == b.rel_path);
 
     Ok(out)
 }

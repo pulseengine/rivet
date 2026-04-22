@@ -664,6 +664,47 @@ pub fn render_to_html(
             continue;
         }
 
+        // Standalone block-level embed — a line that is *entirely* a single
+        // `{{...}}` token emits block HTML (<table>, <div>, etc.) and must
+        // NOT be wrapped in <p>, which produces invalid nesting. Falls back
+        // to inline handling if the line also contains other text.
+        if trimmed.starts_with("{{")
+            && trimmed.ends_with("}}")
+            && trimmed.matches("{{").count() == 1
+            && trimmed.matches("}}").count() == 1
+        {
+            if in_paragraph {
+                html.push_str("</p>\n");
+                in_paragraph = false;
+            }
+            if in_list {
+                html.push_str("</ul>\n");
+                in_list = false;
+            }
+            if in_ordered_list {
+                html.push_str("</ol>\n");
+                in_ordered_list = false;
+            }
+            if in_table {
+                html.push_str("</tbody></table>\n");
+                in_table = false;
+                table_header_done = false;
+            }
+            if in_blockquote {
+                html.push_str("</blockquote>\n");
+                in_blockquote = false;
+            }
+            html.push_str(&resolve_inline(
+                trimmed,
+                &artifact_exists,
+                &artifact_info,
+                &document_exists,
+                &embed_resolver,
+            ));
+            html.push('\n');
+            continue;
+        }
+
         // Regular text → paragraph
         if in_list {
             html.push_str("</ul>\n");
@@ -1962,6 +2003,27 @@ See frontmatter.
         assert!(
             !html.contains("artifact-embed-header"),
             "links-only should not have card header"
+        );
+    }
+
+    // rivet: verifies REQ-033
+    #[test]
+    fn standalone_embed_line_not_wrapped_in_paragraph() {
+        // Regression guard: when `{{table:...}}`, `{{artifact:ID}}`, or
+        // `{{links:ID}}` appears on its own line, the resolved block-level
+        // HTML must emit directly — NOT inside a <p>, which produces
+        // invalid nesting like <p><table>...</table></p>.
+        let content =
+            "---\nid: DOC-BE\ntitle: Blocks\n---\n{{artifact:REQ-001}}\n\n{{links:REQ-001}}\n";
+        let doc = parse_document(content, None).unwrap();
+        let html = render_to_html(&doc, |_| true, rich_info_fn, |_| false, noop_embed);
+        assert!(
+            !html.contains("<p><div"),
+            "artifact embed must not be wrapped in <p>: {html}"
+        );
+        assert!(
+            !html.contains("<p><table"),
+            "links embed must not be wrapped in <p>: {html}"
         );
     }
 
