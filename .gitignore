@@ -15,3 +15,11 @@ vscode-rivet/node_modules/
 vscode-rivet/bin/rivet
 vscode-rivet/out/
 vscode-rivet/*.vsix
+
+# npm distribution: binaries are populated by release-npm.yml at publish time,
+# never committed. node_modules from local npm installs should also be ignored.
+platform-packages/*/rivet
+platform-packages/*/rivet.exe
+npm/bin/
+npm/node_modules/
+platform-packages/*/node_modules/

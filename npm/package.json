@@ -1,0 +1,67 @@
+{
+  "name": "@pulseengine/rivet",
+  "version": "0.4.0",
+  "description": "Rivet — SDLC traceability, validation, and MCP server for safety-critical systems (ISO 26262, DO-178C, ASPICE, STPA)",
+  "main": "index.js",
+  "bin": {
+    "rivet": "./run.js"
+  },
+  "scripts": {
+    "postinstall": "node install.js",
+    "preuninstall": "node uninstall.js"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "sdlc",
+    "traceability",
+    "safety",
+    "iso-26262",
+    "do-178c",
+    "aspice",
+    "stpa",
+    "requirements",
+    "verification",
+    "rust",
+    "cli"
+  ],
+  "author": "PulseEngine <https://github.com/pulseengine>",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pulseengine/rivet.git"
+  },
+  "homepage": "https://github.com/pulseengine/rivet#readme",
+  "bugs": {
+    "url": "https://github.com/pulseengine/rivet/issues"
+  },
+  "optionalDependencies": {
+    "@pulseengine/rivet-darwin-arm64": "0.4.0",
+    "@pulseengine/rivet-darwin-x64": "0.4.0",
+    "@pulseengine/rivet-linux-arm64": "0.4.0",
+    "@pulseengine/rivet-linux-x64": "0.4.0",
+    "@pulseengine/rivet-win32-x64": "0.4.0"
+  },
+  "engines": {
+    "node": ">=14"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "files": [
+    "index.js",
+    "install.js",
+    "run.js",
+    "uninstall.js",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

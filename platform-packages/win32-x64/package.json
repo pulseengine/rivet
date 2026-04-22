@@ -1,0 +1,38 @@
+{
+  "name": "@pulseengine/rivet-win32-x64",
+  "version": "0.4.0",
+  "description": "Rivet CLI binary for Windows x64 (MSVC)",
+  "main": "index.js",
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "keywords": [
+    "rivet",
+    "sdlc",
+    "traceability",
+    "mcp",
+    "binary",
+    "windows",
+    "x64"
+  ],
+  "author": "PulseEngine <https://github.com/pulseengine>",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pulseengine/rivet.git"
+  },
+  "homepage": "https://github.com/pulseengine/rivet#readme",
+  "bugs": {
+    "url": "https://github.com/pulseengine/rivet/issues"
+  },
+  "files": [
+    "index.js",
+    "rivet.exe"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
