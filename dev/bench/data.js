@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1776843803570,
+  "lastUpdate": 1776844109478,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "7aa75077286463808692515a59ee313956bbf663",
-          "message": "fix(ci): Miri green + getting-started docs for all new features\n\nFix Miri CI: feature_model tests build rowan trees for constraint\nparsing, triggering the same tree-borrows deallocation UB as yaml_hir.\nSkip feature_model in Miri alongside existing skips.\n\nUpdate getting-started.md with documentation for new features:\ns-expression filtering, variant management, Zola export, sphinx-needs\nimport, MCP server, git hooks, and security model.\n\nTrace: skip\n\nCo-authored-by: Claude Opus 4.6 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-04-13T22:26:40-05:00",
-          "tree_id": "1652d03753fb32ac550309c8344fb4d63c7fc0f0",
-          "url": "https://github.com/pulseengine/rivet/commit/7aa75077286463808692515a59ee313956bbf663"
-        },
-        "date": 1776137587243,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 81935,
-            "range": "± 394",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 889208,
-            "range": "± 11723",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 12224860,
-            "range": "± 346838",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1942,
-            "range": "± 5",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 24729,
-            "range": "± 110",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 355047,
-            "range": "± 3302",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 96,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 96,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 96,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1047453,
-            "range": "± 24708",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 167191,
-            "range": "± 852",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1927509,
-            "range": "± 143164",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 26438292,
-            "range": "± 1625801",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 106814,
-            "range": "± 366",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 919452,
-            "range": "± 2856",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 10406610,
-            "range": "± 141486",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4320,
-            "range": "± 9",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 46051,
-            "range": "± 503",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 757165,
-            "range": "± 11383",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 62309,
-            "range": "± 166",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 690801,
-            "range": "± 2007",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7796059,
-            "range": "± 143668",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 732,
-            "range": "± 21",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 6536,
-            "range": "± 35",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 91200,
-            "range": "± 484",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 21693,
-            "range": "± 142",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 146620,
-            "range": "± 783",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1356087,
-            "range": "± 19709",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1579609,
             "range": "± 20893",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b285c37dbc4fba73b2b259acbb75a35ef1db990f",
+          "message": "v0.4.1 embeds: mermaid fix + {{query}}/{{group}}/{{stats:type}} + rivet docs embeds + rivet query (#180)\n\n* fix(markdown): render mermaid fences as <pre class=\"mermaid\">\n\nArtifact descriptions go through rivet-core's pulldown-cmark based\nrender_markdown. That renderer was emitting pulldown's default\n<pre><code class=\"language-mermaid\"> for fenced mermaid blocks, which\nthe dashboard's mermaid.js (selector `.mermaid`) never matches — so\ndiagrams in artifact descriptions rendered as literal source.\n\nAdd a tiny event-mapping pass that replaces the Start/End code-block\nevents for `mermaid` fences with synthetic HTML wrappers (NUL-byte\nsentinels that cannot appear in input, rewritten post-html-push). Other\nraw HTML events are still dropped for XSS defence, and the sanitize\npass still runs. Non-mermaid fences keep their existing rendering.\n\nCovers the bug end-to-end: markdown unit tests verify the <pre\nclass=\"mermaid\"> shape and regression for rust fences; architecture.yaml\nARCH-CORE-001 now carries a mermaid diagram as a live fixture, and a\nPlaywright regression walks the artifact page and asserts mermaid.js\nactually produces an SVG.\n\nFixes: REQ-032\nRefs: FEAT-032\n\n* feat(embed): {{query:(sexpr)}} renders live s-expression results\n\nAdds a read-only {{query:(...)}} embed backed by the existing\nsexpr_eval::parse_filter + matches_filter_with_store pair — the same path\nthat powers `rivet list --filter` and MCP's `rivet_query`. The embed\nrenders a compact `id | type | title | status` table, clamped to a\ndefault of 50 rows (hard max 500 via `limit=N`), with a visible\n\"Showing N of M\" footer on truncation so nothing disappears silently.\n\nParser changes:\n\n- `EmbedRequest::parse` was previously splitting on `:` blindly, which\n  corrupted any s-expression argument.  For `name == \"query\"` it now\n  expects a balanced-paren form `{{query:(...)}}` and captures the whole\n  paren group as the single positional arg.  Parens inside string\n  literals are respected so `(= title \"foo)bar\")` parses correctly.\n- All other embed shapes (`stats`, `stats:types`, `table:T:F`, …) keep\n  their existing colon-split behaviour — covered by regression tests.\n\nTests: 12 new unit tests covering the paren scanner (simple, nested,\nstring-literal, unbalanced), the `query` parse shape, an end-to-end\n`query_embed_matches_sexpr_filter` cross-check against the evaluator\ndirectly, truncation, `limit=` clamping, and error propagation from a\nmalformed filter.\n\nImplements: REQ-007\nRefs: FEAT-032\n\n* feat(embed): {{stats:type:NAME}} for single-type counts\n\n{{stats:types}} already renders the full per-type count table; users\nasking for a single number — e.g. \"how many requirements do we have?\"\n— had to eyeball it out of the table. Add a granular form\n{{stats:type:requirement}} that renders a one-row table with just the\ncount for the named type.\n\nUnknown types render count=0 rather than erroring, matching SC-EMBED-3:\nthe rule is \"visible output, never silent disappearance\". An empty type\nname falls back to an `embed-error` span.\n\nFour unit tests: counts correctly, unknown type → zero, empty name →\nvisible error, and a regression check that the existing {{stats:types}}\nform still produces the full multi-row table.\n\nImplements: REQ-007\nRefs: FEAT-032\n\n* feat(embed): {{group:FIELD}} count-by-value grouping\n\nThe user report listed {{group:...}} as a missing embed with no stated\nsemantics. Neither the PR #159 design doc nor the codebase pinned down a\ndefinition, so this commit picks the most useful reading:\n\n  {{group:FIELD}} renders a count-by-value table of the named artifact\n  field. Example outputs:\n\n    {{group:status}}  →  draft / approved / shipped counts\n    {{group:type}}    →  per-type counts (complement to {{stats:types}})\n    {{group:asil}}    →  per-ASIL counts from a custom YAML field\n\nMissing / empty values bucket into \"unset\" so the totals equal the\nproject artifact count. List-valued fields (e.g. tags) render as\ncomma-joined keys — per-tag grouping is a future enhancement.\n\nThe renderer reuses the same html_escape / embed-table class set as the\nrest of the embeds, and returns an EmbedError for an empty FIELD.\n\nFive unit tests: status grouping with an \"unset\" row, type grouping,\ncustom YAML field (asil), empty-field rejection, and empty-store\nno-data path.\n\nImplements: REQ-007\nRefs: FEAT-032\n\n* feat(cli): `rivet docs embeds` + embed registry\n\nAdds `rivet_core::embed::EMBED_REGISTRY` — a `&[EmbedSpec]` slice with\none entry per known embed (`stats`, `coverage`, `diagnostics`, `matrix`,\n`query`, `group`, plus the legacy `artifact` / `links` / `table`\ninline embeds). Each spec carries the `name`, a compact `args` signature,\na one-line `summary`, a runnable `example`, and a `legacy` flag so the\ninline embeds are still listed even though they dispatch from\n`document.rs` rather than `resolve_embed`.\n\nSurfaces the registry in three places so discoverability stays in sync:\n\n- `rivet docs embeds` (and `--format json`) — prints an aligned table or\n  emits a machine-readable list; usage footer points at `rivet embed`\n  and `rivet docs embed-syntax`.\n- Dashboard Help view — new \"Document Embeds\" card built from the same\n  registry so users browsing at /help see the exact same set.\n- Unit tests assert that every name dispatched in `resolve_embed` also\n  appears in `EMBED_REGISTRY`, and that every registry example parses\n  via `EmbedRequest::parse` (catches copy-paste rot).\n\nIntegration tests in `rivet-cli/tests/embeds_help.rs` walk the built\nbinary end-to-end for both text and JSON output.\n\nWhile here, fix a latent order-dependent assertion in the earlier\n`query_embed_matches_sexpr_filter` test — store iteration is not\nstable, so compare as a sorted set instead.\n\nImplements: REQ-007\nRefs: FEAT-032, FEAT-001\n\n* feat(cli): `rivet query --sexpr ...` mirrors MCP rivet_query\n\nLifts the shared s-expression evaluation path into\n`rivet_core::query::execute_sexpr` so MCP's `rivet_query` tool, the new\n`rivet query` CLI, and the `{{query:(...)}}` document embed all converge\non one function.  The result struct carries `matches`, `total`, and a\n`truncated` flag so callers can render the same \"Showing N of M\" footer\nwithout re-running the filter.\n\nCLI surface:\n\n    rivet query --sexpr '(and (= type \"requirement\") (has-tag \"stpa\"))'\n    rivet query --sexpr '...' --format json    # MCP shape envelope\n    rivet query --sexpr '...' --format ids     # newline-separated IDs\n    rivet query --sexpr '...' --limit 25\n\nThree output formats — text (aligned columns), json (the MCP envelope\n`{filter, count, total, truncated, artifacts[]}`), and ids (for shell\npipelines: `rivet query --format ids | xargs -n1 rivet show`).\n\nMCP's `tool_query` is refactored to use `execute_sexpr` directly and\nnow returns the same envelope shape (adding `total` + `truncated`\nfields alongside the existing `filter`, `count`, `artifacts`), so\nscripts working against MCP and CLI read identical JSON.\n\nFive unit tests in `rivet_core::query::tests` (type filter, limit +\ntruncation, empty-filter-matches-all, parse-error propagation, tag\nfilter agreement with `rivet list --filter`).  Three integration tests\nin `rivet-cli/tests/cli_commands.rs` exercise the binary end-to-end for\n`--format ids` vs. `rivet list --type`, the MCP-shape JSON envelope,\nand the error path for an unbalanced s-expression.\n\nImplements: REQ-007\nRefs: FEAT-010, FEAT-032",
+          "timestamp": "2026-04-22T01:13:53-05:00",
+          "tree_id": "a643caf499f7c574398261a4393b254f00c6d90c",
+          "url": "https://github.com/pulseengine/rivet/commit/b285c37dbc4fba73b2b259acbb75a35ef1db990f"
+        },
+        "date": 1776844108902,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 81208,
+            "range": "± 980",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 858152,
+            "range": "± 20677",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 11825356,
+            "range": "± 539523",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2148,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 26811,
+            "range": "± 171",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 376314,
+            "range": "± 10680",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 94,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 985145,
+            "range": "± 26336",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 164425,
+            "range": "± 1490",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1905679,
+            "range": "± 11140",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 25487567,
+            "range": "± 1226701",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 112712,
+            "range": "± 578",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 951994,
+            "range": "± 5469",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 10389519,
+            "range": "± 480913",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4273,
+            "range": "± 8",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 60476,
+            "range": "± 852",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 779002,
+            "range": "± 4718",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 60474,
+            "range": "± 319",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 681498,
+            "range": "± 5792",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7329920,
+            "range": "± 173964",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 795,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7466,
+            "range": "± 28",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 110483,
+            "range": "± 789",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 22847,
+            "range": "± 179",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 168602,
+            "range": "± 554",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1490578,
+            "range": "± 18058",
             "unit": "ns/iter"
           }
         ]
