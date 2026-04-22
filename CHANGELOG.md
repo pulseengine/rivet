@@ -3,6 +3,124 @@
 <!-- AUDIT-FILE: verified 2026-04-22 — all numeric counts in this file
      are historical snapshots taken at release time, not current state. -->
 
+## [0.4.2] — 2026-04-23
+
+<!-- rivet-docs-check: ignore SEC-AS-001 -->
+
+This release closes 18 silent-accept findings discovered through dogfooding
+plus a customer bug-hunt pass. Theme: every place where invalid input used
+to silently succeed now surfaces a typed error or warning. Most are tiny
+behavioural changes; the cumulative effect is a much louder pipeline.
+
+### Correctness fixes (silent-accept antipattern)
+
+- **Required-link cardinality silently passed on flow-style YAML** —
+  `links: [{type: X, target: Y}]` parsed without error but the cardinality
+  counter saw zero, so a "required" link could be entirely absent and
+  `rivet validate` still returned PASS. Same hole for the named-field form
+  `targets: [SEC-AS-001]` derived from a schema's `link-fields[].name`. Both
+  shapes now produce identical `Vec<Link>` and the cardinality counter sees
+  them. (issue #3)
+- **Schema link-fields referencing undeclared link types** were emitted as
+  `Warning` from `rivet validate` (overall result still PASS) and silently
+  tolerated at schema load. Now `Error` with one diagnostic per
+  `(artifact, link-type)` pair, plus a new `Schema::validate_consistency()`
+  for fail-fast load-time checks. (issue #1)
+- **`{{group:TYPE:FIELD}}` two-arg form** discarded the second arg, treating
+  the type name as the field — every artifact bucketed into `"unset"`.
+- **`{{query (...) :limit 10}}`** colon-prefixed options were silently
+  dropped because the parser only recognised `key=value`. Now rejected with
+  a hint pointing to the correct syntax. New `fields=id,title,asil` option
+  customises columns.
+- **`{{coverage:typo-rule}} / {{matrix:UnknownType:Y}} / {{diagnostics:warnings}}`**
+  all rendered blank or all-results when given typo'd arguments. Each now
+  errors with a list of valid values.
+- **Standalone `{{artifact|links|table:…}}` on its own line** wrapped in
+  `<p>` producing invalid HTML nesting. Block-level embeds now emit
+  directly.
+- **`#[serde(deny_unknown_fields)]`** added to every schema-author struct
+  (`SchemaFile`, `SchemaMetadata`, `ArtifactTypeDef`, `FieldDef`,
+  `LinkFieldDef`, `LinkTypeDef`, `TraceabilityRule`, `ConditionalRule`,
+  `MistakeGuide`, `AlternateBacklink`) plus the artifact-level `Link` and
+  `Provenance` structs. Typo'd YAML keys now error at load time instead of
+  being silently dropped. New `LinkFieldDef.description` and
+  `TraceabilityRule.alternate_backlinks` to surface fields the bundled
+  schemas were already using.
+- **YAML CST parser** now handles inline `# comments` on mapping lines —
+  the LSP previously emitted `expected mapping key, found Some(Comment)`
+  on every CI workflow file. (issue #6b)
+- **`rivet docs check`** now honors `rivet.yaml` `docs:` paths instead of
+  only scanning the top-level `docs/` directory; projects with
+  `crates/*/docs` or `rivet/docs` layouts no longer get silently skipped.
+
+### LSP
+
+- **LSP resolves workspace schemas** — was reading from the launching
+  process's CWD. User-extended schema files referenced via
+  `rivet.yaml: schemas:` now load correctly. (issue #6a)
+
+### Dashboard / UI
+
+- **Artifact detail page** lists the documents that `[[ID]]`-reference it
+  (reverse index — closes the loop on the existing forward `/doc-linkage`
+  view).
+- **Mermaid + AADL diagrams** on artifact detail and `schema/show` pages
+  now wrap in `.svg-viewer` so they get the same zoom / fullscreen / popout
+  toolbar as graph and doc-linkage views. Parity test in
+  `diagram-viewer.spec.ts` pins the invariant.
+- **Document headings** carry stable `id="…"` slugs so in-page TOC links
+  and `#anchor` URLs navigate. (B1)
+- **Variants in the dashboard** are now documented in `getting-started.md`
+  and `what-is-rivet.md`. The auto-discovery convention, sidebar entry,
+  header dropdown and `/variants` overview are spelled out.
+
+### Documentation invariants
+
+- **External-namespace exemption** for `ArtifactIdValidity`. Three layers
+  to escape the `[A-Z]+-NNN`-pattern check when the prose legitimately
+  references external IDs (Jira, Polarion, hazard catalogs):
+  - `rivet.yaml: docs-check.external-namespaces: [GNV, GNR, HZO, UC]`
+  - `rivet.yaml: docs-check.ignore-patterns: [<regex>]`
+  - HTML-comment directives: `<!-- rivet-docs-check: ignore GNV-396 -->`
+    or `<!-- rivet-docs-check: ignore-line -->`.
+- **AGENTS.md template** now ships an `ignore SC-1 REQ-001 FEAT-042`
+  directive so a fresh `rivet init && rivet docs check` doesn't fail on
+  its own example IDs. (issue #2)
+- **`AUDIT:` marker syntax** documented for the `ArtifactCounts`
+  invariant.
+- **`conditional-rules:` worked example** in `getting-started.md`.
+- **`<!-- BEGIN/END rivet-managed -->` contract** documented for
+  `rivet init --agents`. Content outside the markers is preserved across
+  regeneration.
+
+### CLI
+
+- **`rivet stamp` batch flags**: `--type PATTERN` (glob or exact type),
+  `--changed-since REF` (git-aware), `--missing-provenance`. No more
+  `xargs` loops to stamp a batch of artifacts. (issue #4)
+- **`rivet init --agents --force-regen`** now requires `--yes` to confirm
+  the destructive overwrite. The flag was previously one accidental
+  trigger away from destroying a hand-written AGENTS.md.
+- **`rivet embed artifact:X / links:X / table:T:F`** error message now
+  explains why the embed only renders inside markdown documents instead
+  of the cryptic "handled inline" string.
+
+### Looking ahead — Safety-Critical Rust roadmap
+
+The next planned release will start a workspace-wide clippy lint
+escalation aligned with the Safety-Critical Rust Consortium guidelines:
+`unwrap_used`, `expect_used`, `indexing_slicing`,
+`wildcard_enum_match_arm`, `as_conversions`, `arithmetic_side_effects`,
+and `print_stdout` / `print_stderr` outside the CLI binary. Each lint
+will be enabled at `warn` first with per-site `allow` annotations
+carrying a `// SAFETY-REVIEW:` rationale, then escalated to `deny` once
+the backlog is drained. A later release will raise the `rivet-core`
+coverage gate from 40% → 70% and flip mutation testing to a hard gate.
+
+The eight commits in this release already implement the SCRC pattern
+"no silent acceptance of malformed input" empirically — the lint
+escalation makes the same discipline mechanical.
+
 ## [0.4.1] — 2026-04-22
 
 ### Correctness fixes (HIGH)

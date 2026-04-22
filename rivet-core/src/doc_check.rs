@@ -553,7 +553,13 @@ impl DocInvariant for VersionConsistency {
                     // and unrelated semver (e.g. dependency numbers).
                     let raw = m.as_str();
                     let is_v_prefixed = raw.starts_with('v');
-                    let ctx_start = m.start().saturating_sub(32);
+                    // Walk backwards to a char boundary to avoid panicking
+                    // when the 32-byte window lands inside a multibyte
+                    // character (e.g. an em-dash in a heading).
+                    let mut ctx_start = m.start().saturating_sub(32);
+                    while ctx_start > 0 && !doc.content.is_char_boundary(ctx_start) {
+                        ctx_start -= 1;
+                    }
                     let window = &doc.content[ctx_start..m.end()];
                     let is_version_context = window.to_ascii_lowercase().contains("version");
                     if !(is_v_prefixed || is_version_context) {

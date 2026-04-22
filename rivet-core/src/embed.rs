@@ -689,10 +689,18 @@ fn render_diagnostics(
         .diagnostics
         .iter()
         .filter(|d| match filter_severity {
+            // The early validation pass at the top of render_diagnostics
+            // rejects unknown severities, so we know `filter_severity` is
+            // either None or one of the three supported strings here.
             Some("error") => d.severity == Severity::Error,
             Some("warning") => d.severity == Severity::Warning,
             Some("info") => d.severity == Severity::Info,
-            _ => true,
+            None => true,
+            // Defensive: any other value would have been rejected upstream.
+            // If this arm fires, there's a contract bug — fail loudly.
+            Some(other) => unreachable!(
+                "render_diagnostics severity filter '{other}' should have been rejected upstream",
+            ),
         })
         .collect();
 

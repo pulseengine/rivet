@@ -13,6 +13,7 @@ use crate::error::Error;
 
 /// Top-level structure of a schema YAML file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SchemaFile {
     pub schema: SchemaMetadata,
     #[serde(default, rename = "base-fields")]
@@ -28,6 +29,7 @@ pub struct SchemaFile {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SchemaMetadata {
     pub name: String,
     pub version: String,
@@ -46,6 +48,7 @@ pub struct SchemaMetadata {
 // ── Artifact type definition ─────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ArtifactTypeDef {
     pub name: String,
     pub description: String,
@@ -92,6 +95,7 @@ pub struct ArtifactTypeDef {
 
 /// A common mistake entry with problem description and fix command.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MistakeGuide {
     pub problem: String,
     #[serde(default, rename = "fix-command")]
@@ -99,6 +103,7 @@ pub struct MistakeGuide {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FieldDef {
     pub name: String,
     #[serde(rename = "type")]
@@ -112,6 +117,7 @@ pub struct FieldDef {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LinkFieldDef {
     pub name: String,
     #[serde(rename = "link-type")]
@@ -122,6 +128,9 @@ pub struct LinkFieldDef {
     pub required: bool,
     #[serde(default)]
     pub cardinality: Cardinality,
+    /// Free-form description shown in schema docs and AI hints.
+    #[serde(default)]
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -137,6 +146,7 @@ pub enum Cardinality {
 // ── Link type definition ─────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LinkTypeDef {
     pub name: String,
     #[serde(default)]
@@ -151,6 +161,7 @@ pub struct LinkTypeDef {
 // ── Traceability rule ────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TraceabilityRule {
     pub name: String,
     pub description: String,
@@ -166,6 +177,22 @@ pub struct TraceabilityRule {
     pub from_types: Vec<String>,
     #[serde(default)]
     pub severity: Severity,
+    /// Alternative backlink shapes that satisfy this rule. Each entry
+    /// is a `(link-type, from-types)` pair — used by safety-case schemas
+    /// to express "supported-by OR decomposed-by OR has-sub-goal" without
+    /// duplicating the whole rule.
+    #[serde(default, rename = "alternate-backlinks")]
+    pub alternate_backlinks: Vec<AlternateBacklink>,
+}
+
+/// One alternative backlink shape inside a TraceabilityRule.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AlternateBacklink {
+    #[serde(rename = "link-type")]
+    pub link_type: String,
+    #[serde(default, rename = "from-types")]
+    pub from_types: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -189,6 +216,7 @@ fn default_severity() -> Severity {
 /// rule to fire. This enables compound rules like "AI-generated artifacts with
 /// active status must have a reviewer".
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ConditionalRule {
     pub name: String,
     #[serde(default)]

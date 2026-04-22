@@ -762,6 +762,7 @@ mod tests {
                 required: false,
                 cardinality: Cardinality::ZeroOrMany,
                 target_types: vec!["another-missing-type".to_string()],
+                description: None,
             }],
             aspice_process: None,
             common_mistakes: vec![],
@@ -1013,6 +1014,7 @@ then:
             target_types: vec!["requirement".into()],
             from_types: vec![],
             severity: Severity::Error,
+            alternate_backlinks: vec![],
         }];
         Schema::merge(&[file])
     }
@@ -1437,6 +1439,7 @@ then:
             target_types: vec![], // empty — the ambiguous case
             from_types: vec![],
             severity: Severity::Error,
+            alternate_backlinks: vec![],
         }];
         let schema = Schema::merge(&[file]);
 
@@ -1519,6 +1522,7 @@ then:
             target_types: vec![],
             from_types: vec![], // empty — the ambiguous case
             severity: Severity::Error,
+            alternate_backlinks: vec![],
         }];
         let schema = Schema::merge(&[file]);
 

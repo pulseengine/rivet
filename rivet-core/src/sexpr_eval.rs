@@ -285,6 +285,17 @@ pub fn check(expr: &Expr, ctx: &EvalContext) -> bool {
 
 // ── Field resolution ────────────────────────────────────────────────────
 
+/// Resolve a field accessor to a string value for s-expression comparisons.
+///
+/// Missing fields intentionally resolve to the empty string so filters like
+/// `(= asil "ASIL-D")` naturally exclude artifacts without an `asil` field
+/// rather than erroring out. This is filter semantics, not silent-accept:
+/// the caller wants "show artifacts whose asil = ASIL-D", and an artifact
+/// without `asil` correctly does NOT match. Reject-on-missing would make
+/// every cross-type query unusable.
+///
+/// Typos in field names should be caught by the schema layer
+/// (`deny_unknown_fields`) at YAML load time, not by the query evaluator.
 fn resolve_str(acc: &Accessor, artifact: &Artifact) -> String {
     match acc {
         Accessor::Field(name) => match name.as_str() {

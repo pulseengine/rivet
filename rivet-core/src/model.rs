@@ -11,6 +11,7 @@ pub const TRACED_STATUSES: &[&str] = &["implemented", "done", "approved", "accep
 
 /// A typed, directional link from one artifact to another.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct Link {
     /// Semantic type of this link (e.g., "leads-to-loss", "verifies").
     pub link_type: String,
@@ -24,6 +25,7 @@ pub struct Link {
 /// workflow, along with optional details about the model, session, and
 /// human reviewer.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct Provenance {
     /// Origin of the artifact: "human", "ai", or "ai-assisted".
     #[serde(rename = "created-by")]
