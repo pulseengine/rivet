@@ -1,3 +1,7 @@
+<!-- rivet-docs-check: design-doc-aspirational-ok -->
+<!-- AUDIT-FILE: verified 2026-04-22 — positioning doc may reference planned
+     v0.5.0 features and counts that drift with the artifact tree. -->
+
 # rivet: because AI agents still don't remember why
 
 The faster AI agents produce code, the more it matters to prove *why*

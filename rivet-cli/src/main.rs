@@ -6029,21 +6029,13 @@ fn cmd_docs_check(cli: &Cli, format: &str, fix: bool) -> Result<bool> {
     // without that feature.
     known_subcommands.insert("import".to_string());
 
-    // 3. Known embed set — kept in sync with rivet-core/src/embed.rs.  The
-    //    "legacy" inline embeds (artifact/links/table) plus the modern
-    //    computed embeds (stats/coverage/diagnostics/matrix).
-    let mut known_embeds: BTreeSet<String> = BTreeSet::new();
-    for e in [
-        "stats",
-        "coverage",
-        "diagnostics",
-        "matrix",
-        "artifact",
-        "links",
-        "table",
-    ] {
-        known_embeds.insert(e.to_string());
-    }
+    // 3. Known embed set — derived from the EMBED_REGISTRY single source
+    //    of truth in rivet-core/src/embed.rs so new embeds (query, group,
+    //    future additions) don't cause doc-check drift.
+    let known_embeds: BTreeSet<String> = rivet_core::embed::EMBED_REGISTRY
+        .iter()
+        .map(|spec| spec.name.to_string())
+        .collect();
 
     // 4. Workspace version from CARGO_PKG_VERSION (the CLI shares the
     //    workspace version via `version.workspace = true`).
