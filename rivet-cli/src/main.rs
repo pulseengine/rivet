@@ -9260,7 +9260,23 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
     // Initialize salsa database for incremental computation
     let mut db = RivetDatabase::new();
     let config_path = project_dir.join("rivet.yaml");
-    let schemas_dir = resolve_schemas_dir(cli);
+    // Resolve schemas relative to the workspace `project_dir` (from
+    // root_uri), NOT `cli.project`, which is whatever directory the LSP
+    // process happened to be launched from. Without this override an LSP
+    // started from a different cwd would never see the workspace's
+    // user-defined schemas (e.g. schemas/ulinc.yaml), reporting
+    // "unknown artifact type" for every artifact that uses them.
+    let schemas_dir = if let Some(explicit) = &cli.schemas {
+        explicit.clone()
+    } else {
+        let workspace_schemas = project_dir.join("schemas");
+        if workspace_schemas.exists() {
+            workspace_schemas
+        } else {
+            resolve_schemas_dir(cli)
+        }
+    };
+    eprintln!("rivet lsp: schemas dir: {}", schemas_dir.display());
 
     let config_opt = if config_path.exists() {
         match rivet_core::load_project_config(&config_path) {

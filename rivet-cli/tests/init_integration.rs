@@ -192,10 +192,10 @@ fn agents_md_force_regen_overwrites_no_markers() {
     let seed = "# OLD HAND AUTHORED CONTENT\n\nOLD_SENTINEL_DELETE_ME\n";
     std::fs::write(&agents, seed).unwrap();
 
-    let out = run_init_agents(&dir, &["--force-regen"]);
+    let out = run_init_agents(&dir, &["--force-regen", "--yes"]);
     assert!(
         out.status.success(),
-        "--force-regen must succeed. stderr: {}",
+        "--force-regen --yes must succeed. stderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
     let stderr = String::from_utf8_lossy(&out.stderr);
