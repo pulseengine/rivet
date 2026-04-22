@@ -1,0 +1,431 @@
+# Artifacts for what actually shipped in v0.4.2 (2026-04-22):
+# UX polish + 18 silent-accept fixes + SCRC-aligned schema strictness +
+# rivet-delta PR workflow + AI-provenance sweep.
+#
+# Authored *before* the v0.4.2 tag (2026-04-22 evening) to close the
+# "retroactive artifact authoring" gap that v0.4.0 and v0.4.1 both had.
+# v0.4.2 is the first release where the artifact record reflects the
+# code at tag time, not after the fact.
+
+artifacts:
+
+  # ── Design decisions ────────────────────────────────────────────────
+
+  - id: DD-056
+    type: design-decision
+    title: Close silent-accept antipattern as the theme of v0.4.2
+    status: approved
+    description: >
+      Every place where invalid input used to silently succeed now
+      surfaces a typed error or warning. 18 sites fixed across parser,
+      schema loader, embed resolver, s-expr evaluator, link cardinality
+      validator, and docs-check gate — each with a regression test
+      pinning the invariant.
+    tags: [silent-accept, validation, safety-critical, scrc]
+    links:
+      - type: satisfies
+        target: REQ-004
+      - type: satisfies
+        target: REQ-010
+    fields:
+      rationale: >
+        Eleven fixes in one release was not a deliberate architectural
+        push — it was a customer-triggered audit (external user filed
+        six substantive bugs at once) plus an internal follow-up audit
+        agent that found another six. The pattern was identical every
+        time: code returned None / empty Vec / unwrap_or_default() / a
+        _ => true match arm when it didn't recognise an input, and the
+        caller treated empty as "no problem". Users saw false-green
+        pipelines on safety tooling — the worst-case failure mode.
+        The fix pattern is also identical: return Err with a hint
+        listing valid values, de-dupe per (context, bad-input) pair so
+        a single typo doesn't drown the report, pin the invariant with
+        a regression test whose name includes the word "rejects".
+      alternatives: >
+        (1) Fix each bug as reported, no cross-cutting theme. Rejected:
+        we would miss the shared root cause and the same pattern would
+        keep reappearing in new code. (2) Land the fixes but skip the
+        regression tests. Rejected: the regression tests are the
+        durable value — they encode "silent-accept is not tolerated
+        here" as a testable invariant that outlives any single author.
+        (3) Wait and land everything together with the SCRC clippy
+        lint escalation in v0.4.3. Rejected: the customer was blocked
+        now and the silent-accept bugs were causing actual data
+        integrity failures in their safety case. (4) Ship as v0.4.1.1
+        patch release. Rejected: the scope was substantial (new schema
+        fields, new CLI flags, new workflow) — not a patch-release
+        shape.
+      source-ref: >
+        Theme mirrors SCRC "no implicit panics on user input" +
+        "exhaustive matches, no _ on closed enums" rules. Discovered
+        empirically before the SCRC lint escalation — see DD-058 for
+        the planned mechanical closure in v0.4.3.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-22T20:25:20Z
+  - id: DD-057
+    type: design-decision
+    title: deny_unknown_fields on all schema-author structs
+    status: approved
+    description: >
+      Every struct deserialized from a user-authored YAML file
+      (SchemaFile, SchemaMetadata, ArtifactTypeDef, FieldDef,
+      LinkFieldDef, LinkTypeDef, TraceabilityRule, ConditionalRule,
+      MistakeGuide, AlternateBacklink, Link, Provenance) carries
+      #[serde(deny_unknown_fields)]. Typo'd YAML keys error at load
+      time instead of being silently dropped.
+    tags: [schema, serde, strict-parsing, scrc]
+    links:
+      - type: satisfies
+        target: REQ-010
+      - type: verifies
+        target: REQ-004
+    fields:
+      rationale: >
+        SCRC "deterministic parsing / strict schemas" rule applied
+        with one attribute per struct. The strict annotation
+        immediately caught two missing fields the bundled schemas
+        were already using (LinkFieldDef.description,
+        TraceabilityRule.alternate_backlinks) — fields that would
+        have silently dropped on every safety-case load before. That
+        is the exact pattern the annotation is designed to surface:
+        the struct definition drifts from real YAML data and nobody
+        notices until a rigorous parser refuses to proceed.
+      alternatives: >
+        (1) Catch-all fields via #[serde(flatten)] into a BTreeMap
+        for custom fields. Rejected for schema-author structs:
+        schemas have a bounded, versioned set of fields; a typo'd
+        field name is always a bug, never extension. The Artifact
+        struct keeps its custom fields map because artifacts legitimately
+        carry domain-specific properties. (2) Keep the old lenient
+        parsing and add a separate schema-lint pass. Rejected: adds a
+        second source of truth (the linter's allow-list vs the struct
+        fields) that will inevitably drift.
+      source-ref: >
+        serde docs: https://serde.rs/container-attrs.html#deny_unknown_fields
+        SCRC "deterministic parsing" family.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-22T20:25:20Z
+  - id: DD-058
+    type: design-decision
+    title: Safety-Critical Rust clippy lint escalation roadmap
+    status: approved
+    description: >
+      Commit to a staged workspace-wide clippy restriction-lint
+      escalation across v0.4.3–v0.4.7, aligned with the Safety-Critical
+      Rust Consortium coding guidelines. Each lint enabled at warn
+      first with per-site allow annotations carrying a SAFETY-REVIEW
+      rationale, then escalated to deny once the backlog is drained.
+    tags: [safety-critical, scrc, clippy, roadmap]
+    links:
+      - type: satisfies
+        target: REQ-004
+      - type: satisfies
+        target: REQ-010
+    fields:
+      rationale: >
+        The 18 silent-accept findings in v0.4.2 are exactly what the
+        SCRC rule families "no implicit panics on user input" and
+        "exhaustive matches, no _ on closed enums" would have caught
+        mechanically. An SCRC audit (conducted via a background
+        research agent 2026-04-22) found 715 unwrap/expect occurrences
+        in rivet-core/src, 24 suspect wildcard arms, and 6 .ok()
+        Result-swallowing sites. Fixing each case by hand reactively
+        is unbounded. A staged lint escalation flips that workload to
+        the compiler: new silent-accept patterns fail in CI instead of
+        being discovered by a customer bug report. Staging prevents
+        the "all-or-nothing" failure mode where the lint rules are
+        introduced with thousands of violations and the team disables
+        them to unstick trunk.
+      alternatives: >
+        (1) Flip every lint at once. Rejected: the transitive backlog
+        (~800 sites) makes this a week-long interruption to feature
+        work and risks the team disabling the lints out of fatigue.
+        (2) Skip clippy, write a custom rust-analyzer rule. Rejected:
+        tooling already exists and works. (3) Defer indefinitely.
+        Rejected: the v0.4.2 fix rate (11 silent-accept bugs in one
+        release) shows this is an active cost.
+      source-ref: >
+        SCRC Coding Guidelines repo (rustfoundation org) — rule
+        families "no implicit panics", "exhaustive matches", "strict
+        schemas", "cast discipline", "unsafe containment".
+        CHANGELOG.md v0.4.2 "Looking ahead" section records the
+        commitment visible to external contributors.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-22T20:25:20Z
+  # ── Features ────────────────────────────────────────────────────────
+
+  - id: FEAT-123
+    type: feature
+    title: rivet stamp batch filter flags (--type / --changed-since / --missing-provenance)
+    status: approved
+    description: >
+      The rivet stamp CLI gains three batch-filter flags so provenance
+      stamping no longer requires a shell loop. --type PATTERN accepts
+      either a glob on ID (SEC-*) or an exact artifact-type name
+      (requirement). --changed-since REF restricts to artifacts whose
+      source YAML was touched relative to a git ref (committed diff
+      plus uncommitted modifications). --missing-provenance skips
+      artifacts that already carry a provenance: block, making
+      repeated stamping idempotent.
+    tags: [cli, provenance, ai-agent]
+    links:
+      - type: implements
+        target: REQ-007
+      - type: satisfies
+        target: REQ-008
+    fields:
+      ai-usage: >
+        The PostToolUse hook in .claude/settings.json now uses
+        --missing-provenance --model claude-opus-4-7 so each Claude
+        Code edit only stamps newly-created artifacts and pins the
+        model version for audit. Without --missing-provenance, every
+        edit re-timestamped every artifact — churn that obscured real
+        provenance history.
+      source-ref: >
+        rivet-cli/src/main.rs cmd_stamp filter pipeline. Five unit
+        tests in stamp_glob_tests pin the glob matcher semantics.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-22T20:25:20Z
+  - id: FEAT-124
+    type: feature
+    title: rivet-delta PR workflow (graphical artifact diff)
+    status: approved
+    description: >
+      New informational GitHub Actions workflow (.github/workflows/
+      rivet-delta.yml) posts a markdown summary comment on every PR
+      that touches artifacts, schemas, or rivet.yaml. The comment
+      includes a counts table, a mermaid link-graph of changed
+      artifacts (capped at 30 nodes with an overflow sentinel),
+      collapsible change lists, and a download link to the full
+      HTML dashboard uploaded as a workflow artifact.
+    tags: [ci, dashboard, review-ergonomics]
+    links:
+      - type: implements
+        target: REQ-008
+      - type: verifies
+        target: REQ-010
+    fields:
+      rationale: >
+        Reviewers previously had to mentally simulate "what does this
+        PR do to the artifact graph" from raw YAML diffs. The mermaid
+        diagram shows added/removed/modified nodes with class-based
+        colour coding at a glance; the HTML artifact gives the full
+        dashboard for deep inspection. Comment updates in place via
+        a hidden marker so subsequent pushes replace rather than
+        stack.
+      security-review: >
+        All user-derived inputs (PR number, base SHA, run ID, repo)
+        are captured at job scope via env: and referenced as $VAR
+        from run: blocks — follows GitHub's workflow-injection guide.
+        Never blocks merge (informational only). The diff-to-markdown
+        script escapes pipe, backtick, asterisk, underscore, brackets,
+        and angle brackets in all user-controlled strings so a
+        hostile artifact ID cannot break out of the comment
+        structure.
+      verification: >
+        tests/playwright/rivet-delta.spec.ts pins the "visible and
+        usable" contract with 6 tests: shipping summary renders
+        end-to-end in a browser, empty diff emits no-change sentinel,
+        malformed JSON produces a warning not a crash, mermaid source
+        parses with the real bundled mermaid.js parser, 30-node cap
+        emits overflow sentinel, markdown metacharacters in artifact
+        IDs are escaped.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-22T20:25:20Z
+  - id: FEAT-125
+    type: feature
+    title: Schema::validate_consistency — fail-fast on dangling link-field refs
+    status: approved
+    description: >
+      New rivet_core::schema::Schema::validate_consistency() returns
+      a Vec<String> of schema-internal issues: link-fields whose
+      link_type isn't declared in the schema, link-fields with unknown
+      target artifact types, and traceability rules with unknown
+      from-types or target-types. Callers can fail-fast at load time
+      instead of proceeding with silently-broken rules.
+    tags: [schema, validation, silent-accept]
+    links:
+      - type: implements
+        target: REQ-010
+      - type: verifies
+        target: REQ-004
+    fields:
+      rationale: >
+        Before this release an undeclared link-type reference emitted
+        a Warning from rivet validate (overall result still PASS)
+        and was silently tolerated at schema load. The validator
+        silently skipped cardinality checks for those undeclared
+        links, so an artifact requiring "one-or-many satisfies
+        links" could have zero and still pass. Promoting to Error
+        plus adding the load-time check closes both holes.
+      source-ref: >
+        rivet-core/src/schema.rs Schema::validate_consistency.
+        Regression test: validate::tests::schema_consistency_flags_
+        dangling_link_field_refs.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-22T20:25:20Z
+  - id: FEAT-126
+    type: feature
+    title: docs-check external-namespace exemption (three-layer escape hatch)
+    status: approved
+    description: >
+      The ArtifactIdValidity invariant in rivet docs check gains
+      three escape hatches so the gate can run on projects that
+      legitimately reference external IDs (Jira tickets, Polarion
+      requirements, hazard catalogs). rivet.yaml docs-check.
+      external-namespaces lists exempt prefixes; docs-check.ignore-
+      patterns takes free-form regexes; and HTML-comment directives
+      (<!-- rivet-docs-check: ignore GNV-396 --> or ignore-line)
+      provide surgical per-doc exemption.
+    tags: [docs-check, ci-adoption, external-refs]
+    links:
+      - type: implements
+        target: REQ-008
+      - type: satisfies
+        target: REQ-004
+    fields:
+      rationale: >
+        Fresh rivet init previously failed rivet docs check on its
+        own example IDs (SC-1, REQ-001, FEAT-042) in the generated
+        AGENTS.md template — the tool refused to pass its own
+        starter project. A real-world user reported this as a
+        blocker to adopting rivet docs check as a required CI gate
+        on a project with extensive Polarion/Jira references.
+        Three layers give graduated surgical control without
+        turning off the invariant entirely.
+      source-ref: >
+        rivet-core/src/doc_check.rs ArtifactIdValidity + skip
+        directive parser. rivet-core/src/model.rs DocsCheckConfig.
+        Two regression tests in doc_check::tests.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-22T20:25:20Z
+  - id: FEAT-127
+    type: feature
+    title: LSP resolves workspace schemas via root_uri
+    status: approved
+    description: >
+      The rivet language server now resolves its schemas directory
+      from the workspace root derived from LSP root_uri, not from
+      the process CWD. User-extended schemas referenced via
+      rivet.yaml: schemas: (e.g. schemas/ulinc.yaml) now load
+      correctly regardless of which directory the LSP was launched
+      from.
+    tags: [lsp, ide, schema]
+    links:
+      - type: implements
+        target: REQ-029
+      - type: verifies
+        target: REQ-028
+    fields:
+      rationale: >
+        VS Code and other IDE integrations start the LSP process
+        with an unpredictable CWD — often not the workspace root.
+        The old resolve_schemas_dir(cli) path used cli.project,
+        which silently pointed at the wrong schemas directory and
+        reported "unknown artifact type" for every user-schema
+        artifact. The fix prefers the workspace_schemas derived
+        from project_dir (LSP root_uri), falling back to the
+        binary-relative location only if no workspace schemas
+        exist.
+      source-ref: >
+        rivet-cli/src/main.rs cmd_lsp schema-dir resolution.
+        Complementary YAML CST parse fix: yaml_cst parse_block_
+        mapping now handles comment-only lines as trivia,
+        eliminating "expected mapping key, found Some(Comment)"
+        false positives on CI workflow files.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-22T20:25:20Z
+  - id: FEAT-128
+    type: feature
+    title: Artifact detail reverse-references view
+    status: approved
+    description: >
+      The dashboard artifact detail page (/artifacts/{id}) now
+      shows a "Referenced in Documents" block listing every
+      markdown document that cites the artifact via [[ID]]
+      references, with line numbers per occurrence. Reverse index
+      of the existing forward /doc-linkage view.
+    tags: [dashboard, ui, traceability]
+    links:
+      - type: implements
+        target: REQ-008
+      - type: satisfies
+        target: FEAT-001
+    fields:
+      rationale: >
+        Data was always in the DocumentStore (all_references()
+        iterator); the artifact view just didn't surface it. This
+        is the third example in v0.4.2 of the "data exists in
+        core but UI doesn't show it" antipattern — alongside the
+        diagram viewer toolbar and variant dashboard selector.
+        All three closed in the same release. Follow-on work for
+        v0.4.3 is a RouteDocCoverage doc invariant: every route
+        served by rivet serve must be mentioned at least once in
+        docs/, mirroring how SubcommandReferences works for CLI
+        commands.
+      source-ref: >
+        rivet-cli/src/render/artifacts.rs render_artifact_detail
+        reverse-reference block. Playwright coverage:
+        tests/playwright/artifacts.spec.ts "artifact detail shows
+        referencing documents".
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-22T20:25:20Z
+  # ── Requirements ────────────────────────────────────────────────────
+
+  - id: REQ-060
+    type: requirement
+    title: Every embed option must validate before the embed renders
+    status: approved
+    description: >
+      Embed tokens (e.g. {{query (...) limit=10 fields=id,title})
+      parse as name + positional args + key=value options. Any
+      unrecognised option syntax (colon-prefixed :limit, missing =
+      sign, whitespace-only key) MUST produce a MalformedSyntax
+      error naming the bad input and pointing to the correct form.
+      Silent discard of options that looked valid to the author but
+      didn't parse is a correctness bug — the renderer proceeds
+      with defaults while the author thinks their option was honoured.
+    tags: [embed, validation, silent-accept]
+    links:
+      - type: verifies
+        target: REQ-010
+      - type: satisfies
+        target: REQ-004
+    fields:
+      rationale: >
+        Shipping a safety tooling that silently drops its own
+        configuration options is the worst possible framing. The
+        user wrote {{query (...) :limit 10}} expecting their
+        limit to apply; the parser returned {..., options: {}}
+        because the token didn't contain an equals sign; the query
+        returned the unbounded default. The user's PR went green
+        and their safety case under-counted coverage. This
+        requirement pins the invariant the fix introduced:
+        unrecognised tokens after the positional arg are errors.
+      verification: >
+        embed::tests::query_embed_rejects_colon_prefixed_option_
+        syntax. The test asserts the error message contains
+        "key=value" so the user gets a pointer to the correct
+        form rather than just "invalid".
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-22T20:25:20Z

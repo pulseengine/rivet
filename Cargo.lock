@@ -972,7 +972,7 @@ dependencies = [
 
 [[package]]
 name = "etch"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "petgraph 0.7.1",
 ]
@@ -2693,7 +2693,7 @@ dependencies = [
 
 [[package]]
 name = "rivet-cli"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "anyhow",
  "axum",
@@ -2720,7 +2720,7 @@ dependencies = [
 
 [[package]]
 name = "rivet-core"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "anyhow",
  "criterion",
