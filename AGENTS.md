@@ -1,3 +1,4 @@
+<!-- rivet-docs-check: design-doc-aspirational-ok -->
 <!-- This file has two kinds of content:
 
      1. A rivet-managed section (between the BEGIN/END rivet-managed markers
@@ -211,6 +212,9 @@ GitHub to the artifacts that document the work.
 | `aa706fc7` | #153 | Windows chmod gating (merge; `Trace: skip`) | Implements FEAT-122; Satisfies REQ-060; Refs DD-055 |
 
 ### Commits that are genuinely unmappable
+
+<!-- AUDIT: verified 2026-04-22 — SC-EMBED-* below are known-unmappable
+     historical references, preserved intentionally per the section title. -->
 
 - `ca97dd9f` (#95) — still carries broken refs to `SC-EMBED-1`/`-3`/`-4`
   which do not exist in any artifacts file. Preserving for historical record;

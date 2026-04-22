@@ -1,3 +1,5 @@
+<!-- rivet-docs-check: design-doc-aspirational-ok -->
+
 # ISO 26262:2018 — Artifact Mapping & Gap Analysis for Rivet
 
 **Status:** gap analysis (not a certification opinion)
@@ -170,10 +172,11 @@ descriptive form exists via score, and the schema system is extensible
 enough that a bridging profile is tractable.
 
 **Minimum schema PR to make a qualified claim honest.** A new
-`schemas/iso-26262.yaml` that `extends: [common, score, safety-case,
-stpa]` and adds the ten types from Section C plus two link types:
-`decomposes-asil` and `item-covers-hazard`. That gets rivet from 32.5%
-EXACT to roughly 75% EXACT without disturbing existing schemas.
+`iso-26262.yaml` schema under `schemas/` (planned for v0.5.0) that
+`extends: [common, score, safety-case, stpa]` and adds the ten types
+from Section C plus two link types: `decomposes-asil` and
+`item-covers-hazard`. That gets rivet from 32.5% EXACT to roughly 75%
+EXACT without disturbing existing schemas.
 
 **What cannot be fixed by schema alone.** Three items need validator
 changes in `rivet-core`:
