@@ -835,6 +835,36 @@ rivet variant solve --model fm.yaml --variant v.yaml --binding bindings.yaml
 rivet validate --model fm.yaml --variant v.yaml --binding bindings.yaml
 ```
 
+### Variants in the dashboard
+
+`rivet serve` auto-discovers variant configuration when these files exist
+(under `artifacts/` or any `source.path` from `rivet.yaml`):
+
+- `feature-model.yaml` or `feature_model.yaml`
+- `bindings.yaml` or `feature-bindings.yaml`
+- `variants/*.yaml` — one file per variant
+
+When a feature model is found, the dashboard exposes:
+
+1. **Sidebar "Variants" entry** with a count badge (declared variants).
+2. **Variant selector** in the header — picking one scopes every artifact
+   list, the link graph, and the coverage matrix to artifacts bound to
+   the variant's active features.
+3. **`/variants` overview page** — every declared variant with PASS/FAIL
+   constraint-solver status and the bound artifact set.
+
+If no feature model is present, the dashboard renders normally and
+`/variants` shows a friendly hint on how to create one.
+
+#### Filtering artifacts by variant
+
+In the dashboard via the header dropdown. On the CLI:
+
+```bash
+rivet list --variant eu-adas-c --format json
+rivet coverage --variant eu-adas-c
+```
+
 ---
 
 ## Zola Export

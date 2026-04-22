@@ -175,6 +175,10 @@ reviews*.
   `reachable-to` predicates in the evaluator.
 - **Human reviews.** Whether the feature-model constraints encode the
   real product-line rules.
+- **Dashboard.** When a feature model is in the project, `rivet serve`
+  auto-discovers it and renders a header dropdown plus a `/variants`
+  overview page. Selecting a variant scopes every artifact list, the
+  link graph, and the coverage matrix to that variant's active features.
 
 ### 4.6 LLM-assisted code review and authoring
 
