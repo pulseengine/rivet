@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1776841901825,
+  "lastUpdate": 1776842091933,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "7588c3c2080739f4c82a02ce884b2b0b5375b1c2",
-          "message": "feat: sphinx-needs JSON import adapter (migration path)\n\nAdd needs-json format support to the import-results CLI command,\nenabling sphinx-needs users to import their needs.json exports into\nrivet as generic YAML artifacts.\n\nThe core adapter (rivet-core/src/formats/needs_json.rs) was already\nimplemented with full support for type mapping, ID normalization\n(underscore to hyphen), configurable link types, tag/status\npreservation, and extra field forwarding. This commit wires it into\nthe CLI's import-results command so users can run:\n\n  rivet import-results --format needs-json needs.json --output artifacts/\n\nImplements: REQ-025\n\nCo-authored-by: Claude Opus 4.6 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-04-13T13:05:20-05:00",
-          "tree_id": "f92385fd8b3a67018d10d249d96a8e84db4ebfe3",
-          "url": "https://github.com/pulseengine/rivet/commit/7588c3c2080739f4c82a02ce884b2b0b5375b1c2"
-        },
-        "date": 1776103895471,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 80222,
-            "range": "± 252",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 864971,
-            "range": "± 3608",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 12015669,
-            "range": "± 777347",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2166,
-            "range": "± 5",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 25803,
-            "range": "± 132",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 374132,
-            "range": "± 1762",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 99,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 100,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 100,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1006708,
-            "range": "± 24383",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 165524,
-            "range": "± 566",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1882909,
-            "range": "± 13221",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 25885542,
-            "range": "± 1621608",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 107035,
-            "range": "± 640",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 903894,
-            "range": "± 16825",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 9578640,
-            "range": "± 316048",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4358,
-            "range": "± 26",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 60243,
-            "range": "± 347",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 774281,
-            "range": "± 2198",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 58401,
-            "range": "± 892",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 667165,
-            "range": "± 2391",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7224219,
-            "range": "± 189161",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 864,
-            "range": "± 5",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 7884,
-            "range": "± 25",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 112805,
-            "range": "± 739",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 22879,
-            "range": "± 83",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 161767,
-            "range": "± 1646",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1506052,
-            "range": "± 22246",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1483546,
             "range": "± 23154",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "89cdb7531d1c24ed9572ba163699e144d6318de4",
+          "message": "fix(reqif): 6 fidelity bugs — provenance, typed fields, tags, creation-time, enum, dangling relations (#175)\n\n* fix(reqif): round-trip AI provenance via rivet:* string attributes\n\nReqIF importer set `provenance: None` unconditionally and the exporter\nnever emitted any provenance data — every AI-provenance field was ABSENT\non Path 2 per the fidelity analysis in\ndocs/design/polarion-reqif-fidelity.md.\n\nDefine a stable ReqIF AttributeDefinition scheme (five `rivet:*` string\nattributes: created-by, model, session-id, timestamp, reviewed-by) and\nround-trip the full `Provenance` struct.  Absence on import stays\n`None` for backward compatibility with files that don't carry rivet\nmetadata.\n\nAdds two regression tests:\n- test_provenance_roundtrip — all five fields survive\n- test_provenance_absent_stays_none — backward-compat contract\n\nFixes: REQ-025\n\n* fix(reqif): emit typed fields via canonical strings, not Debug-form\n\nThe exporter wrote `format!(\\\"{other:?}\\\")` for any non-string\n`serde_yaml::Value` in `Artifact.fields`, producing XML payloads like\n`\\\"Bool(true)\\\"` and `\\\"Sequence [String(\\\\\\\"a\\\\\\\")]\\\"` — not something any\nReqIF consumer (Polarion, DOORS, StrictDoc) could parse.\n\nReplace with `encode_field_value` doing explicit per-variant conversion:\n- `Bool`  → `\\\"true\\\"` / `\\\"false\\\"`\n- `Number` → decimal string\n- `Sequence` / `Mapping` → JSON (well-known, reversible, and a YAML\n  subset so it survives re-parse)\n- `Null` → attribute omitted\n- `Tagged` → recurse on inner value\n\nThe importer mirrors this with `decode_field_value`: best-effort JSON\nrecovery for content that unambiguously looks structured (leading `[`,\n`{`, `true`, `false`, or a digit/sign); anything else stays a string.\n\nAdds two regression tests:\n- test_non_string_fields_roundtrip — bool/int/float/list round-trip and\n  the raw XML contains no `Bool(`, `Number(`, or `Sequence [` fragments.\n- test_null_field_dropped_on_export — null fields are omitted, not\n  emitted as empty attributes.\n\nFixes: REQ-025\n\n* fix(reqif): encode tags as JSON array so commas and whitespace survive\n\nTags were joined on `, ` at export and split on `,` at import, so any\ntag containing a comma (`\\\"safety, critical\\\"`) or leading whitespace was\nsilently mangled on re-import — a silent corruption flagged in the\nfidelity scorecard.\n\nSwitch to JSON array encoding on export (`[\\\"safety, critical\\\", \\\"plain\\\"]`).\n`decode_tags` auto-detects the form: values starting with `[` are parsed\nas JSON; everything else falls back to the legacy comma-split, keeping\nbackward compatibility with older rivet exports and ReqIF files from\nother tools.\n\nAdds two regression tests:\n- test_tags_with_special_chars_roundtrip — commas, leading space, and\n  quotes all survive export/import.\n- test_tags_legacy_comma_form_parses — the fallback path still works.\n\nFixes: REQ-025\n\n* fix(reqif): stamp REQ-IF-HEADER CREATION-TIME with current UTC\n\nThe header hardcoded `creation_time: None`, so every export emitted an\nempty CREATION-TIME — tools like Polarion's ReqIF importer have nothing\nto record against, and diffing two exports over time becomes impossible.\n\nAdd `reqif_creation_timestamp()` which returns ISO-8601 UTC using the\nsame `std::time::SystemTime` + civil_from_days algorithm already used by\n`export.rs::timestamp_now`, keeping the no-chrono dep contract.\n\nAdds regression test test_creation_time_is_stamped asserting the XML\ncontains a non-empty `<CREATION-TIME>` in the 20-char ISO form.\n\nFixes: REQ-025\n\n* fix(reqif): emit ENUMERATION datatype for schema allowed-values fields\n\nThe exporter always wrote a single `DATATYPE-DEFINITION-STRING` and\nmapped every field to a STRING attribute, silently flattening any\n`allowed-values` constraint the schema declared (e.g. severity:\n[catastrophic, critical, marginal, negligible]).  Downstream tools that\nconsume ReqIF lose the closed-enum semantics.\n\nAdd `ReqIfAdapter::with_schema(schema)` and a new\n`build_reqif_with_schema(artifacts, Option<&Schema>)`; `build_reqif` now\ndelegates to it with `None` for backward compatibility.  When a schema\nis attached and the artifact's `ArtifactTypeDef.fields` declares\n`allowed-values`, the exporter emits:\n\n- one `DATATYPE-DEFINITION-ENUMERATION` per (artifact-type, field) pair\n- an `ATTRIBUTE-DEFINITION-ENUMERATION` on the matching SpecObjectType\n- an `ATTRIBUTE-VALUE-ENUMERATION` on each SpecObject whose value\n  matches an allowed label; values outside the enum fall back to STRING\n  so validate.rs can still flag them.\n\nThe importer path is unchanged — it already recognised\nATTRIBUTE-VALUE-ENUMERATION via the existing StrictDoc compatibility\ncode — so the round-trip closes.\n\nAdds two regression tests:\n- test_schema_enum_field_emits_enumeration — round-trip through a real\n  `Schema` with `allowed-values: [catastrophic, critical, …]`.\n- test_export_without_schema_stays_string — no unexpected ENUMERATION\n  when no schema is attached.\n\nSchema.rs is not modified; the adapter only reads `FieldDef.allowed_values`\nvia its public API.\n\nFixes: REQ-025\n\n* fix(reqif): reject dangling SPEC-RELATION targets instead of phantom Links\n\nPreviously the importer built `SpecRelation`s in a single pass: if the\ntarget SpecObject didn't exist in the file, the Link was still attached\nto the source artifact pointing at a missing ID.  That phantom edge\nwould later surface as a broken link in the LinkGraph, but the cause\n(a malformed ReqIF input) was silently lost.\n\nTwo-pass import:\n  1. First pass (already present) collects every SpecObject ID into\n     `artifact_ids`.\n  2. Relation pass now checks both source and target against that set;\n     any mismatch is collected into `dangling` with the source/target/role\n     triple.  At the end, if `dangling` is non-empty the whole import is\n     rejected with `Error::Adapter` listing every offending relation.\n\nThis is more aggressive than `links.rs` (which keeps broken links as\nadvisory data) because a ReqIF file is an atomic interchange unit — a\ndangling SPEC-OBJECT-REF means the file is malformed, not that the\ntraceability store has a temporary gap.\n\nAdds two regression tests:\n- test_dangling_spec_relation_rejected — target points at a missing ID;\n  error names the missing target and the link role.\n- test_dangling_source_rejected — source points at a missing ID.\n\nFixes: REQ-025",
+          "timestamp": "2026-04-22T00:32:16-05:00",
+          "tree_id": "fbda38a97f6c3ae5fabef108b43005b627132712",
+          "url": "https://github.com/pulseengine/rivet/commit/89cdb7531d1c24ed9572ba163699e144d6318de4"
+        },
+        "date": 1776842091439,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 83016,
+            "range": "± 770",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 875141,
+            "range": "± 4844",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 13494185,
+            "range": "± 1296034",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1973,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 24885,
+            "range": "± 94",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 366987,
+            "range": "± 4474",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 97,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1003577,
+            "range": "± 19594",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 166720,
+            "range": "± 765",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1923037,
+            "range": "± 27960",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 28469244,
+            "range": "± 1422960",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 109340,
+            "range": "± 544",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 961779,
+            "range": "± 9241",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 11441920,
+            "range": "± 561797",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4120,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 44409,
+            "range": "± 840",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 728791,
+            "range": "± 3553",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 63618,
+            "range": "± 125",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 708525,
+            "range": "± 2221",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8061328,
+            "range": "± 367821",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 734,
+            "range": "± 15",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 6455,
+            "range": "± 38",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 90299,
+            "range": "± 416",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 22135,
+            "range": "± 91",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 154932,
+            "range": "± 1185",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1469702,
+            "range": "± 14966",
             "unit": "ns/iter"
           }
         ]
