@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1776844109478,
+  "lastUpdate": 1776844500419,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "a06285f20fa364fde1e268eee2a862748d2f720e",
-          "message": "feat(cli): rivet validate --variant for variant-scoped validation\n\nAdd --model, --variant, and --binding flags to `rivet validate` that\nenable variant-scoped validation using the feature model constraint\nsolver. When all three flags are provided, the command:\n\n1. Loads the feature model and solves the variant configuration\n2. Uses the binding file to collect artifact IDs for effective features\n3. Builds a scoped store containing only those artifacts\n4. Runs validation against the scoped store instead of the full project\n\nIncludes error handling when only some of the three flags are provided,\nvariant scope info in both text and JSON output formats, and proper\ndiagnostic filtering for the salsa incremental path.\n\nImplements: REQ-045, REQ-046\n\nCo-authored-by: Claude Opus 4.6 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-04-13T22:26:43-05:00",
-          "tree_id": "ceb460bf54d985b02cb1bc90f414880a29ee33ba",
-          "url": "https://github.com/pulseengine/rivet/commit/a06285f20fa364fde1e268eee2a862748d2f720e"
-        },
-        "date": 1776137771012,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 81558,
-            "range": "± 907",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 858463,
-            "range": "± 11203",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 16216025,
-            "range": "± 897474",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2249,
-            "range": "± 79",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 26336,
-            "range": "± 66",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 376692,
-            "range": "± 3690",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 95,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1025228,
-            "range": "± 52001",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 161739,
-            "range": "± 1606",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1924266,
-            "range": "± 30946",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 36579936,
-            "range": "± 4673797",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 108837,
-            "range": "± 1765",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 919513,
-            "range": "± 4527",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 14162422,
-            "range": "± 1493848",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4419,
-            "range": "± 102",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 62204,
-            "range": "± 512",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 798731,
-            "range": "± 17136",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 60239,
-            "range": "± 418",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 694308,
-            "range": "± 6106",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 10375029,
-            "range": "± 656790",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 776,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 7493,
-            "range": "± 177",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 114710,
-            "range": "± 594",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 23349,
-            "range": "± 125",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 162126,
-            "range": "± 1738",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1499579,
-            "range": "± 17780",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1490578,
             "range": "± 18058",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a86cbe766bd561687bc999ee15f7e69af8676abd",
+          "message": "feat: docs-check gate (recurring doc-vs-reality CI check) (#178)\n\n* feat(doc-check): add invariant engine for docs-vs-reality drift detection\n\nIntroduces rivet-core/src/doc_check.rs: an invariant engine that scans\nREADME.md, CHANGELOG.md, AGENTS.md/CLAUDE.md and every *.md under docs/\nto catch doc-code drift.\n\nShips 8 invariants (MVP):\n- SubcommandReferences — \"rivet <word>\" must be a real subcommand\n- EmbedTokenReferences — \"{{name:...}}\" must be a registered embed\n- VersionConsistency — workspace version == vscode/npm package.json\n  and > every version string mentioned in prose\n- ArtifactCounts — \"N <noun>\" needs {{stats}} or AUDIT marker\n- SchemaReferences — schemas/foo.yaml must exist\n- SoftGateHonesty — \"enforced\"/\"wired into CI\" claims must not match\n  a job carrying continue-on-error: true\n- ConfigExampleFreshness — fenced yaml/yml blocks must parse\n- ArtifactIdValidity — REQ-NNN style IDs must resolve in the store\n\nOpt-out for roadmap docs:\n<!-- rivet-docs-check: design-doc-aspirational-ok -->\nFiles under docs/plans/ or docs/design/ are auto-detected as design docs.\n\n21 unit tests in-module covering fixture-doc-flagged and fixture-doc-\nclean paths for each invariant plus line/code-fence helpers.\n\nRefs: REQ-054\n\n* feat(cli): add `rivet docs check [--fix]` handler\n\nWires the doc_check engine into the CLI as a `check` subtopic of the\nexisting `docs` command.  Usage:\n\n  rivet docs check              # text output, exit 1 on failure\n  rivet docs check --format json\n  rivet docs check --fix        # apply auto-fixes (version numbers)\n\nThe handler pulls the known-subcommand list from clap::CommandFactory at\nruntime so it stays in sync with the actual CLI.  Known embed kinds are\ncurrently hard-coded to match rivet-core/src/embed.rs.\n\nLoads the project store when available; invariants that need it (like\nArtifactIdValidity) silently skip when the project fails to load so the\ncheck can still run against docs-only repos.\n\nAlso reads .github/workflows/ci.yml (when present) to drive the\nSoftGateHonesty invariant.\n\nJSON output is machine-readable with `status`, `violation_count`,\n`by_invariant`, and a `violations[]` array, ready for CI annotations.\n\nRefs: REQ-054\n\n* ci: add docs-check gate to CI and release workflows\n\nAdds a new 'docs-check' job in both .github/workflows/ci.yml and\n.github/workflows/release.yml that runs 'rivet docs check' and fails\nthe build if any invariant is violated.\n\nThe release workflow gates 'create-release' on this job so a tag\ncannot produce a GitHub Release while documentation claims are\nstale.\n\nDeliberately uses neither continue-on-error nor an allow-list: doc\ndrift should fail the build the same way clippy errors do.  Budget\nis <1 minute on a warm rust-cache.\n\nTrace: skip\n\n* feat(doc-check): tighten heuristics to cut false positives\n\nObservations running the gate against the current tree:\n- \"rivet never touches\" / \"rivet models itself\" matched SubcommandReferences.\n  Fix: require the match to be inside inline backticks or after a shell-\n  prompt marker (\"$ \").\n- Document front-matter IDs (AUDIT-001, SRS-001, ROAD-001, …) tripped\n  ArtifactIdValidity.  Fix: collect front-matter IDs up front and exclude\n  them from body checks.\n- Anchor-style hex hashes (YAML-654FF0, STPA-654FF0) tripped the same\n  invariant.  Fix: recognize the hex-hash suffix pattern.\n- DO-178C / UTF-8 / NOPE-999 were flagged.  Fix: extend non-artifact\n  prefix skip-list.\n- Design docs under docs/plans/ mention future rivet versions (v0.5.0,\n  v1.0.0) as part of roadmaps.  Fix: skip VersionConsistency entirely\n  for design docs, plus skip versions inside inline backticks (third-\n  party version pins like `kani-version: '0.50.0'`).\n- CHANGELOG and audit-report.md are large historical snapshots; tagging\n  every count line with AUDIT was noisy.  Fix: add a file-level\n  `<!-- AUDIT-FILE: verified YYYY-MM-DD -->` marker that suppresses\n  ArtifactCounts for the entire document.\n\nAlso recognize `rivet import` unconditionally (it exists behind the\n`wasm` feature gate but the CI build doesn't enable it) so that docs\ndescribing the full surface don't break the release gate.\n\nThree new unit tests: subcommand_references_skip_plain_prose,\nartifact_id_validity_ignores_frontmatter_ids,\nartifact_id_validity_skips_hex_anchor_hashes.  All 24 tests pass.\n\nRefs: REQ-054\n\n* docs: make the tree pass the new docs-check gate\n\nFixes the violations that `rivet docs check` reports against main:\n\n- vscode-rivet/package.json: bumped 0.3.0 -> 0.4.0 to match the\n  workspace.  Without this the extension version lags every CLI\n  release (this has happened every release so far).\n- README.md: the commands table listed `rivet import` for\n  \"ReqIF, sphinx-needs JSON\".  The real command for that path is\n  `rivet import-results`; `rivet import` is the WASM adapter\n  entry point.  Also updated the dogfood line from the stale\n  \"447 artifacts\" to the actual current count (709) with an\n  AUDIT marker pointing future readers at `rivet stats`.\n- CHANGELOG.md: added a file-level AUDIT-FILE marker.  Every\n  count in the changelog is a release-time snapshot and should\n  not be required to track current state.\n- AGENTS.md: added an AUDIT marker after the retroactive\n  traceability table (a frozen historical record of the v0.0.x\n  -> v0.3 commit map).\n- docs/audit-report.md: added a file-level AUDIT-FILE marker for\n  the same reason as CHANGELOG.\n\nResult: `rivet docs check` passes (31 files, 0 violations).\n\nRefs: REQ-054",
+          "timestamp": "2026-04-22T01:22:27-05:00",
+          "tree_id": "b846f9be9681bbe6dc0c68cef8c02d371da0210c",
+          "url": "https://github.com/pulseengine/rivet/commit/a86cbe766bd561687bc999ee15f7e69af8676abd"
+        },
+        "date": 1776844499549,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 76923,
+            "range": "± 1993",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 814064,
+            "range": "± 29475",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 11043388,
+            "range": "± 1123618",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2036,
+            "range": "± 58",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 26699,
+            "range": "± 791",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 361511,
+            "range": "± 10147",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 92,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 92,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 91,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 980997,
+            "range": "± 24992",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 156074,
+            "range": "± 5514",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1838737,
+            "range": "± 45116",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 22638004,
+            "range": "± 616924",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 107263,
+            "range": "± 2931",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 931452,
+            "range": "± 22337",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 9439882,
+            "range": "± 314472",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4293,
+            "range": "± 107",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 57499,
+            "range": "± 1528",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 740183,
+            "range": "± 16623",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 54955,
+            "range": "± 1160",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 639965,
+            "range": "± 16840",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7234364,
+            "range": "± 198027",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 760,
+            "range": "± 21",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 6950,
+            "range": "± 180",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 112980,
+            "range": "± 3000",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 22445,
+            "range": "± 669",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 161142,
+            "range": "± 4401",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1504976,
+            "range": "± 37511",
             "unit": "ns/iter"
           }
         ]
