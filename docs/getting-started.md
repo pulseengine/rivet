@@ -777,6 +777,44 @@ Quantifiers: `forall`, `exists`, `count`.
 
 Graph: `reachable-from`, `reachable-to`.
 
+### Count comparisons
+
+`(count <scope>)` as a standalone form matches artifacts that exist in
+the scope (equivalent to `(exists <scope> true)`). Wrapped in a
+comparison, it counts artifacts and compares to a threshold:
+
+```bash
+# At least one failing test?
+rivet list --filter '(> (count (and (= type "test") (= status "failed"))) 0)'
+
+# Exactly three approved requirements with the safety tag?
+rivet list --filter '(= (count (and (= type "requirement") (= status "approved") (has-tag "safety"))) 3)'
+```
+
+All six operators (`>`, `<`, `>=`, `<=`, `=`, `!=`) accept `(count …)` on
+the left and an integer literal on the right. Any other shape produces
+a parse error at lower time — no silent match failures.
+
+### Regex patterns in `matches`
+
+`(matches <field> "<regex>")` validates the regex **at parse time**. An
+invalid pattern produces an error with the compiler's complaint, not a
+silent empty result. Doubled backslashes are needed inside the s-expr
+string (`"\\d+"` not `"\d+"`):
+
+```bash
+rivet list --filter '(matches id "^REQ-\\d+$")'   # OK
+rivet list --filter '(matches id "[unclosed")'    # parse error with clear message
+```
+
+### Field accessors
+
+Only single-name field accessors are supported today. Dotted forms like
+`links.satisfies.target` parse as a single symbol and currently resolve
+to the empty string — they do not navigate nested structure. To filter
+on links, use the purpose-built predicates (`linked-by`, `linked-from`,
+`linked-to`, `links-count`) rather than field-path navigation.
+
 ---
 
 ## Variant Management (Product Line Engineering)

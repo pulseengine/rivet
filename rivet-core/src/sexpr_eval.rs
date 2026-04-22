@@ -112,6 +112,12 @@ pub enum Expr {
     Exists(Box<Expr>, Box<Expr>),
     /// `(count <scope>)` — number of artifacts matching scope (compared via parent).
     Count(Box<Expr>),
+    /// `(> (count <scope>) N)` and friends — count-compared-to-threshold.
+    /// Created by the lowering path when a comparison's left operand is a
+    /// `(count ...)` form. Evaluates the count once and compares it to the
+    /// threshold — so authors can finally write
+    /// `(> (count (and (= type "test") (= status "passed"))) 10)`.
+    CountCompare(Box<Expr>, CompOp, i64),
 
     // ── Graph traversal ─────────────────────────────────────────────
     /// `(reachable-from "REQ-001" "satisfies")` — true if current artifact is
@@ -306,6 +312,34 @@ pub fn check(expr: &Expr, ctx: &EvalContext) -> bool {
                 };
                 check(_scope, &scope_ctx)
             })
+        }
+        Expr::CountCompare(scope, op, threshold) => {
+            // Count artifacts matching the scope, compare to threshold.
+            // Requires store access; returns false when the filter is
+            // being evaluated without a store (e.g. single-artifact
+            // contexts) — matching the same shape as Forall / Exists.
+            let Some(store) = ctx.store else {
+                return false;
+            };
+            let count: i64 = store
+                .iter()
+                .filter(|a| {
+                    let scope_ctx = EvalContext {
+                        artifact: a,
+                        graph: ctx.graph,
+                        store: ctx.store,
+                    };
+                    check(scope, &scope_ctx)
+                })
+                .count() as i64;
+            match op {
+                CompOp::Gt => count > *threshold,
+                CompOp::Lt => count < *threshold,
+                CompOp::Ge => count >= *threshold,
+                CompOp::Le => count <= *threshold,
+                CompOp::Eq => count == *threshold,
+                CompOp::Ne => count != *threshold,
+            }
         }
 
         // Graph traversal
@@ -700,6 +734,38 @@ fn lower_list(node: &crate::sexpr::SyntaxNode, errors: &mut Vec<LowerError>) -> 
                 });
                 return None;
             }
+
+            // Special case: `(> (count <scope>) N)` and friends.
+            // Detect a `(count ...)` form on the left, integer literal on
+            // the right, and lower to `CountCompare` so the count is
+            // evaluated over the store and compared to the threshold.
+            // This closes the audit-flagged gap where `count` had no
+            // usable lowering as a numeric operand.
+            if let Some(scope_expr) = try_extract_count_scope(&args[0], errors) {
+                let threshold = match extract_integer_literal(&args[1]) {
+                    Some(n) => n,
+                    None => {
+                        errors.push(LowerError {
+                            offset,
+                            message: format!(
+                                "'{form_name}' with '(count ...)' on the left requires an integer on the right — `(count ...)` counts artifacts and must be compared to a number"
+                            ),
+                        });
+                        return None;
+                    }
+                };
+                let op = match form_name.as_str() {
+                    "=" => CompOp::Eq,
+                    "!=" => CompOp::Ne,
+                    ">" => CompOp::Gt,
+                    "<" => CompOp::Lt,
+                    ">=" => CompOp::Ge,
+                    "<=" => CompOp::Le,
+                    _ => unreachable!(),
+                };
+                return Some(Expr::CountCompare(Box::new(scope_expr), op, threshold));
+            }
+
             let acc = extract_accessor(&args[0])?;
             let val = extract_value(&args[1])?;
             Some(match form_name.as_str() {
@@ -757,6 +823,27 @@ fn lower_list(node: &crate::sexpr::SyntaxNode, errors: &mut Vec<LowerError>) -> 
             }
             let acc = extract_accessor(&args[0])?;
             let val = extract_value(&args[1])?;
+            // Validate the regex at lower time when the pattern is a
+            // string literal. Without this, an invalid pattern would
+            // silently match nothing at runtime (consistent with our
+            // lenient filter semantics, but users hit "mysterious empty
+            // results" before the audit surfaced this). Non-literal
+            // patterns (rare; they'd come from field interpolation)
+            // retain the runtime-lenient behaviour.
+            if let Value::Str(ref pattern) = val {
+                if let Err(e) = regex::RegexBuilder::new(pattern)
+                    .size_limit(1 << 20)
+                    .build()
+                {
+                    errors.push(LowerError {
+                        offset,
+                        message: format!(
+                            "'matches' regex pattern does not compile: {e}"
+                        ),
+                    });
+                    return None;
+                }
+            }
             Some(Expr::Matches(acc, val))
         }
         "contains" => {
@@ -1017,6 +1104,55 @@ fn extract_value(node: &crate::sexpr::SyntaxNode) -> Option<Value> {
     }
 }
 
+/// If the node is a `(count <scope>)` form, lower the inner scope and
+/// return the lowered Expr. Returns None if the node is not a list whose
+/// head symbol is exactly "count" (other lists fall through to the normal
+/// accessor extraction path). Errors during scope lowering are pushed
+/// into the same error accumulator the caller is using.
+fn try_extract_count_scope(
+    node: &crate::sexpr::SyntaxNode,
+    errors: &mut Vec<LowerError>,
+) -> Option<Expr> {
+    use crate::sexpr::SyntaxKind as SK;
+    if node.kind() != SK::List {
+        return None;
+    }
+    let children: Vec<_> = node
+        .children()
+        .filter(|c| matches!(c.kind(), SK::List | SK::Atom))
+        .collect();
+    if children.len() < 2 {
+        return None;
+    }
+    let head = extract_symbol(&children[0])?;
+    if head != "count" {
+        return None;
+    }
+    if children.len() != 2 {
+        errors.push(LowerError {
+            offset: node.text_range().start().into(),
+            message: "'count' requires exactly 1 argument (scope)".into(),
+        });
+        return None;
+    }
+    lower_child(&children[1], errors)
+}
+
+/// Extract an integer literal from an atom node. Returns None for any
+/// other shape. Used by the comparison lowering to validate that
+/// `(> (count ...) N)` has an actual integer on the right-hand side.
+fn extract_integer_literal(node: &crate::sexpr::SyntaxNode) -> Option<i64> {
+    use crate::sexpr::SyntaxKind as SK;
+    if node.kind() != SK::Atom {
+        return None;
+    }
+    let token = node.first_token()?;
+    if token.kind() != SK::IntLit {
+        return None;
+    }
+    token.text().parse::<i64>().ok()
+}
+
 // ── Tests ───────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1238,6 +1374,73 @@ mod tests {
     fn parse_error_reported() {
         let result = parse_filter("(and a");
         assert!(result.is_err());
+    }
+
+    // ── sexpr audit followups — v0.4.3 ──────────────────────────────
+
+    // Followup #1: `(> (count <scope>) N)` now lowers to CountCompare
+    // and evaluates against the store, so users can finally gate on
+    // "more than N matching artifacts".
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn count_compare_gt_threshold() {
+        let expr = parse_filter("(> (count (= type \"requirement\")) 0)");
+        assert!(
+            expr.is_ok(),
+            "(> (count ...) 0) must parse: {:?}",
+            expr.err()
+        );
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn count_compare_requires_integer_rhs() {
+        // Passing a string on the right must error with a clear
+        // message pointing at the contract.
+        let expr = parse_filter("(> (count (= type \"test\")) \"ten\")");
+        assert!(expr.is_err(), "non-integer RHS must error");
+        let msg = format!("{:?}", expr.err().unwrap());
+        assert!(
+            msg.contains("integer") || msg.contains("count"),
+            "error must mention the integer requirement: {msg}"
+        );
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn count_compare_all_six_operators_lower() {
+        for op in &[">", "<", ">=", "<=", "=", "!="] {
+            let input = format!("({op} (count (= status \"approved\")) 5)");
+            let expr = parse_filter(&input);
+            assert!(
+                expr.is_ok(),
+                "{op} must lower with count LHS: {:?}",
+                expr.err()
+            );
+        }
+    }
+
+    // Followup #2: invalid regex pattern in (matches) now fails at
+    // lower time with a clear message, instead of silently matching
+    // nothing at runtime.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn matches_rejects_invalid_regex_at_lower_time() {
+        let expr = parse_filter("(matches title \"[unclosed\")");
+        assert!(expr.is_err(), "invalid regex must error at lower time");
+        let msg = format!("{:?}", expr.err().unwrap());
+        assert!(
+            msg.to_lowercase().contains("regex")
+                || msg.to_lowercase().contains("compile"),
+            "error must mention regex/compile: {msg}"
+        );
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn matches_accepts_valid_regex() {
+        let expr = parse_filter("(matches title \"^REQ-\\\\d+$\")");
+        assert!(expr.is_ok(), "valid regex must parse: {:?}", expr.err());
     }
 
     // ── Logical equivalence unit tests ──────────────────────────────

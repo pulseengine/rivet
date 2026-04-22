@@ -225,6 +225,17 @@ fn expr_to_sexpr(e: &Expr) -> String {
             format!("(exists {} {})", expr_to_sexpr(scope), expr_to_sexpr(pred))
         }
         Expr::Count(scope) => format!("(count {})", expr_to_sexpr(scope)),
+        Expr::CountCompare(scope, op, n) => {
+            let op_s = match op {
+                sexpr_eval::CompOp::Gt => ">",
+                sexpr_eval::CompOp::Lt => "<",
+                sexpr_eval::CompOp::Ge => ">=",
+                sexpr_eval::CompOp::Le => "<=",
+                sexpr_eval::CompOp::Eq => "=",
+                sexpr_eval::CompOp::Ne => "!=",
+            };
+            format!("({op_s} (count {}) {n})", expr_to_sexpr(scope))
+        }
         Expr::ReachableFrom(start, lt) => format!(
             "(reachable-from {} {})",
             value_to_sexpr(start),
