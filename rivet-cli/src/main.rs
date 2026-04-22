@@ -524,7 +524,10 @@ enum Command {
         action: SnapshotAction,
     },
 
-    /// Product line variant management (feature model + constraint solver)
+    /// Product line variant management (feature model + constraint solver).
+    ///
+    /// YAML schema reference: docs/feature-model-schema.md.
+    /// Binding file format:   docs/feature-model-bindings.md.
     Variant {
         #[command(subcommand)]
         action: VariantAction,
@@ -795,6 +798,20 @@ enum SnapshotAction {
 
 #[derive(Subcommand)]
 enum VariantAction {
+    /// Scaffold a starter feature-model.yaml + bindings/<name>.yaml with
+    /// commented fields. See docs/feature-model-schema.md.
+    Init {
+        /// Variant / project name (used for the bindings file name).
+        name: String,
+
+        /// Target directory (default: current directory).
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
+
+        /// Overwrite existing files.
+        #[arg(long)]
+        force: bool,
+    },
     /// Check a variant configuration against a feature model
     Check {
         /// Path to feature model YAML file
@@ -1066,6 +1083,7 @@ fn run(cli: Cli) -> Result<bool> {
             SnapshotAction::List => cmd_snapshot_list(&cli),
         },
         Command::Variant { action } => match action {
+            VariantAction::Init { name, dir, force } => cmd_variant_init(name, dir, *force),
             VariantAction::Check {
                 model,
                 variant,
@@ -6773,6 +6791,121 @@ fn cmd_snapshot_list(cli: &Cli) -> Result<bool> {
 }
 
 // ── Variant commands ────────────────────────────────────────────────────
+
+/// Scaffold a starter feature-model.yaml + bindings/<name>.yaml pair.
+///
+/// Files are annotated with comments documenting every field so the user
+/// does not need to open `docs/feature-model-schema.md` to get started.
+/// See that document for the full schema reference.
+fn cmd_variant_init(name: &str, dir: &std::path::Path, force: bool) -> Result<bool> {
+    if name.trim().is_empty() {
+        anyhow::bail!("variant name cannot be empty");
+    }
+
+    let target = if dir == std::path::Path::new(".") {
+        std::env::current_dir().context("resolving current directory")?
+    } else {
+        dir.to_path_buf()
+    };
+
+    std::fs::create_dir_all(&target)
+        .with_context(|| format!("creating {}", target.display()))?;
+    let bindings_dir = target.join("bindings");
+    std::fs::create_dir_all(&bindings_dir)
+        .with_context(|| format!("creating {}", bindings_dir.display()))?;
+
+    let fm_path = target.join("feature-model.yaml");
+    let binding_path = bindings_dir.join(format!("{name}.yaml"));
+
+    if !force {
+        for p in [&fm_path, &binding_path] {
+            if p.exists() {
+                anyhow::bail!(
+                    "refusing to overwrite {} (use --force)",
+                    p.display()
+                );
+            }
+        }
+    }
+
+    let fm_yaml = r#"# feature-model.yaml — starter template.
+# Full reference: docs/feature-model-schema.md
+kind: feature-model
+
+# `root` is the always-selected top of the feature tree.
+root: product
+
+# Every feature is declared under `features`.
+#   group: one of `mandatory`, `optional`, `alternative`, `or`, `leaf`.
+#   children: names of child features.
+features:
+  product:
+    group: mandatory
+    children: [base, extras]
+
+  base:
+    group: leaf
+
+  extras:
+    group: or
+    children: [telemetry, auth]
+
+  telemetry:
+    group: leaf
+
+  auth:
+    group: leaf
+
+# Cross-tree constraints (s-expression syntax).
+#   Bare feature names mean "this feature is selected".
+#   Supported forms: and, or, not, implies, excludes, forall, exists.
+constraints:
+  # - (implies auth telemetry)
+  # - (excludes base telemetry)
+"#;
+
+    let binding_yaml = format!(
+        r#"# bindings/{name}.yaml — starter template.
+# Full reference: docs/feature-model-bindings.md
+
+# `variant:` identifies which variant this file configures and records
+# the user's feature selection. The solver adds root, ancestors, mandatory
+# descendants, and constraint-implied features on top of `selects`.
+variant:
+  name: {name}
+  selects: [telemetry]
+
+# `bindings:` maps feature names to the artifacts and source files that
+# implement them.
+bindings:
+  telemetry:
+    artifacts: []           # e.g. [REQ-001, REQ-002]
+    source: []              # e.g. ["src/telemetry/**"]
+  auth:
+    artifacts: []
+    source: []
+"#
+    );
+
+    std::fs::write(&fm_path, fm_yaml)
+        .with_context(|| format!("writing {}", fm_path.display()))?;
+    std::fs::write(&binding_path, binding_yaml)
+        .with_context(|| format!("writing {}", binding_path.display()))?;
+
+    println!("  wrote {}", fm_path.display());
+    println!("  wrote {}", binding_path.display());
+    println!();
+    println!("Edit the files above, then run:");
+    println!("  rivet variant list  --model {}", fm_path.display());
+    println!(
+        "  rivet variant check --model {} --variant {}",
+        fm_path.display(),
+        binding_path.display()
+    );
+    println!("See docs/feature-model-schema.md for the full schema.");
+
+    Ok(true)
+}
 
 /// Check a variant configuration against a feature model.
 fn cmd_variant_check(
