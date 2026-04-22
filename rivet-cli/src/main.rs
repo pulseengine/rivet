@@ -2487,6 +2487,10 @@ fn cmd_init_hooks(dir: &std::path::Path) -> Result<bool> {
     println!("  installed {}", commit_msg_path.display());
 
     // ── pre-commit hook ─────────────────────────────────────────────
+    // Marker-discovery walks up from $PWD to find rivet.yaml. This
+    // survives relocation of the project within the working tree (a
+    // hard-coded `-p <path>` would silently validate the wrong directory
+    // or skip validation after a move).
     let pre_commit_path = hooks_dir.join("pre-commit");
     install_hook(
         &pre_commit_path,
@@ -2494,6 +2498,21 @@ fn cmd_init_hooks(dir: &std::path::Path) -> Result<bool> {
             r#"#!/usr/bin/env bash
 # Installed by: rivet init --hooks
 # Runs rivet validate and blocks on errors.
+#
+# Marker discovery: walk up from $PWD until we find rivet.yaml, then cd
+# into that directory before running rivet. This keeps the hook working
+# after the rivet project is moved inside the git tree.
+dir="$PWD"
+while [ "$dir" != "/" ] && [ ! -f "$dir/rivet.yaml" ]; do
+    dir="$(dirname "$dir")"
+done
+if [ ! -f "$dir/rivet.yaml" ]; then
+    # No rivet project in the ancestor chain — skip silently so the hook
+    # does not block commits in unrelated repositories.
+    exit 0
+fi
+cd "$dir" || exit 0
+
 output=$("{rivet_bin}" validate --format json 2>/dev/null)
 errors=$(echo "$output" | python3 -c "import json,sys; print(json.load(sys.stdin).get('errors',0))" 2>/dev/null || echo "0")
 if [ "$errors" -gt 0 ]; then
