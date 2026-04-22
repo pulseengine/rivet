@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1776842091933,
+  "lastUpdate": 1776842639715,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "0053fbb63d8048497759131b808d559c05593d13",
-          "message": "fix: tool qualification — STPA, requirements, MCP audit, regex bounds, export --clean, import verification\n\n* fix: harden Zola export, hook paths, and filter store access\n\nFixes found during honest quality review:\n\n1. Zola export filter now uses matches_filter_with_store (quantifiers work)\n2. rivet init --hooks resolves binary via PATH (not hardcoded debug path)\n3. Zola export generates fallback taxonomy templates when missing\n   (zola build now works without a theme)\n4. Verified: needs-json import works end-to-end (import → validate → PASS)\n5. Verified: variant constraints handle (not feature), (and a b), (excludes a c)\n\nTested:\n- Clean Zola roundtrip: export → zola build → 53 pages, zero errors\n- needs-json: 3 artifacts imported, IDs normalized, validates clean\n- Variant: complex constraints with implies/excludes/and/not\n\nImplements: REQ-007\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* feat(stpa): tool qualification STPA + STPA-Sec for v0.4.0 features\n\nSTPA analysis treating rivet as a qualification tool (ISO 26262 §11.4.7,\nTCL 1). Covers hazards introduced by s-expression evaluator, variant\nsolver, Zola export, needs-json import, MCP write tools, and git hooks.\n\nSafety (7 hazards, 7 constraints, 3 losses):\n- H-TQ-001: evaluator returns wrong boolean (→ false PASS)\n- H-TQ-002: variant solver unsound (accepts invalid config)\n- H-TQ-003: Zola export omits/stales artifacts\n- H-TQ-004: needs-json maps links incorrectly\n- H-TQ-005: MCP modifies without validation\n- H-TQ-006: git hooks bypassed\n- H-TQ-007: quantifier scope mismatch\n\nSecurity (5 losses, 3 hazards, 5 constraints):\n- SL-TQ-002: AI agent prompt injection via MCP (no auth/rate limit)\n- SL-TQ-004: --no-verify bypasses hooks (hooks are not security controls)\n- SSC-TQ-002: MCP mutations must produce tamper-evident audit log\n- SSC-TQ-005: CI must independently verify (hooks are convenience, not security)\n\nImplements: REQ-002\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* feat: tool qualification requirements REQ-047..053\n\nSeven requirements addressing STPA tool qualification constraints:\n- REQ-047: MCP mutation audit logging (SSC-TQ-002)\n- REQ-048: Regex complexity bounds (SSC-TQ-001)\n- REQ-049: Export validation embedding + --clean (SC-TQ-003, SSC-TQ-004)\n- REQ-050: Import link-target verification (SC-TQ-004, SSC-TQ-003)\n- REQ-051: CI-enforced traceability, hooks are convenience only (SSC-TQ-005)\n- REQ-052: Variant solver fuzz testing (SC-TQ-002)\n- REQ-053: Quantifier scope correctness testing (SC-TQ-007)\n\nImplements: REQ-002\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* feat: implement REQ-047 (MCP audit log), REQ-048 (regex bounds), REQ-053 (quantifier scope tests)\n\nThree tool qualification requirements implemented:\n\nREQ-047 — MCP audit logging:\n  Every mutation (modify, link, unlink, remove) writes a JSON log entry\n  to .rivet/mcp-audit.jsonl with timestamp, tool name, and details.\n  Enables forensic analysis of AI agent activity.\n\nREQ-048 — Regex complexity bounds:\n  The matches predicate uses RegexBuilder::size_limit(1MB) to prevent\n  ReDoS attacks via crafted filter expressions.\n\nREQ-053 — Quantifier scope correctness:\n  Three new tests verify forall/exists iterate the store parameter:\n  - forall_uses_store_parameter: different stores → different results\n  - exists_uses_store_parameter: adding artifact changes exists result\n  - quantifier_without_store_returns_false: safe default\n\nImplements: REQ-047, REQ-048, REQ-053\nVerifies: REQ-041\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* feat: implement REQ-049 (export --clean + validation.json)\n\n- --clean flag removes content/<prefix>/ and data/<prefix>/ before writing,\n  preventing deleted artifacts from persisting as stale published pages\n- data/<prefix>/validation.json embeds PASS/FAIL, error/warning counts,\n  artifact count, and export date for consumers to verify freshness\n- Addresses TOCTOU between export and publication (SSC-TQ-004)\n\nImplements: REQ-049\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* feat: implement REQ-050 (import link verification) + REQ-051 (hook security docs)\n\nREQ-050: needs-json import now verifies all link targets exist within\nthe imported artifact set. Unresolved targets produce warnings with\nartifact ID, link type, and target. Prevents crafted imports from\ncreating links to non-existent artifacts.\n\nREQ-051: CLAUDE.md documents that git hooks are convenience only,\nnot security controls. CI must independently enforce traceability.\n\nImplements: REQ-050, REQ-051\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.6 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-04-13T17:39:24-05:00",
-          "tree_id": "16f477a812be7fb9f4496e73c4830a70e0342f20",
-          "url": "https://github.com/pulseengine/rivet/commit/0053fbb63d8048497759131b808d559c05593d13"
-        },
-        "date": 1776120329203,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 81310,
-            "range": "± 905",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 856533,
-            "range": "± 6972",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 11854510,
-            "range": "± 631300",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2151,
-            "range": "± 7",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 25317,
-            "range": "± 72",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 396051,
-            "range": "± 3182",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 95,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1020153,
-            "range": "± 30436",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 159637,
-            "range": "± 945",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1869510,
-            "range": "± 98745",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 23433408,
-            "range": "± 1760401",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 107880,
-            "range": "± 1086",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 895133,
-            "range": "± 2878",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 9475055,
-            "range": "± 408831",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4464,
-            "range": "± 122",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 59301,
-            "range": "± 195",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 760566,
-            "range": "± 1420",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 58106,
-            "range": "± 133",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 671280,
-            "range": "± 1839",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7390110,
-            "range": "± 153908",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 819,
-            "range": "± 5",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 7548,
-            "range": "± 51",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 111659,
-            "range": "± 781",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 23617,
-            "range": "± 77",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 164016,
-            "range": "± 2288",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1506922,
-            "range": "± 10776",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1469702,
             "range": "± 14966",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f46fb627cc8797694922c5e3067d3bbe1b70c7c5",
+          "message": "feat(cli): v0.4.1 CLI polish — fail-on, stats counts, coverage gate, JSON schemas (#177)\n\n* feat(cli): add --fail-on <severity> flag to validate\n\nNew flag on `rivet validate`: --fail-on error (default, current\nbehavior), --fail-on warning, --fail-on info. Exit code 1 when any\ndiagnostic at or above the given severity is emitted. Lets CI tighten\nthe traceability gate over time without forcing every warning to be\npromoted in the schema.\n\nTests cover all three outcomes: default --fail-on error on a\nwarning-only project exits 0, --fail-on warning on the same project\nexits 1, and an invalid value is rejected with a clear error message.\n\nImplements: REQ-007\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n* feat(cli): include errors/warnings/infos in stats JSON output\n\n`rivet stats --format json` now exposes the same severity breakdown\nas `rivet validate --format json` (new fields: errors, warnings,\ninfos). Removes the need for consumers to make a second validate\ncall just to get diagnostic counts when rendering a dashboard or\nCI summary. Existing fields (total, types, orphans, broken_links)\nare unchanged — additive only, backward-compatible.\n\nThe text output gains a trailing \"Diagnostics: N error(s), ...\"\nsummary line so the human-readable form agrees with JSON.\n\nTests: one asserting the new fields are present and numeric; a\ncross-command test asserting stats and validate agree on the\ncounts for the current project.\n\nImplements: REQ-007\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n* feat(cli): polish coverage --fail-under gate\n\nThe --fail-under flag already gated exit code on overall coverage.\nThis commit hardens and documents the CI-gate use case:\n\n- JSON output echoes a new `threshold: { fail_under, passed }`\n  block when the flag is set, so consumers can distinguish a clean\n  run from a gated failure without parsing stderr.\n- Text output prints a \"✔ coverage N.N% meets threshold M.M%\" line\n  on success to match the existing failure message.\n- JSON output now carries `\"command\": \"coverage\"` for consistency\n  with the rest of the --format json envelopes.\n\nTests: --fail-under 0 passes, --fail-under 101 fails, no flag is\nreport-only, and JSON carries the threshold echo.\n\nImplements: REQ-007\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n* feat(cli): publish JSON schemas for --format json outputs\n\nAdds draft-2020-12 JSON Schemas describing every `--format json` CLI\noutput so downstream consumers can validate against a machine-readable\ncontract instead of reverse-engineering field layouts:\n\n  schemas/json/validate-output.schema.json\n  schemas/json/stats-output.schema.json\n  schemas/json/coverage-output.schema.json\n  schemas/json/list-output.schema.json\n\nSchemas are hand-written (rivet has no `schemars` dependency today —\ngrep of workspace Cargo.toml files returned zero hits — and pulling\nit in just for four small schemas is heavier than the schemas\nthemselves).\n\nTwo new subcommands under `rivet schema` surface the schemas:\n\n  rivet schema list-json          # enumerate shipped schemas + paths\n  rivet schema get-json <name>    # print path for one\n  rivet schema get-json <name> --content   # print schema content\n\nTests cover:\n- every shipped schema file is valid JSON with required metadata\n- `schema list-json --format json` lists all four, all files exist\n- `schema get-json <name>` round-trips path-and-content for all four\n- an unknown name is rejected with a helpful error\n- the actual `rivet validate` / `rivet stats` JSON output contains\n  every `required` field declared in the corresponding schema — so\n  future field drift fails CI instead of silently breaking consumers\n\nImplements: REQ-007\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.7 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-04-22T00:32:20-05:00",
+          "tree_id": "ce9589522412f452395d3656729e243f43e7fea3",
+          "url": "https://github.com/pulseengine/rivet/commit/f46fb627cc8797694922c5e3067d3bbe1b70c7c5"
+        },
+        "date": 1776842638696,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 82255,
+            "range": "± 1519",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 878407,
+            "range": "± 5081",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 16660800,
+            "range": "± 1180942",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1949,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 24905,
+            "range": "± 524",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 359875,
+            "range": "± 3251",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 97,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 97,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 97,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1006756,
+            "range": "± 16983",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 166852,
+            "range": "± 2985",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1927758,
+            "range": "± 19675",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 30285021,
+            "range": "± 4189699",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 110097,
+            "range": "± 1500",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 964375,
+            "range": "± 16385",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 13833296,
+            "range": "± 1288159",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4138,
+            "range": "± 20",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 44392,
+            "range": "± 1656",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 742229,
+            "range": "± 5251",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 61614,
+            "range": "± 229",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 707695,
+            "range": "± 11808",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8363193,
+            "range": "± 593552",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 734,
+            "range": "± 5",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 6480,
+            "range": "± 22",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 93708,
+            "range": "± 389",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 22499,
+            "range": "± 59",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 162628,
+            "range": "± 3788",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1471654,
+            "range": "± 15949",
             "unit": "ns/iter"
           }
         ]
