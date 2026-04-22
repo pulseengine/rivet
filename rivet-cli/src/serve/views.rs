@@ -18,8 +18,7 @@ fn variant_error_response(msg: &str) -> Response {
         "<div class=\"card\" style=\"margin:2rem\">\
          <h2 style=\"margin-top:0;color:#b91c1c\">Invalid variant scope</h2>\
          <p>{}</p>\
-         <p><a href=\"/variants\" hx-get=\"/variants\" hx-target=\"#content\" \
-         hx-push-url=\"true\">See all declared variants</a> \
+         <p><a href=\"/variants\" hx-get=\"/variants\" hx-push-url=\"true\" hx-target=\"#content\">See all declared variants</a> \
          or <a href=\"?\">clear the filter</a>.</p>\
          </div>",
         rivet_core::document::html_escape(msg),
