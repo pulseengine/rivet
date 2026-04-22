@@ -189,6 +189,9 @@ added as trailers without rewriting git history):
 | `c5ff64c8` | #96 | Embed phases 2+5 (diagnostics, matrix, snapshots) | Implements REQ-033 |
 | `cc4cc1c1` | #94 | oEmbed provider and Grafana JSON API | Implements FEAT-001 |
 | `adcf0bc1` | #28 | Phase 3 (30+ features, 402 tests, formal verification) | Implements REQ-004, REQ-012 |
+<!-- AUDIT: verified 2026-04-19 — retroactive traceability table, counts are
+     historical snapshots not current project state -->
+
 | `51f2054a` | #126 | S-expression query language, MCP CRUD, variant/PLE artifacts, EU AI Act runtime evidence | Implements REQ-041, REQ-042, REQ-043, REQ-044, REQ-045, REQ-046, REQ-047, REQ-048, FEAT-106..108 |
 | `f958a7ef` | — | `fix(ci):` — Miri, cargo-deny, cargo-audit CI failures | Exempt: `ci` type (rivet-commits mis-classifies `fix(ci):` as non-exempt; treat as exempt per CLAUDE.md) |
 | `75521b85` | #44 | `rivet sync` — replace incompatible `git clone --config` | Fixes REQ-017 (external reference resolution) |

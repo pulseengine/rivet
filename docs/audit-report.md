@@ -6,6 +6,11 @@ date: 2026-03-09
 status: current
 ---
 
+<!-- AUDIT-FILE: verified 2026-03-09 — this document is an audit
+     snapshot; numeric counts reflect the project state at the date
+     above, not current reality.  A fresh audit creates a new dated
+     report rather than editing these numbers. -->
+
 # Rivet Project Quality Audit Report
 
 **Date:** 2026-03-09
