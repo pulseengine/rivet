@@ -27,6 +27,7 @@ use serde::{Deserialize, Serialize};
 use crate::adapter::{Adapter, AdapterConfig, AdapterSource};
 use crate::error::Error;
 use crate::model::{Artifact, Link, Provenance};
+use crate::schema::Schema;
 
 // ── ReqIF XML structures ────────────────────────────────────────────────
 //
@@ -487,13 +488,28 @@ const PROV_LONG_REVIEWED_BY: &str = "rivet:reviewed-by";
 
 pub struct ReqIfAdapter {
     supported: Vec<String>,
+    /// Optional schema used on export to emit `DATATYPE-DEFINITION-ENUMERATION`
+    /// for fields whose schema declares `allowed-values`.  When `None`, the
+    /// exporter falls back to flat STRING attributes for all fields.
+    schema: Option<Schema>,
 }
 
 impl ReqIfAdapter {
     pub fn new() -> Self {
         Self {
             supported: vec![], // accepts all types
+            schema: None,
         }
+    }
+
+    /// Attach a schema to drive enum-aware export.  When artifacts carry
+    /// fields whose schema declares `allowed-values`, the exporter emits a
+    /// `DATATYPE-DEFINITION-ENUMERATION` and an `ATTRIBUTE-DEFINITION-ENUMERATION`
+    /// on the SpecObjectType, instead of a flat STRING attribute.  Import is
+    /// unchanged — it already recognises ENUMERATION values.
+    pub fn with_schema(mut self, schema: Schema) -> Self {
+        self.schema = Some(schema);
+        self
     }
 }
 
@@ -536,7 +552,7 @@ impl Adapter for ReqIfAdapter {
     }
 
     fn export(&self, artifacts: &[Artifact], _config: &AdapterConfig) -> Result<Vec<u8>, Error> {
-        let reqif = build_reqif(artifacts);
+        let reqif = build_reqif_with_schema(artifacts, self.schema.as_ref());
         serialize_reqif(&reqif)
     }
 }
@@ -885,8 +901,39 @@ pub fn parse_reqif(xml: &str, type_map: &HashMap<String, String>) -> Result<Vec<
 
 // ── Export ───────────────────────────────────────────────────────────────
 
+/// Internal per-field metadata for schema-driven ENUMERATION emission.
+///
+/// Computed once per (artifact-type, field-name) pair whose schema carries
+/// `allowed-values`; re-used when emitting the DATATYPE, the
+/// ATTRIBUTE-DEFINITION, and each ATTRIBUTE-VALUE.
+struct EnumFieldMeta {
+    /// `DATATYPE-DEFINITION-ENUMERATION` identifier.
+    datatype_id: String,
+    /// `ATTRIBUTE-DEFINITION-ENUMERATION` identifier on the SpecObjectType.
+    attr_def_id: String,
+    /// Enum value identifiers, one per allowed value (same order).
+    value_ids: Vec<String>,
+    /// Allowed label strings (the schema's `allowed-values` array).
+    allowed: Vec<String>,
+}
+
 /// Build a ReqIF document from Rivet artifacts.
+///
+/// Shorthand for `build_reqif_with_schema(artifacts, None)` — emits flat
+/// STRING attributes for every field, ignoring `allowed-values` constraints.
 pub fn build_reqif(artifacts: &[Artifact]) -> ReqIfRoot {
+    build_reqif_with_schema(artifacts, None)
+}
+
+/// Build a ReqIF document from Rivet artifacts, optionally consulting a
+/// Schema to emit `DATATYPE-DEFINITION-ENUMERATION` constraints.
+///
+/// When `schema` is `Some`, fields whose schema declares `allowed-values`
+/// are emitted as `ATTRIBUTE-DEFINITION-ENUMERATION` on the SpecObjectType
+/// and as `ATTRIBUTE-VALUE-ENUMERATION` on each SpecObject.  Other fields
+/// still use STRING attributes.  When `schema` is `None`, all fields are
+/// STRING (legacy behaviour).
+pub fn build_reqif_with_schema(artifacts: &[Artifact], schema: Option<&Schema>) -> ReqIfRoot {
     // Collect unique artifact types and link types.
     let mut artifact_types: Vec<String> = Vec::new();
     let mut link_types: Vec<String> = Vec::new();
@@ -912,14 +959,73 @@ pub fn build_reqif(artifacts: &[Artifact]) -> ReqIfRoot {
         }
     }
 
-    // Build DATATYPE-DEFINITION-STRING.
+    // Precompute schema-driven enum metadata per (artifact_type, field_name):
+    //   enum_meta[(at, field)] = (datatype_id, attr_def_id, [enum_value_id, ...])
+    // This is empty when `schema` is None or no enum fields apply.
+    let mut enum_meta: std::collections::BTreeMap<(String, String), EnumFieldMeta> =
+        std::collections::BTreeMap::new();
+    if let Some(sch) = schema {
+        for at in &artifact_types {
+            let Some(atdef) = sch.artifact_types.get(at) else {
+                continue;
+            };
+            for fdef in &atdef.fields {
+                let Some(allowed) = &fdef.allowed_values else {
+                    continue;
+                };
+                if allowed.is_empty() {
+                    continue;
+                }
+                // Datatypes, attribute-defs, and enum-values need globally-unique
+                // identifiers.  Namespacing with artifact-type keeps per-type
+                // allowed-values sets separate when the same field name appears
+                // on multiple types with different constraints.
+                let datatype_id = format!("DT-ENUM-{at}-{}", fdef.name);
+                let attr_def_id = format!("ATTR-ENUM-{at}-{}", fdef.name);
+                let value_ids: Vec<String> = allowed
+                    .iter()
+                    .enumerate()
+                    .map(|(i, _)| format!("{datatype_id}-V{i}"))
+                    .collect();
+                enum_meta.insert(
+                    (at.clone(), fdef.name.clone()),
+                    EnumFieldMeta {
+                        datatype_id,
+                        attr_def_id,
+                        value_ids,
+                        allowed: allowed.clone(),
+                    },
+                );
+            }
+        }
+    }
+
+    // Build DATATYPE-DEFINITION-STRING + optional ENUMERATION datatypes.
+    let mut enum_types: Vec<DatatypeDefinitionEnumeration> = Vec::new();
+    for meta in enum_meta.values() {
+        let values: Vec<EnumValue> = meta
+            .allowed
+            .iter()
+            .zip(meta.value_ids.iter())
+            .map(|(label, id)| EnumValue {
+                identifier: id.clone(),
+                long_name: Some(label.clone()),
+            })
+            .collect();
+        enum_types.push(DatatypeDefinitionEnumeration {
+            identifier: meta.datatype_id.clone(),
+            long_name: Some(format!("Enum-{}", meta.datatype_id)),
+            specified_values: Some(SpecifiedValues { values }),
+        });
+    }
+
     let datatypes = Datatypes {
         string_types: vec![DatatypeDefinitionString {
             identifier: DATATYPE_STRING_ID.into(),
             long_name: Some("String".into()),
             max_length: Some(65535),
         }],
-        enum_types: vec![],
+        enum_types,
     };
 
     // Build SPEC-OBJECT-TYPEs — one per artifact type, each with standard
@@ -973,14 +1079,24 @@ pub fn build_reqif(artifacts: &[Artifact]) -> ReqIfRoot {
                 });
             }
 
+            let mut enum_attrs: Vec<AttributeDefinitionEnumeration> = Vec::new();
             for fname in &field_names {
-                string_attrs.push(AttributeDefinitionString {
-                    identifier: format!("ATTR-{fname}"),
-                    long_name: Some(fname.clone()),
-                    datatype_ref: Some(DatatypeRef {
-                        datatype_ref: DATATYPE_STRING_ID.into(),
-                    }),
-                });
+                // Prefer ENUMERATION when the schema declares allowed-values
+                // for this (artifact-type, field) pair.
+                if let Some(meta) = enum_meta.get(&(at.clone(), fname.clone())) {
+                    enum_attrs.push(AttributeDefinitionEnumeration {
+                        identifier: meta.attr_def_id.clone(),
+                        long_name: Some(fname.clone()),
+                    });
+                } else {
+                    string_attrs.push(AttributeDefinitionString {
+                        identifier: format!("ATTR-{fname}"),
+                        long_name: Some(fname.clone()),
+                        datatype_ref: Some(DatatypeRef {
+                            datatype_ref: DATATYPE_STRING_ID.into(),
+                        }),
+                    });
+                }
             }
 
             SpecObjectType {
@@ -988,7 +1104,7 @@ pub fn build_reqif(artifacts: &[Artifact]) -> ReqIfRoot {
                 long_name: Some(at.clone()),
                 spec_attributes: Some(SpecAttributes {
                     string_attrs,
-                    enum_attrs: vec![],
+                    enum_attrs,
                 }),
             }
         })
@@ -1057,7 +1173,30 @@ pub fn build_reqif(artifacts: &[Artifact]) -> ReqIfRoot {
                 }
             }
 
+            let mut enum_values: Vec<AttributeValueEnumeration> = Vec::new();
             for (key, value) in &a.fields {
+                if let Some(meta) = enum_meta.get(&(a.artifact_type.clone(), key.clone())) {
+                    // Schema-driven ENUMERATION.  The value must match one of
+                    // the allowed labels; if it doesn't, fall back to a STRING
+                    // attribute so the raw value isn't silently dropped.
+                    let label = match value {
+                        serde_yaml::Value::String(s) => s.clone(),
+                        other => encode_field_value(other).unwrap_or_default(),
+                    };
+                    if let Some(pos) = meta.allowed.iter().position(|a| a == &label) {
+                        enum_values.push(AttributeValueEnumeration {
+                            values: Some(EnumValueRefs {
+                                refs: vec![meta.value_ids[pos].clone()],
+                            }),
+                            definition: EnumAttrDefinitionRef {
+                                attr_def_ref: meta.attr_def_id.clone(),
+                            },
+                        });
+                        continue;
+                    }
+                    // Out-of-enum value: emit as STRING with the original
+                    // attribute name so downstream validate.rs can flag it.
+                }
                 if let Some(val_str) = encode_field_value(value) {
                     string_values.push(AttributeValueString {
                         the_value: val_str,
@@ -1077,7 +1216,7 @@ pub fn build_reqif(artifacts: &[Artifact]) -> ReqIfRoot {
                 }),
                 values: Some(Values {
                     string_values,
-                    enum_values: vec![],
+                    enum_values,
                 }),
             }
         })
@@ -1722,6 +1861,142 @@ mod tests {
         assert_eq!(ct.len(), 20, "creation_time not ISO 8601: {ct}");
         assert!(ct.ends_with('Z'));
         assert!(ct.contains('T'));
+    }
+
+    /// When the schema declares `allowed-values` for a field, the exporter
+    /// must emit `DATATYPE-DEFINITION-ENUMERATION` plus
+    /// `ATTRIBUTE-DEFINITION-ENUMERATION` rather than a flat STRING.
+    /// Regression for the bug at `reqif.rs:871-874` flagged in
+    /// `docs/design/polarion-reqif-fidelity.md`: the exporter previously
+    /// never emitted any ENUMERATION, silently flattening closed-enum
+    /// schema constraints.
+    // rivet: verifies REQ-025
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_schema_enum_field_emits_enumeration() {
+        use crate::schema::{ArtifactTypeDef, FieldDef, Schema};
+        use std::collections::HashMap;
+
+        let atdef = ArtifactTypeDef {
+            name: "hazard".into(),
+            description: "Safety hazard".into(),
+            fields: vec![FieldDef {
+                name: "severity".into(),
+                field_type: "string".into(),
+                required: false,
+                description: None,
+                allowed_values: Some(vec![
+                    "catastrophic".into(),
+                    "critical".into(),
+                    "marginal".into(),
+                    "negligible".into(),
+                ]),
+            }],
+            link_fields: vec![],
+            aspice_process: None,
+            common_mistakes: vec![],
+            example: None,
+            yaml_section: None,
+            yaml_sections: vec![],
+            yaml_section_suffix: None,
+            shorthand_links: Default::default(),
+        };
+        let mut at_map = HashMap::new();
+        at_map.insert("hazard".to_string(), atdef);
+        let schema = Schema {
+            artifact_types: at_map,
+            link_types: HashMap::new(),
+            inverse_map: HashMap::new(),
+            traceability_rules: vec![],
+            conditional_rules: vec![],
+        };
+
+        let mut fields: BTreeMap<String, serde_yaml::Value> = BTreeMap::new();
+        fields.insert(
+            "severity".into(),
+            serde_yaml::Value::String("critical".into()),
+        );
+        let art = Artifact {
+            id: "H-1".into(),
+            artifact_type: "hazard".into(),
+            title: "Runaway train".into(),
+            description: None,
+            status: None,
+            tags: vec![],
+            links: vec![],
+            fields,
+            provenance: None,
+            source_file: None,
+        };
+
+        let adapter = ReqIfAdapter::new().with_schema(schema);
+        let bytes = adapter.export(&[art], &AdapterConfig::default()).unwrap();
+        let xml = std::str::from_utf8(&bytes).unwrap();
+
+        // Must contain ENUMERATION elements — not just STRING.
+        assert!(
+            xml.contains("DATATYPE-DEFINITION-ENUMERATION"),
+            "no DATATYPE-DEFINITION-ENUMERATION in export: {xml}"
+        );
+        assert!(
+            xml.contains("ATTRIBUTE-DEFINITION-ENUMERATION"),
+            "no ATTRIBUTE-DEFINITION-ENUMERATION in export: {xml}"
+        );
+        assert!(
+            xml.contains("ATTRIBUTE-VALUE-ENUMERATION"),
+            "no ATTRIBUTE-VALUE-ENUMERATION in export: {xml}"
+        );
+        // All allowed values must appear as ENUM-VALUE LONG-NAMEs.
+        for v in ["catastrophic", "critical", "marginal", "negligible"] {
+            assert!(
+                xml.contains(v),
+                "allowed value {v} missing from enum datatype"
+            );
+        }
+
+        // Import round-trip: the enum-valued field comes back as a string
+        // with the long-name of the referenced enum value.
+        let re = adapter
+            .import(&AdapterSource::Bytes(bytes), &AdapterConfig::default())
+            .unwrap();
+        assert_eq!(re.len(), 1);
+        assert_eq!(
+            re[0].fields.get("severity"),
+            Some(&serde_yaml::Value::String("critical".into()))
+        );
+    }
+
+    /// Without a schema, exports fall back to flat STRING attributes for
+    /// fields — backward compatibility with adapter callers that pre-date
+    /// `with_schema`.
+    // rivet: verifies REQ-025
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_export_without_schema_stays_string() {
+        let mut fields: BTreeMap<String, serde_yaml::Value> = BTreeMap::new();
+        fields.insert(
+            "severity".into(),
+            serde_yaml::Value::String("critical".into()),
+        );
+        let art = Artifact {
+            id: "H-1".into(),
+            artifact_type: "hazard".into(),
+            title: "Runaway train".into(),
+            description: None,
+            status: None,
+            tags: vec![],
+            links: vec![],
+            fields,
+            provenance: None,
+            source_file: None,
+        };
+        let adapter = ReqIfAdapter::new();
+        let bytes = adapter.export(&[art], &AdapterConfig::default()).unwrap();
+        let xml = std::str::from_utf8(&bytes).unwrap();
+        assert!(
+            !xml.contains("DATATYPE-DEFINITION-ENUMERATION"),
+            "unexpected ENUMERATION emitted without schema: {xml}"
+        );
     }
 
     /// Legacy comma-joined tags (from older rivet exports or other tools)
