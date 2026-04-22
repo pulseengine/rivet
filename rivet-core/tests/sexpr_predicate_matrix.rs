@@ -292,9 +292,19 @@ fn matches_no_match_for_non_matching_regex() {
 }
 
 #[test]
-fn matches_invalid_regex_returns_false_safely() {
-    // Malformed regex — evaluator returns false instead of panicking.
-    assert!(!ok(r#"(matches id "[")"#, &base_artifact()));
+fn matches_invalid_regex_is_parse_error() {
+    // v0.4.3: malformed regex patterns are rejected at lower time with
+    // a clear error rather than silently matching nothing at runtime.
+    // Previously this returned false safely; audit flagged that users
+    // mistake silent empty-match for "filter excluded everything" and
+    // waste debugging time. `err()` here exercises the lower path and
+    // asserts the diagnostic names the regex compile failure.
+    let errs = err(r#"(matches id "[")"#);
+    assert!(
+        errs.iter()
+            .any(|e| e.message.to_lowercase().contains("regex")),
+        "invalid regex must produce a parse error mentioning 'regex': got {errs:?}"
+    );
 }
 
 #[test]
