@@ -109,6 +109,13 @@ impl EmbedRequest {
     /// Parse a raw embed string (the content between `{{` and `}}`).
     ///
     /// Syntax: `name[:arg1[:arg2[...]]] [key=val ...]`
+    ///
+    /// Special case: when `name == "query"` the first argument is an
+    /// s-expression which contains `(`, `)`, `"` and its own `:` — so
+    /// naive `split(':')` / `split_whitespace()` would corrupt it. The
+    /// parser therefore requires the query form `query:(...)` and
+    /// captures balanced parens as the single positional arg, leaving any
+    /// trailing `key=val` options after the closing `)` intact.
     pub fn parse(input: &str) -> Result<Self, EmbedError> {
         let input = input.trim();
         if input.is_empty() {
@@ -118,18 +125,77 @@ impl EmbedRequest {
             });
         }
 
-        // Split on first space to separate "name:args..." from "key=val ..."
-        let (name_args_part, options_part) = match input.find(' ') {
-            Some(pos) => (&input[..pos], Some(&input[pos + 1..])),
-            None => (input, None),
+        // Peel off the embed name (everything up to the first ':' or space).
+        let name_end = input
+            .find(|c: char| c == ':' || c.is_whitespace())
+            .unwrap_or(input.len());
+        let name = input[..name_end].to_string();
+        let rest = input[name_end..].trim_start_matches(':');
+
+        // ── Balanced-paren form for `query` ────────────────────────
+        // `{{query:(..balanced..) key=val}}`.  Any colons, spaces, and
+        // quotes inside the parens belong to the s-expression.
+        if name == "query" {
+            let rest_trim = rest.trim_start();
+            if !rest_trim.starts_with('(') {
+                return Err(EmbedError {
+                    kind: EmbedErrorKind::MalformedSyntax(
+                        "query embed requires a parenthesised s-expression: {{query:(...)}}"
+                            .into(),
+                    ),
+                    raw_text: input.to_string(),
+                });
+            }
+            let (sexpr, tail) = match extract_balanced_parens(rest_trim) {
+                Some(pair) => pair,
+                None => {
+                    return Err(EmbedError {
+                        kind: EmbedErrorKind::MalformedSyntax(
+                            "unbalanced parentheses in query embed".into(),
+                        ),
+                        raw_text: input.to_string(),
+                    });
+                }
+            };
+
+            let mut options = BTreeMap::new();
+            for token in tail.split_whitespace() {
+                if let Some((key, val)) = token.split_once('=') {
+                    options.insert(key.to_string(), val.to_string());
+                }
+            }
+            return Ok(EmbedRequest {
+                name,
+                args: vec![sexpr.to_string()],
+                options,
+            });
+        }
+
+        // ── Classic form: name:arg1:arg2 key=val ... ───────────────
+        // (Re-assemble input so the whitespace/option parser sees the
+        //  original shape.)
+        let tail_full = if rest.is_empty() { input } else { rest };
+        // If `rest` is a slice of `input`, we need to re-anchor the "name"
+        // prefix logic on the tail (arguments only).
+        let args_and_options = if name_end == input.len() {
+            ""
+        } else {
+            input[name_end..].trim_start_matches(':')
+        };
+        let (args_part, options_part) = match args_and_options.find(' ') {
+            Some(pos) => (
+                &args_and_options[..pos],
+                Some(&args_and_options[pos + 1..]),
+            ),
+            None => (args_and_options, None),
         };
 
-        // Split name:arg1:arg2:...
-        let mut parts = name_args_part.split(':');
-        let name = parts.next().unwrap().to_string();
-        let args: Vec<String> = parts.map(|s| s.trim().to_string()).collect();
+        let args: Vec<String> = if args_part.is_empty() {
+            Vec::new()
+        } else {
+            args_part.split(':').map(|s| s.trim().to_string()).collect()
+        };
 
-        // Parse key=val options
         let mut options = BTreeMap::new();
         if let Some(opts_str) = options_part {
             for token in opts_str.split_whitespace() {
@@ -138,6 +204,9 @@ impl EmbedRequest {
                 }
             }
         }
+
+        // Silence unused-variable lint for the legacy shadow.
+        let _ = tail_full;
 
         Ok(EmbedRequest {
             name,
@@ -165,6 +234,7 @@ pub fn resolve_embed(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> Result<S
         "coverage" => Ok(render_coverage(request, ctx)),
         "diagnostics" => Ok(render_diagnostics(request, ctx)),
         "matrix" => Ok(render_matrix(request, ctx)),
+        "query" => render_query(request, ctx),
         // Legacy embeds (artifact, links, table) are still handled by
         // resolve_inline in document.rs — they should never reach here.
         "artifact" | "links" | "table" => Err(EmbedError {
@@ -178,6 +248,47 @@ pub fn resolve_embed(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> Result<S
             raw_text: format!("{request:?}"),
         }),
     }
+}
+
+/// Extract the balanced-parenthesis prefix from a string that starts with `(`.
+///
+/// Returns `(inside_parens_including_outer, tail_after_close)` on success.
+/// Respects string literals so that `"foo)bar"` does not close the group.
+fn extract_balanced_parens(s: &str) -> Option<(&str, &str)> {
+    let bytes = s.as_bytes();
+    if bytes.first() != Some(&b'(') {
+        return None;
+    }
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut escape = false;
+    for (i, b) in bytes.iter().enumerate() {
+        let c = *b;
+        if in_string {
+            if escape {
+                escape = false;
+            } else if c == b'\\' {
+                escape = true;
+            } else if c == b'"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match c {
+            b'"' => in_string = true,
+            b'(' => depth += 1,
+            b')' => {
+                depth -= 1;
+                if depth == 0 {
+                    // include the closing paren in the first slice
+                    let (head, tail) = s.split_at(i + 1);
+                    return Some((head, tail));
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 // ── Stats renderer ──────────────────────────────────────────────────────
@@ -624,6 +735,100 @@ fn auto_detect_link(ctx: &EmbedContext<'_>, from: &str, _to: &str) -> String {
     String::new()
 }
 
+// ── Query renderer ──────────────────────────────────────────────────────
+
+/// Default maximum rows a `{{query:...}}` embed will render.
+pub const QUERY_EMBED_DEFAULT_LIMIT: usize = 50;
+/// Hard upper bound on `limit=N` for `{{query:...}}`; keeps render time bounded.
+pub const QUERY_EMBED_MAX_LIMIT: usize = 500;
+
+/// Render `{{query:(s-expr) [limit=N]}}`.
+///
+/// Reuses `sexpr_eval::parse_filter` and `matches_filter_with_store` — the
+/// same path used by `rivet list --filter`, MCP's `rivet_query`, and the
+/// `rivet query` CLI — so output IDs agree across all three surfaces.
+///
+/// Read-only by construction (the evaluator has no I/O), and truncation is
+/// reported as a visible footer rather than silently dropping rows.
+fn render_query(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> Result<String, EmbedError> {
+    let Some(sexpr) = request.args.first() else {
+        return Err(EmbedError {
+            kind: EmbedErrorKind::MalformedSyntax(
+                "query embed requires an s-expression: {{query:(...)}}".into(),
+            ),
+            raw_text: format!("{request:?}"),
+        });
+    };
+
+    let expr = crate::sexpr_eval::parse_filter(sexpr).map_err(|errs| {
+        let msgs: Vec<String> = errs.iter().map(|e| e.to_string()).collect();
+        EmbedError {
+            kind: EmbedErrorKind::MalformedSyntax(format!("invalid filter: {}", msgs.join("; "))),
+            raw_text: sexpr.clone(),
+        }
+    })?;
+
+    // Resolve limit: options["limit"] if valid, else default.  Clamped to
+    // the hard max so a stray `limit=99999` cannot pin the renderer.
+    let limit = request
+        .options
+        .get("limit")
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(QUERY_EMBED_DEFAULT_LIMIT)
+        .min(QUERY_EMBED_MAX_LIMIT);
+
+    let mut matches: Vec<&crate::model::Artifact> = Vec::new();
+    let mut total = 0usize;
+    for artifact in ctx.store.iter() {
+        if crate::sexpr_eval::matches_filter_with_store(&expr, artifact, ctx.graph, ctx.store) {
+            total += 1;
+            if matches.len() < limit {
+                matches.push(artifact);
+            }
+        }
+    }
+
+    let mut html = String::from("<div class=\"embed-query\">\n");
+    if total == 0 {
+        html.push_str("<p class=\"embed-no-data\">No artifacts match this query.</p>\n");
+        html.push_str("</div>\n");
+        return Ok(html);
+    }
+
+    html.push_str(
+        "<table class=\"embed-table\"><thead><tr>\
+         <th>ID</th><th>Type</th><th>Title</th><th>Status</th>\
+         </tr></thead><tbody>\n",
+    );
+    for a in &matches {
+        let _ = writeln!(
+            html,
+            "<tr><td><code>{id}</code></td><td>{typ}</td><td>{title}</td><td>{status}</td></tr>",
+            id = document::html_escape(&a.id),
+            typ = document::html_escape(&a.artifact_type),
+            title = document::html_escape(&a.title),
+            status = document::html_escape(a.status.as_deref().unwrap_or("-")),
+        );
+    }
+    html.push_str("</tbody></table>\n");
+
+    if total > matches.len() {
+        let _ = writeln!(
+            html,
+            "<p class=\"embed-summary\">Showing {shown} of {total} — narrow the filter or raise <code>limit=</code> to see more.</p>",
+            shown = matches.len(),
+        );
+    } else {
+        let _ = writeln!(
+            html,
+            "<p class=\"embed-summary\">{total} result{s}.</p>",
+            s = if total == 1 { "" } else { "s" },
+        );
+    }
+    html.push_str("</div>\n");
+    Ok(html)
+}
+
 // ── Provenance ──────────────────────────────────────────────────────────
 
 /// Render a provenance footer for export (SC-EMBED-4).
@@ -923,4 +1128,239 @@ mod tests {
         assert!(!EmbedRequest::parse("diagnostics").unwrap().is_legacy());
         assert!(!EmbedRequest::parse("matrix").unwrap().is_legacy());
     }
+
+    // ── Balanced-paren / query parsing ──────────────────────────────
+
+    #[test]
+    fn extract_balanced_parens_simple() {
+        let (head, tail) = extract_balanced_parens("(= type \"requirement\") limit=5").unwrap();
+        assert_eq!(head, "(= type \"requirement\")");
+        assert_eq!(tail, " limit=5");
+    }
+
+    #[test]
+    fn extract_balanced_parens_nested() {
+        let (head, tail) =
+            extract_balanced_parens("(and (= type \"requirement\") (has-tag \"stpa\"))").unwrap();
+        assert_eq!(head, "(and (= type \"requirement\") (has-tag \"stpa\"))");
+        assert_eq!(tail, "");
+    }
+
+    #[test]
+    fn extract_balanced_parens_respects_string_literal() {
+        // a `)` inside a string must not close the group
+        let (head, _tail) = extract_balanced_parens(r#"(= title "has ) paren")"#).unwrap();
+        assert_eq!(head, r#"(= title "has ) paren")"#);
+    }
+
+    #[test]
+    fn extract_balanced_parens_unbalanced_returns_none() {
+        assert!(extract_balanced_parens("(and (=").is_none());
+    }
+
+    #[test]
+    fn parse_query_captures_whole_sexpr() {
+        let req = EmbedRequest::parse("query:(= type \"requirement\")").unwrap();
+        assert_eq!(req.name, "query");
+        assert_eq!(req.args, vec!["(= type \"requirement\")"]);
+    }
+
+    #[test]
+    fn parse_query_with_nested_and_options() {
+        let req = EmbedRequest::parse(
+            "query:(and (= type \"requirement\") (has-tag \"stpa\")) limit=25",
+        )
+        .unwrap();
+        assert_eq!(req.name, "query");
+        assert_eq!(
+            req.args,
+            vec!["(and (= type \"requirement\") (has-tag \"stpa\"))"]
+        );
+        assert_eq!(req.options.get("limit"), Some(&"25".to_string()));
+    }
+
+    #[test]
+    fn parse_query_without_parens_errors() {
+        let err = EmbedRequest::parse("query:type=requirement").unwrap_err();
+        assert!(matches!(err.kind, EmbedErrorKind::MalformedSyntax(_)));
+    }
+
+    #[test]
+    fn parse_query_with_unbalanced_parens_errors() {
+        let err = EmbedRequest::parse("query:(and (= type \"req\"").unwrap_err();
+        assert!(matches!(err.kind, EmbedErrorKind::MalformedSyntax(_)));
+    }
+
+    // Regression: parser changes for `query` must not break existing embeds.
+
+    #[test]
+    fn parse_stats_still_splits_on_colon() {
+        let req = EmbedRequest::parse("stats:types").unwrap();
+        assert_eq!(req.name, "stats");
+        assert_eq!(req.args, vec!["types"]);
+    }
+
+    #[test]
+    fn parse_table_still_takes_two_args() {
+        let req = EmbedRequest::parse("table:requirement:id,title,status").unwrap();
+        assert_eq!(req.name, "table");
+        assert_eq!(req.args, vec!["requirement", "id,title,status"]);
+    }
+
+    // ── Query & group renderers ─────────────────────────────────────
+
+    use crate::links::LinkGraph;
+    use crate::model::Artifact;
+    use crate::schema::Schema;
+    use crate::store::Store;
+    use crate::validate::Diagnostic;
+    use std::collections::BTreeMap;
+
+    fn make_store(artifacts: Vec<Artifact>) -> Store {
+        let mut s = Store::new();
+        for a in artifacts {
+            s.upsert(a);
+        }
+        s
+    }
+
+    fn plain(id: &str, typ: &str, status: Option<&str>, tags: &[&str]) -> Artifact {
+        Artifact {
+            id: id.into(),
+            artifact_type: typ.into(),
+            title: format!("Title of {id}"),
+            description: None,
+            status: status.map(|s| s.into()),
+            tags: tags.iter().map(|t| t.to_string()).collect(),
+            links: vec![],
+            fields: BTreeMap::new(),
+            provenance: None,
+            source_file: None,
+        }
+    }
+
+    fn run_embed(
+        query: &str,
+        store: &Store,
+        schema: &Schema,
+        graph: &LinkGraph,
+    ) -> Result<String, EmbedError> {
+        let req = EmbedRequest::parse(query)?;
+        let diags: Vec<Diagnostic> = Vec::new();
+        let ctx = EmbedContext {
+            store,
+            schema,
+            graph,
+            diagnostics: &diags,
+            baseline: None,
+        };
+        resolve_embed(&req, &ctx)
+    }
+
+    // The `{{query:...}}` embed must return the same IDs as
+    // `sexpr_eval::matches_filter_with_store` — and therefore the same set
+    // that `rivet list --filter` and MCP's `rivet_query` would return.
+    #[test]
+    fn query_embed_matches_sexpr_filter() {
+        let store = make_store(vec![
+            plain("REQ-1", "requirement", Some("approved"), &["stpa"]),
+            plain("REQ-2", "requirement", Some("draft"), &[]),
+            plain("FEAT-1", "feature", Some("approved"), &["stpa"]),
+        ]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+
+        let html = run_embed(
+            r#"query:(= type "requirement")"#,
+            &store,
+            &schema,
+            &graph,
+        )
+        .unwrap();
+        assert!(html.contains("REQ-1"), "got: {html}");
+        assert!(html.contains("REQ-2"), "got: {html}");
+        assert!(!html.contains("FEAT-1"), "got: {html}");
+
+        // Cross-check via the same evaluator directly.
+        let expr = crate::sexpr_eval::parse_filter(r#"(= type "requirement")"#).unwrap();
+        let direct_ids: Vec<String> = store
+            .iter()
+            .filter(|a| crate::sexpr_eval::matches_filter_with_store(&expr, a, &graph, &store))
+            .map(|a| a.id.clone())
+            .collect();
+        assert_eq!(direct_ids, vec!["REQ-1".to_string(), "REQ-2".to_string()]);
+    }
+
+    #[test]
+    fn query_embed_no_matches_shows_empty_message() {
+        let store = make_store(vec![plain("REQ-1", "requirement", None, &[])]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let html = run_embed(r#"query:(= type "feature")"#, &store, &schema, &graph).unwrap();
+        assert!(html.contains("No artifacts match"), "got: {html}");
+        assert!(html.contains("embed-query"));
+    }
+
+    #[test]
+    fn query_embed_limit_caps_rows_and_shows_truncation_note() {
+        let store = make_store(
+            (0..20)
+                .map(|i| plain(&format!("REQ-{i:03}"), "requirement", None, &[]))
+                .collect(),
+        );
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let html = run_embed(
+            r#"query:(= type "requirement") limit=3"#,
+            &store,
+            &schema,
+            &graph,
+        )
+        .unwrap();
+        // Only 3 data rows render, and a footer flags the truncation.
+        // (Store iteration order is not guaranteed — we assert row count
+        //  and the summary, not specific IDs.)
+        let row_count = html.matches("<tr>").count();
+        assert_eq!(row_count, 4, "expected 1 header + 3 data rows, got: {html}");
+        assert!(html.contains("Showing 3 of 20"), "got: {html}");
+    }
+
+    #[test]
+    fn query_embed_limit_clamped_to_hard_max() {
+        // Just verify that an over-limit renders at all without panicking.
+        let store = make_store(vec![plain("REQ-1", "requirement", None, &[])]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let html = run_embed(
+            &format!(
+                "query:(= type \"requirement\") limit={}",
+                QUERY_EMBED_MAX_LIMIT + 1_000
+            ),
+            &store,
+            &schema,
+            &graph,
+        )
+        .unwrap();
+        assert!(html.contains("REQ-1"));
+    }
+
+    #[test]
+    fn query_embed_malformed_filter_renders_error() {
+        let store = Store::new();
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        // `(and` unclosed — passes the paren-balancer only when wrapped.
+        let req = EmbedRequest::parse("query:(unknown-form)").unwrap();
+        let diags: Vec<Diagnostic> = Vec::new();
+        let ctx = EmbedContext {
+            store: &store,
+            schema: &schema,
+            graph: &graph,
+            diagnostics: &diags,
+            baseline: None,
+        };
+        let err = resolve_embed(&req, &ctx).unwrap_err();
+        assert!(matches!(err.kind, EmbedErrorKind::MalformedSyntax(_)));
+    }
+
 }
