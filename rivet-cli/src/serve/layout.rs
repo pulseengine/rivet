@@ -90,6 +90,16 @@ pub(crate) fn page_layout_with_variant(
     } else {
         String::new()
     };
+    // Variants nav entry: only rendered when a feature model is configured.
+    let variants_nav = if state.variants.has_model() {
+        let count = state.variants.variants.len();
+        format!(
+            "<li><a hx-get=\"/variants\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/variants\"><span class=\"nav-label\"><span class=\"nav-icon\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M2 4h12l-4.5 5v4l-3 1.5V9z\"/></svg></span> Variants</span><span class=\"nav-badge\">{count}</span></a></li>"
+        )
+    } else {
+        String::new()
+    };
+
     let ext_total: usize = state.externals.iter().map(|e| e.store.len()).sum();
     let externals_nav = if !state.externals.is_empty() {
         let badge = if ext_total > 0 {
@@ -304,6 +314,7 @@ document.addEventListener('DOMContentLoaded',renderMermaid);
     <li class="nav-divider"></li>
     <li><a hx-get="/diff" hx-target="#content" hx-push-url="true" href="/diff"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v10M10 3v10"/><path d="M2 8h3M11 8h3"/><circle cx="6" cy="5" r="1.5"/><circle cx="10" cy="11" r="1.5"/></svg></span> Diff</span></a></li>
     {externals_nav}
+    {variants_nav}
     <li class="nav-divider"></li>
     <li><a hx-get="/help" hx-target="#content" hx-push-url="true" href="/help"><span class="nav-label"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><path d="M6 6.5a2 2 0 013.5 1.5c0 1-1.5 1.5-1.5 2.5M8 12.5v.01"/></svg></span> Help &amp; Docs</span></a></li>
   </ul>
