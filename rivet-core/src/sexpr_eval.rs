@@ -386,16 +386,104 @@ pub struct LowerError {
 }
 
 /// Error from parsing + lowering a filter expression.
+///
+/// `note` carries an optional human-readable hint separate from the raw
+/// parser `message`. When the input is detected to look like infix syntax
+/// (`A and B`) or is missing outer parentheses, the hint points the user
+/// at the expected s-expression form. Consumers that want just the short
+/// parser detail can read `message` directly; the `Display` impl renders
+/// both.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FilterError {
     pub offset: usize,
     pub message: String,
+    /// Optional semantic note added by `parse_filter` on top of the
+    /// positional parser message.
+    pub note: Option<String>,
 }
 
 impl std::fmt::Display for FilterError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "offset {}: {}", self.offset, self.message)
+        write!(f, "offset {}: {}", self.offset, self.message)?;
+        if let Some(ref n) = self.note {
+            write!(f, "\n  note: {n}")?;
+        }
+        Ok(())
     }
+}
+
+/// Classify a parse failure and produce a human-readable note.
+///
+/// Detects the three most common user-error shapes:
+///   - bare infix: `A and B`, `A && B`
+///   - missing outer parens: e.g. `and A B`
+///   - unknown head symbol: `(bogus A B)`
+///
+/// and nudges the user at the expected `(head A B …)` form.
+fn classify_filter_error(source: &str, message: &str) -> Option<String> {
+    let trimmed = source.trim_start();
+
+    const HEADS: &[&str] = &[
+        "and", "or", "not", "implies", "excludes", "=", "!=", ">", "<", ">=", "<=",
+        "has-tag", "has-field", "in", "matches", "contains", "linked-by", "linked-from",
+        "linked-to", "links-count", "reachable-from", "reachable-to", "forall", "exists",
+        "count",
+    ];
+    const INFIX: &[&str] = &[
+        "and", "or", "not", "==", "!=", "&&", "||", ">", "<", ">=", "<=", "implies",
+    ];
+
+    if !trimmed.starts_with('(') {
+        let tokens_lc: Vec<String> = trimmed
+            .split_whitespace()
+            .map(|s| s.to_ascii_lowercase())
+            .collect();
+
+        // Case 1: first token is a known head symbol → missing outer
+        // parens (e.g. `and A B`). Prefer this over the infix note
+        // because the fix is a single wrap rather than a restructure.
+        if let Some(first) = tokens_lc.first() {
+            if HEADS.contains(&first.as_str()) {
+                return Some(format!(
+                    "looks like missing outer parens; wrap the expression: ({trimmed})"
+                ));
+            }
+        }
+
+        // Case 2: source does not start with '(' and the OPERATOR sits
+        // between two operands — that's infix.
+        let has_infix = tokens_lc.len() >= 3
+            && tokens_lc
+                .get(1)
+                .is_some_and(|t| INFIX.contains(&t.as_str()));
+        if has_infix {
+            let suggestion = if tokens_lc.len() == 3 {
+                format!(
+                    "({} {} {})",
+                    tokens_lc[1].replace("&&", "and").replace("||", "or"),
+                    tokens_lc[0],
+                    tokens_lc[2]
+                )
+            } else {
+                "(and A B)".to_string()
+            };
+            return Some(format!(
+                "expected s-expression form like {suggestion}; got infix syntax"
+            ));
+        }
+    }
+
+    // Case 3: unknown function / head symbol. The lowerer emits a
+    // message that typically mentions "unknown form" or "unexpected".
+    if message.contains("unknown") || message.contains("unexpected form") {
+        return Some(
+            "unknown head symbol; see docs/getting-started.md for the supported forms \
+             (and/or/not/implies/excludes/=/!=/>/</has-tag/has-field/in/matches/contains/linked-*)"
+                .to_string(),
+        );
+    }
+
+    None
 }
 
 /// Parse a filter string into a typed expression.
@@ -409,6 +497,7 @@ pub fn parse_filter(source: &str) -> Result<Expr, Vec<FilterError>> {
         return Err(parse_errors
             .into_iter()
             .map(|e| FilterError {
+                note: classify_filter_error(source, &e.message),
                 offset: e.offset,
                 message: e.message,
             })
@@ -419,6 +508,7 @@ pub fn parse_filter(source: &str) -> Result<Expr, Vec<FilterError>> {
     lower(&root).map_err(|errs| {
         errs.into_iter()
             .map(|e| FilterError {
+                note: classify_filter_error(source, &e.message),
                 offset: e.offset,
                 message: e.message,
             })
@@ -1238,5 +1328,75 @@ mod tests {
             store: None,
         };
         assert!(!check(&expr, &ctx));
+    }
+
+    // ── Error message quality (pain point #7) ───────────────────────
+
+    /// Bare infix like `A and B` must surface a semantic note pointing
+    /// at the expected `(and A B)` form — not just a positional parser
+    /// offset.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn parse_error_bare_infix_surfaces_note() {
+        let result = parse_filter("A and B");
+        let errs = result.expect_err("bare infix must fail");
+        assert!(!errs.is_empty());
+        let note = errs[0]
+            .note
+            .as_ref()
+            .expect("expected a semantic note for infix input");
+        assert!(
+            note.contains("infix") || note.contains("s-expression"),
+            "note should mention s-expression/infix. got: {note}"
+        );
+        assert!(
+            note.contains("(and A B)") || note.contains("(and"),
+            "note should suggest (and A B). got: {note}"
+        );
+        // Display renders both positional detail and the note.
+        let rendered = format!("{}", errs[0]);
+        assert!(rendered.contains("note:"), "Display should carry the note");
+    }
+
+    /// `and A B` — missing outer parens. The classifier should propose
+    /// wrapping the expression.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn parse_error_missing_outer_parens_surfaces_note() {
+        let result = parse_filter("and A B");
+        let errs = result.expect_err("missing parens must fail");
+        let note = errs[0]
+            .note
+            .as_ref()
+            .expect("expected a semantic note for missing outer parens");
+        assert!(
+            note.contains("missing outer parens") && note.contains("(and A B)"),
+            "note should suggest wrapping in parens. got: {note}"
+        );
+    }
+
+    /// `(bogus A B)` — unknown head symbol. Note should reference the
+    /// supported forms.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn parse_error_unknown_head_surfaces_note() {
+        let result = parse_filter("(bogus A B)");
+        let errs = result.expect_err("unknown head must fail");
+        let note = errs[0]
+            .note
+            .as_ref()
+            .expect("expected a note on unknown head symbol");
+        assert!(
+            note.contains("unknown head symbol") && note.contains("and/or/not"),
+            "note should list supported forms. got: {note}"
+        );
+    }
+
+    /// Valid s-expression input must not carry a note — classification
+    /// only runs on error paths.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn parse_success_has_no_note() {
+        parse_filter("(and (= type \"requirement\") (has-tag \"stpa\"))").unwrap();
     }
 }

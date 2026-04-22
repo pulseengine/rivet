@@ -217,8 +217,10 @@ impl FeatureModel {
         let mut constraints = Vec::new();
         for src in &raw.constraints {
             let preprocessed = preprocess_feature_constraint(src, &features);
-            let expr = sexpr_eval::parse_filter(&preprocessed)
-                .map_err(|errs| Error::Schema(format!("constraint `{src}`: {errs:?}")))?;
+            let expr = sexpr_eval::parse_filter(&preprocessed).map_err(|errs| {
+                let msgs: Vec<String> = errs.iter().map(|e| e.to_string()).collect();
+                Error::Schema(format!("constraint `{src}`: {}", msgs.join("; ")))
+            })?;
             constraints.push(expr);
         }
 
