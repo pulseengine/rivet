@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::adapter::{Adapter, AdapterConfig, AdapterSource};
 use crate::error::Error;
-use crate::model::{Artifact, Link};
+use crate::model::{Artifact, Link, Provenance};
 
 // ── ReqIF XML structures ────────────────────────────────────────────────
 //
@@ -465,6 +465,24 @@ const ATTR_DEF_STATUS: &str = "ATTR-STATUS";
 const ATTR_DEF_TAGS: &str = "ATTR-TAGS";
 const ATTR_DEF_ARTIFACT_TYPE: &str = "ATTR-ARTIFACT-TYPE";
 
+// Provenance attribute definition identifiers and long-names.
+//
+// These expose rivet's AI-provenance metadata over ReqIF as a stable
+// convention: five string attributes prefixed with `rivet:`.  Other tools
+// that don't know about rivet will ignore the unknown attribute names.
+// Files that don't carry them round-trip as `provenance: None`.
+const ATTR_DEF_PROV_CREATED_BY: &str = "ATTR-RIVET-CREATED-BY";
+const ATTR_DEF_PROV_MODEL: &str = "ATTR-RIVET-MODEL";
+const ATTR_DEF_PROV_SESSION_ID: &str = "ATTR-RIVET-SESSION-ID";
+const ATTR_DEF_PROV_TIMESTAMP: &str = "ATTR-RIVET-TIMESTAMP";
+const ATTR_DEF_PROV_REVIEWED_BY: &str = "ATTR-RIVET-REVIEWED-BY";
+
+const PROV_LONG_CREATED_BY: &str = "rivet:created-by";
+const PROV_LONG_MODEL: &str = "rivet:model";
+const PROV_LONG_SESSION_ID: &str = "rivet:session-id";
+const PROV_LONG_TIMESTAMP: &str = "rivet:timestamp";
+const PROV_LONG_REVIEWED_BY: &str = "rivet:reviewed-by";
+
 // ── Adapter ─────────────────────────────────────────────────────────────
 
 pub struct ReqIfAdapter {
@@ -655,6 +673,12 @@ pub fn parse_reqif(xml: &str, type_map: &HashMap<String, String>) -> Result<Vec<
         let mut reqif_foreign_id: Option<String> = None;
         let mut reqif_name: Option<String> = None;
         let mut reqif_text: Option<String> = None;
+        // Rivet AI-provenance attributes.
+        let mut prov_created_by: Option<String> = None;
+        let mut prov_model: Option<String> = None;
+        let mut prov_session_id: Option<String> = None;
+        let mut prov_timestamp: Option<String> = None;
+        let mut prov_reviewed_by: Option<String> = None;
 
         if let Some(values) = &obj.values {
             for av in &values.string_values {
@@ -701,6 +725,32 @@ pub fn parse_reqif(xml: &str, type_map: &HashMap<String, String>) -> Result<Vec<
                     "ReqIF.ChapterName" => {
                         if !av.the_value.is_empty() {
                             reqif_name = Some(av.the_value.clone());
+                        }
+                    }
+                    // Rivet AI-provenance: mapped back into the Provenance struct.
+                    PROV_LONG_CREATED_BY => {
+                        if !av.the_value.is_empty() {
+                            prov_created_by = Some(av.the_value.clone());
+                        }
+                    }
+                    PROV_LONG_MODEL => {
+                        if !av.the_value.is_empty() {
+                            prov_model = Some(av.the_value.clone());
+                        }
+                    }
+                    PROV_LONG_SESSION_ID => {
+                        if !av.the_value.is_empty() {
+                            prov_session_id = Some(av.the_value.clone());
+                        }
+                    }
+                    PROV_LONG_TIMESTAMP => {
+                        if !av.the_value.is_empty() {
+                            prov_timestamp = Some(av.the_value.clone());
+                        }
+                    }
+                    PROV_LONG_REVIEWED_BY => {
+                        if !av.the_value.is_empty() {
+                            prov_reviewed_by = Some(av.the_value.clone());
                         }
                     }
                     _ => {
@@ -770,6 +820,17 @@ pub fn parse_reqif(xml: &str, type_map: &HashMap<String, String>) -> Result<Vec<
             .cloned()
             .unwrap_or(resolved_type);
 
+        // Reconstruct provenance only if at least `created-by` was emitted.
+        // Absence → `None` (backward-compatible with files lacking rivet
+        // metadata).
+        let provenance = prov_created_by.map(|created_by| Provenance {
+            created_by,
+            model: prov_model,
+            session_id: prov_session_id,
+            timestamp: prov_timestamp,
+            reviewed_by: prov_reviewed_by,
+        });
+
         let artifact = Artifact {
             id,
             artifact_type: mapped_type,
@@ -779,7 +840,7 @@ pub fn parse_reqif(xml: &str, type_map: &HashMap<String, String>) -> Result<Vec<
             tags,
             links: vec![], // filled in below from SPEC-RELATIONS
             fields,
-            provenance: None,
+            provenance,
             source_file: None,
         };
         artifacts.push(artifact);
@@ -904,6 +965,26 @@ pub fn build_reqif(artifacts: &[Artifact]) -> ReqIfRoot {
                 },
             ];
 
+            // Rivet AI-provenance attribute definitions.  Emitted on every
+            // SpecObjectType so tools that preserve attribute ordering don't
+            // drop them; values are only set per-SpecObject when the source
+            // Artifact carries provenance.
+            for (ident, long_name) in [
+                (ATTR_DEF_PROV_CREATED_BY, PROV_LONG_CREATED_BY),
+                (ATTR_DEF_PROV_MODEL, PROV_LONG_MODEL),
+                (ATTR_DEF_PROV_SESSION_ID, PROV_LONG_SESSION_ID),
+                (ATTR_DEF_PROV_TIMESTAMP, PROV_LONG_TIMESTAMP),
+                (ATTR_DEF_PROV_REVIEWED_BY, PROV_LONG_REVIEWED_BY),
+            ] {
+                string_attrs.push(AttributeDefinitionString {
+                    identifier: ident.into(),
+                    long_name: Some(long_name.into()),
+                    datatype_ref: Some(DatatypeRef {
+                        datatype_ref: DATATYPE_STRING_ID.into(),
+                    }),
+                });
+            }
+
             for fname in &field_names {
                 string_attrs.push(AttributeDefinitionString {
                     identifier: format!("ATTR-{fname}"),
@@ -963,6 +1044,30 @@ pub fn build_reqif(artifacts: &[Artifact]) -> ReqIfRoot {
                     },
                 },
             ];
+
+            // Emit rivet AI-provenance when present.  Fields with `None`
+            // values are skipped — only the non-empty metadata survives.
+            if let Some(p) = &a.provenance {
+                let entries: [(&str, Option<&str>); 5] = [
+                    (ATTR_DEF_PROV_CREATED_BY, Some(p.created_by.as_str())),
+                    (ATTR_DEF_PROV_MODEL, p.model.as_deref()),
+                    (ATTR_DEF_PROV_SESSION_ID, p.session_id.as_deref()),
+                    (ATTR_DEF_PROV_TIMESTAMP, p.timestamp.as_deref()),
+                    (ATTR_DEF_PROV_REVIEWED_BY, p.reviewed_by.as_deref()),
+                ];
+                for (ident, val) in entries {
+                    if let Some(v) = val {
+                        if !v.is_empty() {
+                            string_values.push(AttributeValueString {
+                                the_value: v.to_string(),
+                                definition: AttrDefinitionRef {
+                                    attr_def_ref: ident.into(),
+                                },
+                            });
+                        }
+                    }
+                }
+            }
 
             for (key, value) in &a.fields {
                 let val_str = match value {
@@ -1274,5 +1379,74 @@ mod tests {
         assert_eq!(arts[0].artifact_type, "sw-req");
         // Unmapped types pass through unchanged
         assert_eq!(arts[1].artifact_type, "section");
+    }
+
+    /// Provenance must round-trip through ReqIF.  Rivet's AI-provenance
+    /// metadata is encoded as five `rivet:*` string attributes on every
+    /// SpecObject.  Absence on the way in → `None` on the way out.
+    ///
+    /// Regression test for the bug documented in
+    /// `docs/design/polarion-reqif-fidelity.md` row "provenance.*" where every
+    /// provenance field was ABSENT on Path 2.
+    // rivet: verifies REQ-025
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_provenance_roundtrip() {
+        let art = Artifact {
+            id: "REQ-PROV".into(),
+            artifact_type: "requirement".into(),
+            title: "Provenance carrier".into(),
+            description: None,
+            status: None,
+            tags: vec![],
+            links: vec![],
+            fields: BTreeMap::new(),
+            provenance: Some(Provenance {
+                created_by: "ai-assisted".into(),
+                model: Some("claude-opus-4-7".into()),
+                session_id: Some("s-1234".into()),
+                timestamp: Some("2026-04-19T12:34:56Z".into()),
+                reviewed_by: Some("alice".into()),
+            }),
+            source_file: None,
+        };
+
+        let adapter = ReqIfAdapter::new();
+        let config = AdapterConfig::default();
+        let bytes = adapter.export(&[art.clone()], &config).unwrap();
+        let re = adapter
+            .import(&AdapterSource::Bytes(bytes), &config)
+            .unwrap();
+
+        assert_eq!(re.len(), 1);
+        assert_eq!(re[0].provenance, art.provenance);
+    }
+
+    /// Files without any provenance attributes parse back to `None` — the
+    /// backward-compatibility contract.
+    // rivet: verifies REQ-025
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_provenance_absent_stays_none() {
+        let art = Artifact {
+            id: "REQ-NOPROV".into(),
+            artifact_type: "requirement".into(),
+            title: "No provenance".into(),
+            description: None,
+            status: None,
+            tags: vec![],
+            links: vec![],
+            fields: BTreeMap::new(),
+            provenance: None,
+            source_file: None,
+        };
+        let adapter = ReqIfAdapter::new();
+        let config = AdapterConfig::default();
+        let bytes = adapter.export(&[art], &config).unwrap();
+        let re = adapter
+            .import(&AdapterSource::Bytes(bytes), &config)
+            .unwrap();
+        assert_eq!(re.len(), 1);
+        assert!(re[0].provenance.is_none());
     }
 }
