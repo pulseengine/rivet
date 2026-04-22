@@ -369,14 +369,13 @@ fn render_variant_banner(state: &AppState, active_variant: Option<&str>) -> Stri
         return String::new();
     };
     if !state.variants.has_model() {
-        return format!(
-            "<div class=\"variant-banner variant-banner-err\" role=\"alert\" \
+        return "<div class=\"variant-banner variant-banner-err\" role=\"alert\" \
              style=\"margin:.75rem 2rem 0 2rem;padding:.6rem .9rem;font-size:.82rem;\
              background:#fef3c7;color:#78350f;border:1px solid #f59e0b;border-radius:6px\">\
              <strong>Variant filter ignored:</strong> this project has no feature model. \
              <a href=\"?\" style=\"color:inherit;text-decoration:underline\">Clear filter</a>\
-             </div>",
-        );
+             </div>"
+            .to_string();
     }
     let total = state.store.len();
     match state.build_variant_scope(name) {

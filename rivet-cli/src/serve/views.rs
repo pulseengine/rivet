@@ -33,6 +33,7 @@ fn variant_error_response(msg: &str) -> Response {
 /// * `Ok(None)` — no `variant` param, render unscoped.
 /// * `Ok(Some(scope))` — scope built, render against its store/graph.
 /// * `Err(resp)` — render the error response directly.
+#[allow(clippy::result_large_err)]
 fn try_build_scope(
     state: &AppState,
     variant: &Option<String>,
