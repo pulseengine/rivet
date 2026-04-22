@@ -420,19 +420,34 @@ pub fn validate_structural(store: &Store, schema: &Schema, graph: &LinkGraph) ->
         }
     }
 
-    // 8. Check unknown link types (not defined in schema)
+    // 8. Check unknown link types (not defined in schema).
+    // Elevated from Warning to Error: an undeclared link-type means the
+    // schema's cardinality and target-type guarantees silently don't apply
+    // to those links — the same severity as a broken required-link link,
+    // not a soft advisory. Pin to one diagnostic per (artifact, link-type)
+    // pair so a typo doesn't drown the report.
+    use std::collections::BTreeSet;
+    let known_link_types: BTreeSet<&str> = schema
+        .link_types
+        .keys()
+        .map(String::as_str)
+        .collect();
     for artifact in store.iter() {
+        let mut seen: BTreeSet<&str> = BTreeSet::new();
         for link in &artifact.links {
-            if !schema.link_types.contains_key(&link.link_type) {
+            if !known_link_types.contains(link.link_type.as_str())
+                && seen.insert(link.link_type.as_str())
+            {
                 diagnostics.push(Diagnostic {
                     source_file: None,
                     line: None,
                     column: None,
-                    severity: Severity::Warning,
+                    severity: Severity::Error,
                     artifact_id: Some(artifact.id.clone()),
                     rule: "unknown-link-type".to_string(),
                     message: format!(
-                        "link type '{}' is not defined in the schema",
+                        "link type '{}' is not defined in the schema \
+                         — declare it in link-types: or remove the link",
                         link.link_type
                     ),
                 });
@@ -504,8 +519,8 @@ mod tests {
     use crate::links::LinkGraph;
     use crate::model::{Artifact, Link};
     use crate::schema::{
-        ArtifactTypeDef, Condition, ConditionalRule, FieldDef, Requirement, Severity,
-        TraceabilityRule,
+        ArtifactTypeDef, Condition, ConditionalRule, FieldDef, LinkFieldDef, Requirement,
+        Severity, TraceabilityRule,
     };
     use crate::test_helpers::{minimal_artifact, minimal_schema};
     use std::collections::BTreeMap;
@@ -682,6 +697,90 @@ mod tests {
         assert_eq!(diags.len(), 1);
         assert!(diags[0].message.contains("mitigated_by"));
         assert_eq!(diags[0].severity, Severity::Warning);
+    }
+
+    // rivet: verifies REQ-004
+    #[test]
+    fn unknown_link_type_is_error_not_warning() {
+        // Regression guard: v0.4.1 emitted Warning for links whose type
+        // wasn't declared in the schema, so validation stayed PASS even
+        // though the cardinality and target-type guarantees silently
+        // didn't apply. Now promoted to Error — one per unique
+        // (artifact, link_type) pair to avoid noise.
+        use crate::store::Store;
+
+        let schema_file = minimal_schema("test");
+        let schema = Schema::merge(&[schema_file]);
+
+        let mut art = minimal_artifact("A-1", "test");
+        art.links = vec![
+            Link {
+                link_type: "undeclared-type".to_string(),
+                target: "B-1".to_string(),
+            },
+            Link {
+                link_type: "undeclared-type".to_string(),
+                target: "B-2".to_string(),
+            },
+        ];
+        let mut store = Store::new();
+        store.insert(art);
+        let graph = LinkGraph::build(&store, &schema);
+
+        let diags = crate::validate::validate(&store, &schema, &graph);
+        let unknown: Vec<_> = diags
+            .iter()
+            .filter(|d| d.rule == "unknown-link-type")
+            .collect();
+        assert_eq!(
+            unknown.len(),
+            1,
+            "must emit exactly one diagnostic per (artifact, link-type) pair: {unknown:?}",
+        );
+        assert_eq!(
+            unknown[0].severity,
+            Severity::Error,
+            "unknown link type must be Error, got {:?}",
+            unknown[0].severity
+        );
+    }
+
+    // rivet: verifies REQ-010
+    #[test]
+    fn schema_consistency_flags_dangling_link_field_refs() {
+        // Regression guard: a schema with link-field.link_type pointing to
+        // an undeclared link type must be flagged at schema-check time,
+        // not silently tolerated until artifacts start being validated.
+        let mut file = minimal_schema("test");
+        file.artifact_types = vec![ArtifactTypeDef {
+            name: "test".to_string(),
+            description: "Test type".to_string(),
+            fields: vec![],
+            link_fields: vec![LinkFieldDef {
+                name: "satisfies".to_string(),
+                link_type: "nonexistent-link-type".to_string(),
+                required: false,
+                cardinality: Cardinality::ZeroOrMany,
+                target_types: vec!["another-missing-type".to_string()],
+            }],
+            aspice_process: None,
+            common_mistakes: vec![],
+            example: None,
+            yaml_section: None,
+            yaml_sections: vec![],
+            yaml_section_suffix: None,
+            shorthand_links: std::collections::BTreeMap::new(),
+        }];
+        let schema = Schema::merge(&[file]);
+        let issues = schema.validate_consistency();
+        assert!(
+            issues.iter().any(|i| i.contains("nonexistent-link-type")),
+            "must flag undeclared link type: got {issues:?}",
+        );
+        assert!(
+            issues.iter().any(|i| i.contains("another-missing-type")),
+            "must flag unknown target type: got {issues:?}",
+        );
     }
 
     // rivet: verifies REQ-004

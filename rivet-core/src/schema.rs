@@ -677,6 +677,62 @@ impl Schema {
         }
     }
 
+    /// Return schema-internal consistency issues as human-readable messages.
+    /// Callers should surface these as errors — a schema with dangling
+    /// link-field references silently breaks cardinality enforcement for
+    /// every artifact that uses the undeclared link type, so the schema
+    /// should not reach production without review.
+    ///
+    /// Checks:
+    /// - Every `link-field.link_type` is declared in `link-types:`.
+    /// - Every `link-field.target_types` names a known artifact type.
+    /// - Every traceability rule's `from_types` and target types exist.
+    pub fn validate_consistency(&self) -> Vec<String> {
+        let mut issues = Vec::new();
+        let type_names: std::collections::HashSet<&str> =
+            self.artifact_types.keys().map(String::as_str).collect();
+        let link_names: std::collections::HashSet<&str> =
+            self.link_types.keys().map(String::as_str).collect();
+
+        for at in self.artifact_types.values() {
+            for lf in &at.link_fields {
+                if !link_names.contains(lf.link_type.as_str()) {
+                    issues.push(format!(
+                        "type '{}': link-field '{}' references unknown link type '{}'",
+                        at.name, lf.name, lf.link_type
+                    ));
+                }
+                for tt in &lf.target_types {
+                    if !type_names.contains(tt.as_str()) {
+                        issues.push(format!(
+                            "type '{}': link-field '{}' target type '{}' is not a known artifact type",
+                            at.name, lf.name, tt
+                        ));
+                    }
+                }
+            }
+        }
+        for rule in &self.traceability_rules {
+            for from in &rule.from_types {
+                if !type_names.contains(from.as_str()) {
+                    issues.push(format!(
+                        "rule '{}': from-type '{}' is not a known artifact type",
+                        rule.name, from
+                    ));
+                }
+            }
+            for target in &rule.target_types {
+                if !type_names.contains(target.as_str()) {
+                    issues.push(format!(
+                        "rule '{}': target-type '{}' is not a known artifact type",
+                        rule.name, target
+                    ));
+                }
+            }
+        }
+        issues
+    }
+
     /// Look up an artifact type definition by name.
     #[inline]
     pub fn artifact_type(&self, name: &str) -> Option<&ArtifactTypeDef> {
