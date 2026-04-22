@@ -759,6 +759,27 @@ enum SchemaAction {
         #[arg(short, long, default_value = "text")]
         format: String,
     },
+    /// List JSON schemas describing `--format json` CLI outputs
+    ///
+    /// Rivet ships draft-2020-12 JSON Schemas for every `--format json`
+    /// output (validate, stats, coverage, list). Consumers can pipe
+    /// the CLI output through a JSON Schema validator to catch
+    /// regressions when CLI fields are added or removed.
+    ListJson {
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+    /// Print the path (or content) of a JSON schema for a given CLI output
+    ///
+    /// Valid output names: validate, stats, coverage, list.
+    GetJson {
+        /// Output name (validate | stats | coverage | list)
+        name: String,
+        /// Print the schema content instead of just its path
+        #[arg(long)]
+        content: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -5834,6 +5855,20 @@ fn cmd_docs(
 
 /// Introspect loaded schemas.
 fn cmd_schema(cli: &Cli, action: &SchemaAction) -> Result<bool> {
+    // `list-json` / `get-json` don't need the project schema graph —
+    // they describe CLI output shapes, not artifact types. Handle them
+    // before the expensive load.
+    match action {
+        SchemaAction::ListJson { format } => {
+            validate_format(format, &["text", "json"])?;
+            return cmd_schema_list_json(cli, format);
+        }
+        SchemaAction::GetJson { name, content } => {
+            return cmd_schema_get_json(cli, name, *content);
+        }
+        _ => {}
+    }
+
     let schemas_dir = resolve_schemas_dir(cli);
     let config_path = cli.project.join("rivet.yaml");
     let schema_names = if config_path.exists() {
@@ -5875,8 +5910,123 @@ fn cmd_schema(cli: &Cli, action: &SchemaAction) -> Result<bool> {
             };
             schema_cmd::cmd_info(&schema_file, format)
         }
+        SchemaAction::ListJson { .. } | SchemaAction::GetJson { .. } => unreachable!(),
     };
     print!("{output}");
+    Ok(true)
+}
+
+/// The four CLI subcommands that emit machine-readable JSON along with the
+/// JSON schema file that describes their output.
+const JSON_SCHEMA_REGISTRY: &[(&str, &str, &str)] = &[
+    (
+        "validate",
+        "schemas/json/validate-output.schema.json",
+        "rivet validate --format json",
+    ),
+    (
+        "stats",
+        "schemas/json/stats-output.schema.json",
+        "rivet stats --format json",
+    ),
+    (
+        "coverage",
+        "schemas/json/coverage-output.schema.json",
+        "rivet coverage --format json",
+    ),
+    (
+        "list",
+        "schemas/json/list-output.schema.json",
+        "rivet list --format json",
+    ),
+];
+
+/// Resolve a schema file path against `--schemas` (if set) or the
+/// bundled repo-relative `schemas/` directory. We need a slightly
+/// different heuristic than `resolve_schemas_dir` — JSON schemas live
+/// under `schemas/json/` regardless of whether the user overrode the
+/// YAML schemas path.
+fn resolve_json_schema(cli: &Cli, relative: &str) -> PathBuf {
+    // Strip the leading "schemas/" — we'll reattach it whether we use
+    // the override or the default.
+    let sub = relative.strip_prefix("schemas/").unwrap_or(relative);
+    if let Some(ref s) = cli.schemas {
+        return s.join(sub);
+    }
+    // Prefer the sibling of the current project dir (`<project>/schemas`)
+    // when the project has one; fall back to repo-local.
+    let project_schemas = cli.project.join("schemas").join(sub);
+    if project_schemas.exists() {
+        return project_schemas;
+    }
+    PathBuf::from(relative)
+}
+
+fn cmd_schema_list_json(cli: &Cli, format: &str) -> Result<bool> {
+    let entries: Vec<(String, PathBuf, String, bool)> = JSON_SCHEMA_REGISTRY
+        .iter()
+        .map(|(name, rel, desc)| {
+            let path = resolve_json_schema(cli, rel);
+            let exists = path.exists();
+            (name.to_string(), path, desc.to_string(), exists)
+        })
+        .collect();
+
+    if format == "json" {
+        let items: Vec<serde_json::Value> = entries
+            .iter()
+            .map(|(name, path, desc, exists)| {
+                serde_json::json!({
+                    "name": name,
+                    "path": path.display().to_string(),
+                    "describes": desc,
+                    "exists": exists,
+                })
+            })
+            .collect();
+        let output = serde_json::json!({
+            "command": "schema-list-json",
+            "count": items.len(),
+            "schemas": items,
+        });
+        println!("{}", serde_json::to_string_pretty(&output).unwrap());
+    } else {
+        println!("JSON schemas for rivet --format json outputs:\n");
+        let header = format!(
+            "  {:<12} {:<72} {}",
+            "Name", "Path", "Describes"
+        );
+        println!("{header}");
+        let sep = "-".repeat(110);
+        println!("  {sep}");
+        for (name, path, desc, exists) in &entries {
+            let marker = if *exists { " " } else { "!" };
+            let path_str = path.display().to_string();
+            println!("  {marker} {name:<10} {path_str:<72} {desc}");
+        }
+        println!("\nUse: rivet schema get-json <name>            # print path");
+        println!("     rivet schema get-json <name> --content   # print schema JSON");
+    }
+    Ok(true)
+}
+
+fn cmd_schema_get_json(cli: &Cli, name: &str, print_content: bool) -> Result<bool> {
+    let Some((_, rel, _)) = JSON_SCHEMA_REGISTRY.iter().find(|(n, _, _)| *n == name) else {
+        let valid: Vec<&str> = JSON_SCHEMA_REGISTRY.iter().map(|(n, _, _)| *n).collect();
+        anyhow::bail!(
+            "unknown JSON schema '{}' — valid names: {}",
+            name,
+            valid.join(", ")
+        );
+    };
+    let path = resolve_json_schema(cli, rel);
+    if print_content {
+        let content = std::fs::read_to_string(&path)
+            .with_context(|| format!("reading {}", path.display()))?;
+        print!("{content}");
+    } else {
+        println!("{}", path.display());
+    }
     Ok(true)
 }
 

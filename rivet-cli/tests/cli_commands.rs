@@ -1620,6 +1620,257 @@ fn stats_json_counts_match_validate() {
     }
 }
 
+// ── rivet schema list-json / get-json ───────────────────────────────────
+
+/// `rivet schema list-json --format json` lists all shipped JSON
+/// schemas describing `--format json` output shapes.
+#[test]
+fn schema_list_json_produces_valid_output() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "schema",
+            "list-json",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("schema list-json");
+
+    assert!(
+        output.status.success(),
+        "schema list-json must succeed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let parsed: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("valid JSON");
+    assert_eq!(
+        parsed.get("command").and_then(|v| v.as_str()),
+        Some("schema-list-json"),
+    );
+    let schemas = parsed
+        .get("schemas")
+        .and_then(|v| v.as_array())
+        .expect("schemas array");
+    let names: Vec<&str> = schemas
+        .iter()
+        .filter_map(|e| e.get("name").and_then(|v| v.as_str()))
+        .collect();
+    for expected in ["validate", "stats", "coverage", "list"] {
+        assert!(
+            names.contains(&expected),
+            "expected '{expected}' in list, got {names:?}"
+        );
+    }
+    // Every shipped schema must resolve to an existing file on disk.
+    for entry in schemas {
+        assert_eq!(
+            entry.get("exists").and_then(|v| v.as_bool()),
+            Some(true),
+            "schema entry must exist on disk: {entry}"
+        );
+    }
+}
+
+/// `rivet schema get-json <name>` prints the path to the schema file,
+/// and `--content` reads the schema.
+#[test]
+fn schema_get_json_returns_path_and_content() {
+    let root_str = project_root();
+    let root_str = root_str.to_str().unwrap();
+
+    for name in ["validate", "stats", "coverage", "list"] {
+        // Path mode
+        let out = Command::new(rivet_bin())
+            .args([
+                "--project",
+                root_str,
+                "schema",
+                "get-json",
+                name,
+            ])
+            .output()
+            .expect("get-json path");
+        assert!(
+            out.status.success(),
+            "get-json {name} must succeed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let path_str = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        let path = std::path::PathBuf::from(&path_str);
+        assert!(
+            path.exists(),
+            "path '{path_str}' printed by get-json {name} must exist"
+        );
+
+        // Content mode — verify it's valid JSON and looks like a schema.
+        let out = Command::new(rivet_bin())
+            .args([
+                "--project",
+                root_str,
+                "schema",
+                "get-json",
+                name,
+                "--content",
+            ])
+            .output()
+            .expect("get-json --content");
+        assert!(out.status.success());
+        let content: serde_json::Value =
+            serde_json::from_slice(&out.stdout).expect("schema JSON parseable");
+        assert_eq!(
+            content.get("$schema").and_then(|v| v.as_str()),
+            Some("https://json-schema.org/draft/2020-12/schema"),
+            "{name} schema must declare draft-2020-12"
+        );
+        assert!(
+            content.get("title").and_then(|v| v.as_str()).is_some(),
+            "{name} schema must have a title"
+        );
+    }
+}
+
+/// An unknown schema name is rejected with a helpful message.
+#[test]
+fn schema_get_json_unknown_name_rejected() {
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "schema",
+            "get-json",
+            "bogus",
+        ])
+        .output()
+        .expect("get-json");
+
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("unknown") || stderr.contains("valid names"),
+        "error must list valid names, got: {stderr}"
+    );
+}
+
+/// Every shipped JSON schema file must itself be parseable as JSON
+/// (catches hand-written typos at CI time).
+#[test]
+fn shipped_json_schemas_are_valid_json() {
+    let schemas_dir = project_root().join("schemas").join("json");
+    for name in [
+        "validate-output.schema.json",
+        "stats-output.schema.json",
+        "coverage-output.schema.json",
+        "list-output.schema.json",
+    ] {
+        let path = schemas_dir.join(name);
+        let content = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        let parsed: serde_json::Value = serde_json::from_str(&content)
+            .unwrap_or_else(|e| panic!("{} is not valid JSON: {e}", path.display()));
+        // Minimal well-formed JSON Schema: must be an object with $schema,
+        // title, type.
+        assert!(parsed.is_object(), "{name} must be a JSON object");
+        for key in ["$schema", "title", "type"] {
+            assert!(
+                parsed.get(key).is_some(),
+                "{name} must declare '{key}'"
+            );
+        }
+    }
+}
+
+/// The `rivet validate --format json` output must conform to the shipped
+/// schema — this catches drift between the CLI output shape and the
+/// published schema.
+#[test]
+fn validate_json_output_matches_shipped_schema() {
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "validate",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("validate");
+
+    let parsed: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("validate JSON");
+
+    // Light-weight schema conformance (no external crate): check the
+    // required fields listed in validate-output.schema.json are all
+    // present with the expected types.
+    let schema_path = project_root()
+        .join("schemas")
+        .join("json")
+        .join("validate-output.schema.json");
+    let schema: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(&schema_path).expect("read schema"),
+    )
+    .expect("schema JSON");
+    let required = schema
+        .get("required")
+        .and_then(|v| v.as_array())
+        .expect("required array");
+    for req in required {
+        let key = req.as_str().expect("required[] is string");
+        assert!(
+            parsed.get(key).is_some(),
+            "validate JSON missing required field '{key}'"
+        );
+    }
+    // `command` field must match the const in the schema.
+    assert_eq!(
+        parsed.get("command").and_then(|v| v.as_str()),
+        Some("validate"),
+    );
+}
+
+/// Same conformance check for `rivet stats --format json`.
+#[test]
+fn stats_json_output_matches_shipped_schema() {
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "stats",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("stats");
+
+    let parsed: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("stats JSON");
+
+    let schema_path = project_root()
+        .join("schemas")
+        .join("json")
+        .join("stats-output.schema.json");
+    let schema: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(&schema_path).expect("read schema"),
+    )
+    .expect("schema JSON");
+    let required = schema
+        .get("required")
+        .and_then(|v| v.as_array())
+        .expect("required array");
+    for req in required {
+        let key = req.as_str().expect("required[] is string");
+        assert!(
+            parsed.get(key).is_some(),
+            "stats JSON missing required field '{key}'"
+        );
+    }
+    assert_eq!(
+        parsed.get("command").and_then(|v| v.as_str()),
+        Some("stats")
+    );
+}
+
 /// An invalid `--fail-on` value is rejected up-front.
 #[test]
 fn validate_fail_on_invalid_value_rejected() {

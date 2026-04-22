@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pulseengine.github.io/rivet/schemas/json/validate-output.schema.json",
+  "title": "rivet validate --format json",
+  "description": "Machine-readable output produced by `rivet validate --format json`.",
+  "type": "object",
+  "required": [
+    "command",
+    "result",
+    "errors",
+    "warnings",
+    "infos",
+    "diagnostics"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "command": {
+      "type": "string",
+      "const": "validate"
+    },
+    "result": {
+      "type": "string",
+      "enum": ["PASS", "FAIL"],
+      "description": "Overall result. FAIL iff there is at least one error or broken cross-ref."
+    },
+    "errors": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Count of diagnostics with severity 'error'."
+    },
+    "warnings": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "infos": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "cross_repo_broken": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "backlinks": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "circular_deps": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "version_conflicts": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "lifecycle_gaps": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "message"],
+        "additionalProperties": true,
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": ["error", "warning", "info"]
+          },
+          "artifact_id": {
+            "type": ["string", "null"]
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "broken_cross_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["reference", "reason"],
+        "properties": {
+          "reference": { "type": "string" },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "cross_repo_backlinks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["source_prefix", "source_id", "target"],
+        "properties": {
+          "source_prefix": { "type": "string" },
+          "source_id": { "type": "string" },
+          "target": { "type": "string" }
+        }
+      }
+    },
+    "circular_dependencies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["chain"],
+        "properties": {
+          "chain": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "version_conflict_details": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["repo_identifier", "versions"],
+        "properties": {
+          "repo_identifier": { "type": "string" },
+          "versions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["declared_by", "version"],
+              "properties": {
+                "declared_by": { "type": "string" },
+                "version": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "lifecycle_coverage": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["artifact_id", "artifact_type", "missing"],
+        "properties": {
+          "artifact_id": { "type": "string" },
+          "artifact_type": { "type": "string" },
+          "status": { "type": ["string", "null"] },
+          "missing": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "variant": {
+      "type": "object",
+      "required": ["name", "bound_artifacts", "resolved_artifacts"],
+      "properties": {
+        "name": { "type": "string" },
+        "bound_artifacts": { "type": "integer", "minimum": 0 },
+        "resolved_artifacts": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}
