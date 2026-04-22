@@ -726,7 +726,8 @@ enum Command {
 
     /// Stamp artifact(s) with AI provenance metadata
     Stamp {
-        /// Artifact ID to stamp (or "all" for all artifacts in a file)
+        /// Artifact ID to stamp, "all" for every artifact, or a glob/prefix
+        /// when combined with --type or --pattern.
         id: String,
         /// Who created it: "human", "ai", or "ai-assisted"
         #[arg(long, default_value = "ai-assisted")]
@@ -740,6 +741,19 @@ enum Command {
         /// Human reviewer
         #[arg(long)]
         reviewed_by: Option<String>,
+        /// Restrict stamping to artifacts whose `type` matches PATTERN.
+        /// Glob form (`SEC-*`) matches IDs by prefix; otherwise treated as
+        /// an exact artifact-type name (`requirement`, `threat-scenario`).
+        #[arg(long, value_name = "PATTERN")]
+        r#type: Option<String>,
+        /// Stamp only artifacts whose source YAML changed since this git ref
+        /// (e.g. `--changed-since HEAD~1` or `--changed-since main`).
+        #[arg(long, value_name = "REF")]
+        changed_since: Option<String>,
+        /// Stamp only artifacts that don't already have a `provenance:` block.
+        /// Combine with `id "all"` for "stamp every unstamped artifact".
+        #[arg(long)]
+        missing_provenance: bool,
     },
 
     /// Start the language server (LSP over stdio)
@@ -1254,6 +1268,9 @@ fn run(cli: Cli) -> Result<bool> {
             model,
             session_id,
             reviewed_by,
+            r#type,
+            changed_since,
+            missing_provenance,
         } => cmd_stamp(
             &cli,
             id,
@@ -1261,6 +1278,9 @@ fn run(cli: Cli) -> Result<bool> {
             model.as_deref(),
             session_id.as_deref(),
             reviewed_by.as_deref(),
+            r#type.as_deref(),
+            changed_since.as_deref(),
+            *missing_provenance,
         ),
     }
 }
@@ -8494,6 +8514,70 @@ fn cmd_remove(cli: &Cli, id: &str, force: bool) -> Result<bool> {
 }
 
 /// Stamp an artifact (or all artifacts in its file) with AI provenance metadata.
+/// Minimal glob match supporting `*` (any sequence) and `?` (one char).
+/// Sufficient for `--type SEC-*` style stamping filters; we deliberately
+/// avoid pulling in the `glob` crate for this small need.
+fn glob_matches(pattern: &str, value: &str) -> bool {
+    fn rec(p: &[u8], v: &[u8]) -> bool {
+        match (p.first(), v.first()) {
+            (None, None) => true,
+            (Some(b'*'), _) => {
+                if rec(&p[1..], v) {
+                    return true;
+                }
+                if v.is_empty() {
+                    return false;
+                }
+                rec(p, &v[1..])
+            }
+            (Some(b'?'), Some(_)) => rec(&p[1..], &v[1..]),
+            (Some(pc), Some(vc)) if pc == vc => rec(&p[1..], &v[1..]),
+            _ => false,
+        }
+    }
+    rec(pattern.as_bytes(), value.as_bytes())
+}
+
+/// Return the relative paths of files changed since `git_ref` (committed
+/// changes plus uncommitted modifications). Empty vec on git error so
+/// `--changed-since` degrades to "no matches" rather than panicking.
+fn files_changed_since(project: &std::path::Path, git_ref: &str) -> Result<Vec<String>> {
+    use std::process::Command as Cmd;
+    let mut paths = Vec::new();
+    // Committed changes since ref.
+    if let Ok(out) = Cmd::new("git")
+        .args(["diff", "--name-only", git_ref, "--"])
+        .current_dir(project)
+        .output()
+    {
+        if out.status.success() {
+            for line in String::from_utf8_lossy(&out.stdout).lines() {
+                if !line.is_empty() {
+                    paths.push(line.to_string());
+                }
+            }
+        }
+    }
+    // Uncommitted modifications.
+    if let Ok(out) = Cmd::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(project)
+        .output()
+    {
+        if out.status.success() {
+            for line in String::from_utf8_lossy(&out.stdout).lines() {
+                if let Some(path) = line.get(3..) {
+                    paths.push(path.to_string());
+                }
+            }
+        }
+    }
+    paths.sort();
+    paths.dedup();
+    Ok(paths)
+}
+
+#[allow(clippy::too_many_arguments)]
 fn cmd_stamp(
     cli: &Cli,
     id: &str,
@@ -8501,6 +8585,9 @@ fn cmd_stamp(
     model: Option<&str>,
     session_id: Option<&str>,
     reviewed_by: Option<&str>,
+    type_filter: Option<&str>,
+    changed_since: Option<&str>,
+    missing_provenance: bool,
 ) -> Result<bool> {
     use rivet_core::mutate;
 
@@ -8539,24 +8626,75 @@ fn cmd_stamp(
     let y = if m <= 2 { y + 1 } else { y };
     let timestamp = format!("{y:04}-{m:02}-{d:02}T{hours:02}:{minutes:02}:{seconds:02}Z");
 
-    // Collect artifact IDs to stamp
-    let ids: Vec<String> = if id == "all" {
-        // Stamp every local artifact (skip externals with ':' prefix)
+    // Collect artifact IDs to stamp.
+    // Filter pipeline (applied in order, each shrinks the candidate set):
+    //   1. id == "all" → every local artifact;
+    //      id is glob (contains '*' or '?') → match by id;
+    //      id is plain → exact ID match.
+    //   2. --type pattern: glob on id (`SEC-*`) or exact artifact-type name.
+    //   3. --changed-since <ref>: artifact's source file changed in git.
+    //   4. --missing-provenance: artifact has no provenance: block.
+    let mut ids: Vec<String> = if id == "all" || id.contains('*') || id.contains('?') {
+        let pattern = if id == "all" { "*" } else { id };
         store
             .iter()
             .filter(|a| !a.id.contains(':'))
+            .filter(|a| glob_matches(pattern, &a.id))
             .map(|a| a.id.clone())
             .collect()
     } else {
-        // Single artifact
         if !store.contains(id) {
             anyhow::bail!("artifact '{id}' does not exist");
         }
         vec![id.to_string()]
     };
 
+    if let Some(pat) = type_filter {
+        ids.retain(|aid| {
+            let Some(art) = store.get(aid) else {
+                return false;
+            };
+            // Glob form on ID, otherwise exact artifact-type name.
+            if pat.contains('*') || pat.contains('?') {
+                glob_matches(pat, &art.id)
+            } else {
+                art.artifact_type == pat
+            }
+        });
+    }
+
+    if let Some(git_ref) = changed_since {
+        let changed = files_changed_since(&cli.project, git_ref)?;
+        ids.retain(|aid| {
+            let Some(art) = store.get(aid) else {
+                return false;
+            };
+            let Some(sf) = art.source_file.as_ref() else {
+                return false;
+            };
+            let sf_str = sf.to_string_lossy();
+            changed
+                .iter()
+                .any(|c| sf_str.ends_with(c.as_str()) || c.ends_with(sf_str.as_ref()))
+        });
+    }
+
+    if missing_provenance {
+        ids.retain(|aid| {
+            store
+                .get(aid)
+                .and_then(|a| a.fields.get("provenance"))
+                .is_none()
+        });
+    }
+
     if ids.is_empty() {
-        anyhow::bail!("no artifacts found to stamp");
+        anyhow::bail!(
+            "no artifacts found to stamp (after filters: type={:?}, changed_since={:?}, missing_provenance={})",
+            type_filter,
+            changed_since,
+            missing_provenance
+        );
     }
 
     let mut stamped = 0;
@@ -10309,6 +10447,41 @@ fn print_diagnostics(diagnostics: &[validate::Diagnostic]) {
 }
 
 // ── LSP unit tests ─────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod stamp_glob_tests {
+    use super::glob_matches;
+
+    #[test]
+    fn glob_star_matches_prefix() {
+        assert!(glob_matches("SEC-*", "SEC-AS-001"));
+        assert!(glob_matches("SEC-*", "SEC-1"));
+    }
+
+    #[test]
+    fn glob_star_does_not_match_other_prefix() {
+        assert!(!glob_matches("SEC-*", "REQ-001"));
+        assert!(!glob_matches("SEC-*", "SECURITY-001"));
+    }
+
+    #[test]
+    fn glob_question_matches_single_char() {
+        assert!(glob_matches("REQ-???", "REQ-001"));
+        assert!(!glob_matches("REQ-???", "REQ-1234"));
+    }
+
+    #[test]
+    fn glob_exact_no_wildcards() {
+        assert!(glob_matches("REQ-001", "REQ-001"));
+        assert!(!glob_matches("REQ-001", "REQ-002"));
+    }
+
+    #[test]
+    fn glob_star_only_matches_anything() {
+        assert!(glob_matches("*", "REQ-001"));
+        assert!(glob_matches("*", ""));
+    }
+}
 
 #[cfg(test)]
 mod lsp_tests {
