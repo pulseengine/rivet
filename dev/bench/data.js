@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1776831097164,
+  "lastUpdate": 1776832821181,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "6f781be12d61e0530f86c651cd02fb9d83ca497a",
-          "message": "fix: edge case hardening + STPA artifacts + schema fixes + MCP tests (#124)\n\n* fix: edge case hardening from deep code scan\n\nCRITICAL: Replace .unwrap() with if-let on store.get() in render code\n  (results.rs:72, traceability.rs:230,261)\n\nHIGH: Recover from poisoned mutex in serve reload handler instead of\n  panicking (serve/mod.rs:449)\n\nHIGH: Document RwLock ordering in MCP server — rmcp serializes calls\n  over stdio so concurrent read+write cannot occur (mcp.rs)\n\nMEDIUM: Reject empty artifact IDs and self-referential links during\n  HIR extraction with proper diagnostics (yaml_hir.rs, both paths)\n\nRefs: #91\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* test(mcp): add rmcp client integration tests for MCP server\n\nAdd 14 integration tests that spawn `rivet mcp` as a child process and\nexercise all 10 tools plus resources via the rmcp client transport. Tests\ncover tools/list, rivet_validate, rivet_list (with filters), rivet_get\n(valid + invalid), rivet_stats, rivet_schema (with filters),\nrivet_coverage, resources/list, resources/read for diagnostics and\ncoverage, and rivet_reload with live file changes.\n\nRefs: FEAT-010\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* fix: clippy + format in MCP integration tests\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* feat(stpa): add MCP server and YAML round-trip STPA artifacts\n\nAdd missing artifacts identified in deep methodology review:\n- CTRL-MCP controller in control-structure.yaml\n- H-21 (MCP stale state) and H-24 (round-trip formatting) hazards\n- SC-23 (MCP staleness prevention) and SC-24 (byte-for-byte round-trip) constraints\n- LS-M-1 loss scenario (MCP agent commits on stale validation)\n\nNote: LS-M-1 references UCA-M-1 which will be defined in a follow-up.\n\nImplements: SC-23, SC-24\nRefs: H-21, H-24, CTRL-MCP, LS-M-1\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* fix: add missing schema fields and STPA constraint for data quality\n\n- Add baseline (string) and upstream-ref (string) fields to requirement type in dev.yaml\n- Add baseline, diagram, and source-ref fields to design-decision type in dev.yaml\n- Add baseline field to feature type in dev.yaml\n- Add source-ref and diagram fields to aadl-component type in aadl.yaml\n- Add allocated-from as standalone link type in aadl.yaml (was only defined as inverse)\n- Add SC-LSP-003 system constraint for H-LSP-003 (diagnostic location accuracy)\n- Renumber SC-LSP-003..007 to SC-LSP-004..008 to avoid ID collision\n\nFixes: H-LSP-003\nRefs: SC-LSP-003\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* fix: update hazard count (32→34), remove forward ref to UCA-M-1\n\n- yaml_cst test: hazards.yaml now has 34 items (22 hazards + 12 sub-hazards)\n  after adding H-21 and H-24\n- loss-scenarios: remove uca: UCA-M-1 forward reference (UCA not yet defined)\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* fix: coverage --format default was 'table' (invalid), now 'text'\n\nFound during dogfooding — our own format validator rejects 'table'.\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* fix(db): use rowan parser for YAML error detection in salsa path\n\nThe salsa validation path (validate_all -> collect_parse_errors) was\nusing parse_generic_yaml to detect parse errors for ALL source files.\nThis produced 18 false \"missing field 'artifacts'\" errors for STPA\nsection-based files, which use a different document structure.\n\nAdd collect_rowan_parse_errors tracked function that uses the rowan CST\nparser to detect actual YAML syntax errors without assuming any\nparticular document structure. When the rowan-yaml feature is enabled,\nvalidate_all now uses this instead of the serde_yaml-based error\ncollection.\n\nFixes #125\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* feat(cli): add 'rivet stamp' command for AI provenance metadata\n\nAdds a new CLI command that stamps artifacts with provenance metadata\n(created-by, model, session-id, timestamp, reviewed-by). Supports\nstamping individual artifacts or all artifacts at once, with proper\ninsert-or-replace semantics via the YamlEditor.\n\nImplements REQ-034\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* feat: add rivet stamp command + Claude Code pre-commit hook\n\nNew CLI: `rivet stamp <ID> --created-by ai-assisted --model claude-opus-4-6`\nStamps artifacts with AI provenance. Supports `rivet stamp all`.\n\nClaude Code hook: .claude/settings.json runs `rivet validate` pre-commit.\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* feat(docs): add supply-chain topic and Claude Code pre-commit hook\n\nAdd a `supply-chain` docs topic covering SBOM components, build\nattestations, vulnerabilities, and release artifacts with example\nYAML for each type, link types, and traceability rules. Update the\nschemas overview to include supply-chain and its bridge.\n\nCreate `.claude/settings.json` with a pre-commit hook that runs\n`rivet validate --direct` before each commit. Update CLAUDE.md to\ndocument the hook and the `rivet stamp` command.\n\nRefs: FEAT-001\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* feat: auto-stamp AI provenance via PostToolUse hook\n\nWhen Claude Code edits artifact YAML files in artifacts/ or safety/,\nthe PostToolUse hook automatically runs `rivet stamp all` to record\nprovenance metadata (created-by: ai-assisted, model: claude-opus-4-6).\n\nThis makes provenance tracking automatic and deterministic — no need\nfor Claude to remember to stamp manually.\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n* fix: skip yaml_hir and stpa_hazard in Miri CI\n\nThe rowan cursor deallocation UB triggers in any test creating a\nmulti-item tree (not just parse_actual_hazards). The stpa_hazard_sequence\ntest and yaml_hir tests also create enough cursor nodes to trigger it.\nSkip these in Miri CI until the rowan cursor fix is complete.\n\nCo-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.6 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-04-07T00:27:39+02:00",
-          "tree_id": "d6dde01d396ddf377c288bbdfa31434f7610b385",
-          "url": "https://github.com/pulseengine/rivet/commit/6f781be12d61e0530f86c651cd02fb9d83ca497a"
-        },
-        "date": 1775514858841,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 80724,
-            "range": "± 1104",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 852169,
-            "range": "± 6200",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 12257484,
-            "range": "± 1006576",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2141,
-            "range": "± 4",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 25942,
-            "range": "± 83",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 370879,
-            "range": "± 2175",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 95,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 994812,
-            "range": "± 5957",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 149377,
-            "range": "± 485",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1772884,
-            "range": "± 30567",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 24486177,
-            "range": "± 2956363",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 107536,
-            "range": "± 662",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 891148,
-            "range": "± 4849",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 10199438,
-            "range": "± 1186813",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4432,
-            "range": "± 15",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 59229,
-            "range": "± 435",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 773379,
-            "range": "± 10062",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 63009,
-            "range": "± 218",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 690534,
-            "range": "± 3714",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 8007145,
-            "range": "± 803561",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 814,
-            "range": "± 4",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 7453,
-            "range": "± 79",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 107109,
-            "range": "± 1767",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 23392,
-            "range": "± 298",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 166939,
-            "range": "± 1132",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1575785,
-            "range": "± 11393",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1056989,
             "range": "± 13193",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "89d3f43a3a62fd9064e2525c749b545bcdeb5561",
+          "message": "fix(mcp): scope `set_fields` to domain fields, add top-level `description` setter (#158)\n\nTwo related MCP correctness bugs in `rivet_modify`:\n\n1. `set_fields` silently wrote reserved top-level keys (description, title,\n   status, ...) under the `fields:` sub-map — corrupting the artifact's\n   shape. Values containing backticks or newlines additionally broke the\n   YAML emitter, which used unquoted `format!(\"{key}: {value}\")` lines.\n\n2. There was no way to set the top-level `description` (or other top-level\n   metadata) via MCP — `set_fields` was the only \"generic setter\" and, by\n   design, targets only the domain `fields:` map.\n\nDesign: keep `set_fields` scoped to the `fields:` sub-map and expose\ndedicated setters for top-level metadata. `validate_modify` now rejects\nany `set_fields` key listed in `RESERVED_TOP_LEVEL_KEYS` (id, type, title,\ndescription, status, tags, links, fields, provenance, source-file) with a\nhint pointing at the right parameter. A new `description` parameter on\n`rivet_modify` routes through `ModifyParams::set_description`, which\nemits YAML-safe scalars — multi-line values become block-literal (`|-`)\nscalars, single-line values with YAML-significant characters are\ndouble-quoted with proper escapes. `set_field` in the editor was extended\nto splice multi-line values into the line buffer so block scalars stay\nwell-formed.\n\nTests (added failing first, now green):\n- `test_set_fields_rejects_reserved_description` / `_all_reserved_top_level_keys`\n- `test_modify_sets_top_level_description`\n- `test_modify_description_with_backticks_and_newlines`\n- `test_validate_modify_rejects_reserved_top_level_in_set_fields`\n- `test_yaml_quote_inline_scalar_*`, `test_set_field_writes_*_as_*_scalar`\n\nFixes: REQ-002",
+          "timestamp": "2026-04-21T23:19:27-05:00",
+          "tree_id": "dfb096793ec21444231ff321ed322a7b687df5eb",
+          "url": "https://github.com/pulseengine/rivet/commit/89d3f43a3a62fd9064e2525c749b545bcdeb5561"
+        },
+        "date": 1776832820358,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 80336,
+            "range": "± 1017",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 849054,
+            "range": "± 7484",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 15313804,
+            "range": "± 1255864",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2213,
+            "range": "± 38",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 27200,
+            "range": "± 82",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 369616,
+            "range": "± 3269",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 95,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1005444,
+            "range": "± 78912",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 164581,
+            "range": "± 897",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1921622,
+            "range": "± 26375",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 31923170,
+            "range": "± 3528317",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 111286,
+            "range": "± 863",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 947408,
+            "range": "± 7923",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 14414540,
+            "range": "± 1284581",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4283,
+            "range": "± 28",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 59889,
+            "range": "± 520",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 768291,
+            "range": "± 23699",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 62244,
+            "range": "± 280",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 698236,
+            "range": "± 2942",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 9298941,
+            "range": "± 909588",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 812,
+            "range": "± 9",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7518,
+            "range": "± 90",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 109298,
+            "range": "± 621",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 23269,
+            "range": "± 138",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 165942,
+            "range": "± 1521",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1532476,
+            "range": "± 21741",
             "unit": "ns/iter"
           }
         ]
