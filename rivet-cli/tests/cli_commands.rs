@@ -1895,3 +1895,130 @@ fn validate_fail_on_invalid_value_rejected() {
         "error must mention the bad value, got: {stderr}"
     );
 }
+
+// ── rivet query (REQ-007) ───────────────────────────────────────────────
+
+/// `rivet query --sexpr ... --format ids` prints one ID per line.
+#[test]
+fn query_ids_format_matches_list_filter() {
+    let bin = rivet_bin();
+    let root = project_root();
+
+    // `rivet list --type requirement` — one line per matching artifact (id + title).
+    let list_out = Command::new(&bin)
+        .args(["--project", &root.display().to_string(), "list", "--type", "requirement"])
+        .output()
+        .expect("run rivet list");
+    assert!(list_out.status.success(), "rivet list must succeed");
+    let list_stdout = String::from_utf8_lossy(&list_out.stdout);
+
+    // `rivet query --sexpr '(= type "requirement")' --format ids` → only IDs.
+    let query_out = Command::new(&bin)
+        .args([
+            "--project",
+            &root.display().to_string(),
+            "query",
+            "--sexpr",
+            r#"(= type "requirement")"#,
+            "--limit",
+            "1000",
+            "--format",
+            "ids",
+        ])
+        .output()
+        .expect("run rivet query");
+    assert!(
+        query_out.status.success(),
+        "rivet query must succeed; stderr: {}",
+        String::from_utf8_lossy(&query_out.stderr)
+    );
+    let query_stdout = String::from_utf8_lossy(&query_out.stdout);
+    let query_ids: Vec<&str> = query_stdout.lines().filter(|l| !l.is_empty()).collect();
+
+    assert!(
+        !query_ids.is_empty(),
+        "rivet query must return some requirements; got:\n{query_stdout}"
+    );
+
+    // Every ID that `rivet query` reports must also appear somewhere in
+    // `rivet list`'s output — confirms the two surfaces agree.
+    for id in &query_ids {
+        assert!(
+            list_stdout.contains(id),
+            "id {id} from `rivet query` not found in `rivet list --type requirement` output",
+        );
+    }
+}
+
+/// `rivet query --format json` produces MCP-shape output: filter, count,
+/// total, truncated, artifacts[].
+#[test]
+fn query_json_format_envelope() {
+    let bin = rivet_bin();
+    let root = project_root();
+
+    let out = Command::new(&bin)
+        .args([
+            "--project",
+            &root.display().to_string(),
+            "query",
+            "--sexpr",
+            r#"(= type "requirement")"#,
+            "--limit",
+            "5",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run rivet query");
+
+    assert!(
+        out.status.success(),
+        "rivet query --format json must succeed; stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let val: serde_json::Value =
+        serde_json::from_str(&stdout).expect("output must be valid JSON");
+
+    assert_eq!(
+        val["filter"].as_str(),
+        Some(r#"(= type "requirement")"#),
+        "filter field must echo input",
+    );
+    assert!(val["count"].is_number(), "count must be a number");
+    assert!(val["total"].is_number(), "total must be a number");
+    assert!(val["truncated"].is_boolean(), "truncated must be a bool");
+    let arts = val["artifacts"].as_array().expect("artifacts must be array");
+    assert!(arts.len() <= 5, "respects --limit");
+    for a in arts {
+        assert!(a["id"].is_string());
+        assert!(a["type"].is_string());
+        assert!(a["title"].is_string());
+    }
+}
+
+/// Invalid filter → non-zero exit with a helpful error.
+#[test]
+fn query_invalid_filter_reports_parse_error() {
+    let bin = rivet_bin();
+    let root = project_root();
+
+    let out = Command::new(&bin)
+        .args([
+            "--project",
+            &root.display().to_string(),
+            "query",
+            "--sexpr",
+            "(and (= type", // unbalanced
+        ])
+        .output()
+        .expect("run rivet query");
+
+    assert!(!out.status.success(), "unbalanced filter must fail");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("invalid filter") || stderr.contains("filter"),
+        "stderr should mention the filter error; got: {stderr}"
+    );
+}

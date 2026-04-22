@@ -49,26 +49,64 @@ fn sanitize_html(html: &str) -> String {
 /// Enables tables, strikethrough, and task lists on top of the CommonMark base.
 /// Used for artifact descriptions, field values, and document content.
 ///
-/// Security: raw HTML events are filtered at the pulldown-cmark level, and a
-/// regex-based sanitization pass strips dangerous tags (`<script>`, `<iframe>`,
-/// `<object>`, `<embed>`, `<form>`), `on*` event handler attributes, and
-/// `javascript:` URLs as defense-in-depth.
+/// Fenced ` ```mermaid ` code blocks are emitted as `<pre class="mermaid">...</pre>`
+/// (rather than pulldown-cmark's default `<pre><code class="language-mermaid">`)
+/// so the dashboard's mermaid.js loader (which selects on `.mermaid`) renders
+/// them as diagrams. Matches the behaviour of the document renderer in
+/// `document.rs`.
+///
+/// Security: raw HTML events are filtered at the pulldown-cmark level (except
+/// for the two synthetic `<pre class="mermaid">` wrappers, which are injected
+/// by us and are safe), and a regex-based sanitization pass strips dangerous
+/// tags (`<script>`, `<iframe>`, `<object>`, `<embed>`, `<form>`), `on*` event
+/// handler attributes, and `javascript:` URLs as defense-in-depth.
 pub fn render_markdown(input: &str) -> String {
-    use pulldown_cmark::{Event, Options, Parser, html};
+    use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd, html};
 
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_STRIKETHROUGH);
     options.insert(Options::ENABLE_TASKLISTS);
 
-    // Filter out raw HTML events to prevent XSS via markdown input.
-    // This strips <script>, <iframe>, and any other raw HTML while
-    // keeping the rendered markdown HTML produced by pulldown-cmark.
-    let parser = Parser::new_ext(input, options)
-        .filter(|event| !matches!(event, Event::Html(_) | Event::InlineHtml(_)));
+    // Two-stage event pipeline:
+    //   1. Track whether we are inside a fenced ```mermaid block, and when we
+    //      are, replace the Start/End CodeBlock events with synthetic Html
+    //      events that wrap the body in `<pre class="mermaid">...</pre>`.
+    //   2. Filter out any *other* raw HTML events to prevent XSS via markdown
+    //      input. The synthetic mermaid wrappers are marked by a sentinel
+    //      prefix we strip back out — see `MERMAID_OPEN` / `MERMAID_CLOSE`.
+    const MERMAID_OPEN: &str = "\0rivet-mermaid-open\0";
+    const MERMAID_CLOSE: &str = "\0rivet-mermaid-close\0";
+
+    let mut in_mermaid = false;
+    let parser = Parser::new_ext(input, options).filter_map(move |event| match event {
+        Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(ref lang)))
+            if lang.as_ref() == "mermaid" =>
+        {
+            in_mermaid = true;
+            Some(Event::Html(MERMAID_OPEN.into()))
+        }
+        Event::End(TagEnd::CodeBlock) if in_mermaid => {
+            in_mermaid = false;
+            Some(Event::Html(MERMAID_CLOSE.into()))
+        }
+        // Inside a mermaid block, pass text through as-is (pulldown-cmark
+        // emits the fenced body as Event::Text segments).
+        Event::Text(_) if in_mermaid => Some(event),
+        // Drop all other raw HTML events for XSS defence.
+        Event::Html(_) | Event::InlineHtml(_) => None,
+        other => Some(other),
+    });
 
     let mut html_output = String::new();
     html::push_html(&mut html_output, parser);
+
+    // Rewrite the mermaid sentinels into the real HTML tags.  Because the
+    // sentinels contain NUL bytes they cannot appear in markdown input, so
+    // replacement is safe from confusion attacks.
+    let html_output = html_output
+        .replace(MERMAID_OPEN, "<pre class=\"mermaid\">")
+        .replace(MERMAID_CLOSE, "</pre>");
 
     // Defense-in-depth: strip dangerous tags/attributes that may survive
     // the pulldown-cmark event filter (e.g. javascript: URLs in links).
@@ -300,5 +338,72 @@ mod tests {
     fn sanitize_fn_strips_javascript_href() {
         let out = sanitize_html(r#"<a href="javascript:alert(1)">click</a>"#);
         assert!(!out.contains("javascript:"), "got: {out}");
+    }
+
+    // ── Mermaid rendering (REQ-032) ─────────────────────────────────────
+
+    // Mermaid fenced blocks must emit <pre class="mermaid"> so the
+    // dashboard's mermaid.js loader (selector: `.mermaid`) picks them up.
+    // rivet: verifies REQ-032
+    #[test]
+    fn fenced_mermaid_becomes_pre_mermaid() {
+        let input = "```mermaid\ngraph TD\nA-->B\n```";
+        let html = render_markdown(input);
+        assert!(
+            html.contains("<pre class=\"mermaid\">"),
+            "mermaid block must render as <pre class=\"mermaid\">, got: {html}"
+        );
+        assert!(
+            html.contains("graph TD"),
+            "mermaid body must be preserved, got: {html}"
+        );
+        assert!(
+            !html.contains("language-mermaid"),
+            "default pulldown-cmark language class must not leak, got: {html}"
+        );
+    }
+
+    // rivet: verifies REQ-032
+    #[test]
+    fn fenced_mermaid_inside_artifact_description_renders() {
+        // Shape mirrors a real artifact description with prose around a diagram.
+        let input = "Overview:\n\n```mermaid\nflowchart LR\nA --> B\n```\n\nMore text.";
+        let html = render_markdown(input);
+        assert!(html.contains("<pre class=\"mermaid\">"), "got: {html}");
+        assert!(html.contains("flowchart LR"), "got: {html}");
+        assert!(html.contains("More text"), "got: {html}");
+    }
+
+    // Regression: non-mermaid fences still render as normal code blocks with
+    // a language class (so existing syntax highlighting, etc. keeps working).
+    // rivet: verifies REQ-032
+    #[test]
+    fn fenced_rust_still_renders_as_code() {
+        let input = "```rust\nfn main() {}\n```";
+        let html = render_markdown(input);
+        assert!(
+            html.contains("<pre><code class=\"language-rust\">"),
+            "rust block must keep language-rust class, got: {html}"
+        );
+        assert!(
+            !html.contains("<pre class=\"mermaid\""),
+            "rust must not be treated as mermaid, got: {html}"
+        );
+    }
+
+    // Sentinel strings used internally for the mermaid rewrite must never
+    // leak into output even if a user tries to smuggle them via text.  NUL
+    // bytes cannot appear in well-formed markdown input, so the sentinel is
+    // distinguishable from user content; but we still test that normal
+    // usage has no NUL bytes remaining.
+    // rivet: verifies REQ-032
+    #[test]
+    fn mermaid_sentinels_do_not_leak() {
+        let html = render_markdown("```mermaid\nA-->B\n```");
+        assert!(!html.contains('\0'), "NUL sentinels must be rewritten");
+        assert!(
+            !html.contains("rivet-mermaid-open"),
+            "sentinel label must not leak, got: {html}"
+        );
     }
 }

@@ -207,9 +207,58 @@ pub(crate) fn render_help(ctx: &RenderContext) -> String {
     html.push_str("rivet schema list           List artifact types\n");
     html.push_str("rivet schema show TYPE      Show type details\n");
     html.push_str("rivet docs                  List documentation topics\n");
+    html.push_str("rivet docs embeds           List {{...}} embed tokens\n");
     html.push_str("rivet serve [-P PORT]       Start dashboard\n");
     html.push_str("</pre></div>");
 
+    // Registered embeds — sourced from rivet_core::embed::EMBED_REGISTRY so
+    // the dashboard listing matches `rivet docs embeds` exactly.
+    html.push_str(&render_embed_registry());
+
+    html
+}
+
+/// Render the embed registry table for the Help view.
+///
+/// Mirrors the output of `rivet docs embeds` so users can discover
+/// `{{stats}}`, `{{query:(...)}}`, `{{artifact:ID}}`, etc. without having
+/// to read the source or grep the docs.
+fn render_embed_registry() -> String {
+    use rivet_core::embed::registry;
+    let specs = registry();
+
+    let mut html = String::with_capacity(4096);
+    html.push_str(
+        r#"<div class="card" style="padding:1.25rem;margin-top:1rem">
+        <h3 style="margin:0 0 1rem">Document Embeds</h3>
+        <p style="opacity:.7;font-size:.85rem;margin:0 0 .75rem">
+            Use <code>{{name[:args]}}</code> inside an artifact description or document body.
+            Run <code>rivet docs embeds</code> for the same list from the CLI, or
+            <code>rivet docs embed-syntax</code> for the full reference.
+        </p>
+        <table style="font-size:.85rem">
+        <thead><tr><th>Name</th><th>Args</th><th>Summary</th><th>Example</th></tr></thead>
+        <tbody>
+"#,
+    );
+    for s in specs {
+        html.push_str(&format!(
+            "<tr><td><code>{name}</code>{marker}</td>\
+             <td><code>{args}</code></td>\
+             <td>{summary}</td>\
+             <td><code>{example}</code></td></tr>\n",
+            name = html_escape(s.name),
+            marker = if s.legacy {
+                r#" <span style="opacity:.6;font-size:.75rem">(inline)</span>"#
+            } else {
+                ""
+            },
+            args = html_escape(s.args),
+            summary = html_escape(s.summary),
+            example = html_escape(s.example),
+        ));
+    }
+    html.push_str("</tbody></table></div>");
     html
 }
 

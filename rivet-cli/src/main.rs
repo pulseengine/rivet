@@ -699,6 +699,25 @@ enum Command {
         format: String,
     },
 
+    /// Run an s-expression filter against the project and print matches
+    ///
+    /// Mirror of the MCP `rivet_query` tool and the `{{query:(...)}}`
+    /// document embed — all three share `rivet_core::query::execute_sexpr`
+    /// so their results agree for the same filter.
+    Query {
+        /// The s-expression filter (e.g. '(and (= type "requirement") (has-tag "stpa"))')
+        #[arg(long)]
+        sexpr: String,
+
+        /// Maximum number of results (default: 100)
+        #[arg(long, default_value = "100")]
+        limit: usize,
+
+        /// Output format: "text" (default), "json", "ids"
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
     /// Stamp artifact(s) with AI provenance metadata
     Stamp {
         /// Artifact ID to stamp (or "all" for all artifacts in a file)
@@ -1214,6 +1233,11 @@ fn run(cli: Cli) -> Result<bool> {
         Command::Remove { id, force } => cmd_remove(&cli, id, *force),
         Command::Batch { file } => cmd_batch(&cli, file),
         Command::Embed { query, format } => cmd_embed(&cli, query, format),
+        Command::Query {
+            sexpr,
+            limit,
+            format,
+        } => cmd_query(&cli, sexpr, *limit, format),
         Command::Stamp {
             id,
             created_by,
@@ -5949,7 +5973,15 @@ fn cmd_docs(
     } else if let Some(pattern) = grep {
         print!("{}", docs::grep_docs(pattern, format, context));
     } else if let Some(slug) = topic {
-        print!("{}", docs::show_topic(slug, format));
+        // Special meta-topic: `rivet docs embeds` lists every registered
+        // {{...}} token from `rivet_core::embed::EMBED_REGISTRY`.  Kept in
+        // `docs` (rather than a new top-level subcommand) so it ships in
+        // the existing --help tree and stays near `docs embed-syntax`.
+        if slug == "embeds" {
+            print!("{}", docs::list_embeds(format));
+        } else {
+            print!("{}", docs::show_topic(slug, format));
+        }
     } else {
         print!("{}", docs::list_topics(format));
     }
@@ -8754,6 +8786,92 @@ fn strip_html_tags(html: &str) -> String {
 fn cmd_mcp(cli: &Cli) -> Result<bool> {
     let rt = tokio::runtime::Runtime::new().context("creating tokio runtime")?;
     rt.block_on(mcp::run(cli.project.clone()))?;
+    Ok(true)
+}
+
+/// `rivet query --sexpr "..."` — run an s-expression filter from the CLI.
+///
+/// Thin adapter over `rivet_core::query::execute_sexpr`, the same entry
+/// point used by MCP's `rivet_query` tool and the `{{query:(...)}}` embed,
+/// so all three surfaces emit the same match set for the same filter.
+/// Three output formats: `text` (one line per match, id + title + status),
+/// `json` (MCP-shape: `{filter, count, total, truncated, artifacts[]}`),
+/// or `ids` (newline-separated IDs — handy for shell pipelines).
+fn cmd_query(cli: &Cli, sexpr: &str, limit: usize, format: &str) -> Result<bool> {
+    validate_format(format, &["text", "json", "ids"])?;
+
+    let project = rivet_core::load_project_full(&cli.project)
+        .with_context(|| format!("loading project from {}", cli.project.display()))?;
+
+    let result =
+        rivet_core::query::execute_sexpr(&project.store, &project.graph, sexpr, Some(limit))
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    match format {
+        "json" => {
+            let artifacts: Vec<serde_json::Value> = result
+                .matches
+                .iter()
+                .map(|a| {
+                    let links: Vec<serde_json::Value> = a
+                        .links
+                        .iter()
+                        .map(|l| {
+                            serde_json::json!({"type": l.link_type, "target": l.target})
+                        })
+                        .collect();
+                    serde_json::json!({
+                        "id": a.id,
+                        "type": a.artifact_type,
+                        "title": a.title,
+                        "status": a.status.as_deref().unwrap_or("-"),
+                        "tags": a.tags,
+                        "links": links,
+                        "description": a.description.as_deref().unwrap_or(""),
+                    })
+                })
+                .collect();
+            let out = serde_json::json!({
+                "filter": sexpr,
+                "count": artifacts.len(),
+                "total": result.total,
+                "truncated": result.truncated,
+                "artifacts": artifacts,
+            });
+            println!("{}", serde_json::to_string_pretty(&out)?);
+        }
+        "ids" => {
+            for a in &result.matches {
+                println!("{}", a.id);
+            }
+        }
+        _ => {
+            // text
+            if result.matches.is_empty() {
+                println!("No artifacts match: {sexpr}");
+            } else {
+                for a in &result.matches {
+                    println!(
+                        "{:16} {:16} {:8} {}",
+                        a.id,
+                        a.artifact_type,
+                        a.status.as_deref().unwrap_or("-"),
+                        a.title,
+                    );
+                }
+                if result.truncated {
+                    println!(
+                        "\n{} result(s) shown, {} match total — raise --limit to see more.",
+                        result.matches.len(),
+                        result.total,
+                    );
+                } else {
+                    println!("\n{} result(s).", result.matches.len());
+                }
+            }
+        }
+    }
+
     Ok(true)
 }
 

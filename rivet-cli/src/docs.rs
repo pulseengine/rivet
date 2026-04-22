@@ -996,6 +996,68 @@ pub fn list_topics(format: &str) -> String {
     out
 }
 
+/// List every registered computed embed token.
+///
+/// Sourced from `rivet_core::embed::EMBED_REGISTRY` so the listing never
+/// drifts from what `resolve_embed` actually dispatches.
+pub fn list_embeds(format: &str) -> String {
+    let specs = rivet_core::embed::registry();
+
+    if format == "json" {
+        let items: Vec<serde_json::Value> = specs
+            .iter()
+            .map(|s| {
+                serde_json::json!({
+                    "name": s.name,
+                    "args": s.args,
+                    "summary": s.summary,
+                    "example": s.example,
+                    "legacy": s.legacy,
+                })
+            })
+            .collect();
+        return serde_json::to_string_pretty(&serde_json::json!({
+            "command": "docs-embeds",
+            "embeds": items,
+        }))
+        .unwrap_or_default();
+    }
+
+    // Plain-text: aligned columns with a short footer pointing to the
+    // full syntax reference and to `rivet embed` for CLI rendering.
+    let name_w = specs.iter().map(|s| s.name.len()).max().unwrap_or(4);
+    let args_w = specs.iter().map(|s| s.args.len()).max().unwrap_or(6);
+    let mut out = String::new();
+    out.push_str("Registered computed embeds:\n\n");
+    out.push_str(&format!(
+        "  {:<nw$}  {:<aw$}  SUMMARY\n",
+        "NAME",
+        "ARGS",
+        nw = name_w,
+        aw = args_w
+    ));
+    for s in specs {
+        let marker = if s.legacy { " (inline)" } else { "" };
+        out.push_str(&format!(
+            "  {:<nw$}  {:<aw$}  {}{}\n",
+            s.name,
+            s.args,
+            s.summary,
+            marker,
+            nw = name_w,
+            aw = args_w
+        ));
+    }
+    out.push_str("\nExamples:\n");
+    for s in specs {
+        out.push_str(&format!("  {:<nw$}  {}\n", s.name, s.example, nw = name_w));
+    }
+    out.push_str("\nUsage:\n");
+    out.push_str("  rivet embed <NAME>[:args]     Render any embed from the CLI\n");
+    out.push_str("  rivet docs embed-syntax       Full {{...}} syntax reference\n");
+    out
+}
+
 /// Show a specific topic.
 pub fn show_topic(slug: &str, format: &str) -> String {
     let Some(topic) = TOPICS.iter().find(|t| t.slug == slug) else {

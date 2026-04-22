@@ -103,12 +103,122 @@ impl<'a> EmbedContext<'a> {
     }
 }
 
+// ── Embed registry ──────────────────────────────────────────────────────
+
+/// A single entry in the embed registry.
+///
+/// Every `{{name[:args...]}}` token that `resolve_embed` or the document
+/// inline resolver knows about has a matching `EmbedSpec`.  This is the
+/// single source of truth for `rivet docs embeds`, the dashboard Help view,
+/// and any future UX that needs to enumerate embeds.
+#[derive(Debug, Clone, Copy)]
+pub struct EmbedSpec {
+    /// Embed name as it appears after `{{`.
+    pub name: &'static str,
+    /// Compact signature, e.g. `[section]` or `(sexpr) [limit=N]`.
+    pub args: &'static str,
+    /// One-line description for the listing.
+    pub summary: &'static str,
+    /// Runnable example that users can paste into a document.
+    pub example: &'static str,
+    /// True if handled by the inline resolver in `document.rs` rather than
+    /// by `resolve_embed`.  Legacy embeds still appear in listings.
+    pub legacy: bool,
+}
+
+/// The canonical list of registered embeds.
+///
+/// Order is the order shown to users; group newest (or least-known) embeds
+/// near the top of their family so they are discoverable.
+pub const EMBED_REGISTRY: &[EmbedSpec] = &[
+    EmbedSpec {
+        name: "stats",
+        args: "[section|type:NAME]",
+        summary: "Project statistics (types, status, validation) or count for a single type",
+        example: "{{stats}}  /  {{stats:types}}  /  {{stats:type:requirement}}",
+        legacy: false,
+    },
+    EmbedSpec {
+        name: "coverage",
+        args: "[rule]",
+        summary: "Traceability coverage bars; with a rule name, lists uncovered IDs",
+        example: "{{coverage}}  /  {{coverage:req-implements-feat}}",
+        legacy: false,
+    },
+    EmbedSpec {
+        name: "diagnostics",
+        args: "[severity]",
+        summary: "Validation findings (all, or filtered by error|warning|info)",
+        example: "{{diagnostics}}  /  {{diagnostics:error}}",
+        legacy: false,
+    },
+    EmbedSpec {
+        name: "matrix",
+        args: "[FROM:TO]",
+        summary: "Traceability matrix — one per schema rule, or a specific type pair",
+        example: "{{matrix}}  /  {{matrix:requirement:feature}}",
+        legacy: false,
+    },
+    EmbedSpec {
+        name: "query",
+        args: "(sexpr) [limit=N]",
+        summary: "Results of an s-expression filter as a compact table (id/type/title/status)",
+        example: "{{query:(and (= type \"requirement\") (has-tag \"stpa\"))}}",
+        legacy: false,
+    },
+    EmbedSpec {
+        name: "group",
+        args: "FIELD",
+        summary: "Count-by-value table grouping artifacts by the given field",
+        example: "{{group:status}}  /  {{group:asil}}",
+        legacy: false,
+    },
+    // Legacy embeds — resolved inline in document.rs, but still listed here
+    // so users can discover them via `rivet docs embeds`.
+    EmbedSpec {
+        name: "artifact",
+        args: "ID[:modifier[:depth]]",
+        summary: "Inline card for a single artifact (default|full|links|upstream|downstream|chain)",
+        example: "{{artifact:REQ-001}}  /  {{artifact:REQ-001:full}}",
+        legacy: true,
+    },
+    EmbedSpec {
+        name: "links",
+        args: "ID",
+        summary: "Incoming + outgoing link table for an artifact",
+        example: "{{links:REQ-001}}",
+        legacy: true,
+    },
+    EmbedSpec {
+        name: "table",
+        args: "TYPE:FIELDS",
+        summary: "Filtered artifact table for a single type with comma-separated columns",
+        example: "{{table:requirement:id,title,status}}",
+        legacy: true,
+    },
+];
+
+/// Return the full embed registry.
+///
+/// Convenience accessor — callers that want the raw slice can also use
+/// `EMBED_REGISTRY` directly.
+pub fn registry() -> &'static [EmbedSpec] {
+    EMBED_REGISTRY
+}
+
 // ── Parsing ─────────────────────────────────────────────────────────────
 
 impl EmbedRequest {
     /// Parse a raw embed string (the content between `{{` and `}}`).
     ///
     /// Syntax: `name[:arg1[:arg2[...]]] [key=val ...]`
+    ///
+    /// Special case: when `name == "query"` the first argument is an
+    /// s-expression which contains `(`, `)`, `"` and its own `:` — so
+    /// naive `split(':')` / `split_whitespace()` would corrupt it. The
+    /// parser therefore requires the query form `query:(...)` and
+    /// captures balanced parens as the single positional arg, leaving any
+    /// trailing `key=val` options after the closing `)` intact.
     pub fn parse(input: &str) -> Result<Self, EmbedError> {
         let input = input.trim();
         if input.is_empty() {
@@ -118,18 +228,77 @@ impl EmbedRequest {
             });
         }
 
-        // Split on first space to separate "name:args..." from "key=val ..."
-        let (name_args_part, options_part) = match input.find(' ') {
-            Some(pos) => (&input[..pos], Some(&input[pos + 1..])),
-            None => (input, None),
+        // Peel off the embed name (everything up to the first ':' or space).
+        let name_end = input
+            .find(|c: char| c == ':' || c.is_whitespace())
+            .unwrap_or(input.len());
+        let name = input[..name_end].to_string();
+        let rest = input[name_end..].trim_start_matches(':');
+
+        // ── Balanced-paren form for `query` ────────────────────────
+        // `{{query:(..balanced..) key=val}}`.  Any colons, spaces, and
+        // quotes inside the parens belong to the s-expression.
+        if name == "query" {
+            let rest_trim = rest.trim_start();
+            if !rest_trim.starts_with('(') {
+                return Err(EmbedError {
+                    kind: EmbedErrorKind::MalformedSyntax(
+                        "query embed requires a parenthesised s-expression: {{query:(...)}}"
+                            .into(),
+                    ),
+                    raw_text: input.to_string(),
+                });
+            }
+            let (sexpr, tail) = match extract_balanced_parens(rest_trim) {
+                Some(pair) => pair,
+                None => {
+                    return Err(EmbedError {
+                        kind: EmbedErrorKind::MalformedSyntax(
+                            "unbalanced parentheses in query embed".into(),
+                        ),
+                        raw_text: input.to_string(),
+                    });
+                }
+            };
+
+            let mut options = BTreeMap::new();
+            for token in tail.split_whitespace() {
+                if let Some((key, val)) = token.split_once('=') {
+                    options.insert(key.to_string(), val.to_string());
+                }
+            }
+            return Ok(EmbedRequest {
+                name,
+                args: vec![sexpr.to_string()],
+                options,
+            });
+        }
+
+        // ── Classic form: name:arg1:arg2 key=val ... ───────────────
+        // (Re-assemble input so the whitespace/option parser sees the
+        //  original shape.)
+        let tail_full = if rest.is_empty() { input } else { rest };
+        // If `rest` is a slice of `input`, we need to re-anchor the "name"
+        // prefix logic on the tail (arguments only).
+        let args_and_options = if name_end == input.len() {
+            ""
+        } else {
+            input[name_end..].trim_start_matches(':')
+        };
+        let (args_part, options_part) = match args_and_options.find(' ') {
+            Some(pos) => (
+                &args_and_options[..pos],
+                Some(&args_and_options[pos + 1..]),
+            ),
+            None => (args_and_options, None),
         };
 
-        // Split name:arg1:arg2:...
-        let mut parts = name_args_part.split(':');
-        let name = parts.next().unwrap().to_string();
-        let args: Vec<String> = parts.map(|s| s.trim().to_string()).collect();
+        let args: Vec<String> = if args_part.is_empty() {
+            Vec::new()
+        } else {
+            args_part.split(':').map(|s| s.trim().to_string()).collect()
+        };
 
-        // Parse key=val options
         let mut options = BTreeMap::new();
         if let Some(opts_str) = options_part {
             for token in opts_str.split_whitespace() {
@@ -138,6 +307,9 @@ impl EmbedRequest {
                 }
             }
         }
+
+        // Silence unused-variable lint for the legacy shadow.
+        let _ = tail_full;
 
         Ok(EmbedRequest {
             name,
@@ -165,6 +337,8 @@ pub fn resolve_embed(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> Result<S
         "coverage" => Ok(render_coverage(request, ctx)),
         "diagnostics" => Ok(render_diagnostics(request, ctx)),
         "matrix" => Ok(render_matrix(request, ctx)),
+        "query" => render_query(request, ctx),
+        "group" => render_group(request, ctx),
         // Legacy embeds (artifact, links, table) are still handled by
         // resolve_inline in document.rs — they should never reach here.
         "artifact" | "links" | "table" => Err(EmbedError {
@@ -180,11 +354,64 @@ pub fn resolve_embed(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> Result<S
     }
 }
 
+/// Extract the balanced-parenthesis prefix from a string that starts with `(`.
+///
+/// Returns `(inside_parens_including_outer, tail_after_close)` on success.
+/// Respects string literals so that `"foo)bar"` does not close the group.
+fn extract_balanced_parens(s: &str) -> Option<(&str, &str)> {
+    let bytes = s.as_bytes();
+    if bytes.first() != Some(&b'(') {
+        return None;
+    }
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut escape = false;
+    for (i, b) in bytes.iter().enumerate() {
+        let c = *b;
+        if in_string {
+            if escape {
+                escape = false;
+            } else if c == b'\\' {
+                escape = true;
+            } else if c == b'"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match c {
+            b'"' => in_string = true,
+            b'(' => depth += 1,
+            b')' => {
+                depth -= 1;
+                if depth == 0 {
+                    // include the closing paren in the first slice
+                    let (head, tail) = s.split_at(i + 1);
+                    return Some((head, tail));
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 // ── Stats renderer ──────────────────────────────────────────────────────
 
-/// Render `{{stats}}` / `{{stats:types}}` / `{{stats:status}}` / `{{stats:validation}}`.
+/// Render one of:
+/// - `{{stats}}`              — full statistics panel (types + status + validation)
+/// - `{{stats:types}}`        — just the type-count table
+/// - `{{stats:status}}`       — just the status-count table
+/// - `{{stats:validation}}`   — just the per-severity table
+/// - `{{stats:type:NAME}}`    — single count for the named artifact type
 fn render_stats(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> String {
     let section = request.args.first().map(|s| s.as_str());
+    let target_type = request.args.get(1).map(|s| s.as_str());
+
+    // Granular form: {{stats:type:requirement}} → single-cell count.
+    if section == Some("type") {
+        return render_stats_single_type(target_type.unwrap_or(""), ctx);
+    }
+
     let mut html = String::from("<div class=\"embed-stats\">\n");
 
     let show_types = section.is_none() || section == Some("types");
@@ -203,6 +430,32 @@ fn render_stats(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> String {
 
     html.push_str("</div>\n");
     html
+}
+
+/// Render `{{stats:type:NAME}}` — just the count for a single artifact type.
+///
+/// Rendered as a compact single-row table so it still looks like the rest of
+/// the stats family.  Unknown types render a zero-count row rather than an
+/// error: this is the "embed never disappears silently" rule (SC-EMBED-3).
+fn render_stats_single_type(type_name: &str, ctx: &EmbedContext<'_>) -> String {
+    let name = type_name.trim();
+    if name.is_empty() {
+        return "<div class=\"embed-stats\"><span class=\"embed-error\">stats:type requires a type name, e.g. <code>{{stats:type:requirement}}</code></span></div>\n".to_string();
+    }
+    let count = ctx
+        .store
+        .iter()
+        .filter(|a| a.artifact_type == name)
+        .count();
+
+    format!(
+        "<div class=\"embed-stats embed-stats-single\">\n\
+         <table class=\"embed-table\"><thead><tr><th>Type</th><th>Count</th></tr></thead><tbody>\n\
+         <tr><td>{typ}</td><td>{count}</td></tr>\n\
+         </tbody></table>\n\
+         </div>\n",
+        typ = document::html_escape(name),
+    )
 }
 
 fn render_stats_types(ctx: &EmbedContext<'_>) -> String {
@@ -624,6 +877,211 @@ fn auto_detect_link(ctx: &EmbedContext<'_>, from: &str, _to: &str) -> String {
     String::new()
 }
 
+// ── Query renderer ──────────────────────────────────────────────────────
+
+/// Default maximum rows a `{{query:...}}` embed will render.
+pub const QUERY_EMBED_DEFAULT_LIMIT: usize = 50;
+/// Hard upper bound on `limit=N` for `{{query:...}}`; keeps render time bounded.
+pub const QUERY_EMBED_MAX_LIMIT: usize = 500;
+
+/// Render `{{query:(s-expr) [limit=N]}}`.
+///
+/// Reuses `sexpr_eval::parse_filter` and `matches_filter_with_store` — the
+/// same path used by `rivet list --filter`, MCP's `rivet_query`, and the
+/// `rivet query` CLI — so output IDs agree across all three surfaces.
+///
+/// Read-only by construction (the evaluator has no I/O), and truncation is
+/// reported as a visible footer rather than silently dropping rows.
+fn render_query(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> Result<String, EmbedError> {
+    let Some(sexpr) = request.args.first() else {
+        return Err(EmbedError {
+            kind: EmbedErrorKind::MalformedSyntax(
+                "query embed requires an s-expression: {{query:(...)}}".into(),
+            ),
+            raw_text: format!("{request:?}"),
+        });
+    };
+
+    let expr = crate::sexpr_eval::parse_filter(sexpr).map_err(|errs| {
+        let msgs: Vec<String> = errs.iter().map(|e| e.to_string()).collect();
+        EmbedError {
+            kind: EmbedErrorKind::MalformedSyntax(format!("invalid filter: {}", msgs.join("; "))),
+            raw_text: sexpr.clone(),
+        }
+    })?;
+
+    // Resolve limit: options["limit"] if valid, else default.  Clamped to
+    // the hard max so a stray `limit=99999` cannot pin the renderer.
+    let limit = request
+        .options
+        .get("limit")
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(QUERY_EMBED_DEFAULT_LIMIT)
+        .min(QUERY_EMBED_MAX_LIMIT);
+
+    let mut matches: Vec<&crate::model::Artifact> = Vec::new();
+    let mut total = 0usize;
+    for artifact in ctx.store.iter() {
+        if crate::sexpr_eval::matches_filter_with_store(&expr, artifact, ctx.graph, ctx.store) {
+            total += 1;
+            if matches.len() < limit {
+                matches.push(artifact);
+            }
+        }
+    }
+
+    let mut html = String::from("<div class=\"embed-query\">\n");
+    if total == 0 {
+        html.push_str("<p class=\"embed-no-data\">No artifacts match this query.</p>\n");
+        html.push_str("</div>\n");
+        return Ok(html);
+    }
+
+    html.push_str(
+        "<table class=\"embed-table\"><thead><tr>\
+         <th>ID</th><th>Type</th><th>Title</th><th>Status</th>\
+         </tr></thead><tbody>\n",
+    );
+    for a in &matches {
+        let _ = writeln!(
+            html,
+            "<tr><td><code>{id}</code></td><td>{typ}</td><td>{title}</td><td>{status}</td></tr>",
+            id = document::html_escape(&a.id),
+            typ = document::html_escape(&a.artifact_type),
+            title = document::html_escape(&a.title),
+            status = document::html_escape(a.status.as_deref().unwrap_or("-")),
+        );
+    }
+    html.push_str("</tbody></table>\n");
+
+    if total > matches.len() {
+        let _ = writeln!(
+            html,
+            "<p class=\"embed-summary\">Showing {shown} of {total} — narrow the filter or raise <code>limit=</code> to see more.</p>",
+            shown = matches.len(),
+        );
+    } else {
+        let _ = writeln!(
+            html,
+            "<p class=\"embed-summary\">{total} result{s}.</p>",
+            s = if total == 1 { "" } else { "s" },
+        );
+    }
+    html.push_str("</div>\n");
+    Ok(html)
+}
+
+// ── Group renderer ──────────────────────────────────────────────────────
+
+/// Render `{{group:FIELD}}` — count-by-value table grouping existing
+/// artifacts by the given field.
+///
+/// Examples:
+/// - `{{group:status}}` — counts of draft / approved / shipped / unset
+/// - `{{group:type}}` — like `{{stats:types}}` without schema pre-population
+/// - `{{group:asil}}` — per-ASIL counts from a custom field
+///
+/// The "meaning" of this embed is not fully pinned down by prior docs —
+/// this implementation picks the most useful reading (count-by-value) and
+/// documents it alongside the output.  Unset / missing values are bucketed
+/// as "unset" so the totals line up with the project artifact count.
+fn render_group(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> Result<String, EmbedError> {
+    let Some(field) = request.args.first() else {
+        return Err(EmbedError {
+            kind: EmbedErrorKind::MalformedSyntax(
+                "group embed requires a field name: {{group:status}}".into(),
+            ),
+            raw_text: format!("{request:?}"),
+        });
+    };
+    let field = field.trim();
+    if field.is_empty() {
+        return Err(EmbedError {
+            kind: EmbedErrorKind::MalformedSyntax("group field cannot be empty".into()),
+            raw_text: format!("{request:?}"),
+        });
+    }
+
+    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+    for a in ctx.store.iter() {
+        let raw = read_artifact_field(a, field);
+        // Treat empty/missing as "unset" so the totals always add up.
+        let bucket = if raw.is_empty() {
+            "unset".to_string()
+        } else {
+            raw
+        };
+        *counts.entry(bucket).or_default() += 1;
+    }
+
+    if counts.is_empty() {
+        return Ok(format!(
+            "<div class=\"embed-group\"><p class=\"embed-no-data\">No artifacts to group by <code>{}</code>.</p></div>\n",
+            document::html_escape(field)
+        ));
+    }
+
+    let total: usize = counts.values().sum();
+    let mut html = String::from("<div class=\"embed-group\">\n");
+    let _ = writeln!(
+        html,
+        "<table class=\"embed-table\"><thead><tr><th>{fld}</th><th>Count</th></tr></thead><tbody>",
+        fld = document::html_escape(field),
+    );
+    for (value, count) in &counts {
+        let _ = writeln!(
+            html,
+            "<tr><td>{v}</td><td>{c}</td></tr>",
+            v = document::html_escape(value),
+            c = count,
+        );
+    }
+    let _ = writeln!(
+        html,
+        "<tr class=\"embed-total\"><td><strong>Total</strong></td><td><strong>{total}</strong></td></tr>"
+    );
+    html.push_str("</tbody></table>\n</div>\n");
+    Ok(html)
+}
+
+/// Read a single string value for an artifact field by name.
+///
+/// Handles the well-known top-level fields (id, type, title, status,
+/// description) as well as YAML extension fields stored in `fields`.
+/// List-valued fields (e.g. `tags`) render as a comma-joined string so
+/// `{{group:tags}}` produces stable buckets — individual-tag grouping is
+/// a future enhancement.
+fn read_artifact_field(a: &crate::model::Artifact, name: &str) -> String {
+    match name {
+        "id" => a.id.clone(),
+        "type" => a.artifact_type.clone(),
+        "title" => a.title.clone(),
+        "description" => a.description.clone().unwrap_or_default(),
+        "status" => a.status.clone().unwrap_or_default(),
+        "tags" => a.tags.join(","),
+        other => a
+            .fields
+            .get(other)
+            .map(yaml_value_to_plain_string)
+            .unwrap_or_default(),
+    }
+}
+
+fn yaml_value_to_plain_string(v: &serde_yaml::Value) -> String {
+    match v {
+        serde_yaml::Value::String(s) => s.clone(),
+        serde_yaml::Value::Number(n) => n.to_string(),
+        serde_yaml::Value::Bool(b) => b.to_string(),
+        serde_yaml::Value::Null => String::new(),
+        serde_yaml::Value::Sequence(seq) => seq
+            .iter()
+            .map(yaml_value_to_plain_string)
+            .collect::<Vec<_>>()
+            .join(","),
+        serde_yaml::Value::Mapping(_) | serde_yaml::Value::Tagged(_) => format!("{v:?}"),
+    }
+}
+
 // ── Provenance ──────────────────────────────────────────────────────────
 
 /// Render a provenance footer for export (SC-EMBED-4).
@@ -922,5 +1380,443 @@ mod tests {
     fn diagnostics_and_matrix_are_not_legacy() {
         assert!(!EmbedRequest::parse("diagnostics").unwrap().is_legacy());
         assert!(!EmbedRequest::parse("matrix").unwrap().is_legacy());
+    }
+
+    // ── Balanced-paren / query parsing ──────────────────────────────
+
+    #[test]
+    fn extract_balanced_parens_simple() {
+        let (head, tail) = extract_balanced_parens("(= type \"requirement\") limit=5").unwrap();
+        assert_eq!(head, "(= type \"requirement\")");
+        assert_eq!(tail, " limit=5");
+    }
+
+    #[test]
+    fn extract_balanced_parens_nested() {
+        let (head, tail) =
+            extract_balanced_parens("(and (= type \"requirement\") (has-tag \"stpa\"))").unwrap();
+        assert_eq!(head, "(and (= type \"requirement\") (has-tag \"stpa\"))");
+        assert_eq!(tail, "");
+    }
+
+    #[test]
+    fn extract_balanced_parens_respects_string_literal() {
+        // a `)` inside a string must not close the group
+        let (head, _tail) = extract_balanced_parens(r#"(= title "has ) paren")"#).unwrap();
+        assert_eq!(head, r#"(= title "has ) paren")"#);
+    }
+
+    #[test]
+    fn extract_balanced_parens_unbalanced_returns_none() {
+        assert!(extract_balanced_parens("(and (=").is_none());
+    }
+
+    #[test]
+    fn parse_query_captures_whole_sexpr() {
+        let req = EmbedRequest::parse("query:(= type \"requirement\")").unwrap();
+        assert_eq!(req.name, "query");
+        assert_eq!(req.args, vec!["(= type \"requirement\")"]);
+    }
+
+    #[test]
+    fn parse_query_with_nested_and_options() {
+        let req = EmbedRequest::parse(
+            "query:(and (= type \"requirement\") (has-tag \"stpa\")) limit=25",
+        )
+        .unwrap();
+        assert_eq!(req.name, "query");
+        assert_eq!(
+            req.args,
+            vec!["(and (= type \"requirement\") (has-tag \"stpa\"))"]
+        );
+        assert_eq!(req.options.get("limit"), Some(&"25".to_string()));
+    }
+
+    #[test]
+    fn parse_query_without_parens_errors() {
+        let err = EmbedRequest::parse("query:type=requirement").unwrap_err();
+        assert!(matches!(err.kind, EmbedErrorKind::MalformedSyntax(_)));
+    }
+
+    #[test]
+    fn parse_query_with_unbalanced_parens_errors() {
+        let err = EmbedRequest::parse("query:(and (= type \"req\"").unwrap_err();
+        assert!(matches!(err.kind, EmbedErrorKind::MalformedSyntax(_)));
+    }
+
+    // Regression: parser changes for `query` must not break existing embeds.
+
+    #[test]
+    fn parse_stats_still_splits_on_colon() {
+        let req = EmbedRequest::parse("stats:types").unwrap();
+        assert_eq!(req.name, "stats");
+        assert_eq!(req.args, vec!["types"]);
+    }
+
+    #[test]
+    fn parse_table_still_takes_two_args() {
+        let req = EmbedRequest::parse("table:requirement:id,title,status").unwrap();
+        assert_eq!(req.name, "table");
+        assert_eq!(req.args, vec!["requirement", "id,title,status"]);
+    }
+
+    // ── Query & group renderers ─────────────────────────────────────
+
+    use crate::links::LinkGraph;
+    use crate::model::Artifact;
+    use crate::schema::Schema;
+    use crate::store::Store;
+    use crate::validate::Diagnostic;
+    use std::collections::BTreeMap;
+
+    fn make_store(artifacts: Vec<Artifact>) -> Store {
+        let mut s = Store::new();
+        for a in artifacts {
+            s.upsert(a);
+        }
+        s
+    }
+
+    fn plain(id: &str, typ: &str, status: Option<&str>, tags: &[&str]) -> Artifact {
+        Artifact {
+            id: id.into(),
+            artifact_type: typ.into(),
+            title: format!("Title of {id}"),
+            description: None,
+            status: status.map(|s| s.into()),
+            tags: tags.iter().map(|t| t.to_string()).collect(),
+            links: vec![],
+            fields: BTreeMap::new(),
+            provenance: None,
+            source_file: None,
+        }
+    }
+
+    fn run_embed(
+        query: &str,
+        store: &Store,
+        schema: &Schema,
+        graph: &LinkGraph,
+    ) -> Result<String, EmbedError> {
+        let req = EmbedRequest::parse(query)?;
+        let diags: Vec<Diagnostic> = Vec::new();
+        let ctx = EmbedContext {
+            store,
+            schema,
+            graph,
+            diagnostics: &diags,
+            baseline: None,
+        };
+        resolve_embed(&req, &ctx)
+    }
+
+    // The `{{query:...}}` embed must return the same IDs as
+    // `sexpr_eval::matches_filter_with_store` — and therefore the same set
+    // that `rivet list --filter` and MCP's `rivet_query` would return.
+    #[test]
+    fn query_embed_matches_sexpr_filter() {
+        let store = make_store(vec![
+            plain("REQ-1", "requirement", Some("approved"), &["stpa"]),
+            plain("REQ-2", "requirement", Some("draft"), &[]),
+            plain("FEAT-1", "feature", Some("approved"), &["stpa"]),
+        ]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+
+        let html = run_embed(
+            r#"query:(= type "requirement")"#,
+            &store,
+            &schema,
+            &graph,
+        )
+        .unwrap();
+        assert!(html.contains("REQ-1"), "got: {html}");
+        assert!(html.contains("REQ-2"), "got: {html}");
+        assert!(!html.contains("FEAT-1"), "got: {html}");
+
+        // Cross-check via the same evaluator directly.  Store iteration
+        // order is not guaranteed, so compare as a sorted set.
+        let expr = crate::sexpr_eval::parse_filter(r#"(= type "requirement")"#).unwrap();
+        let mut direct_ids: Vec<String> = store
+            .iter()
+            .filter(|a| crate::sexpr_eval::matches_filter_with_store(&expr, a, &graph, &store))
+            .map(|a| a.id.clone())
+            .collect();
+        direct_ids.sort();
+        assert_eq!(direct_ids, vec!["REQ-1".to_string(), "REQ-2".to_string()]);
+    }
+
+    #[test]
+    fn query_embed_no_matches_shows_empty_message() {
+        let store = make_store(vec![plain("REQ-1", "requirement", None, &[])]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let html = run_embed(r#"query:(= type "feature")"#, &store, &schema, &graph).unwrap();
+        assert!(html.contains("No artifacts match"), "got: {html}");
+        assert!(html.contains("embed-query"));
+    }
+
+    #[test]
+    fn query_embed_limit_caps_rows_and_shows_truncation_note() {
+        let store = make_store(
+            (0..20)
+                .map(|i| plain(&format!("REQ-{i:03}"), "requirement", None, &[]))
+                .collect(),
+        );
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let html = run_embed(
+            r#"query:(= type "requirement") limit=3"#,
+            &store,
+            &schema,
+            &graph,
+        )
+        .unwrap();
+        // Only 3 data rows render, and a footer flags the truncation.
+        // (Store iteration order is not guaranteed — we assert row count
+        //  and the summary, not specific IDs.)
+        let row_count = html.matches("<tr>").count();
+        assert_eq!(row_count, 4, "expected 1 header + 3 data rows, got: {html}");
+        assert!(html.contains("Showing 3 of 20"), "got: {html}");
+    }
+
+    #[test]
+    fn query_embed_limit_clamped_to_hard_max() {
+        // Just verify that an over-limit renders at all without panicking.
+        let store = make_store(vec![plain("REQ-1", "requirement", None, &[])]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let html = run_embed(
+            &format!(
+                "query:(= type \"requirement\") limit={}",
+                QUERY_EMBED_MAX_LIMIT + 1_000
+            ),
+            &store,
+            &schema,
+            &graph,
+        )
+        .unwrap();
+        assert!(html.contains("REQ-1"));
+    }
+
+    #[test]
+    fn query_embed_malformed_filter_renders_error() {
+        let store = Store::new();
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        // `(and` unclosed — passes the paren-balancer only when wrapped.
+        let req = EmbedRequest::parse("query:(unknown-form)").unwrap();
+        let diags: Vec<Diagnostic> = Vec::new();
+        let ctx = EmbedContext {
+            store: &store,
+            schema: &schema,
+            graph: &graph,
+            diagnostics: &diags,
+            baseline: None,
+        };
+        let err = resolve_embed(&req, &ctx).unwrap_err();
+        assert!(matches!(err.kind, EmbedErrorKind::MalformedSyntax(_)));
+    }
+
+    // ── stats:type:NAME granular form ───────────────────────────────
+
+    #[test]
+    fn stats_type_single_name_counts_correctly() {
+        let store = make_store(vec![
+            plain("A", "requirement", None, &[]),
+            plain("B", "requirement", None, &[]),
+            plain("C", "feature", None, &[]),
+        ]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let html = run_embed("stats:type:requirement", &store, &schema, &graph).unwrap();
+        assert!(html.contains("embed-stats-single"), "got: {html}");
+        // The single-type row must show count = 2 for requirement.
+        assert!(html.contains("<td>requirement</td>"), "got: {html}");
+        assert!(html.contains("<td>2</td>"), "got: {html}");
+        // Must NOT contain the full stats table sections.
+        assert!(!html.contains("embed-stats-validation"), "got: {html}");
+        assert!(!html.contains("embed-stats-status"), "got: {html}");
+    }
+
+    #[test]
+    fn stats_type_unknown_type_renders_zero_not_error() {
+        let store = make_store(vec![plain("A", "requirement", None, &[])]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let html = run_embed("stats:type:nonexistent", &store, &schema, &graph).unwrap();
+        // Still renders a table cell (SC-EMBED-3: no silent disappearance).
+        assert!(html.contains("<td>nonexistent</td>"), "got: {html}");
+        assert!(html.contains("<td>0</td>"), "got: {html}");
+    }
+
+    #[test]
+    fn stats_type_empty_name_renders_embed_error() {
+        let store = Store::new();
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        // `{{stats:type}}` with no third arg — flag as user error, visibly.
+        let html = run_embed("stats:type", &store, &schema, &graph).unwrap();
+        assert!(html.contains("embed-error"), "got: {html}");
+    }
+
+    #[test]
+    fn stats_type_does_not_break_existing_stats_types() {
+        // Regression: the previous {{stats:types}} form must still render
+        // the full table.
+        let store = make_store(vec![
+            plain("A", "requirement", None, &[]),
+            plain("B", "feature", None, &[]),
+        ]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let html = run_embed("stats:types", &store, &schema, &graph).unwrap();
+        assert!(html.contains("<table"));
+        assert!(html.contains("requirement"));
+        assert!(html.contains("feature"));
+    }
+
+    // ── {{group:FIELD}} embed ───────────────────────────────────────
+
+    #[test]
+    fn group_embed_counts_by_status() {
+        let store = make_store(vec![
+            plain("A", "requirement", Some("draft"), &[]),
+            plain("B", "requirement", Some("approved"), &[]),
+            plain("C", "requirement", Some("approved"), &[]),
+            plain("D", "requirement", None, &[]), // unset
+        ]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let html = run_embed("group:status", &store, &schema, &graph).unwrap();
+        assert!(html.contains("embed-group"));
+        assert!(html.contains("approved"));
+        assert!(html.contains("draft"));
+        assert!(html.contains("unset"), "got: {html}");
+        // 3 + 1 = 4 total
+        assert!(html.contains("<strong>4</strong>"), "got: {html}");
+    }
+
+    #[test]
+    fn group_embed_counts_by_type() {
+        let store = make_store(vec![
+            plain("A", "requirement", None, &[]),
+            plain("B", "feature", None, &[]),
+            plain("C", "feature", None, &[]),
+        ]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let html = run_embed("group:type", &store, &schema, &graph).unwrap();
+        // two features, one requirement — assert the cells directly.
+        assert!(html.contains("<td>feature</td>"), "got: {html}");
+        assert!(html.contains("<td>2</td>"), "got: {html}");
+        assert!(html.contains("<td>requirement</td>"), "got: {html}");
+        assert!(html.contains("<td>1</td>"), "got: {html}");
+    }
+
+    #[test]
+    fn group_embed_by_custom_field() {
+        // ASIL is a common custom YAML field; group-by that.
+        let mut a = plain("A", "requirement", None, &[]);
+        a.fields.insert(
+            "asil".into(),
+            serde_yaml::Value::String("ASIL-B".into()),
+        );
+        let mut b = plain("B", "requirement", None, &[]);
+        b.fields.insert(
+            "asil".into(),
+            serde_yaml::Value::String("ASIL-B".into()),
+        );
+        let c = plain("C", "requirement", None, &[]); // no asil → unset
+        let store = make_store(vec![a, b, c]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let html = run_embed("group:asil", &store, &schema, &graph).unwrap();
+        assert!(html.contains("ASIL-B"), "got: {html}");
+        assert!(html.contains("<td>2</td>"), "got: {html}");
+        assert!(html.contains("unset"), "got: {html}");
+    }
+
+    #[test]
+    fn group_embed_rejects_empty_field() {
+        let store = Store::new();
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let req = EmbedRequest::parse("group:").unwrap();
+        let diags: Vec<Diagnostic> = Vec::new();
+        let ctx = EmbedContext {
+            store: &store,
+            schema: &schema,
+            graph: &graph,
+            diagnostics: &diags,
+            baseline: None,
+        };
+        let err = resolve_embed(&req, &ctx).unwrap_err();
+        assert!(matches!(err.kind, EmbedErrorKind::MalformedSyntax(_)));
+    }
+
+    #[test]
+    fn group_embed_empty_store_renders_no_data() {
+        let store = Store::new();
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let html = run_embed("group:status", &store, &schema, &graph).unwrap();
+        assert!(html.contains("embed-group"), "got: {html}");
+        assert!(html.contains("No artifacts"), "got: {html}");
+    }
+
+    // ── Registry invariants ─────────────────────────────────────────
+
+    /// Every embed that resolve_embed dispatches must appear in
+    /// EMBED_REGISTRY — otherwise `rivet docs embeds` lies by omission.
+    #[test]
+    fn registry_covers_all_dispatched_embeds() {
+        let dispatched = [
+            "stats",
+            "coverage",
+            "diagnostics",
+            "matrix",
+            "query",
+            "group",
+            // Legacy — still listed:
+            "artifact",
+            "links",
+            "table",
+        ];
+        let registered: Vec<&str> = EMBED_REGISTRY.iter().map(|s| s.name).collect();
+        for name in &dispatched {
+            assert!(
+                registered.contains(name),
+                "embed '{name}' is dispatched but not in EMBED_REGISTRY",
+            );
+        }
+    }
+
+    /// Each registry entry's example must itself be a parseable embed so
+    /// the listing output is copy-pasteable without further editing.
+    #[test]
+    fn registry_examples_parse() {
+        for spec in EMBED_REGISTRY {
+            // Strip the outer {{ }} and parse the first example.  Many
+            // examples list multiple variants separated by "  /  ";
+            // testing the first is enough to catch regressions.
+            let first = spec.example.split("  /  ").next().unwrap().trim();
+            let inner = first
+                .trim_start_matches("{{")
+                .trim_end_matches("}}")
+                .trim();
+            EmbedRequest::parse(inner)
+                .unwrap_or_else(|e| panic!("registry example for '{}' failed to parse: {e}", spec.name));
+        }
+    }
+
+    #[test]
+    fn registry_has_stable_entries() {
+        // Smoke test: hold the registry to at least these entries.  Stops
+        // accidental deletions.
+        let names: Vec<&str> = EMBED_REGISTRY.iter().map(|s| s.name).collect();
+        for required in ["stats", "coverage", "query", "group", "artifact"] {
+            assert!(names.contains(&required));
+        }
     }
 }

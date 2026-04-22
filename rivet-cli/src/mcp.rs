@@ -943,46 +943,43 @@ fn json_to_yaml_value(v: &Value) -> serde_yaml::Value {
 // ── Query tool helper ─────────────────────────────────────────────────
 
 fn tool_query(proj: &McpProject, params: &QueryParams) -> Result<Value> {
-    let expr = rivet_core::sexpr_eval::parse_filter(&params.filter).map_err(|errs| {
-        let msgs: Vec<String> = errs.iter().map(|e| e.to_string()).collect();
-        anyhow::anyhow!("invalid filter: {}", msgs.join("; "))
-    })?;
+    // Shared path with `rivet query` and the `{{query:...}}` embed so all
+    // three surfaces return the same artifact set for the same filter.
+    let result = rivet_core::query::execute_sexpr(
+        &proj.store,
+        &proj.graph,
+        &params.filter,
+        Some(params.limit.unwrap_or(100)),
+    )
+    .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-    let limit = params.limit.unwrap_or(100);
-    let mut results: Vec<Value> = Vec::new();
-
-    for artifact in proj.store.iter() {
-        if !rivet_core::sexpr_eval::matches_filter_with_store(
-            &expr,
-            artifact,
-            &proj.graph,
-            &proj.store,
-        ) {
-            continue;
-        }
-        let links_json: Vec<Value> = artifact
-            .links
-            .iter()
-            .map(|l| json!({"type": l.link_type, "target": l.target}))
-            .collect();
-        results.push(json!({
-            "id": artifact.id,
-            "type": artifact.artifact_type,
-            "title": artifact.title,
-            "status": artifact.status.as_deref().unwrap_or("-"),
-            "tags": artifact.tags,
-            "links": links_json,
-            "description": artifact.description.as_deref().unwrap_or(""),
-        }));
-        if results.len() >= limit {
-            break;
-        }
-    }
+    let artifacts: Vec<Value> = result
+        .matches
+        .iter()
+        .map(|a| {
+            let links_json: Vec<Value> = a
+                .links
+                .iter()
+                .map(|l| json!({"type": l.link_type, "target": l.target}))
+                .collect();
+            json!({
+                "id": a.id,
+                "type": a.artifact_type,
+                "title": a.title,
+                "status": a.status.as_deref().unwrap_or("-"),
+                "tags": a.tags,
+                "links": links_json,
+                "description": a.description.as_deref().unwrap_or(""),
+            })
+        })
+        .collect();
 
     Ok(json!({
         "filter": params.filter,
-        "count": results.len(),
-        "artifacts": results,
+        "count": artifacts.len(),
+        "total": result.total,
+        "truncated": result.truncated,
+        "artifacts": artifacts,
     }))
 }
 
