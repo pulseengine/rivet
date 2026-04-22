@@ -101,7 +101,13 @@ function extractMermaid(md: string): string {
 function runDiffToMarkdown(
   diff: unknown,
   impact: unknown,
-  opts: { pr?: string; run?: string; repo?: string } = {},
+  opts: {
+    pr?: string;
+    run?: string;
+    repo?: string;
+    mmdOut?: string;
+    svgUrl?: string;
+  } = {},
 ): string {
   const dir = mkdtempSync(join(tmpdir(), "rivet-delta-test-"));
   const diffPath = join(dir, "diff.json");
@@ -121,6 +127,8 @@ function runDiffToMarkdown(
     "--repo",
     opts.repo ?? "pulseengine/rivet",
   ];
+  if (opts.mmdOut) args.push("--mmd-out", opts.mmdOut);
+  if (opts.svgUrl) args.push("--svg-url", opts.svgUrl);
   return execFileSync("node", args, { cwd: REPO_ROOT, encoding: "utf8" });
 }
 
@@ -349,5 +357,88 @@ test.describe("rivet-delta PR-comment output", () => {
     // The pipe in the modified row must be escaped so the table stays
     // structurally sound.
     expect(md).toContain("REQ-\\|pipe\\|");
+  });
+
+  // v0.4.3: the second-pass --svg-url invocation must emit an <img>
+  // reference above the mermaid block so the diagram renders in email
+  // notifications and the GitHub mobile app (both show ```mermaid
+  // fenced blocks as raw source otherwise). The interactive mermaid
+  // block stays available in a collapsed <details> for GitHub web.
+  test("svg-url flag injects image above the mermaid block", async ({
+    page,
+  }) => {
+    const diff = {
+      added: ["REQ-X"],
+      removed: [],
+      modified: [],
+      summary: "1 added",
+    };
+    const svgUrl =
+      "https://raw.githubusercontent.com/pulseengine/rivet/rivet-delta-renders/pr-42/run-101/diagram.svg";
+    const md = runDiffToMarkdown(diff, { impacted: [] }, { svgUrl });
+
+    // Image must appear BEFORE the mermaid block — email clients that
+    // strip the mermaid source as plain text still show the image.
+    const imgIndex = md.indexOf(`![Rivet artifact delta graph](${svgUrl})`);
+    const mermaidIndex = md.indexOf("```mermaid");
+    expect(imgIndex).toBeGreaterThan(-1);
+    expect(mermaidIndex).toBeGreaterThan(imgIndex);
+
+    // Mermaid must now be inside a <details> so it collapses on the web
+    // UI and doesn't duplicate the image visually.
+    expect(md).toContain("<details><summary>Interactive graph (mermaid source)");
+
+    // Render and verify the image tag is present in the DOM.
+    await page.setContent(`<html><body>${mdToHtml(md)}</body></html>`);
+    const img = page.locator("img[alt='Rivet artifact delta graph']");
+    await expect(img).toHaveAttribute("src", svgUrl);
+  });
+
+  test("classification priority: added wins over modified when duplicated", async () => {
+    // Regression: v0.4.2 PR #192 delta showed a newly-added artifact
+    // (REQ-060) as "modified" yellow because the mermaid node map was
+    // built with modified last, overwriting the added entry. Fix: build
+    // modified first, then added/removed last so terminal classes win.
+    const diff = {
+      added: ["NEW-1"],
+      removed: ["OLD-1"],
+      // Deliberately duplicate NEW-1 in modified to simulate any upstream
+      // pipeline oddity that puts the same ID in two lists.
+      modified: [
+        {
+          id: "NEW-1",
+          status_changed: null,
+          title_changed: null,
+          description_changed: true,
+          tags_added: [],
+          tags_removed: [],
+          links_added: [],
+          links_removed: [],
+        },
+      ],
+      summary: "duplicate",
+    };
+    const md = runDiffToMarkdown(diff, { impacted: [] });
+    const mermaid = extractMermaid(md);
+    // NEW-1 must be coloured as "added" (terminal), not "modified".
+    expect(mermaid).toMatch(/NEW_1\["NEW-1"\]:::added/);
+  });
+
+  test("mmd-out flag writes the mermaid source to a file", async () => {
+    const diff = {
+      added: ["REQ-Y"],
+      removed: [],
+      modified: [],
+      summary: "1 added",
+    };
+    const dir = mkdtempSync(join(tmpdir(), "rivet-delta-mmdout-"));
+    const mmdOut = join(dir, "diagram.mmd");
+    runDiffToMarkdown(diff, { impacted: [] }, { mmdOut });
+
+    // The file must exist and contain raw mermaid source (no fences).
+    const body = readFileSync(mmdOut, "utf8");
+    expect(body.trim().startsWith("graph LR")).toBe(true);
+    expect(body).not.toContain("```");
+    expect(body).toContain("REQ_Y");
   });
 });
