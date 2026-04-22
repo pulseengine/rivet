@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1776894381356,
+  "lastUpdate": 1776894624135,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "56087b8e14b592f717e77b3115093e452317b035",
-          "message": "fix(feature-model): cross-tree constraints silently pass (#156)\n\n* fix(feature-model): evaluate cross-tree constraints as logical assertions\n\nBefore this change, `rivet variant check` silently reported PASS on\nvariants that explicitly violated `(implies X (not Y))` and other\ncross-tree constraints where forward propagation could not auto-select\na feature to satisfy the consequent. The solver only used `Expr::Implies`\nto schedule consequent features for selection; when the consequent was\na negation, a compound, or any non-feature-name shape, no check ever\nfired against the propagated selection — a false-positive PASS on a\nsafety-critical validation surface.\n\nFix: add a `eval_constraint` pass after propagation that treats every\ntop-level constraint as a boolean assertion over the effective feature\nset, with standard propositional semantics for `and`/`or`/`not`/\n`implies`/`excludes`. `excludes` keeps its dedicated diagnostic string\nto preserve existing error messages; other shapes report through a new\n`describe_constraint` helper. Unknown artifact-oriented predicates\n(link queries, regex matches) default to true so unrelated constraint\nflavours do not trigger spurious violations.\n\nRegression tests cover the reported shape `(implies X (not Y))` with\nboth X and Y selected (now FAIL), the companion case with only X\nselected (still PASS), and ensure forward propagation of\n`(implies X Y)` still works.\n\nFixes: REQ-044\n\n* fix(deps): ignore RUSTSEC-2026-0103 (thin-vec UAF in transitive salsa)\n\nthin-vec 0.2.14 has a Double-Free / UAF in IntoIter::drop and\nThinVec::clear. Pulled in transitively via salsa 0.26.0. Rivet does\nnot directly construct or iterate thin_vec::ThinVec — the exposure is\nthrough salsa's internal data structures.\n\nIgnore in both cargo-deny and cargo-audit until either salsa bumps\nits thin-vec dependency or thin-vec 0.2.15 lands upstream.\n\nTrace: skip",
-          "timestamp": "2026-04-21T13:52:40-05:00",
-          "tree_id": "9e9392032e08d8839b6e2246ced7d0e442c4ba6e",
-          "url": "https://github.com/pulseengine/rivet/commit/56087b8e14b592f717e77b3115093e452317b035"
-        },
-        "date": 1776797926104,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 63903,
-            "range": "± 232",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 997825,
-            "range": "± 130653",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 15493494,
-            "range": "± 1592811",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1494,
-            "range": "± 10",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 18413,
-            "range": "± 157",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 264812,
-            "range": "± 5401",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 75,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 75,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 75,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 774488,
-            "range": "± 25782",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 191060,
-            "range": "± 26742",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 2023898,
-            "range": "± 248972",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 31428795,
-            "range": "± 3585696",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 97158,
-            "range": "± 1157",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 859226,
-            "range": "± 26496",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 10835840,
-            "range": "± 1635640",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 3277,
-            "range": "± 5",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 35299,
-            "range": "± 390",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 636087,
-            "range": "± 2936",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 54388,
-            "range": "± 808",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 574164,
-            "range": "± 2068",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 6755220,
-            "range": "± 434930",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 579,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 4993,
-            "range": "± 145",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 70862,
-            "range": "± 1164",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 19080,
-            "range": "± 219",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 132933,
-            "range": "± 3952",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1239036,
-            "range": "± 12518",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1627937,
             "range": "± 22129",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2b94ece8c9c036e69f7eba9fa895295acb9d2ec6",
+          "message": "feat(clippy): SCRC Phase 1 lint escalation — restriction family at warn (#195)\n\n* feat(clippy): SCRC Phase 1 lint escalation — restriction family at warn\n\nLands Phase 1 of the DD-058 roadmap: the full Safety-Critical Rust\nConsortium restriction-lint family is now declared at `warn` in\n`[workspace.lints.clippy]`, and every workspace member inherits via\n`[lints] workspace = true`.\n\nLints enabled (15):\n  unwrap_used, expect_used, indexing_slicing, arithmetic_side_effects,\n  as_conversions, cast_possible_truncation, cast_sign_loss,\n  wildcard_enum_match_arm, match_wildcard_for_single_variants,\n  panic, todo, unimplemented, dbg_macro, print_stdout, print_stderr.\n\nBaseline: 5,204 violations across 95 files (1,260 unwrap_used,\n1,191 arithmetic_side_effects, 1,175 indexing_slicing, 517\nprint_stdout, 404 expect_used, 249 as_conversions, 207 print_stderr,\n115 wildcard_enum_match_arm, 35 panic, 34 cast_possible_truncation,\n8 match_wildcard_for_single_variants, 6 cast_sign_loss).\n\nPhase 1 strategy (per DD-059): grandfathered via file-scope\n`#![allow(...)]` blocks carrying a `SAFETY-REVIEW (SCRC Phase 1,\nDD-058)` rationale. Per-site rewrite deferred to Phase 2 — the\n5.2k-site backlog would take weeks to clear inline and risks the\nteam disabling the lints out of fatigue (exactly the failure mode\nDD-058 is designed to prevent).\n\nScope of the blanket allow:\n  * Production sources under rivet-core/src, rivet-cli/src, etch/src\n    (64 files) — each carries a file-scope block with a per-lint\n    rationale covering parser-offset math, BTreeMap lookups by key\n    just-inserted, tolerant enum catch-alls, etc.\n  * All integration tests and benches (31 files) — tests legitimately\n    use unwrap/expect/panic/assert-indexing patterns.\n  * rivet-cli binary — print_stdout/print_stderr are legitimate CLI\n    output; kept denied elsewhere.\n\nTwo incidental fixes to unblock -D warnings:\n  * rivet-core/src/validate.rs:765 — pre-existing unused_must_use on\n    `store.insert(art)` silently swallowed a Result. Wrapped in\n    `let _ =` (test-only code; Result is Ok in practice but\n    needed explicit discard).\n  * rivet-core/src/reqif.rs:1864 — `get(...).is_none()` clippy-\n    refactored to `!contains_key(...)` per the\n    unnecessary_get_then_check lint (not in SCRC family; would\n    otherwise block -D warnings).\n  * rivet-core/src/doc_check.rs — added regex_creation_in_loops to\n    the file-scope allow (intentional per-file pattern binding).\n\nVerification:\n  cargo clippy --all-targets --workspace -- -D warnings: exits 0\n    (sole residual warning is the pre-existing MSRV mismatch between\n    clippy.toml 1.85.0 and Cargo.toml 1.89 — unrelated to SCRC).\n  cargo test --workspace: all 36 test binaries green.\n  rivet docs check: PASS (41 files scanned, 0 violations).\n  rivet validate: unchanged error count (6 pre-existing spar:*\n    external-import errors untouched by this change).\n\nCandidates for downgrade (see DD-060): arithmetic_side_effects,\nindexing_slicing, and as_conversions account for 2,712 of the 5,204\nsites. In a userspace tool like rivet the signal-to-noise ratio of\nthese three lints is worth revisiting at Phase 2 kickoff — the SCRC\nembedded rationale doesn't map 1:1 to a YAML parser and dashboard.\n\nArtifact record: artifacts/v043-artifacts.yaml (DD-059, DD-060,\nFEAT-129, REQ-061). CHANGELOG [Unreleased] section documents the\nscope for external readers.\n\nRefs: DD-058\nImplements: REQ-004\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n* docs: drop v0.4.4 mention in SCRC Phase 1 CHANGELOG/artifact\n\nVersionConsistency invariant rejected the \"(v0.4.4 target)\" text in\nthe Phase 2 plan because the workspace version is still 0.4.2. Phase 2\nis tracked in DD-060 — no need to bake a specific version into the\nprose. Keeps `rivet docs check` PASS.\n\nRefs: DD-059\nTrace: skip\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.7 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-04-22T21:44:04Z",
+          "tree_id": "35f56d7f052f9bf5f1ab5436b0f51ae93c6abab1",
+          "url": "https://github.com/pulseengine/rivet/commit/2b94ece8c9c036e69f7eba9fa895295acb9d2ec6"
+        },
+        "date": 1776894623660,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 81728,
+            "range": "± 542",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 858182,
+            "range": "± 11225",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 11514990,
+            "range": "± 593396",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2161,
+            "range": "± 8",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25824,
+            "range": "± 362",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 356130,
+            "range": "± 1279",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 999255,
+            "range": "± 21023",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 164125,
+            "range": "± 661",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1918332,
+            "range": "± 21182",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 24522359,
+            "range": "± 1869072",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 123841,
+            "range": "± 747",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1070350,
+            "range": "± 20080",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 12352980,
+            "range": "± 2094084",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4498,
+            "range": "± 14",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 60140,
+            "range": "± 319",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 805731,
+            "range": "± 2226",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 61422,
+            "range": "± 401",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 692550,
+            "range": "± 28959",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7695902,
+            "range": "± 289419",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 793,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 6915,
+            "range": "± 50",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 108848,
+            "range": "± 726",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 24606,
+            "range": "± 208",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 176316,
+            "range": "± 1113",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1618850,
+            "range": "± 19278",
             "unit": "ns/iter"
           }
         ]
