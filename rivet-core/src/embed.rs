@@ -235,6 +235,7 @@ pub fn resolve_embed(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> Result<S
         "diagnostics" => Ok(render_diagnostics(request, ctx)),
         "matrix" => Ok(render_matrix(request, ctx)),
         "query" => render_query(request, ctx),
+        "group" => render_group(request, ctx),
         // Legacy embeds (artifact, links, table) are still handled by
         // resolve_inline in document.rs — they should never reach here.
         "artifact" | "links" | "table" => Err(EmbedError {
@@ -867,6 +868,117 @@ fn render_query(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> Result<String
     Ok(html)
 }
 
+// ── Group renderer ──────────────────────────────────────────────────────
+
+/// Render `{{group:FIELD}}` — count-by-value table grouping existing
+/// artifacts by the given field.
+///
+/// Examples:
+/// - `{{group:status}}` — counts of draft / approved / shipped / unset
+/// - `{{group:type}}` — like `{{stats:types}}` without schema pre-population
+/// - `{{group:asil}}` — per-ASIL counts from a custom field
+///
+/// The "meaning" of this embed is not fully pinned down by prior docs —
+/// this implementation picks the most useful reading (count-by-value) and
+/// documents it alongside the output.  Unset / missing values are bucketed
+/// as "unset" so the totals line up with the project artifact count.
+fn render_group(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> Result<String, EmbedError> {
+    let Some(field) = request.args.first() else {
+        return Err(EmbedError {
+            kind: EmbedErrorKind::MalformedSyntax(
+                "group embed requires a field name: {{group:status}}".into(),
+            ),
+            raw_text: format!("{request:?}"),
+        });
+    };
+    let field = field.trim();
+    if field.is_empty() {
+        return Err(EmbedError {
+            kind: EmbedErrorKind::MalformedSyntax("group field cannot be empty".into()),
+            raw_text: format!("{request:?}"),
+        });
+    }
+
+    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+    for a in ctx.store.iter() {
+        let raw = read_artifact_field(a, field);
+        // Treat empty/missing as "unset" so the totals always add up.
+        let bucket = if raw.is_empty() {
+            "unset".to_string()
+        } else {
+            raw
+        };
+        *counts.entry(bucket).or_default() += 1;
+    }
+
+    if counts.is_empty() {
+        return Ok(format!(
+            "<div class=\"embed-group\"><p class=\"embed-no-data\">No artifacts to group by <code>{}</code>.</p></div>\n",
+            document::html_escape(field)
+        ));
+    }
+
+    let total: usize = counts.values().sum();
+    let mut html = String::from("<div class=\"embed-group\">\n");
+    let _ = writeln!(
+        html,
+        "<table class=\"embed-table\"><thead><tr><th>{fld}</th><th>Count</th></tr></thead><tbody>",
+        fld = document::html_escape(field),
+    );
+    for (value, count) in &counts {
+        let _ = writeln!(
+            html,
+            "<tr><td>{v}</td><td>{c}</td></tr>",
+            v = document::html_escape(value),
+            c = count,
+        );
+    }
+    let _ = writeln!(
+        html,
+        "<tr class=\"embed-total\"><td><strong>Total</strong></td><td><strong>{total}</strong></td></tr>"
+    );
+    html.push_str("</tbody></table>\n</div>\n");
+    Ok(html)
+}
+
+/// Read a single string value for an artifact field by name.
+///
+/// Handles the well-known top-level fields (id, type, title, status,
+/// description) as well as YAML extension fields stored in `fields`.
+/// List-valued fields (e.g. `tags`) render as a comma-joined string so
+/// `{{group:tags}}` produces stable buckets — individual-tag grouping is
+/// a future enhancement.
+fn read_artifact_field(a: &crate::model::Artifact, name: &str) -> String {
+    match name {
+        "id" => a.id.clone(),
+        "type" => a.artifact_type.clone(),
+        "title" => a.title.clone(),
+        "description" => a.description.clone().unwrap_or_default(),
+        "status" => a.status.clone().unwrap_or_default(),
+        "tags" => a.tags.join(","),
+        other => a
+            .fields
+            .get(other)
+            .map(yaml_value_to_plain_string)
+            .unwrap_or_default(),
+    }
+}
+
+fn yaml_value_to_plain_string(v: &serde_yaml::Value) -> String {
+    match v {
+        serde_yaml::Value::String(s) => s.clone(),
+        serde_yaml::Value::Number(n) => n.to_string(),
+        serde_yaml::Value::Bool(b) => b.to_string(),
+        serde_yaml::Value::Null => String::new(),
+        serde_yaml::Value::Sequence(seq) => seq
+            .iter()
+            .map(yaml_value_to_plain_string)
+            .collect::<Vec<_>>()
+            .join(","),
+        serde_yaml::Value::Mapping(_) | serde_yaml::Value::Tagged(_) => format!("{v:?}"),
+    }
+}
+
 // ── Provenance ──────────────────────────────────────────────────────────
 
 /// Render a provenance footer for export (SC-EMBED-4).
@@ -1457,5 +1569,94 @@ mod tests {
         assert!(html.contains("<table"));
         assert!(html.contains("requirement"));
         assert!(html.contains("feature"));
+    }
+
+    // ── {{group:FIELD}} embed ───────────────────────────────────────
+
+    #[test]
+    fn group_embed_counts_by_status() {
+        let store = make_store(vec![
+            plain("A", "requirement", Some("draft"), &[]),
+            plain("B", "requirement", Some("approved"), &[]),
+            plain("C", "requirement", Some("approved"), &[]),
+            plain("D", "requirement", None, &[]), // unset
+        ]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let html = run_embed("group:status", &store, &schema, &graph).unwrap();
+        assert!(html.contains("embed-group"));
+        assert!(html.contains("approved"));
+        assert!(html.contains("draft"));
+        assert!(html.contains("unset"), "got: {html}");
+        // 3 + 1 = 4 total
+        assert!(html.contains("<strong>4</strong>"), "got: {html}");
+    }
+
+    #[test]
+    fn group_embed_counts_by_type() {
+        let store = make_store(vec![
+            plain("A", "requirement", None, &[]),
+            plain("B", "feature", None, &[]),
+            plain("C", "feature", None, &[]),
+        ]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let html = run_embed("group:type", &store, &schema, &graph).unwrap();
+        // two features, one requirement — assert the cells directly.
+        assert!(html.contains("<td>feature</td>"), "got: {html}");
+        assert!(html.contains("<td>2</td>"), "got: {html}");
+        assert!(html.contains("<td>requirement</td>"), "got: {html}");
+        assert!(html.contains("<td>1</td>"), "got: {html}");
+    }
+
+    #[test]
+    fn group_embed_by_custom_field() {
+        // ASIL is a common custom YAML field; group-by that.
+        let mut a = plain("A", "requirement", None, &[]);
+        a.fields.insert(
+            "asil".into(),
+            serde_yaml::Value::String("ASIL-B".into()),
+        );
+        let mut b = plain("B", "requirement", None, &[]);
+        b.fields.insert(
+            "asil".into(),
+            serde_yaml::Value::String("ASIL-B".into()),
+        );
+        let c = plain("C", "requirement", None, &[]); // no asil → unset
+        let store = make_store(vec![a, b, c]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let html = run_embed("group:asil", &store, &schema, &graph).unwrap();
+        assert!(html.contains("ASIL-B"), "got: {html}");
+        assert!(html.contains("<td>2</td>"), "got: {html}");
+        assert!(html.contains("unset"), "got: {html}");
+    }
+
+    #[test]
+    fn group_embed_rejects_empty_field() {
+        let store = Store::new();
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let req = EmbedRequest::parse("group:").unwrap();
+        let diags: Vec<Diagnostic> = Vec::new();
+        let ctx = EmbedContext {
+            store: &store,
+            schema: &schema,
+            graph: &graph,
+            diagnostics: &diags,
+            baseline: None,
+        };
+        let err = resolve_embed(&req, &ctx).unwrap_err();
+        assert!(matches!(err.kind, EmbedErrorKind::MalformedSyntax(_)));
+    }
+
+    #[test]
+    fn group_embed_empty_store_renders_no_data() {
+        let store = Store::new();
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let html = run_embed("group:status", &store, &schema, &graph).unwrap();
+        assert!(html.contains("embed-group"), "got: {html}");
+        assert!(html.contains("No artifacts"), "got: {html}");
     }
 }
