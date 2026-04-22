@@ -2,7 +2,7 @@
 
 # Rivet
 
-<sup>SDLC traceability for safety-critical systems</sup>
+<sup>Evidence as Code — the audit substrate for AI-assisted engineering</sup>
 
 &nbsp;
 
@@ -30,9 +30,13 @@
 
 Spar parses. Etch renders. Meld fuses. **Rivet binds.**
 
-Rivet is a schema-driven SDLC artifact manager for safety-critical systems. It keeps requirements, architecture, design, test specifications, and safety analysis artifacts as YAML files in git — then validates link integrity, traceability coverage, and completeness rules against mergeable schemas.
+**Rivet is the audit substrate for AI-assisted engineering — every artifact, link, and decision carries evidence a human can review in a pull request.**
 
-No database, no external service, just text files and a fast Rust CLI.
+AI agents draft the requirements, hazards, design decisions, test specs, and variant bindings. Rivet stamps them with provenance (model, session, timestamp), validates them against mergeable schemas (STPA, ASPICE, ISO/PAS 8800, IEC 61508, IEC 62304, DO-178C, EN 50128, EU AI Act, GSN), and lets a human approve or reject the change in a single git diff. The MCP server exposes the artifact graph to Claude, Cursor, and other agents as typed tools; every mutation is server-side validated before it lands.
+
+One schema system, many domains — TDD, ASPICE, safety analysis, requirements, variants, GSN safety cases. One linker, many workflows. **No database, no external service — text files, git, and a fast Rust CLI.**
+
+See **[docs/what-is-rivet.md](docs/what-is-rivet.md)** for the positioning frame — who it is for, the per-situation playbook, and explicit limits.
 
 ## Features
 
