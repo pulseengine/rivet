@@ -826,6 +826,24 @@ enum VariantAction {
         #[arg(short, long, default_value = "text")]
         format: String,
     },
+    /// Check every variant declared in a binding file.
+    ///
+    /// Exits 0 if all declared variants pass, 1 if any fail. The binding
+    /// file may carry a `variants:` list alongside `bindings:` — see
+    /// docs/feature-model-bindings.md.
+    CheckAll {
+        /// Path to feature model YAML file
+        #[arg(long)]
+        model: PathBuf,
+
+        /// Path to binding YAML file containing `variants:` declarations
+        #[arg(long)]
+        binding: PathBuf,
+
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
     /// List features in a feature model
     List {
         /// Path to feature model YAML file
@@ -1089,6 +1107,11 @@ fn run(cli: Cli) -> Result<bool> {
                 variant,
                 format,
             } => cmd_variant_check(model, variant, format),
+            VariantAction::CheckAll {
+                model,
+                binding,
+                format,
+            } => cmd_variant_check_all(model, binding, format),
             VariantAction::List { model, format } => cmd_variant_list(model, format),
             VariantAction::Solve {
                 model,
@@ -3157,58 +3180,101 @@ fn cmd_validate(
         (store, graph)
     };
 
-    // Apply variant scoping if --model + --variant + --binding are all provided
-    let (store, graph, variant_scope_name) = if let (Some(mp), Some(vp), Some(bp)) =
-        (model_path, variant_path, binding_path)
-    {
-        let model_yaml = std::fs::read_to_string(mp)
-            .with_context(|| format!("reading feature model {}", mp.display()))?;
-        let fm = rivet_core::feature_model::FeatureModel::from_yaml(&model_yaml)
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
+    // Apply variant scoping.
+    //
+    // Three modes:
+    //   --model + --variant + --binding : validate the subset bound to the
+    //     variant's effective feature set (variant-scoped).
+    //   --model + --binding (no variant) : validate the feature model +
+    //     binding file pair (parse model, parse binding, check every
+    //     feature name in the binding exists in the model). Does not
+    //     scope the store.
+    //   --variant alone: legacy error — --variant requires --model and
+    //     a binding to resolve against.
+    let (store, graph, variant_scope_name) = match (model_path, variant_path, binding_path) {
+        (Some(mp), Some(vp), Some(bp)) => {
+            let model_yaml = std::fs::read_to_string(mp)
+                .with_context(|| format!("reading feature model {}", mp.display()))?;
+            let fm = rivet_core::feature_model::FeatureModel::from_yaml(&model_yaml)
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-        let variant_yaml = std::fs::read_to_string(vp)
-            .with_context(|| format!("reading variant config {}", vp.display()))?;
-        let vc: rivet_core::feature_model::VariantConfig =
-            serde_yaml::from_str(&variant_yaml).context("parsing variant config")?;
+            let variant_yaml = std::fs::read_to_string(vp)
+                .with_context(|| format!("reading variant config {}", vp.display()))?;
+            let vc: rivet_core::feature_model::VariantConfig =
+                serde_yaml::from_str(&variant_yaml).context("parsing variant config")?;
 
-        let resolved = rivet_core::feature_model::solve(&fm, &vc).map_err(|errs| {
-            let msgs: Vec<String> = errs.iter().map(|e| format!("{e}")).collect();
-            anyhow::anyhow!("variant solve failed:\n  {}", msgs.join("\n  "))
-        })?;
+            let resolved = rivet_core::feature_model::solve(&fm, &vc).map_err(|errs| {
+                let msgs: Vec<String> = errs.iter().map(|e| format!("{e}")).collect();
+                anyhow::anyhow!("variant solve failed:\n  {}", msgs.join("\n  "))
+            })?;
 
-        let binding_yaml = std::fs::read_to_string(bp)
-            .with_context(|| format!("reading binding {}", bp.display()))?;
-        let fb: rivet_core::feature_model::FeatureBinding =
-            serde_yaml::from_str(&binding_yaml).context("parsing feature binding")?;
+            let binding_yaml = std::fs::read_to_string(bp)
+                .with_context(|| format!("reading binding {}", bp.display()))?;
+            let fb: rivet_core::feature_model::FeatureBinding =
+                serde_yaml::from_str(&binding_yaml).context("parsing feature binding")?;
 
-        // Collect bound artifact IDs from effective features
-        let bound_ids: std::collections::BTreeSet<String> = resolved
-            .effective_features
-            .iter()
-            .flat_map(|f| {
-                fb.bindings
-                    .get(f)
-                    .map(|b| b.artifacts.clone())
-                    .unwrap_or_default()
-            })
-            .collect();
+            // Collect bound artifact IDs from effective features
+            let bound_ids: std::collections::BTreeSet<String> = resolved
+                .effective_features
+                .iter()
+                .flat_map(|f| {
+                    fb.bindings
+                        .get(f)
+                        .map(|b| b.artifacts.clone())
+                        .unwrap_or_default()
+                })
+                .collect();
 
-        // Build a scoped store containing only bound artifacts
-        let mut scoped = Store::new();
-        for id in &bound_ids {
-            if let Some(art) = store.get(id) {
-                scoped.upsert(art.clone());
+            // Build a scoped store containing only bound artifacts
+            let mut scoped = Store::new();
+            for id in &bound_ids {
+                if let Some(art) = store.get(id) {
+                    scoped.upsert(art.clone());
+                }
             }
+            let scoped_graph = LinkGraph::build(&scoped, &schema);
+            let vname = resolved.name.clone();
+            (scoped, scoped_graph, Some((vname, bound_ids.len())))
         }
-        let scoped_graph = LinkGraph::build(&scoped, &schema);
-        let vname = resolved.name.clone();
-        (scoped, scoped_graph, Some((vname, bound_ids.len())))
-    } else if model_path.is_some() || variant_path.is_some() || binding_path.is_some() {
-        anyhow::bail!(
-            "--model, --variant, and --binding must all be provided together for variant-scoped validation"
-        );
-    } else {
-        (store, graph, None)
+        (Some(mp), None, Some(bp)) => {
+            // Model + binding, no variant: validate model/binding consistency
+            // without resolving a specific variant. Unknown feature names in
+            // the binding file are reported as errors.
+            let model_yaml = std::fs::read_to_string(mp)
+                .with_context(|| format!("reading feature model {}", mp.display()))?;
+            let fm = rivet_core::feature_model::FeatureModel::from_yaml(&model_yaml)
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+            let binding_yaml = std::fs::read_to_string(bp)
+                .with_context(|| format!("reading binding {}", bp.display()))?;
+            let fb: rivet_core::feature_model::FeatureBinding =
+                serde_yaml::from_str(&binding_yaml).context("parsing feature binding")?;
+
+            let unknown: Vec<String> = fb
+                .bindings
+                .keys()
+                .filter(|name| !fm.features.contains_key(name.as_str()))
+                .cloned()
+                .collect();
+            if !unknown.is_empty() {
+                anyhow::bail!(
+                    "binding references unknown features: {}",
+                    unknown.join(", ")
+                );
+            }
+            if format != "json" {
+                println!(
+                    "Feature model + binding: {} features, {} bindings (OK)\n",
+                    fm.features.len(),
+                    fb.bindings.len()
+                );
+            }
+            (store, graph, None)
+        }
+        (None, None, None) => (store, graph, None),
+        _ => anyhow::bail!(
+            "variant-scoped validation requires --model and --binding; --variant is optional"
+        ),
     };
 
     let doc_store = doc_store.unwrap_or_default();
@@ -6984,6 +7050,92 @@ fn cmd_variant_check(
             Ok(false)
         }
     }
+}
+
+/// Check every variant declared in a binding file against the feature model.
+///
+/// Exits 0 iff every declared variant solves successfully; exits 1 as soon
+/// as any fails. Binding files without a `variants:` block are reported
+/// as an empty pass.
+fn cmd_variant_check_all(
+    model_path: &std::path::Path,
+    binding_path: &std::path::Path,
+    format: &str,
+) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
+
+    let model_yaml = std::fs::read_to_string(model_path)
+        .with_context(|| format!("reading {}", model_path.display()))?;
+    let model = rivet_core::feature_model::FeatureModel::from_yaml(&model_yaml)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    let binding_yaml = std::fs::read_to_string(binding_path)
+        .with_context(|| format!("reading {}", binding_path.display()))?;
+    let binding: rivet_core::feature_model::FeatureBinding =
+        serde_yaml::from_str(&binding_yaml).context("parsing binding")?;
+
+    let mut results: Vec<(String, std::result::Result<(), Vec<String>>)> = Vec::new();
+    for vc in &binding.variants {
+        match rivet_core::feature_model::solve(&model, vc) {
+            Ok(_) => results.push((vc.name.clone(), Ok(()))),
+            Err(errs) => {
+                let msgs: Vec<String> = errs.iter().map(|e| e.to_string()).collect();
+                results.push((vc.name.clone(), Err(msgs)));
+            }
+        }
+    }
+
+    let pass_count = results.iter().filter(|(_, r)| r.is_ok()).count();
+    let fail_count = results.len() - pass_count;
+
+    if format == "json" {
+        let rows: Vec<serde_json::Value> = results
+            .iter()
+            .map(|(name, r)| match r {
+                Ok(()) => serde_json::json!({ "variant": name, "result": "PASS" }),
+                Err(msgs) => serde_json::json!({
+                    "variant": name,
+                    "result": "FAIL",
+                    "errors": msgs,
+                }),
+            })
+            .collect();
+        let output = serde_json::json!({
+            "result": if fail_count == 0 { "PASS" } else { "FAIL" },
+            "total": results.len(),
+            "passed": pass_count,
+            "failed": fail_count,
+            "variants": rows,
+        });
+        println!("{}", serde_json::to_string_pretty(&output)?);
+    } else {
+        if results.is_empty() {
+            println!(
+                "No variants declared in {}. Add a `variants:` list to exercise the check.",
+                binding_path.display()
+            );
+        } else {
+            for (name, r) in &results {
+                match r {
+                    Ok(()) => println!("  PASS  {name}"),
+                    Err(msgs) => {
+                        println!("  FAIL  {name}");
+                        for m in msgs {
+                            println!("        {m}");
+                        }
+                    }
+                }
+            }
+            println!(
+                "\n{}/{} variants passed ({} failed)",
+                pass_count,
+                results.len(),
+                fail_count
+            );
+        }
+    }
+
+    Ok(fail_count == 0)
 }
 
 /// List features in a feature model.

@@ -66,9 +66,15 @@ pub struct ResolvedVariant {
 // ── Feature-to-artifact binding ────────────────────────────────────────
 
 /// Maps features to artifact IDs and source globs.
+///
+/// May also carry a list of variant configurations that `rivet variant
+/// check-all` iterates. Absent means "no declared variants" — check-all
+/// reports an empty pass.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeatureBinding {
     pub bindings: BTreeMap<String, Binding>,
+    #[serde(default)]
+    pub variants: Vec<VariantConfig>,
 }
 
 /// Artifacts and source files associated with a feature.
