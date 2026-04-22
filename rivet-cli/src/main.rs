@@ -7249,26 +7249,65 @@ fn cmd_variant_solve(
     };
 
     if format == "json" {
+        // Serialise origins alongside effective_features so downstream
+        // tooling can distinguish user-selected / mandatory / implied.
+        // The legacy `effective_features` + `feature_count` fields are
+        // preserved verbatim for backwards compatibility.
+        use rivet_core::feature_model::FeatureOrigin;
+        let origins_json: serde_json::Map<String, serde_json::Value> = resolved
+            .origins
+            .iter()
+            .map(|(name, origin)| {
+                let v = match origin {
+                    FeatureOrigin::UserSelected => serde_json::json!({ "kind": "selected" }),
+                    FeatureOrigin::Mandatory => serde_json::json!({ "kind": "mandatory" }),
+                    FeatureOrigin::ImpliedBy(cause) => {
+                        serde_json::json!({ "kind": "implied", "by": cause })
+                    }
+                    FeatureOrigin::AllowedButUnbound => {
+                        serde_json::json!({ "kind": "allowed" })
+                    }
+                };
+                (name.clone(), v)
+            })
+            .collect();
         let output = serde_json::json!({
             "variant": resolved.name,
             "effective_features": resolved.effective_features,
             "feature_count": resolved.effective_features.len(),
+            "origins": origins_json,
             "bound_artifacts": bound_artifacts,
             "bound_artifact_count": bound_artifacts.len(),
         });
         println!("{}", serde_json::to_string_pretty(&output)?);
     } else {
+        use rivet_core::feature_model::FeatureOrigin;
         println!("Variant '{}': PASS", resolved.name);
-        let features_list: Vec<&str> = resolved
+        println!(
+            "Effective features ({}):",
+            resolved.effective_features.len()
+        );
+        // Width = longest feature name, padded for alignment.
+        let name_col = resolved
             .effective_features
             .iter()
-            .map(|s| s.as_str())
-            .collect();
-        println!(
-            "Effective features ({}): {}",
-            features_list.len(),
-            features_list.join(", ")
-        );
+            .map(|s| s.len())
+            .max()
+            .unwrap_or(0);
+        for name in &resolved.effective_features {
+            let origin = resolved
+                .origins
+                .get(name)
+                .cloned()
+                .unwrap_or(FeatureOrigin::AllowedButUnbound);
+            let label = match &origin {
+                FeatureOrigin::UserSelected => "selected".to_string(),
+                FeatureOrigin::Mandatory => "mandatory".to_string(),
+                FeatureOrigin::ImpliedBy(cause) => format!("implied by {cause}"),
+                FeatureOrigin::AllowedButUnbound => "allowed".to_string(),
+            };
+            println!("  + {name:<name_col$}  ({label})");
+        }
 
         if !bound_artifacts.is_empty() {
             println!("\nBound artifacts ({}):", bound_artifacts.len());
