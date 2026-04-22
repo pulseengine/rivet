@@ -5949,7 +5949,15 @@ fn cmd_docs(
     } else if let Some(pattern) = grep {
         print!("{}", docs::grep_docs(pattern, format, context));
     } else if let Some(slug) = topic {
-        print!("{}", docs::show_topic(slug, format));
+        // Special meta-topic: `rivet docs embeds` lists every registered
+        // {{...}} token from `rivet_core::embed::EMBED_REGISTRY`.  Kept in
+        // `docs` (rather than a new top-level subcommand) so it ships in
+        // the existing --help tree and stays near `docs embed-syntax`.
+        if slug == "embeds" {
+            print!("{}", docs::list_embeds(format));
+        } else {
+            print!("{}", docs::show_topic(slug, format));
+        }
     } else {
         print!("{}", docs::list_topics(format));
     }

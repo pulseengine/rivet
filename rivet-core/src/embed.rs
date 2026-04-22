@@ -103,6 +103,109 @@ impl<'a> EmbedContext<'a> {
     }
 }
 
+// ── Embed registry ──────────────────────────────────────────────────────
+
+/// A single entry in the embed registry.
+///
+/// Every `{{name[:args...]}}` token that `resolve_embed` or the document
+/// inline resolver knows about has a matching `EmbedSpec`.  This is the
+/// single source of truth for `rivet docs embeds`, the dashboard Help view,
+/// and any future UX that needs to enumerate embeds.
+#[derive(Debug, Clone, Copy)]
+pub struct EmbedSpec {
+    /// Embed name as it appears after `{{`.
+    pub name: &'static str,
+    /// Compact signature, e.g. `[section]` or `(sexpr) [limit=N]`.
+    pub args: &'static str,
+    /// One-line description for the listing.
+    pub summary: &'static str,
+    /// Runnable example that users can paste into a document.
+    pub example: &'static str,
+    /// True if handled by the inline resolver in `document.rs` rather than
+    /// by `resolve_embed`.  Legacy embeds still appear in listings.
+    pub legacy: bool,
+}
+
+/// The canonical list of registered embeds.
+///
+/// Order is the order shown to users; group newest (or least-known) embeds
+/// near the top of their family so they are discoverable.
+pub const EMBED_REGISTRY: &[EmbedSpec] = &[
+    EmbedSpec {
+        name: "stats",
+        args: "[section|type:NAME]",
+        summary: "Project statistics (types, status, validation) or count for a single type",
+        example: "{{stats}}  /  {{stats:types}}  /  {{stats:type:requirement}}",
+        legacy: false,
+    },
+    EmbedSpec {
+        name: "coverage",
+        args: "[rule]",
+        summary: "Traceability coverage bars; with a rule name, lists uncovered IDs",
+        example: "{{coverage}}  /  {{coverage:req-implements-feat}}",
+        legacy: false,
+    },
+    EmbedSpec {
+        name: "diagnostics",
+        args: "[severity]",
+        summary: "Validation findings (all, or filtered by error|warning|info)",
+        example: "{{diagnostics}}  /  {{diagnostics:error}}",
+        legacy: false,
+    },
+    EmbedSpec {
+        name: "matrix",
+        args: "[FROM:TO]",
+        summary: "Traceability matrix — one per schema rule, or a specific type pair",
+        example: "{{matrix}}  /  {{matrix:requirement:feature}}",
+        legacy: false,
+    },
+    EmbedSpec {
+        name: "query",
+        args: "(sexpr) [limit=N]",
+        summary: "Results of an s-expression filter as a compact table (id/type/title/status)",
+        example: "{{query:(and (= type \"requirement\") (has-tag \"stpa\"))}}",
+        legacy: false,
+    },
+    EmbedSpec {
+        name: "group",
+        args: "FIELD",
+        summary: "Count-by-value table grouping artifacts by the given field",
+        example: "{{group:status}}  /  {{group:asil}}",
+        legacy: false,
+    },
+    // Legacy embeds — resolved inline in document.rs, but still listed here
+    // so users can discover them via `rivet docs embeds`.
+    EmbedSpec {
+        name: "artifact",
+        args: "ID[:modifier[:depth]]",
+        summary: "Inline card for a single artifact (default|full|links|upstream|downstream|chain)",
+        example: "{{artifact:REQ-001}}  /  {{artifact:REQ-001:full}}",
+        legacy: true,
+    },
+    EmbedSpec {
+        name: "links",
+        args: "ID",
+        summary: "Incoming + outgoing link table for an artifact",
+        example: "{{links:REQ-001}}",
+        legacy: true,
+    },
+    EmbedSpec {
+        name: "table",
+        args: "TYPE:FIELDS",
+        summary: "Filtered artifact table for a single type with comma-separated columns",
+        example: "{{table:requirement:id,title,status}}",
+        legacy: true,
+    },
+];
+
+/// Return the full embed registry.
+///
+/// Convenience accessor — callers that want the raw slice can also use
+/// `EMBED_REGISTRY` directly.
+pub fn registry() -> &'static [EmbedSpec] {
+    EMBED_REGISTRY
+}
+
 // ── Parsing ─────────────────────────────────────────────────────────────
 
 impl EmbedRequest {
@@ -1431,13 +1534,15 @@ mod tests {
         assert!(html.contains("REQ-2"), "got: {html}");
         assert!(!html.contains("FEAT-1"), "got: {html}");
 
-        // Cross-check via the same evaluator directly.
+        // Cross-check via the same evaluator directly.  Store iteration
+        // order is not guaranteed, so compare as a sorted set.
         let expr = crate::sexpr_eval::parse_filter(r#"(= type "requirement")"#).unwrap();
-        let direct_ids: Vec<String> = store
+        let mut direct_ids: Vec<String> = store
             .iter()
             .filter(|a| crate::sexpr_eval::matches_filter_with_store(&expr, a, &graph, &store))
             .map(|a| a.id.clone())
             .collect();
+        direct_ids.sort();
         assert_eq!(direct_ids, vec!["REQ-1".to_string(), "REQ-2".to_string()]);
     }
 
@@ -1658,5 +1763,60 @@ mod tests {
         let html = run_embed("group:status", &store, &schema, &graph).unwrap();
         assert!(html.contains("embed-group"), "got: {html}");
         assert!(html.contains("No artifacts"), "got: {html}");
+    }
+
+    // ── Registry invariants ─────────────────────────────────────────
+
+    /// Every embed that resolve_embed dispatches must appear in
+    /// EMBED_REGISTRY — otherwise `rivet docs embeds` lies by omission.
+    #[test]
+    fn registry_covers_all_dispatched_embeds() {
+        let dispatched = [
+            "stats",
+            "coverage",
+            "diagnostics",
+            "matrix",
+            "query",
+            "group",
+            // Legacy — still listed:
+            "artifact",
+            "links",
+            "table",
+        ];
+        let registered: Vec<&str> = EMBED_REGISTRY.iter().map(|s| s.name).collect();
+        for name in &dispatched {
+            assert!(
+                registered.contains(name),
+                "embed '{name}' is dispatched but not in EMBED_REGISTRY",
+            );
+        }
+    }
+
+    /// Each registry entry's example must itself be a parseable embed so
+    /// the listing output is copy-pasteable without further editing.
+    #[test]
+    fn registry_examples_parse() {
+        for spec in EMBED_REGISTRY {
+            // Strip the outer {{ }} and parse the first example.  Many
+            // examples list multiple variants separated by "  /  ";
+            // testing the first is enough to catch regressions.
+            let first = spec.example.split("  /  ").next().unwrap().trim();
+            let inner = first
+                .trim_start_matches("{{")
+                .trim_end_matches("}}")
+                .trim();
+            EmbedRequest::parse(inner)
+                .unwrap_or_else(|e| panic!("registry example for '{}' failed to parse: {e}", spec.name));
+        }
+    }
+
+    #[test]
+    fn registry_has_stable_entries() {
+        // Smoke test: hold the registry to at least these entries.  Stops
+        // accidental deletions.
+        let names: Vec<&str> = EMBED_REGISTRY.iter().map(|s| s.name).collect();
+        for required in ["stats", "coverage", "query", "group", "artifact"] {
+            assert!(names.contains(&required));
+        }
     }
 }
