@@ -191,9 +191,15 @@ enum Command {
 
         /// With --agents: overwrite existing AGENTS.md/CLAUDE.md even if
         /// they have no rivet-managed markers. DESTRUCTIVE — replaces the
-        /// whole file. Prefer --migrate when possible.
-        #[arg(long, requires = "agents")]
+        /// whole file. Prefer --migrate when possible. Requires --yes to
+        /// confirm; otherwise refused with an error.
+        #[arg(long, requires = "agents", requires = "yes")]
         force_regen: bool,
+
+        /// Confirm a destructive operation (currently required by
+        /// `--force-regen`). Without this flag, `--force-regen` is refused.
+        #[arg(long)]
+        yes: bool,
 
         /// Install git hooks (commit-msg, pre-commit) that call rivet for validation
         #[arg(long)]
@@ -977,6 +983,7 @@ fn run(cli: Cli) -> Result<bool> {
         agents,
         migrate,
         force_regen,
+        yes: _yes,
         hooks,
     } = &cli.command
     {

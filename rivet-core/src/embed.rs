@@ -349,12 +349,22 @@ pub fn resolve_embed(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> Result<S
         "matrix" => Ok(render_matrix(request, ctx)),
         "query" => render_query(request, ctx),
         "group" => render_group(request, ctx),
-        // Legacy embeds (artifact, links, table) are still handled by
-        // resolve_inline in document.rs — they should never reach here.
+        // Legacy embeds (artifact, links, table) are rendered by
+        // `resolve_inline` while a markdown document is being processed —
+        // not by this top-level resolver. So `rivet embed table:foo:bar`
+        // can't produce a card on its own; it only renders correctly when
+        // the token appears inside a doc that runs through the markdown
+        // pipeline (rivet serve, rivet export --format html, embeds in
+        // rendered prose). Inform the caller plainly so they don't waste
+        // time chasing the empty result.
         "artifact" | "links" | "table" => Err(EmbedError {
-            kind: EmbedErrorKind::MalformedSyntax(
-                "artifact/links/table embeds are handled inline".into(),
-            ),
+            kind: EmbedErrorKind::MalformedSyntax(format!(
+                "{} embed renders inside markdown documents (rivet serve / \
+                 rivet export --format html). The CLI `rivet embed` command \
+                 can't render it standalone — embed it in a doc and view \
+                 the rendered output instead.",
+                request.name
+            )),
             raw_text: format!("{request:?}"),
         }),
         other => Err(EmbedError {
