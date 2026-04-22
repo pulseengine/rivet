@@ -123,15 +123,25 @@ pub struct LinkParam {
 pub struct ModifyParams {
     #[schemars(description = "Artifact ID to modify")]
     pub id: String,
-    #[schemars(description = "New status value")]
+    #[schemars(description = "New top-level status value")]
     pub status: Option<String>,
-    #[schemars(description = "New title")]
+    #[schemars(description = "New top-level title")]
     pub title: Option<String>,
+    #[schemars(
+        description = "New top-level description (YAML-safe quoting is applied; multi-line \
+                       values become block-literal scalars)"
+    )]
+    pub description: Option<String>,
     #[schemars(description = "Tags to add")]
     pub add_tags: Option<Vec<String>>,
     #[schemars(description = "Tags to remove")]
     pub remove_tags: Option<Vec<String>>,
-    #[schemars(description = "Fields to set as key=value pairs")]
+    #[schemars(
+        description = "Domain `fields:` sub-map entries as key=value pairs. Reserved top-level \
+                       keys (id, type, title, description, status, tags, links, fields, \
+                       provenance, source-file) are rejected — use the dedicated parameters \
+                       for those (e.g. `description`, `status`, `title`)."
+    )]
     pub set_fields: Option<Vec<String>>,
 }
 
@@ -1025,6 +1035,7 @@ fn tool_modify(project_dir: &Path, p: &ModifyParams) -> Result<Value> {
     let params = mutate::ModifyParams {
         set_status: p.status.clone(),
         set_title: p.title.clone(),
+        set_description: p.description.clone(),
         add_tags: p.add_tags.clone().unwrap_or_default(),
         remove_tags: p.remove_tags.clone().unwrap_or_default(),
         set_fields,
@@ -1041,7 +1052,12 @@ fn tool_modify(project_dir: &Path, p: &ModifyParams) -> Result<Value> {
     mcp_audit_log(
         project_dir,
         "rivet_modify",
-        &json!({"id": p.id, "status": p.status, "title": p.title}),
+        &json!({
+            "id": p.id,
+            "status": p.status,
+            "title": p.title,
+            "description": p.description.is_some(),
+        }),
     );
     Ok(result)
 }
