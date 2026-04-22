@@ -48,10 +48,17 @@ artifacts:
   - id: ARCH-CORE-001
     type: aadl-component
     title: RivetCore process
-    description: >
+    description: |
       Core library process containing all domain logic: config loading,
       schema merging, artifact storage, adapter dispatch, graph building,
       validation, matrix computation, diff, documents, and query.
+
+      ```mermaid
+      flowchart LR
+          Config --> Store
+          Store --> Graph
+          Graph --> Validate
+      ```
     status: implemented
     tags: [aadl, architecture, core]
     links:
