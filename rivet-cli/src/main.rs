@@ -524,7 +524,10 @@ enum Command {
         action: SnapshotAction,
     },
 
-    /// Product line variant management (feature model + constraint solver)
+    /// Product line variant management (feature model + constraint solver).
+    ///
+    /// YAML schema reference: docs/feature-model-schema.md.
+    /// Binding file format:   docs/feature-model-bindings.md.
     Variant {
         #[command(subcommand)]
         action: VariantAction,
@@ -795,6 +798,20 @@ enum SnapshotAction {
 
 #[derive(Subcommand)]
 enum VariantAction {
+    /// Scaffold a starter feature-model.yaml + bindings/<name>.yaml with
+    /// commented fields. See docs/feature-model-schema.md.
+    Init {
+        /// Variant / project name (used for the bindings file name).
+        name: String,
+
+        /// Target directory (default: current directory).
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
+
+        /// Overwrite existing files.
+        #[arg(long)]
+        force: bool,
+    },
     /// Check a variant configuration against a feature model
     Check {
         /// Path to feature model YAML file
@@ -804,6 +821,24 @@ enum VariantAction {
         /// Path to variant configuration YAML file
         #[arg(long)]
         variant: PathBuf,
+
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+    /// Check every variant declared in a binding file.
+    ///
+    /// Exits 0 if all declared variants pass, 1 if any fail. The binding
+    /// file may carry a `variants:` list alongside `bindings:` — see
+    /// docs/feature-model-bindings.md.
+    CheckAll {
+        /// Path to feature model YAML file
+        #[arg(long)]
+        model: PathBuf,
+
+        /// Path to binding YAML file containing `variants:` declarations
+        #[arg(long)]
+        binding: PathBuf,
 
         /// Output format: "text" (default) or "json"
         #[arg(short, long, default_value = "text")]
@@ -1066,11 +1101,17 @@ fn run(cli: Cli) -> Result<bool> {
             SnapshotAction::List => cmd_snapshot_list(&cli),
         },
         Command::Variant { action } => match action {
+            VariantAction::Init { name, dir, force } => cmd_variant_init(name, dir, *force),
             VariantAction::Check {
                 model,
                 variant,
                 format,
             } => cmd_variant_check(model, variant, format),
+            VariantAction::CheckAll {
+                model,
+                binding,
+                format,
+            } => cmd_variant_check_all(model, binding, format),
             VariantAction::List { model, format } => cmd_variant_list(model, format),
             VariantAction::Solve {
                 model,
@@ -2469,6 +2510,10 @@ fn cmd_init_hooks(dir: &std::path::Path) -> Result<bool> {
     println!("  installed {}", commit_msg_path.display());
 
     // ── pre-commit hook ─────────────────────────────────────────────
+    // Marker-discovery walks up from $PWD to find rivet.yaml. This
+    // survives relocation of the project within the working tree (a
+    // hard-coded `-p <path>` would silently validate the wrong directory
+    // or skip validation after a move).
     let pre_commit_path = hooks_dir.join("pre-commit");
     install_hook(
         &pre_commit_path,
@@ -2476,6 +2521,21 @@ fn cmd_init_hooks(dir: &std::path::Path) -> Result<bool> {
             r#"#!/usr/bin/env bash
 # Installed by: rivet init --hooks
 # Runs rivet validate and blocks on errors.
+#
+# Marker discovery: walk up from $PWD until we find rivet.yaml, then cd
+# into that directory before running rivet. This keeps the hook working
+# after the rivet project is moved inside the git tree.
+dir="$PWD"
+while [ "$dir" != "/" ] && [ ! -f "$dir/rivet.yaml" ]; do
+    dir="$(dirname "$dir")"
+done
+if [ ! -f "$dir/rivet.yaml" ]; then
+    # No rivet project in the ancestor chain — skip silently so the hook
+    # does not block commits in unrelated repositories.
+    exit 0
+fi
+cd "$dir" || exit 0
+
 output=$("{rivet_bin}" validate --format json 2>/dev/null)
 errors=$(echo "$output" | python3 -c "import json,sys; print(json.load(sys.stdin).get('errors',0))" 2>/dev/null || echo "0")
 if [ "$errors" -gt 0 ]; then
@@ -3120,58 +3180,101 @@ fn cmd_validate(
         (store, graph)
     };
 
-    // Apply variant scoping if --model + --variant + --binding are all provided
-    let (store, graph, variant_scope_name) = if let (Some(mp), Some(vp), Some(bp)) =
-        (model_path, variant_path, binding_path)
-    {
-        let model_yaml = std::fs::read_to_string(mp)
-            .with_context(|| format!("reading feature model {}", mp.display()))?;
-        let fm = rivet_core::feature_model::FeatureModel::from_yaml(&model_yaml)
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
+    // Apply variant scoping.
+    //
+    // Three modes:
+    //   --model + --variant + --binding : validate the subset bound to the
+    //     variant's effective feature set (variant-scoped).
+    //   --model + --binding (no variant) : validate the feature model +
+    //     binding file pair (parse model, parse binding, check every
+    //     feature name in the binding exists in the model). Does not
+    //     scope the store.
+    //   --variant alone: legacy error — --variant requires --model and
+    //     a binding to resolve against.
+    let (store, graph, variant_scope_name) = match (model_path, variant_path, binding_path) {
+        (Some(mp), Some(vp), Some(bp)) => {
+            let model_yaml = std::fs::read_to_string(mp)
+                .with_context(|| format!("reading feature model {}", mp.display()))?;
+            let fm = rivet_core::feature_model::FeatureModel::from_yaml(&model_yaml)
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-        let variant_yaml = std::fs::read_to_string(vp)
-            .with_context(|| format!("reading variant config {}", vp.display()))?;
-        let vc: rivet_core::feature_model::VariantConfig =
-            serde_yaml::from_str(&variant_yaml).context("parsing variant config")?;
+            let variant_yaml = std::fs::read_to_string(vp)
+                .with_context(|| format!("reading variant config {}", vp.display()))?;
+            let vc: rivet_core::feature_model::VariantConfig =
+                serde_yaml::from_str(&variant_yaml).context("parsing variant config")?;
 
-        let resolved = rivet_core::feature_model::solve(&fm, &vc).map_err(|errs| {
-            let msgs: Vec<String> = errs.iter().map(|e| format!("{e}")).collect();
-            anyhow::anyhow!("variant solve failed:\n  {}", msgs.join("\n  "))
-        })?;
+            let resolved = rivet_core::feature_model::solve(&fm, &vc).map_err(|errs| {
+                let msgs: Vec<String> = errs.iter().map(|e| format!("{e}")).collect();
+                anyhow::anyhow!("variant solve failed:\n  {}", msgs.join("\n  "))
+            })?;
 
-        let binding_yaml = std::fs::read_to_string(bp)
-            .with_context(|| format!("reading binding {}", bp.display()))?;
-        let fb: rivet_core::feature_model::FeatureBinding =
-            serde_yaml::from_str(&binding_yaml).context("parsing feature binding")?;
+            let binding_yaml = std::fs::read_to_string(bp)
+                .with_context(|| format!("reading binding {}", bp.display()))?;
+            let fb: rivet_core::feature_model::FeatureBinding =
+                serde_yaml::from_str(&binding_yaml).context("parsing feature binding")?;
 
-        // Collect bound artifact IDs from effective features
-        let bound_ids: std::collections::BTreeSet<String> = resolved
-            .effective_features
-            .iter()
-            .flat_map(|f| {
-                fb.bindings
-                    .get(f)
-                    .map(|b| b.artifacts.clone())
-                    .unwrap_or_default()
-            })
-            .collect();
+            // Collect bound artifact IDs from effective features
+            let bound_ids: std::collections::BTreeSet<String> = resolved
+                .effective_features
+                .iter()
+                .flat_map(|f| {
+                    fb.bindings
+                        .get(f)
+                        .map(|b| b.artifacts.clone())
+                        .unwrap_or_default()
+                })
+                .collect();
 
-        // Build a scoped store containing only bound artifacts
-        let mut scoped = Store::new();
-        for id in &bound_ids {
-            if let Some(art) = store.get(id) {
-                scoped.upsert(art.clone());
+            // Build a scoped store containing only bound artifacts
+            let mut scoped = Store::new();
+            for id in &bound_ids {
+                if let Some(art) = store.get(id) {
+                    scoped.upsert(art.clone());
+                }
             }
+            let scoped_graph = LinkGraph::build(&scoped, &schema);
+            let vname = resolved.name.clone();
+            (scoped, scoped_graph, Some((vname, bound_ids.len())))
         }
-        let scoped_graph = LinkGraph::build(&scoped, &schema);
-        let vname = resolved.name.clone();
-        (scoped, scoped_graph, Some((vname, bound_ids.len())))
-    } else if model_path.is_some() || variant_path.is_some() || binding_path.is_some() {
-        anyhow::bail!(
-            "--model, --variant, and --binding must all be provided together for variant-scoped validation"
-        );
-    } else {
-        (store, graph, None)
+        (Some(mp), None, Some(bp)) => {
+            // Model + binding, no variant: validate model/binding consistency
+            // without resolving a specific variant. Unknown feature names in
+            // the binding file are reported as errors.
+            let model_yaml = std::fs::read_to_string(mp)
+                .with_context(|| format!("reading feature model {}", mp.display()))?;
+            let fm = rivet_core::feature_model::FeatureModel::from_yaml(&model_yaml)
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+            let binding_yaml = std::fs::read_to_string(bp)
+                .with_context(|| format!("reading binding {}", bp.display()))?;
+            let fb: rivet_core::feature_model::FeatureBinding =
+                serde_yaml::from_str(&binding_yaml).context("parsing feature binding")?;
+
+            let unknown: Vec<String> = fb
+                .bindings
+                .keys()
+                .filter(|name| !fm.features.contains_key(name.as_str()))
+                .cloned()
+                .collect();
+            if !unknown.is_empty() {
+                anyhow::bail!(
+                    "binding references unknown features: {}",
+                    unknown.join(", ")
+                );
+            }
+            if format != "json" {
+                println!(
+                    "Feature model + binding: {} features, {} bindings (OK)\n",
+                    fm.features.len(),
+                    fb.bindings.len()
+                );
+            }
+            (store, graph, None)
+        }
+        (None, None, None) => (store, graph, None),
+        _ => anyhow::bail!(
+            "variant-scoped validation requires --model and --binding; --variant is optional"
+        ),
     };
 
     let doc_store = doc_store.unwrap_or_default();
@@ -6774,6 +6877,121 @@ fn cmd_snapshot_list(cli: &Cli) -> Result<bool> {
 
 // ── Variant commands ────────────────────────────────────────────────────
 
+/// Scaffold a starter feature-model.yaml + bindings/<name>.yaml pair.
+///
+/// Files are annotated with comments documenting every field so the user
+/// does not need to open `docs/feature-model-schema.md` to get started.
+/// See that document for the full schema reference.
+fn cmd_variant_init(name: &str, dir: &std::path::Path, force: bool) -> Result<bool> {
+    if name.trim().is_empty() {
+        anyhow::bail!("variant name cannot be empty");
+    }
+
+    let target = if dir == std::path::Path::new(".") {
+        std::env::current_dir().context("resolving current directory")?
+    } else {
+        dir.to_path_buf()
+    };
+
+    std::fs::create_dir_all(&target)
+        .with_context(|| format!("creating {}", target.display()))?;
+    let bindings_dir = target.join("bindings");
+    std::fs::create_dir_all(&bindings_dir)
+        .with_context(|| format!("creating {}", bindings_dir.display()))?;
+
+    let fm_path = target.join("feature-model.yaml");
+    let binding_path = bindings_dir.join(format!("{name}.yaml"));
+
+    if !force {
+        for p in [&fm_path, &binding_path] {
+            if p.exists() {
+                anyhow::bail!(
+                    "refusing to overwrite {} (use --force)",
+                    p.display()
+                );
+            }
+        }
+    }
+
+    let fm_yaml = r#"# feature-model.yaml — starter template.
+# Full reference: docs/feature-model-schema.md
+kind: feature-model
+
+# `root` is the always-selected top of the feature tree.
+root: product
+
+# Every feature is declared under `features`.
+#   group: one of `mandatory`, `optional`, `alternative`, `or`, `leaf`.
+#   children: names of child features.
+features:
+  product:
+    group: mandatory
+    children: [base, extras]
+
+  base:
+    group: leaf
+
+  extras:
+    group: or
+    children: [telemetry, auth]
+
+  telemetry:
+    group: leaf
+
+  auth:
+    group: leaf
+
+# Cross-tree constraints (s-expression syntax).
+#   Bare feature names mean "this feature is selected".
+#   Supported forms: and, or, not, implies, excludes, forall, exists.
+constraints:
+  # - (implies auth telemetry)
+  # - (excludes base telemetry)
+"#;
+
+    let binding_yaml = format!(
+        r#"# bindings/{name}.yaml — starter template.
+# Full reference: docs/feature-model-bindings.md
+
+# `variant:` identifies which variant this file configures and records
+# the user's feature selection. The solver adds root, ancestors, mandatory
+# descendants, and constraint-implied features on top of `selects`.
+variant:
+  name: {name}
+  selects: [telemetry]
+
+# `bindings:` maps feature names to the artifacts and source files that
+# implement them.
+bindings:
+  telemetry:
+    artifacts: []           # e.g. [REQ-001, REQ-002]
+    source: []              # e.g. ["src/telemetry/**"]
+  auth:
+    artifacts: []
+    source: []
+"#
+    );
+
+    std::fs::write(&fm_path, fm_yaml)
+        .with_context(|| format!("writing {}", fm_path.display()))?;
+    std::fs::write(&binding_path, binding_yaml)
+        .with_context(|| format!("writing {}", binding_path.display()))?;
+
+    println!("  wrote {}", fm_path.display());
+    println!("  wrote {}", binding_path.display());
+    println!();
+    println!("Edit the files above, then run:");
+    println!("  rivet variant list  --model {}", fm_path.display());
+    println!(
+        "  rivet variant check --model {} --variant {}",
+        fm_path.display(),
+        binding_path.display()
+    );
+    println!("See docs/feature-model-schema.md for the full schema.");
+
+    Ok(true)
+}
+
 /// Check a variant configuration against a feature model.
 fn cmd_variant_check(
     model_path: &std::path::Path,
@@ -6832,6 +7050,92 @@ fn cmd_variant_check(
             Ok(false)
         }
     }
+}
+
+/// Check every variant declared in a binding file against the feature model.
+///
+/// Exits 0 iff every declared variant solves successfully; exits 1 as soon
+/// as any fails. Binding files without a `variants:` block are reported
+/// as an empty pass.
+fn cmd_variant_check_all(
+    model_path: &std::path::Path,
+    binding_path: &std::path::Path,
+    format: &str,
+) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
+
+    let model_yaml = std::fs::read_to_string(model_path)
+        .with_context(|| format!("reading {}", model_path.display()))?;
+    let model = rivet_core::feature_model::FeatureModel::from_yaml(&model_yaml)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    let binding_yaml = std::fs::read_to_string(binding_path)
+        .with_context(|| format!("reading {}", binding_path.display()))?;
+    let binding: rivet_core::feature_model::FeatureBinding =
+        serde_yaml::from_str(&binding_yaml).context("parsing binding")?;
+
+    let mut results: Vec<(String, std::result::Result<(), Vec<String>>)> = Vec::new();
+    for vc in &binding.variants {
+        match rivet_core::feature_model::solve(&model, vc) {
+            Ok(_) => results.push((vc.name.clone(), Ok(()))),
+            Err(errs) => {
+                let msgs: Vec<String> = errs.iter().map(|e| e.to_string()).collect();
+                results.push((vc.name.clone(), Err(msgs)));
+            }
+        }
+    }
+
+    let pass_count = results.iter().filter(|(_, r)| r.is_ok()).count();
+    let fail_count = results.len() - pass_count;
+
+    if format == "json" {
+        let rows: Vec<serde_json::Value> = results
+            .iter()
+            .map(|(name, r)| match r {
+                Ok(()) => serde_json::json!({ "variant": name, "result": "PASS" }),
+                Err(msgs) => serde_json::json!({
+                    "variant": name,
+                    "result": "FAIL",
+                    "errors": msgs,
+                }),
+            })
+            .collect();
+        let output = serde_json::json!({
+            "result": if fail_count == 0 { "PASS" } else { "FAIL" },
+            "total": results.len(),
+            "passed": pass_count,
+            "failed": fail_count,
+            "variants": rows,
+        });
+        println!("{}", serde_json::to_string_pretty(&output)?);
+    } else {
+        if results.is_empty() {
+            println!(
+                "No variants declared in {}. Add a `variants:` list to exercise the check.",
+                binding_path.display()
+            );
+        } else {
+            for (name, r) in &results {
+                match r {
+                    Ok(()) => println!("  PASS  {name}"),
+                    Err(msgs) => {
+                        println!("  FAIL  {name}");
+                        for m in msgs {
+                            println!("        {m}");
+                        }
+                    }
+                }
+            }
+            println!(
+                "\n{}/{} variants passed ({} failed)",
+                pass_count,
+                results.len(),
+                fail_count
+            );
+        }
+    }
+
+    Ok(fail_count == 0)
 }
 
 /// List features in a feature model.
@@ -6945,26 +7249,65 @@ fn cmd_variant_solve(
     };
 
     if format == "json" {
+        // Serialise origins alongside effective_features so downstream
+        // tooling can distinguish user-selected / mandatory / implied.
+        // The legacy `effective_features` + `feature_count` fields are
+        // preserved verbatim for backwards compatibility.
+        use rivet_core::feature_model::FeatureOrigin;
+        let origins_json: serde_json::Map<String, serde_json::Value> = resolved
+            .origins
+            .iter()
+            .map(|(name, origin)| {
+                let v = match origin {
+                    FeatureOrigin::UserSelected => serde_json::json!({ "kind": "selected" }),
+                    FeatureOrigin::Mandatory => serde_json::json!({ "kind": "mandatory" }),
+                    FeatureOrigin::ImpliedBy(cause) => {
+                        serde_json::json!({ "kind": "implied", "by": cause })
+                    }
+                    FeatureOrigin::AllowedButUnbound => {
+                        serde_json::json!({ "kind": "allowed" })
+                    }
+                };
+                (name.clone(), v)
+            })
+            .collect();
         let output = serde_json::json!({
             "variant": resolved.name,
             "effective_features": resolved.effective_features,
             "feature_count": resolved.effective_features.len(),
+            "origins": origins_json,
             "bound_artifacts": bound_artifacts,
             "bound_artifact_count": bound_artifacts.len(),
         });
         println!("{}", serde_json::to_string_pretty(&output)?);
     } else {
+        use rivet_core::feature_model::FeatureOrigin;
         println!("Variant '{}': PASS", resolved.name);
-        let features_list: Vec<&str> = resolved
+        println!(
+            "Effective features ({}):",
+            resolved.effective_features.len()
+        );
+        // Width = longest feature name, padded for alignment.
+        let name_col = resolved
             .effective_features
             .iter()
-            .map(|s| s.as_str())
-            .collect();
-        println!(
-            "Effective features ({}): {}",
-            features_list.len(),
-            features_list.join(", ")
-        );
+            .map(|s| s.len())
+            .max()
+            .unwrap_or(0);
+        for name in &resolved.effective_features {
+            let origin = resolved
+                .origins
+                .get(name)
+                .cloned()
+                .unwrap_or(FeatureOrigin::AllowedButUnbound);
+            let label = match &origin {
+                FeatureOrigin::UserSelected => "selected".to_string(),
+                FeatureOrigin::Mandatory => "mandatory".to_string(),
+                FeatureOrigin::ImpliedBy(cause) => format!("implied by {cause}"),
+                FeatureOrigin::AllowedButUnbound => "allowed".to_string(),
+            };
+            println!("  + {name:<name_col$}  ({label})");
+        }
 
         if !bound_artifacts.is_empty() {
             println!("\nBound artifacts ({}):", bound_artifacts.len());

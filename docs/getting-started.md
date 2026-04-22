@@ -757,6 +757,9 @@ Graph: `reachable-from`, `reachable-to`.
 
 Manage product variants with feature models, constraint solving, and artifact scoping.
 
+Full schema reference: [feature-model-schema.md](feature-model-schema.md).
+Binding file format: [feature-model-bindings.md](feature-model-bindings.md).
+
 ### Feature Model
 
 Define your product line as a YAML feature tree:

@@ -56,19 +56,58 @@ pub struct VariantConfig {
     pub selects: Vec<String>,
 }
 
+/// Origin of a feature in a resolved variant — why did the solver
+/// include it in the effective set?
+///
+/// This is reported per-feature so downstream tooling can distinguish
+/// user intent from solver-driven choices. Pain point #8: flat lists
+/// hid whether a feature was picked by the user, auto-selected via a
+/// mandatory group, or pulled in by a constraint.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FeatureOrigin {
+    /// User picked this feature explicitly via `selects:`.
+    UserSelected,
+    /// Forced in because an ancestor group is `mandatory`, or because
+    /// this is the root feature (root is always selected).
+    Mandatory,
+    /// A constraint (`implies X Y` and similar) propagated the
+    /// selection from the named feature.
+    ImpliedBy(String),
+    /// Present in the model and allowed but not actively chosen by the
+    /// user, group semantics, or a constraint. Surfaced for reporting
+    /// only — the solver never materialises "allowed-but-unbound"
+    /// features into `effective_features`; this variant exists so that
+    /// future reporting (e.g. showing `optional` siblings that could
+    /// still be toggled) has a slot.
+    AllowedButUnbound,
+}
+
 /// Result of solving a variant against a feature model.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedVariant {
     pub name: String,
     pub effective_features: BTreeSet<String>,
+    /// Per-feature origin for every entry in `effective_features`.
+    ///
+    /// Keys mirror `effective_features`; the map is populated for new
+    /// callers that want to distinguish user-selected, mandatory, and
+    /// constraint-implied features. Empty for manually-constructed
+    /// `ResolvedVariant` values (backwards-compatible default).
+    pub origins: BTreeMap<String, FeatureOrigin>,
 }
 
 // ── Feature-to-artifact binding ────────────────────────────────────────
 
 /// Maps features to artifact IDs and source globs.
+///
+/// May also carry a list of variant configurations that `rivet variant
+/// check-all` iterates. Absent means "no declared variants" — check-all
+/// reports an empty pass.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeatureBinding {
     pub bindings: BTreeMap<String, Binding>,
+    #[serde(default)]
+    pub variants: Vec<VariantConfig>,
 }
 
 /// Artifacts and source files associated with a feature.
@@ -211,8 +250,10 @@ impl FeatureModel {
         let mut constraints = Vec::new();
         for src in &raw.constraints {
             let preprocessed = preprocess_feature_constraint(src, &features);
-            let expr = sexpr_eval::parse_filter(&preprocessed)
-                .map_err(|errs| Error::Schema(format!("constraint `{src}`: {errs:?}")))?;
+            let expr = sexpr_eval::parse_filter(&preprocessed).map_err(|errs| {
+                let msgs: Vec<String> = errs.iter().map(|e| e.to_string()).collect();
+                Error::Schema(format!("constraint `{src}`: {}", msgs.join("; ")))
+            })?;
             constraints.push(expr);
         }
 
@@ -351,16 +392,38 @@ pub fn solve(
     }
 
     // Start with root + user selections.
-    let mut selected: BTreeSet<String> = config.selects.iter().cloned().collect();
-    selected.insert(model.root.clone());
+    //
+    // `origins` tracks *why* each feature entered the effective set.
+    // We use `insert` with .or_insert so the first reason wins: a user
+    // selection beats a subsequent mandatory/implied discovery.
+    let mut selected: BTreeSet<String> = BTreeSet::new();
+    let mut origins: BTreeMap<String, FeatureOrigin> = BTreeMap::new();
 
-    // Also select ancestors of every selected feature (a child implies its parent).
+    // Root is always mandatory.
+    selected.insert(model.root.clone());
+    origins.insert(model.root.clone(), FeatureOrigin::Mandatory);
+
+    for name in &config.selects {
+        if selected.insert(name.clone()) {
+            origins.insert(name.clone(), FeatureOrigin::UserSelected);
+        } else {
+            origins
+                .entry(name.clone())
+                .or_insert(FeatureOrigin::UserSelected);
+        }
+    }
+
+    // Select ancestors of every selected feature. Ancestors are
+    // "mandatory" in the sense that a child cannot be selected without
+    // its parent also being selected.
     let initial: Vec<String> = selected.iter().cloned().collect();
     for name in initial {
         let mut cur = name.as_str();
         while let Some(f) = model.features.get(cur) {
             if let Some(ref p) = f.parent {
-                selected.insert(p.clone());
+                if selected.insert(p.clone()) {
+                    origins.insert(p.clone(), FeatureOrigin::Mandatory);
+                }
                 cur = p;
             } else {
                 break;
@@ -383,6 +446,7 @@ pub fn solve(
                 if f.group == GroupType::Mandatory {
                     for child in &f.children {
                         if selected.insert(child.clone()) {
+                            origins.insert(child.clone(), FeatureOrigin::Mandatory);
                             changed = true;
                         }
                     }
@@ -398,8 +462,14 @@ pub fn solve(
                     && !is_feature_selected(consequent, &selected)
                 {
                     if let Some(name) = extract_feature_name(consequent) {
-                        if model.features.contains_key(&name) && selected.insert(name) {
-                            changed = true;
+                        if model.features.contains_key(&name) {
+                            let cause = extract_feature_name(antecedent)
+                                .unwrap_or_else(|| "constraint".to_string());
+                            if selected.insert(name.clone()) {
+                                origins
+                                    .insert(name.clone(), FeatureOrigin::ImpliedBy(cause));
+                                changed = true;
+                            }
                         }
                     }
                 }
@@ -478,6 +548,7 @@ pub fn solve(
         Ok(ResolvedVariant {
             name: config.name.clone(),
             effective_features: selected,
+            origins,
         })
     } else {
         Err(errors)
@@ -982,6 +1053,98 @@ constraints:
         };
         let resolved = solve(&model, &config).unwrap();
         assert!(resolved.effective_features.contains("feature-y"));
+    }
+
+    // ── Feature origin tracking (pain point #8) ─────────────────────
+
+    #[test]
+    fn origin_marks_user_selected_features() {
+        let model = FeatureModel::from_yaml(vehicle_model_yaml()).unwrap();
+        let config = VariantConfig {
+            name: "eu-electric".into(),
+            selects: vec!["electric".into(), "eu".into()],
+        };
+        let resolved = solve(&model, &config).unwrap();
+
+        assert_eq!(
+            resolved.origins.get("electric"),
+            Some(&FeatureOrigin::UserSelected),
+            "electric was named in selects → UserSelected"
+        );
+        assert_eq!(
+            resolved.origins.get("eu"),
+            Some(&FeatureOrigin::UserSelected)
+        );
+    }
+
+    #[test]
+    fn origin_marks_mandatory_ancestors_and_root() {
+        let model = FeatureModel::from_yaml(vehicle_model_yaml()).unwrap();
+        let config = VariantConfig {
+            name: "eu-electric".into(),
+            selects: vec!["electric".into(), "eu".into()],
+        };
+        let resolved = solve(&model, &config).unwrap();
+
+        // Root and ancestor `engine` / `market` are pulled in by the tree,
+        // not by the user. Root is always Mandatory; ancestors are too.
+        assert_eq!(
+            resolved.origins.get("vehicle"),
+            Some(&FeatureOrigin::Mandatory),
+            "root must be Mandatory"
+        );
+        assert_eq!(
+            resolved.origins.get("engine"),
+            Some(&FeatureOrigin::Mandatory),
+            "engine is the parent of electric — ancestors are mandatory"
+        );
+        assert_eq!(
+            resolved.origins.get("market"),
+            Some(&FeatureOrigin::Mandatory)
+        );
+    }
+
+    #[test]
+    fn origin_marks_constraint_implied_features() {
+        // Model has `(implies eu pedestrian-detection)`. Selecting eu
+        // should mark pedestrian-detection as ImpliedBy("eu").
+        let model = FeatureModel::from_yaml(vehicle_model_yaml()).unwrap();
+        let config = VariantConfig {
+            name: "eu".into(),
+            selects: vec!["electric".into(), "eu".into()],
+        };
+        let resolved = solve(&model, &config).unwrap();
+
+        let origin = resolved
+            .origins
+            .get("pedestrian-detection")
+            .expect("pedestrian-detection must be in the effective set");
+        match origin {
+            FeatureOrigin::ImpliedBy(cause) => {
+                assert_eq!(cause, "eu", "cause should be `eu`, got {cause:?}");
+            }
+            other => panic!(
+                "pedestrian-detection should be ImpliedBy(eu), got {other:?}"
+            ),
+        }
+    }
+
+    #[test]
+    fn origins_cover_every_effective_feature() {
+        // Every feature in `effective_features` must have a matching
+        // entry in `origins`. No orphans.
+        let model = FeatureModel::from_yaml(vehicle_model_yaml()).unwrap();
+        let config = VariantConfig {
+            name: "full".into(),
+            selects: vec!["electric".into(), "eu".into(), "abs".into()],
+        };
+        let resolved = solve(&model, &config).unwrap();
+        for name in &resolved.effective_features {
+            assert!(
+                resolved.origins.contains_key(name),
+                "missing origin for feature `{name}`"
+            );
+        }
     }
 
     #[test]
