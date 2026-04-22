@@ -4020,7 +4020,8 @@ fn cmd_coverage(
         let total: usize = report.entries.iter().map(|e| e.total).sum();
         let covered: usize = report.entries.iter().map(|e| e.covered).sum();
         let overall_pct = (report.overall_coverage() * 10.0).round() / 10.0;
-        let output = serde_json::json!({
+        let mut output = serde_json::json!({
+            "command": "coverage",
             "rules": rules_json,
             "overall": {
                 "covered": covered,
@@ -4028,6 +4029,16 @@ fn cmd_coverage(
                 "percentage": overall_pct,
             },
         });
+        // Echo the threshold + pass/fail result when --fail-under is in
+        // effect so CI consumers can programmatically distinguish a
+        // clean run from a gated failure without parsing stderr.
+        if let Some(&threshold) = fail_under {
+            let passed = report.overall_coverage() >= threshold;
+            output["threshold"] = serde_json::json!({
+                "fail_under": threshold,
+                "passed": passed,
+            });
+        }
         println!("{}", serde_json::to_string_pretty(&output).unwrap());
     } else {
         println!("Traceability Coverage Report\n");
@@ -4071,10 +4082,15 @@ fn cmd_coverage(
         let overall = report.overall_coverage();
         if overall < threshold {
             eprintln!(
-                "\nerror: overall coverage {:.1}% is below threshold {:.1}%",
+                "\nerror: overall coverage {:.1}% is below threshold {:.1}% (--fail-under)",
                 overall, threshold
             );
             return Ok(false);
+        } else if format != "json" {
+            println!(
+                "\n\u{2714} coverage {:.1}% meets threshold {:.1}%",
+                overall, threshold
+            );
         }
     }
 

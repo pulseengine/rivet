@@ -1436,6 +1436,113 @@ fn validate_fail_on_warning_fails_on_warnings() {
     );
 }
 
+// ── rivet coverage --fail-under ─────────────────────────────────────────
+
+/// `rivet coverage --format json` echoes the threshold block when
+/// `--fail-under` is set. Consumers can check `threshold.passed` to
+/// distinguish a clean run from a gated failure without parsing stderr.
+#[test]
+fn coverage_json_echoes_threshold() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "coverage",
+            "--format",
+            "json",
+            "--fail-under",
+            "0",
+        ])
+        .output()
+        .expect("coverage");
+    assert!(output.status.success());
+    let parsed: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("coverage JSON");
+    let threshold = parsed
+        .get("threshold")
+        .expect("threshold block present when --fail-under set");
+    assert_eq!(
+        threshold
+            .get("fail_under")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(-1.0),
+        0.0
+    );
+    assert_eq!(
+        threshold.get("passed").and_then(|v| v.as_bool()),
+        Some(true)
+    );
+}
+
+/// `rivet coverage --fail-under 0` always succeeds (any coverage ≥ 0%).
+#[test]
+fn coverage_fail_under_zero_passes() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "coverage",
+            "--fail-under",
+            "0",
+        ])
+        .output()
+        .expect("coverage");
+
+    assert!(
+        output.status.success(),
+        "--fail-under 0 must always pass. stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// `rivet coverage --fail-under 101` always fails (no project has > 100%).
+#[test]
+fn coverage_fail_under_above_100_fails() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "coverage",
+            "--fail-under",
+            "101",
+        ])
+        .output()
+        .expect("coverage");
+
+    assert!(
+        !output.status.success(),
+        "--fail-under 101 must fail. stdout:\n{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("below threshold") || stderr.contains("coverage"),
+        "error message should mention threshold, got:\n{stderr}"
+    );
+}
+
+/// Without `--fail-under`, coverage is report-only — a low-coverage
+/// project still exits 0.
+#[test]
+fn coverage_without_fail_under_is_report_only() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "coverage",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("coverage");
+
+    assert!(
+        output.status.success(),
+        "coverage without --fail-under must exit 0. stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 /// `rivet stats --format json` exposes diagnostic counts so consumers
 /// don't need a second `rivet validate --format json` call just to
 /// get the severity breakdown.
