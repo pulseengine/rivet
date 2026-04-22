@@ -44,6 +44,18 @@ jobs:
       - run: pip install yamllint
       - run: yamllint -c .yamllint.yaml schemas/ artifacts/ rivet.yaml .github/
 
+  # ── Docs-vs-reality gate (REQ-054) ────────────────────────────────────
+  # A real gate — no continue-on-error.  Budget <1 minute on cached runs.
+  docs-check:
+    name: Docs Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run rivet docs check
+        run: cargo run --release -p rivet-cli -- docs check
+
   # ── Tests ─────────────────────────────────────────────────────────────
   test:
     name: Test

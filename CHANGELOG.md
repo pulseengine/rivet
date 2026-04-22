@@ -1,5 +1,8 @@
 # Changelog
 
+<!-- AUDIT-FILE: verified 2026-04-19 — all numeric counts in this file
+     are historical snapshots taken at release time, not current state. -->
+
 ## [0.4.0] — 2026-04-19
 
 ### Features

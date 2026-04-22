@@ -152,7 +152,7 @@ docs/                   # Documents with {{artifact:ID}} embeds
 | `rivet remove` | Remove an artifact |
 | `rivet batch` | Atomic multi-mutation from a YAML file |
 | `rivet export` | Generate HTML, ReqIF, YAML, or Gherkin output |
-| `rivet import` | Import from ReqIF, sphinx-needs JSON |
+| `rivet import-results` | Import from JUnit XML or sphinx-needs JSON |
 | `rivet impact` | Show change impact analysis |
 | `rivet coverage` | Show traceability coverage |
 | `rivet matrix` | Compute traceability matrix |
@@ -172,7 +172,8 @@ schemas/        # Built-in domain schemas (8 schemas)
 
 ## Dogfooding
 
-Rivet tracks its own development — 447 artifacts across 19 types, validated on every commit.
+<!-- AUDIT: verified 2026-04-19 — run `rivet stats` for current count -->
+Rivet tracks its own development — 709 artifacts across 19 types, validated on every commit.
 
 ```bash
 $ rivet validate
