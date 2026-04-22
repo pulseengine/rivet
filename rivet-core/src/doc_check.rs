@@ -123,6 +123,13 @@ pub struct DocCheckContext<'a> {
     pub store: Option<&'a Store>,
     /// Contents of `.github/workflows/ci.yml` if present.
     pub ci_yaml: Option<&'a str>,
+    /// External-namespace prefixes (e.g. "GNV", "JIRA") that exempt
+    /// matching IDs from the ArtifactIdValidity invariant. Sourced from
+    /// `rivet.yaml: docs-check.external-namespaces`.
+    pub external_namespaces: &'a [String],
+    /// Pre-compiled regex patterns from `docs-check.ignore-patterns`.
+    /// Any ID match that satisfies one of these is skipped.
+    pub ignore_patterns: &'a [regex::Regex],
 }
 
 /// One invariant.
@@ -869,6 +876,12 @@ impl DocInvariant for ArtifactIdValidity {
             // Collect IDs that live in the YAML front-matter block at the
             // top of the file — those are *document* IDs, not artifact IDs.
             let frontmatter_ids = collect_frontmatter_ids(&doc.content);
+            // Per-line skip set sourced from HTML-comment directives:
+            //   <!-- rivet-docs-check: ignore GNV-396 -->
+            //   <!-- rivet-docs-check: ignore-line -->
+            // The first form skips the named ID anywhere in the doc; the
+            // second skips every ID on the same line as the directive.
+            let (ignored_ids, ignored_lines) = collect_skip_directives(&doc.content);
             let mut seen: BTreeMap<String, usize> = BTreeMap::new();
             for cap in re.captures_iter(&doc.content) {
                 let m = cap.get(0).unwrap();
@@ -885,8 +898,28 @@ impl DocInvariant for ArtifactIdValidity {
                 if store.contains(&id) {
                     continue;
                 }
-                // De-dupe per-file to avoid noisy output.
+                // External-namespace exemption (rivet.yaml docs-check.external-namespaces).
+                let prefix = id.split('-').next().unwrap_or("");
+                if ctx
+                    .external_namespaces
+                    .iter()
+                    .any(|n| n.eq_ignore_ascii_case(prefix))
+                {
+                    continue;
+                }
+                // Free-form regex exemption.
+                if ctx.ignore_patterns.iter().any(|re| re.is_match(&id)) {
+                    continue;
+                }
+                // HTML-comment directives.
+                if ignored_ids.contains(&id) {
+                    continue;
+                }
                 let line = line_for_offset(&doc.content, m.start());
+                if ignored_lines.contains(&line) {
+                    continue;
+                }
+                // De-dupe per-file to avoid noisy output.
                 if seen.insert(id.clone(), line).is_some() {
                     continue;
                 }
@@ -902,6 +935,32 @@ impl DocInvariant for ArtifactIdValidity {
         }
         out
     }
+}
+
+/// Parse `<!-- rivet-docs-check: ... -->` directives in a doc body.
+/// Returns (set-of-ignored-IDs, set-of-ignored-line-numbers).
+fn collect_skip_directives(content: &str) -> (BTreeSet<String>, BTreeSet<usize>) {
+    let mut ids = BTreeSet::new();
+    let mut lines = BTreeSet::new();
+    let re = regex::Regex::new(
+        r"<!--\s*rivet-docs-check:\s*([^>]+?)\s*-->",
+    )
+    .unwrap();
+    for cap in re.captures_iter(content) {
+        let m = cap.get(0).unwrap();
+        let line = line_for_offset(content, m.start());
+        let directive = cap.get(1).map(|x| x.as_str().trim()).unwrap_or("");
+        if let Some(rest) = directive.strip_prefix("ignore-line") {
+            // Optional `ignore-line N` to skip a specific other line; default = same line.
+            let target = rest.trim().parse::<usize>().ok().unwrap_or(line);
+            lines.insert(target);
+        } else if let Some(rest) = directive.strip_prefix("ignore ") {
+            for token in rest.split([' ', ',']).filter(|s| !s.is_empty()) {
+                ids.insert(token.to_string());
+            }
+        }
+    }
+    (ids, lines)
 }
 
 /// True for IDs that look like artifact IDs but refer to external
@@ -1027,6 +1086,8 @@ mod tests {
             workspace_version: version,
             store: None,
             ci_yaml: None,
+            external_namespaces: &[],
+            ignore_patterns: &[],
         }
     }
 
@@ -1241,6 +1302,8 @@ jobs:
             workspace_version: "0.4.0",
             store: None,
             ci_yaml: Some(ci),
+            external_namespaces: &[],
+            ignore_patterns: &[],
         };
         let v = SoftGateHonesty.check(&ctx);
         assert_eq!(v.len(), 1);
@@ -1269,6 +1332,8 @@ jobs:
             workspace_version: "0.4.0",
             store: None,
             ci_yaml: Some(ci),
+            external_namespaces: &[],
+            ignore_patterns: &[],
         };
         let v = SoftGateHonesty.check(&ctx);
         assert!(v.is_empty(), "got: {v:?}");
@@ -1318,10 +1383,78 @@ jobs:
             workspace_version: "0.4.0",
             store: Some(&store),
             ci_yaml: None,
+            external_namespaces: &[],
+            ignore_patterns: &[],
         };
         let v = ArtifactIdValidity.check(&ctx);
         assert_eq!(v.len(), 1);
         assert_eq!(v[0].claim, "REQ-999");
+    }
+
+    #[test]
+    fn artifact_id_validity_honors_external_namespaces_config() {
+        // rivet.yaml docs-check.external-namespaces: [GNV, GNR, HZO, UC]
+        // exempts those Jira/Polarion/hazard IDs from "artifact not found".
+        let store = Store::new();
+        let docs = vec![doc(
+            "docs/stakereqs.md",
+            "Traces to GNV-396, GNR-968, HZO-189, and UC-1.",
+        )];
+        let subs = BTreeSet::new();
+        let embeds = BTreeSet::new();
+        let exempted = vec![
+            "GNV".to_string(),
+            "GNR".to_string(),
+            "HZO".to_string(),
+            "UC".to_string(),
+        ];
+        let ctx = DocCheckContext {
+            project_root: Path::new("."),
+            docs: &docs,
+            known_subcommands: &subs,
+            known_embeds: &embeds,
+            workspace_version: "0.4.0",
+            store: Some(&store),
+            ci_yaml: None,
+            external_namespaces: &exempted,
+            ignore_patterns: &[],
+        };
+        let v = ArtifactIdValidity.check(&ctx);
+        assert!(v.is_empty(), "external IDs should be exempted: {v:?}");
+    }
+
+    #[test]
+    fn artifact_id_validity_honors_html_comment_skip_directive() {
+        // <!-- rivet-docs-check: ignore GNV-396 --> exempts a specific ID.
+        // <!-- rivet-docs-check: ignore-line --> exempts every ID on the
+        // same line as the directive.
+        let store = Store::new();
+        let docs = vec![doc(
+            "docs/x.md",
+            "Mention REQ-WAT-1. <!-- rivet-docs-check: ignore REQ-WAT-1 -->\n\
+             Other line: REQ-WAT-2 <!-- rivet-docs-check: ignore-line -->\n\
+             Still flagged: REQ-WAT-3.",
+        )];
+        let subs = BTreeSet::new();
+        let embeds = BTreeSet::new();
+        let ctx = DocCheckContext {
+            project_root: Path::new("."),
+            docs: &docs,
+            known_subcommands: &subs,
+            known_embeds: &embeds,
+            workspace_version: "0.4.0",
+            store: Some(&store),
+            ci_yaml: None,
+            external_namespaces: &[],
+            ignore_patterns: &[],
+        };
+        let v = ArtifactIdValidity.check(&ctx);
+        let claims: Vec<&str> = v.iter().map(|x| x.claim.as_str()).collect();
+        assert_eq!(
+            claims,
+            vec!["REQ-WAT-3"],
+            "only the un-skipped ID should be flagged: {v:?}",
+        );
     }
 
     #[test]
@@ -1341,6 +1474,8 @@ jobs:
             workspace_version: "0.4.0",
             store: Some(&store),
             ci_yaml: None,
+            external_namespaces: &[],
+            ignore_patterns: &[],
         };
         let v = ArtifactIdValidity.check(&ctx);
         assert!(v.is_empty(), "got: {v:?}");
@@ -1366,6 +1501,8 @@ jobs:
             workspace_version: "0.4.0",
             store: Some(&store),
             ci_yaml: None,
+            external_namespaces: &[],
+            ignore_patterns: &[],
         };
         let v = ArtifactIdValidity.check(&ctx);
         assert_eq!(v.len(), 1);
@@ -1389,6 +1526,8 @@ jobs:
             workspace_version: "0.4.0",
             store: Some(&store),
             ci_yaml: None,
+            external_namespaces: &[],
+            ignore_patterns: &[],
         };
         let v = ArtifactIdValidity.check(&ctx);
         assert!(v.is_empty(), "got: {v:?}");
