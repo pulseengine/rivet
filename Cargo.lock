@@ -2738,6 +2738,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "serial_test",
+ "sha2",
  "spar-analysis",
  "spar-hir",
  "tempfile",
