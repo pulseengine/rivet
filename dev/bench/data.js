@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1776922389887,
+  "lastUpdate": 1776922722513,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "2fafe1a574e590671b21e9fce42b4a76db88ef70",
-          "message": "fix: audit followups — real hard gates, /graph budget, PLE self-apply, v0.4.0 artifacts (#155)\n\n* fix(ci): make Kani, Rocq, and Mutation Testing real hard gates\n\nAudit found that all four verification-pyramid CI jobs were silently\nfailing on main. None had ever run green. This fixes three and scopes\nthe fourth to an upstream bug.\n\n**Kani Proofs** — flipped to hard gate. Five harnesses in\nrivet-core/src/proofs.rs were initializing `EvalContext` with only\n`artifact` + `graph` fields after the struct grew a `store: Option<...>`\nfield for quantifier support. The cfg(kani) gate meant the break was\ninvisible to normal `cargo check`. Added `store: None` to all five.\n\n**Rocq Proofs** — flipped to hard gate. The `rocq_library` target\n`rivet_metamodel` had `srcs = []`, which fails Bazel analysis with\n\"rocq_library requires at least one source file\". Removed the empty\naggregator target and pointed the test at the two real libraries\n(Schema + Validation) directly.\n\n**Mutation Testing** — split into a per-crate matrix so rivet-core\nand rivet-cli each get a 45-minute budget. Previously both crates\nshared a single 40-minute timeout, causing rivet-core to be cancelled\nbefore finishing and rivet-cli to never run. `--timeout` per-mutant\nreduced from 120s to 90s. Uploads are now per-crate artifacts.\n\n**Verus Proofs** — left as continue-on-error with a pointer comment.\nRoot cause is in rules_verus (pulseengine/rules_verus, commit e2c1600):\nthe hub repository's `:all` alias only points to the first platform's\ntoolchain rather than registering `toolchain()` rules for each\nplatform, so `register_toolchains(\"@verus_toolchains//:all\")`\nresolves to a non-toolchain target. Fixing this requires an upstream\nchange to rules_verus.\n\nWith these fixes, CI will fail — honestly — on Kani regressions,\nRocq proof breaks, and surviving mutants, instead of silently\nreporting green.\n\nImplements: REQ-010, REQ-029\nVerifies: REQ-010\n\n* perf(serve): enforce node budget on /graph to prevent 57s render\n\nThe /graph dashboard route previously ran layout + SVG over the full\nlink graph (~1800 artifacts on the dogfood dataset), taking ~57s and\nproducing ~1MB of HTML. The Playwright test at graph.spec.ts:17 was\nnamed \"node budget prevents crash on full graph\" but grepping the\nrenderer for budget/max_nodes returned zero matches -- the budget was\naspirational.\n\nThis commit adds a real safety valve in render_graph_view:\n\n- DEFAULT_NODE_BUDGET = 200, MAX_NODE_BUDGET = 2000 (hard ceiling).\n- After the filtered subgraph is built but before the expensive\n  pgv_layout + render_svg calls, short-circuit with a budget message\n  when node_count > budget.\n- The message contains the literal string \"budget\" so the Playwright\n  locator `svg, :text('budget')` matches and exposes the standard\n  filter form (types / focus / depth / link_types / limit) so users\n  can scope the view without editing URLs.\n- Per-request override via ?limit=NNN, clamped to [1, MAX_NODE_BUDGET].\n- Filtered views under the budget (?types=requirement,\n  ?focus=REQ-001&depth=2) continue to render SVG unchanged.\n\nPerf (release build, rivet dogfood dataset via serve_integration test):\n                                     before       after\n  GET /graph                         ~57s / ~1MB  ~1ms / 20KB\n  GET /graph?types=requirement       (filtered)   ~1ms / 44KB (SVG)\n  GET /graph?focus=REQ-001&depth=2   (filtered)   ~44ms / 67KB (SVG)\n\nThree new integration tests in serve_integration.rs lock in the\ninvariant: full graph stays under 5s and returns the budget message,\nfocused view still renders SVG, and ?limit=1 forces the budget path.\n\nImplements: REQ-007\n\n* feat(ple): feature model + variants for rivet itself (dogfooding #128)\n\nShip a feature model that describes the real variability in rivet:\ncompile-time cargo features, CLI deployment surfaces (cli / dashboard /\nLSP / MCP), built-in adapters, export formats, test-import formats, and\ninit presets. Every declared feature maps 1:1 to something grep-able in\nthe code: a cargo feature flag, a `rivet` subcommand, a format string\ndispatched by `export --format` / `import-results --format`, or an init\npreset in `resolve_preset()`.\n\nCloses the dogfooding gap for #128 — v0.4.0 shipped `rivet variant\ncheck`, but the rivet project itself had no feature model to feed it.\n\nFiles:\n  * artifacts/feature-model.yaml        — root feature tree + constraints\n  * artifacts/variants/minimal-ci.yaml  — default-features cargo build,\n                                          CLI-only deployment (what CI runs)\n  * artifacts/variants/full-desktop.yaml — every surface, every preset,\n                                           wasm + oslc cargo features on\n\nReal variability identified:\n  * yaml-backend alternative (rowan-yaml default, serde-yaml-only fallback)\n  * deployment-surface or-group (cli-only, dashboard, lsp-server, mcp-server)\n  * adapters or-group with cargo-feature constraints (implies oslc-client\n    feat-oslc; implies wasm-adapter feat-wasm)\n  * export-formats / test-import-formats / init-presets or-groups\n  * preset ↔ adapter constraints (preset-aadl implies aadl-adapter;\n    preset-stpa implies stpa-yaml-adapter)\n  * dashboard implies html-export (shared HTML pipeline)\n  * reqif-export implies reqif-adapter (shared reqif module)\n\nVerification (both variants pass):\n\n  $ rivet variant check --model artifacts/feature-model.yaml \\\n                        --variant artifacts/variants/minimal-ci.yaml\n  Variant 'minimal-ci': PASS\n  Effective features (40):\n    aadl-adapter, adapters, baselines, cli-only, commits, core,\n    coverage, deployment-surface, docs-cli, export-formats,\n    generic-yaml-adapter, generic-yaml-export, hooks-infra,\n    html-export, impact-analysis, init-presets, junit-adapter,\n    junit-import, matrix, mutations, needs-json-adapter,\n    needs-json-import, optional-cargo-features, preset-aadl,\n    preset-dev, preset-stpa, query, reqif-adapter, reqif-export,\n    rivet, rowan-yaml, schema-system, sexpr-language, snapshots,\n    stpa-yaml-adapter, test-import-formats, validate, variant-mgmt,\n    yaml-backend, zola-export\n\n  $ rivet variant check --model artifacts/feature-model.yaml \\\n                        --variant artifacts/variants/full-desktop.yaml\n  Variant 'full-desktop': PASS\n  Effective features (58):\n    ...minimal-ci set plus dashboard, lsp-server, mcp-server,\n    oslc-client, wasm-adapter, feat-oslc, feat-wasm, and all 14\n    init presets (aspice, stpa-ai, cybersecurity, eu-ai-act,\n    safety-case, do-178c, en-50128, iec-61508, iec-62304,\n    iso-pas-8800, sotif, plus the three in minimal-ci).\n\nNotes from reading the code:\n  * `rowan-yaml` cargo feature: default-on, with a `cfg(not(feature =\n    \"rowan-yaml\"))` fallback path in rivet-core/src/db.rs — so the\n    alternative group has two real arms, not one.\n  * `aadl` cargo feature: default-on. Modelled as a mandatory\n    (always-present) adapter since no real build disables it — not as\n    an optional-feature toggle.\n  * `oslc` and `wasm`: off-by-default cargo features, correctly\n    modelled as optional with implies-constraints from the adapters.\n  * `lsp-server`, `dashboard`, `mcp-server` are *not* behind cargo\n    features — they're always compiled in today. The variance is\n    runtime/deployment, not compile-time. Flagged this as a surprising\n    mismatch with the v0.4.0 narrative (where LSP/MCP are described as\n    optional deployment surfaces): they are, but only in the sense of\n    \"whether you launch that process\", not \"whether the code is in the\n    binary\".\n  * The rowan YAML parser rejects multi-line `#` comments between\n    mapping entries at the same indent (`expected mapping key, found\n    Some(Comment)`). Worked around by keeping single-line section\n    comments in feature-model.yaml; flagging this as a latent parser\n    bug worth a follow-up issue.\n\nRefs: #128\n\n* feat(audit): v0.4.0 artifacts, retroactive trailer map, Verus hard gate\n\nAddresses three gaps found in the post-v0.4.0 dogfooding audit.\n\n**v0.4.0 shipped-work artifacts** — `artifacts/v040-features.yaml` was\nlast touched 2026-04-12 and describes variant/PLE work (FEAT-106..114),\nnot the verification pyramid that actually shipped on 2026-04-19. New\nfile `artifacts/v040-verification.yaml` authors 4 design decisions\n(DD-052 four-layer verification pyramid, DD-053 suffix-based\nyaml-section matching, DD-054 non-blocking framing for formal CI\njobs, DD-055 cfg-gate platform syscalls), 8 features\n(FEAT-115..122 covering Kani 27-harness expansion, differential YAML\ntests, operation-sequence proptest, STPA-Sec suite, suffix-based UCA\nextraction, nested control-action extraction, Zola export, Windows\nsupport), and 1 requirement (REQ-060 cross-platform binaries).\nCounts were verified against the actual codebase — 27 `#[kani::proof]`\nattrs in proofs.rs, 6 differential tests, 16 STPA-Sec tests.\n\n**Retroactive trailer map** — extended `AGENTS.md` with three more\nlegacy orphans (51f2054a #126, f958a7ef, 75521b85 #44), a new v0.4.0\nPR-level section for #150/#151/#152/#153, and an honest\n\"genuinely-unmappable\" section calling out `ca97dd9f` (#95) whose\n`SC-EMBED-*` trailers point to artifacts that were never authored.\n\n**Verus Proofs → hard gate** — rules_verus PR #21 (merged as\n5bc96f39) fixes the hub-repo's ambiguous `:all` alias by emitting\nproper `toolchain()` wrappers per platform. Updates the git_override\npin from e2c1600a (Feb 2026, broken) to 5bc96f39 and removes\n`continue-on-error: true` from the Verus job.\n\nImplements: REQ-030, REQ-060\nRefs: DD-052, DD-053, DD-054, DD-055, FEAT-115, FEAT-116, FEAT-117, FEAT-118, FEAT-119, FEAT-120, FEAT-121, FEAT-122\nVerifies: REQ-030\n\n* fix(ci): honest feedback on first hard-gate run\n\nFirst run of the flipped hard gates exposed real issues:\n\n- **Kani**: `eval_context(artifact: &Artifact)` had an unused param after\n  the store-building refactor. cfg(kani) hid it from `cargo check`; CI's\n  `-D warnings` caught it. Prefixed with `_artifact`.\n\n- **Rocq**: Schema.v / Validation.v opened `string_scope` but used `++`\n  on `Store` (a list). Rocq 9.0.1 parses `++` in string_scope as\n  `String.append`, so `s ++ [a]` failed with \"s has type Store while\n  expected string\". Added `Open Scope list_scope.` after the string\n  open so list concatenation takes precedence. Neither file uses\n  string `++` so the scope swap is safe.\n\n- **Verus**: unblocked the `:all` alias bug via upstream rules_verus PR\n  (5bc96f39), but hit a deeper upstream issue — rules_rust 0.56.0\n  references `CcInfo` which has been removed from current Bazel. Needs\n  a rules_rust bump inside rules_verus before Verus can be a hard gate.\n  Reverted to `continue-on-error: true` with a pointer comment so this\n  is honestly signposted rather than silently advertised as shipped.\n\nMutation Testing rivet-cli passed on the first run. rivet-core still\nrunning. /graph budget works in CI (included in the same PR).\n\nImplements: REQ-030\n\n* fix(rocq): drop Open Scope string_scope, tag string literals\n\nThe `Open Scope string_scope.` at the top of Schema.v / Validation.v\nshadowed `length` (String.length vs List.length) and `++`\n(String.append vs List.app), breaking every Store operation once the\nproofs got compiled under Rocq 9.0.1.\n\nNeither file actually uses infix string operators — all string\nliterals are either passed to `String.eqb` or constructed with explicit\n`%string` tags. Drop the scope open; tag the one remaining bare\nliteral `\"broken-link\"` in Validation.v:120 with `%string`.\n\nExplanatory comment in both files so a future reader doesn't reopen\nstring_scope and re-break this.\n\n* fix(rocq): fully qualify List.length in proofs\n\nWith `Require Import Coq.Strings.String` after `Coq.Lists.List`, the\nbare identifier `length` resolves to `String.length` (the latest\nimport wins), so `length s` with `s : Store` fails to typecheck.\n\nQualify every `length` call against a list as `List.length` so name\nresolution cannot drift. Five call sites across Schema.v / Validation.v.\n\n* fix(rocq): apply -> eapply reach_direct for constructor with implicit lk\n\n`reach_direct` has a forall-bound `lk : LinkKind` that isn't surfaced\nin the goal after `apply`. Rocq 9.0.1 refuses the implicit instantiation\nthat older versions allowed, fails with \"Unable to find an instance for\nthe variable lk\". Using `eapply` creates a metavariable that unifies\nwhen the inner `exact Hl1_kind` step substitutes the real link kind.\n\n* fix(rocq): admit vmodel_chain_two_steps honestly (real proof gap)\n\nThe `apply reach_direct` + `eapply reach_direct` routes both fail under\nRocq 9.0.1 because the proof has an actual hole: `t1` (the link target\nartifact introduced by destructing `artifact_satisfies_rule`) is not\nthe same as `a2` (the caller-supplied intermediate). The goal after\nthe link-wiring step reduces to `link_target l1 = art_id a2`, but we\nonly have `art_id t1 = link_target l1` — nothing ties `t1` to `a2`.\n\nRather than write around the gap with tactics that wouldn't hold, mark\nthe theorem `Admitted.` with an explicit comment describing what the\ncorrect strengthening would look like. All other theorems in\nSchema.v / Validation.v remain Qed'd.\n\nThis lets the Rocq hard gate actually compile and enforce the proofs\nwe DO have, rather than hiding a stale semantic break behind a tactic\nthat just happened to typecheck on older Rocq.\n\n* fix(ci): honest gate status after first real run\n\nThe first hard-gate run surfaced issues deeper than one-line fixes.\nThis commit restores honesty rather than hiding them:\n\n**Hard gates that stay on:**\n- Kani compile errors (`store: None`, `_artifact`) — fixed, but see below.\n- Rocq `Open Scope list_scope.` + `List.length` qualification + `eapply\n  reach_direct` — applied.\n- Mutation Testing (rivet-cli): 0 surviving mutants, hard gate.\n\n**Jobs moved back to continue-on-error with TODOs:**\n\n- **Kani**: 27-harness suite exceeded the 30-min CI budget and got\n  cancelled. Bumped timeout to 45 min and left continue-on-error on\n  until we scope the PR-sized subset vs nightly full suite.\n\n- **Rocq**: Rocq 9.0.1 is stricter than the version the proofs were\n  written against. Fixed three classes of errors; a fourth (`No such\n  contradiction` in a destructure) remains unfixed. Also\n  `vmodel_chain_two_steps` has a genuine proof gap (link target t1 ≠\n  caller's a2 without an extra hypothesis) and is now `Admitted.` with\n  an explicit note. Needs a systematic port pass before hard-gating.\n\n- **Mutation Testing (rivet-core)**: 3677 mutants, real surviving ones\n  in `collect_yaml_files` / `import_with_schema` (lib.rs:80,241,268)\n  and `bazel.rs::lex` (delete match arm `b'\\r'`). Those are actual\n  test coverage gaps. Hard-gating rivet-core means writing tests to\n  kill every one of them first; scoping that out of this PR.\n  rivet-cli mutation stays hard-gated per above.\n\n- **Verus**: still blocked on rules_rust 0.56 `CcInfo` removal upstream.\n\nThe goal of \"real hard gates\" was to stop advertising verification\nthat never ran green. Three checkpoints are now genuine (rivet-cli\nmutations, Kani compile-clean once unblocked, Rocq compile-clean once\nported). The rest have explicit follow-up notes in ci.yml pointing\nat what needs to happen before they flip.\n\n* ci(verus): flip to hard gate; bump rules_verus pin past CcInfo fix\n\nThe Verus job was marked continue-on-error because rules_verus's\nminimum rules_rust (0.56.0) used the Bazel built-in `CcInfo` symbol\nthat current Bazel has removed, so the module failed to load.\n\npulseengine/rules_verus@fc7b636 bumps the floor to 0.58.0 — the\nrelease where CcInfo is loaded from @rules_cc//cc/common:cc_info.bzl\ninstead. Bumping our pin past that commit unblocks the load and lets\nthe verus job run as a real gate.\n\nThe same pin range (5e2b7c6) also picks up three correctness fixes\nin verus-strip: backtick-escaped `verus!` in doc comments no longer\ntruncates output, `pub exec const` strips the `exec` keyword, and\ncontent after the `verus!{}` block is preserved.\n\nTrace: skip\n\n* fix(bazel): expose verus_specs.rs via rivet-core/src/BUILD.bazel\n\n//verus:rivet_specs_verify references `//rivet-core/src:verus_specs.rs`\nas a Bazel label, but rivet-core/src was not a Bazel package, so\n`bazel test` failed analysis with:\n\n  ERROR: no such package 'rivet-core/src': BUILD file not found\n\nAdds a minimal BUILD.bazel that marks the directory as a package and\nexports the verus specs file. The crate itself is still built via\ncargo — this file exists only so the Bazel-side Verus targets can\naddress the spec source.\n\nTrace: skip\n\n* refactor(bazel): unify repo into a single bzlmod workspace\n\nverus/ and proofs/rocq/ each had their own MODULE.bazel, which made\nevery Bazel label relative to those subdirectories. That broke\n//verus:rivet_specs_verify's attempt to reference\n//rivet-core/src:verus_specs.rs — the label resolved against the\nverus/ workspace root and demanded a `verus/rivet-core/src` directory\nthat doesn't exist, yielding:\n\n  ERROR: no such package 'rivet-core/src': BUILD file not found\n\nRoot cause was architectural. Consolidate into one workspace at the\nrepo root so cross-directory Bazel references work:\n\n- New top-level `MODULE.bazel` merges the two previous module\n  declarations (rules_verus + rules_rocq_rust + rules_nixpkgs_core,\n  same commit pins and same toolchain registrations).\n- New top-level `BUILD.bazel` as a minimal package marker.\n- Deleted `verus/MODULE.bazel` and `proofs/rocq/MODULE.bazel`.\n- CI: run `bazel test //verus:rivet_specs_verify` and\n  `bazel test //proofs/rocq:rivet_metamodel_test` from the repo root,\n  not `working-directory: verus|proofs/rocq`.\n\nThe Rust crates are still built via cargo. Bazel in this repo is\nscoped to the formal-verification targets only. With the unified\nworkspace, //verus:rivet_specs_verify can now reach\n//rivet-core/src:verus_specs.rs which is the precondition for the\nVerus hard gate to do real work.\n\nTrace: skip\n\n* fix(ci): install Nix on Verus runner too\n\nWorkspace consolidation (6771e6e) means root MODULE.bazel registers\nboth Verus and Rocq toolchains. Bazel resolves every registered\ntoolchain at analysis time regardless of which target is being built,\nso the Verus-only job now hits the Rocq toolchain extension, which\nrequires rules_nixpkgs_core, which requires nix-build on PATH:\n\n  ERROR: An error occurred during the fetch of repository\n    'rules_rocq_rust++rocq+rocq_toolchains': Platform is not supported:\n    nix-build not found in PATH.\n\nInstall Nix on the Verus runner too. Small cost (~30s) on a job that\nalready takes 20 min, and it's the minimal fix — alternatives (split\nMODULE.bazel, or rules_nixpkgs_core fail_not_supported) either undo\nthe consolidation or require upstream changes.\n\nTrace: skip\n\n* ci(verus): soft-gate again — toolchain works, specs fail\n\nWorkspace hoist + Nix install fixed the plumbing: Verus now analyses\n//verus:rivet_specs_verify against //rivet-core/src:verus_specs.rs and\ninvokes rust_verify. But the specs themselves fail verification in 0.1s\n— a real SMT proof obligation can't be discharged. That's spec-level\nwork (audit which `requires`/`ensures` clauses are wrong) and doesn't\nbelong in this CI-hard-gate PR. Soft-gate until the spec fixes land.\n\nTrace: skip",
-          "timestamp": "2026-04-21T23:05:28-05:00",
-          "tree_id": "37cb9b4280f8e6812d4a6c736b19d4bf3c2010b7",
-          "url": "https://github.com/pulseengine/rivet/commit/2fafe1a574e590671b21e9fce42b4a76db88ef70"
-        },
-        "date": 1776831096617,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 63420,
-            "range": "± 225",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 678487,
-            "range": "± 6153",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 10919758,
-            "range": "± 667589",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1482,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 18377,
-            "range": "± 35",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 269456,
-            "range": "± 1380",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 75,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 75,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 75,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 778867,
-            "range": "± 8653",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 127731,
-            "range": "± 591",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1487602,
-            "range": "± 11779",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 23876175,
-            "range": "± 1828586",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 83361,
-            "range": "± 401",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 736705,
-            "range": "± 4109",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 9182847,
-            "range": "± 548001",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 3283,
-            "range": "± 20",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 34852,
-            "range": "± 112",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 564717,
-            "range": "± 4408",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 45470,
-            "range": "± 175",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 500593,
-            "range": "± 3865",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 6107115,
-            "range": "± 365890",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 564,
-            "range": "± 13",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 5187,
-            "range": "± 6",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 69446,
-            "range": "± 4127",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 16784,
-            "range": "± 24",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 114429,
-            "range": "± 307",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1056989,
-            "range": "± 13193",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1739575,
             "range": "± 22700",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "54b3ad5c31120cf3a56076fb92f8530313dbef2e",
+          "message": "chore(release): v0.4.3 (#200)\n\n* feat(variant): rivet variant explain for debugging solve outcomes\n\nAnswers \"why did my variant pick/skip feature X?\" — a dev/debug UX gap\ncalled out in the v0.4.3 scope.\n\nTwo modes:\n\n  # Full audit: every effective feature + origin, unselected features,\n  # and the constraint list\n  rivet variant explain --model fm.yaml --variant prod.yaml\n\n  # Single-feature focus: origin, attribute values, and every\n  # constraint that mentions the feature\n  rivet variant explain --model fm.yaml --variant prod.yaml asil-c\n\nEach effective feature carries an origin:\n  - `selected`        — user listed it under `selects:`\n  - `mandatory`       — parent group is mandatory, or is the root\n  - `implied by <X>`  — a constraint forced it in once <X> was selected\n  - `allowed`         — present but not proven mandatory\n\n`--format json` emits a structured audit for scripts (dashboard uses\nthe same shape for the variant sidebar).\n\nCoverage:\n  - explain_single_feature_shows_origin_and_attrs (text mode)\n  - explain_single_feature_json_mode\n  - explain_full_variant_audit_lists_origins_and_unselected\n\nDocs: new \"Debugging\" subsection in docs/getting-started.md under the\nvariant management chapter, with an origin table.\n\nImplements: REQ-046\nRefs: DD-050\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n* test(variant): enrich eu-adas-c example + per-format smoke on realistic model\n\nAdds realistic `attributes:` to examples/variant/feature-model.yaml\nfor every market (eu/us/cn with compliance+locale) and every ASIL\nlevel (asil-numeric + required analysis techniques). These match the\nworked examples in docs/getting-started.md so users can run the\nsnippets against the shipped fixture and see the same output.\n\nNew integration test `every_format_renders_realistic_example`\nexercises all 7 --format values against the enriched example and\nasserts each output contains the variant name and the asil-c marker\n(in whatever casing the format uses). Catches regressions that pass\non toy models but break on constraint-driven inclusion, multi-attr\nfeatures, or non-trivial tree depth.\n\nImplements: REQ-046\nRefs: DD-050\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n* chore(release): v0.4.3\n\nWorkspace version bump 0.4.2 → 0.4.3, CHANGELOG entry covering the\nv0.4.3 changes that have already landed on main:\n\n- rivet variant features/value/attr for 7 build systems (#197)\n- docs: variant emitter walkthrough + exit-code contract (#198)\n- rivet variant explain for debugging solve outcomes (#199)\n- test: enrich eu-adas-c example + per-format smoke (#199)\n- sexpr count-compare + matches parse-time regex (#196)\n- SCRC Phase 1 clippy restriction lint escalation (#195)\n- Rivet Delta SVG render for email/mobile (#193)\n- stamp --missing-provenance filter + warn-skip (#192)\n\nv043-artifacts.yaml gains five new entries matching the implementations:\n  - DD-061  build-system emitters are namespaced and loud-on-failure\n  - FEAT-130 rivet variant features/value/attr\n  - FEAT-131 rivet variant explain\n  - DD-062  matches regex + count-compare validated at lower time\n  - FEAT-132 count-compare lowering + matches parse-time regex\n  - FEAT-133 Rivet Delta SVG render for email/mobile\n  - FEAT-134 rivet stamp filter + warn-skip\n\nAll 41 test binaries green. rivet validate: only pre-existing SPAR\naadl-component schema errors remain (unrelated to this release).\n\nImplements: REQ-046\nRefs: REQ-004, REQ-010, DD-050, DD-058\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.7 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-04-23T00:30:18-05:00",
+          "tree_id": "0372c9b857ae5be3e8968828e88125479bc880fd",
+          "url": "https://github.com/pulseengine/rivet/commit/54b3ad5c31120cf3a56076fb92f8530313dbef2e"
+        },
+        "date": 1776922721745,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 79860,
+            "range": "± 1483",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 851759,
+            "range": "± 3347",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 12258024,
+            "range": "± 721958",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2246,
+            "range": "± 13",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 27164,
+            "range": "± 187",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 356271,
+            "range": "± 3401",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 93,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 93,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 93,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1019850,
+            "range": "± 17035",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 164758,
+            "range": "± 1446",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1909708,
+            "range": "± 7398",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 25692890,
+            "range": "± 2422946",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 123492,
+            "range": "± 654",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1051217,
+            "range": "± 12714",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 11284775,
+            "range": "± 559859",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4197,
+            "range": "± 11",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 60138,
+            "range": "± 237",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 762716,
+            "range": "± 2333",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 64316,
+            "range": "± 306",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 714229,
+            "range": "± 11544",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7967212,
+            "range": "± 228317",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 808,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7653,
+            "range": "± 60",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 107341,
+            "range": "± 950",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 25314,
+            "range": "± 189",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 185457,
+            "range": "± 1306",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1754981,
+            "range": "± 23024",
             "unit": "ns/iter"
           }
         ]
