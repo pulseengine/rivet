@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1776925575786,
+  "lastUpdate": 1776964687594,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "571816f0fb78743a0654de158ec8f137e646fe96",
-          "message": "fix(serve): Cmd+K search URL persistence + embed discoverability design (#159)\n\n* fix(serve): persist Cmd+K search term in URL so reload preserves it\n\nThe Cmd+K overlay used vanilla fetch() with no history write, so a page\nreload (Cmd+R) silently dropped any in-flight search. Now we sync the\ncurrent query into the URL via history.replaceState as ?cmdk=...; on\nload, if ?cmdk= is present we re-open the overlay pre-filled with the\nsaved term and re-run the search. Using cmdk (not q) avoids colliding\nwith the existing /artifacts?q=... filter-bar state.\n\nThe /artifacts filter-bar search input was already wired with\nhx-push-url=\"true\" via components::search_input — this change adds a\nregression test asserting that typing into it updates the URL and the\nvalue survives a reload.\n\nFixes: REQ-007\n\n* docs(design): embed discoverability, {{query:...}} MVP, mermaid, rivet query\n\nDesign note only — no code changes. Covers four UX gaps reported from\ndogfooding in a single note so the trade-offs are visible side-by-side:\n\n1. Mermaid in artifact descriptions (one-function fix in markdown.rs).\n2. {{query:<sexpr>}} embed — reuses existing sexpr_eval; read-only MVP.\n3. rivet docs embeds + table-driven registry for resolve_embed.\n4. rivet query CLI — thin mirror of MCP's rivet_query.\n\nEach section cites exact file paths and line numbers where changes\nwould land. Ends with a priority-ordered recommendation table so the\nimplementation sequence is unambiguous.\n\nExempt type: docs (no trailer required).",
-          "timestamp": "2026-04-21T23:19:53-05:00",
-          "tree_id": "25c3b523bb50ae55c0ba073b29386a56b5465d79",
-          "url": "https://github.com/pulseengine/rivet/commit/571816f0fb78743a0654de158ec8f137e646fe96"
-        },
-        "date": 1776834397075,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 65346,
-            "range": "± 499",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 702590,
-            "range": "± 3980",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 10122271,
-            "range": "± 362822",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1475,
-            "range": "± 9",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 18463,
-            "range": "± 37",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 265125,
-            "range": "± 1804",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 75,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 75,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 75,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 769017,
-            "range": "± 2168",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 129223,
-            "range": "± 877",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1472888,
-            "range": "± 15526",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 21156466,
-            "range": "± 311145",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 83228,
-            "range": "± 360",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 732151,
-            "range": "± 3463",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 8385718,
-            "range": "± 139945",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 3199,
-            "range": "± 7",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 34614,
-            "range": "± 355",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 560685,
-            "range": "± 6804",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 47444,
-            "range": "± 80",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 515789,
-            "range": "± 2510",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 6011153,
-            "range": "± 47701",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 568,
-            "range": "± 3",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 5042,
-            "range": "± 10",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 69334,
-            "range": "± 172",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 16739,
-            "range": "± 69",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 117089,
-            "range": "± 327",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1082997,
-            "range": "± 5475",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1750011,
             "range": "± 20461",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "43c6f73f476718b562658e2e658745b53a910db9",
+          "message": "fix(ci): remove dead `build-vsix` reference that killed ci.yml at parse time (#202)\n\n`release-results.needs:` referenced a `build-vsix` job that no longer\nexists — VSIX packaging was moved to release.yml so the extension\nattaches to the GitHub Release alongside the platform binaries.\nGitHub Actions rejects the whole workflow at validation time when\n`needs:` names a non-existent job, which is why every push to `main`\nand every PR has been showing \"ci.yml failed in 0s, 0 jobs\" since\nthe move.\n\nEffect of the bug: the main CI test gate has been silently absent\non every commit since the VSIX move. PRs have been merging only on\nBenchmarks + Rivet Delta checks. Fix restores fmt / clippy /\ntest / playwright / miri / proptest / coverage / audit / deny /\nkani / verus / rocq / msrv + docs-check as live checks.\n\nAlso drops the now-obsolete \"Download VSIX artifact\" step and the\n`vsix/*.vsix` entry in the release-results upload list — release.yml\nhandles both since the move.\n\nVerified clean with actionlint 1.7.12 across every workflow file.\n\nTrace: skip",
+          "timestamp": "2026-04-23T12:11:46-05:00",
+          "tree_id": "75b701137470e370707235150cad82a6a424bb0a",
+          "url": "https://github.com/pulseengine/rivet/commit/43c6f73f476718b562658e2e658745b53a910db9"
+        },
+        "date": 1776964686907,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 79731,
+            "range": "± 701",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 849128,
+            "range": "± 2725",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 11093866,
+            "range": "± 297388",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2228,
+            "range": "± 37",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 27143,
+            "range": "± 193",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 373253,
+            "range": "± 1825",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 93,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 93,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 93,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1016459,
+            "range": "± 10771",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 166058,
+            "range": "± 554",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1906300,
+            "range": "± 16561",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 23566086,
+            "range": "± 422410",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 124821,
+            "range": "± 1434",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1041807,
+            "range": "± 10878",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 10653467,
+            "range": "± 235005",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4360,
+            "range": "± 40",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 61933,
+            "range": "± 290",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 755723,
+            "range": "± 7291",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 63438,
+            "range": "± 423",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 714313,
+            "range": "± 3474",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7698830,
+            "range": "± 226320",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 836,
+            "range": "± 16",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7799,
+            "range": "± 27",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 113139,
+            "range": "± 688",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 26447,
+            "range": "± 120",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 186732,
+            "range": "± 984",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1750316,
+            "range": "± 27526",
             "unit": "ns/iter"
           }
         ]
