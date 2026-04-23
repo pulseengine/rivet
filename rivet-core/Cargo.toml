@@ -20,6 +20,7 @@ serde = { workspace = true }
 serde_yaml = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+sha2 = { workspace = true }
 petgraph = { workspace = true }
 regex = { workspace = true }
 salsa = { workspace = true }
