@@ -10,27 +10,55 @@ features:
     group: alternative
     children: [eu, us, cn]
 
+  # Market-specific compliance metadata
   eu:
     group: leaf
+    attributes:
+      compliance: "unece-r157"
+      locale: "en_EU"
   us:
     group: leaf
+    attributes:
+      compliance: "fmvss-127"
+      locale: "en_US"
   cn:
     group: leaf
+    attributes:
+      compliance: "gb-7258"
+      locale: "zh_CN"
 
   safety-level:
     group: alternative
     children: [qm, asil-a, asil-b, asil-c, asil-d]
 
+  # Each safety level carries an ISO 26262 numeric rating plus the
+  # minimum required analysis techniques. These show up in emitted
+  # build config as RIVET_ATTR_ASIL_C_ASIL_NUMERIC=3 etc.
   qm:
     group: leaf
+    attributes:
+      asil-numeric: 0
+      reqs: "none"
   asil-a:
     group: leaf
+    attributes:
+      asil-numeric: 1
+      reqs: "fmea"
   asil-b:
     group: leaf
+    attributes:
+      asil-numeric: 2
+      reqs: "fmea"
   asil-c:
     group: leaf
+    attributes:
+      asil-numeric: 3
+      reqs: "fmea-dfa"
   asil-d:
     group: leaf
+    attributes:
+      asil-numeric: 4
+      reqs: "fmea-dfa-fta"
 
   feature-set:
     group: or

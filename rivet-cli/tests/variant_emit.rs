@@ -332,6 +332,51 @@ features:
     assert!(stdout.contains("- c"));
 }
 
+/// Smoke every formatter against the shipped examples/variant/ fixture.
+/// Catches regressions where a format change works on a toy model but
+/// breaks on a realistic one (constraint-driven inclusion, multiple
+/// attribute types per feature, non-trivial tree depth).
+#[test]
+fn every_format_renders_realistic_example() {
+    let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest.parent().expect("workspace root");
+    let model = workspace_root.join("examples/variant/feature-model.yaml");
+    let variant = workspace_root.join("examples/variant/eu-adas-c.yaml");
+    if !model.exists() || !variant.exists() {
+        // Keep this test silent if the examples dir is stripped from
+        // a release tarball — real users run it against the repo.
+        return;
+    }
+    for fmt in ["json", "env", "cargo", "cmake", "cpp-header", "bazel", "make"] {
+        let out = Command::new(rivet_bin())
+            .args([
+                "variant", "features",
+                "--model", model.to_str().unwrap(),
+                "--variant", variant.to_str().unwrap(),
+                "--format", fmt,
+            ])
+            .output()
+            .unwrap_or_else(|e| panic!("rivet variant features --format {fmt}: {e}"));
+        assert!(
+            out.status.success(),
+            "--format {fmt} failed: stderr={}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        // Every format should mention the variant name and ASIL-C
+        // (the headline feature from the example).
+        assert!(
+            stdout.contains("eu-adas-c"),
+            "--format {fmt}: variant name missing in output:\n{stdout}"
+        );
+        let feature_markers = ["ASIL_C", "asil-c"];
+        assert!(
+            feature_markers.iter().any(|m| stdout.contains(m)),
+            "--format {fmt}: no asil-c marker in output:\n{stdout}"
+        );
+    }
+}
+
 #[test]
 fn attr_prints_scalar_and_errors_on_missing_key() {
     let tmp = tempfile::tempdir().unwrap();
