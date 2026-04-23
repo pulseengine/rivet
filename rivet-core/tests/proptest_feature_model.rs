@@ -140,6 +140,8 @@ fn arb_feature_model(max_features: usize) -> impl Strategy<Value = FeatureModel>
                 root,
                 features,
                 constraints: vec![], // No s-expression constraints for these tests
+                attribute_schema: std::collections::BTreeMap::new(),
+                attribute_warnings: vec![],
             }
         })
 }

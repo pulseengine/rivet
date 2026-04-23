@@ -1,6 +1,22 @@
 kind: feature-model
 root: vehicle-platform
 
+# Optional attribute schema (Gap 1). Type-checks every feature attribute
+# at load time so a YAML typo (e.g. `asil-numeric: "3"` vs `3`) cannot
+# leak into emitted build configuration. Adding a key here enforces the
+# type; omitting it allows free-form YAML on that key (with a warning).
+attribute-schema:
+  asil-numeric:
+    type: int
+    range: [0, 4]
+  reqs:
+    type: string
+  compliance:
+    type: enum
+    values: [unece-r157, fmvss-127, gb-7258]
+  locale:
+    type: string
+
 features:
   vehicle-platform:
     group: mandatory
