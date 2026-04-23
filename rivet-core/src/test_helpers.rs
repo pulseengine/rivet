@@ -70,6 +70,7 @@ pub fn minimal_schema(name: &str) -> SchemaFile {
         link_types: vec![],
         traceability_rules: vec![],
         conditional_rules: vec![],
+        agent_pipelines: None,
         // Future fields get default values here -- ONE place to update.
     }
 }
