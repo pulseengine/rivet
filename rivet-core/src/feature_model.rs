@@ -67,6 +67,15 @@ pub struct Feature {
     pub group: GroupType,
     pub children: Vec<String>,
     pub parent: Option<String>,
+    /// Typed key-value attributes attached to this feature. Looked up
+    /// by `rivet variant attr FEATURE KEY` and by the formatters when
+    /// emitting build-system-specific outputs. Values are kept as
+    /// `serde_yaml::Value` so a feature can carry strings, integers,
+    /// booleans, or small sub-maps without a schema change up front.
+    ///
+    /// Example: `asil-c` might declare `{ asil-numeric: 3, reqs: "fmea-dfa" }`
+    /// so a release script can emit `-DASIL_NUMERIC=3 -DREQS=fmea-dfa`.
+    pub attributes: BTreeMap<String, serde_yaml::Value>,
 }
 
 /// Group semantics governing child selection.
@@ -177,6 +186,8 @@ struct FeatureYaml {
     group: GroupType,
     #[serde(default)]
     children: Vec<String>,
+    #[serde(default)]
+    attributes: BTreeMap<String, serde_yaml::Value>,
 }
 
 fn default_group() -> GroupType {
@@ -252,6 +263,7 @@ impl FeatureModel {
                     group: fy.group,
                     children: fy.children.clone(),
                     parent: None,
+                    attributes: fy.attributes.clone(),
                 },
             );
         }
@@ -262,6 +274,7 @@ impl FeatureModel {
             group: GroupType::Mandatory,
             children: vec![],
             parent: None,
+            attributes: BTreeMap::new(),
         });
 
         // Second pass: set parent links from children references.
@@ -277,6 +290,7 @@ impl FeatureModel {
                 group: GroupType::Leaf,
                 children: vec![],
                 parent: None,
+                attributes: BTreeMap::new(),
             });
             features.get_mut(&child).unwrap().parent = Some(parent);
         }

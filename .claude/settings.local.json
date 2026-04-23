@@ -164,7 +164,31 @@
       "Bash(perl -0777 -i -pe 's/\\(TraceabilityRule \\\\{[^}]*severity: [^,}]+,\\)\\(\\\\s*\\\\}\\)/$1\\\\n            alternate_backlinks: vec![],$2/g' rivet-core/src/coverage.rs rivet-core/src/export.rs rivet-core/src/proofs.rs rivet-core/src/lifecycle.rs rivet-core/src/validate.rs)",
       "Bash(perl -0777 -i -pe 's/\\(TraceabilityRule \\\\{[^}]*severity: [^,}]+,\\)\\(\\\\s*\\\\}\\)/$1\\\\n            alternate_backlinks: vec![],$2/g' rivet-core/tests/proptest_operations.rs)",
       "Bash(node scripts/diff-to-markdown.mjs --diff /tmp/malformed.json --pr 1 --run 1 --repo x/y)",
-      "Bash(node -e \"require\\('typescript'\\).transpileModule\\(require\\('fs'\\).readFileSync\\('rivet-delta.spec.ts','utf8'\\), { compilerOptions: { target: 'es2022', module: 'nodenext' } }\\)\")"
+      "Bash(node -e \"require\\('typescript'\\).transpileModule\\(require\\('fs'\\).readFileSync\\('rivet-delta.spec.ts','utf8'\\), { compilerOptions: { target: 'es2022', module: 'nodenext' } }\\)\")",
+      "Bash(node scripts/diff-to-markdown.mjs --diff /tmp/df.json --pr 1 --run 1 --repo x/y --mmd-out /tmp/diag.mmd --svg-url \"https://raw.githubusercontent.com/x/y/rivet-delta-renders/pr-1/run-1/diagram.svg\")",
+      "Bash(node scripts/diff-to-markdown.mjs --diff /tmp/df2.json --pr 1 --run 1 --repo x/y --svg-url \"https://example.com/g.svg\")",
+      "Bash(git -C /Users/r/git/pulseengine/rivet/.claude/worktrees/agent-aa9070c3 push -u origin test/sexpr-audit)",
+      "Bash(git -C /Users/r/git/pulseengine/rivet/.claude/worktrees/agent-a6c5e422 push -u origin worktree-agent-a6c5e422)",
+      "Bash(git -C /Users/r/git/pulseengine/rivet fetch origin)",
+      "Bash(git -C /Users/r/git/pulseengine/rivet checkout main)",
+      "Bash(git -C /Users/r/git/pulseengine/rivet pull)",
+      "Bash(git -C /Users/r/git/pulseengine/rivet checkout -b feat/v043-sexpr-followups)",
+      "Bash(git -C /Users/r/git/pulseengine/rivet log --oneline -5)",
+      "Bash(git -C /Users/r/git/pulseengine/rivet status --short)",
+      "Bash(git -C /Users/r/git/pulseengine/rivet stash push -- .claude/settings.local.json)",
+      "Bash(git -C /Users/r/git/pulseengine/rivet branch -D feat/v043-sexpr-followups)",
+      "Bash(git -C /Users/r/git/pulseengine/rivet add -A rivet-core/src/sexpr_eval.rs rivet-core/tests/sexpr_fuzz.rs rivet-core/tests/sexpr_predicate_matrix.rs docs/getting-started.md)",
+      "Bash(git -C /Users/r/git/pulseengine/rivet commit -m ' *)",
+      "Bash(git -C /Users/r/git/pulseengine/rivet push -u origin feat/v043-sexpr-followups)",
+      "Bash(awk '/cmd_variant_solve/{flag=1; print; next} flag && /^}/ {print; exit}')",
+      "Bash(awk *)",
+      "Bash(/Users/r/git/pulseengine/rivet/target/debug/rivet variant *)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(/Users/r/git/pulseengine/rivet/target/debug/rivet validate *)",
+      "Bash(/Users/r/git/pulseengine/rivet/target/debug/rivet list *)",
+      "Bash(git *)",
+      "Bash(kill 19359 19358 19355)",
+      "Bash(ps -p 19358 19359 -o pid)"
     ]
   }
 }
