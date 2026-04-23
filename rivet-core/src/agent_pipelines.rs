@@ -97,21 +97,16 @@ fn applies_to_all() -> AppliesTo {
 }
 
 /// Filter expression for `applies-to:`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum AppliesTo {
     /// The literal string `"*"` or the sequence `["*"]` — applies to every artifact.
+    #[default]
     Wildcard,
     /// List of type names, e.g. `["requirement", "design-decision"]`.
     TypeList(Vec<String>),
     /// Map form with type / tag / status / conditions predicates.
     Map(BTreeMap<String, serde_yaml::Value>),
-}
-
-impl Default for AppliesTo {
-    fn default() -> Self {
-        AppliesTo::Wildcard
-    }
 }
 
 /// Firing condition for the oracle's command.
