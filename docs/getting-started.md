@@ -996,6 +996,34 @@ Exit codes for `value` / `attr`:
 - `1` — feature not selected (defined but absent from this variant)
 - `2` — unknown feature, missing attribute key, or variant fails to solve
 
+### Debugging: `rivet variant explain`
+
+When a variant picks up features you didn't expect (or skips ones you
+did), `rivet variant explain` answers the "why?". Two modes:
+
+```bash
+# Full audit: every effective feature + origin, unselected features,
+# and the constraint list (debugger's eye view of one solve)
+rivet variant explain --model fm.yaml --variant prod.yaml
+
+# Single-feature focus: origin, attribute values, and every
+# constraint that mentions the feature
+rivet variant explain --model fm.yaml --variant prod.yaml asil-c
+```
+
+Each effective feature carries an **origin** explaining how it got
+into the set:
+
+| Origin             | Meaning |
+|--------------------|---------|
+| `selected`         | You listed it under `selects:` in the variant config |
+| `mandatory`        | Parent group is `mandatory`, or this is the root |
+| `implied by <X>`   | A constraint forced it in once `<X>` was selected |
+| `allowed`          | Present in the model, solver did not prove it mandatory |
+
+Add `--format json` for machine-readable output (the dashboard variant
+scope uses the same shape).
+
 ### Variants in the dashboard
 
 `rivet serve` auto-discovers variant configuration when these files exist

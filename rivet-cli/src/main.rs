@@ -1036,6 +1036,31 @@ enum VariantAction {
         /// Attribute key
         key: String,
     },
+    /// Explain a variant: why each feature is (or is not) selected, what
+    /// the solver did, and which constraints fired. Great for debugging
+    /// "why did my variant pick/skip feature X?".
+    ///
+    /// Without `[feature]`: prints the full audit (every effective
+    /// feature + origin, attributes, listed unselected features, and
+    /// the constraint list). With `[feature]`: prints just that
+    /// feature's state, origin, attribute values, and whether any
+    /// constraint mentions it.
+    Explain {
+        /// Path to feature model YAML file
+        #[arg(long)]
+        model: PathBuf,
+
+        /// Path to variant configuration YAML file
+        #[arg(long)]
+        variant: PathBuf,
+
+        /// Single feature to explain. Omit for a full-variant audit.
+        feature: Option<String>,
+
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
 }
 
 fn main() -> ExitCode {
@@ -1306,6 +1331,12 @@ fn run(cli: Cli) -> Result<bool> {
                 feature,
                 key,
             } => cmd_variant_attr(model, variant, feature, key),
+            VariantAction::Explain {
+                model,
+                variant,
+                feature,
+                format,
+            } => cmd_variant_explain(model, variant, feature.as_deref(), format),
         },
         #[cfg(feature = "wasm")]
         Command::Import {
@@ -8039,6 +8070,219 @@ fn cmd_variant_attr(
             std::process::exit(2);
         }
     }
+}
+
+fn cmd_variant_explain(
+    model_path: &std::path::Path,
+    variant_path: &std::path::Path,
+    focus: Option<&str>,
+    format: &str,
+) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
+    let (model, resolved) = load_and_solve_variant(model_path, variant_path)?;
+    use rivet_core::feature_model::FeatureOrigin;
+
+    if let Some(name) = focus {
+        // Single-feature focus
+        let exists = model.features.contains_key(name);
+        let selected = resolved.effective_features.contains(name);
+        let origin = resolved.origins.get(name);
+        let attrs = model.features.get(name).map(|f| &f.attributes);
+        let mentioning_constraints: Vec<String> = model
+            .constraints
+            .iter()
+            .filter_map(|c| {
+                let rendered = format!("{c:?}");
+                if rendered.contains(&format!("\"{name}\"")) || rendered.contains(name) {
+                    Some(rendered)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if format == "json" {
+            let origin_v = origin.map(|o| match o {
+                FeatureOrigin::UserSelected => serde_json::json!({ "kind": "selected" }),
+                FeatureOrigin::Mandatory => serde_json::json!({ "kind": "mandatory" }),
+                FeatureOrigin::ImpliedBy(c) => serde_json::json!({ "kind": "implied", "by": c }),
+                FeatureOrigin::AllowedButUnbound => serde_json::json!({ "kind": "allowed" }),
+            });
+            let attrs_v: serde_json::Value = attrs
+                .map(|m| {
+                    let o: serde_json::Map<_, _> = m
+                        .iter()
+                        .map(|(k, v)| (k.clone(), rivet_core_yaml_to_json(v)))
+                        .collect();
+                    serde_json::Value::Object(o)
+                })
+                .unwrap_or(serde_json::Value::Null);
+            let out = serde_json::json!({
+                "feature": name,
+                "declared_in_model": exists,
+                "selected": selected,
+                "origin": origin_v,
+                "attributes": attrs_v,
+                "mentioning_constraints": mentioning_constraints,
+                "variant": resolved.name,
+            });
+            println!("{}", serde_json::to_string_pretty(&out)?);
+            return Ok(selected);
+        }
+
+        println!("Feature: {name}");
+        println!("  declared in model: {}", if exists { "yes" } else { "no" });
+        println!("  selected in variant `{}`: {}", resolved.name, selected);
+        if let Some(o) = origin {
+            let label = match o {
+                FeatureOrigin::UserSelected => "user-selected via `selects:`".to_string(),
+                FeatureOrigin::Mandatory => "auto-selected (mandatory group or root)".to_string(),
+                FeatureOrigin::ImpliedBy(cause) => format!("implied by `{cause}`"),
+                FeatureOrigin::AllowedButUnbound => "allowed but unbound".to_string(),
+            };
+            println!("  origin: {label}");
+        } else if selected {
+            println!("  origin: (no origin recorded — legacy path?)");
+        } else {
+            println!("  origin: (not selected — feature absent from effective set)");
+        }
+        if let Some(a) = attrs {
+            if a.is_empty() {
+                println!("  attributes: (none)");
+            } else {
+                println!("  attributes:");
+                for (k, v) in a {
+                    let rendered = match v {
+                        serde_yaml::Value::Null => "null".into(),
+                        serde_yaml::Value::Bool(b) => b.to_string(),
+                        serde_yaml::Value::Number(n) => n.to_string(),
+                        serde_yaml::Value::String(s) => format!("\"{s}\""),
+                        _ => serde_json::to_string(&rivet_core_yaml_to_json(v))
+                            .unwrap_or_else(|_| "<unserializable>".into()),
+                    };
+                    println!("    {k} = {rendered}");
+                }
+            }
+        }
+        if !mentioning_constraints.is_empty() {
+            println!("  constraints mentioning `{name}`:");
+            for c in &mentioning_constraints {
+                println!("    - {c}");
+            }
+        }
+        return Ok(selected);
+    }
+
+    // Full-variant audit.
+    if format == "json" {
+        let origins: serde_json::Map<String, serde_json::Value> = resolved
+            .origins
+            .iter()
+            .map(|(n, o)| {
+                let v = match o {
+                    FeatureOrigin::UserSelected => serde_json::json!({ "kind": "selected" }),
+                    FeatureOrigin::Mandatory => serde_json::json!({ "kind": "mandatory" }),
+                    FeatureOrigin::ImpliedBy(c) => serde_json::json!({ "kind": "implied", "by": c }),
+                    FeatureOrigin::AllowedButUnbound => serde_json::json!({ "kind": "allowed" }),
+                };
+                (n.clone(), v)
+            })
+            .collect();
+        let unselected: Vec<String> = model
+            .features
+            .keys()
+            .filter(|k| !resolved.effective_features.contains(*k))
+            .cloned()
+            .collect();
+        let constraints: Vec<String> =
+            model.constraints.iter().map(|c| format!("{c:?}")).collect();
+        let attrs: serde_json::Map<String, serde_json::Value> = resolved
+            .effective_features
+            .iter()
+            .filter_map(|n| {
+                let f = model.features.get(n)?;
+                if f.attributes.is_empty() {
+                    None
+                } else {
+                    let inner: serde_json::Map<String, serde_json::Value> = f
+                        .attributes
+                        .iter()
+                        .map(|(k, v)| (k.clone(), rivet_core_yaml_to_json(v)))
+                        .collect();
+                    Some((n.clone(), serde_json::Value::Object(inner)))
+                }
+            })
+            .collect();
+        let out = serde_json::json!({
+            "variant": resolved.name,
+            "effective_features": resolved.effective_features,
+            "origins": origins,
+            "unselected_features": unselected,
+            "attributes": attrs,
+            "constraints": constraints,
+        });
+        println!("{}", serde_json::to_string_pretty(&out)?);
+        return Ok(true);
+    }
+
+    println!("Variant audit: `{}`", resolved.name);
+    println!();
+    println!(
+        "Effective features ({} of {}):",
+        resolved.effective_features.len(),
+        model.features.len()
+    );
+    let width = resolved
+        .effective_features
+        .iter()
+        .map(|s| s.len())
+        .max()
+        .unwrap_or(0);
+    for name in &resolved.effective_features {
+        let o = resolved.origins.get(name);
+        let label = match o {
+            Some(FeatureOrigin::UserSelected) => "selected".to_string(),
+            Some(FeatureOrigin::Mandatory) => "mandatory".to_string(),
+            Some(FeatureOrigin::ImpliedBy(cause)) => format!("implied by {cause}"),
+            Some(FeatureOrigin::AllowedButUnbound) => "allowed".to_string(),
+            None => "(no origin)".to_string(),
+        };
+        let attr_note = model
+            .features
+            .get(name)
+            .map(|f| {
+                if f.attributes.is_empty() {
+                    String::new()
+                } else {
+                    format!("  [{} attr]", f.attributes.len())
+                }
+            })
+            .unwrap_or_default();
+        println!("  + {name:<width$}  ({label}){attr_note}");
+    }
+
+    let unselected: Vec<&String> = model
+        .features
+        .keys()
+        .filter(|k| !resolved.effective_features.contains(*k))
+        .collect();
+    if !unselected.is_empty() {
+        println!();
+        println!("Unselected features ({}):", unselected.len());
+        for n in &unselected {
+            println!("  - {n}");
+        }
+    }
+
+    if !model.constraints.is_empty() {
+        println!();
+        println!("Constraints ({}):", model.constraints.len());
+        for c in &model.constraints {
+            println!("  {c:?}");
+        }
+    }
+
+    Ok(true)
 }
 
 /// YAML→JSON conversion for non-scalar attribute values printed by
