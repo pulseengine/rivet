@@ -167,3 +167,45 @@ conditional-rules:
     then:
       required-fields: [description]
     severity: warning
+
+# Oracle-gated agent pipeline for `rivet close-gaps`. See
+# docs/agent-pipelines.md (TODO) for the full spec. This is the simplest
+# possible block — one oracle (rivet validate) composed into one
+# structural pipeline — so the machinery works end-to-end against the
+# dev schema before heavier schemas (ASPICE, ISO 26262, GSN) land.
+agent-pipelines:
+  oracles:
+    - id: structural-trace
+      command: rivet validate
+      description: >
+        The canonical rivet validator. Reports missing required fields,
+        broken cross-references, missing required links, and schema
+        violations. Fires on any diagnostic at severity `error`.
+      applies-to: ["*"]
+      fires-on:
+        exit-code: nonzero
+
+  pipelines:
+    vmodel:
+      description: >
+        Traceability and structural gaps surfaced by `rivet validate`.
+        Auto-close rules handle mechanical link-wiring; content gaps
+        route to humans with a draft stub.
+      uses-oracles: [structural-trace]
+      rank-by:
+        - when: { oracle: structural-trace, severity: error }
+          weight: 50
+          label: "schema error"
+        - when: { oracle: structural-trace, severity: warning }
+          weight: 5
+          label: "schema warning"
+      auto-close:
+        - when: { oracle: structural-trace, closure-kind: link-existing }
+          reviewers: ["{context.review-roles.dev-team}"]
+      human-review-required:
+        - when: { oracle: structural-trace, closure-kind: draft-required }
+          reviewers: ["{context.review-roles.dev-team}"]
+          draft-template: templates/stubs/requirement.yaml.tmpl
+      emit:
+        trailer: "Implements: {target_id}"
+        change-control: none

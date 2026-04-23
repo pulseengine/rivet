@@ -62,9 +62,12 @@ use rivet_core::schema::Severity;
 use rivet_core::store::Store;
 use rivet_core::validate;
 
+mod close_gaps;
 mod docs;
 mod mcp;
+mod pipelines_cmd;
 mod render;
+mod runs_cmd;
 mod schema_cmd;
 mod serve;
 
@@ -596,6 +599,34 @@ enum Command {
         action: VariantAction,
     },
 
+    /// Audit trail over `.rivet/runs/`
+    Runs {
+        #[command(subcommand)]
+        action: RunsAction,
+    },
+
+    /// Inspect and validate `agent-pipelines:` blocks from active schemas
+    Pipelines {
+        #[command(subcommand)]
+        action: PipelinesAction,
+    },
+
+    /// Oracle-gated gap-closure loop. MVP: structural pipeline + dev schema.
+    CloseGaps {
+        /// Variant to scope against (requires bindings).
+        #[arg(long)]
+        variant: Option<String>,
+        /// Keep only the top-N gaps after ranking; 0 = unlimited.
+        #[arg(long, default_value = "10")]
+        top: usize,
+        /// Output format: "json" (stable contract for tool adapters) or "text".
+        #[arg(long, default_value = "json")]
+        format: String,
+        /// Dry-run: never writes a commit or PR. Run artefacts still land in `.rivet/runs/`.
+        #[arg(long, default_value = "true")]
+        dry_run: bool,
+    },
+
     /// Import artifacts using a custom WASM adapter component
     #[cfg(feature = "wasm")]
     Import {
@@ -911,6 +942,63 @@ enum SnapshotAction {
     },
     /// List available snapshots
     List,
+}
+
+#[derive(Subcommand)]
+enum RunsAction {
+    /// List runs under .rivet/runs/, newest first.
+    List {
+        /// Keep only the first N entries; 0 = unlimited.
+        #[arg(long, default_value = "20")]
+        limit: usize,
+        /// Output format: text (default) or json.
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+    /// Show one run's detail by id.
+    Show {
+        run_id: String,
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+    /// Query runs by filters (pipeline/schema/variant/status/invoker).
+    Query {
+        #[arg(long)]
+        pipeline: Option<String>,
+        #[arg(long)]
+        schema: Option<String>,
+        #[arg(long)]
+        variant: Option<String>,
+        #[arg(long)]
+        status: Option<String>,
+        /// Substring match on invocation.invoker.
+        #[arg(long)]
+        invoker_contains: Option<String>,
+        #[arg(short, long, default_value = "json")]
+        format: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum PipelinesAction {
+    /// List active pipelines across every loaded schema.
+    List {
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+    /// Show one schema's resolved agent-pipelines block.
+    Show {
+        schema: String,
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+    /// Hard gate: refuse downstream close-gaps if any Tier-3 placeholder
+    /// is unresolved, any oracle reference is unknown, or any reviewer
+    /// group is missing from .rivet/context/review-roles.yaml.
+    Validate {
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1345,6 +1433,62 @@ fn run(cli: Cli) -> Result<bool> {
                 format,
             } => cmd_variant_explain(model, variant, feature.as_deref(), format),
         },
+        Command::Runs { action } => match action {
+            RunsAction::List { limit, format } => {
+                runs_cmd::cmd_list(&cli.project, *limit, format)
+            }
+            RunsAction::Show { run_id, format } => {
+                runs_cmd::cmd_show(&cli.project, run_id, format)
+            }
+            RunsAction::Query {
+                pipeline,
+                schema,
+                variant,
+                status,
+                invoker_contains,
+                format,
+            } => runs_cmd::cmd_query(
+                &cli.project,
+                pipeline.as_deref(),
+                schema.as_deref(),
+                variant.as_deref(),
+                status.as_deref(),
+                invoker_contains.as_deref(),
+                format,
+            ),
+        },
+        Command::Pipelines { action } => {
+            let schemas_dir = resolve_schemas_dir(&cli);
+            match action {
+                PipelinesAction::List { format } => {
+                    pipelines_cmd::cmd_list(&cli.project, &schemas_dir, format)
+                }
+                PipelinesAction::Show { schema, format } => {
+                    pipelines_cmd::cmd_show(&cli.project, &schemas_dir, schema, format)
+                }
+                PipelinesAction::Validate { format } => {
+                    pipelines_cmd::cmd_validate(&cli.project, &schemas_dir, format)
+                }
+            }
+        }
+        Command::CloseGaps {
+            variant,
+            top,
+            format,
+            dry_run,
+        } => {
+            let schemas_dir = resolve_schemas_dir(&cli);
+            close_gaps::run(close_gaps::CloseGapsOptions {
+                project_root: &cli.project,
+                schemas_dir: &schemas_dir,
+                top_n: *top,
+                variant: variant.as_deref(),
+                format,
+                dry_run: *dry_run,
+                rivet_version: env!("CARGO_PKG_VERSION"),
+                invoker: "human:cli",
+            })
+        }
         #[cfg(feature = "wasm")]
         Command::Import {
             adapter,
