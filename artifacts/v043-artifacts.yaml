@@ -198,3 +198,265 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-7
       timestamp: 2026-04-22T21:30:00Z
+
+  # ── Variant query surface (v0.4.3 headline feature) ─────────────────
+
+  - id: DD-061
+    type: design-decision
+    title: Build-system emitter formats are namespaced and loud-on-failure
+    status: approved
+    description: >
+      `rivet variant features` emits long, namespaced identifiers
+      (`RIVET_FEATURE_<NAME>`, `RIVET_ATTR_<FEATURE>_<KEY>`) in every
+      format so a downstream project can embed several rivet models
+      without collision. Every formatter is loud on two conditions:
+      (a) a variant that violates a constraint exits non-zero with the
+      violation list, never a partial emission; (b) a non-scalar
+      attribute value (list or map) is only preserved by `--format json`
+      — the build-system formatters return `Error::Schema` rather than
+      invent a silent flattening convention. Both are explicit
+      rejections of the "silent accept" antipattern this project
+      tracks in `REQ-004`.
+    tags: [variant, cli, loud, design-decision]
+    links:
+      - type: satisfies
+        target: REQ-046
+      - type: depends-on
+        target: DD-050
+    fields:
+      rationale: >
+        The user's v0.4.3 direction was explicit: "1 Rust Cargo Bazel
+        cmake c cpp and generics, 2 both [boolean+string attributes],
+        3 loud, 4 long [namespace]". Namespace-prefixed names win on
+        coexistence; loud-on-failure wins on debuggability; loud-on-
+        non-scalar wins on user control (they decide the flattening,
+        the tool does not guess). The alternative — silent flattening
+        by comma-join or last-write-wins — was rejected because the
+        attribute YAML is the user's source of truth, and making the
+        tool pick a convention invisibly would have been the same
+        footgun as the parse-time validations we added in #196.
+      alternatives-considered: >
+        (1) Short identifiers (FEATURE_ASIL_C) — rejected because it
+        conflicts with hand-rolled feature flags many projects already
+        have in their build system. (2) Silent flattening of
+        non-scalars — rejected, see rationale. (3) One format per
+        subcommand (`rivet variant cargo`) — rejected, single flag
+        keeps the CLI surface narrow and predictable.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-23T05:25:00Z
+
+  - id: FEAT-130
+    type: feature
+    title: rivet variant features/value/attr — build-system query surface
+    status: approved
+    description: >
+      Three new subcommands on the variant-scoped CLI surface. `rivet
+      variant features --format {json,env,cargo,cmake,cpp-header,
+      bazel,make}` emits the resolved feature set plus per-feature
+      `attributes:` entries in seven build-system-specific formats.
+      `rivet variant value FEATURE` is a shell-friendly probe with
+      exit codes 0/1/2 (on/off/unknown). `rivet variant attr FEATURE
+      KEY` prints a single attribute. Feature models gained an
+      `attributes:` map per feature, parsed as `BTreeMap<String,
+      serde_yaml::Value>` and round-tripped through `solve()`.
+    tags: [variant, cli, build-system, v043]
+    links:
+      - type: implements
+        target: REQ-046
+      - type: satisfies
+        target: DD-061
+    fields:
+      source-ref: >
+        rivet-core/src/variant_emit.rs (formatters + unit tests)
+        rivet-core/src/feature_model.rs (attributes field)
+        rivet-cli/src/main.rs (cmd_variant_features/value/attr)
+        rivet-cli/tests/variant_emit.rs (CLI integration tests)
+        examples/variant/feature-model.yaml (enriched with realistic
+        asil-numeric, compliance, locale attributes)
+      verification: >
+        11 unit tests in rivet_core::variant_emit::tests for per-format
+        rendering (slug rules, sh-quoting, loud-error path, JSON
+        structure preservation).
+        15 integration tests in rivet-cli/tests/variant_emit.rs
+        covering CLI end-to-end, exit-code contract, loud-on-failure
+        path, and a smoke run against the shipped eu-adas-c example.
+        Full cargo test --workspace green.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-23T05:25:00Z
+
+  - id: FEAT-131
+    type: feature
+    title: rivet variant explain — debug why the solver picked what it picked
+    status: approved
+    description: >
+      `rivet variant explain [FEATURE]` answers the "why did my
+      variant pick/skip feature X?" question. Full audit mode (no
+      FEATURE) prints every effective feature with its origin
+      (`selected` / `mandatory` / `implied by <X>` / `allowed`),
+      plus the unselected set and the constraint list. Single-feature
+      focus mode prints one feature's state, origin, attribute values,
+      and every constraint that mentions it. `--format json` emits
+      the same structured audit for scripts.
+    tags: [variant, cli, dev-ux, debugging, v043]
+    links:
+      - type: implements
+        target: REQ-046
+      - type: satisfies
+        target: DD-050
+    fields:
+      rationale: >
+        The user called this out explicitly: "we should do in parallel
+        that we are really good on developing and debugging this
+        stuff". The solver already tracks FeatureOrigin per effective
+        feature; the missing piece was surfacing it on the CLI. This
+        lands that surface.
+      source-ref: >
+        rivet-cli/src/main.rs (cmd_variant_explain, VariantAction::Explain).
+        3 integration tests covering text+JSON modes and full-variant
+        audit.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-23T05:25:00Z
+
+  # ── S-expression hardening ──────────────────────────────────────────
+
+  - id: DD-062
+    type: design-decision
+    title: matches regex and count-compare validated at lower time, not runtime
+    status: approved
+    description: >
+      Regex patterns in `(matches <field> "<regex>")` and the integer
+      RHS of a `(count …)` comparison are validated when the filter
+      expression is lowered from s-expression to `Expr`, not lazily at
+      evaluation time. A malformed regex or a non-integer count
+      threshold produces a parse error with the compiler's message,
+      not a silent empty result set.
+    tags: [sexpr, validation, loud, design-decision]
+    links:
+      - type: satisfies
+        target: REQ-004
+      - type: depends-on
+        target: DD-058
+    fields:
+      rationale: >
+        The sexpr audit (PR #194) documented `(count …)` as "meant
+        for numeric comparisons" but no lowering existed. Users
+        typing `(> (count …) 10)` saw silent no-match. Separately,
+        `(matches id "[")` compiled but never matched — the regex
+        crate failed at runtime and the evaluator swallowed the
+        error. Both are classic silent-accept footguns. Validating
+        at lower time converts the footgun into a build-time error
+        and matches the broader "loud" direction the project has
+        adopted across v0.4.2 and v0.4.3.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-23T05:25:00Z
+
+  - id: FEAT-132
+    type: feature
+    title: count-compare lowering + matches parse-time regex validation
+    status: approved
+    description: >
+      New `Expr::CountCompare(Box<Expr>, CompOp, i64)` variant. The
+      lowering pass detects a `(count <scope>)` on the LHS of any of
+      the six comparison operators (>, <, >=, <=, =, !=) with an
+      integer literal on the RHS and produces CountCompare, which the
+      evaluator realises by counting matching artifacts once and
+      comparing. Separately, `(matches <field> "<literal-regex>")`
+      now calls `regex::Regex::new` at lower time; a parse error
+      surfaces with the compiler's message. Non-literal patterns (rare;
+      field interpolation) still use the runtime-lenient path.
+    tags: [sexpr, lowering, validation, v043]
+    links:
+      - type: implements
+        target: REQ-004
+      - type: satisfies
+        target: DD-062
+    fields:
+      source-ref: >
+        rivet-core/src/sexpr_eval.rs — CountCompare variant,
+        count-extract helpers, regex parse-time validation.
+        rivet-core/tests/sexpr_predicate_matrix.rs — renamed test
+        pins new strict behavior.
+        rivet-core/tests/sexpr_fuzz.rs — expr_to_sexpr handles the
+        new variant so fuzz roundtrip stays equivalent.
+      verification: >
+        5 new regression tests: count_compare_gt_threshold,
+        count_compare_requires_integer_rhs,
+        count_compare_all_six_operators_lower,
+        matches_rejects_invalid_regex_at_lower_time,
+        matches_accepts_valid_regex.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-23T05:25:00Z
+
+  # ── CI / release pipeline ───────────────────────────────────────────
+
+  - id: FEAT-133
+    type: feature
+    title: Rivet Delta — pre-rendered Mermaid SVG for email/mobile viewers
+    status: approved
+    description: >
+      The rivet-delta GitHub Action now pre-renders the summary
+      Mermaid diagram to SVG via `@mermaid-js/mermaid-cli` and pushes
+      the rendered asset to an orphan `rivet-delta-renders` branch at
+      `pr-<N>/run-<N>/diagram.svg`. The PR comment embeds both the
+      Mermaid source (web UI) and an `<img src=...>` pointing at the
+      SVG so email notifications and the GitHub mobile app show the
+      diagram inline. Classification-priority ordering in
+      `scripts/diff-to-markdown.mjs` is also fixed so multi-label
+      changes (breaking+additive → breaking) pick the most severe.
+    tags: [ci, rivet-delta, ux, v043]
+    links:
+      - type: traces-to
+        target: FEAT-010
+    fields:
+      source-ref: >
+        .github/workflows/rivet-delta.yml — SVG render step + orphan
+        branch push.
+        scripts/diff-to-markdown.mjs — --mmd-out, --svg-url flags,
+        classification priority.
+      verification: >
+        Playwright e2e test renders a fixture delta and asserts both
+        the Mermaid block and the SVG anchor appear in the comment
+        body. ts-transpile smoke test runs against the spec file.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-23T05:25:00Z
+
+  - id: FEAT-134
+    type: feature
+    title: rivet stamp — correct --missing-provenance filter + warn-skip
+    status: approved
+    description: >
+      `rivet stamp all --missing-provenance` previously checked for a
+      `provenance` entry in generic `fields:`, which was always
+      absent because provenance is a first-class struct field on
+      Artifact. The filter now correctly checks `a.provenance.is_none()`.
+      Separately, `set_provenance` no longer aborts the whole batch on
+      a single CST-invisible artifact; it warns and skips that item
+      and continues stamping the rest.
+    tags: [stamp, cli, fix, v043]
+    links:
+      - type: verifies
+        target: REQ-004
+    fields:
+      source-ref: >
+        rivet-cli/src/main.rs — cmd_stamp_all filter predicate.
+        rivet-core/src/store.rs — set_provenance warn-skip path.
+      verification: >
+        stamp integration tests cover both the filter (an artifact
+        with no provenance is stamped) and the warn-skip path
+        (mixing CST-visible + CST-invisible items completes).
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-23T05:25:00Z

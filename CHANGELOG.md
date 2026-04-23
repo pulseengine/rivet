@@ -5,6 +5,96 @@
 
 ## [Unreleased]
 
+## [0.4.3] — 2026-04-23
+
+### `rivet variant` — build-system query surface and solve debugger
+
+Three new subcommands complete the variant-scoped CLI surface
+(`REQ-046`). Feature models can now carry typed `attributes:` per
+feature, round-tripped through `solve()` and emitted into seven
+different build systems — the same one variant YAML can configure
+Cargo, CMake, Bazel, a C/C++ header, Make, shell env, or structured
+JSON without divergent hand-written shims.
+
+- `rivet variant features --format {json,env,cargo,cmake,cpp-header,bazel,make}`
+  emits every effective feature plus its `attributes:` entries with long,
+  namespaced identifiers (`RIVET_FEATURE_*`, `RIVET_ATTR_*`). Every format
+  is **loud on failure** — a variant that violates a constraint exits
+  non-zero with the violation list, never a partial emission.
+  Non-scalar attribute values (lists/maps) only serialise through
+  `--format json`; build-system formatters return `Error::Schema` rather
+  than invent a silent flattening convention.
+
+- `rivet variant value FEATURE` — shell-friendly single-feature probe with
+  exit codes `0` (selected), `1` (unselected), `2` (unknown feature or
+  variant fails to solve). Designed for `if rivet variant value … ; then …`.
+
+- `rivet variant attr FEATURE KEY` — print one attribute value. Scalars
+  print bare; list/map values print as JSON so shells can parse
+  structurally.
+
+- `rivet variant explain [FEATURE]` — dev/debug UX for "why did my
+  variant pick/skip feature X?". Full audit mode prints every effective
+  feature with its origin (`selected` / `mandatory` / `implied by <X>` /
+  `allowed`), plus the unselected set and the full constraint list.
+  Single-feature focus mode zooms on one feature and lists every
+  constraint that mentions it.
+
+Feature models gained an `attributes:` key per feature, parsed as
+`BTreeMap<String, serde_yaml::Value>`. The shipped
+`examples/variant/feature-model.yaml` now carries realistic metadata
+(`asil-numeric`, `compliance`, `locale`) so the worked examples in
+`docs/getting-started.md` run against the fixture and produce the
+documented output.
+
+Test coverage: 11 unit tests in `rivet_core::variant_emit::tests` for
+per-format rendering, 15 integration tests in
+`rivet-cli/tests/variant_emit.rs` for CLI end-to-end, exit-code
+contract, loud-on-failure path, and the realistic-example smoke across
+all seven formats.
+
+### S-expression follow-ups
+
+- `(> (count <scope>) N)` now lowers to a new `CountCompare` expr
+  variant that evaluates the count against the store once and compares
+  to an integer threshold. Previously the audit documented `(count …)`
+  as "meant for numeric comparisons" but no lowering existed — you
+  could only use it as a standalone predicate. Every comparison operator
+  (`>`, `<`, `>=`, `<=`, `=`, `!=`) now accepts a `(count …)` LHS with
+  an integer RHS.
+
+- `(matches <field> "<regex>")` validates the regex at lower time
+  instead of silently returning `false` at runtime on malformed
+  patterns. Closes the "mysterious empty result" footgun — typing
+  `(matches id "[")` used to match nothing and cost debug time; now it
+  produces a parse error with the compiler's message. Non-literal
+  patterns (rare; from field interpolation) still use the runtime-lenient
+  path.
+
+- `docs/getting-started.md` gains dedicated sections for count
+  comparisons and regex validation, plus a note that dotted accessors
+  like `links.satisfies.target` are not supported — use the purpose-built
+  `linked-by` / `linked-from` / `linked-to` / `links-count` predicates.
+
+### Rivet Delta CI action — SVG render for email/mobile
+
+`rivet-delta.yml` workflow now pre-renders the summary Mermaid diagram
+to SVG and pushes it to an orphan `rivet-delta-renders` branch, so email
+notifications and the GitHub mobile app show the diagram inline instead
+of a `<mermaid>` text block that nothing except the web UI can render.
+Classification-priority ordering in `scripts/diff-to-markdown.mjs` is
+also fixed so multi-label changes (`breaking` + `additive` → `breaking`)
+pick the most severe.
+
+### Stamp command
+
+- `rivet stamp all --missing-provenance` filter now correctly checks the
+  first-class `provenance:` struct field (previously it looked for a
+  `provenance` entry in generic `fields:` and was therefore a no-op).
+- `set_provenance` no longer aborts the whole batch on a single
+  CST-invisible artifact; it warns and skips that one artifact and
+  continues.
+
 ### Safety-Critical Rust Consortium (SCRC) clippy escalation — Phase 1
 
 Follow-up to the v0.4.2 commitment recorded in `DD-058`. The full
