@@ -446,10 +446,14 @@ jobs:
       - run: cargo check --all
 
   # ── Attach test results + attestation to releases ───────────────────
+  #
+  # VSIX packaging moved to release.yml so the extension ships together
+  # with the platform binaries on tag push. This job now only attaches
+  # the JUnit, coverage lcov, and attested rivet binary for the tag.
   release-results:
     name: Publish Test Results on Release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [test, coverage, miri, proptest, playwright, build-vsix]
+    needs: [test, coverage, miri, proptest, playwright]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -473,11 +477,6 @@ jobs:
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: target/release/rivet
-      - name: Download VSIX artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: vsix
-          path: vsix
       - name: Package results
         run: |
           VERSION="${GITHUB_REF#refs/tags/}"
@@ -496,4 +495,3 @@ jobs:
           files: |
             release-results-*.tar.gz
             target/release/rivet
-            vsix/*.vsix
