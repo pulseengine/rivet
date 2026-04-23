@@ -62,6 +62,7 @@ use rivet_core::schema::Severity;
 use rivet_core::store::Store;
 use rivet_core::validate;
 
+mod check;
 mod close_gaps;
 mod docs;
 mod mcp;
@@ -627,6 +628,19 @@ enum Command {
         dry_run: bool,
     },
 
+    /// Oracle subcommands: reusable mechanical checks that agent pipelines
+    /// declare in a schema's `agent-pipelines:` block.
+    ///
+    /// Each oracle either passes (exit 0) or fires (exit 1). On
+    /// `--format json` the result is emitted as canonical JSON on stdout so
+    /// downstream oracles can consume it without re-parsing text.
+    ///
+    /// See docs/oracles.md for the catalog and JSON schemas.
+    Check {
+        #[command(subcommand)]
+        action: CheckAction,
+    },
+
     /// Import artifacts using a custom WASM adapter component
     #[cfg(feature = "wasm")]
     Import {
@@ -1158,6 +1172,52 @@ enum VariantAction {
     },
 }
 
+/// Oracle subcommands under `rivet check`.
+///
+/// Each oracle is either passing (exit 0) or firing (exit 1). JSON output
+/// (`--format json`) is the machine contract — downstream oracles read it
+/// directly without re-parsing.
+#[derive(Subcommand)]
+enum CheckAction {
+    /// Verify every link whose type declares `inverse:` in the schema has
+    /// its inverse registered on the target.
+    Bidirectional {
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
+    /// Verify a `released` artifact carries a reviewer distinct from the
+    /// author (and optionally with a matching role).
+    ReviewSignoff {
+        /// Artifact ID (e.g. REQ-001).
+        artifact_id: String,
+
+        /// Required reviewer role, matched against `fields["reviewer-role"]`.
+        /// When omitted, only reviewer presence + author-distinctness are
+        /// checked.
+        #[arg(long)]
+        role: Option<String>,
+
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
+    /// Run validation and emit a canonical JSON gaps summary grouped by
+    /// artifact. Exits 1 when any error-severity diagnostic is present.
+    GapsJson {
+        /// Scope validation to a named baseline (cumulative).
+        #[arg(long)]
+        baseline: Option<String>,
+
+        /// Output format: "json" (default) or "text". This oracle emits
+        /// JSON by default because its primary consumer is another tool.
+        #[arg(short, long, default_value = "json")]
+        format: String,
+    },
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
 
@@ -1489,6 +1549,17 @@ fn run(cli: Cli) -> Result<bool> {
                 invoker: "human:cli",
             })
         }
+        Command::Check { action } => match action {
+            CheckAction::Bidirectional { format } => cmd_check_bidirectional(&cli, format),
+            CheckAction::ReviewSignoff {
+                artifact_id,
+                role,
+                format,
+            } => cmd_check_review_signoff(&cli, artifact_id, role.as_deref(), format),
+            CheckAction::GapsJson { baseline, format } => {
+                cmd_check_gaps_json(&cli, baseline.as_deref(), format)
+            }
+        },
         #[cfg(feature = "wasm")]
         Command::Import {
             adapter,
@@ -8620,6 +8691,106 @@ fn apply_baseline_scope(
         eprintln!("warning: --baseline specified but no baselines defined in rivet.yaml");
         store
     }
+}
+
+// ── Oracle subcommands: `rivet check …` ─────────────────────────────────
+
+/// `rivet check bidirectional` — fire if any link with a declared inverse
+/// lacks its inverse on the target.
+fn cmd_check_bidirectional(cli: &Cli, format: &str) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
+    let ctx = ProjectContext::load(cli)?;
+    let report = check::bidirectional::compute(&ctx.store, &ctx.schema, &ctx.graph);
+
+    if format == "json" {
+        println!("{}", check::bidirectional::render_json(&report));
+    } else {
+        print!("{}", check::bidirectional::render_text(&report));
+    }
+
+    if !report.violations.is_empty() {
+        for v in &report.violations {
+            eprintln!(
+                "bidirectional: {} -({}) -> {}: missing inverse '{}' on {}",
+                v.source, v.link_type, v.target, v.expected_inverse, v.target
+            );
+        }
+        return Ok(false);
+    }
+    Ok(true)
+}
+
+/// `rivet check review-signoff <id>` — fire if a `released` artifact lacks
+/// a reviewer distinct from the author (and optionally a matching role).
+fn cmd_check_review_signoff(
+    cli: &Cli,
+    artifact_id: &str,
+    role: Option<&str>,
+    format: &str,
+) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
+    let ctx = ProjectContext::load(cli)?;
+
+    let artifact = ctx.store.get(artifact_id).ok_or_else(|| {
+        anyhow::anyhow!(
+            "artifact '{artifact_id}' not found in store (loaded {} total)",
+            ctx.store.len()
+        )
+    })?;
+
+    let report = check::review_signoff::compute(artifact, role);
+
+    if format == "json" {
+        println!("{}", check::review_signoff::render_json(&report));
+    } else {
+        print!("{}", check::review_signoff::render_text(&report));
+    }
+
+    if !report.ok {
+        for r in &report.reasons {
+            eprintln!("review-signoff [{}]: {r}", report.artifact_id);
+        }
+        return Ok(false);
+    }
+    Ok(true)
+}
+
+/// `rivet check gaps-json` — run validation and emit a canonical JSON
+/// summary of all diagnostics, grouped by artifact.
+fn cmd_check_gaps_json(cli: &Cli, baseline_name: Option<&str>, format: &str) -> Result<bool> {
+    validate_format(format, &["json", "text"])?;
+    let ctx = ProjectContext::load(cli)?;
+
+    let (store, graph) = if let Some(bl) = baseline_name {
+        if let Some(ref baselines) = ctx.config.baselines {
+            let scoped = ctx.store.scoped(bl, baselines);
+            let g = LinkGraph::build(&scoped, &ctx.schema);
+            (scoped, g)
+        } else {
+            eprintln!("warning: --baseline specified but no baselines defined in rivet.yaml");
+            (ctx.store, ctx.graph)
+        }
+    } else {
+        (ctx.store, ctx.graph)
+    };
+
+    let report = check::gaps_json::compute(&store, &ctx.schema, &graph);
+
+    if format == "text" {
+        print!("{}", check::gaps_json::render_text(&report));
+    } else {
+        println!("{}", check::gaps_json::render_json(&report));
+    }
+
+    if report.by_severity.error > 0 {
+        eprintln!(
+            "gaps-json: {} error(s) found across {} artifact(s)",
+            report.by_severity.error,
+            report.gaps.len()
+        );
+        return Ok(false);
+    }
+    Ok(true)
 }
 
 struct ProjectContext {
