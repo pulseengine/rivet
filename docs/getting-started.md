@@ -871,7 +871,130 @@ rivet variant solve --model fm.yaml --variant v.yaml --binding bindings.yaml
 
 # Validate only variant-scoped artifacts
 rivet validate --model fm.yaml --variant v.yaml --binding bindings.yaml
+
+# Emit effective features for a build system (see "Build-system emitters" below)
+rivet variant features --model fm.yaml --variant v.yaml --format cargo
+
+# Query single feature state (exit 0/1/2 = on/off/unknown)
+rivet variant value  --model fm.yaml --variant v.yaml asil-c
+
+# Print a single attribute value
+rivet variant attr   --model fm.yaml --variant v.yaml asil-c asil-numeric
 ```
+
+### Feature attributes
+
+Each feature may declare an `attributes:` map — typed key/value metadata
+that a release script can turn into build-system configuration. Example:
+
+```yaml
+# feature-model.yaml (excerpt)
+features:
+  asil-c:
+    group: leaf
+    attributes:
+      asil-numeric: 3
+      reqs: "fmea-dfa"
+  core:
+    group: leaf
+    attributes:
+      version: "1.2.3"
+```
+
+Attribute values can be strings, integers, booleans, or null. Lists and
+maps are accepted, but only the JSON emitter preserves them — every
+other emitter returns an error rather than invent a silent flattening
+rule.
+
+### Build-system emitters
+
+`rivet variant features --format <fmt>` emits the resolved feature set
+plus per-feature attributes in a build-system-specific format. Every
+identifier is long and namespaced (`RIVET_FEATURE_*`, `RIVET_ATTR_*`)
+so multiple rivet models can coexist in one project.
+
+All formats are **loud on failure**: if the variant violates a
+constraint, the command exits non-zero with the violation list, never
+a partial emission.
+
+Supported formats:
+
+| `--format`   | Output | Intended consumer |
+|--------------|--------|-------------------|
+| `json`       | structured JSON | scripts, other tools |
+| `env` (`sh`) | `export NAME=value` | shell, Docker, CI |
+| `cargo`      | `cargo:rustc-cfg=…` / `cargo:rustc-env=…` | `build.rs` |
+| `cmake`      | `set(...)` + `add_compile_definitions(...)` | CMake projects |
+| `cpp-header` | `#define` guarded by `RIVET_VARIANT_H` | C / C++ projects |
+| `bazel`      | `.bzl` constants (`RIVET_FEATURES`, `RIVET_ATTRS`) | Bazel projects |
+| `make`       | `NAME := value` | GNU Make |
+
+Worked example — with the `asil-c`/`core` attributes shown above:
+
+```bash
+# Rust build.rs integration
+rivet variant features --model fm.yaml --variant prod.yaml --format cargo
+# cargo:rustc-env=RIVET_VARIANT=prod
+# cargo:rustc-cfg=rivet_feature="asil-c"
+# cargo:rustc-env=RIVET_FEATURE_ASIL_C=1
+# cargo:rustc-env=RIVET_ATTR_ASIL_C_ASIL_NUMERIC=3
+# cargo:rustc-env=RIVET_ATTR_ASIL_C_REQS=fmea-dfa
+
+# CMake integration
+rivet variant features --model fm.yaml --variant prod.yaml --format cmake
+# set(RIVET_VARIANT "prod")
+# set(RIVET_FEATURE_ASIL_C ON)
+# set(RIVET_ATTR_ASIL_C_ASIL_NUMERIC "3")
+# add_compile_definitions(RIVET_FEATURE_ASIL_C=1 RIVET_ATTR_ASIL_C_ASIL_NUMERIC=3 …)
+
+# C/C++ header
+rivet variant features --model fm.yaml --variant prod.yaml --format cpp-header
+# #ifndef RIVET_VARIANT_H
+# #define RIVET_VARIANT_H
+# #define RIVET_FEATURE_ASIL_C 1
+# #define RIVET_ATTR_ASIL_C_ASIL_NUMERIC 3
+# #define RIVET_ATTR_ASIL_C_REQS "fmea-dfa"
+# #endif
+
+# Bazel (.bzl)
+rivet variant features --model fm.yaml --variant prod.yaml --format bazel
+# RIVET_FEATURES = ["asil-c", "core", …]
+# RIVET_ATTRS = {
+#     "asil-c": { "asil-numeric": 3, "reqs": "fmea-dfa" },
+#     …
+# }
+
+# GNU Make
+rivet variant features --model fm.yaml --variant prod.yaml --format make
+# RIVET_VARIANT := prod
+# RIVET_FEATURES := asil-c core …
+# RIVET_ATTR_ASIL_C_ASIL_NUMERIC := 3
+
+# Shell env (sourceable)
+rivet variant features --model fm.yaml --variant prod.yaml --format env
+# export RIVET_FEATURE_ASIL_C=1
+# export RIVET_ATTR_ASIL_C_ASIL_NUMERIC='3'
+
+# JSON (preserves list/map attributes)
+rivet variant features --model fm.yaml --variant prod.yaml --format json
+```
+
+### Single-feature queries
+
+```bash
+# Probe one feature — ideal for shell conditionals
+if rivet variant value --model fm.yaml --variant prod.yaml asil-c >/dev/null; then
+    echo "ASIL-C variant detected"
+fi
+
+# Read one attribute — scalar printed bare, list/map as JSON
+asil_num=$(rivet variant attr --model fm.yaml --variant prod.yaml asil-c asil-numeric)
+```
+
+Exit codes for `value` / `attr`:
+- `0` — feature selected / attribute present
+- `1` — feature not selected (defined but absent from this variant)
+- `2` — unknown feature, missing attribute key, or variant fails to solve
 
 ### Variants in the dashboard
 
