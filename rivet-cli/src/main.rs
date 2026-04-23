@@ -71,6 +71,7 @@ mod render;
 mod runs_cmd;
 mod schema_cmd;
 mod serve;
+mod templates_cmd;
 
 /// Validate that a `--format` value is one of the accepted options.
 fn validate_format(format: &str, valid: &[&str]) -> Result<()> {
@@ -621,6 +622,13 @@ enum Command {
         action: PipelinesAction,
     },
 
+    /// Inspect, render, copy, and diff per-pipeline-kind prompt templates.
+    /// See docs/templates.md (TODO) for the kind catalogue.
+    Templates {
+        #[command(subcommand)]
+        action: TemplatesAction,
+    },
+
     /// Oracle-gated gap-closure loop. MVP: structural pipeline + dev schema.
     CloseGaps {
         /// Variant to scope against (requires bindings).
@@ -1019,6 +1027,49 @@ enum PipelinesAction {
     /// is unresolved, any oracle reference is unknown, or any reviewer
     /// group is missing from .rivet/context/review-roles.yaml.
     Validate {
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum TemplatesAction {
+    /// List every template kind (built-in + project override) and which
+    /// files exist per kind.
+    List {
+        /// Output format: `text` (default) or `json`.
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+    /// Print one template's body. `--format raw` (default) emits as-is;
+    /// `--format rendered` substitutes `--var key=value` placeholders.
+    Show {
+        /// `<kind>/<file>.md`, e.g. `structural/discover.md`.
+        target: String,
+        /// `raw` (default) or `rendered`.
+        #[arg(short, long, default_value = "raw")]
+        format: String,
+        /// Bind a `{{key}}` placeholder. Repeatable.
+        #[arg(long = "var", value_name = "KEY=VALUE")]
+        vars: Vec<String>,
+    },
+    /// Copy a kind's embedded files into
+    /// `.rivet/templates/pipelines/<kind>/`. Records provenance in
+    /// `.rivet/.rivet-version`. Refuses to overwrite existing files.
+    CopyToProject {
+        /// Built-in kind name (`structural`, `discovery`, …).
+        kind: String,
+        /// Output format: `text` (default) or `json`.
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+    /// Diff a project override against the current embedded version of
+    /// the same template — shows drift after rivet ships a template
+    /// update. Skips with a notice if the file hasn't been copied.
+    Diff {
+        /// `<kind>/<file>.md`, e.g. `structural/discover.md`.
+        target: String,
+        /// Output format: `text` (default, prints unified diff) or `json`.
         #[arg(short, long, default_value = "text")]
         format: String,
     },
@@ -1545,6 +1596,27 @@ fn run(cli: Cli) -> Result<bool> {
                 }
             }
         }
+        Command::Templates { action } => match action {
+            TemplatesAction::List { format } => {
+                templates_cmd::cmd_list(&cli.project, format)
+            }
+            TemplatesAction::Show {
+                target,
+                format,
+                vars,
+            } => templates_cmd::cmd_show(&cli.project, target, format, vars),
+            TemplatesAction::CopyToProject { kind, format } => {
+                templates_cmd::cmd_copy_to_project(
+                    &cli.project,
+                    kind,
+                    env!("CARGO_PKG_VERSION"),
+                    format,
+                )
+            }
+            TemplatesAction::Diff { target, format } => {
+                templates_cmd::cmd_diff(&cli.project, target, format)
+            }
+        },
         Command::CloseGaps {
             variant,
             top,

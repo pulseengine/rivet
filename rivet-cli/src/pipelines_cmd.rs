@@ -194,9 +194,10 @@ pub fn cmd_validate(project_root: &Path, schemas_dir: &Path, format: &str) -> Re
     let mut errors: Vec<String> = Vec::new();
     let mut warnings: Vec<String> = Vec::new();
 
-    // (1)+(2): per-schema internal validation
+    // (1)+(2): per-schema internal validation, including unknown
+    // template-kind rejection against the project's templates dir.
     for (schema, ap) in &pipelines {
-        if let Err(errs) = ap.validate() {
+        if let Err(errs) = ap.validate_with_project(project_root) {
             for e in errs {
                 errors.push(format!("[{schema}] {e}"));
             }
