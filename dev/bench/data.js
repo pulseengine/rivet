@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1776964687594,
+  "lastUpdate": 1776966753250,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "19e8cbaf984b0dde6231a6b9e3a84339b1d0ea9b",
-          "message": "test(fuzz): YAML footgun + CLI argv + artifact-id fuzzers (#160)\n\nAdds three libfuzzer-based targets under fuzz/ that empirically measure\nthe arxiv:2604.13108 \"YAML silently corrupts ~50% of structural errors\"\nclaim against rivet's actual artifact-ingest pipeline, plus a CLI argv\ntarget and an id-roundtrip target.\n\nTargets:\n  * yaml_footguns  — Arbitrary-driven adversarial mutations of a known\n    valid seed YAML (Norway, version-coercion, leading-zero-id,\n    unquoted-date, duplicate-key, tab-indent, multi-doc, null-shorthand\n    link, unknown top-level key, anchor cycle, deep nesting, control\n    chars in id).  Five oracles: source-substring invariant for ids /\n    types / link targets, phantom-link detection, null-ish target\n    detection, serde-rejected-but-hir-accepted detection, and\n    multi-document truncation detection.\n  * cli_argv      — structured argv for rivet-cli subprocess; oracle\n    fails on signal-death or when --format json returns success with\n    non-JSON stdout.  Gated on $RIVET_BIN env var so it skips silently\n    if no binary is configured.\n  * artifact_ids  — arbitrary bytes as id: scalar; oracle requires\n    Store::insert → Store::get to round-trip byte-exact.\n\nAlso adds fuzz/examples/oracle_smoke.rs — a non-libfuzzer harness that\nruns the same oracle logic against a fixed set of Mythos-predicted\nfootgun inputs.  Running `cargo run --release --example oracle_smoke`\n(before cargo-fuzz is available in CI) produces five findings on\ncurrent main, empirically confirming:\n  - null / tilde / empty-string link targets produce phantom links\n    (yaml_hir.rs:530-549 bug class)\n  - multi-document YAML is silently truncated by the HIR path\n    (yaml_cst.rs:517 bug class)\n  - renaming `artifacts:` to a sibling key causes the HIR path to\n    return Ok(vec![]) with zero diagnostics (formats/generic.rs:138)\n\nCI: .github/workflows/fuzz.yml runs each target for 15 min on push to\nmain and nightly at 06:17 UTC.  continue-on-error so new crashes do\nnot block merges; crashes upload as workflow artifacts and the evolved\ncorpus is cached between runs.\n\nREQ-052 is scoped to variant-solver fuzzing; these YAML/CLI fuzzers\nverify the broader parser surface (REQ-028) and CLI surface (REQ-007).\n\nVerifies: REQ-028, REQ-007\nRefs: REQ-052\n\nCo-authored-by: Claude Opus 4.7 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-04-21T23:20:17-05:00",
-          "tree_id": "5d37a010efdba2cd47e9bb3a3e359c75b427f843",
-          "url": "https://github.com/pulseengine/rivet/commit/19e8cbaf984b0dde6231a6b9e3a84339b1d0ea9b"
-        },
-        "date": 1776835179633,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 80194,
-            "range": "± 499",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 842530,
-            "range": "± 2776",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 11123083,
-            "range": "± 445104",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2219,
-            "range": "± 8",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 25826,
-            "range": "± 283",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 353885,
-            "range": "± 2665",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1004683,
-            "range": "± 29116",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 161978,
-            "range": "± 788",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1872259,
-            "range": "± 10819",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 24319952,
-            "range": "± 2834191",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 113094,
-            "range": "± 608",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 961908,
-            "range": "± 2646",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 9675462,
-            "range": "± 271441",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4221,
-            "range": "± 9",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 59847,
-            "range": "± 274",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 755355,
-            "range": "± 2622",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 62423,
-            "range": "± 370",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 706328,
-            "range": "± 3634",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7822420,
-            "range": "± 62398",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 824,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 7065,
-            "range": "± 97",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 126662,
-            "range": "± 1774",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 23424,
-            "range": "± 125",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 165154,
-            "range": "± 2348",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1526304,
-            "range": "± 10820",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1750316,
             "range": "± 27526",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "bbba88e314e23ec34c66c546a34f89ac12339f13",
+          "message": "feat(scrc): Phase 2 opening — memory-safety lints + semver-checks + SAFETY.md (#203)\n\n* fix(ci): remove dead `build-vsix` reference that killed ci.yml at parse time\n\n`release-results.needs:` referenced a `build-vsix` job that no longer\nexists — VSIX packaging was moved to release.yml so the extension\nattaches to the GitHub Release alongside the platform binaries.\nGitHub Actions rejects the whole workflow at validation time when\n`needs:` names a non-existent job, which is why every push to `main`\nand every PR has been showing \"ci.yml failed in 0s, 0 jobs\" since\nthe move.\n\nEffect of the bug: the main CI test gate has been silently absent\non every commit since the VSIX move. PRs have been merging only on\nBenchmarks + Rivet Delta checks. Fix restores fmt / clippy /\ntest / playwright / miri / proptest / coverage / audit / deny /\nkani / verus / rocq / msrv + docs-check as live checks.\n\nAlso drops the now-obsolete \"Download VSIX artifact\" step and the\n`vsix/*.vsix` entry in the release-results upload list — release.yml\nhandles both since the move.\n\nVerified clean with actionlint 1.7.12 across every workflow file.\n\nTrace: skip\n\n* feat(scrc): Phase 2 opening — memory-safety lints + semver-checks + SAFETY.md\n\nTwelve new clippy restriction lints at workspace `warn`:\n\n  unsafe-block hygiene:\n    undocumented_unsafe_blocks, multiple_unsafe_ops_per_block\n  memory-safety traps:\n    mem_forget, mem_replace_with_uninit,\n    transmute_undefined_repr, uninit_assumed_init\n  concurrency hazards:\n    rc_mutex, mutex_atomic\n  defensive misc:\n    same_name_method, lossy_float_literal, empty_drop, exit\n\nZero pre-existing violations for eleven of the twelve — these are\n\"defensive-against-drift\" lints that fail CI the moment a future\ncommit introduces an unsafe block without documentation, a transmute\nacross !repr(transparent) layouts, or a Mutex around a primitive.\n\n`clippy::exit` is grandfathered on three CLI exit-code sites in\nrivet-cli/src/main.rs (variant value/attr, exit 2 for the POSIX\n\"misuse\" code in the three-valued on/off/unknown contract). The\nfile-scope allow's rationale block explains why Result<bool> can't\nexpress a three-valued return.\n\nPhase 2 migration opens: rivet-core/src/matrix.rs is the first\nproduction file converted from file-scope blanket allow to per-site\n#[allow(...)] with inline SAFETY-REVIEW comments. Pattern documented\nin SAFETY.md so the remaining 63 files can follow.\n\nCI additions:\n- semver-checks job on pull_request catches breaking changes to the\n  rivet-core public API before they escape to a release tag.\n\nAlso adds the Phase 1 test-blanket allow to 5 integration test files\nthat I had missed during Phase 1: variant_emit.rs, sexpr_fuzz.rs,\nsexpr_filter_integration.rs, sexpr_doc_examples.rs,\nsexpr_predicate_matrix.rs. Test code legitimately uses\nunwrap/expect/panic; the blanket lives at crate scope for tests.\n\nSAFETY.md: new top-level document summarising the safety posture —\nlint set per tier, migration plan, and the verification harness\n(Miri, proptest, fuzz, mutants, Kani, Verus, Rocq).\n\nVerification:\n  cargo clippy --all-targets --workspace -- -D warnings   # exits 0\n  cargo test --workspace                                  # 41 binaries green\n\nImplements: REQ-004\nRefs: DD-058, DD-059\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.7 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-04-23T12:44:21-05:00",
+          "tree_id": "67546debd66b153ed10cf585e3babd275f2eebce",
+          "url": "https://github.com/pulseengine/rivet/commit/bbba88e314e23ec34c66c546a34f89ac12339f13"
+        },
+        "date": 1776966752740,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 80373,
+            "range": "± 1159",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 856750,
+            "range": "± 6425",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 12069942,
+            "range": "± 717375",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2207,
+            "range": "± 7",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 24518,
+            "range": "± 123",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 355103,
+            "range": "± 1491",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 93,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 93,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 93,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1030710,
+            "range": "± 12748",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 165299,
+            "range": "± 1512",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1895829,
+            "range": "± 20740",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 24984315,
+            "range": "± 1923156",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 121366,
+            "range": "± 904",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1018144,
+            "range": "± 14661",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 11366673,
+            "range": "± 552586",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4314,
+            "range": "± 21",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 61858,
+            "range": "± 1260",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 761247,
+            "range": "± 6323",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 63302,
+            "range": "± 337",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 705593,
+            "range": "± 2481",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7719753,
+            "range": "± 168420",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 850,
+            "range": "± 5",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7706,
+            "range": "± 19",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 108772,
+            "range": "± 614",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 25473,
+            "range": "± 170",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 184331,
+            "range": "± 1413",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1733833,
+            "range": "± 27431",
             "unit": "ns/iter"
           }
         ]
