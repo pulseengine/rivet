@@ -251,6 +251,133 @@ fn value_unknown_feature_exits_two() {
 }
 
 #[test]
+fn explain_single_feature_shows_origin_and_attrs() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (m, v) = write_fixture(tmp.path());
+    let out = Command::new(rivet_bin())
+        .args([
+            "variant", "explain",
+            "--model", m.to_str().unwrap(),
+            "--variant", v.to_str().unwrap(),
+            "asil-c",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("Feature: asil-c"));
+    assert!(stdout.contains("selected in variant `prod`: true"));
+    assert!(stdout.contains("user-selected via `selects:`"));
+    assert!(stdout.contains("asil-numeric = 3"));
+    assert!(stdout.contains("reqs = \"fmea-dfa\""));
+}
+
+#[test]
+fn explain_single_feature_json_mode() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (m, v) = write_fixture(tmp.path());
+    let out = Command::new(rivet_bin())
+        .args([
+            "variant", "explain",
+            "--model", m.to_str().unwrap(),
+            "--variant", v.to_str().unwrap(),
+            "--format", "json",
+            "asil-c",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_str(&String::from_utf8_lossy(&out.stdout)).unwrap();
+    assert_eq!(v["feature"], "asil-c");
+    assert_eq!(v["selected"], true);
+    assert_eq!(v["origin"]["kind"], "selected");
+    assert_eq!(v["attributes"]["asil-numeric"], 3);
+}
+
+#[test]
+fn explain_full_variant_audit_lists_origins_and_unselected() {
+    let tmp = tempfile::tempdir().unwrap();
+    // Model with an optional feature so we get both selected and unselected
+    let model = tmp.path().join("feature-model.yaml");
+    fs::write(
+        &model,
+        r#"
+root: rt
+features:
+  rt: { group: optional, children: [a, b, c] }
+  a: { group: leaf }
+  b: { group: leaf }
+  c: { group: leaf }
+"#,
+    )
+    .unwrap();
+    let variant = tmp.path().join("v.yaml");
+    fs::write(&variant, "name: v\nselects:\n  - a\n").unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "variant", "explain",
+            "--model", model.to_str().unwrap(),
+            "--variant", variant.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("Variant audit: `v`"));
+    assert!(stdout.contains("Effective features"));
+    assert!(stdout.contains("+ a"));
+    assert!(stdout.contains("Unselected features"));
+    assert!(stdout.contains("- b"));
+    assert!(stdout.contains("- c"));
+}
+
+/// Smoke every formatter against the shipped examples/variant/ fixture.
+/// Catches regressions where a format change works on a toy model but
+/// breaks on a realistic one (constraint-driven inclusion, multiple
+/// attribute types per feature, non-trivial tree depth).
+#[test]
+fn every_format_renders_realistic_example() {
+    let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest.parent().expect("workspace root");
+    let model = workspace_root.join("examples/variant/feature-model.yaml");
+    let variant = workspace_root.join("examples/variant/eu-adas-c.yaml");
+    if !model.exists() || !variant.exists() {
+        // Keep this test silent if the examples dir is stripped from
+        // a release tarball — real users run it against the repo.
+        return;
+    }
+    for fmt in ["json", "env", "cargo", "cmake", "cpp-header", "bazel", "make"] {
+        let out = Command::new(rivet_bin())
+            .args([
+                "variant", "features",
+                "--model", model.to_str().unwrap(),
+                "--variant", variant.to_str().unwrap(),
+                "--format", fmt,
+            ])
+            .output()
+            .unwrap_or_else(|e| panic!("rivet variant features --format {fmt}: {e}"));
+        assert!(
+            out.status.success(),
+            "--format {fmt} failed: stderr={}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        // Every format should mention the variant name and ASIL-C
+        // (the headline feature from the example).
+        assert!(
+            stdout.contains("eu-adas-c"),
+            "--format {fmt}: variant name missing in output:\n{stdout}"
+        );
+        let feature_markers = ["ASIL_C", "asil-c"];
+        assert!(
+            feature_markers.iter().any(|m| stdout.contains(m)),
+            "--format {fmt}: no asil-c marker in output:\n{stdout}"
+        );
+    }
+}
+
+#[test]
 fn attr_prints_scalar_and_errors_on_missing_key() {
     let tmp = tempfile::tempdir().unwrap();
     let (m, v) = write_fixture(tmp.path());
