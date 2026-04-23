@@ -498,3 +498,189 @@ traceability-rules:
     required-backlink: verifies
     from-types: [unit-verification]
     severity: warning
+
+# ──────────────────────────────────────────────────────────────────────────
+# Agent pipelines — Automotive SPICE v4.0 Capability Level 2 evidence
+# ──────────────────────────────────────────────────────────────────────────
+#
+# Three pipelines target the three legs of an ASPICE Level 2 assessment:
+#
+#   level-2-trace   — bidirectional traceability between work products
+#                     (SUP.10 BP1/BP2 + the trace expectations woven through
+#                     SYS.2 / SWE.1 / SWE.4 / SWE.6 base practices).
+#   level-2-content — required content of each work product
+#                     (Automotive SPICE v4.0 Annex B, "Work product outlines").
+#   level-2-review  — peer review evidence with reviewer != author
+#                     (SUP.9 problem resolution + the GP 2.1.x process
+#                     management practices on review records).
+#
+# What is FUTURE (parses today, but the underlying oracle command is not
+# yet implemented; pipeline rows referencing it are inert until the
+# oracle lands):
+#   - decomposition-coverage      — checks that each higher-level work
+#                                   product is fully decomposed into the
+#                                   lower-level products required by the
+#                                   process.
+#   - work-product-content        — checks each work product against its
+#                                   Annex B outline.
+#   - base-practice-coverage      — checks each base practice in scope has
+#                                   evidence of being performed.
+#
+# Today only `bidirectional-trace` (rivet check bidirectional) and
+# `peer-review-signed` (rivet check review-signoff) are wired to real
+# CLI subcommands.
+agent-pipelines:
+  oracles:
+    - id: bidirectional-trace
+      command: rivet check bidirectional
+      description: >
+        Bidirectional traceability oracle. Walks every link source -> target
+        and confirms the inverse link exists; reports both directions of the
+        ASPICE traceability matrix expected by SUP.10.
+      applies-to: ["*"]
+      fires-on:
+        exit-code: nonzero
+
+    # FUTURE: rivet check decomposition-coverage
+    # Confirms that every higher-level WP has the required set of
+    # lower-level WPs derived from it (e.g. each system-req decomposes
+    # into at least one sw-req, each sw-req into at least one
+    # sw-arch-element, etc., as required by the relevant base practices).
+    - id: decomposition-coverage
+      command: rivet check decomposition-coverage
+      description: >
+        FUTURE oracle. Verifies decomposition completeness across the
+        Level 2 V-model: stakeholder-req -> system-req -> sw-req ->
+        sw-arch-element -> sw-detail-design.
+      applies-to: ["*"]
+      fires-on:
+        exit-code: nonzero
+
+    # FUTURE: rivet check work-product-content
+    # Checks each work product against the outline given in Automotive
+    # SPICE v4.0 Annex B ("Work product characteristics"). For example,
+    # a stakeholder-req must contain a rationale, a verification criterion,
+    # a priority, and a source attribution.
+    - id: work-product-content
+      command: rivet check work-product-content
+      description: >
+        FUTURE oracle. Validates work product content against ASPICE v4.0
+        Annex B work product outlines. Fires when a required outline
+        section is absent on a released artifact.
+      applies-to: ["*"]
+      fires-on:
+        exit-code: nonzero
+
+    - id: peer-review-signed
+      command: rivet check review-signoff
+      description: >
+        Peer-review oracle. Confirms each released work product has a
+        review record with reviewer identity != author identity, as
+        required by ASPICE GP 2.1.7 / GP 2.2.4 (review of work products).
+      applies-to: ["*"]
+      fires-on:
+        exit-code: nonzero
+
+    # FUTURE: rivet check base-practice-coverage
+    # Confirms every base practice (BP) in the assessed processes has
+    # at least one work product as evidence of being performed.
+    - id: base-practice-coverage
+      command: rivet check base-practice-coverage
+      description: >
+        FUTURE oracle. For each ASPICE process in scope, verifies every
+        base practice has a corresponding work product produced.
+      applies-to: ["*"]
+      fires-on:
+        exit-code: nonzero
+
+  pipelines:
+
+    # ── level-2-trace ───────────────────────────────────────────────────
+    level-2-trace:
+      description: >
+        Bidirectional traceability and decomposition coverage between
+        ASPICE V-model work products. Targets SUP.10 BP1/BP2 (consistency
+        of traceability) and the cross-process trace expectations of SYS.2,
+        SWE.1, SWE.4, SWE.6.
+      template-kind: structural
+      uses-oracles: [bidirectional-trace, decomposition-coverage]
+      rank-by:
+        - when: { oracle: bidirectional-trace, severity: error }
+          weight: 50
+          label: "missing inverse link (SUP.10 BP1)"
+        - when: { oracle: decomposition-coverage, severity: error }
+          weight: 75
+          label: "decomposition incomplete (Level 2 blocker)"
+      auto-close:
+        # Only the simplest mechanical case auto-closes: the inverse link
+        # is missing but the target artifact already exists in the store,
+        # so the CLI can write the back-link without inventing content.
+        - when:
+            oracle: bidirectional-trace
+            closure-kind: missing-inverse-link
+            target-exists: true
+          reviewers: ["{context.review-roles.dev-team}"]
+      human-review-required:
+        - when: { oracle: bidirectional-trace, closure-kind: missing-inverse-link, target-exists: false }
+          reviewers: ["{context.review-roles.dev-team}"]
+          draft-template: templates/stubs/missing-target-stub.yaml.tmpl  # FUTURE template
+        - when: { oracle: decomposition-coverage }
+          reviewers: ["{context.review-roles.dev-team}"]
+      emit:
+        trailer: "Refs: {target_id}"
+        change-control: pr-review
+
+    # ── level-2-content ─────────────────────────────────────────────────
+    level-2-content:
+      description: >
+        Work product content compliance vs the Annex B outlines of
+        Automotive SPICE v4.0. Each released work product must populate
+        its required outline sections; missing sections are flagged for
+        a process-lead to author (cannot be machine-synthesised).
+      template-kind: content  # FUTURE kind
+      uses-oracles: [work-product-content]
+      rank-by:
+        - when: { oracle: work-product-content, fires-on: missing-required-section }
+          weight: 40
+          label: "WP outline section missing (Annex B)"
+      # Auto-close: NONE. Work product content requires human authorship;
+      # the CLI cannot mechanically synthesise rationale, criteria, or
+      # attribution text.
+      auto-close: []
+      human-review-required:
+        - when: { oracle: work-product-content }
+          reviewers: ["{context.review-roles.process-lead}"]
+          # FUTURE template — `rivet-core::templates` is being authored
+          # in a parallel work-stream and will populate this stub.
+          draft-template: templates/stubs/wp-sections.yaml.tmpl
+      emit:
+        trailer: "Refs: {target_id}"
+        change-control: pr-review
+
+    # ── level-2-review ──────────────────────────────────────────────────
+    level-2-review:
+      description: >
+        Peer review evidence: every released work product has a review
+        record with reviewer != author. Implements GP 2.1.7 (review of
+        process performance) / GP 2.2.4 (review work products) and the
+        base-practice coverage check that all process BPs are evidenced.
+      template-kind: review  # FUTURE kind
+      uses-oracles: [peer-review-signed, base-practice-coverage]
+      rank-by:
+        - when: { oracle: peer-review-signed, fires-on: reviewer-equals-author }
+          weight: 60
+          label: "released WP has no independent reviewer"
+        - when: { oracle: base-practice-coverage, severity: error }
+          weight: 45
+          label: "base practice has no evidence"
+      # Auto-close: NONE. Review activity cannot be synthesised post-hoc.
+      auto-close: []
+      human-review-required:
+        - when: { oracle: peer-review-signed }
+          reviewers: ["{context.review-roles.process-lead}"]
+          # No draft-template: the action is "convene a review", not "draft content".
+        - when: { oracle: base-practice-coverage }
+          reviewers: ["{context.review-roles.process-lead}"]
+      emit:
+        trailer: "Refs: {target_id}"
+        change-control: pr-review

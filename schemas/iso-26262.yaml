@@ -1,0 +1,471 @@
+# ISO 26262 Part 6 — Product development at the software level schema
+#
+# Defines artifact types and traceability rules for the ISO 26262:2018
+# Part 6 software lifecycle (clauses 5–11) plus the ASIL-driven evidence
+# requirements that span Parts 2 (management of functional safety),
+# 6 (software), and 8 (supporting processes).
+#
+# Lifecycle activities covered (Part 6, edition 2):
+#   Clause 5  General topics for the product development at the software level
+#   Clause 6  Specification of software safety requirements
+#   Clause 7  Software architectural design
+#   Clause 8  Software unit design and implementation
+#   Clause 9  Software unit verification
+#   Clause 10 Software integration verification
+#   Clause 11 Verification of software safety requirements
+#
+# ASIL (Automotive Safety Integrity Level) drives the rigour of methods
+# selected from Tables 1–18 of Part 6. ASIL D requires the highest rigour.
+# Confirmation reviews (Part 2 clause 6.4.7 / Annex C) are mandatory for
+# work products of ASIL C and ASIL D safety requirements.
+#
+# This is a minimal schema sufficient to drive the Part 6 agent-pipelines
+# block below; richer ISO 26262 modelling (FSC, TSC, item definition,
+# safety case integration) is out of scope for this file.
+
+schema:
+  name: iso-26262
+  version: "0.1.0"
+  namespace: "http://pulseengine.dev/ns/iso-26262#"
+  extends: [common]
+  description: >
+    ISO 26262:2018 Part 6 software lifecycle artifact types and
+    traceability rules with ASIL-driven evidence requirements.
+
+# ──────────────────────────────────────────────────────────────────────────
+# Artifact types
+# ──────────────────────────────────────────────────────────────────────────
+artifact-types:
+
+  - name: safety-goal
+    description: >
+      Top-level safety goal (Part 3 clause 7) that the item must satisfy.
+      Listed here so software safety requirements can trace upward to
+      their originating goal.
+    fields:
+      - name: asil
+        type: string
+        required: true
+        allowed-values: [QM, A, B, C, D]
+        description: ASIL assigned by the HARA (Part 3 clause 7.4)
+    link-fields: []
+
+  - name: functional-safety-requirement
+    description: >
+      Functional safety requirement (FSR, Part 3 clause 8). Allocates a
+      portion of a safety goal to a function and inherits or decomposes
+      the ASIL.
+    fields:
+      - name: asil
+        type: string
+        required: true
+        allowed-values: [QM, A, B, C, D]
+      - name: decomposed
+        type: bool
+        required: false
+        description: True when ASIL is the result of an ASIL decomposition (Part 9 clause 5)
+    link-fields:
+      - name: derived-from
+        link-type: derives-from
+        target-types: [safety-goal]
+        required: true
+        cardinality: one-or-many
+
+  - name: technical-safety-requirement
+    description: >
+      Technical safety requirement (TSR, Part 4 clause 6). Refines an
+      FSR into a system-level technical requirement allocated to
+      hardware, software, or both.
+    fields:
+      - name: asil
+        type: string
+        required: true
+        allowed-values: [QM, A, B, C, D]
+      - name: allocation
+        type: string
+        required: false
+        allowed-values: [hardware, software, both]
+    link-fields:
+      - name: derived-from
+        link-type: derives-from
+        target-types: [functional-safety-requirement]
+        required: true
+        cardinality: one-or-many
+
+  - name: software-safety-requirement
+    description: >
+      Software safety requirement (Part 6 clause 6). Specifies a software
+      contribution to the satisfaction of a TSR. Inherits ASIL from the
+      TSR unless an ASIL decomposition argument applies.
+    fields:
+      - name: asil
+        type: string
+        required: true
+        allowed-values: [QM, A, B, C, D]
+      - name: decomposed
+        type: bool
+        required: false
+    link-fields:
+      - name: derived-from
+        link-type: derives-from
+        target-types: [technical-safety-requirement]
+        required: true
+        cardinality: one-or-many
+
+  - name: software-unit-design
+    description: >
+      Software unit design (Part 6 clause 8). Smallest design element
+      whose verification is in scope of clause 9. Inherits the highest
+      ASIL of the SSRs it implements.
+    fields:
+      - name: asil
+        type: string
+        required: true
+        allowed-values: [QM, A, B, C, D]
+    link-fields:
+      - name: implements
+        link-type: implements
+        target-types: [software-safety-requirement]
+        required: true
+        cardinality: one-or-many
+
+  - name: unit-test-plan
+    description: >
+      Software unit verification plan (Part 6 clause 9). Selects the
+      verification methods from Table 9 (per-ASIL recommended methods)
+      and Table 10 (per-ASIL recommended coverage measures).
+    fields:
+      - name: asil
+        type: string
+        required: true
+        allowed-values: [QM, A, B, C, D]
+      - name: methods
+        type: list
+        required: false
+        description: Methods selected from Part 6 Table 9 (1a–1k)
+      - name: coverage-measures
+        type: list
+        required: false
+        description: Structural coverage measures from Part 6 Table 10 (1a–1c)
+    link-fields:
+      - name: verifies
+        link-type: verifies
+        target-types: [software-unit-design]
+        required: true
+        cardinality: one-or-many
+
+  - name: integration-test-plan
+    description: >
+      Software integration verification plan (Part 6 clause 10). Methods
+      drawn from Table 11; structural coverage from Table 12 (function
+      coverage and call coverage at the integration level).
+    fields:
+      - name: asil
+        type: string
+        required: true
+        allowed-values: [QM, A, B, C, D]
+      - name: methods
+        type: list
+        required: false
+        description: Methods selected from Part 6 Table 11
+    link-fields:
+      - name: verifies
+        link-type: verifies
+        target-types: [software-unit-design, software-safety-requirement]
+        required: true
+        cardinality: one-or-many
+
+  - name: validation-activity
+    description: >
+      Verification of software safety requirements (Part 6 clause 11).
+      Demonstrates the integrated software meets the SSRs.
+    fields:
+      - name: asil
+        type: string
+        required: true
+        allowed-values: [QM, A, B, C, D]
+    link-fields:
+      - name: verifies
+        link-type: verifies
+        target-types: [software-safety-requirement]
+        required: true
+        cardinality: one-or-many
+
+# ──────────────────────────────────────────────────────────────────────────
+# Link types
+# ──────────────────────────────────────────────────────────────────────────
+# The link types `verifies`, `implements`, and `derives-from` are inherited
+# from common.yaml. We add `decomposed-into` here because it has specific
+# meaning in ISO 26262 (ASIL decomposition per Part 9 clause 5).
+link-types:
+  - name: decomposed-into
+    inverse: decomposed-from
+    description: >
+      ASIL decomposition relationship (Part 9 clause 5): a parent
+      requirement is decomposed into two or more independent child
+      requirements whose combined satisfaction is sufficient.
+
+# ──────────────────────────────────────────────────────────────────────────
+# Traceability rules
+# ──────────────────────────────────────────────────────────────────────────
+traceability-rules:
+  - name: ssr-has-tsr-parent
+    description: Every software safety requirement must derive from a TSR
+    source-type: software-safety-requirement
+    required-link: derives-from
+    target-types: [technical-safety-requirement]
+    severity: error
+
+  - name: unit-design-has-test-plan
+    description: Every software unit design should be covered by a unit test plan
+    source-type: software-unit-design
+    required-backlink: verifies
+    from-types: [unit-test-plan]
+    severity: warning
+
+  - name: ssr-has-validation
+    description: Every software safety requirement should be validated at clause 11
+    source-type: software-safety-requirement
+    required-backlink: verifies
+    from-types: [validation-activity, integration-test-plan]
+    severity: warning
+
+# ──────────────────────────────────────────────────────────────────────────
+# Agent pipelines — ISO 26262 Part 6 Capability Level 2 evidence
+# ──────────────────────────────────────────────────────────────────────────
+#
+# Three pipelines target the principal software-level ISO 26262 evidence
+# loops:
+#
+#   vmodel        — structural traceability across the Part 6 V plus the
+#                   ASIL-decomposition independence argument required by
+#                   Part 9 clause 5.4.4.
+#   coverage      — verification method selection (Table 9, Table 11) and
+#                   structural coverage thresholds (Table 10, Table 12).
+#   confirmation  — confirmation reviews per Part 2 clause 6.4.7 / Annex C
+#                   for ASIL C and ASIL D work products.
+#
+# Variant-conditional ranking (in vmodel) raises the weight of structural
+# trace gaps when a project ships ASIL-D-touching variants such as the
+# `implantable-class-iii` variant — these become regulatory blockers, not
+# warnings, and outrank lower-ASIL gaps.
+#
+# What is FUTURE (parses today, but the underlying oracle command is not
+# yet implemented; pipeline rows referencing it are inert until the
+# oracle lands):
+#   - asil-decomposition         — checks the independence argument
+#                                  required when an ASIL decomposition
+#                                  is claimed (Part 9 clause 5).
+#   - coverage-threshold         — wraps an external coverage tool's
+#                                  output and compares vs the per-ASIL
+#                                  thresholds chosen by the project.
+#   - method-table-compliance    — checks the verification methods
+#                                  recorded against Part 6 Table 9 (unit)
+#                                  and Table 11 (integration), reporting
+#                                  shortfalls vs the ASIL recommendation.
+#
+# Today only `structural-trace` (rivet validate) and `confirmation-review`
+# (rivet check review-signoff --role confirmation-reviewer) are wired to
+# real CLI subcommands.
+agent-pipelines:
+  oracles:
+    - id: structural-trace
+      command: rivet validate
+      description: >
+        Schema-driven structural traceability oracle. Reports broken
+        cross-references, missing required links, and missing required
+        attributes (e.g. asil) on Part 6 work products.
+      applies-to: ["*"]
+      fires-on:
+        exit-code: nonzero
+
+    # FUTURE: rivet check asil-decomposition
+    # Verifies that any artifact carrying `decomposed: true` is supported
+    # by an independence argument (Part 9 clause 5.4.4) — concretely,
+    # that the two child requirements have non-overlapping allocation
+    # and an attached argument document.
+    - id: asil-decomposition
+      command: rivet check asil-decomposition
+      description: >
+        FUTURE oracle. Validates the independence argument required for
+        every claimed ASIL decomposition (Part 9 clause 5).
+      applies-to: ["*"]
+      fires-on:
+        exit-code: nonzero
+
+    # FUTURE: rivet check coverage-threshold
+    # The project supplies the external coverage command (lcov, kcov,
+    # gcov, etc.); the oracle compares the parsed result against the
+    # per-ASIL threshold table the project declares.
+    - id: coverage-threshold
+      command: rivet check coverage-threshold
+      description: >
+        FUTURE oracle. Compares structural coverage results against
+        per-ASIL thresholds. Project supplies the external command that
+        produces the coverage report.
+      applies-to: ["*"]
+      fires-on:
+        exit-code: nonzero
+
+    # FUTURE: rivet check method-table-compliance
+    # Cross-checks the `methods:` and `coverage-measures:` fields on
+    # unit-test-plan and integration-test-plan against the per-ASIL
+    # recommendations of Part 6 Table 9 and Table 11. ISO 26262 does not
+    # mandate a specific method set; "++" methods are highly recommended
+    # and "+" are recommended. The oracle reports gaps vs the project's
+    # declared compliance position.
+    - id: method-table-compliance
+      command: rivet check method-table-compliance
+      description: >
+        FUTURE oracle. Cross-checks selected verification methods against
+        ISO 26262-6 Table 9 (SW unit test methods per ASIL) and Table 10
+        (SW unit structural coverage per ASIL) for unit verification, and
+        Table 11 (SW integration test methods) for integration verification.
+      applies-to: ["*"]
+      fires-on:
+        exit-code: nonzero
+
+    - id: confirmation-review
+      command: rivet check review-signoff --role confirmation-reviewer
+      description: >
+        Confirmation review oracle (Part 2 clause 6.4.7 + Annex C).
+        Confirms a confirmation reviewer (independent of the development
+        team) has signed off on the work product. Required for ASIL C
+        and ASIL D safety-related work products.
+      applies-to:
+        asil: [C, D]
+      fires-on:
+        exit-code: nonzero
+
+  pipelines:
+
+    # ── vmodel ─────────────────────────────────────────────────────────
+    vmodel:
+      description: >
+        Structural traceability across the ISO 26262 Part 6 V (safety
+        goal -> FSR -> TSR -> SSR -> unit design -> unit/integration
+        verification -> validation) plus the ASIL-decomposition
+        independence argument required by Part 9 clause 5.
+      template-kind: structural
+      uses-oracles: [structural-trace, asil-decomposition]
+      rank-by:
+        # Variant-conditional weights: an implantable Class-III device
+        # variant elevates structural-trace errors to regulatory blockers
+        # (the device cannot ship without complete trace). For ordinary
+        # ASIL-A/B variants the same gap is weight 50.
+        - when: { oracle: structural-trace, severity: error, variant: implantable-class-iii }
+          weight: 100
+          label: "regulatory blocker (class III device)"
+        - when: { oracle: structural-trace, severity: error }
+          weight: 50
+          label: "structural trace error"
+        - when: { oracle: asil-decomposition, fires-on: independence-argument-missing }
+          weight: 80
+          label: "ASIL decomposition without independence argument"
+      auto-close:
+        - when:
+            oracle: structural-trace
+            closure-kind: link-existing
+          reviewers: ["{context.review-roles.dev-team}"]
+      human-review-required:
+        - when:
+            oracle: asil-decomposition
+            fires-on: independence-argument-missing
+          reviewers: ["{context.review-roles.safety-officer}"]
+          # FUTURE template — `rivet-core::templates` will populate this stub
+          # with the canonical ASIL-decomposition independence-argument
+          # outline (Part 9 clause 5.4.4: scope, freedom-from-interference
+          # claim, common-cause analysis, conclusion).
+          draft-template: templates/stubs/independence-argument.yaml
+      emit:
+        trailer: "Refs: {target_id}"
+        change-control: pr-review
+
+    # ── coverage ───────────────────────────────────────────────────────
+    coverage:
+      description: >
+        Per-ASIL verification method and structural coverage compliance.
+        Cross-checks selected methods against ISO 26262-6 Table 9 (SW unit
+        test methods per ASIL) and Table 10 (SW unit coverage per ASIL).
+        Coverage threshold gaps at ASIL D are regulatory blockers; the
+        change-control policy is `change-request` per ISO 26262 Part 8
+        clause 8 (configuration management) and clause 4.6 of the same
+        part covering project-level change requests.
+      template-kind: coverage
+      uses-oracles: [coverage-threshold, method-table-compliance]
+      rank-by:
+        - when: { oracle: coverage-threshold, fires-on: coverage-below-threshold, asil: D }
+          weight: 90
+          label: "coverage below ASIL-D threshold (regulatory blocker)"
+        - when: { oracle: coverage-threshold, fires-on: coverage-below-threshold, asil: C }
+          weight: 70
+          label: "coverage below ASIL-C threshold"
+        - when: { oracle: coverage-threshold, fires-on: coverage-below-threshold }
+          weight: 40
+          label: "coverage below threshold"
+        - when: { oracle: method-table-compliance, fires-on: highly-recommended-method-missing }
+          weight: 60
+          label: "Table 9/Table 11 highly-recommended method missing"
+      # Auto-close: NONE. Coverage evidence cannot be synthesised without
+      # actually running tests, and a missing method choice cannot be
+      # decided automatically — it requires a methods-justification
+      # written by the QA lead.
+      auto-close: []
+      human-review-required:
+        - when: { oracle: coverage-threshold }
+          reviewers: ["{context.review-roles.qa-lead}"]
+          change-control: change-request
+        - when: { oracle: method-table-compliance }
+          reviewers: ["{context.review-roles.qa-lead}"]
+          change-control: change-request
+      emit:
+        trailer: "Refs: {target_id}"
+        change-control: change-request
+
+    # ── confirmation ───────────────────────────────────────────────────
+    confirmation:
+      description: >
+        Confirmation reviews (Part 2 clause 6.4.7 + Annex C) for ASIL C
+        and ASIL D work products. A confirmation reviewer independent of
+        the development team must sign off; without that signoff the
+        work product is not released-grade.
+      template-kind: review  # FUTURE kind
+      uses-oracles: [confirmation-review]
+      rank-by:
+        - when:
+            oracle: confirmation-review
+            fires-on: missing-signoff
+            artifact-type: software-safety-requirement
+            asil: D
+          weight: 70
+          label: "missing confirmation review on ASIL-D SSR"
+        - when:
+            oracle: confirmation-review
+            fires-on: missing-signoff
+            asil: D
+          weight: 60
+          label: "missing confirmation review on ASIL-D work product"
+        - when:
+            oracle: confirmation-review
+            fires-on: missing-signoff
+            asil: C
+          weight: 45
+          label: "missing confirmation review on ASIL-C work product"
+      auto-close:
+        # FUTURE wiring: today rivet's commit-trailer parser does not
+        # extract `Confirmed-By:` trailers. When that lands, the CLI can
+        # observe a PR landing with `Confirmed-By: <name> <email>` from
+        # an authorised confirmation reviewer and record the signoff
+        # directly without a separate manual step. Until then this row
+        # documents intent but never matches.
+        - when:
+            oracle: confirmation-review
+            closure-kind: signoff-present-in-git-trailer
+          reviewers: ["{context.review-roles.confirmation-review-board}"]
+      human-review-required:
+        - when: { oracle: confirmation-review, fires-on: missing-signoff }
+          reviewers: ["{context.review-roles.confirmation-review-board}"]
+          change-control: pr-review
+      emit:
+        trailer: "Confirmed-By: {reviewer}"
+        change-control: pr-review

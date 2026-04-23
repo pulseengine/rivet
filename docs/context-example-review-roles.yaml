@@ -1,0 +1,65 @@
+# Example reviewer-roles context file.
+#
+# This file documents every reviewer-group placeholder used by the
+# agent-pipelines blocks shipped with rivet (notably `schemas/aspice.yaml`
+# and `schemas/iso-26262.yaml`).
+#
+# To use it: copy this file to `.rivet/context/review-roles.yaml` in
+# your project root and replace each list of identifiers with the actual
+# user / group / team handles in your reviewer system. The
+# `agent-pipelines:` placeholder `{context.review-roles.<group>}`
+# resolves against the entries below at dispatch time.
+#
+# Identifier conventions:
+#   - GitHub: `@org/team-slug` for teams; `@username` for individuals.
+#   - GitLab: `@group/subgroup` and `@username`.
+#   - Plain email addresses are also acceptable for systems that route by mail.
+#
+# Each group below lists which schemas / pipelines reference it so a
+# project can scope-down to the groups it actually consumes.
+
+review-roles:
+
+  # Used by:
+  #   - dev   pipeline `vmodel`               (auto-close, human-review)
+  #   - aspice pipeline `level-2-trace`      (auto-close, human-review)
+  #   - iso-26262 pipeline `vmodel`          (auto-close)
+  dev-team:
+    - "@your-org/dev-team"
+    # - "@alice"
+    # - "@bob"
+
+  # Used by:
+  #   - iso-26262 pipeline `coverage`         (human-review, change-request)
+  qa-lead:
+    - "@your-org/qa-leads"
+    # - "@quality-lead-name"
+
+  # Used by:
+  #   - iso-26262 pipeline `vmodel`           (human-review for ASIL decomposition)
+  safety-officer:
+    - "@your-org/functional-safety"
+    # - "@safety-officer-name"
+
+  # Used by:
+  #   - aspice pipeline `level-2-content`     (human-review)
+  #   - aspice pipeline `level-2-review`      (human-review)
+  process-lead:
+    - "@your-org/process-leads"
+    # - "@process-lead-name"
+
+  # Used by:
+  #   - iso-26262 pipeline `confirmation`     (auto-close + human-review)
+  # Independent of the development team per ISO 26262 Part 2 clause 6.4.7.
+  confirmation-review-board:
+    - "@your-org/confirmation-review-board"
+    # - "@independent-reviewer-1"
+    # - "@independent-reviewer-2"
+
+  # Used by:
+  #   - cybersecurity / TARA pipelines (declared in other schemas; listed
+  #     here so a single shared review-roles file works across the full
+  #     rivet schema set without copy-paste).
+  security-team:
+    - "@your-org/security-team"
+    # - "@security-engineer-name"
