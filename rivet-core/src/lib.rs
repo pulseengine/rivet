@@ -79,6 +79,7 @@ pub mod agent_pipelines;
 pub mod ownership;
 pub mod rivet_version;
 pub mod runs;
+pub mod templates;
 pub mod validate;
 pub mod variant_emit;
 pub mod yaml_cst;

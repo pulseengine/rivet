@@ -35,10 +35,15 @@
 //! surface.
 
 use std::collections::BTreeMap;
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
 use crate::error::Error;
+
+fn default_template_kind() -> String {
+    "structural".to_string()
+}
 
 // ── Top-level block ────────────────────────────────────────────────────
 
@@ -138,6 +143,14 @@ pub struct PipelineDecl {
     /// Human-readable description for `rivet pipelines show`.
     #[serde(default)]
     pub description: String,
+
+    /// Which prompt-template kind drives this pipeline's discover/validate/
+    /// emit sub-agents. Resolves against the embedded set
+    /// (`rivet_core::templates::list_kinds`) and against project overrides
+    /// under `.rivet/templates/pipelines/<kind>/`. Defaults to
+    /// `"structural"` — the rivet-authored kind.
+    #[serde(default = "default_template_kind")]
+    pub template_kind: String,
 
     /// Which oracles this pipeline composes. Each entry must match an
     /// `oracles[].id`. Unknown oracle references are a validation error.
@@ -292,6 +305,37 @@ impl AgentPipelines {
         }
     }
 
+    /// Like `validate`, but additionally rejects any pipeline whose
+    /// `template-kind:` is neither built-in
+    /// (`rivet_core::templates::list_kinds`) nor present as a project
+    /// override directory under `.rivet/templates/pipelines/<kind>/`.
+    ///
+    /// Use this from `rivet pipelines validate` and other CLI sites that
+    /// have a project root in hand. The plain `validate()` is for unit
+    /// tests and any caller that doesn't yet know its project root.
+    pub fn validate_with_project(&self, project_root: &Path) -> Result<(), Vec<String>> {
+        let mut errors = match self.validate() {
+            Ok(()) => Vec::new(),
+            Err(e) => e,
+        };
+        for (name, pipeline) in &self.pipelines {
+            if !crate::templates::kind_is_known(project_root, &pipeline.template_kind) {
+                let known = crate::templates::list_kinds().join(", ");
+                errors.push(format!(
+                    "pipeline `{name}` declares unknown template-kind `{}` — \
+                     known built-ins: [{}]; project overrides live under \
+                     .rivet/templates/pipelines/<kind>/",
+                    pipeline.template_kind, known
+                ));
+            }
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
+    }
+
     /// Enumerate (oracle_id, schema_name) for use in runs.
     pub fn oracle_ids(&self) -> impl Iterator<Item = &str> {
         self.oracles.iter().map(|o| o.id.as_str())
@@ -431,6 +475,72 @@ pipelines:
             err.iter().any(|m| m.contains("not listed in uses-oracles")),
             "errors: {err:?}"
         );
+    }
+
+    #[test]
+    fn template_kind_defaults_to_structural() {
+        let yaml = r#"
+oracles:
+  - id: o1
+    command: cmd
+pipelines:
+  p:
+    uses-oracles: [o1]
+"#;
+        let p = AgentPipelines::from_yaml(yaml).unwrap();
+        assert_eq!(p.pipelines["p"].template_kind, "structural");
+    }
+
+    #[test]
+    fn template_kind_round_trips_explicit_value() {
+        let yaml = r#"
+oracles:
+  - id: o1
+    command: cmd
+pipelines:
+  p:
+    uses-oracles: [o1]
+    template-kind: discovery
+"#;
+        let p = AgentPipelines::from_yaml(yaml).unwrap();
+        assert_eq!(p.pipelines["p"].template_kind, "discovery");
+    }
+
+    #[test]
+    fn validate_with_project_rejects_unknown_template_kind() {
+        let yaml = r#"
+oracles:
+  - id: o1
+    command: cmd
+pipelines:
+  p:
+    uses-oracles: [o1]
+    template-kind: not-a-real-kind
+"#;
+        let p = AgentPipelines::from_yaml(yaml).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let err = p.validate_with_project(tmp.path()).unwrap_err();
+        assert!(
+            err.iter().any(|m| m.contains("not-a-real-kind")),
+            "errors: {err:?}"
+        );
+    }
+
+    #[test]
+    fn validate_with_project_accepts_project_override_kind() {
+        let yaml = r#"
+oracles:
+  - id: o1
+    command: cmd
+pipelines:
+  p:
+    uses-oracles: [o1]
+    template-kind: custom-kind
+"#;
+        let p = AgentPipelines::from_yaml(yaml).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join(".rivet/templates/pipelines/custom-kind")).unwrap();
+        assert!(p.validate_with_project(tmp.path()).is_ok());
     }
 
     #[test]
