@@ -1230,6 +1230,31 @@ enum VariantAction {
         #[arg(short, long, default_value = "text")]
         format: String,
     },
+    /// Print the per-feature source manifest for a resolved variant.
+    ///
+    /// Resolves the variant against the feature model, then walks the
+    /// binding model and evaluates every `when:` predicate against the
+    /// effective feature set. The output enumerates exactly which source
+    /// globs participated in this variant — the audit-facing answer to
+    /// "what files went into this build?" (Gap 5,
+    /// docs/pure-variants-comparison.md).
+    Manifest {
+        /// Path to feature model YAML file
+        #[arg(long)]
+        model: PathBuf,
+
+        /// Path to variant configuration YAML file
+        #[arg(long)]
+        variant: PathBuf,
+
+        /// Path to binding model YAML file (artifacts/feature bindings).
+        #[arg(long)]
+        binding: PathBuf,
+
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
 }
 
 /// Oracle subcommands under `rivet check`.
@@ -1557,6 +1582,12 @@ fn run(cli: Cli) -> Result<bool> {
                 feature,
                 format,
             } => cmd_variant_explain(model, variant, feature.as_deref(), format),
+            VariantAction::Manifest {
+                model,
+                variant,
+                binding,
+                format,
+            } => cmd_variant_manifest(model, variant, binding, format),
         },
         Command::Runs { action } => match action {
             RunsAction::List { limit, format } => {
@@ -8845,6 +8876,80 @@ fn cmd_variant_explain(
         println!("Constraints ({}):", model.constraints.len());
         for c in &model.constraints {
             println!("  {c:?}");
+        }
+    }
+
+    Ok(true)
+}
+
+/// `rivet variant manifest` — print the per-feature source manifest for
+/// a resolved variant. The manifest is the audit-facing output
+/// described in `docs/pure-variants-comparison.md` Gap 5.
+fn cmd_variant_manifest(
+    model_path: &std::path::Path,
+    variant_path: &std::path::Path,
+    binding_path: &std::path::Path,
+    format: &str,
+) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
+
+    let model_yaml = std::fs::read_to_string(model_path)
+        .with_context(|| format!("reading {}", model_path.display()))?;
+    let model = rivet_core::feature_model::FeatureModel::from_yaml(&model_yaml)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    let variant_yaml = std::fs::read_to_string(variant_path)
+        .with_context(|| format!("reading {}", variant_path.display()))?;
+    let variant: rivet_core::feature_model::VariantConfig =
+        serde_yaml::from_str(&variant_yaml).context("parsing variant config")?;
+
+    let binding_yaml = std::fs::read_to_string(binding_path)
+        .with_context(|| format!("reading {}", binding_path.display()))?;
+    let binding: rivet_core::feature_model::FeatureBinding =
+        serde_yaml::from_str(&binding_yaml).context("parsing binding model")?;
+
+    let resolved = rivet_core::feature_model::solve_with_bindings(&model, &variant, &binding)
+        .map_err(|errs| {
+            let msgs: Vec<String> = errs.iter().map(|e| format!("{e}")).collect();
+            anyhow::anyhow!(
+                "variant `{}` failed to resolve manifest:\n  {}",
+                variant.name,
+                msgs.join("\n  ")
+            )
+        })?;
+
+    if format == "json" {
+        let manifest_json: serde_json::Map<String, serde_json::Value> = resolved
+            .source_manifest
+            .iter()
+            .map(|(feature, paths)| {
+                let arr: Vec<serde_json::Value> = paths
+                    .iter()
+                    .map(|p| serde_json::Value::String(p.display().to_string()))
+                    .collect();
+                (feature.clone(), serde_json::Value::Array(arr))
+            })
+            .collect();
+        let total_globs: usize = resolved.source_manifest.values().map(|v| v.len()).sum();
+        let output = serde_json::json!({
+            "variant": resolved.name,
+            "feature_count": resolved.effective_features.len(),
+            "manifest_entry_count": resolved.source_manifest.len(),
+            "manifest_glob_count": total_globs,
+            "manifest": manifest_json,
+        });
+        println!("{}", serde_json::to_string_pretty(&output)?);
+    } else {
+        println!("Variant '{}': source manifest", resolved.name);
+        if resolved.source_manifest.is_empty() {
+            println!("  (no bound source entries for this variant)");
+        } else {
+            for (feature, paths) in &resolved.source_manifest {
+                println!("  {feature}:");
+                for p in paths {
+                    println!("    {}", p.display());
+                }
+            }
         }
     }
 
