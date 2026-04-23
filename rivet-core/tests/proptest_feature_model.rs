@@ -107,6 +107,7 @@ fn arb_feature_model(max_features: usize) -> impl Strategy<Value = FeatureModel>
                         group,
                         children,
                         parent,
+                        attributes: std::collections::BTreeMap::new(),
                     },
                 );
             }

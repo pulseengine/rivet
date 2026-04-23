@@ -38,6 +38,7 @@ pub mod snapshot;
 pub mod store;
 pub mod test_scanner;
 pub mod validate;
+pub mod variant_emit;
 pub mod yaml_cst;
 pub mod yaml_edit;
 pub mod yaml_hir;

@@ -944,6 +944,60 @@ enum VariantAction {
         #[arg(short, long, default_value = "text")]
         format: String,
     },
+    /// Emit effective features + attributes in a build-system-specific
+    /// format. Exits non-zero if the variant fails to solve.
+    ///
+    /// Formats: json, env (sh), cargo (build.rs), cmake, cpp-header,
+    /// bazel, make. See docs/getting-started.md for worked examples.
+    Features {
+        /// Path to feature model YAML file
+        #[arg(long)]
+        model: PathBuf,
+
+        /// Path to variant configuration YAML file
+        #[arg(long)]
+        variant: PathBuf,
+
+        /// Output format
+        #[arg(short, long, default_value = "env")]
+        format: String,
+    },
+    /// Print "on"/"off" for a single feature after solving the variant.
+    ///
+    /// Exit status: 0 if the feature is selected, 1 if not, 2 if the
+    /// variant fails to solve or the feature is unknown.
+    Value {
+        /// Path to feature model YAML file
+        #[arg(long)]
+        model: PathBuf,
+
+        /// Path to variant configuration YAML file
+        #[arg(long)]
+        variant: PathBuf,
+
+        /// Feature name to query
+        feature: String,
+    },
+    /// Print a single attribute value for a feature after solving.
+    ///
+    /// Exit status: 0 if the attribute exists, 2 if the feature is not
+    /// selected or the key is absent. Non-scalar values (lists/maps)
+    /// print as JSON.
+    Attr {
+        /// Path to feature model YAML file
+        #[arg(long)]
+        model: PathBuf,
+
+        /// Path to variant configuration YAML file
+        #[arg(long)]
+        variant: PathBuf,
+
+        /// Feature name
+        feature: String,
+
+        /// Attribute key
+        key: String,
+    },
 }
 
 fn main() -> ExitCode {
@@ -1198,6 +1252,22 @@ fn run(cli: Cli) -> Result<bool> {
                 binding,
                 format,
             } => cmd_variant_solve(&cli, model, variant, binding.as_deref(), format),
+            VariantAction::Features {
+                model,
+                variant,
+                format,
+            } => cmd_variant_features(model, variant, format),
+            VariantAction::Value {
+                model,
+                variant,
+                feature,
+            } => cmd_variant_value(model, variant, feature),
+            VariantAction::Attr {
+                model,
+                variant,
+                feature,
+                key,
+            } => cmd_variant_attr(model, variant, feature, key),
         },
         #[cfg(feature = "wasm")]
         Command::Import {
@@ -7812,6 +7882,164 @@ fn cmd_variant_solve(
     }
 
     Ok(true)
+}
+
+/// Load a feature model + variant config and solve — loud on failure.
+///
+/// Shared by `rivet variant features / value / attr`. Every call path
+/// runs the solver; if constraints fail, the caller exits with a clear
+/// error (no silent partial output).
+fn load_and_solve_variant(
+    model_path: &std::path::Path,
+    variant_path: &std::path::Path,
+) -> Result<(
+    rivet_core::feature_model::FeatureModel,
+    rivet_core::feature_model::ResolvedVariant,
+)> {
+    let model_yaml = std::fs::read_to_string(model_path)
+        .with_context(|| format!("reading {}", model_path.display()))?;
+    let model = rivet_core::feature_model::FeatureModel::from_yaml(&model_yaml)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let variant_yaml = std::fs::read_to_string(variant_path)
+        .with_context(|| format!("reading {}", variant_path.display()))?;
+    let variant: rivet_core::feature_model::VariantConfig =
+        serde_yaml::from_str(&variant_yaml).context("parsing variant config")?;
+    let resolved = rivet_core::feature_model::solve(&model, &variant).map_err(|errs| {
+        let msgs: Vec<String> = errs.iter().map(|e| format!("{e:?}")).collect();
+        anyhow::anyhow!(
+            "variant `{}` failed constraint check:\n  {}",
+            variant.name,
+            msgs.join("\n  ")
+        )
+    })?;
+    Ok((model, resolved))
+}
+
+fn cmd_variant_features(
+    model_path: &std::path::Path,
+    variant_path: &std::path::Path,
+    format: &str,
+) -> Result<bool> {
+    let fmt = rivet_core::variant_emit::EmitFormat::parse(format)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let (model, resolved) = load_and_solve_variant(model_path, variant_path)?;
+    let out = rivet_core::variant_emit::emit(&model, &resolved, fmt)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    print!("{out}");
+    Ok(true)
+}
+
+fn cmd_variant_value(
+    model_path: &std::path::Path,
+    variant_path: &std::path::Path,
+    feature: &str,
+) -> Result<bool> {
+    let (model, resolved) = load_and_solve_variant(model_path, variant_path)?;
+    if !model.features.contains_key(feature) {
+        eprintln!(
+            "error: feature `{feature}` is not declared in the feature model `{}`",
+            model_path.display()
+        );
+        std::process::exit(2);
+    }
+    if resolved.effective_features.contains(feature) {
+        println!("on");
+        Ok(true)
+    } else {
+        println!("off");
+        Ok(false)
+    }
+}
+
+fn cmd_variant_attr(
+    model_path: &std::path::Path,
+    variant_path: &std::path::Path,
+    feature: &str,
+    key: &str,
+) -> Result<bool> {
+    let (model, resolved) = load_and_solve_variant(model_path, variant_path)?;
+    let f = model.features.get(feature).ok_or_else(|| {
+        anyhow::anyhow!(
+            "feature `{feature}` is not declared in feature model `{}`",
+            model_path.display()
+        )
+    })?;
+    if !resolved.effective_features.contains(feature) {
+        eprintln!(
+            "error: feature `{feature}` is not selected in variant `{}`",
+            resolved.name
+        );
+        std::process::exit(2);
+    }
+    match f.attributes.get(key) {
+        Some(v) => {
+            match v {
+                serde_yaml::Value::Null => println!(),
+                serde_yaml::Value::Bool(b) => println!("{b}"),
+                serde_yaml::Value::Number(n) => println!("{n}"),
+                serde_yaml::Value::String(s) => println!("{s}"),
+                // list/map → JSON so shells can parse structurally
+                other => {
+                    let json =
+                        serde_json::to_string(&rivet_core_yaml_to_json(other)).map_err(|e| {
+                            anyhow::anyhow!("serializing attribute `{key}` as json: {e}")
+                        })?;
+                    println!("{json}");
+                }
+            }
+            Ok(true)
+        }
+        None => {
+            eprintln!(
+                "error: feature `{feature}` has no attribute `{key}` (declared keys: {})",
+                f.attributes
+                    .keys()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            std::process::exit(2);
+        }
+    }
+}
+
+/// YAML→JSON conversion for non-scalar attribute values printed by
+/// `rivet variant attr`. Mirrors the internal helper in `variant_emit`
+/// but is small enough to keep here rather than expose publicly.
+fn rivet_core_yaml_to_json(v: &serde_yaml::Value) -> serde_json::Value {
+    match v {
+        serde_yaml::Value::Null => serde_json::Value::Null,
+        serde_yaml::Value::Bool(b) => serde_json::Value::Bool(*b),
+        serde_yaml::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                serde_json::json!(i)
+            } else if let Some(u) = n.as_u64() {
+                serde_json::json!(u)
+            } else if let Some(f) = n.as_f64() {
+                serde_json::Number::from_f64(f)
+                    .map(serde_json::Value::Number)
+                    .unwrap_or(serde_json::Value::Null)
+            } else {
+                serde_json::Value::Null
+            }
+        }
+        serde_yaml::Value::String(s) => serde_json::Value::String(s.clone()),
+        serde_yaml::Value::Sequence(items) => {
+            serde_json::Value::Array(items.iter().map(rivet_core_yaml_to_json).collect())
+        }
+        serde_yaml::Value::Mapping(m) => {
+            let mut out = serde_json::Map::new();
+            for (k, v) in m {
+                let key = match k {
+                    serde_yaml::Value::String(s) => s.clone(),
+                    other => serde_yaml::to_string(other).unwrap_or_default().trim().to_string(),
+                };
+                out.insert(key, rivet_core_yaml_to_json(v));
+            }
+            serde_json::Value::Object(out)
+        }
+        serde_yaml::Value::Tagged(t) => rivet_core_yaml_to_json(&t.value),
+    }
 }
 
 fn find_latest_snapshot(snap_dir: &std::path::Path) -> Result<std::path::PathBuf> {
