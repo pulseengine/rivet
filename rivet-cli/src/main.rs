@@ -253,6 +253,15 @@ enum Command {
         /// Install git hooks (commit-msg, pre-commit) that call rivet for validation
         #[arg(long)]
         hooks: bool,
+
+        /// With --agents: also scaffold the `.rivet/` workspace tree —
+        /// `.rivet-version` pin file, `.rivet/context/` placeholders
+        /// (review-roles, risk-tolerance, domain-glossary), and
+        /// `.rivet/agents/rivet-rule.md`. Project-owned files are never
+        /// overwritten once created; rerun with `rivet upgrade --resync-project`
+        /// only if you really want to regenerate them.
+        #[arg(long, requires = "agents")]
+        bootstrap: bool,
     },
 
     /// Validate artifacts against schemas
@@ -1257,10 +1266,15 @@ fn run(cli: Cli) -> Result<bool> {
         force_regen,
         yes: _yes,
         hooks,
+        bootstrap,
     } = &cli.command
     {
         if *agents {
-            return cmd_init_agents(&cli, *migrate, *force_regen);
+            cmd_init_agents(&cli, *migrate, *force_regen)?;
+            if *bootstrap {
+                return cmd_init_bootstrap(&cli);
+            }
+            return Ok(true);
         }
         if *hooks {
             return cmd_init_hooks(dir);
@@ -2919,6 +2933,264 @@ rivet stats        # Show summary statistics
 /// Hooks chain with existing hooks: if a hook file already exists, it is
 /// renamed to `<hook>.prev` and called after rivet's check succeeds.
 /// This allows coexistence with other hook managers (husky, pre-commit, lefthook).
+/// Scaffold the `.rivet/` workspace tree. Creates directory structure +
+/// pin file + project-owned placeholder files. Templates are NOT copied
+/// here — that's `rivet templates copy-to-project`'s job. This runs only
+/// when the user passes `--bootstrap` and always after `cmd_init_agents`.
+///
+/// Ownership contract: every file written here is PROJECT-OWNED once
+/// created; `rivet init --agents --bootstrap` refuses to overwrite any
+/// project-owned file that already exists. Use `rivet upgrade
+/// --resync-project` if you really want to regenerate them.
+fn cmd_init_bootstrap(cli: &Cli) -> Result<bool> {
+    use rivet_core::ownership::{guard_write, rivet_dir, WriteMode};
+    use rivet_core::rivet_version::{content_sha256, FileRecord, RivetVersion, ScaffoldedFrom};
+
+    let project_root = cli.project.clone();
+    let rivet_dir = rivet_dir(&project_root);
+
+    // 1. Top-level `.rivet/` directory + subdirs.
+    for sub in [".rivet", ".rivet/pipelines", ".rivet/context", ".rivet/agents", ".rivet/runs"] {
+        let p = project_root.join(sub);
+        if !p.exists() {
+            std::fs::create_dir_all(&p)
+                .with_context(|| format!("creating {}", p.display()))?;
+        }
+    }
+
+    // 2. Project-owned placeholder files. Each goes through the ownership
+    //    guard so re-running this command on an existing scaffold refuses
+    //    to clobber user content.
+    let mut file_records: Vec<FileRecord> = Vec::new();
+
+    // 2a. Context placeholders
+    let context_files: &[(&str, &str)] = &[
+        (".rivet/context/review-roles.yaml", REVIEW_ROLES_STARTER),
+        (".rivet/context/risk-tolerance.yaml", RISK_TOLERANCE_STARTER),
+        (".rivet/context/domain-glossary.md", DOMAIN_GLOSSARY_STARTER),
+    ];
+    for (rel, content) in context_files {
+        let abs = project_root.join(rel);
+        let exists = abs.exists();
+        match guard_write(&rivet_dir, &abs, WriteMode::Scaffold, exists) {
+            Ok(()) => {
+                std::fs::write(&abs, content)
+                    .with_context(|| format!("writing {}", abs.display()))?;
+                file_records.push(FileRecord {
+                    path: rel.to_string(),
+                    from_template: format!("builtin:{}", rel.rsplit_once('/').unwrap().1),
+                    scaffolded_sha: content_sha256(content.as_bytes()),
+                });
+                eprintln!("  scaffolded {}", rel);
+            }
+            Err(e) if format!("{e}").contains("refusing to overwrite") => {
+                eprintln!("  kept {} (already project-owned)", rel);
+            }
+            Err(e) => return Err(anyhow::anyhow!("{e}")),
+        }
+    }
+
+    // 2b. Agent-facing project rule. Pulls in what `cmd_init_agents`
+    //     already wrote into AGENTS.md so the agent has a single canonical
+    //     file to read.
+    let rule_path = project_root.join(".rivet/agents/rivet-rule.md");
+    let rule_exists = rule_path.exists();
+    match guard_write(&rivet_dir, &rule_path, WriteMode::Scaffold, rule_exists) {
+        Ok(()) => {
+            let content = rivet_rule_starter(cli);
+            std::fs::write(&rule_path, &content)
+                .with_context(|| format!("writing {}", rule_path.display()))?;
+            file_records.push(FileRecord {
+                path: ".rivet/agents/rivet-rule.md".into(),
+                from_template: "builtin:rivet-rule.md".into(),
+                scaffolded_sha: content_sha256(content.as_bytes()),
+            });
+            eprintln!("  scaffolded .rivet/agents/rivet-rule.md");
+        }
+        Err(_) => {
+            eprintln!("  kept .rivet/agents/rivet-rule.md (already project-owned)");
+        }
+    }
+
+    // 3. Pin file — .rivet/.rivet-version. Writes even if present; this
+    //    records the scaffold event.
+    let version_path = rivet_dir.join(".rivet-version");
+    let pin = RivetVersion {
+        rivet_cli: env!("CARGO_PKG_VERSION").to_string(),
+        template_version: 1,
+        scaffolded_at: iso8601_now(),
+        files: file_records,
+        scaffolded_from: ScaffoldedFrom {
+            templates_version: 1,
+            schemas: Default::default(),
+        },
+    };
+    let yaml = pin.to_yaml().map_err(|e| anyhow::anyhow!("{e}"))?;
+    std::fs::write(&version_path, yaml)
+        .with_context(|| format!("writing {}", version_path.display()))?;
+    eprintln!("  pinned .rivet/.rivet-version (rivet-cli {})", pin.rivet_cli);
+
+    // 4. Report next steps so the user knows what's expected.
+    println!();
+    println!("Bootstrap complete. Next steps before `rivet close-gaps` will run:");
+    println!("  1. Edit .rivet/context/review-roles.yaml — replace TODOs with actual reviewer groups");
+    println!("  2. Edit .rivet/context/risk-tolerance.yaml — set integrity-level thresholds for your project");
+    println!("  3. Optional: `rivet templates copy-to-project <kind>` to customise pipeline prompts");
+    println!("  4. Run `rivet pipelines validate` — confirms every Tier-3 placeholder is resolved");
+    println!();
+    println!("See .rivet/agents/rivet-rule.md for the project-specialised agent instructions.");
+
+    Ok(true)
+}
+
+fn iso8601_now() -> String {
+    // Kept tiny so we don't pull in chrono; matches runs::new_run_id format.
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    let days = secs.div_euclid(86_400);
+    let rem = secs.rem_euclid(86_400) as u32;
+    let h = rem / 3600;
+    let m = (rem / 60) % 60;
+    let s = rem % 60;
+    let (y, mo, d) = civil_from_days(days);
+    format!("{y:04}-{mo:02}-{d:02}T{h:02}:{m:02}:{s:02}Z")
+}
+
+fn civil_from_days(z: i64) -> (i64, u32, u32) {
+    let z = z + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u32;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    (y, m, d)
+}
+
+fn rivet_rule_starter(cli: &Cli) -> String {
+    // Project-specialised version of the skill rule. Agents read this on
+    // trigger; rivet never rewrites it after scaffold, so it's the
+    // authoritative project-specific instruction file.
+    let project_name = cli.project.file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("this project");
+    format!(
+        "# rivet in {project_name}\n\
+        \n\
+        This file was scaffolded once by `rivet init --agents --bootstrap`.\n\
+        Edit freely — rivet never rewrites it. For the generic skill surface\n\
+        see `.claude/skills/rivet-rule/SKILL.md` (or the equivalent for your\n\
+        agent tool).\n\
+        \n\
+        ## How this project uses rivet\n\
+        \n\
+        - Schemas:  see `rivet.yaml :: project.schemas`\n\
+        - Variants: see `rivet variant list`\n\
+        - Pipelines: run `rivet pipelines list` to see active agent-pipelines\n\
+        \n\
+        ## The loop\n\
+        \n\
+        ```bash\n\
+        rivet pipelines validate          # hard gate; fix .rivet/context/ until clean\n\
+        rivet close-gaps --format json    # ranks gaps, produces proposals\n\
+        # for each gap (parallel sub-agents):\n\
+        #   execute the template-pair's discover.md in the scratch worktree\n\
+        #   fresh-session validate.md runs `rivet validate` cold\n\
+        #   emit.md produces the draft PR\n\
+        rivet runs record --run-id <id> --outcome outcomes.json\n\
+        ```\n\
+        \n\
+        ## Project conventions to enforce\n\
+        \n\
+        - Every commit under `artifacts/**/*.yaml` needs a trailer per the\n\
+          project's commits.trailers config in rivet.yaml.\n\
+        - Never commit without a fresh `rivet validate` in the scratch\n\
+          worktree where the change was made.\n\
+        - When a gap is `human-review-required`, read `.rivet/context/`\n\
+          first — domain glossary + review roles + risk tolerance carry\n\
+          project-specific context no prompt should override.\n\
+        \n\
+        ## Project-specific notes\n\
+        \n\
+        <!-- Add anything here that makes your project special: domain\n\
+             terminology, review customs, release procedures, review groups\n\
+             and their GitHub handles. The agent reads this on trigger. -->\n"
+    )
+}
+
+const REVIEW_ROLES_STARTER: &str = r#"# .rivet/context/review-roles.yaml
+#
+# Maps reviewer-group names referenced in your schemas' agent-pipelines
+# blocks (via `{context.review-roles.X}` placeholders) to concrete
+# reviewers in your organisation.
+#
+# This file is PROJECT-OWNED. Rivet scaffolds it once and never rewrites
+# it. Add / remove roles as your pipelines require them.
+#
+# Each role is a list of identifiers — the shape (GitHub handles, teams,
+# emails, Slack group IDs) is a project-level decision. Every downstream
+# closure PR will tag the listed reviewers.
+
+dev-team:
+  # TODO: replace with actual reviewers for this project.
+  # Example formats:
+  #   GitHub handles:   ["@alice", "@bob"]
+  #   GitHub team ref:  ["@yourorg/dev-leads"]
+  #   Email addresses:  ["alice@example.com"]
+  - "{{PLACEHOLDER: list at least one reviewer or mark accepted-empty}}"
+
+qa-lead:
+  - "{{PLACEHOLDER: required for safety-critical schemas (ASPICE, 26262)}}"
+
+safety-officer:
+  - "{{PLACEHOLDER: required for ISO 26262 ASIL decomposition closures}}"
+"#;
+
+const RISK_TOLERANCE_STARTER: &str = r#"# .rivet/context/risk-tolerance.yaml
+#
+# Integrity-level thresholds for coverage/evidence oracles in your
+# project. Schemas reference these via `{context.risk-tolerance.X}`.
+#
+# PROJECT-OWNED. Rivet scaffolds once; edit freely thereafter.
+
+mc-dc-asil-d: 95.0       # ISO 26262-6 Table 12 row MC/DC
+mc-dc-asil-c: 85.0
+branch-asil-b: 70.0
+statement-asil-a: 50.0
+
+# Add / remove keys to match the oracles your schemas actually use.
+# If your schemas don't reference coverage thresholds at all, this file
+# can stay minimal but should still be present.
+"#;
+
+const DOMAIN_GLOSSARY_STARTER: &str = r#"# Domain glossary
+
+<!-- PROJECT-OWNED. Rivet scaffolds once, never rewrites. Fill in the
+     terms your project uses — an agent will consult this when drafting
+     content for human-review-required gaps so synthesised stubs match
+     your organisation's vocabulary. -->
+
+## Core terms
+
+- **requirement** — {{PLACEHOLDER: what "requirement" means in this project — formality, approval workflow, naming}}
+- **safety goal** — {{PLACEHOLDER: if relevant; else mark accepted-empty}}
+- **mitigation** — {{PLACEHOLDER}}
+
+## Variant vocabulary
+
+- **production build** — {{PLACEHOLDER: which variant name(s) map to production}}
+- **developer build** — {{PLACEHOLDER: dev-only variants}}
+
+## Stakeholder shorthands
+
+- **the-team** — {{PLACEHOLDER: e.g. which GH team: @yourorg/sw-team}}
+"#;
+
 fn cmd_init_hooks(dir: &std::path::Path) -> Result<bool> {
     let dir = if dir == std::path::Path::new(".") {
         std::env::current_dir().context("resolving current directory")?
