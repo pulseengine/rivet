@@ -1,3 +1,25 @@
+// SAFETY-REVIEW (SCRC Phase 1, DD-058): Integration test code — blanket
+// allow of the restriction family. Tests legitimately use
+// unwrap/expect/panic/indexing because a test failure should panic with
+// a clear stack; real risk analysis is carried by production code.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects,
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::wildcard_enum_match_arm,
+    clippy::match_wildcard_for_single_variants,
+    clippy::panic,
+    clippy::todo,
+    clippy::unimplemented,
+    clippy::dbg_macro,
+    clippy::print_stdout,
+    clippy::print_stderr
+)]
+
 //! Integration tests for `rivet variant features / value / attr`.
 //!
 //! The unit tests in `rivet_core::variant_emit::tests` cover format

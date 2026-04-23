@@ -33,7 +33,14 @@
     clippy::unimplemented,
     clippy::dbg_macro,
     clippy::print_stdout,
-    clippy::print_stderr
+    clippy::print_stderr,
+    // SCRC Phase 2 (DD-063): `clippy::exit` is the right lint to enforce
+    // in library code but `rivet-cli` is a CLI binary where
+    // `std::process::exit(2)` is the idiomatic way to signal the
+    // POSIX "misuse" exit code for `rivet variant value/attr`
+    // (0 = selected/present, 1 = absent-but-defined, 2 = unknown/error).
+    // Returning Result<bool> cannot express the three-valued contract.
+    clippy::exit
 )]
 
 use std::collections::HashSet;
