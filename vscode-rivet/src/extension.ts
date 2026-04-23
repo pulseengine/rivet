@@ -67,6 +67,22 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('rivet.validate', () => runValidate()),
     vscode.commands.registerCommand('rivet.addArtifact', () => addArtifact()),
     vscode.commands.registerCommand('rivet.navigateTo', (urlPath: string) => showDashboard(context, urlPath)),
+    vscode.commands.registerCommand('rivet.openArtifactInView', () => {
+      const id = artifactIdAtCursor();
+      if (!id) {
+        vscode.window.showInformationMessage('Place the cursor on an artifact ID (e.g. REQ-001) first.');
+        return;
+      }
+      vscode.commands.executeCommand('rivet.navigateTo', `/artifact/${encodeURIComponent(id)}`);
+    }),
+    vscode.commands.registerCommand('rivet.openArtifactInGraph', () => {
+      const id = artifactIdAtCursor();
+      if (!id) {
+        vscode.window.showInformationMessage('Place the cursor on an artifact ID (e.g. REQ-001) first.');
+        return;
+      }
+      vscode.commands.executeCommand('rivet.navigateTo', `/graph?focus=${encodeURIComponent(id)}`);
+    }),
     vscode.commands.registerCommand('rivet.showSource', async () => {
       if (!currentSourceFile) {
         vscode.window.showInformationMessage('No source file for current view');
@@ -204,6 +220,33 @@ export function deactivate() {
   return client?.stop().catch(() => {});
 }
 
+// --- Artifact ID detection ---
+
+// Returns the artifact-ID-shaped token at the cursor in the active YAML
+// editor, or undefined if no editor is active or the cursor is not on
+// such a token. Pattern matches canonical rivet IDs: an uppercase prefix
+// of 2+ letters, an optional colon-namespaced external prefix, and a
+// numeric suffix separated by dashes. Examples: REQ-001, FEAT-128,
+// spar:SPAR-SYS-001, DD-059.
+function artifactIdAtCursor(): string | undefined {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) return undefined;
+  const doc = editor.document;
+  const pos = editor.selection.active;
+  // Word-boundary regex; colon-inclusive for external-ref prefixes.
+  const wordRange = doc.getWordRangeAtPosition(
+    pos,
+    /[A-Za-z][A-Za-z0-9:_-]*/,
+  );
+  if (!wordRange) return undefined;
+  const word = doc.getText(wordRange);
+  // Accept bare `REQ-001`, prefixed `stpa:REQ-001`, and any uppercase
+  // alpha+dash+digit shape. Reject plain words and YAML keys like `title`.
+  return /^([a-z][a-z0-9-]*:)?[A-Z][A-Z0-9]*-[A-Z0-9-]+$/.test(word)
+    ? word
+    : undefined;
+}
+
 // --- Binary discovery ---
 
 function findRivetBinary(context: vscode.ExtensionContext): string | undefined {
@@ -275,7 +318,18 @@ async function showDashboard(context: vscode.ExtensionContext, urlPath: string =
             ? msg.file
             : path.join(rivetProjectRoot, msg.file);
           const uri = vscode.Uri.file(filePath);
-          await vscode.window.showTextDocument(uri, { viewColumn: vscode.ViewColumn.One });
+          // `msg.line` is the 0-based line where the artifact is defined,
+          // as computed by render_artifact_detail. Position the cursor
+          // and reveal that line on open so the user lands on the
+          // artifact's `id:` row, not the top of the file.
+          const options: vscode.TextDocumentShowOptions = {
+            viewColumn: vscode.ViewColumn.One,
+          };
+          if (typeof msg.line === 'number' && Number.isFinite(msg.line) && msg.line >= 0) {
+            const pos = new vscode.Position(msg.line, 0);
+            options.selection = new vscode.Range(pos, pos);
+          }
+          await vscode.window.showTextDocument(uri, options);
         }
       }
     });

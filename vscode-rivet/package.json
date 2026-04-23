@@ -78,8 +78,32 @@
         "command": "rivet.searchArtifact",
         "title": "Search Artifacts",
         "category": "Rivet"
+      },
+      {
+        "command": "rivet.openArtifactInView",
+        "title": "Rivet: Open Artifact in Dashboard",
+        "category": "Rivet"
+      },
+      {
+        "command": "rivet.openArtifactInGraph",
+        "title": "Rivet: Show Artifact in Graph",
+        "category": "Rivet"
       }
     ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "rivet.openArtifactInView",
+          "group": "rivet@1",
+          "when": "editorLangId == yaml"
+        },
+        {
+          "command": "rivet.openArtifactInGraph",
+          "group": "rivet@2",
+          "when": "editorLangId == yaml"
+        }
+      ]
+    },
     "keybindings": [
       {
         "command": "rivet.searchArtifact",
