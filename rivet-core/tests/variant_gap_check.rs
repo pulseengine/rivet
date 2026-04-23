@@ -50,8 +50,10 @@ use rivet_core::feature_model::{FeatureModel, VariantConfig, solve};
 /// Closing this gap means introducing an `attribute-schema` section
 /// on `FeatureModel` and refusing loads where an attribute value does
 /// not match its declared type.
+///
+/// Closed in Gap-1 work — `attribute-schema:` declarations + load-time
+/// validation now live on `FeatureModel`. Test guards the regression.
 #[test]
-#[ignore = "gap: no typed-attribute schema yet — see docs/pure-variants-comparison.md §Gap 1"]
 fn gap_1_typed_feature_attributes() {
     // A model where `asil-numeric` is declared int but the YAML
     // provides a string should fail to parse once the schema is in
@@ -257,8 +259,12 @@ constraints: []
 /// a string glob (current) or a `{ glob, when }` struct where `when`
 /// is an s-expression constraint evaluated against the resolved
 /// selection.
+///
+/// Closed in Gap-5 work — `Binding.source` is now `Vec<SourceEntry>`
+/// with optional `when:`. `solve_with_bindings` populates a per-feature
+/// source manifest after evaluating each predicate. Test guards the
+/// regression.
 #[test]
-#[ignore = "gap: no per-source-element restrictions — see docs/pure-variants-comparison.md §Gap 5"]
 fn gap_5_family_model_artifact_restrictions() {
     use rivet_core::feature_model::FeatureBinding;
 
