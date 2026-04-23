@@ -48,11 +48,13 @@ export function getShellHtml(
     document.addEventListener('click', (e) => {
       const a = e.target.closest('a');
       if (!a) return;
-      // Source file links — open in editor
+      // Source file links — open in editor at the artifact's definition line
       const sourceFile = a.getAttribute('data-source-file');
       if (sourceFile) {
         e.preventDefault();
-        vscode.postMessage({ type: 'openSource', file: sourceFile });
+        const lineAttr = a.getAttribute('data-source-line');
+        const line = lineAttr !== null ? parseInt(lineAttr, 10) : undefined;
+        vscode.postMessage({ type: 'openSource', file: sourceFile, line });
         return;
       }
       // Internal navigation links

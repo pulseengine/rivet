@@ -389,17 +389,38 @@ pub(crate) fn render_artifact_detail(ctx: &RenderContext, id: &str) -> RenderRes
         .as_ref()
         .map(|p| p.display().to_string());
 
+    // Resolve the line number of `id: <this>` within the source file so
+    // VS Code's Open Source lands on the artifact definition, not the
+    // top of the file. Uses a simple scan (mirrors lsp_find_artifact_line)
+    // so no rowan CST dependency is pulled into the render path.
+    let source_line: Option<u32> = source_file
+        .as_deref()
+        .and_then(|sf| std::fs::read_to_string(sf).ok())
+        .and_then(|content| {
+            content.lines().enumerate().find_map(|(i, line)| {
+                let t = line.trim();
+                (t == format!("id: {id}") || t == format!("- id: {id}"))
+                    .then_some(u32::try_from(i).unwrap_or(0))
+            })
+        });
+
     // Source file link (shown at top for quick access)
-    // Uses data-source-file attribute — the VS Code nav shim picks this up
+    // Uses data-source-file + data-source-line attributes — the VS Code
+    // nav shim in shell.ts picks these up and opens the file at the
+    // exact line of the artifact definition.
     let source_link = if let Some(ref sf) = source_file {
         let filename = std::path::Path::new(sf)
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or(sf);
+        let line_attr = source_line
+            .map(|l| format!(" data-source-line=\"{l}\""))
+            .unwrap_or_default();
         format!(
             " <span class=\"meta\" style=\"float:right;font-size:.85rem\">\
-             <a href=\"#\" data-source-file=\"{}\" title=\"Open source file\">&#128196; {}</a></span>",
+             <a href=\"#\" data-source-file=\"{}\"{} title=\"Open source file\">&#128196; {}</a></span>",
             html_escape(sf),
+            line_attr,
             html_escape(filename),
         )
     } else {
@@ -630,7 +651,7 @@ pub(crate) fn render_artifact_detail(ctx: &RenderContext, id: &str) -> RenderRes
         html,
         title: format!("{} — {}", artifact.id, artifact.title),
         source_file,
-        source_line: None,
+        source_line,
     }
 }
 
