@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1776921628532,
+  "lastUpdate": 1776922389887,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "d09a4bb04fa01e9a30fcd3b77479f51358af0799",
-          "message": "fix(mythos): 4 one-liner silent-accept bugs (validate/coverage/yaml_hir/formats) (#168)\n\n* fix(validate): align empty target-types/from-types with coverage semantics\n\nBefore this fix, `validate::validate` and `coverage::compute_coverage`\ngave contradictory answers on the same traceability rule + artifact\ndata:\n\n- `TraceabilityRule.target_types` / `.from_types` are `#[serde(default)]`\n  so they deserialize to an empty `Vec<String>` when omitted.\n- `validate::validate` treated an empty list as \"match nothing\"\n  (rule.target_types.contains(&t) is false for every t), producing a\n  false-positive violation.\n- `coverage::compute_coverage` treated an empty list as \"match any\"\n  (`if target_types.is_empty() { true } else { ... }`), reporting the\n  same artifact as fully covered.\n\nResult: `rivet validate` said \"1 error\" while `rivet coverage` said\n\"1/1 (100%)\" on the same inputs. Discovered by the Mythos pass.\n\nUnify on the \"match any\" convention (also used by LinkFieldDef checks\nat validate.rs ~L310) so both tools agree. Adds two regression tests\nthat pin validate and coverage must never contradict each other on\nempty `target-types` or `from-types`.\n\nFixes: REQ-004\nVerifies: REQ-010\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n* fix(coverage): exclude self-links from traceability rule satisfaction\n\n`compute_coverage` counted a link from an artifact to itself (e.g.\n`DD-001 → DD-001` via `satisfies`) as a valid rule satisfaction. That\nmeant an author blocked from finding upstream trace could pass CI by\nwriting a single self-referential line — the author's own DD closed\nthe loop.\n\nAdd `l.target != *id` (forward) and `bl.source != *id` (backlink) to\nthe filter chain inside `compute_coverage`. Two regression tests —\none per direction — pin the expected behaviour.\n\nDiscovered by the Mythos pass; empirically reproducible.\n\nFixes: REQ-004\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n* fix(yaml_hir): skip null/empty shorthand values instead of emitting phantom link\n\nWhen a schema-shorthand-link field is written with a null-like YAML\nvalue (e.g. `losses: null`, `losses: ~`, `losses: \"\"`), the extractor\nwas creating a `Link { target: \"null\" }` / `\"~\"` / `\"\"` instead of\ntreating it as \"no link.\" These phantom links silently pollute the\ntrace graph, and the YAML footgun fuzzer surfaced the behaviour as a\nconfirmed bug.\n\nAdd an `is_null_or_empty_scalar` helper and guard the shorthand link\nemission on it. Also skip empty-string entries inside list shorthand\nvalues (`losses: [L-1, \"\"]`). Three regression tests cover the null,\ntilde, and empty-string cases.\n\nImplements: REQ-028\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n* fix(formats/generic): reject unknown top-level keys instead of silently dropping\n\nWithout `#[serde(deny_unknown_fields)]` on `GenericFile`, a file that\nhas a valid `artifacts:` key plus a typo-ed companion key like\n`artifact:` (singular) or `Artifacts:` (wrong case) deserialized\nsuccessfully and silently dropped every artifact under the typo'd key.\nThe fuzzer (test/yaml-cli-fuzzers branch) confirmed the resulting\ntrace-graph hole.\n\nAdd `deny_unknown_fields` so unknown top-level keys surface as\n`serde_yaml::Error`s. `parse_generic_yaml` already bubbles these up\nas `Error::Yaml`, and the diagnostics pipeline in db.rs\n(`collect_parse_errors`) converts them to `Severity::Error`\ndiagnostics — so the typo is now user-visible rather than silent.\n\nTwo regression tests pin the new behaviour for `artifact:` (singular)\nand `Artifacts:` (capitalised) companion keys.\n\nFixes: REQ-004\nVerifies: REQ-010\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.7 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-04-21T14:44:41-05:00",
-          "tree_id": "43681235b42f9a26b7a0f7cbc12bb9f86f7f98a7",
-          "url": "https://github.com/pulseengine/rivet/commit/d09a4bb04fa01e9a30fcd3b77479f51358af0799"
-        },
-        "date": 1776804187955,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 80863,
-            "range": "± 601",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 858653,
-            "range": "± 6175",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 15500980,
-            "range": "± 1224092",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2121,
-            "range": "± 18",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 26094,
-            "range": "± 321",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 374351,
-            "range": "± 10873",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 94,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 991901,
-            "range": "± 15466",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 165581,
-            "range": "± 2794",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1876571,
-            "range": "± 21758",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 26661047,
-            "range": "± 1907239",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 112471,
-            "range": "± 797",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 954987,
-            "range": "± 6052",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 12674693,
-            "range": "± 764811",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4410,
-            "range": "± 24",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 69387,
-            "range": "± 238",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 777659,
-            "range": "± 16770",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 56450,
-            "range": "± 222",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 672850,
-            "range": "± 4415",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 8726447,
-            "range": "± 563011",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 782,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 7716,
-            "range": "± 25",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 105806,
-            "range": "± 674",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 23069,
-            "range": "± 150",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 158191,
-            "range": "± 2869",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1462886,
-            "range": "± 20690",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1623860,
             "range": "± 18621",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "bcfcb2d87bc050972ba932deccd2acd279284091",
+          "message": "feat(variant): rivet variant explain for debugging solve outcomes (#199)\n\n* feat(variant): rivet variant explain for debugging solve outcomes\n\nAnswers \"why did my variant pick/skip feature X?\" — a dev/debug UX gap\ncalled out in the v0.4.3 scope.\n\nTwo modes:\n\n  # Full audit: every effective feature + origin, unselected features,\n  # and the constraint list\n  rivet variant explain --model fm.yaml --variant prod.yaml\n\n  # Single-feature focus: origin, attribute values, and every\n  # constraint that mentions the feature\n  rivet variant explain --model fm.yaml --variant prod.yaml asil-c\n\nEach effective feature carries an origin:\n  - `selected`        — user listed it under `selects:`\n  - `mandatory`       — parent group is mandatory, or is the root\n  - `implied by <X>`  — a constraint forced it in once <X> was selected\n  - `allowed`         — present but not proven mandatory\n\n`--format json` emits a structured audit for scripts (dashboard uses\nthe same shape for the variant sidebar).\n\nCoverage:\n  - explain_single_feature_shows_origin_and_attrs (text mode)\n  - explain_single_feature_json_mode\n  - explain_full_variant_audit_lists_origins_and_unselected\n\nDocs: new \"Debugging\" subsection in docs/getting-started.md under the\nvariant management chapter, with an origin table.\n\nImplements: REQ-046\nRefs: DD-050\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n* test(variant): enrich eu-adas-c example + per-format smoke on realistic model\n\nAdds realistic `attributes:` to examples/variant/feature-model.yaml\nfor every market (eu/us/cn with compliance+locale) and every ASIL\nlevel (asil-numeric + required analysis techniques). These match the\nworked examples in docs/getting-started.md so users can run the\nsnippets against the shipped fixture and see the same output.\n\nNew integration test `every_format_renders_realistic_example`\nexercises all 7 --format values against the enriched example and\nasserts each output contains the variant name and the asil-c marker\n(in whatever casing the format uses). Catches regressions that pass\non toy models but break on constraint-driven inclusion, multi-attr\nfeatures, or non-trivial tree depth.\n\nImplements: REQ-046\nRefs: DD-050\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.7 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-04-23T00:23:18-05:00",
+          "tree_id": "db09866d78542811092a8c6d89bf78b233e73b33",
+          "url": "https://github.com/pulseengine/rivet/commit/bcfcb2d87bc050972ba932deccd2acd279284091"
+        },
+        "date": 1776922389379,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 80350,
+            "range": "± 304",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 838255,
+            "range": "± 2217",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 11507652,
+            "range": "± 499515",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2138,
+            "range": "± 24",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25955,
+            "range": "± 4690",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 359601,
+            "range": "± 838",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1022131,
+            "range": "± 19696",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 164031,
+            "range": "± 848",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1815189,
+            "range": "± 23423",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 24440378,
+            "range": "± 1230630",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 121534,
+            "range": "± 1228",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1072101,
+            "range": "± 18031",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 10785758,
+            "range": "± 634836",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4196,
+            "range": "± 209",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 59011,
+            "range": "± 249",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 758698,
+            "range": "± 1528",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 61345,
+            "range": "± 204",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 689499,
+            "range": "± 2840",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7839732,
+            "range": "± 265543",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 785,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7118,
+            "range": "± 36",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 105717,
+            "range": "± 592",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 25766,
+            "range": "± 369",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 186371,
+            "range": "± 828",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1739575,
+            "range": "± 22700",
             "unit": "ns/iter"
           }
         ]
