@@ -184,6 +184,26 @@ jobs:
       - name: Run cargo-deny
         run: cargo deny check
 
+  # ── Public API stability (semver drift gate) ────────────────────────
+  # Runs only on pull_request so main can move freely between tags.
+  # Fails the PR if the public API of rivet-core changes in a way that
+  # would require a semver major/minor bump relative to the base branch.
+  # SCRC Phase 2 (DD-063): catch accidental breaking changes before they
+  # escape to a release.
+  semver-checks:
+    name: Semver Checks (rivet-core public API)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run cargo-semver-checks
+        uses: obi1kenobi/cargo-semver-checks-action@v2
+        with:
+          package: rivet-core
+          feature-group: default-features
+
   # ── Code coverage (Rust nightly for source-based instrumentation) ───
   coverage:
     name: Code Coverage

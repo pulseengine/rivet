@@ -432,6 +432,68 @@ artifacts:
       model: claude-opus-4-7
       timestamp: 2026-04-23T05:25:00Z
 
+  # ── SCRC Phase 2 opening ────────────────────────────────────────────
+
+  - id: DD-063
+    type: design-decision
+    title: SCRC Phase 2 opening — unsafe-block hygiene and memory-safety lints
+    status: approved
+    description: >
+      Second tier of SCRC restriction lints enabled at workspace `warn`
+      (DD-059 established Phase 1). Phase 2 opening adds 12 lints covering
+      unsafe-block hygiene (undocumented_unsafe_blocks,
+      multiple_unsafe_ops_per_block), memory-safety traps (mem_forget,
+      mem_replace_with_uninit, transmute_undefined_repr, uninit_assumed_init),
+      concurrency hazards (rc_mutex, mutex_atomic), and a grab-bag of
+      defensive lints (same_name_method, lossy_float_literal, empty_drop,
+      exit). Zero pre-existing violations for eleven of the twelve; `exit`
+      is grandfathered on three rivet-cli exit-code sites.
+      Also opens the Phase 2 migration: rivet-core/src/matrix.rs is the
+      first production file converted from file-scope blanket allow to
+      per-site #[allow] + inline SAFETY-REVIEW rationale.
+      Added: cargo-semver-checks CI job on pull_request to catch
+      accidental breaking changes to the rivet-core public API.
+      Added: SAFETY.md documenting the full lint set, migration plan, and
+      verification harness (Miri, proptest, fuzz, mutants, Kani, Verus).
+    tags: [safety-critical, scrc, clippy, phase-2, v043]
+    links:
+      - type: satisfies
+        target: REQ-004
+      - type: depends-on
+        target: DD-059
+    fields:
+      rationale: >
+        User direction was "sehr defensiv" (very defensive) when
+        implementing SCRC recommendations. The twelve new lints chosen
+        for this wave are all "zero-cost at warn" because the current
+        codebase does not use unsafe blocks, does not touch raw pointer
+        transmutes, and does not wrap primitives in Mutex. Enabling
+        them at `warn` now means any future regression introducing one
+        of these patterns will fail CI immediately — the lints are
+        defensive against *drift*, not against pre-existing debt.
+        matrix.rs was chosen as the Phase 2 proof-of-concept because it
+        is small (160 lines), self-contained, and its arithmetic is
+        genuinely safe (bounded by store size) so the per-site allow
+        pattern is illustrative rather than hiding a real risk.
+      source-ref: >
+        Cargo.toml — new [workspace.lints.clippy] entries for the 12
+        Phase 2 lints.
+        rivet-cli/src/main.rs — file-scope allow extended with
+        clippy::exit + justification pointing at the three-valued
+        (0/1/2) exit-code contract on rivet variant value/attr.
+        rivet-core/src/matrix.rs — blanket removed, two per-site
+        #[allow(clippy::arithmetic_side_effects, clippy::cast_precision_loss)]
+        with inline SAFETY-REVIEW rationale.
+        .github/workflows/ci.yml — new semver-checks job on pull_request.
+        SAFETY.md — new document summarising the posture.
+      verification: >
+        cargo clippy --all-targets --workspace -- -D warnings: exits 0
+        cargo test --workspace: all test binaries green
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-23T09:00:00Z
+
   - id: FEAT-134
     type: feature
     title: rivet stamp — correct --missing-provenance filter + warn-skip
