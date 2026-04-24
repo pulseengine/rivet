@@ -2046,3 +2046,102 @@ fn query_invalid_filter_reports_parse_error() {
         "stderr should mention the filter error; got: {stderr}"
     );
 }
+
+// ── rivet externals discover ────────────────────────────────────────────
+// rivet: verifies REQ-027
+
+/// `rivet externals discover` reads MODULE.bazel and reports bazel_dep entries,
+/// enriching them with git_override URLs and commits.
+#[test]
+fn externals_discover_bazel_text() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tmp.path().join("MODULE.bazel"),
+        r#"module(name = "test_project", version = "1.0.0")
+bazel_dep(name = "rules_go", version = "0.41.0")
+bazel_dep(name = "rules_rust", version = "0.30.0")
+git_override(module_name = "rules_rust", remote = "https://github.com/bazelbuild/rules_rust", commit = "abc123def456")
+"#,
+    )
+    .unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "externals",
+            "discover",
+            "--path",
+            tmp.path().to_str().unwrap(),
+        ])
+        .output()
+        .expect("run rivet externals discover");
+
+    assert!(out.status.success(), "must exit 0; stderr: {}",
+        String::from_utf8_lossy(&out.stderr));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("Discovered 2 external(s)"), "got: {stdout}");
+    assert!(stdout.contains("rules_go (bazel, version 0.41.0)"), "got: {stdout}");
+    assert!(stdout.contains("rules_rust (bazel, version 0.30.0)"), "got: {stdout}");
+    assert!(
+        stdout.contains("git: https://github.com/bazelbuild/rules_rust"),
+        "git_override URL must be surfaced; got: {stdout}"
+    );
+    assert!(stdout.contains("ref: abc123def456"), "commit ref; got: {stdout}");
+}
+
+/// `rivet externals discover --format json` emits parseable JSON with the
+/// serde-derived shape of `DiscoveredExternal`.
+#[test]
+fn externals_discover_bazel_json() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tmp.path().join("MODULE.bazel"),
+        r#"module(name = "test_project", version = "1.0.0")
+bazel_dep(name = "rules_go", version = "0.41.0")
+"#,
+    )
+    .unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "externals",
+            "discover",
+            "--path",
+            tmp.path().to_str().unwrap(),
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run rivet externals discover --format json");
+
+    assert!(out.status.success(), "must exit 0");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("output must be valid JSON");
+    let arr = parsed.as_array().expect("top-level must be array");
+    assert_eq!(arr.len(), 1, "one dep");
+    assert_eq!(arr[0]["name"], "rules_go");
+    assert_eq!(arr[0]["source"], "bazel");
+    assert_eq!(arr[0]["version"], "0.41.0");
+}
+
+/// With no manifests present, the command reports zero externals (not an error).
+#[test]
+fn externals_discover_empty_project() {
+    let tmp = tempfile::tempdir().unwrap();
+    let out = Command::new(rivet_bin())
+        .args([
+            "externals",
+            "discover",
+            "--path",
+            tmp.path().to_str().unwrap(),
+        ])
+        .output()
+        .expect("run rivet externals discover");
+
+    assert!(out.status.success(), "empty project is not an error");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("No externals discovered"),
+        "should say 'No externals discovered'; got: {stdout}"
+    );
+}

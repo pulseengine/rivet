@@ -44,7 +44,7 @@
 )]
 
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{Context, Result};
@@ -570,6 +570,17 @@ enum Command {
         update: bool,
     },
 
+    /// Build-system-aware external project discovery (REQ-027).
+    ///
+    /// Reads MODULE.bazel and flake.lock from the project root and reports
+    /// the cross-repo dependencies declared there, without modifying
+    /// rivet.yaml. Use the output to populate the [externals] section
+    /// manually, or pipe JSON into other tools.
+    Externals {
+        #[command(subcommand)]
+        action: ExternalsAction,
+    },
+
     /// Analyze change impact between current state and a baseline
     Impact {
         /// Git ref to compare against (branch, tag, or commit)
@@ -973,6 +984,19 @@ enum SnapshotAction {
     },
     /// List available snapshots
     List,
+}
+
+#[derive(Debug, Subcommand)]
+enum ExternalsAction {
+    /// Discover externals from build-system manifests (MODULE.bazel, flake.lock).
+    Discover {
+        /// Project root directory (default: current directory).
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+        /// Output format: "text" (default) or "json".
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1533,6 +1557,9 @@ fn run(cli: Cli) -> Result<bool> {
         }
         Command::Sync { local } => cmd_sync(&cli, *local),
         Command::Lock { update } => cmd_lock(&cli, *update),
+        Command::Externals { action } => match action {
+            ExternalsAction::Discover { path, format } => cmd_externals_discover(path, format),
+        },
         Command::Baseline { action } => match action {
             BaselineAction::Verify { name, strict } => cmd_baseline_verify(&cli, name, *strict),
             BaselineAction::List => cmd_baseline_list(&cli),
@@ -7765,6 +7792,50 @@ fn cmd_sync(cli: &Cli, local_only: bool) -> Result<bool> {
         }
     }
 
+    Ok(true)
+}
+
+fn cmd_externals_discover(path: &Path, format: &str) -> Result<bool> {
+    let bazel = rivet_core::providers::discover_bazel_externals(path)
+        .map_err(|e| anyhow::anyhow!("bazel discovery: {e}"))?;
+    let nix = rivet_core::providers::discover_nix_externals(path)
+        .map_err(|e| anyhow::anyhow!("nix discovery: {e}"))?;
+
+    let mut all = bazel;
+    all.extend(nix);
+
+    match format {
+        "json" => {
+            let out = serde_json::to_string_pretty(&all)
+                .context("serializing discovered externals")?;
+            println!("{out}");
+        }
+        _ => {
+            if all.is_empty() {
+                println!(
+                    "No externals discovered in {} (looked for MODULE.bazel, flake.lock).",
+                    path.display()
+                );
+            } else {
+                println!("Discovered {} external(s) in {}:", all.len(), path.display());
+                for ext in &all {
+                    println!(
+                        "  {} ({}, version {})",
+                        ext.name, ext.source, ext.version
+                    );
+                    if let Some(url) = &ext.git_url {
+                        println!("    git: {url}");
+                    }
+                    if let Some(r) = &ext.git_ref {
+                        println!("    ref: {r}");
+                    }
+                    if let Some(p) = &ext.local_path {
+                        println!("    path: {}", p.display());
+                    }
+                }
+            }
+        }
+    }
     Ok(true)
 }
 
