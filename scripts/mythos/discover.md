@@ -49,17 +49,19 @@ Procedure (do these in order; do not skip):
    priors. If you want to target multiple symbols, do so in ONE patch
    only if they are independently dead — all-or-nothing.
 
-2. BASELINE run first. On a clean worktree, record the pristine result
-   of each command so you can distinguish "excision broke this" from
-   "this was already broken." Run:
+2. BASELINE run first. On a clean worktree, record the pristine
+   result of EVERY command that can produce noise unrelated to the
+   excision. Run:
 
+       cargo clippy --workspace --all-targets -- -D warnings 2>&1 | tail -40
        cargo run --bin rivet --quiet -- validate 2>&1 | tail -5
        cargo run --bin rivet --quiet -- commits 2>&1 | tail -5
 
-   Note both exit codes and last lines. These two commands are the most
-   likely to be non-zero on a pristine repo (pre-existing schema
-   issues). If they are non-zero baseline, the oracle rule becomes
-   "excised output must be IDENTICAL to baseline," not "must be zero."
+   Note exit codes and last lines for each. Clippy, validate, and
+   commits may all be non-zero on pristine main due to pre-existing
+   lint / schema issues. The oracle rule for these three is
+   "excised output must match baseline," not "must be zero." Only
+   `build` and `test` need true exit-0.
 
 3. Apply the excision as a literal source edit in this worktree (NOT a
    commit). Use `unimplemented!("slop-hunt excision: {{file}}::FN")`
@@ -81,28 +83,35 @@ Procedure (do these in order; do not skip):
        ( cd tests/playwright && npx playwright test --reporter=line 2>&1 | tail -40 )
 
    Oracle rule:
-     - For `build`, `test`, `clippy`: must exit 0. (These are green on
+     - For `build` and `test`: must exit 0. (These are green on
        pristine main; any failure after excision ⇒ code exercised.)
-     - For `validate`, `commits`: must match BASELINE output from
-       step 2. If pristine was red, excised must be the same red. Any
-       *new* error line caused by excision ⇒ code exercised.
+     - For `clippy`, `validate`, `commits`: must match BASELINE output
+       from step 2. Pristine main may have pre-existing lint / schema
+       noise; the relevant question is whether excision introduces
+       NEW errors. Any new error line caused by excision ⇒ code
+       exercised.
      - If any command is exercised-by-excision → finding REJECTED.
        Stop. Do not continue to step 5.
 
 5. Run the symbol-scoped traceability query. This replaces the v1
    file-level trailer check. For each symbol in your excision set:
 
-       git log --all -L ':{{SYMBOL}}:{{file}}' --format="%H %s" 2>/dev/null | \
+       git log -L ':{{SYMBOL}}:{{file}}' --format="%H %s" 2>/dev/null | \
          awk '/^[0-9a-f]{40} / {print $1}' | sort -u | \
          while read sha; do
            git log -1 --format="%B" "$sha" | \
              grep -qE "^(Implements|Refs|Fixes|Verifies): " && echo "$sha traced"
          done
 
+   Note: `git log -L` only works from HEAD (git error "more than one
+   commit to dig from" with `--all`). A `.gitattributes` entry
+   `*.rs diff=rust` must exist for the symbol-regex form to work; the
+   repo ships this.
+
    If `git log -L` reports the symbol is not found (rare — e.g. macro
    expansion), fall back to line-range log:
 
-       git log --all -L {{LO}},{{HI}}:{{file}} --format="%H" 2>/dev/null | \
+       git log -L {{LO}},{{HI}}:{{file}} --format="%H" 2>/dev/null | \
          awk '/^[0-9a-f]{40}/ {print}' | sort -u | while read sha; do
            git log -1 --format="%B" "$sha" | \
              grep -qE "^(Implements|Refs|Fixes|Verifies): " && echo "$sha traced"

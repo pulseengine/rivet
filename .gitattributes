@@ -1,0 +1,6 @@
+# Enables git's built-in Rust function-name regex for `git diff` and
+# `git log -L :fn:file.rs`. The Mythos v2 slop-hunt pipeline
+# (scripts/mythos/) uses symbol-scoped log queries as its interpretive
+# oracle; without this, the queries fall back to line-range logs which
+# re-include lines across refactors.
+*.rs diff=rust

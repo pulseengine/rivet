@@ -36,19 +36,24 @@ Rules:
      - `fields.baseline` — the current workspace version from
        `Cargo.toml` of `rivet-core`.
 
-3. Links:
-     - If OUTCOME is `delete` or `add-test` and no artifact currently
-       satisfies the excised code: omit `links.satisfies`. This is
-       the one case where a design-decision may appear without a
-       requirement link — because the decision IS "there is no
-       requirement."  Set `links.tags` to include `unlinked-on-purpose`.
-     - If OUTCOME is `add-artifact-link`: emit
-       `links: [{type: satisfies, target: {chosen-REQ-or-FEAT}}]`.
+3. Links — the schema requires at least one `satisfies` link on every
+   `design-decision` (rivet validate emits
+   "link 'satisfies' requires at least 1 target" otherwise):
+     - If OUTCOME is `delete` (orphan-slop): emit
+       `links: [{type: satisfies, target: REQ-004}]`. The audit finding
+       IS a traceability assertion — the decision that "no requirement
+       governs this code" itself satisfies REQ-004.
+     - If OUTCOME is `add-test` (aspirational-slop where the spec is
+       current): emit `links: [{type: satisfies, target: <named REQ/FEAT>}]`.
+     - If OUTCOME is `document-as-non-goal` (aspirational-slop where
+       the spec has drifted): emit
+       `links: [{type: satisfies, target: REQ-004}]` and also mark the
+       original REQ or FEAT as `status: deferred` in a separate
+       artifact edit.
      - If OUTCOME is `unify-with-{path}`: emit
-       `links: [{type: supersedes, target: {existing-DD-if-any}}]`
-       AND a second `satisfies` link to the requirement that motivates
-       unification (typically REQ-004 "traceability" or REQ-028
-       "parsing"). Do NOT invent link types.
+       `links: [{type: supersedes, target: {existing-DD-if-any}},
+                {type: satisfies, target: REQ-028}]` (or whichever
+       requirement motivates unification). Do NOT invent link types.
 
 4. Status MUST be `draft` on first emission. A human promotes to
    `approved` after deciding whether to delete / unify / test.
@@ -82,7 +87,7 @@ Template skeleton (fill in, don't modify structure):
       `Trace: skip`.
     tags: [audit, slop-hunt, <class>]
     links:
-      - type: satisfies        # omit if unlinked-on-purpose (see rule 3)
+      - type: satisfies        # REQ-004 for orphan-slop; see rule 3
         target: REQ-NNN
     fields:
       baseline: <workspace version>

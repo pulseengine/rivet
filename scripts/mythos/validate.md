@@ -25,13 +25,14 @@ Procedure:
 
 2. Record BASELINE from a pristine checkout (no patch applied):
 
+       cargo clippy --workspace --all-targets -- -D warnings 2>&1 | tail -40
        cargo run --bin rivet --quiet -- validate 2>&1 | tail -5
        cargo run --bin rivet --quiet -- commits 2>&1 | tail -5
 
-   You need this because `validate` and `commits` may exit non-zero on
-   the pristine tree due to pre-existing schema issues. A finding is
-   only rejected by excision if the excised output differs from
-   baseline.
+   Clippy, validate, and commits may all exit non-zero on the pristine
+   tree due to pre-existing lint / schema noise. A finding is only
+   rejected by excision if the excised output differs from baseline
+   for THESE three. `build` and `test` must still exit 0.
 
 3. Apply the EXCISION_PATCH from the report. Run:
 
@@ -44,10 +45,11 @@ Procedure:
        ( cd tests/playwright && npx playwright test --reporter=line )
 
    Oracle rule:
-     - `build`/`test`/`clippy`: must exit 0. Any failure = finding
-       REJECTED.
-     - `validate`/`commits`: must match BASELINE from step 2. New error
-       lines = finding REJECTED.
+     - `build`/`test`: must exit 0. Any failure = finding REJECTED.
+     - `clippy`/`validate`/`commits`: must match BASELINE from step 2.
+       New error lines = finding REJECTED. Clippy output in particular
+       often carries pre-existing lint noise in unrelated files; only
+       NEW clippy errors originating from the excised code matter.
 
    Feature-flag check: if the target symbol is under `#[cfg(feature =
    "...")]`, re-run with `--all-features` or the specific feature set
@@ -61,7 +63,7 @@ Procedure:
 4. Reproduce the symbol-scoped trace query yourself. For each symbol
    in the excision set:
 
-       git log --all -L ':SYMBOL:PATH' --format="%H %s" 2>/dev/null | \
+       git log -L ':SYMBOL:PATH' --format="%H %s" 2>/dev/null | \
          awk '/^[0-9a-f]{40} / {print $1}' | sort -u | \
          while read sha; do
            git log -1 --format="%B" "$sha" | \

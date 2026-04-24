@@ -86,12 +86,14 @@ cargo run --bin rivet --quiet -- commits    # must match baseline
 ( cd tests/playwright && npx playwright test )
 ```
 
-`validate` and `commits` may be non-zero on pristine main due to
-pre-existing schema issues. The rule is:
-- `build` / `test` / `clippy` must exit 0.
-- `validate` / `commits` must **match baseline** (recorded on a
-  pristine checkout before applying the patch). Any NEW error line
-  introduced by excision ⇒ symbol is exercised ⇒ finding rejected.
+`clippy`, `validate`, and `commits` may all be non-zero on pristine
+main due to pre-existing lint / schema noise. The rule is:
+- `build` / `test` must exit 0.
+- `clippy` / `validate` / `commits` must **match baseline** (recorded
+  on a pristine checkout before applying the patch). Any NEW error
+  line introduced by excision ⇒ symbol is exercised ⇒ finding
+  rejected. Pre-existing lint noise in unrelated files is not
+  evidence against the finding.
 
 If excision passes, slop is **confirmed** — whether to delete, test,
 or document it depends on the interpretive oracle below.
@@ -106,7 +108,7 @@ commits that happened to touch the file:
 
 ```
 # (a) commits that touched THIS SYMBOL with a trailer
-git log --all -L ':{{SYMBOL}}:{{file}}' --format="%H %s" 2>/dev/null |
+git log -L ':{{SYMBOL}}:{{file}}' --format="%H %s" 2>/dev/null |
   awk '/^[0-9a-f]{40} / {print $1}' | sort -u |
   while read sha; do
     git log -1 --format="%B" "$sha" |
