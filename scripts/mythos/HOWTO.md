@@ -122,15 +122,29 @@ cargo run --bin rivet --quiet -- list --format json |
       (.description // "" | (contains($p) and contains($s))) or
       (.fields["source-ref"] // "" | (contains($p) and contains($s)))
     ) | .id'
+
+# (c) inline test annotations — rivet uses `// rivet: verifies REQ-N`
+# etc. on tests; this is a real trace mechanism the artifact corpus
+# does not expose via list.
+rg -n "// rivet: (verifies|implements|refs|fixes) [A-Z]+-[0-9]+" \
+  -- "{{file}}"
 ```
 
 Classification:
-- Excision passes AND trace EMPTY → `CLASS: orphan-slop`.
+- Excision passes AND all three queries EMPTY → `CLASS: orphan-slop`.
   `OUTCOME: delete`. Nobody specced it; nobody calls it.
-- Excision passes AND trace NON-EMPTY → `CLASS: aspirational-slop`.
-  `OUTCOME: add-test` (if the spec is current) or
-  `document-as-non-goal` (if the spec has drifted).
+- Excision passes AND any of the three NON-EMPTY → `CLASS:
+  aspirational-slop`. `OUTCOME: add-test` (if the spec is current
+  and the correct fix is to wire the code to a runtime path) or
+  `document-as-non-goal` (if the spec has drifted — mark the REQ
+  `deferred` and delete).
 - Excision fails → finding REJECTED. Symbol is exercised.
+
+**Whole-module excision.** Gate `mod X;` in `lib.rs` with
+`#[cfg(not(all()))]`, NOT `#[cfg(never)]`. The `never` form trips the
+`unexpected_cfgs` lint under `-D warnings` (post-Rust 1.80) and
+fabricates a false oracle failure. The `not(all())` form is recognized
+and always-false.
 
 `discover.md` requires a passing excision as the confirmation signal.
 "If you cannot produce a passing excision, do not report.

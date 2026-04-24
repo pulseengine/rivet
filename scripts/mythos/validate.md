@@ -77,10 +77,22 @@ Procedure:
              (.fields["source-ref"] // "" | (contains($p) and contains($s)))
            ) | .id'
 
-   Use your output to classify:
-     - Empty → orphan-slop (outcome should be `delete`).
-     - Non-empty → aspirational-slop (outcome should be `add-test` or
-       `document-as-non-goal`).
+   Also grep for inline `// rivet: (verifies|implements|refs|fixes)`
+   annotations on tests:
+
+       rg -n "// rivet: (verifies|implements|refs|fixes) [A-Z]+-[0-9]+" \
+         -- PATH
+
+   If any test in the file verifies a requirement whose status is
+   `approved`, the correct outcome is NOT `delete` — it is `add-test`
+   (wire the code to a runtime path) or `document-as-non-goal` (mark
+   the requirement `deferred`).
+
+   Use your combined output to classify:
+     - All three queries empty → orphan-slop (outcome should be
+       `delete`).
+     - Any of the three non-empty → aspirational-slop (outcome should
+       be `add-test` or `document-as-non-goal`).
 
    If the discovery agent's CLASS disagrees with your trace output,
    mark `VERDICT: confirmed-but-outcome-changed` and name the correct

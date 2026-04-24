@@ -66,7 +66,12 @@ Procedure (do these in order; do not skip):
 3. Apply the excision as a literal source edit in this worktree (NOT a
    commit). Use `unimplemented!("slop-hunt excision: {{file}}::FN")`
    for function bodies. For traits, replace each method body
-   separately.
+   separately. For whole-module excision, gate the `mod X;` line in
+   `lib.rs` with `#[cfg(not(all()))]` — NOT `#[cfg(never)]`. The
+   `never` form trips the `unexpected_cfgs` lint under `-D warnings`
+   (post-Rust 1.80) and fabricates a false oracle failure.
+   `#[cfg(not(all()))]` is recognized and always-false, producing
+   no lint noise.
 
 4. Run the excision oracle with `timeout: 600000` (10 min) per cargo
    command:
@@ -127,7 +132,21 @@ Procedure (do these in order; do not skip):
              (.fields["source-ref"] // "" | (contains($p) and contains($s)))
            ) | .id'
 
-   Record both outputs. Empty = orphan; non-empty = aspirational.
+   Also run the inline-annotation query — rivet uses
+   `// rivet: (verifies|implements|refs|fixes) REQ-N` comments on
+   tests to link tests to requirements. The artifact corpus does not
+   capture this; grep the source directly:
+
+       rg -n "// rivet: (verifies|implements|refs|fixes) [A-Z]+-[0-9]+" \
+         -- "{{file}}"
+
+   If this turns up a requirement ID that is `approved` status, the
+   target is aspirational-slop (somebody wrote tests verifying a
+   requirement but never wired the code to a runtime path), not
+   orphan-slop. Classify accordingly.
+
+   Record all three outputs. Empty across all three = orphan;
+   non-empty in any = aspirational.
 
 6. Determine the CLASS and OUTCOME:
      - Empty trace → `CLASS: orphan-slop` → `OUTCOME: delete`.
