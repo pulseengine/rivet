@@ -1126,3 +1126,81 @@ artifacts:
       model: claude-opus-4-7
       session-id: mythos-slop-hunt-wasm_runtime
       timestamp: 2026-04-24T00:00:00Z
+
+  - id: DD-065
+    type: design-decision
+    title: Delete five orphan-slop symbols from round-2 Mythos sweep
+    status: draft
+    description: >
+      Mythos v2.2 slop-hunt sweep audited the five remaining rank-5 parsers
+      (sexpr.rs, commits.rs, reqif.rs, needs_json.rs, oslc.rs). Four files
+      yielded narrow orphan-slop findings with clean excision — all deleted
+      together in a single follow-up commit trailered Implements: DD-065.
+      The fifth (oslc.rs) surfaced aspirational-slop on bidirectional sync
+      and is handled separately via REQ-006/FEAT-011 wire-up, not this
+      artifact. This decision covers exactly the five symbols listed below.
+    tags: [audit, slop-hunt, orphan-slop]
+    links:
+      - type: satisfies
+        target: REQ-004
+    fields:
+      baseline: v0.4.3
+      source-ref: rivet-core/src/{sexpr,commits,reqif,formats/needs_json}.rs
+      rationale: |
+        Five symbols across four files, all excising cleanly under Mythos
+        v2.2 oracle (excision primary, trace interpretive):
+
+        1. rivet-core/src/sexpr.rs
+           - line_starts (L437-445)       — duplicate of yaml_cst::line_starts
+           - offset_to_line_col (L448-454) — duplicate of yaml_cst equivalent
+           - SyntaxToken type alias (L138) — unreferenced in workspace
+           - (associated test line_col_mapping L599-605 removed with the fns)
+
+        2. rivet-core/src/commits.rs
+           - CommitClass::Exempt variant + its unreachable match arm in
+             analyze_commits. Structural proof: classify_commit_refs has
+             three return sites (Linked/BrokenRef/Orphan), none yield
+             Exempt. Author's comment: "for completeness" — aspirational
+             placeholder, never constructed.
+
+        3. rivet-core/src/reqif.rs
+           - pub fn build_reqif (L997-999) — backward-compat shorthand for
+             build_reqif_with_schema(_, None); zero callers in workspace.
+           - pub fn build_reqif_with_schema_unused (L994) — empty-body
+             function, literally `pub fn name() {}`, caught as bonus
+             finding during the sweep.
+
+        4. rivet-core/src/formats/needs_json.rs
+           - fn import_needs_json_directory (L425-450) — directory-walk
+             branch of NeedsJsonAdapter::import. No workspace source
+             declares format: needs-json as directory; the live CLI path
+             (cmd_import_results_needs_json) calls import_needs_json
+             directly, bypassing the adapter. Narrow finding; the whole
+             NeedsJsonAdapter block is a separate audit target.
+
+        ORACLE SUMMARY (applied per-file in isolated worktrees):
+          cargo build --workspace --all-targets       → exit 0
+          cargo test --workspace --no-fail-fast        → 0 failed
+          cargo clippy --workspace --all-targets       → BASELINE-MATCH
+          rivet validate                               → BASELINE-MATCH
+          rivet commits                                → BASELINE-MATCH
+          playwright                                   → skipped (backend)
+
+        SYMBOL-SCOPED TRACE (per v2.2 rules):
+          All five symbols: git log -L trailers empty; artifact source-ref
+          query empty; inline // rivet: verifies annotations empty or
+          outside the symbol range. Clean orphan classification.
+      alternatives: >
+        (1) Per-file DDs (DD-065 through DD-069): rejected as ceremony —
+        the five findings share one shape (orphan-slop + delete), one
+        oracle shape, one review surface. (2) Keep-and-test: rejected
+        because no artifact in the corpus specs any of the five symbols;
+        writing tests would freeze unspecced behavior. (3) Delete:
+        chosen. (4) Bonus find build_reqif_with_schema_unused bundled
+        here rather than as its own decision, since it is a one-line
+        placeholder caught incidentally.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      session-id: mythos-slop-hunt-round-2-batch
+      timestamp: 2026-04-24T00:00:00Z
