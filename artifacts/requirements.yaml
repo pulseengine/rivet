@@ -155,7 +155,7 @@ artifacts:
   - id: REQ-006
     type: requirement
     title: OSLC-based tool synchronization
-    status: draft
+    status: approved
     description: >
       Bidirectional sync with Polarion, DOORS, and codebeamer via OSLC
       (Open Services for Lifecycle Collaboration) rather than per-tool

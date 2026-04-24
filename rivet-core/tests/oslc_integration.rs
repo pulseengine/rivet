@@ -35,6 +35,7 @@ use serde_json::json;
 use wiremock::matchers::{header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+use rivet_core::model::Artifact;
 use rivet_core::oslc::{OslcClient, OslcClientConfig, OslcSyncAdapter, SyncAdapter};
 
 // ---------------------------------------------------------------------------
@@ -894,3 +895,246 @@ async fn test_pull_test_result_with_status() {
     assert_eq!(artifacts[0].links[0].link_type, "reports-on");
     assert_eq!(artifacts[0].links[0].target, "TC-001");
 }
+
+// ---------------------------------------------------------------------------
+// Push — bidirectional sync (REQ-006, FEAT-011)
+// ---------------------------------------------------------------------------
+
+/// Build a minimal requirement artifact for push tests.
+fn req(id: &str, title: &str, description: Option<&str>) -> Artifact {
+    Artifact {
+        id: id.to_string(),
+        artifact_type: "requirement".to_string(),
+        title: title.to_string(),
+        description: description.map(str::to_string),
+        status: Some("approved".to_string()),
+        tags: vec![],
+        links: vec![],
+        fields: std::collections::BTreeMap::new(),
+        provenance: None,
+        source_file: None,
+    }
+}
+
+/// Empty OSLC query response for tests where the remote has no artifacts.
+fn empty_query_response() -> serde_json::Value {
+    json!({ "total_count": 0, "members": [] })
+}
+
+// rivet: verifies REQ-006
+// rivet: verifies FEAT-011
+/// Empty remote + 2 locals → push issues 2 POSTs (no PUTs).
+#[tokio::test]
+async fn test_push_creates_new_resources() {
+    let mock_server = MockServer::start().await;
+    let base = mock_server.uri();
+
+    // GET the factory URL for the query: returns empty.
+    Mock::given(method("GET"))
+        .and(path("/rm/query"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(empty_query_response()))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    // POST to /rm/query (factory URL == service URL in this setup) twice.
+    Mock::given(method("POST"))
+        .and(path("/rm/query"))
+        .respond_with(ResponseTemplate::new(201).set_body_json(json!({})))
+        .expect(2)
+        .mount(&mock_server)
+        .await;
+
+    let config = OslcClientConfig::new(&base);
+    let adapter = OslcSyncAdapter::from_config(config).expect("adapter creation");
+
+    let locals = vec![
+        req("REQ-100", "New requirement one", Some("body one")),
+        req("REQ-101", "New requirement two", Some("body two")),
+    ];
+    let service_url = format!("{base}/rm/query");
+    adapter.push(&service_url, &locals).await.expect("push should succeed");
+    // Wiremock `.expect(N)` on both mocks is checked on drop.
+}
+
+// rivet: verifies REQ-006
+// rivet: verifies FEAT-011
+/// Remote has REQ-200 with old title; push REQ-200 with new title → 1 PUT, 0 POSTs.
+#[tokio::test]
+async fn test_push_updates_modified_resource() {
+    let mock_server = MockServer::start().await;
+    let base = mock_server.uri();
+    let remote_uri = format!("{base}/rm/resources/REQ-200");
+
+    let query_body = json!({
+        "total_count": 1,
+        "members": [
+            {
+                "@id": remote_uri,
+                "@type": ["http://open-services.net/ns/rm#Requirement"],
+                "dcterms:identifier": "REQ-200",
+                "dcterms:title": "OLD title"
+            }
+        ]
+    });
+    Mock::given(method("GET"))
+        .and(path("/rm/query"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(query_body))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("PUT"))
+        .and(path("/rm/resources/REQ-200"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    // No POST mock — any unexpected POST would 404 via MockServer default,
+    // failing the test with a clear error.
+
+    let config = OslcClientConfig::new(&base);
+    let adapter = OslcSyncAdapter::from_config(config).expect("adapter creation");
+
+    let locals = vec![req("REQ-200", "NEW title", None)];
+    let service_url = format!("{base}/rm/query");
+    adapter.push(&service_url, &locals).await.expect("push should succeed");
+}
+
+// rivet: verifies REQ-006
+// rivet: verifies FEAT-011
+/// Mixed: remote has REQ-300 old; push REQ-300 modified + REQ-301 new → 1 PUT + 1 POST.
+#[tokio::test]
+async fn test_push_mixed_create_and_update() {
+    let mock_server = MockServer::start().await;
+    let base = mock_server.uri();
+    let remote_uri = format!("{base}/rm/resources/REQ-300");
+
+    let query_body = json!({
+        "total_count": 1,
+        "members": [
+            {
+                "@id": remote_uri,
+                "@type": ["http://open-services.net/ns/rm#Requirement"],
+                "dcterms:identifier": "REQ-300",
+                "dcterms:title": "OLD title"
+            }
+        ]
+    });
+    Mock::given(method("GET"))
+        .and(path("/rm/query"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(query_body))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("PUT"))
+        .and(path("/rm/resources/REQ-300"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/rm/query"))
+        .respond_with(ResponseTemplate::new(201).set_body_json(json!({})))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let config = OslcClientConfig::new(&base);
+    let adapter = OslcSyncAdapter::from_config(config).expect("adapter creation");
+
+    let locals = vec![
+        req("REQ-300", "NEW title", None),
+        req("REQ-301", "Brand new", None),
+    ];
+    let service_url = format!("{base}/rm/query");
+    adapter.push(&service_url, &locals).await.expect("push should succeed");
+}
+
+// rivet: verifies REQ-006
+// rivet: verifies FEAT-011
+/// Remote has REQ-400; push identical REQ-400 → 0 POSTs, 0 PUTs (unchanged).
+#[tokio::test]
+async fn test_push_skips_unchanged() {
+    let mock_server = MockServer::start().await;
+    let base = mock_server.uri();
+    let remote_uri = format!("{base}/rm/resources/REQ-400");
+
+    let query_body = json!({
+        "total_count": 1,
+        "members": [
+            {
+                "@id": remote_uri,
+                "@type": ["http://open-services.net/ns/rm#Requirement"],
+                "dcterms:identifier": "REQ-400",
+                "dcterms:title": "Stable title",
+                "dcterms:description": "Stable body"
+            }
+        ]
+    });
+    Mock::given(method("GET"))
+        .and(path("/rm/query"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(query_body))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    // No POST or PUT mocks — any mutation request would 404 via the mock
+    // server's default handler and fail the push. That's the assertion.
+
+    let config = OslcClientConfig::new(&base);
+    let adapter = OslcSyncAdapter::from_config(config).expect("adapter creation");
+
+    // Construct a local artifact that matches the remote exactly — same id,
+    // same artifact_type, same title, same description, same status. The
+    // status diff check in artifacts_differ is what matters; it must match.
+    let mut local = req("REQ-400", "Stable title", Some("Stable body"));
+    // The pulled-from-OSLC artifact has no status by default; match that.
+    local.status = None;
+    let locals = vec![local];
+    let service_url = format!("{base}/rm/query");
+    adapter.push(&service_url, &locals).await.expect("push should succeed");
+}
+
+// rivet: verifies REQ-006
+// rivet: verifies FEAT-011
+/// Regression: pre-v2.2 push POSTed everything blindly. With the new
+/// diff-aware push, a remote that already contains the exact artifact
+/// must not receive another POST.
+#[tokio::test]
+async fn test_push_does_not_recreate_identical_remote() {
+    let mock_server = MockServer::start().await;
+    let base = mock_server.uri();
+
+    let query_body = json!({
+        "total_count": 1,
+        "members": [
+            {
+                "@id": format!("{base}/rm/resources/REQ-500"),
+                "@type": ["http://open-services.net/ns/rm#Requirement"],
+                "dcterms:identifier": "REQ-500",
+                "dcterms:title": "Already there"
+            }
+        ]
+    });
+    Mock::given(method("GET"))
+        .and(path("/rm/query"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(query_body))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let config = OslcClientConfig::new(&base);
+    let adapter = OslcSyncAdapter::from_config(config).expect("adapter creation");
+
+    let mut local = req("REQ-500", "Already there", None);
+    local.status = None;
+    let locals = vec![local];
+    let service_url = format!("{base}/rm/query");
+    adapter.push(&service_url, &locals).await.expect("push should succeed");
+    // No POST / PUT mocks registered → any mutation attempt fails.
+}
+
