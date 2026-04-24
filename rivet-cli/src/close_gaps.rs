@@ -43,8 +43,18 @@ use rivet_core::runs::{
     self, Invocation, OracleFiring, RunManifest, RunSummary,
 };
 
-/// Top-level JSON output of `rivet close-gaps --emit json`. This is the
-/// stable API contract every tool adapter consumes — see spec §7.2.
+/// Top-level JSON output of `rivet close-gaps --format json`.
+///
+/// **Rivet's role here is mechanical**: list the oracle firings, sorted,
+/// with enough context that an orchestrator's own prompts (the
+/// `discover.md` / `validate.md` / `emit.md` the project scaffolds into
+/// `.rivet/templates/pipelines/<kind>/`) can act on them.
+///
+/// Deliberately absent: routing decisions, template-pair paths per gap,
+/// proposed-action prescription. Those are the orchestrator's call,
+/// not rivet's. See the project blog post "Spec-driven development is
+/// half the loop" — "no LLM narrative in the loop — just the
+/// validator's diagnostic and the agent's proposed closure."
 #[derive(Debug, Clone, Serialize)]
 pub struct CloseGapsOutput {
     pub run_id: String,
@@ -52,62 +62,29 @@ pub struct CloseGapsOutput {
     pub pipelines_active: Vec<String>,
     pub schemas_active: Vec<String>,
     pub variant: Option<String>,
-    pub gaps: Vec<GapProposal>,
+    pub gaps: Vec<GapReport>,
     pub elapsed_ms: u64,
 }
 
+/// One oracle firing, surfaced to the orchestrator with minimal context.
+/// The orchestrator (an AI agent or a shell script or a human) decides
+/// what to do with it. Rivet does not classify or route.
 #[derive(Debug, Clone, Serialize)]
-pub struct GapProposal {
+pub struct GapReport {
+    /// Stable id within this run (`gap-0`, `gap-1`, …).
     pub id: String,
+    /// Artifact the oracle tripped on, if any.
     pub artifact_id: Option<String>,
+    /// Verbatim oracle diagnostic message.
     pub diagnostic: String,
+    /// Which oracles fired on this artifact, and at what weight.
     pub contributing_oracles: Vec<ContributingOracle>,
+    /// Deterministic sort key. Computed from the contributing oracles'
+    /// weights; orchestrators may re-sort or ignore it.
     pub rank_weight: i32,
+    /// Schema whose oracle surfaced this gap first. Used only for
+    /// grouping / attribution, not for routing decisions.
     pub owning_schema: String,
-    pub routing: Routing,
-    pub reviewers: Vec<String>,
-    pub draft_template: Option<String>,
-    pub proposed_action: ProposedAction,
-    pub validated: Option<bool>,
-    pub emitted: Option<EmittedRecord>,
-    /// Which prompt-template kind drives this gap's discover/validate/
-    /// emit sub-agents, plus the resolved paths an orchestrator can read.
-    pub template_pair: TemplatePairRef,
-}
-
-/// References to the three (optionally four) prompt files that together
-/// implement one pipeline kind. Each path is either a project-relative
-/// override path (`.rivet/templates/pipelines/<kind>/<file>.md`) or the
-/// `embedded:<kind>/<file>.md` marker the orchestrator interprets as
-/// "ask `rivet templates show` for the body".
-#[derive(Debug, Clone, Serialize)]
-pub struct TemplatePairRef {
-    pub kind: String,
-    pub discover: String,
-    pub validate: String,
-    pub emit: String,
-}
-
-impl TemplatePairRef {
-    /// Build a ref by resolving each file: project override path if it
-    /// exists, otherwise the `embedded:` marker.
-    pub fn for_kind(project_root: &Path, kind: &str) -> Self {
-        use rivet_core::templates::{embedded_marker, override_path, TemplateFile};
-        let one = |f: TemplateFile| -> String {
-            let abs = project_root.join(override_path(kind, f));
-            if abs.exists() {
-                override_path(kind, f).display().to_string()
-            } else {
-                embedded_marker(kind, f)
-            }
-        };
-        Self {
-            kind: kind.to_string(),
-            discover: one(TemplateFile::Discover),
-            validate: one(TemplateFile::Validate),
-            emit: one(TemplateFile::Emit),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -116,34 +93,6 @@ pub struct ContributingOracle {
     pub schema: String,
     pub weight: i32,
     pub details: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Routing {
-    AutoClose,
-    HumanReviewRequired,
-    SkippedManualOnly,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "kebab-case", tag = "kind")]
-pub enum ProposedAction {
-    Link { command: String },
-    CreateArtifact { stub_path: String },
-    DraftStub { stub_path: String },
-    ExternalToolRun { command: String },
-    None,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "kebab-case", tag = "kind")]
-pub enum EmittedRecord {
-    None,
-    Commit { sha: String },
-    Pr { url: String },
-    Patch { path: String },
-    CrTicket { id: String },
 }
 
 // ── Entry point ────────────────────────────────────────────────────────
@@ -208,34 +157,26 @@ pub fn run(opts: CloseGapsOptions) -> Result<bool> {
     handle.write_json("diagnostics.json", &diagnostics)?;
     handle.write_json("oracle-firings.json", &firings)?;
 
-    // 4. Rank + route. MVP: each firing becomes one gap, routed by the
-    //    first matching auto-close rule or human-review rule in the
-    //    first pipeline whose uses-oracles references the oracle.
-    let mut proposals = build_proposals(opts.project_root, &pipelines, &firings);
+    // 4. Build gap reports — no routing, no classification.
+    let mut gaps = build_gap_reports(&pipelines, &firings);
 
-    // 5. Deterministic order + top-N
-    proposals.sort_by(|a, b| b.rank_weight.cmp(&a.rank_weight).then(a.id.cmp(&b.id)));
-    if opts.top_n > 0 && proposals.len() > opts.top_n {
-        proposals.truncate(opts.top_n);
+    // 5. Deterministic order + top-N — rank_weight is advisory.
+    gaps.sort_by(|a, b| b.rank_weight.cmp(&a.rank_weight).then(a.id.cmp(&b.id)));
+    if opts.top_n > 0 && gaps.len() > opts.top_n {
+        gaps.truncate(opts.top_n);
     }
-    handle.write_json("ranked.json", &proposals)?;
-    handle.write_json("proposals.json", &proposals)?;
-    handle.write_json("validated.json", &serde_json::json!([]))?; // MVP: no fresh-validate yet
-    handle.write_json("emitted.json", &serde_json::json!([]))?; // MVP: no emit yet
+    handle.write_json("ranked.json", &gaps)?;
+    handle.write_json("proposals.json", &gaps)?;
 
-    // 6. Finalise manifest summary
+    // 6. Finalise manifest summary. Orchestrator outcomes (validate /
+    //    emit counts) are reported back via `rivet runs record` — rivet
+    //    doesn't know those at plan time.
     let summary = RunSummary {
         gaps_found: firings.iter().filter(|f| f.fired).count() as u32,
-        ranked_top_n: proposals.len() as u32,
-        auto_closed: 0, // MVP: dry-run only
-        human_review: proposals
-            .iter()
-            .filter(|p| matches!(p.routing, Routing::HumanReviewRequired))
-            .count() as u32,
-        skipped: proposals
-            .iter()
-            .filter(|p| matches!(p.routing, Routing::SkippedManualOnly))
-            .count() as u32,
+        ranked_top_n: gaps.len() as u32,
+        auto_closed: 0,
+        human_review: 0,
+        skipped: 0,
         errored: 0,
     };
     let ended_at = now_iso8601();
@@ -250,7 +191,7 @@ pub fn run(opts: CloseGapsOptions) -> Result<bool> {
         pipelines_active: pipeline_names,
         schemas_active: schema_names,
         variant: opts.variant.map(|s| s.to_string()),
-        gaps: proposals,
+        gaps,
         elapsed_ms,
     };
 
@@ -258,7 +199,7 @@ pub fn run(opts: CloseGapsOptions) -> Result<bool> {
         "json" => {
             println!("{}", serde_json::to_string_pretty(&output)?);
         }
-        "text" | _ => {
+        _ => {
             println!("Run: {}", output.run_id);
             println!(
                 "  pipelines: [{}]",
@@ -268,14 +209,9 @@ pub fn run(opts: CloseGapsOptions) -> Result<bool> {
             println!("  elapsed:   {} ms", output.elapsed_ms);
             println!();
             for g in &output.gaps {
-                let routing = match g.routing {
-                    Routing::AutoClose => "auto-close",
-                    Routing::HumanReviewRequired => "human-review",
-                    Routing::SkippedManualOnly => "skipped",
-                };
                 println!(
                     "  [{}][w={}] {} — {}",
-                    routing,
+                    g.owning_schema,
                     g.rank_weight,
                     g.artifact_id.as_deref().unwrap_or("?"),
                     g.diagnostic,
@@ -283,6 +219,13 @@ pub fn run(opts: CloseGapsOptions) -> Result<bool> {
             }
             if output.gaps.is_empty() {
                 println!("  (no gaps surfaced by any active oracle)");
+            } else {
+                println!();
+                println!(
+                    "  See `.rivet/templates/pipelines/<kind>/{{discover,validate,emit}}.md`"
+                );
+                println!("  for the project's own closure procedure. Rivet does not prescribe");
+                println!("  routing; the orchestrator's prompts decide per gap.");
             }
         }
     }
@@ -342,28 +285,33 @@ fn run_structural_oracle(
     Ok((diag_json, firings))
 }
 
-// ── Proposal construction ──────────────────────────────────────────────
+// ── Gap-report construction ────────────────────────────────────────────
 
-fn build_proposals(
-    project_root: &Path,
+/// Build one `GapReport` per oracle firing. Rivet's contribution is
+/// purely mechanical: attribute each firing to its schema, attach the
+/// schema's oracle weight for sorting, and move on. No routing, no
+/// closure-kind classification, no template dispatch — those are the
+/// orchestrator's job.
+fn build_gap_reports(
     pipelines: &[(String, rivet_core::agent_pipelines::AgentPipelines)],
     firings: &[OracleFiring],
-) -> Vec<GapProposal> {
+) -> Vec<GapReport> {
     let mut out = Vec::new();
     for (i, f) in firings.iter().filter(|f| f.fired).enumerate() {
-        // Find the owning schema's routing config
-        let (owning_schema, routing, reviewers, draft_template, template_kind) =
-            route_firing(pipelines, f).unwrap_or_else(|| {
-                (
-                    f.schema.clone(),
-                    Routing::SkippedManualOnly,
-                    Vec::new(),
-                    None,
-                    "structural".to_string(),
-                )
-            });
-        let template_pair = TemplatePairRef::for_kind(project_root, &template_kind);
-        out.push(GapProposal {
+        // Owning schema: the first schema whose pipelines reference the
+        // firing's oracle id. Same-oracle-across-schemas tie-breaks by
+        // rivet.yaml load order (BTreeMap gives deterministic iteration).
+        let owning_schema = pipelines
+            .iter()
+            .find(|(_s, ap)| {
+                ap.pipelines
+                    .values()
+                    .any(|p| p.uses_oracles.iter().any(|u| u == &f.oracle_id))
+            })
+            .map(|(s, _)| s.clone())
+            .unwrap_or_else(|| f.schema.clone());
+
+        out.push(GapReport {
             id: format!("gap-{i}"),
             artifact_id: f.artifact_id.clone(),
             diagnostic: f.details.clone(),
@@ -373,78 +321,13 @@ fn build_proposals(
                 weight: 10,
                 details: f.details.clone(),
             }],
-            rank_weight: 10, // MVP flat weight; real ranking comes with schema rank-by rules
+            // Flat weight until the multi-schema `rank-by` composition
+            // lands; rivet sorts gaps by weight, orchestrator may ignore.
+            rank_weight: 10,
             owning_schema,
-            routing,
-            reviewers,
-            draft_template,
-            proposed_action: ProposedAction::None,
-            validated: None,
-            emitted: None,
-            template_pair,
         });
     }
     out
-}
-
-/// Returns `(owning_schema, routing, reviewers, draft_template, template_kind)`.
-fn route_firing(
-    pipelines: &[(String, rivet_core::agent_pipelines::AgentPipelines)],
-    firing: &OracleFiring,
-) -> Option<(String, Routing, Vec<String>, Option<String>, String)> {
-    for (schema, ap) in pipelines {
-        if schema != &firing.schema {
-            continue;
-        }
-        for (_pname, pipeline) in &ap.pipelines {
-            if !pipeline.uses_oracles.iter().any(|u| u == &firing.oracle_id) {
-                continue;
-            }
-            let kind = pipeline.template_kind.clone();
-            // Route: auto-close if any auto-close rule's when.oracle matches
-            for rule in &pipeline.auto_close {
-                if rule_matches_oracle(&rule.when, &firing.oracle_id) {
-                    return Some((
-                        schema.clone(),
-                        Routing::AutoClose,
-                        rule.reviewers.clone(),
-                        rule.draft_template.clone(),
-                        kind,
-                    ));
-                }
-            }
-            for rule in &pipeline.human_review_required {
-                if rule_matches_oracle(&rule.when, &firing.oracle_id) {
-                    return Some((
-                        schema.clone(),
-                        Routing::HumanReviewRequired,
-                        rule.reviewers.clone(),
-                        rule.draft_template.clone(),
-                        kind,
-                    ));
-                }
-            }
-            // Fallback: human-review default if uses-oracles matches but no rule does
-            return Some((
-                schema.clone(),
-                Routing::HumanReviewRequired,
-                Vec::new(),
-                None,
-                kind,
-            ));
-        }
-    }
-    None
-}
-
-fn rule_matches_oracle(
-    when: &rivet_core::agent_pipelines::MatchClause,
-    oracle_id: &str,
-) -> bool {
-    match when.get("oracle") {
-        Some(serde_yaml::Value::String(s)) if s == oracle_id => true,
-        _ => false,
-    }
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────

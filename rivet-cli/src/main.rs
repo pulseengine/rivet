@@ -1023,12 +1023,17 @@ enum PipelinesAction {
         #[arg(short, long, default_value = "text")]
         format: String,
     },
-    /// Hard gate: refuse downstream close-gaps if any Tier-3 placeholder
-    /// is unresolved, any oracle reference is unknown, or any reviewer
-    /// group is missing from .rivet/context/review-roles.yaml.
+    /// Advisory checker over `.rivet/` config. Reports unresolved
+    /// placeholders, unknown oracle/template references, missing
+    /// reviewer groups. Default: prints findings and exits 0 — the
+    /// report is informational, rivet does not refuse its own
+    /// subcommand. Use `--strict` for CI-gating (exit 1 on errors).
     Validate {
         #[arg(short, long, default_value = "text")]
         format: String,
+        /// Exit 1 on any error instead of the advisory default.
+        #[arg(long)]
+        strict: bool,
     },
 }
 
@@ -1622,8 +1627,8 @@ fn run(cli: Cli) -> Result<bool> {
                 PipelinesAction::Show { schema, format } => {
                     pipelines_cmd::cmd_show(&cli.project, &schemas_dir, schema, format)
                 }
-                PipelinesAction::Validate { format } => {
-                    pipelines_cmd::cmd_validate(&cli.project, &schemas_dir, format)
+                PipelinesAction::Validate { format, strict } => {
+                    pipelines_cmd::cmd_validate(&cli.project, &schemas_dir, format, *strict)
                 }
             }
         }

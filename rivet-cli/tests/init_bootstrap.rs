@@ -153,7 +153,11 @@ fn bootstrap_rerun_keeps_project_owned_files() {
 }
 
 #[test]
-fn pipelines_validate_fires_on_unfilled_placeholders() {
+fn pipelines_validate_default_is_advisory() {
+    // Default mode (no --strict): exit 0 even when placeholders are
+    // unresolved. The report is informational; rivet does not refuse
+    // its own subcommand on project-config issues. Issues are still
+    // listed in stdout so the operator / CI can log them.
     let tmp = tempfile::tempdir().unwrap();
     setup_project(tmp.path());
     run_bootstrap(tmp.path());
@@ -170,13 +174,41 @@ fn pipelines_validate_fires_on_unfilled_placeholders() {
         .output()
         .expect("rivet pipelines validate");
 
-    // Must fail — placeholders are unresolved on a fresh bootstrap
-    assert!(!out.status.success());
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    let combined = format!("{stdout}{}", String::from_utf8_lossy(&out.stderr));
     assert!(
-        combined.contains("unresolved placeholder") || combined.contains("Pipeline validation"),
-        "pipelines validate output didn't reference placeholders or validation: {combined}"
+        out.status.success(),
+        "default mode must exit 0 (advisory); stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("unresolved placeholder"),
+        "advisory output should still mention unresolved placeholders: {stdout}"
+    );
+}
+
+#[test]
+fn pipelines_validate_strict_gates_on_errors() {
+    // --strict: exit 1 on any error, for CI / pre-commit gating.
+    let tmp = tempfile::tempdir().unwrap();
+    setup_project(tmp.path());
+    run_bootstrap(tmp.path());
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "-p",
+            tmp.path().to_str().unwrap(),
+            "--schemas",
+            tmp.path().join("schemas").to_str().unwrap(),
+            "pipelines",
+            "validate",
+            "--strict",
+        ])
+        .output()
+        .expect("rivet pipelines validate --strict");
+
+    assert!(
+        !out.status.success(),
+        "--strict must exit 1 when unresolved placeholders remain"
     );
 }
 

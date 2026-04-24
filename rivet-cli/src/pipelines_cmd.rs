@@ -179,16 +179,25 @@ pub fn cmd_show(
 
 // ── validate ───────────────────────────────────────────────────────────
 
-/// The hard gate. `rivet close-gaps` refuses to run until this exits 0.
+/// Advisory checker over `.rivet/` and each schema's `agent-pipelines:`
+/// block. Reports unresolved placeholders, unknown oracle references,
+/// unknown `template-kind:` values, and missing reviewer-group mappings.
 ///
-/// Checks:
-/// 1. Every loaded schema's agent-pipelines block passes internal validation.
-/// 2. Every `uses-oracles` reference resolves within the schema.
-/// 3. Tier-3 placeholders in `.rivet/context/*` have been filled in
-///    (or explicitly marked `accepted-empty`).
-/// 4. Every reviewer group referenced in routing rules is mapped in
-///    `.rivet/context/review-roles.yaml`.
-pub fn cmd_validate(project_root: &Path, schemas_dir: &Path, format: &str) -> Result<bool> {
+/// **Default behaviour is advisory**: prints the report and exits 0 even
+/// when problems are found. This is deliberate — per the blog's
+/// "rivet tools produce errors the agent responds to" framing, rivet
+/// should not refuse its own subcommand on project-config issues. The
+/// `validate` oracle that matters is `rivet validate` (against
+/// artifacts). This here is a hygiene check on the pipeline
+/// configuration; orchestrators may inspect it, humans decide.
+///
+/// Pass `strict=true` to make it CI-gating (exit 1 on any error).
+pub fn cmd_validate(
+    project_root: &Path,
+    schemas_dir: &Path,
+    format: &str,
+    strict: bool,
+) -> Result<bool> {
     validate_format(format)?;
     let pipelines = load_pipelines(project_root, schemas_dir)?;
     let mut errors: Vec<String> = Vec::new();
@@ -275,32 +284,43 @@ pub fn cmd_validate(project_root: &Path, schemas_dir: &Path, format: &str) -> Re
             "errors": errors,
             "warnings": warnings,
             "ok": errors.is_empty(),
+            "strict": strict,
         });
         println!("{}", serde_json::to_string_pretty(&out)?);
     } else {
         if !errors.is_empty() {
-            println!("Pipeline validation FAILED ({} errors):", errors.len());
+            println!("Pipeline configuration issues ({}):", errors.len());
             for e in &errors {
-                println!("  error: {e}");
+                println!("  {e}");
             }
+            println!();
+            println!(
+                "  (advisory — `rivet close-gaps` will still run. Re-run with"
+            );
+            println!("  `--strict` if you want this to gate CI.)");
         }
         if !warnings.is_empty() {
             println!("Warnings ({}):", warnings.len());
             for w in &warnings {
-                println!("  warning: {w}");
+                println!("  {w}");
             }
         }
-        if errors.is_empty() {
+        if errors.is_empty() && warnings.is_empty() {
             println!(
-                "Pipeline validation PASS ({} schemas, {} oracles)",
+                "Pipeline configuration OK ({} schemas, {} oracles)",
                 pipelines.len(),
                 pipelines.iter().map(|(_, a)| a.oracles.len()).sum::<usize>(),
             );
         }
     }
 
-    // Exit code via Ok(bool): true => 0, false => 1.
-    Ok(errors.is_empty())
+    // Default: always Ok(true) — this is advisory, not a gate.
+    // `--strict`: return Ok(false) on any error to give CI an exit code.
+    if strict {
+        Ok(errors.is_empty())
+    } else {
+        Ok(true)
+    }
 }
 
 fn strip_review_roles_prefix(reviewer: &str) -> Option<&str> {
