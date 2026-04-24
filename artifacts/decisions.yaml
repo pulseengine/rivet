@@ -1063,3 +1063,66 @@ artifacts:
     provenance:
       created-by: ai-assisted
       timestamp: 2026-04-07T03:40:26Z
+
+  - id: DD-064
+    type: design-decision
+    title: Delete four orphan WasmAdapter methods in wasm_runtime.rs
+    status: draft
+    description: >
+      Mythos v2 slop-hunt audit confirmed that four methods on
+      `WasmAdapter` in `rivet-core/src/wasm_runtime.rs` are pure orphans:
+      `call_id` (L276–301), `call_name` (L304–327), `call_supported_types`
+      (L330–349), and `call_analyze` (L482–542). All four excise cleanly
+      (unimplemented! body → build/test/clippy/validate/commits
+      baseline-match); none have a symbol-scoped trailered commit; no
+      artifact in the corpus mentions any of the four symbol names.
+      Proposed outcome: delete. See `fields.rationale` for verbatim
+      oracle output. Two independent agents (discovery + fresh
+      validator) reached the same verdict.
+    tags: [audit, slop-hunt, orphan-slop]
+    links:
+      - type: satisfies
+        target: REQ-004
+    fields:
+      baseline: v0.4.3
+      source-ref: rivet-core/src/wasm_runtime.rs:276-542
+      rationale: |
+        Mythos v2 excision-primary oracle.
+
+        BASELINE (pristine main, features rivet-core/wasm + rivet-cli/wasm):
+          rivet validate → FAIL (6 errors, 10 warnings, 0 broken cross-refs)
+          rivet commits  → Artifact coverage: 87/236 (36.9%)
+
+        EXCISION (each method body → unimplemented!; _root/_aadl_dir):
+          cargo build --workspace --all-targets  → exit 0
+          cargo test  --workspace --no-fail-fast → 1500+ passed, 0 failed
+          cargo clippy --workspace --all-targets → no new errors vs baseline
+          rivet validate                         → BASELINE-MATCH
+          rivet commits                          → BASELINE-MATCH
+          playwright                             → skipped (backend-only)
+
+        SYMBOL-SCOPED TRACE (git log -L LO,HI:wasm_runtime.rs):
+          call_id              (L276-301) → 50c5107 (no trailer)
+          call_name            (L304-327) → 50c5107 (no trailer)
+          call_supported_types (L330-349) → 50c5107 (no trailer)
+          call_analyze         (L482-542) → 3b04f01 (no trailer)
+
+        ARTIFACT REFERENCE (all four symbol names): empty.
+
+        Per v2 rule: excision-pass ∧ trace-empty → orphan-slop → delete.
+
+        Adjacent: impl Adapter for WasmAdapter at L590-619 carries the
+        comment "TODO: call self.call_id() and cache" — staging that
+        was never completed. Trait methods currently return path-stem /
+        empty-slice fallbacks and do not invoke the excised helpers.
+      alternatives: >
+        (1) add-test: rejected for all four; no artifact specifies
+        these methods as planned, so tests would lock in unspecced
+        behavior. (2) document-as-non-goal: rejected; nothing currently
+        names them as aspirational to formally rescind. (3) delete:
+        chosen (v2 oracle rule for orphan-slop).
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      session-id: mythos-slop-hunt-wasm_runtime
+      timestamp: 2026-04-24T00:00:00Z
