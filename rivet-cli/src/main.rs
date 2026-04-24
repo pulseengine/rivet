@@ -1284,6 +1284,57 @@ enum VariantAction {
         #[arg(short, long, default_value = "text")]
         format: String,
     },
+
+    /// Emit a CI matrix driven by the declared variants in a binding file.
+    ///
+    /// Iterates every VariantConfig in the binding's `variants:` list,
+    /// solves each against the feature model, and renders one matrix entry
+    /// per variant. Format `github-actions` produces a `strategy.matrix:`
+    /// fragment ready to paste into a workflow.
+    Matrix {
+        /// Path to feature model YAML.
+        #[arg(long)]
+        model: PathBuf,
+        /// Path to binding YAML containing `variants:` declarations.
+        #[arg(long)]
+        binding: PathBuf,
+        /// Output format: "github-actions" (default).
+        #[arg(short, long, default_value = "github-actions")]
+        format: String,
+        /// Restrict to variants matching one of these exact names. Repeatable.
+        #[arg(long = "variant", value_name = "NAME")]
+        variants: Vec<String>,
+        /// Only include variants whose root-feature attribute matches.
+        /// Format: `key=value`. Repeatable (AND).
+        #[arg(long = "attr", value_name = "K=V")]
+        attrs: Vec<String>,
+        /// Wrap the emitted fragment. `fragment` (default) prints just the
+        /// `strategy:` block; `job` wraps in a minimal `jobs.build:` skeleton.
+        #[arg(long, default_value = "fragment")]
+        wrap: String,
+        /// Default runner label when a variant has no `ci-runner` attribute.
+        #[arg(long, default_value = "ubuntu-latest")]
+        default_runner: String,
+        /// Which root-feature attribute key carries the runner label.
+        #[arg(long, default_value = "ci-runner")]
+        runner_attr: String,
+        /// Fail (exit 2) if the resulting matrix would exceed this many jobs.
+        /// GitHub Actions' documented cap is 256.
+        #[arg(long, default_value = "256")]
+        max_jobs: usize,
+        /// Emit `fail-fast: true` (GHA default). Without this flag, rivet
+        /// emits `fail-fast: false` so one variant failure does not cancel
+        /// peers — the safety-critical default.
+        #[arg(long)]
+        fail_fast: bool,
+        /// Load additional variants from every `*.yaml` file in this
+        /// directory. Useful for projects that store variants as
+        /// standalone files (`rivet variant check <FILE>`-compatible).
+        /// Variants declared inline in the binding file are loaded first;
+        /// name collisions error.
+        #[arg(long, value_name = "DIR")]
+        variants_dir: Option<PathBuf>,
+    },
 }
 
 /// Oracle subcommands under `rivet check`.
@@ -1620,6 +1671,31 @@ fn run(cli: Cli) -> Result<bool> {
                 binding,
                 format,
             } => cmd_variant_manifest(model, variant, binding, format),
+            VariantAction::Matrix {
+                model,
+                binding,
+                format,
+                variants,
+                attrs,
+                wrap,
+                default_runner,
+                runner_attr,
+                max_jobs,
+                fail_fast,
+                variants_dir,
+            } => cmd_variant_matrix(
+                model,
+                binding,
+                format,
+                variants,
+                attrs,
+                wrap,
+                default_runner,
+                runner_attr,
+                *max_jobs,
+                *fail_fast,
+                variants_dir.as_deref(),
+            ),
         },
         Command::Runs { action } => match action {
             RunsAction::List { limit, format } => {
@@ -9029,6 +9105,134 @@ fn cmd_variant_manifest(
         }
     }
 
+    Ok(true)
+}
+
+/// `rivet variant matrix` — emit a CI matrix driven by declared variants.
+#[allow(clippy::too_many_arguments)]
+fn cmd_variant_matrix(
+    model_path: &std::path::Path,
+    binding_path: &std::path::Path,
+    format: &str,
+    variant_names: &[String],
+    attr_filters: &[String],
+    wrap: &str,
+    default_runner: &str,
+    runner_attr: &str,
+    max_jobs: usize,
+    fail_fast: bool,
+    variants_dir: Option<&std::path::Path>,
+) -> Result<bool> {
+    validate_format(format, &["github-actions"])?;
+
+    let wrap_kind = match wrap {
+        "fragment" => rivet_core::variant_emit::GhaWrap::Fragment,
+        "job" => rivet_core::variant_emit::GhaWrap::Job,
+        other => anyhow::bail!("unknown --wrap `{other}`: expected `fragment` or `job`"),
+    };
+
+    let model_yaml = std::fs::read_to_string(model_path)
+        .with_context(|| format!("reading {}", model_path.display()))?;
+    let model = rivet_core::feature_model::FeatureModel::from_yaml(&model_yaml)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    let binding_yaml = std::fs::read_to_string(binding_path)
+        .with_context(|| format!("reading {}", binding_path.display()))?;
+    let mut binding: rivet_core::feature_model::FeatureBinding =
+        serde_yaml::from_str(&binding_yaml).context("parsing binding model")?;
+
+    // If --variants-dir is given, load every *.yaml there as a VariantConfig
+    // and append. Name collisions with binding-inline variants are fatal.
+    if let Some(dir) = variants_dir {
+        let mut existing: std::collections::BTreeSet<String> =
+            binding.variants.iter().map(|v| v.name.clone()).collect();
+        let entries = std::fs::read_dir(dir)
+            .with_context(|| format!("reading variants dir {}", dir.display()))?;
+        let mut paths: Vec<std::path::PathBuf> = entries
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("yaml"))
+            .collect();
+        paths.sort();
+        for path in paths {
+            let yaml = std::fs::read_to_string(&path)
+                .with_context(|| format!("reading {}", path.display()))?;
+            let vc: rivet_core::feature_model::VariantConfig =
+                serde_yaml::from_str(&yaml)
+                    .with_context(|| format!("parsing variant file {}", path.display()))?;
+            if !existing.insert(vc.name.clone()) {
+                anyhow::bail!(
+                    "variant name collision: `{}` appears in both binding's inline \
+                     variants: list and {}",
+                    vc.name,
+                    path.display()
+                );
+            }
+            binding.variants.push(vc);
+        }
+    }
+
+    if binding.variants.is_empty() {
+        anyhow::bail!(
+            "no variants to emit. Declare variants either inline under `variants:` \
+             in the binding file, or point --variants-dir at a directory containing \
+             per-variant YAML files. An empty GHA matrix errors at workflow dispatch."
+        );
+    }
+
+    let mut attrs: Vec<(String, String)> = Vec::new();
+    for spec in attr_filters {
+        match spec.split_once('=') {
+            Some((k, v)) => attrs.push((k.to_string(), v.to_string())),
+            None => anyhow::bail!(
+                "invalid --attr `{spec}`: expected `key=value`"
+            ),
+        }
+    }
+
+    let filters = rivet_core::variant_emit::MatrixFilters {
+        variants: variant_names.to_vec(),
+        attrs,
+        runner_attr: runner_attr.to_string(),
+        default_runner: Some(default_runner.to_string()),
+    };
+
+    let spec = rivet_core::variant_emit::build_matrix_spec(&model, &binding, &filters)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    if spec.len() > max_jobs {
+        anyhow::bail!(
+            "matrix would produce {} jobs, exceeding --max-jobs {}. \
+             Filter with --variant NAME or --attr K=V, or raise the cap.",
+            spec.len(),
+            max_jobs
+        );
+    }
+
+    let source = format!(
+        "{} + {}",
+        model_path.display(),
+        binding_path.display()
+    );
+    let header = vec![
+        "Generated by: rivet variant matrix".to_string(),
+        format!("Source:       {source}"),
+        format!(
+            "Variants:     {} (filtered from {})",
+            spec.len(),
+            binding.variants.len()
+        ),
+        "DO NOT EDIT — regenerate with `rivet variant matrix` on model change.".to_string(),
+    ];
+
+    let opts = rivet_core::variant_emit::GhaOpts {
+        wrap: wrap_kind,
+        fail_fast_off: !fail_fast,
+        header_comments: header,
+    };
+
+    let out = rivet_core::variant_emit::emit_matrix_github_actions(&spec, &opts);
+    print!("{out}");
     Ok(true)
 }
 

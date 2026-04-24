@@ -2145,3 +2145,184 @@ fn externals_discover_empty_project() {
         "should say 'No externals discovered'; got: {stdout}"
     );
 }
+
+// ── rivet variant matrix ────────────────────────────────────────────────
+// rivet: verifies FEAT-001
+
+fn write_matrix_fixture(dir: &std::path::Path) {
+    let model = r#"
+kind: feature-model
+root: product
+features:
+  product:
+    group: mandatory
+    children: [scope]
+    attributes:
+      asil: "QM"
+      ci-runner: "ubuntu-latest"
+  scope:
+    group: alternative
+    children: [tiny, full]
+  tiny:
+    group: leaf
+  full:
+    group: leaf
+constraints: []
+"#;
+    let binding = r#"
+bindings: {}
+variants:
+  - name: tiny-ci
+    selects: [tiny]
+  - name: full-ci
+    selects: [full]
+"#;
+    std::fs::write(dir.join("model.yaml"), model).unwrap();
+    std::fs::write(dir.join("binding.yaml"), binding).unwrap();
+}
+
+/// End-to-end: the command prints a GHA strategy fragment for each
+/// variant in the binding, with fail-fast: false by default.
+#[test]
+fn variant_matrix_emits_github_actions_fragment() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_matrix_fixture(tmp.path());
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "variant",
+            "matrix",
+            "--model",
+            tmp.path().join("model.yaml").to_str().unwrap(),
+            "--binding",
+            tmp.path().join("binding.yaml").to_str().unwrap(),
+        ])
+        .output()
+        .expect("run rivet variant matrix");
+
+    assert!(out.status.success(), "stderr: {}",
+        String::from_utf8_lossy(&out.stderr));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("strategy:"), "got: {stdout}");
+    assert!(stdout.contains("fail-fast: false"));
+    assert!(stdout.contains("- variant: tiny-ci"));
+    assert!(stdout.contains("- variant: full-ci"));
+    assert!(stdout.contains("attr_asil: \"QM\""));
+    assert!(stdout.contains("runner: ubuntu-latest"));
+    // Round-trips as YAML.
+    let _: serde_yaml::Value =
+        serde_yaml::from_str(&stdout).expect("emitted fragment is valid YAML");
+}
+
+/// `--variant NAME` restricts the matrix to a single entry.
+#[test]
+fn variant_matrix_filters_by_variant_name() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_matrix_fixture(tmp.path());
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "variant",
+            "matrix",
+            "--model",
+            tmp.path().join("model.yaml").to_str().unwrap(),
+            "--binding",
+            tmp.path().join("binding.yaml").to_str().unwrap(),
+            "--variant",
+            "full-ci",
+        ])
+        .output()
+        .expect("run rivet variant matrix --variant");
+
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("- variant: full-ci"));
+    assert!(!stdout.contains("- variant: tiny-ci"));
+    assert!(stdout.contains("Variants:     1 (filtered from 2)"));
+}
+
+/// An empty binding exits non-zero with a guiding error.
+#[test]
+fn variant_matrix_empty_binding_errors() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tmp.path().join("model.yaml"),
+        r#"kind: feature-model
+root: p
+features:
+  p:
+    group: mandatory
+constraints: []
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        tmp.path().join("binding.yaml"),
+        "bindings: {}\nvariants: []\n",
+    )
+    .unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "variant",
+            "matrix",
+            "--model",
+            tmp.path().join("model.yaml").to_str().unwrap(),
+            "--binding",
+            tmp.path().join("binding.yaml").to_str().unwrap(),
+        ])
+        .output()
+        .expect("run rivet variant matrix");
+
+    assert!(!out.status.success(), "empty matrix must error");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("no variants to emit"),
+        "stderr should guide user; got: {stderr}"
+    );
+}
+
+/// `--variants-dir` loads standalone variant YAMLs alongside binding-inline.
+#[test]
+fn variant_matrix_loads_variants_dir() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_matrix_fixture(tmp.path());
+    // Wipe inline variants; put them as files instead.
+    std::fs::write(
+        tmp.path().join("binding.yaml"),
+        "bindings: {}\nvariants: []\n",
+    )
+    .unwrap();
+    let vdir = tmp.path().join("variants");
+    std::fs::create_dir(&vdir).unwrap();
+    std::fs::write(
+        vdir.join("tiny-ci.yaml"),
+        "name: tiny-ci\nselects: [tiny]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        vdir.join("full-ci.yaml"),
+        "name: full-ci\nselects: [full]\n",
+    )
+    .unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "variant",
+            "matrix",
+            "--model",
+            tmp.path().join("model.yaml").to_str().unwrap(),
+            "--binding",
+            tmp.path().join("binding.yaml").to_str().unwrap(),
+            "--variants-dir",
+            vdir.to_str().unwrap(),
+        ])
+        .output()
+        .expect("run rivet variant matrix --variants-dir");
+
+    assert!(out.status.success(), "stderr: {}",
+        String::from_utf8_lossy(&out.stderr));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("- variant: tiny-ci"));
+    assert!(stdout.contains("- variant: full-ci"));
+}
