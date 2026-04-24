@@ -411,7 +411,9 @@ impl Adapter for NeedsJsonAdapter {
                     .map_err(|e| Error::Adapter(format!("invalid UTF-8: {e}")))?;
                 import_needs_json_inner(content, &nj_config, None)
             }
-            AdapterSource::Directory(dir) => import_needs_json_directory(dir, &nj_config),
+            AdapterSource::Directory(_) => Err(Error::Adapter(
+                "needs-json adapter does not support directory source".into(),
+            )),
         }
     }
 
@@ -420,33 +422,6 @@ impl Adapter for NeedsJsonAdapter {
             "needs-json adapter does not support export".into(),
         ))
     }
-}
-
-/// Walk a directory for `*.json` files and import each as needs.json.
-fn import_needs_json_directory(
-    dir: &Path,
-    config: &NeedsJsonConfig,
-) -> Result<Vec<Artifact>, Error> {
-    let mut artifacts = Vec::new();
-    let entries =
-        std::fs::read_dir(dir).map_err(|e| Error::Io(format!("{}: {e}", dir.display())))?;
-
-    for entry in entries {
-        let entry = entry.map_err(|e| Error::Io(e.to_string()))?;
-        let path = entry.path();
-        if path.extension().is_some_and(|ext| ext == "json") {
-            let content = std::fs::read_to_string(&path)
-                .map_err(|e| Error::Io(format!("{}: {e}", path.display())))?;
-            match import_needs_json_inner(&content, config, Some(&path)) {
-                Ok(arts) => artifacts.extend(arts),
-                Err(e) => log::warn!("skipping {}: {e}", path.display()),
-            }
-        } else if path.is_dir() {
-            artifacts.extend(import_needs_json_directory(&path, config)?);
-        }
-    }
-
-    Ok(artifacts)
 }
 
 /// Convert flat `AdapterConfig` entries into a structured `NeedsJsonConfig`.
