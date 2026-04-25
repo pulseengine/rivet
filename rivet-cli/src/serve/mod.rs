@@ -1021,20 +1021,27 @@ async fn wrap_full_page(
         && !path.starts_with("/source-raw/")
         && !path.starts_with("/docs-asset/")
     {
+        // Capture status before consuming the body so we can re-apply it after
+        // wrapping; otherwise .into_response() defaults to 200 and silently
+        // turns explicit error statuses (e.g. 400 from variant_error_response)
+        // into successful responses.
+        let status = response.status();
         let bytes = axum::body::to_bytes(response.into_body(), 16 * 1024 * 1024)
             .await
             .unwrap_or_default();
         let content = String::from_utf8_lossy(&bytes);
         let app = state.read().await;
-        if is_print {
-            return layout::print_layout(&content, &app).into_response();
-        }
-        if is_embed {
-            return layout::embed_layout(&content, &app).into_response();
-        }
-        let active_variant = extract_variant_from_query(&query);
-        return layout::page_layout_with_variant(&content, &app, active_variant.as_deref())
-            .into_response();
+        let mut wrapped = if is_print {
+            layout::print_layout(&content, &app).into_response()
+        } else if is_embed {
+            layout::embed_layout(&content, &app).into_response()
+        } else {
+            let active_variant = extract_variant_from_query(&query);
+            layout::page_layout_with_variant(&content, &app, active_variant.as_deref())
+                .into_response()
+        };
+        *wrapped.status_mut() = status;
+        return wrapped;
     }
 
     response
