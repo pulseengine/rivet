@@ -307,7 +307,7 @@ Lemma validation_work_add_one : forall s a rules,
   validation_work s rules + List.length rules.
 Proof.
   intros. unfold validation_work.
-  rewrite app_length. simpl.
+  rewrite length_app. simpl.
   rewrite Nat.add_1_r.
   rewrite Nat.mul_succ_l.
   rewrite Nat.add_comm. reflexivity.
@@ -575,46 +575,62 @@ Definition count_violations (s : Store) (r : TraceRule) : nat :=
                 (art_links a)))
     s).
 
-(** If no artifacts of the source kind exist, there are zero violations.
+(* Helper: filter zero-length implies the predicate is false on every member.
+   Used to drive zero_violations_implies_satisfied. *)
+Lemma filter_length_zero_forall :
+  forall {A : Type} (P : A -> bool) (xs : list A),
+    List.length (filter P xs) = 0 ->
+    forall x, In x xs -> P x = false.
+Proof.
+  induction xs as [| h rest IH]; intros Hlen x Hin.
+  - inversion Hin.
+  - simpl in Hlen, Hin.
+    destruct (P h) eqn:HPh.
+    + simpl in Hlen. discriminate.
+    + destruct Hin as [Heq | Hin_rest].
+      * subst h. exact HPh.
+      * apply IH; assumption.
+Qed.
 
-    KNOWN GAP: The proof has a closure-over-list issue. `count_violations s r`
-    builds a filter whose inner `store_contains s ...` closure references the
-    OUTER list `s`. When inducting on `s`, Coq generates IH for `s := rest`
-    with the closure-internal reference also substituted to `rest`, but the
-    inductive-step goal's closure still refers to `(a :: rest)`. The two
-    don't unify and `apply IH` fails (verified against Rocq 9.0 in CI as of
-    commit 607aed6).
+(* Auxiliary lemma: decouples the lookup list from the iterated list,
+   which is what the original closure-over-s proof was missing. *)
+Lemma no_source_no_violations_aux :
+  forall (xs : Store) (lookup : Store) (r : TraceRule),
+    (forall a, In a xs -> art_kind a <> rule_source_kind r) ->
+    List.length (filter
+      (fun a => artifact_kind_eqb (art_kind a) (rule_source_kind r) &&
+                negb (existsb
+                  (fun l => link_kind_eqb (link_kind l) (rule_link_kind r) &&
+                            store_contains lookup (link_target l))
+                  (art_links a)))
+      xs) = 0.
+Proof.
+  induction xs as [| a rest IH]; intros lookup r Hnone.
+  - simpl. reflexivity.
+  - simpl.
+    assert (Hkind : artifact_kind_eqb (art_kind a) (rule_source_kind r) = false).
+    { destruct (artifact_kind_eqb (art_kind a) (rule_source_kind r)) eqn:Heq; [|reflexivity].
+      exfalso.
+      assert (Heq' : art_kind a = rule_source_kind r).
+      { destruct (art_kind a); destruct (rule_source_kind r);
+          simpl in Heq; try discriminate; try reflexivity;
+          apply String.eqb_eq in Heq; subst; reflexivity. }
+      apply (Hnone a (or_introl eq_refl)); exact Heq'. }
+    rewrite Hkind. simpl.
+    apply IH. intros a' Hin'. apply Hnone. right. exact Hin'.
+Qed.
 
-    Fixing this needs an auxiliary lemma that decouples the lookup list
-    from the iterated list:
-
-      Lemma no_source_no_violations_aux : forall xs lookup r,
-        (forall a, In a xs -> art_kind a <> rule_source_kind r) ->
-        length (filter (fun a => artifact_kind_eqb _ _ &&
-                                 negb (existsb (... store_contains lookup ...)
-                                       (art_links a))) xs) = 0.
-
-    Then: no_source_no_violations s r := no_source_no_violations_aux s s r.
-
-    Admitted for now to keep the meta-model compiling; consistent with
-    `zero_violations_implies_satisfied` below. The 0.4.x release was
-    audited to declare these proofs as work-in-progress (commit 2fafe1a).
-    Restoring full verification is REQ-004 follow-up work. *)
+(** If no artifacts of the source kind exist, there are zero violations. *)
 Lemma no_source_no_violations : forall s r,
   (forall a, In a s -> art_kind a <> rule_source_kind r) ->
   count_violations s r = 0.
-Admitted.
+Proof.
+  intros s r Hnone.
+  unfold count_violations.
+  apply (no_source_no_violations_aux s s r Hnone).
+Qed.
 
-(** Zero violations implies the rule is satisfied (validation soundness).
-
-    Admitted entirely — the existing proof body relied on Rocq < 9.0
-    behavior where `simpl` would auto-rewrite Heq into the goal and
-    `exact Hexists` would unify across the alpha-renamed lambda. Both
-    are stricter in Rocq 9.0. The proof was authored when the Bazel
-    target was empty (`rocq_library` had `srcs = []` per commit 2fafe1a)
-    so it never compiled — restoring it requires a full re-derivation
-    plus the auxiliary lemma needed for `no_source_no_violations`.
-    REQ-004 follow-up. *)
+(** Zero violations implies the rule is satisfied (validation soundness). *)
 Theorem zero_violations_implies_satisfied : forall s r,
   count_violations s r = 0 ->
   forall a, In a s ->
@@ -623,7 +639,15 @@ Theorem zero_violations_implies_satisfied : forall s r,
       (fun l => link_kind_eqb (link_kind l) (rule_link_kind r) &&
                 store_contains s (link_target l))
       (art_links a) = true.
-Admitted.
+Proof.
+  intros s r Hzero a Hin Hkind.
+  unfold count_violations in Hzero.
+  pose proof (filter_length_zero_forall _ _ Hzero a Hin) as HPa.
+  apply andb_false_iff in HPa.
+  destruct HPa as [Hk | Hex].
+  - rewrite Hkind in Hk. discriminate.
+  - apply negb_false_iff in Hex. exact Hex.
+Qed.
 
 (* ========================================================================= *)
 (** * Summary of Verified Properties                                          *)
@@ -667,7 +691,4 @@ Admitted.
 
     10. store_get_in
         An artifact known to be in a store with unique IDs is retrievable.
-
-    One theorem is partially verified (Admitted):
-    - zero_violations_implies_satisfied: requires inductive filter reasoning.
 *)

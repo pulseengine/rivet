@@ -24,7 +24,7 @@ Require Import Coq.Strings.String.
 Require Import Coq.Bool.Bool.
 Import ListNotations.
 
-Require Import Schema.
+From proofs.rocq Require Import Schema.
 
 (* Mirroring Schema.v: no `Open Scope string_scope` — it shadows
  * List.length / List.app. All string literals in this file carry
@@ -181,11 +181,10 @@ Proof.
   intros s a.
   unfold check_broken_links.
   induction (art_links a) as [| h rest IH].
-  - simpl. apply Nat.le_refl.
+  - simpl. apply le_n.
   - simpl. destruct (store_contains s (link_target h)).
     + simpl. apply le_S. exact IH.
-    + simpl. rewrite app_length. simpl.
-      apply le_n_S. exact IH.
+    + simpl. apply le_n_S. exact IH.
 Qed.
 
 Lemma check_artifact_rules_length : forall s a rules,
@@ -194,8 +193,8 @@ Proof.
   intros s a rules.
   unfold check_artifact_rules.
   induction rules as [| r rest IH].
-  - simpl. apply Nat.le_refl.
-  - simpl. rewrite app_length.
+  - simpl. apply le_n.
+  - simpl. rewrite length_app.
     unfold check_artifact_rule.
     destruct (artifact_kind_eqb (art_kind a) (rule_source_kind r)).
     + destruct (existsb _ (art_links a)).
