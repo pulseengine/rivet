@@ -215,6 +215,10 @@ pub struct QueryParams {
 
 #[derive(Clone)]
 pub struct RivetServer {
+    /// Populated by the `#[tool_router]` macro and consumed via the
+    /// generated `tool_router()` method. Compiler cannot see the read
+    /// through the macro's trait impl, so suppress the dead-code lint.
+    #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
     project_dir: Arc<PathBuf>,
     /// Cached project state — loaded once at startup, refreshed via rivet_reload.
