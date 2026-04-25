@@ -24,7 +24,7 @@ Require Import Coq.Strings.String.
 Require Import Coq.Bool.Bool.
 Import ListNotations.
 
-Require Import Schema.
+From rivet_schema Require Import Schema.
 
 (* Mirroring Schema.v: no `Open Scope string_scope` — it shadows
  * List.length / List.app. All string literals in this file carry
