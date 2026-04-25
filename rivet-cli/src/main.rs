@@ -1698,12 +1698,8 @@ fn run(cli: Cli) -> Result<bool> {
             ),
         },
         Command::Runs { action } => match action {
-            RunsAction::List { limit, format } => {
-                runs_cmd::cmd_list(&cli.project, *limit, format)
-            }
-            RunsAction::Show { run_id, format } => {
-                runs_cmd::cmd_show(&cli.project, run_id, format)
-            }
+            RunsAction::List { limit, format } => runs_cmd::cmd_list(&cli.project, *limit, format),
+            RunsAction::Show { run_id, format } => runs_cmd::cmd_show(&cli.project, run_id, format),
             RunsAction::Query {
                 pipeline,
                 schema,
@@ -1736,22 +1732,18 @@ fn run(cli: Cli) -> Result<bool> {
             }
         }
         Command::Templates { action } => match action {
-            TemplatesAction::List { format } => {
-                templates_cmd::cmd_list(&cli.project, format)
-            }
+            TemplatesAction::List { format } => templates_cmd::cmd_list(&cli.project, format),
             TemplatesAction::Show {
                 target,
                 format,
                 vars,
             } => templates_cmd::cmd_show(&cli.project, target, format, vars),
-            TemplatesAction::CopyToProject { kind, format } => {
-                templates_cmd::cmd_copy_to_project(
-                    &cli.project,
-                    kind,
-                    env!("CARGO_PKG_VERSION"),
-                    format,
-                )
-            }
+            TemplatesAction::CopyToProject { kind, format } => templates_cmd::cmd_copy_to_project(
+                &cli.project,
+                kind,
+                env!("CARGO_PKG_VERSION"),
+                format,
+            ),
             TemplatesAction::Diff { target, format } => {
                 templates_cmd::cmd_diff(&cli.project, target, format)
             }
@@ -3154,18 +3146,23 @@ rivet stats        # Show summary statistics
 /// project-owned file that already exists. Use `rivet upgrade
 /// --resync-project` if you really want to regenerate them.
 fn cmd_init_bootstrap(cli: &Cli) -> Result<bool> {
-    use rivet_core::ownership::{guard_write, rivet_dir, WriteMode};
-    use rivet_core::rivet_version::{content_sha256, FileRecord, RivetVersion, ScaffoldedFrom};
+    use rivet_core::ownership::{WriteMode, guard_write, rivet_dir};
+    use rivet_core::rivet_version::{FileRecord, RivetVersion, ScaffoldedFrom, content_sha256};
 
     let project_root = cli.project.clone();
     let rivet_dir = rivet_dir(&project_root);
 
     // 1. Top-level `.rivet/` directory + subdirs.
-    for sub in [".rivet", ".rivet/pipelines", ".rivet/context", ".rivet/agents", ".rivet/runs"] {
+    for sub in [
+        ".rivet",
+        ".rivet/pipelines",
+        ".rivet/context",
+        ".rivet/agents",
+        ".rivet/runs",
+    ] {
         let p = project_root.join(sub);
         if !p.exists() {
-            std::fs::create_dir_all(&p)
-                .with_context(|| format!("creating {}", p.display()))?;
+            std::fs::create_dir_all(&p).with_context(|| format!("creating {}", p.display()))?;
         }
     }
 
@@ -3239,14 +3236,23 @@ fn cmd_init_bootstrap(cli: &Cli) -> Result<bool> {
     let yaml = pin.to_yaml().map_err(|e| anyhow::anyhow!("{e}"))?;
     std::fs::write(&version_path, yaml)
         .with_context(|| format!("writing {}", version_path.display()))?;
-    eprintln!("  pinned .rivet/.rivet-version (rivet-cli {})", pin.rivet_cli);
+    eprintln!(
+        "  pinned .rivet/.rivet-version (rivet-cli {})",
+        pin.rivet_cli
+    );
 
     // 4. Report next steps so the user knows what's expected.
     println!();
     println!("Bootstrap complete. Next steps before `rivet close-gaps` will run:");
-    println!("  1. Edit .rivet/context/review-roles.yaml — replace TODOs with actual reviewer groups");
-    println!("  2. Edit .rivet/context/risk-tolerance.yaml — set integrity-level thresholds for your project");
-    println!("  3. Optional: `rivet templates copy-to-project <kind>` to customise pipeline prompts");
+    println!(
+        "  1. Edit .rivet/context/review-roles.yaml — replace TODOs with actual reviewer groups"
+    );
+    println!(
+        "  2. Edit .rivet/context/risk-tolerance.yaml — set integrity-level thresholds for your project"
+    );
+    println!(
+        "  3. Optional: `rivet templates copy-to-project <kind>` to customise pipeline prompts"
+    );
     println!("  4. Run `rivet pipelines validate` — confirms every Tier-3 placeholder is resolved");
     println!();
     println!("See .rivet/agents/rivet-rule.md for the project-specialised agent instructions.");
@@ -3287,7 +3293,9 @@ fn rivet_rule_starter(cli: &Cli) -> String {
     // Project-specialised version of the skill rule. Agents read this on
     // trigger; rivet never rewrites it after scaffold, so it's the
     // authoritative project-specific instruction file.
-    let project_name = cli.project.file_name()
+    let project_name = cli
+        .project
+        .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or("this project");
     format!(
@@ -4559,9 +4567,7 @@ fn cmd_validate(
     let has_threshold_hit = match fail_on_threshold {
         Severity::Error => errors > 0 || cross_errors > 0,
         Severity::Warning => errors > 0 || cross_errors > 0 || warnings > 0,
-        Severity::Info => {
-            errors > 0 || cross_errors > 0 || warnings > 0 || infos > 0
-        }
+        Severity::Info => errors > 0 || cross_errors > 0 || warnings > 0 || infos > 0,
     };
     Ok(!has_threshold_hit)
 }
@@ -6875,13 +6881,16 @@ fn cmd_docs(
 fn cmd_docs_check(cli: &Cli, format: &str, fix: bool) -> Result<bool> {
     use clap::CommandFactory;
     use rivet_core::doc_check::{
-        apply_fixes, collect_docs, default_invariants, run_all, DocCheckContext,
+        DocCheckContext, apply_fixes, collect_docs, default_invariants, run_all,
     };
     use std::collections::BTreeSet;
 
     validate_format(format, &["text", "json"])?;
 
-    let project_root = cli.project.canonicalize().unwrap_or_else(|_| cli.project.clone());
+    let project_root = cli
+        .project
+        .canonicalize()
+        .unwrap_or_else(|_| cli.project.clone());
 
     // Read project config so the docs scan honors any `docs:` paths from
     // `rivet.yaml` (e.g. `rivet/docs`, `crates/*/docs`) — otherwise the gate
@@ -6964,8 +6973,7 @@ fn cmd_docs_check(cli: &Cli, format: &str, fix: bool) -> Result<bool> {
     let mut report = run_all(&ctx, &invariants);
 
     if fix {
-        let applied = apply_fixes(&ctx, &report)
-            .with_context(|| "applying auto-fixes")?;
+        let applied = apply_fixes(&ctx, &report).with_context(|| "applying auto-fixes")?;
         if applied > 0 {
             eprintln!("doc-check: applied {applied} auto-fix(es); re-running");
             // Rebuild and rerun since auto-fixes may have removed some
@@ -7188,10 +7196,7 @@ fn cmd_schema_list_json(cli: &Cli, format: &str) -> Result<bool> {
         println!("{}", serde_json::to_string_pretty(&output).unwrap());
     } else {
         println!("JSON schemas for rivet --format json outputs:\n");
-        let header = format!(
-            "  {:<12} {:<72} {}",
-            "Name", "Path", "Describes"
-        );
+        let header = format!("  {:<12} {:<72} {}", "Name", "Path", "Describes");
         println!("{header}");
         let sep = "-".repeat(110);
         println!("  {sep}");
@@ -7882,8 +7887,8 @@ fn cmd_externals_discover(path: &Path, format: &str) -> Result<bool> {
 
     match format {
         "json" => {
-            let out = serde_json::to_string_pretty(&all)
-                .context("serializing discovered externals")?;
+            let out =
+                serde_json::to_string_pretty(&all).context("serializing discovered externals")?;
             println!("{out}");
         }
         _ => {
@@ -7893,12 +7898,13 @@ fn cmd_externals_discover(path: &Path, format: &str) -> Result<bool> {
                     path.display()
                 );
             } else {
-                println!("Discovered {} external(s) in {}:", all.len(), path.display());
+                println!(
+                    "Discovered {} external(s) in {}:",
+                    all.len(),
+                    path.display()
+                );
                 for ext in &all {
-                    println!(
-                        "  {} ({}, version {})",
-                        ext.name, ext.source, ext.version
-                    );
+                    println!("  {} ({}, version {})", ext.name, ext.source, ext.version);
                     if let Some(url) = &ext.git_url {
                         println!("    git: {url}");
                     }
@@ -8264,8 +8270,7 @@ fn cmd_variant_init(name: &str, dir: &std::path::Path, force: bool) -> Result<bo
         dir.to_path_buf()
     };
 
-    std::fs::create_dir_all(&target)
-        .with_context(|| format!("creating {}", target.display()))?;
+    std::fs::create_dir_all(&target).with_context(|| format!("creating {}", target.display()))?;
     let bindings_dir = target.join("bindings");
     std::fs::create_dir_all(&bindings_dir)
         .with_context(|| format!("creating {}", bindings_dir.display()))?;
@@ -8276,10 +8281,7 @@ fn cmd_variant_init(name: &str, dir: &std::path::Path, force: bool) -> Result<bo
     if !force {
         for p in [&fm_path, &binding_path] {
             if p.exists() {
-                anyhow::bail!(
-                    "refusing to overwrite {} (use --force)",
-                    p.display()
-                );
+                anyhow::bail!("refusing to overwrite {} (use --force)", p.display());
             }
         }
     }
@@ -8343,8 +8345,7 @@ bindings:
 "#
     );
 
-    std::fs::write(&fm_path, fm_yaml)
-        .with_context(|| format!("writing {}", fm_path.display()))?;
+    std::fs::write(&fm_path, fm_yaml).with_context(|| format!("writing {}", fm_path.display()))?;
     std::fs::write(&binding_path, binding_yaml)
         .with_context(|| format!("writing {}", binding_path.display()))?;
 
@@ -8738,8 +8739,8 @@ fn cmd_variant_features(
     variant_path: &std::path::Path,
     format: &str,
 ) -> Result<bool> {
-    let fmt = rivet_core::variant_emit::EmitFormat::parse(format)
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let fmt =
+        rivet_core::variant_emit::EmitFormat::parse(format).map_err(|e| anyhow::anyhow!("{e}"))?;
     let (model, resolved) = load_and_solve_variant(model_path, variant_path)?;
     let out = rivet_core::variant_emit::emit(&model, &resolved, fmt)
         .map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -8810,11 +8811,7 @@ fn cmd_variant_attr(
         None => {
             eprintln!(
                 "error: feature `{feature}` has no attribute `{key}` (declared keys: {})",
-                f.attributes
-                    .keys()
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .join(", ")
+                f.attributes.keys().cloned().collect::<Vec<_>>().join(", ")
             );
             std::process::exit(2);
         }
@@ -8931,7 +8928,9 @@ fn cmd_variant_explain(
                 let v = match o {
                     FeatureOrigin::UserSelected => serde_json::json!({ "kind": "selected" }),
                     FeatureOrigin::Mandatory => serde_json::json!({ "kind": "mandatory" }),
-                    FeatureOrigin::ImpliedBy(c) => serde_json::json!({ "kind": "implied", "by": c }),
+                    FeatureOrigin::ImpliedBy(c) => {
+                        serde_json::json!({ "kind": "implied", "by": c })
+                    }
                     FeatureOrigin::AllowedButUnbound => serde_json::json!({ "kind": "allowed" }),
                 };
                 (n.clone(), v)
@@ -8943,8 +8942,7 @@ fn cmd_variant_explain(
             .filter(|k| !resolved.effective_features.contains(*k))
             .cloned()
             .collect();
-        let constraints: Vec<String> =
-            model.constraints.iter().map(|c| format!("{c:?}")).collect();
+        let constraints: Vec<String> = model.constraints.iter().map(|c| format!("{c:?}")).collect();
         let attrs: serde_json::Map<String, serde_json::Value> = resolved
             .effective_features
             .iter()
@@ -9157,9 +9155,8 @@ fn cmd_variant_matrix(
         for path in paths {
             let yaml = std::fs::read_to_string(&path)
                 .with_context(|| format!("reading {}", path.display()))?;
-            let vc: rivet_core::feature_model::VariantConfig =
-                serde_yaml::from_str(&yaml)
-                    .with_context(|| format!("parsing variant file {}", path.display()))?;
+            let vc: rivet_core::feature_model::VariantConfig = serde_yaml::from_str(&yaml)
+                .with_context(|| format!("parsing variant file {}", path.display()))?;
             if !existing.insert(vc.name.clone()) {
                 anyhow::bail!(
                     "variant name collision: `{}` appears in both binding's inline \
@@ -9184,9 +9181,7 @@ fn cmd_variant_matrix(
     for spec in attr_filters {
         match spec.split_once('=') {
             Some((k, v)) => attrs.push((k.to_string(), v.to_string())),
-            None => anyhow::bail!(
-                "invalid --attr `{spec}`: expected `key=value`"
-            ),
+            None => anyhow::bail!("invalid --attr `{spec}`: expected `key=value`"),
         }
     }
 
@@ -9209,11 +9204,7 @@ fn cmd_variant_matrix(
         );
     }
 
-    let source = format!(
-        "{} + {}",
-        model_path.display(),
-        binding_path.display()
-    );
+    let source = format!("{} + {}", model_path.display(), binding_path.display());
     let header = vec![
         "Generated by: rivet variant matrix".to_string(),
         format!("Source:       {source}"),
@@ -9281,7 +9272,10 @@ fn rivet_core_yaml_to_json(v: &serde_yaml::Value) -> serde_json::Value {
             for (k, v) in m {
                 let key = match k {
                     serde_yaml::Value::String(s) => s.clone(),
-                    other => serde_yaml::to_string(other).unwrap_or_default().trim().to_string(),
+                    other => serde_yaml::to_string(other)
+                        .unwrap_or_default()
+                        .trim()
+                        .to_string(),
                 };
                 out.insert(key, rivet_core_yaml_to_json(v));
             }
@@ -10270,11 +10264,7 @@ fn cmd_stamp(
         // making this filter a no-op and causing
         // `rivet stamp all --missing-provenance` to overwrite timestamps
         // on every existing artifact — silent-accept of a buggy filter.
-        ids.retain(|aid| {
-            store
-                .get(aid)
-                .is_some_and(|a| a.provenance.is_none())
-        });
+        ids.retain(|aid| store.get(aid).is_some_and(|a| a.provenance.is_none()));
     }
 
     if ids.is_empty() {
@@ -10752,9 +10742,7 @@ fn cmd_query(cli: &Cli, sexpr: &str, limit: usize, format: &str) -> Result<bool>
                     let links: Vec<serde_json::Value> = a
                         .links
                         .iter()
-                        .map(|l| {
-                            serde_json::json!({"type": l.link_type, "target": l.target})
-                        })
+                        .map(|l| serde_json::json!({"type": l.link_type, "target": l.target}))
                         .collect();
                     serde_json::json!({
                         "id": a.id,

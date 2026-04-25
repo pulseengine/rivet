@@ -97,17 +97,21 @@ fn arb_any_string() -> impl Strategy<Value = String> {
     // interesting character for the s-expr lexer: parens, quotes,
     // backslashes, whitespace, ASCII letters/digits, symbol-cont bytes,
     // and a few Unicode characters that have tripped similar parsers.
-    prop::string::string_regex(
-        r#"[ \t\n\r()"\\!?.*<>=+\-a-zA-Z0-9_;αβ]{0,80}"#,
-    )
-    .unwrap()
+    prop::string::string_regex(r#"[ \t\n\r()"\\!?.*<>=+\-a-zA-Z0-9_;αβ]{0,80}"#).unwrap()
 }
 
 // ── Expr generators (bounded depth) for round-trip ─────────────────────
 
 fn arb_accessor() -> impl Strategy<Value = Accessor> {
-    prop::sample::select(vec!["id", "type", "title", "status", "description", "priority"])
-        .prop_map(|s| Accessor::Field(s.to_string()))
+    prop::sample::select(vec![
+        "id",
+        "type",
+        "title",
+        "status",
+        "description",
+        "priority",
+    ])
+    .prop_map(|s| Accessor::Field(s.to_string()))
 }
 
 fn arb_string_value() -> impl Strategy<Value = Value> {
@@ -132,8 +136,7 @@ fn arb_leaf_expr() -> impl Strategy<Value = Expr> {
         (arb_accessor(), arb_string_value()).prop_map(|(a, v)| Expr::Ne(a, v)),
         arb_string_value().prop_map(Expr::HasTag),
         arb_string_value().prop_map(Expr::HasField),
-        (arb_string_value(), arb_string_value())
-            .prop_map(|(lt, tgt)| Expr::LinkedBy(lt, tgt)),
+        (arb_string_value(), arb_string_value()).prop_map(|(lt, tgt)| Expr::LinkedBy(lt, tgt)),
         any::<bool>().prop_map(Expr::BoolLit),
     ]
 }
@@ -160,10 +163,7 @@ fn arb_expr(depth: u32) -> BoxedStrategy<Expr> {
 // the generated subset is sufficient for this property campaign.
 
 fn quote(s: &str) -> String {
-    format!(
-        "\"{}\"",
-        s.replace('\\', "\\\\").replace('"', "\\\"")
-    )
+    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
 fn value_to_sexpr(v: &Value) -> String {
@@ -237,7 +237,12 @@ fn expr_to_sexpr(e: &Expr) -> String {
                 sexpr_eval::CompOp::Eq => "=",
                 sexpr_eval::CompOp::Ne => "!=",
             };
-            format!("(links-count {} {} {})", value_to_sexpr(lt), op_s, value_to_sexpr(n))
+            format!(
+                "(links-count {} {} {})",
+                value_to_sexpr(lt),
+                op_s,
+                value_to_sexpr(n)
+            )
         }
         Expr::Forall(scope, pred) => {
             format!("(forall {} {})", expr_to_sexpr(scope), expr_to_sexpr(pred))

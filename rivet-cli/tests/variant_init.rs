@@ -45,13 +45,7 @@ fn variant_init_creates_starter_files() {
     let dir = tmp.path();
 
     let output = Command::new(rivet_bin())
-        .args([
-            "variant",
-            "init",
-            "myapp",
-            "--dir",
-            dir.to_str().unwrap(),
-        ])
+        .args(["variant", "init", "myapp", "--dir", dir.to_str().unwrap()])
         .output()
         .expect("rivet variant init");
 
@@ -96,17 +90,10 @@ fn variant_init_refuses_to_overwrite_without_force() {
     let tmp = tempfile::tempdir().expect("create temp dir");
     let dir = tmp.path();
 
-    std::fs::write(dir.join("feature-model.yaml"), "pre-existing content")
-        .expect("seed file");
+    std::fs::write(dir.join("feature-model.yaml"), "pre-existing content").expect("seed file");
 
     let output = Command::new(rivet_bin())
-        .args([
-            "variant",
-            "init",
-            "myapp",
-            "--dir",
-            dir.to_str().unwrap(),
-        ])
+        .args(["variant", "init", "myapp", "--dir", dir.to_str().unwrap()])
         .output()
         .expect("rivet variant init");
 
@@ -134,13 +121,7 @@ fn variant_init_scaffolds_valid_feature_model() {
     let dir = tmp.path();
 
     let output = Command::new(rivet_bin())
-        .args([
-            "variant",
-            "init",
-            "myapp",
-            "--dir",
-            dir.to_str().unwrap(),
-        ])
+        .args(["variant", "init", "myapp", "--dir", dir.to_str().unwrap()])
         .output()
         .expect("rivet variant init");
     assert!(output.status.success());

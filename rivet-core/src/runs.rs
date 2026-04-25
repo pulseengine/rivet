@@ -31,7 +31,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::error::Error;
-use crate::ownership::{guard_write, WriteMode};
+use crate::ownership::{WriteMode, guard_write};
 
 // ── Manifest ───────────────────────────────────────────────────────────
 
@@ -125,10 +125,7 @@ pub fn open_run(project_root: &Path, manifest: &RunManifest) -> Result<RunHandle
     std::fs::write(&manifest_path, &manifest_json)
         .map_err(|e| Error::Io(format!("writing {}: {e}", manifest_path.display())))?;
 
-    Ok(RunHandle {
-        run_dir,
-        rivet_dir,
-    })
+    Ok(RunHandle { run_dir, rivet_dir })
 }
 
 /// Write-side handle to an open run. Each write goes through the ownership
@@ -165,9 +162,8 @@ impl RunHandle {
         summary: RunSummary,
     ) -> Result<(), Error> {
         let manifest_path = self.run_dir.join("manifest.json");
-        let content = std::fs::read_to_string(&manifest_path).map_err(|e| {
-            Error::Io(format!("reading {}: {e}", manifest_path.display()))
-        })?;
+        let content = std::fs::read_to_string(&manifest_path)
+            .map_err(|e| Error::Io(format!("reading {}: {e}", manifest_path.display())))?;
         let mut manifest: RunManifest = serde_json::from_str(&content).map_err(|e| {
             Error::Results(format!(
                 "parsing existing manifest {}: {e}",
@@ -221,15 +217,9 @@ pub fn list_runs(project_root: &Path) -> Result<Vec<RunEntry>, Error> {
                     manifest,
                     path: dir,
                 }),
-                Err(e) => log::warn!(
-                    "skipping run {}: invalid manifest: {e}",
-                    dir.display()
-                ),
+                Err(e) => log::warn!("skipping run {}: invalid manifest: {e}", dir.display()),
             },
-            Err(e) => log::warn!(
-                "skipping run {}: cannot read manifest: {e}",
-                dir.display()
-            ),
+            Err(e) => log::warn!("skipping run {}: cannot read manifest: {e}", dir.display()),
         }
     }
     entries.sort_by(|a, b| b.manifest.started_at.cmp(&a.manifest.started_at));
@@ -268,9 +258,7 @@ pub fn new_run_id() -> String {
     let nonce = format!("{:04x}", (nanos >> 16) as u16);
     // Simple ISO-like format; we format without chrono to keep the dep set small.
     let (y, mo, d, h, m, s) = epoch_to_ymdhms(secs as i64);
-    format!(
-        "{y:04}-{mo:02}-{d:02}T{h:02}-{m:02}-{s:02}Z-{nonce}"
-    )
+    format!("{y:04}-{mo:02}-{d:02}T{h:02}-{m:02}-{s:02}Z-{nonce}")
 }
 
 /// Convert a unix timestamp to (year, month, day, hour, minute, second)

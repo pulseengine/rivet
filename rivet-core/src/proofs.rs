@@ -101,7 +101,7 @@ mod proofs {
                 target_types: vec![],
                 from_types: vec![],
                 severity: Severity::Warning,
-            alternate_backlinks: vec![],
+                alternate_backlinks: vec![],
             }],
             conditional_rules: vec![],
         }])

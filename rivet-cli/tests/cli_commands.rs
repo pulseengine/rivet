@@ -1408,8 +1408,7 @@ fn validate_fail_on_error_ignores_warnings() {
 
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
-    let parsed: serde_json::Value =
-        serde_json::from_str(&stdout).expect("validate JSON");
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("validate JSON");
 
     // Sanity: 0 errors, at least 1 warning.
     assert_eq!(
@@ -1418,11 +1417,7 @@ fn validate_fail_on_error_ignores_warnings() {
         "expected 0 errors, got:\n{stdout}"
     );
     assert!(
-        parsed
-            .get("warnings")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0)
-            >= 1,
+        parsed.get("warnings").and_then(|v| v.as_u64()).unwrap_or(0) >= 1,
         "expected >=1 warning, got:\n{stdout}"
     );
 
@@ -1480,8 +1475,7 @@ fn coverage_json_echoes_threshold() {
         .output()
         .expect("coverage");
     assert!(output.status.success());
-    let parsed: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("coverage JSON");
+    let parsed: serde_json::Value = serde_json::from_slice(&output.stdout).expect("coverage JSON");
     let threshold = parsed
         .get("threshold")
         .expect("threshold block present when --fail-under set");
@@ -1624,8 +1618,7 @@ fn stats_json_counts_match_validate() {
         .output()
         .expect("stats");
     assert!(stats.status.success());
-    let stats_json: serde_json::Value =
-        serde_json::from_slice(&stats.stdout).expect("stats JSON");
+    let stats_json: serde_json::Value = serde_json::from_slice(&stats.stdout).expect("stats JSON");
 
     let validate = Command::new(rivet_bin())
         .args(["--project", root_str, "validate", "--format", "json"])
@@ -1667,8 +1660,7 @@ fn schema_list_json_produces_valid_output() {
         "schema list-json must succeed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let parsed: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("valid JSON");
+    let parsed: serde_json::Value = serde_json::from_slice(&output.stdout).expect("valid JSON");
     assert_eq!(
         parsed.get("command").and_then(|v| v.as_str()),
         Some("schema-list-json"),
@@ -1707,13 +1699,7 @@ fn schema_get_json_returns_path_and_content() {
     for name in ["validate", "stats", "coverage", "list"] {
         // Path mode
         let out = Command::new(rivet_bin())
-            .args([
-                "--project",
-                root_str,
-                "schema",
-                "get-json",
-                name,
-            ])
+            .args(["--project", root_str, "schema", "get-json", name])
             .output()
             .expect("get-json path");
         assert!(
@@ -1797,10 +1783,7 @@ fn shipped_json_schemas_are_valid_json() {
         // title, type.
         assert!(parsed.is_object(), "{name} must be a JSON object");
         for key in ["$schema", "title", "type"] {
-            assert!(
-                parsed.get(key).is_some(),
-                "{name} must declare '{key}'"
-            );
+            assert!(parsed.get(key).is_some(), "{name} must declare '{key}'");
         }
     }
 }
@@ -1821,8 +1804,7 @@ fn validate_json_output_matches_shipped_schema() {
         .output()
         .expect("validate");
 
-    let parsed: serde_json::Value =
-        serde_json::from_slice(&out.stdout).expect("validate JSON");
+    let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).expect("validate JSON");
 
     // Light-weight schema conformance (no external crate): check the
     // required fields listed in validate-output.schema.json are all
@@ -1831,10 +1813,9 @@ fn validate_json_output_matches_shipped_schema() {
         .join("schemas")
         .join("json")
         .join("validate-output.schema.json");
-    let schema: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(&schema_path).expect("read schema"),
-    )
-    .expect("schema JSON");
+    let schema: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&schema_path).expect("read schema"))
+            .expect("schema JSON");
     let required = schema
         .get("required")
         .and_then(|v| v.as_array())
@@ -1867,17 +1848,15 @@ fn stats_json_output_matches_shipped_schema() {
         .output()
         .expect("stats");
 
-    let parsed: serde_json::Value =
-        serde_json::from_slice(&out.stdout).expect("stats JSON");
+    let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).expect("stats JSON");
 
     let schema_path = project_root()
         .join("schemas")
         .join("json")
         .join("stats-output.schema.json");
-    let schema: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(&schema_path).expect("read schema"),
-    )
-    .expect("schema JSON");
+    let schema: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&schema_path).expect("read schema"))
+            .expect("schema JSON");
     let required = schema
         .get("required")
         .and_then(|v| v.as_array())
@@ -1909,10 +1888,7 @@ fn validate_fail_on_invalid_value_rejected() {
         .output()
         .expect("validate");
 
-    assert!(
-        !out.status.success(),
-        "--fail-on bogus must fail"
-    );
+    assert!(!out.status.success(), "--fail-on bogus must fail");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         stderr.contains("bogus") || stderr.contains("fail-on"),
@@ -1930,7 +1906,13 @@ fn query_ids_format_matches_list_filter() {
 
     // `rivet list --type requirement` — one line per matching artifact (id + title).
     let list_out = Command::new(&bin)
-        .args(["--project", &root.display().to_string(), "list", "--type", "requirement"])
+        .args([
+            "--project",
+            &root.display().to_string(),
+            "list",
+            "--type",
+            "requirement",
+        ])
         .output()
         .expect("run rivet list");
     assert!(list_out.status.success(), "rivet list must succeed");
@@ -2002,8 +1984,7 @@ fn query_json_format_envelope() {
         String::from_utf8_lossy(&out.stderr)
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
-    let val: serde_json::Value =
-        serde_json::from_str(&stdout).expect("output must be valid JSON");
+    let val: serde_json::Value = serde_json::from_str(&stdout).expect("output must be valid JSON");
 
     assert_eq!(
         val["filter"].as_str(),
@@ -2013,7 +1994,9 @@ fn query_json_format_envelope() {
     assert!(val["count"].is_number(), "count must be a number");
     assert!(val["total"].is_number(), "total must be a number");
     assert!(val["truncated"].is_boolean(), "truncated must be a bool");
-    let arts = val["artifacts"].as_array().expect("artifacts must be array");
+    let arts = val["artifacts"]
+        .as_array()
+        .expect("artifacts must be array");
     assert!(arts.len() <= 5, "respects --limit");
     for a in arts {
         assert!(a["id"].is_string());
@@ -2075,17 +2058,29 @@ git_override(module_name = "rules_rust", remote = "https://github.com/bazelbuild
         .output()
         .expect("run rivet externals discover");
 
-    assert!(out.status.success(), "must exit 0; stderr: {}",
-        String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "must exit 0; stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("Discovered 2 external(s)"), "got: {stdout}");
-    assert!(stdout.contains("rules_go (bazel, version 0.41.0)"), "got: {stdout}");
-    assert!(stdout.contains("rules_rust (bazel, version 0.30.0)"), "got: {stdout}");
+    assert!(
+        stdout.contains("rules_go (bazel, version 0.41.0)"),
+        "got: {stdout}"
+    );
+    assert!(
+        stdout.contains("rules_rust (bazel, version 0.30.0)"),
+        "got: {stdout}"
+    );
     assert!(
         stdout.contains("git: https://github.com/bazelbuild/rules_rust"),
         "git_override URL must be surfaced; got: {stdout}"
     );
-    assert!(stdout.contains("ref: abc123def456"), "commit ref; got: {stdout}");
+    assert!(
+        stdout.contains("ref: abc123def456"),
+        "commit ref; got: {stdout}"
+    );
 }
 
 /// `rivet externals discover --format json` emits parseable JSON with the
@@ -2200,8 +2195,11 @@ fn variant_matrix_emits_github_actions_fragment() {
         .output()
         .expect("run rivet variant matrix");
 
-    assert!(out.status.success(), "stderr: {}",
-        String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("strategy:"), "got: {stdout}");
     assert!(stdout.contains("fail-fast: false"));
@@ -2298,7 +2296,11 @@ fn variant_matrix_actionlint_validates_emitted_workflow() {
         eprintln!("[skipped] set RIVET_ACTIONLINT=1 to enable");
         return;
     }
-    if Command::new("actionlint").arg("--version").output().is_err() {
+    if Command::new("actionlint")
+        .arg("--version")
+        .output()
+        .is_err()
+    {
         eprintln!("[skipped] actionlint not on PATH");
         return;
     }
@@ -2395,8 +2397,11 @@ fn variant_matrix_loads_variants_dir() {
         .output()
         .expect("run rivet variant matrix --variants-dir");
 
-    assert!(out.status.success(), "stderr: {}",
-        String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("- variant: tiny-ci"));
     assert!(stdout.contains("- variant: full-ci"));

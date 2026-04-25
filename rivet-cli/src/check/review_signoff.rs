@@ -147,8 +147,7 @@ pub fn compute(artifact: &Artifact, required_role: Option<&str>) -> Report {
         None => {
             ok = false;
             reasons.push(
-                "missing author: set provenance.created-by to identify the author"
-                    .to_string(),
+                "missing author: set provenance.created-by to identify the author".to_string(),
             );
             String::new()
         }
@@ -201,10 +200,7 @@ pub fn compute(artifact: &Artifact, required_role: Option<&str>) -> Report {
 /// Human-readable rendering.
 pub fn render_text(report: &Report) -> String {
     let head = if report.ok { "OK" } else { "FAIL" };
-    let mut out = format!(
-        "review-signoff [{}] on {}\n",
-        head, report.artifact_id
-    );
+    let mut out = format!("review-signoff [{}] on {}\n", head, report.artifact_id);
     out.push_str(&format!(
         "  status: {}\n",
         report.status.as_deref().unwrap_or("<none>")

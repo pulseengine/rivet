@@ -34,13 +34,7 @@ use rivet_core::schema::Schema;
 use rivet_core::sexpr_eval::{self, matches_filter_with_store};
 use rivet_core::store::Store;
 
-fn art(
-    id: &str,
-    t: &str,
-    tags: &[&str],
-    status: Option<&str>,
-    links: &[(&str, &str)],
-) -> Artifact {
+fn art(id: &str, t: &str, tags: &[&str], status: Option<&str>, links: &[(&str, &str)]) -> Artifact {
     Artifact {
         id: id.into(),
         artifact_type: t.into(),
@@ -88,13 +82,7 @@ fn fixture() -> (Store, LinkGraph) {
                 ("satisfies", "REQ-002"),
             ],
         ),
-        art(
-            "REQ-004",
-            "requirement",
-            &["core"],
-            Some("approved"),
-            &[],
-        ),
+        art("REQ-004", "requirement", &["core"], Some("approved"), &[]),
         art("FEAT-001", "feature", &[], Some("approved"), &[]),
     ];
     let mut s = Store::default();
@@ -121,7 +109,10 @@ fn count_matches(filter: &str, store: &Store, graph: &LinkGraph) -> usize {
 fn docs_example_simple_type_equals() {
     // `rivet list --filter '(= type "requirement")'`
     let (store, graph) = fixture();
-    assert_eq!(count_matches(r#"(= type "requirement")"#, &store, &graph), 4);
+    assert_eq!(
+        count_matches(r#"(= type "requirement")"#, &store, &graph),
+        4
+    );
 }
 
 #[test]
@@ -143,7 +134,10 @@ fn docs_example_not_status_draft() {
     // `rivet list --filter '(not (= status "draft"))'`
     let (store, graph) = fixture();
     // Everything except REQ-002.
-    assert_eq!(count_matches(r#"(not (= status "draft"))"#, &store, &graph), 4);
+    assert_eq!(
+        count_matches(r#"(not (= status "draft"))"#, &store, &graph),
+        4
+    );
 }
 
 #[test]

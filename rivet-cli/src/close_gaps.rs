@@ -39,9 +39,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use serde::Serialize;
 
-use rivet_core::runs::{
-    self, Invocation, OracleFiring, RunManifest, RunSummary,
-};
+use rivet_core::runs::{self, Invocation, OracleFiring, RunManifest, RunSummary};
 
 /// Top-level JSON output of `rivet close-gaps --format json`.
 ///
@@ -142,7 +140,12 @@ pub fn run(opts: CloseGapsOptions) -> Result<bool> {
         pipelines_active: pipeline_names.clone(),
         variant: opts.variant.map(|s| s.to_string()),
         invocation: Invocation {
-            cli: format!("rivet close-gaps{}", opts.variant.map(|v| format!(" --variant {v}")).unwrap_or_default()),
+            cli: format!(
+                "rivet close-gaps{}",
+                opts.variant
+                    .map(|v| format!(" --variant {v}"))
+                    .unwrap_or_default()
+            ),
             cwd: opts.project_root.display().to_string(),
             invoker: opts.invoker.to_string(),
         },
@@ -153,7 +156,8 @@ pub fn run(opts: CloseGapsOptions) -> Result<bool> {
 
     // 3. Run the structural oracle (rivet validate equivalent, but
     //    via the in-process validator for speed and to avoid a fork).
-    let (diagnostics, firings) = run_structural_oracle(opts.project_root, &pipelines, opts.schemas_dir)?;
+    let (diagnostics, firings) =
+        run_structural_oracle(opts.project_root, &pipelines, opts.schemas_dir)?;
     handle.write_json("diagnostics.json", &diagnostics)?;
     handle.write_json("oracle-firings.json", &firings)?;
 
@@ -201,10 +205,7 @@ pub fn run(opts: CloseGapsOptions) -> Result<bool> {
         }
         _ => {
             println!("Run: {}", output.run_id);
-            println!(
-                "  pipelines: [{}]",
-                output.pipelines_active.join(", ")
-            );
+            println!("  pipelines: [{}]", output.pipelines_active.join(", "));
             println!("  gaps:      {}", output.gaps.len());
             println!("  elapsed:   {} ms", output.elapsed_ms);
             println!();
@@ -221,9 +222,7 @@ pub fn run(opts: CloseGapsOptions) -> Result<bool> {
                 println!("  (no gaps surfaced by any active oracle)");
             } else {
                 println!();
-                println!(
-                    "  See `.rivet/templates/pipelines/<kind>/{{discover,validate,emit}}.md`"
-                );
+                println!("  See `.rivet/templates/pipelines/<kind>/{{discover,validate,emit}}.md`");
                 println!("  for the project's own closure procedure. Rivet does not prescribe");
                 println!("  routing; the orchestrator's prompts decide per gap.");
             }

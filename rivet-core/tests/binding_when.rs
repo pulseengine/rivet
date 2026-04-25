@@ -98,10 +98,7 @@ bindings:
     let pd = &binding.bindings["pedestrian-detection"];
     assert_eq!(pd.source.len(), 2);
     assert!(pd.source[0].when.is_none());
-    assert_eq!(
-        pd.source[1].when.as_deref(),
-        Some(r#"(has-tag "asil-d")"#)
-    );
+    assert_eq!(pd.source[1].when.as_deref(), Some(r#"(has-tag "asil-d")"#));
 }
 
 #[test]
@@ -222,7 +219,11 @@ fn invalid_when_expression_fails_loud() {
         selects: vec!["electric".into(), "eu".into()],
     };
     let errs = solve_with_bindings(&model, &cfg, &binding).unwrap_err();
-    let combined: String = errs.iter().map(|e| format!("{e}")).collect::<Vec<_>>().join("\n");
+    let combined: String = errs
+        .iter()
+        .map(|e| format!("{e}"))
+        .collect::<Vec<_>>()
+        .join("\n");
     assert!(
         combined.contains("electric") && combined.contains("when"),
         "error must cite binding name + when expression context, got:\n{combined}"
@@ -294,13 +295,11 @@ fn end_to_end_against_examples_variant_fixture() {
     let model_yaml = std::fs::read_to_string(&model_path).expect("read model");
     let model = FeatureModel::from_yaml(&model_yaml).expect("parse model");
     let bindings_yaml = std::fs::read_to_string(&bindings_path).expect("read bindings");
-    let binding: FeatureBinding =
-        serde_yaml::from_str(&bindings_yaml).expect("parse bindings");
+    let binding: FeatureBinding = serde_yaml::from_str(&bindings_yaml).expect("parse bindings");
     let variant_yaml = std::fs::read_to_string(&variant_path).expect("read variant");
     let cfg: VariantConfig = serde_yaml::from_str(&variant_yaml).expect("parse variant");
 
-    let resolved =
-        solve_with_bindings(&model, &cfg, &binding).expect("eu-adas-c must solve");
+    let resolved = solve_with_bindings(&model, &cfg, &binding).expect("eu-adas-c must solve");
     assert!(
         !resolved.source_manifest.is_empty(),
         "examples/variant fixture should produce a non-empty manifest"

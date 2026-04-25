@@ -139,8 +139,7 @@ fn bidirectional_passes_when_every_forward_link_has_inverse() {
         "expected success; stderr={stderr}; stdout={stdout}"
     );
 
-    let v: serde_json::Value =
-        serde_json::from_str(&stdout).expect("stdout must be valid JSON");
+    let v: serde_json::Value = serde_json::from_str(&stdout).expect("stdout must be valid JSON");
     assert_eq!(v["oracle"], "bidirectional");
     assert_eq!(
         v["violations"].as_array().unwrap().len(),
@@ -189,8 +188,7 @@ fn bidirectional_fires_when_inverse_missing() {
         "expected failure; stdout={stdout}; stderr={stderr}"
     );
 
-    let v: serde_json::Value =
-        serde_json::from_str(&stdout).expect("stdout must be valid JSON");
+    let v: serde_json::Value = serde_json::from_str(&stdout).expect("stdout must be valid JSON");
     assert_eq!(v["oracle"], "bidirectional");
     let viols = v["violations"].as_array().unwrap();
     assert_eq!(viols.len(), 1, "expected exactly one violation: {stdout}");
@@ -243,8 +241,7 @@ fn review_signoff_passes_when_reviewer_distinct_and_role_matches() {
         "expected success; stdout={stdout}; stderr={stderr}"
     );
 
-    let v: serde_json::Value =
-        serde_json::from_str(&stdout).expect("stdout must be valid JSON");
+    let v: serde_json::Value = serde_json::from_str(&stdout).expect("stdout must be valid JSON");
     assert_eq!(v["oracle"], "review-signoff");
     assert_eq!(v["artifact_id"], "REQ-001");
     assert_eq!(v["ok"], true);
@@ -285,8 +282,7 @@ fn review_signoff_fires_when_reviewer_same_as_author() {
         "expected failure; stdout={stdout}; stderr={stderr}"
     );
 
-    let v: serde_json::Value =
-        serde_json::from_str(&stdout).expect("stdout must be valid JSON");
+    let v: serde_json::Value = serde_json::from_str(&stdout).expect("stdout must be valid JSON");
     assert_eq!(v["oracle"], "review-signoff");
     assert_eq!(v["ok"], false);
     let reasons = v["reasons"].as_array().unwrap();
@@ -362,8 +358,7 @@ fn gaps_json_passes_on_clean_project() {
         "expected success on clean project; stdout={stdout}; stderr={stderr}"
     );
 
-    let v: serde_json::Value =
-        serde_json::from_str(&stdout).expect("stdout must be valid JSON");
+    let v: serde_json::Value = serde_json::from_str(&stdout).expect("stdout must be valid JSON");
     assert_eq!(v["oracle"], "gaps-json");
     assert_eq!(v["by_severity"]["error"], 0);
 }
@@ -406,8 +401,7 @@ fn gaps_json_fires_when_artifact_has_errors() {
 
     // Sanity: the DD-042 artifact should appear in the gaps.
     assert!(
-        gaps.iter()
-            .any(|g| g["artifact_id"] == "DD-042"),
+        gaps.iter().any(|g| g["artifact_id"] == "DD-042"),
         "expected DD-042 in gaps list: {stdout}"
     );
 }

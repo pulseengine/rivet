@@ -61,10 +61,7 @@ pub fn load_pipelines(
 
 /// Locate and re-parse the schema YAML to pick up the agent-pipelines:
 /// block. Tries on-disk first (user-shipped override), then embedded.
-fn agent_pipelines_for(
-    schemas_dir: &Path,
-    name: &str,
-) -> Result<Option<AgentPipelines>> {
+fn agent_pipelines_for(schemas_dir: &Path, name: &str) -> Result<Option<AgentPipelines>> {
     let on_disk = schemas_dir.join(format!("{name}.yaml"));
     if on_disk.exists() {
         let content = std::fs::read_to_string(&on_disk)
@@ -85,8 +82,8 @@ fn extract_block(content: &str) -> Result<Option<AgentPipelines>> {
     let Some(block) = raw.get("agent-pipelines") else {
         return Ok(None);
     };
-    let typed: AgentPipelines = serde_yaml::from_value(block.clone())
-        .context("parsing agent-pipelines: block")?;
+    let typed: AgentPipelines =
+        serde_yaml::from_value(block.clone()).context("parsing agent-pipelines: block")?;
     Ok(Some(typed))
 }
 
@@ -122,10 +119,7 @@ pub fn cmd_list(project_root: &Path, schemas_dir: &Path, format: &str) -> Result
             }
             println!("{schema}:");
             for (name, p) in &ap.pipelines {
-                println!(
-                    "  {name}  (uses-oracles: {})",
-                    p.uses_oracles.join(", ")
-                );
+                println!("  {name}  (uses-oracles: {})", p.uses_oracles.join(", "));
                 if !p.description.is_empty() {
                     println!("    └ {}", p.description);
                 }
@@ -241,8 +235,7 @@ pub fn cmd_validate(
         }
     } else {
         warnings.push(
-            "no .rivet/context/ — run `rivet init --agents --bootstrap` to scaffold it"
-                .to_string(),
+            "no .rivet/context/ — run `rivet init --agents --bootstrap` to scaffold it".to_string(),
         );
     }
 
@@ -263,10 +256,8 @@ pub fn cmd_validate(
                 for (i, r) in rule_kind.iter().enumerate() {
                     for reviewer in &r.reviewers {
                         if let Some(role) = strip_review_roles_prefix(reviewer) {
-                            let resolved = review_roles
-                                .as_ref()
-                                .and_then(|v| v.get(role))
-                                .is_some();
+                            let resolved =
+                                review_roles.as_ref().and_then(|v| v.get(role)).is_some();
                             if !resolved {
                                 errors.push(format!(
                                     "[{schema}::{pname}][rule {i}] reviewer `{reviewer}` references review-roles.{role} but .rivet/context/review-roles.yaml has no such entry"
@@ -294,9 +285,7 @@ pub fn cmd_validate(
                 println!("  {e}");
             }
             println!();
-            println!(
-                "  (advisory — `rivet close-gaps` will still run. Re-run with"
-            );
+            println!("  (advisory — `rivet close-gaps` will still run. Re-run with");
             println!("  `--strict` if you want this to gate CI.)");
         }
         if !warnings.is_empty() {
@@ -309,7 +298,10 @@ pub fn cmd_validate(
             println!(
                 "Pipeline configuration OK ({} schemas, {} oracles)",
                 pipelines.len(),
-                pipelines.iter().map(|(_, a)| a.oracles.len()).sum::<usize>(),
+                pipelines
+                    .iter()
+                    .map(|(_, a)| a.oracles.len())
+                    .sum::<usize>(),
             );
         }
     }
@@ -325,7 +317,9 @@ pub fn cmd_validate(
 
 fn strip_review_roles_prefix(reviewer: &str) -> Option<&str> {
     let trimmed = reviewer.trim();
-    let inner = trimmed.strip_prefix('{').and_then(|s| s.strip_suffix('}'))?;
+    let inner = trimmed
+        .strip_prefix('{')
+        .and_then(|s| s.strip_suffix('}'))?;
     inner.strip_prefix("context.review-roles.")
 }
 

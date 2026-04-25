@@ -40,10 +40,7 @@ fn rivet_bin() -> std::path::PathBuf {
 
 fn workspace_schemas_dir() -> std::path::PathBuf {
     let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    manifest
-        .parent()
-        .expect("workspace root")
-        .join("schemas")
+    manifest.parent().expect("workspace root").join("schemas")
 }
 
 fn setup_project(dir: &std::path::Path) {
@@ -120,8 +117,8 @@ fn bootstrap_creates_rivet_tree_with_placeholders() {
     }
 
     // Content sanity
-    let review_roles = fs::read_to_string(tmp.path().join(".rivet/context/review-roles.yaml"))
-        .unwrap();
+    let review_roles =
+        fs::read_to_string(tmp.path().join(".rivet/context/review-roles.yaml")).unwrap();
     assert!(review_roles.contains("{{PLACEHOLDER"));
     assert!(review_roles.contains("dev-team"));
 }
@@ -219,12 +216,7 @@ fn bootstrap_requires_agents_flag() {
     setup_project(tmp.path());
 
     let out = Command::new(rivet_bin())
-        .args([
-            "-p",
-            tmp.path().to_str().unwrap(),
-            "init",
-            "--bootstrap",
-        ])
+        .args(["-p", tmp.path().to_str().unwrap(), "init", "--bootstrap"])
         .output()
         .expect("rivet init --bootstrap");
 

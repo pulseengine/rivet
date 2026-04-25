@@ -964,7 +964,10 @@ fn api_stats_variant_scope_smaller_than_full() {
     assert_eq!(s2, 200);
     let j2: serde_json::Value = serde_json::from_str(&b2).unwrap();
     let scoped_total = j2["total_artifacts"].as_u64().unwrap();
-    assert!(scoped_total < total, "scoped total must be strictly smaller");
+    assert!(
+        scoped_total < total,
+        "scoped total must be strictly smaller"
+    );
     assert_eq!(scoped_total, 1);
 
     child.kill().ok();
@@ -1004,7 +1007,9 @@ fn api_coverage_honors_variant() {
     // At least one rule's total must be <= 1 (from the 1-artifact scope)
     // even if the full project had hundreds of entries for that rule.
     assert!(
-        rules.iter().any(|r| r["total"].as_u64().unwrap_or(u64::MAX) <= 1),
+        rules
+            .iter()
+            .any(|r| r["total"].as_u64().unwrap_or(u64::MAX) <= 1),
         "scoped coverage must produce small totals"
     );
     child.kill().ok();
@@ -1046,10 +1051,7 @@ fn variants_page_lists_declared_variants() {
     let (mut child, port) = start_server();
     let (status, body, _) = fetch(port, "/variants", false);
     assert_eq!(status, 200, "/variants must be 200");
-    assert!(
-        body.contains("minimal-ci"),
-        "overview must list minimal-ci"
-    );
+    assert!(body.contains("minimal-ci"), "overview must list minimal-ci");
     assert!(
         body.contains("dashboard-only"),
         "overview must list dashboard-only"

@@ -37,11 +37,11 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use rivet_core::ownership::{guard_write, WriteMode};
-use rivet_core::rivet_version::{content_sha256, FileRecord, RivetVersion, ScaffoldedFrom};
+use rivet_core::ownership::{WriteMode, guard_write};
+use rivet_core::rivet_version::{FileRecord, RivetVersion, ScaffoldedFrom, content_sha256};
 use rivet_core::templates::{
-    self, embedded_marker, kind_is_known, list_kinds, list_project_overrides, load,
-    override_path, resolve, substitute, TemplateFile,
+    self, TemplateFile, embedded_marker, kind_is_known, list_kinds, list_project_overrides, load,
+    override_path, resolve, substitute,
 };
 
 // ── shared helpers ─────────────────────────────────────────────────────
@@ -58,9 +58,7 @@ fn validate_format(fmt: &str) -> Result<()> {
 /// Parse a `<kind>/<file>` argument used by `show` / `diff`.
 fn parse_kind_slash_file(arg: &str) -> Result<(String, TemplateFile)> {
     let (kind, file) = arg.split_once('/').ok_or_else(|| {
-        anyhow::anyhow!(
-            "expected `<kind>/<file>.md`, e.g. `structural/discover.md`; got `{arg}`"
-        )
+        anyhow::anyhow!("expected `<kind>/<file>.md`, e.g. `structural/discover.md`; got `{arg}`")
     })?;
     let tf = TemplateFile::from_filename(file).ok_or_else(|| {
         anyhow::anyhow!(
@@ -153,12 +151,7 @@ pub fn cmd_list(project_root: &Path, format: &str) -> Result<bool> {
 
 // ── show ────────────────────────────────────────────────────────────────
 
-pub fn cmd_show(
-    project_root: &Path,
-    target: &str,
-    format: &str,
-    vars: &[String],
-) -> Result<bool> {
+pub fn cmd_show(project_root: &Path, target: &str, format: &str, vars: &[String]) -> Result<bool> {
     let render_mode = match format {
         "raw" => false,
         "rendered" => true,
@@ -167,17 +160,15 @@ pub fn cmd_show(
         other => {
             return Err(anyhow::anyhow!(
                 "unknown --format `{other}` for `templates show`: expected `raw` or `rendered`"
-            ))
+            ));
         }
     };
     let (kind, file) = parse_kind_slash_file(target)?;
     let body = resolve(project_root, &kind, file)
         .with_context(|| format!("resolving template `{target}`"))?;
     let out = if render_mode {
-        let map: BTreeMap<String, String> = vars
-            .iter()
-            .map(|s| parse_var(s))
-            .collect::<Result<_>>()?;
+        let map: BTreeMap<String, String> =
+            vars.iter().map(|s| parse_var(s)).collect::<Result<_>>()?;
         substitute(&body, &map)
     } else {
         body
@@ -205,9 +196,8 @@ pub fn cmd_copy_to_project(
         );
     }
     let rivet_dir = project_root.join(".rivet");
-    std::fs::create_dir_all(rivet_dir.join("templates/pipelines").join(kind)).with_context(
-        || format!("creating .rivet/templates/pipelines/{kind}/"),
-    )?;
+    std::fs::create_dir_all(rivet_dir.join("templates/pipelines").join(kind))
+        .with_context(|| format!("creating .rivet/templates/pipelines/{kind}/"))?;
 
     let mut copied: Vec<(String, String)> = Vec::new(); // (path-rel-to-project, sha)
     let mut skipped: Vec<String> = Vec::new();
@@ -225,8 +215,7 @@ pub fn cmd_copy_to_project(
             skipped.push(rel.display().to_string());
             continue;
         }
-        std::fs::write(&abs, body)
-            .with_context(|| format!("writing {}", abs.display()))?;
+        std::fs::write(&abs, body).with_context(|| format!("writing {}", abs.display()))?;
         copied.push((rel.display().to_string(), content_sha256(body.as_bytes())));
     }
 
@@ -309,17 +298,14 @@ fn update_pin_file(
     let yaml = existing
         .to_yaml()
         .context("serialising updated .rivet-version")?;
-    std::fs::write(&pin_path, yaml)
-        .with_context(|| format!("writing {}", pin_path.display()))?;
+    std::fs::write(&pin_path, yaml).with_context(|| format!("writing {}", pin_path.display()))?;
     Ok(())
 }
 
 /// Map a project-relative override path to the canonical
 /// `templates/pipelines/<kind>/<file>.md@v1` marker recorded in the pin.
 fn derive_from_template_marker(rel: &str) -> String {
-    let stripped = rel
-        .strip_prefix(".rivet/")
-        .unwrap_or(rel);
+    let stripped = rel.strip_prefix(".rivet/").unwrap_or(rel);
     format!("{stripped}@v1")
 }
 
@@ -377,7 +363,10 @@ pub fn cmd_diff(project_root: &Path, target: &str, format: &str) -> Result<bool>
     } else if drift {
         println!("{diff_text}");
     } else {
-        println!("(no drift: project override matches embedded `{kind}/{}`)", file.filename());
+        println!(
+            "(no drift: project override matches embedded `{kind}/{}`)",
+            file.filename()
+        );
     }
     // Exit 0 either way; the JSON `drift` flag is the machine signal.
     Ok(true)
@@ -443,4 +432,3 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
     let y = if m <= 2 { y + 1 } else { y };
     (y, m, d)
 }
-

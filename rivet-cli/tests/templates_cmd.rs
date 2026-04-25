@@ -78,15 +78,15 @@ fn templates_list_json_emits_array() {
 
     let out = run_rivet(tmp.path(), &["templates", "list", "--format", "json"]);
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
-    let v: serde_json::Value =
-        serde_json::from_str(&stdout).expect("stdout must be valid JSON");
+    let v: serde_json::Value = serde_json::from_str(&stdout).expect("stdout must be valid JSON");
     let arr = v.as_array().expect("top-level is an array");
-    let kinds: Vec<&str> = arr
-        .iter()
-        .map(|k| k["kind"].as_str().unwrap())
-        .collect();
+    let kinds: Vec<&str> = arr.iter().map(|k| k["kind"].as_str().unwrap()).collect();
     assert!(kinds.contains(&"structural"), "kinds: {kinds:?}");
     assert!(kinds.contains(&"discovery"), "kinds: {kinds:?}");
 
@@ -140,10 +140,17 @@ fn templates_show_rendered_substitutes_vars() {
         ],
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     assert!(stdout.contains("Run id: R-1"), "stdout: {stdout}");
     assert!(stdout.contains("gap-3"), "stdout: {stdout}");
-    assert!(!stdout.contains("{{run_id}}"), "rendered should consume placeholder; stdout: {stdout}");
+    assert!(
+        !stdout.contains("{{run_id}}"),
+        "rendered should consume placeholder; stdout: {stdout}"
+    );
 }
 
 #[test]
@@ -168,7 +175,13 @@ fn templates_copy_to_project_creates_files_and_records_provenance() {
 
     let out = run_rivet(
         tmp.path(),
-        &["templates", "copy-to-project", "structural", "--format", "json"],
+        &[
+            "templates",
+            "copy-to-project",
+            "structural",
+            "--format",
+            "json",
+        ],
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
@@ -198,7 +211,10 @@ fn templates_copy_to_project_creates_files_and_records_provenance() {
         pin.contains("templates/pipelines/structural/discover.md@v1"),
         "pin file should record from-template: {pin}"
     );
-    assert!(pin.contains("scaffolded-sha"), "pin file should record sha: {pin}");
+    assert!(
+        pin.contains("scaffolded-sha"),
+        "pin file should record sha: {pin}"
+    );
 }
 
 #[test]
@@ -211,10 +227,20 @@ fn templates_copy_to_project_skips_existing() {
     // Second copy: no overwrites, all skipped.
     let out = run_rivet(
         tmp.path(),
-        &["templates", "copy-to-project", "structural", "--format", "json"],
+        &[
+            "templates",
+            "copy-to-project",
+            "structural",
+            "--format",
+            "json",
+        ],
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
     let v: serde_json::Value = serde_json::from_str(&stdout).expect("json");
     assert_eq!(v["copied"].as_array().unwrap().len(), 0);
@@ -248,19 +274,32 @@ fn templates_diff_shows_drift_after_user_edit() {
     std::fs::write(&target, content).unwrap();
 
     // Diff (text)
-    let out = run_rivet(
-        tmp.path(),
-        &["templates", "diff", "structural/discover.md"],
-    );
+    let out = run_rivet(tmp.path(), &["templates", "diff", "structural/discover.md"]);
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
-    assert!(stdout.contains("Project addition"), "expected drift in diff: {stdout}");
-    assert!(stdout.contains("---") && stdout.contains("+++"), "expected unified-diff hunks: {stdout}");
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        stdout.contains("Project addition"),
+        "expected drift in diff: {stdout}"
+    );
+    assert!(
+        stdout.contains("---") && stdout.contains("+++"),
+        "expected unified-diff hunks: {stdout}"
+    );
 
     // Diff (json) — drift should be true
     let out = run_rivet(
         tmp.path(),
-        &["templates", "diff", "structural/discover.md", "--format", "json"],
+        &[
+            "templates",
+            "diff",
+            "structural/discover.md",
+            "--format",
+            "json",
+        ],
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
     let v: serde_json::Value = serde_json::from_str(&stdout).expect("json");
@@ -272,11 +311,12 @@ fn templates_diff_skips_when_not_copied() {
     let tmp = tempfile::tempdir().unwrap();
     seed_project(tmp.path());
 
-    let out = run_rivet(
-        tmp.path(),
-        &["templates", "diff", "structural/discover.md"],
-    );
+    let out = run_rivet(tmp.path(), &["templates", "diff", "structural/discover.md"]);
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     assert!(stdout.contains("skip"), "expected skip notice: {stdout}");
 }

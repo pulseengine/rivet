@@ -1,5 +1,4 @@
 #![allow(clippy::cloned_ref_to_slice_refs)]
-
 // SAFETY-REVIEW (SCRC Phase 1, DD-058): File-scope blanket allow for
 // the v0.4.3 clippy restriction-lint escalation. These lints are
 // enabled at workspace scope at `warn` so new violations surface in
@@ -39,6 +38,7 @@
 )]
 
 pub mod adapter;
+pub mod agent_pipelines;
 pub mod bazel;
 pub mod commits;
 pub mod compliance;
@@ -66,20 +66,19 @@ pub mod model;
 pub mod mutate;
 #[cfg(feature = "oslc")]
 pub mod oslc;
+pub mod ownership;
 pub mod query;
 pub mod reqif;
 pub mod results;
+pub mod rivet_version;
+pub mod runs;
 pub mod schema;
 pub mod sexpr;
 pub mod sexpr_eval;
 pub mod snapshot;
 pub mod store;
-pub mod test_scanner;
-pub mod agent_pipelines;
-pub mod ownership;
-pub mod rivet_version;
-pub mod runs;
 pub mod templates;
+pub mod test_scanner;
 pub mod validate;
 pub mod variant_emit;
 pub mod yaml_cst;

@@ -131,11 +131,7 @@ pub fn embedded_marker(kind: &str, file: TemplateFile) -> String {
 /// first; falls back to the embedded copy. Returns `Err` only when the
 /// kind is unknown AND no override exists, or when the override is
 /// present but unreadable.
-pub fn resolve(
-    project_root: &Path,
-    kind: &str,
-    file: TemplateFile,
-) -> Result<String, Error> {
+pub fn resolve(project_root: &Path, kind: &str, file: TemplateFile) -> Result<String, Error> {
     let override_abs = project_root.join(override_path(kind, file));
     if override_abs.exists() {
         return std::fs::read_to_string(&override_abs).map_err(|e| {
@@ -295,8 +291,7 @@ mod tests {
     #[test]
     fn resolve_unknown_kind_without_override_errors() {
         let tmp = tempfile::tempdir().unwrap();
-        let err =
-            resolve(tmp.path(), "unknown-kind", TemplateFile::Discover).unwrap_err();
+        let err = resolve(tmp.path(), "unknown-kind", TemplateFile::Discover).unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("unknown-kind"), "msg: {msg}");
     }

@@ -117,13 +117,13 @@ fn attr_scalar(feature: &str, key: &str, v: &serde_yaml::Value) -> Result<String
         serde_yaml::Value::Bool(b) => Ok(if *b { "1".into() } else { "0".into() }),
         serde_yaml::Value::Number(n) => Ok(n.to_string()),
         serde_yaml::Value::String(s) => Ok(s.clone()),
-        serde_yaml::Value::Sequence(_) | serde_yaml::Value::Mapping(_) => Err(Error::Schema(
-            format!(
+        serde_yaml::Value::Sequence(_) | serde_yaml::Value::Mapping(_) => {
+            Err(Error::Schema(format!(
                 "feature `{feature}` attribute `{key}`: non-scalar values (lists/maps) are only \
                  supported in --format json; split into multiple scalar keys or use the JSON \
                  formatter"
-            ),
-        )),
+            )))
+        }
         serde_yaml::Value::Tagged(t) => attr_scalar(feature, key, &t.value),
     }
 }
@@ -183,7 +183,10 @@ fn emit_json(model: &FeatureModel, resolved: &ResolvedVariant) -> Result<String,
         "attributes": attrs,
     });
     serde_json::to_string_pretty(&output)
-        .map(|mut s| { s.push('\n'); s })
+        .map(|mut s| {
+            s.push('\n');
+            s
+        })
         .map_err(|e| Error::Schema(format!("json serialization: {e}")))
 }
 
@@ -213,7 +216,10 @@ fn yaml_to_json(v: &serde_yaml::Value) -> serde_json::Value {
             for (k, v) in m {
                 let key = match k {
                     serde_yaml::Value::String(s) => s.clone(),
-                    other => serde_yaml::to_string(other).unwrap_or_default().trim().to_string(),
+                    other => serde_yaml::to_string(other)
+                        .unwrap_or_default()
+                        .trim()
+                        .to_string(),
                 };
                 out.insert(key, yaml_to_json(v));
             }
@@ -225,7 +231,12 @@ fn yaml_to_json(v: &serde_yaml::Value) -> serde_json::Value {
 
 fn emit_env(model: &FeatureModel, resolved: &ResolvedVariant) -> Result<String, Error> {
     let mut out = String::new();
-    writeln!(out, "# rivet variant features (env) — variant={}", resolved.name).unwrap();
+    writeln!(
+        out,
+        "# rivet variant features (env) — variant={}",
+        resolved.name
+    )
+    .unwrap();
     for (name, attrs) in walk(model, resolved) {
         writeln!(out, "export RIVET_FEATURE_{}=1", slug(name)).unwrap();
         for (key, value) in attrs {
@@ -245,7 +256,12 @@ fn emit_env(model: &FeatureModel, resolved: &ResolvedVariant) -> Result<String, 
 
 fn emit_cargo(model: &FeatureModel, resolved: &ResolvedVariant) -> Result<String, Error> {
     let mut out = String::new();
-    writeln!(out, "# rivet variant features (cargo) — variant={}", resolved.name).unwrap();
+    writeln!(
+        out,
+        "# rivet variant features (cargo) — variant={}",
+        resolved.name
+    )
+    .unwrap();
     writeln!(out, "cargo:rustc-env=RIVET_VARIANT={}", resolved.name).unwrap();
     for (name, attrs) in walk(model, resolved) {
         writeln!(out, "cargo:rustc-cfg=rivet_feature=\"{}\"", name).unwrap();
@@ -267,7 +283,12 @@ fn emit_cargo(model: &FeatureModel, resolved: &ResolvedVariant) -> Result<String
 
 fn emit_cmake(model: &FeatureModel, resolved: &ResolvedVariant) -> Result<String, Error> {
     let mut out = String::new();
-    writeln!(out, "# rivet variant features (cmake) — variant={}", resolved.name).unwrap();
+    writeln!(
+        out,
+        "# rivet variant features (cmake) — variant={}",
+        resolved.name
+    )
+    .unwrap();
     writeln!(out, "set(RIVET_VARIANT \"{}\")", resolved.name).unwrap();
     let mut defs: Vec<String> = Vec::new();
     for (name, attrs) in walk(model, resolved) {
@@ -292,7 +313,12 @@ fn emit_cmake(model: &FeatureModel, resolved: &ResolvedVariant) -> Result<String
 
 fn emit_cpp_header(model: &FeatureModel, resolved: &ResolvedVariant) -> Result<String, Error> {
     let mut out = String::new();
-    writeln!(out, "// rivet variant features (cpp-header) — variant={}", resolved.name).unwrap();
+    writeln!(
+        out,
+        "// rivet variant features (cpp-header) — variant={}",
+        resolved.name
+    )
+    .unwrap();
     writeln!(out, "#ifndef RIVET_VARIANT_H").unwrap();
     writeln!(out, "#define RIVET_VARIANT_H").unwrap();
     writeln!(out, "#define RIVET_VARIANT \"{}\"", resolved.name).unwrap();
@@ -306,7 +332,14 @@ fn emit_cpp_header(model: &FeatureModel, resolved: &ResolvedVariant) -> Result<S
             } else {
                 format!("\"{}\"", v.replace('"', "\\\""))
             };
-            writeln!(out, "#define RIVET_ATTR_{}_{} {}", slug(name), slug(key), rhs).unwrap();
+            writeln!(
+                out,
+                "#define RIVET_ATTR_{}_{} {}",
+                slug(name),
+                slug(key),
+                rhs
+            )
+            .unwrap();
         }
     }
     writeln!(out, "#endif").unwrap();
@@ -315,7 +348,12 @@ fn emit_cpp_header(model: &FeatureModel, resolved: &ResolvedVariant) -> Result<S
 
 fn emit_bazel(model: &FeatureModel, resolved: &ResolvedVariant) -> Result<String, Error> {
     let mut out = String::new();
-    writeln!(out, "# rivet variant features (bazel) — variant={}", resolved.name).unwrap();
+    writeln!(
+        out,
+        "# rivet variant features (bazel) — variant={}",
+        resolved.name
+    )
+    .unwrap();
     writeln!(out, "RIVET_VARIANT = \"{}\"", resolved.name).unwrap();
     writeln!(
         out,
@@ -351,7 +389,12 @@ fn emit_bazel(model: &FeatureModel, resolved: &ResolvedVariant) -> Result<String
 
 fn emit_make(model: &FeatureModel, resolved: &ResolvedVariant) -> Result<String, Error> {
     let mut out = String::new();
-    writeln!(out, "# rivet variant features (make) — variant={}", resolved.name).unwrap();
+    writeln!(
+        out,
+        "# rivet variant features (make) — variant={}",
+        resolved.name
+    )
+    .unwrap();
     writeln!(out, "RIVET_VARIANT := {}", resolved.name).unwrap();
     writeln!(
         out,
@@ -630,14 +673,16 @@ pub fn emit_matrix_github_actions(spec: &MatrixSpec, opts: &GhaOpts) -> String {
             &mut out,
             "{indent}        features: \"{}\"",
             entry.features.join(",")
-        ).ok();
+        )
+        .ok();
         for (k, v) in &entry.attrs {
             writeln!(
                 &mut out,
                 "{indent}        attr_{}: \"{}\"",
                 k,
                 escape_yaml_scalar(v)
-            ).ok();
+            )
+            .ok();
         }
         if let Some(runner) = &entry.runner {
             writeln!(&mut out, "{indent}        runner: {runner}").ok();
@@ -722,12 +767,7 @@ pub fn emit_matrix_azure(spec: &MatrixSpec, opts: &MatrixCommonOpts) -> String {
         let job_key = azure_job_key(&entry.variant);
         writeln!(&mut out, "    {job_key}:").ok();
         writeln!(&mut out, "      VARIANT: {}", entry.variant).ok();
-        writeln!(
-            &mut out,
-            "      FEATURES: \"{}\"",
-            entry.features.join(",")
-        )
-        .ok();
+        writeln!(&mut out, "      FEATURES: \"{}\"", entry.features.join(",")).ok();
         for (k, v) in &entry.attrs {
             writeln!(
                 &mut out,
@@ -901,7 +941,10 @@ features:
         ] {
             let err = emit(&model, &resolved, fmt).unwrap_err();
             let msg = format!("{err}");
-            assert!(msg.contains("non-scalar"), "expected loud error, got: {msg}");
+            assert!(
+                msg.contains("non-scalar"),
+                "expected loud error, got: {msg}"
+            );
         }
         // JSON preserves the list
         let out = emit(&model, &resolved, EmitFormat::Json).unwrap();
@@ -970,8 +1013,8 @@ variants:
     #[test]
     fn matrix_build_produces_one_entry_per_variant() {
         let (model, binding) = load_matrix_fixture();
-        let spec = build_matrix_spec(&model, &binding, &MatrixFilters::default())
-            .expect("matrix builds");
+        let spec =
+            build_matrix_spec(&model, &binding, &MatrixFilters::default()).expect("matrix builds");
         assert_eq!(spec.len(), 2);
         assert_eq!(spec.variants[0].variant, "tiny-ci");
         assert_eq!(spec.variants[1].variant, "full-ci");
@@ -1024,13 +1067,19 @@ variants:
             attrs: vec![("asil".to_string(), "QM".to_string())],
             ..Default::default()
         };
-        assert_eq!(build_matrix_spec(&model, &binding, &filters).unwrap().len(), 2);
+        assert_eq!(
+            build_matrix_spec(&model, &binding, &filters).unwrap().len(),
+            2
+        );
         // A non-matching attr value drops everything.
         let filters = MatrixFilters {
             attrs: vec![("asil".to_string(), "D".to_string())],
             ..Default::default()
         };
-        assert_eq!(build_matrix_spec(&model, &binding, &filters).unwrap().len(), 0);
+        assert_eq!(
+            build_matrix_spec(&model, &binding, &filters).unwrap().len(),
+            0
+        );
     }
 
     #[test]
@@ -1106,8 +1155,7 @@ variants:
         assert!(out.contains("build:"));
         assert!(out.contains("runs-on: ${{ matrix.runner }}"));
         assert!(out.contains("actions/checkout@v4"));
-        let _: serde_yaml::Value =
-            serde_yaml::from_str(&out).expect("job-wrapped YAML parses");
+        let _: serde_yaml::Value = serde_yaml::from_str(&out).expect("job-wrapped YAML parses");
     }
 
     #[test]
@@ -1141,8 +1189,7 @@ variants:
         assert!(out.contains("ATTR_ASIL: \"QM\""));
         assert!(out.contains("RUNNER: ubuntu-latest"));
         // Round-trip parse.
-        let _: serde_yaml::Value =
-            serde_yaml::from_str(&out).expect("gitlab YAML parses");
+        let _: serde_yaml::Value = serde_yaml::from_str(&out).expect("gitlab YAML parses");
     }
 
     #[test]
@@ -1161,8 +1208,7 @@ variants:
         assert!(out.contains("VARIANT: full-ci"));
         assert!(out.contains("ATTR_ASIL: \"QM\""));
         // Round-trip parse.
-        let _: serde_yaml::Value =
-            serde_yaml::from_str(&out).expect("azure YAML parses");
+        let _: serde_yaml::Value = serde_yaml::from_str(&out).expect("azure YAML parses");
     }
 
     #[test]

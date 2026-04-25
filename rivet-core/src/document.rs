@@ -538,9 +538,7 @@ pub fn render_to_html(
             // HTML the inline resolver injected so anchors stay stable
             // across embed-content changes.
             let slug = slugify_heading(raw_text);
-            html.push_str(&format!(
-                "<h{level} id=\"{slug}\">{text}</h{level}>\n"
-            ));
+            html.push_str(&format!("<h{level} id=\"{slug}\">{text}</h{level}>\n"));
             continue;
         }
 

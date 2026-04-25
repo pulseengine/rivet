@@ -107,7 +107,10 @@ pub fn cmd_show(project_root: &Path, run_id: &str, format: &str) -> Result<bool>
             m.ended_at.as_deref().unwrap_or("(in progress)")
         );
         println!("  status:       {}", status_label(&entry));
-        println!("  rivet:        {} (templates v{})", m.rivet_version, m.template_version);
+        println!(
+            "  rivet:        {} (templates v{})",
+            m.rivet_version, m.template_version
+        );
         println!(
             "  schemas:      {}",
             m.schemas
@@ -172,7 +175,12 @@ pub fn cmd_query(
             return Ok(true);
         }
         for e in &filtered {
-            println!("{}  {}  {}", e.run_id, status_label(e), e.manifest.invocation.invoker);
+            println!(
+                "{}  {}  {}",
+                e.run_id,
+                status_label(e),
+                e.manifest.invocation.invoker
+            );
         }
     }
     Ok(true)

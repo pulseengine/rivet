@@ -953,7 +953,10 @@ async fn test_push_creates_new_resources() {
         req("REQ-101", "New requirement two", Some("body two")),
     ];
     let service_url = format!("{base}/rm/query");
-    adapter.push(&service_url, &locals).await.expect("push should succeed");
+    adapter
+        .push(&service_url, &locals)
+        .await
+        .expect("push should succeed");
     // Wiremock `.expect(N)` on both mocks is checked on drop.
 }
 
@@ -999,7 +1002,10 @@ async fn test_push_updates_modified_resource() {
 
     let locals = vec![req("REQ-200", "NEW title", None)];
     let service_url = format!("{base}/rm/query");
-    adapter.push(&service_url, &locals).await.expect("push should succeed");
+    adapter
+        .push(&service_url, &locals)
+        .await
+        .expect("push should succeed");
 }
 
 // rivet: verifies REQ-006
@@ -1051,7 +1057,10 @@ async fn test_push_mixed_create_and_update() {
         req("REQ-301", "Brand new", None),
     ];
     let service_url = format!("{base}/rm/query");
-    adapter.push(&service_url, &locals).await.expect("push should succeed");
+    adapter
+        .push(&service_url, &locals)
+        .await
+        .expect("push should succeed");
 }
 
 // rivet: verifies REQ-006
@@ -1096,7 +1105,10 @@ async fn test_push_skips_unchanged() {
     local.status = None;
     let locals = vec![local];
     let service_url = format!("{base}/rm/query");
-    adapter.push(&service_url, &locals).await.expect("push should succeed");
+    adapter
+        .push(&service_url, &locals)
+        .await
+        .expect("push should succeed");
 }
 
 // rivet: verifies REQ-006
@@ -1134,7 +1146,9 @@ async fn test_push_does_not_recreate_identical_remote() {
     local.status = None;
     let locals = vec![local];
     let service_url = format!("{base}/rm/query");
-    adapter.push(&service_url, &locals).await.expect("push should succeed");
+    adapter
+        .push(&service_url, &locals)
+        .await
+        .expect("push should succeed");
     // No POST / PUT mocks registered → any mutation attempt fails.
 }
-

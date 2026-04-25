@@ -1327,26 +1327,24 @@ impl SyncAdapter for OslcSyncAdapter {
 
         // Phase 3 — create new artifacts (local_only) via POST.
         for id in &diff.local_only {
-            let local = artifacts
-                .iter()
-                .find(|a| &a.id == id)
-                .ok_or_else(|| Error::Adapter(format!("local_only id {id} missing from local set")))?;
+            let local = artifacts.iter().find(|a| &a.id == id).ok_or_else(|| {
+                Error::Adapter(format!("local_only id {id} missing from local set"))
+            })?;
             let oslc_resource = artifact_to_oslc(local)?;
             let json_value = serde_json::to_value(&oslc_resource)
                 .map_err(|e| Error::Adapter(format!("failed to serialize OSLC resource: {e}")))?;
-            self.client.create_resource(service_url, &json_value).await?;
+            self.client
+                .create_resource(service_url, &json_value)
+                .await?;
         }
 
         // Phase 4 — update modified artifacts via PUT to their URIs.
         for id in &diff.modified {
-            let local = artifacts
-                .iter()
-                .find(|a| &a.id == id)
-                .ok_or_else(|| Error::Adapter(format!("modified id {id} missing from local set")))?;
+            let local = artifacts.iter().find(|a| &a.id == id).ok_or_else(|| {
+                Error::Adapter(format!("modified id {id} missing from local set"))
+            })?;
             let remote_uri = remote_uris.get(id).ok_or_else(|| {
-                Error::Adapter(format!(
-                    "cannot update {id}: remote member has no @id URI"
-                ))
+                Error::Adapter(format!("cannot update {id}: remote member has no @id URI"))
             })?;
             let oslc_resource = artifact_to_oslc(local)?;
             let json_value = serde_json::to_value(&oslc_resource)

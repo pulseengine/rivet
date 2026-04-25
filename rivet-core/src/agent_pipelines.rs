@@ -231,8 +231,7 @@ impl AgentPipelines {
     /// or by reading the schema top-level; this is the fallback when
     /// the block is standalone.
     pub fn from_yaml(yaml: &str) -> Result<Self, Error> {
-        serde_yaml::from_str(yaml)
-            .map_err(|e| Error::Schema(format!("agent-pipelines: {e}")))
+        serde_yaml::from_str(yaml).map_err(|e| Error::Schema(format!("agent-pipelines: {e}")))
     }
 
     /// Validate internal consistency: every oracle referenced by

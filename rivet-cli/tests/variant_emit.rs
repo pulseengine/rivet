@@ -218,9 +218,12 @@ fn value_selected_and_unselected() {
 
     let yes = Command::new(rivet_bin())
         .args([
-            "variant", "value",
-            "--model", m.to_str().unwrap(),
-            "--variant", v.to_str().unwrap(),
+            "variant",
+            "value",
+            "--model",
+            m.to_str().unwrap(),
+            "--variant",
+            v.to_str().unwrap(),
             "asil-c",
         ])
         .output()
@@ -245,9 +248,12 @@ features:
     fs::write(&var_a, "name: va\nselects:\n  - a\n").unwrap();
     let no = Command::new(rivet_bin())
         .args([
-            "variant", "value",
-            "--model", model_only.to_str().unwrap(),
-            "--variant", var_a.to_str().unwrap(),
+            "variant",
+            "value",
+            "--model",
+            model_only.to_str().unwrap(),
+            "--variant",
+            var_a.to_str().unwrap(),
             "b",
         ])
         .output()
@@ -262,9 +268,12 @@ fn value_unknown_feature_exits_two() {
     let (m, v) = write_fixture(tmp.path());
     let out = Command::new(rivet_bin())
         .args([
-            "variant", "value",
-            "--model", m.to_str().unwrap(),
-            "--variant", v.to_str().unwrap(),
+            "variant",
+            "value",
+            "--model",
+            m.to_str().unwrap(),
+            "--variant",
+            v.to_str().unwrap(),
             "does-not-exist",
         ])
         .output()
@@ -278,9 +287,12 @@ fn explain_single_feature_shows_origin_and_attrs() {
     let (m, v) = write_fixture(tmp.path());
     let out = Command::new(rivet_bin())
         .args([
-            "variant", "explain",
-            "--model", m.to_str().unwrap(),
-            "--variant", v.to_str().unwrap(),
+            "variant",
+            "explain",
+            "--model",
+            m.to_str().unwrap(),
+            "--variant",
+            v.to_str().unwrap(),
             "asil-c",
         ])
         .output()
@@ -300,10 +312,14 @@ fn explain_single_feature_json_mode() {
     let (m, v) = write_fixture(tmp.path());
     let out = Command::new(rivet_bin())
         .args([
-            "variant", "explain",
-            "--model", m.to_str().unwrap(),
-            "--variant", v.to_str().unwrap(),
-            "--format", "json",
+            "variant",
+            "explain",
+            "--model",
+            m.to_str().unwrap(),
+            "--variant",
+            v.to_str().unwrap(),
+            "--format",
+            "json",
             "asil-c",
         ])
         .output()
@@ -338,9 +354,12 @@ features:
 
     let out = Command::new(rivet_bin())
         .args([
-            "variant", "explain",
-            "--model", model.to_str().unwrap(),
-            "--variant", variant.to_str().unwrap(),
+            "variant",
+            "explain",
+            "--model",
+            model.to_str().unwrap(),
+            "--variant",
+            variant.to_str().unwrap(),
         ])
         .output()
         .unwrap();
@@ -369,13 +388,25 @@ fn every_format_renders_realistic_example() {
         // a release tarball — real users run it against the repo.
         return;
     }
-    for fmt in ["json", "env", "cargo", "cmake", "cpp-header", "bazel", "make"] {
+    for fmt in [
+        "json",
+        "env",
+        "cargo",
+        "cmake",
+        "cpp-header",
+        "bazel",
+        "make",
+    ] {
         let out = Command::new(rivet_bin())
             .args([
-                "variant", "features",
-                "--model", model.to_str().unwrap(),
-                "--variant", variant.to_str().unwrap(),
-                "--format", fmt,
+                "variant",
+                "features",
+                "--model",
+                model.to_str().unwrap(),
+                "--variant",
+                variant.to_str().unwrap(),
+                "--format",
+                fmt,
             ])
             .output()
             .unwrap_or_else(|e| panic!("rivet variant features --format {fmt}: {e}"));
@@ -406,10 +437,14 @@ fn attr_prints_scalar_and_errors_on_missing_key() {
 
     let ok = Command::new(rivet_bin())
         .args([
-            "variant", "attr",
-            "--model", m.to_str().unwrap(),
-            "--variant", v.to_str().unwrap(),
-            "asil-c", "asil-numeric",
+            "variant",
+            "attr",
+            "--model",
+            m.to_str().unwrap(),
+            "--variant",
+            v.to_str().unwrap(),
+            "asil-c",
+            "asil-numeric",
         ])
         .output()
         .unwrap();
@@ -418,10 +453,14 @@ fn attr_prints_scalar_and_errors_on_missing_key() {
 
     let missing = Command::new(rivet_bin())
         .args([
-            "variant", "attr",
-            "--model", m.to_str().unwrap(),
-            "--variant", v.to_str().unwrap(),
-            "asil-c", "not-a-real-key",
+            "variant",
+            "attr",
+            "--model",
+            m.to_str().unwrap(),
+            "--variant",
+            v.to_str().unwrap(),
+            "asil-c",
+            "not-a-real-key",
         ])
         .output()
         .unwrap();

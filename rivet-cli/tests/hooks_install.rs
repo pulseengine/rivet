@@ -42,11 +42,7 @@ fn rivet_bin() -> std::path::PathBuf {
 
 /// Build a fresh git repo with a rivet project inside, then install hooks.
 /// Returns (tempdir keep-alive, project dir, hooks dir).
-fn setup_with_hooks() -> (
-    tempfile::TempDir,
-    std::path::PathBuf,
-    std::path::PathBuf,
-) {
+fn setup_with_hooks() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
     let tmp = tempfile::tempdir().expect("create temp dir");
     let dir = tmp.path().to_path_buf();
 
@@ -144,8 +140,7 @@ fn pre_commit_hook_finds_relocated_rivet_yaml() {
         let from = dir.join(entry);
         if from.exists() {
             let to = sub.join(entry);
-            std::fs::rename(&from, &to)
-                .unwrap_or_else(|e| panic!("moving {entry}: {e}"));
+            std::fs::rename(&from, &to).unwrap_or_else(|e| panic!("moving {entry}: {e}"));
         }
     }
 

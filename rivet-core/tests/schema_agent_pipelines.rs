@@ -37,12 +37,12 @@
 //! checks intra-block consistency, not whether the command exists on
 //! the user's PATH.
 
-use rivet_core::embedded::{embedded_schema, SCHEMA_NAMES};
+use rivet_core::embedded::{SCHEMA_NAMES, embedded_schema};
 use rivet_core::schema::SchemaFile;
 
 fn parse_schema(name: &str) -> SchemaFile {
-    let content = embedded_schema(name)
-        .unwrap_or_else(|| panic!("embedded schema `{name}` not found"));
+    let content =
+        embedded_schema(name).unwrap_or_else(|| panic!("embedded schema `{name}` not found"));
     serde_yaml::from_str(content)
         .unwrap_or_else(|e| panic!("schema `{name}` failed to parse as SchemaFile: {e}"))
 }
@@ -82,7 +82,9 @@ fn aspice_pipelines_present_and_named() {
     let block = schema
         .agent_pipelines
         .expect("aspice.yaml must declare agent-pipelines:");
-    block.validate().expect("aspice agent-pipelines must validate");
+    block
+        .validate()
+        .expect("aspice agent-pipelines must validate");
 
     for expected in ["level-2-trace", "level-2-content", "level-2-review"] {
         assert!(
@@ -99,7 +101,9 @@ fn iso_26262_pipelines_present_and_named() {
     let block = schema
         .agent_pipelines
         .expect("iso-26262.yaml must declare agent-pipelines:");
-    block.validate().expect("iso-26262 agent-pipelines must validate");
+    block
+        .validate()
+        .expect("iso-26262 agent-pipelines must validate");
 
     for expected in ["vmodel", "coverage", "confirmation"] {
         assert!(
@@ -121,7 +125,11 @@ fn aspice_oracles_cover_implemented_and_future_set() {
     assert!(ids.contains(&"peer-review-signed"), "ids: {ids:?}");
 
     // FUTURE — oracles documented but not yet wired to a real command:
-    for future in ["decomposition-coverage", "work-product-content", "base-practice-coverage"] {
+    for future in [
+        "decomposition-coverage",
+        "work-product-content",
+        "base-practice-coverage",
+    ] {
         assert!(
             ids.contains(&future),
             "expected FUTURE oracle `{future}` to be declared in aspice; ids: {ids:?}",
@@ -140,7 +148,11 @@ fn iso_26262_oracles_cover_implemented_and_future_set() {
     assert!(ids.contains(&"confirmation-review"), "ids: {ids:?}");
 
     // FUTURE — oracles documented but not yet wired to a real command:
-    for future in ["asil-decomposition", "coverage-threshold", "method-table-compliance"] {
+    for future in [
+        "asil-decomposition",
+        "coverage-threshold",
+        "method-table-compliance",
+    ] {
         assert!(
             ids.contains(&future),
             "expected FUTURE oracle `{future}` to be declared in iso-26262; ids: {ids:?}",

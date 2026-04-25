@@ -105,7 +105,9 @@ pub enum AttributeKind {
     },
     Str,
     /// Enum: attribute value must be one of `values` (string match).
-    Enum { values: Vec<String> },
+    Enum {
+        values: Vec<String>,
+    },
 }
 
 /// A single feature in the tree.
@@ -264,7 +266,10 @@ impl<'de> Deserialize<'de> for SourceEntry {
             },
         }
         match Repr::deserialize(d)? {
-            Repr::Bare(s) => Ok(SourceEntry { glob: s, when: None }),
+            Repr::Bare(s) => Ok(SourceEntry {
+                glob: s,
+                when: None,
+            }),
             Repr::Struct { glob, when } => Ok(SourceEntry { glob, when }),
         }
     }
@@ -670,9 +675,7 @@ impl FeatureModel {
                 for (key, value) in &feature.attributes {
                     match attribute_schema.get(key) {
                         Some(decl) => {
-                            if let Some(msg) =
-                                check_attribute_value(fname, key, decl, value)
-                            {
+                            if let Some(msg) = check_attribute_value(fname, key, decl, value) {
                                 return Err(Error::Schema(msg));
                             }
                         }
@@ -898,8 +901,7 @@ pub fn solve(
                             let cause = extract_feature_name(antecedent)
                                 .unwrap_or_else(|| "constraint".to_string());
                             if selected.insert(name.clone()) {
-                                origins
-                                    .insert(name.clone(), FeatureOrigin::ImpliedBy(cause));
+                                origins.insert(name.clone(), FeatureOrigin::ImpliedBy(cause));
                                 changed = true;
                             }
                         }
@@ -1644,9 +1646,7 @@ constraints:
             FeatureOrigin::ImpliedBy(cause) => {
                 assert_eq!(cause, "eu", "cause should be `eu`, got {cause:?}");
             }
-            other => panic!(
-                "pedestrian-detection should be ImpliedBy(eu), got {other:?}"
-            ),
+            other => panic!("pedestrian-detection should be ImpliedBy(eu), got {other:?}"),
         }
     }
 
@@ -1738,7 +1738,9 @@ features:
         let asil = &model.attribute_schema["asil-numeric"];
         assert!(matches!(
             asil.kind,
-            AttributeKind::Int { range: Some((0, 4)) }
+            AttributeKind::Int {
+                range: Some((0, 4))
+            }
         ));
         assert!(model.attribute_warnings.is_empty());
     }
@@ -1755,7 +1757,10 @@ features:
             msg.contains("asil-numeric") && msg.contains("type=int"),
             "expected feature/key/type in error, got: {msg}"
         );
-        assert!(msg.contains("unit"), "must name the offending feature: {msg}");
+        assert!(
+            msg.contains("unit"),
+            "must name the offending feature: {msg}"
+        );
     }
 
     #[test]
@@ -1834,7 +1839,10 @@ features:
 "#;
         let model = FeatureModel::from_yaml(yaml).expect("unknown key warns, not errors");
         assert!(
-            model.attribute_warnings.iter().any(|w| w.contains("extra-key")),
+            model
+                .attribute_warnings
+                .iter()
+                .any(|w| w.contains("extra-key")),
             "warning should name the unknown key, got: {:?}",
             model.attribute_warnings
         );

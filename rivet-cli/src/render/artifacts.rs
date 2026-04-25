@@ -583,8 +583,10 @@ pub(crate) fn render_artifact_detail(ctx: &RenderContext, id: &str) -> RenderRes
     // Documents referencing this artifact — reverse index from DocumentStore.
     // Groups [[ID]] occurrences per document so the user can jump from an
     // artifact to every doc that cites it.
-    let mut doc_refs: Vec<(&rivet_core::document::Document, Vec<&rivet_core::document::DocReference>)> =
-        Vec::new();
+    let mut doc_refs: Vec<(
+        &rivet_core::document::Document,
+        Vec<&rivet_core::document::DocReference>,
+    )> = Vec::new();
     for doc in ctx.doc_store.iter() {
         let matching: Vec<_> = doc
             .references
@@ -600,10 +602,7 @@ pub(crate) fn render_artifact_detail(ctx: &RenderContext, id: &str) -> RenderRes
              <table><thead><tr><th>Document</th><th>Title</th><th>Occurrences</th></tr></thead><tbody>");
         for (doc, refs) in &doc_refs {
             let doc_id = html_escape(&doc.id);
-            let lines: Vec<String> = refs
-                .iter()
-                .map(|r| format!("L{}", r.line))
-                .collect();
+            let lines: Vec<String> = refs.iter().map(|r| format!("L{}", r.line)).collect();
             html.push_str(&format!(
                 "<tr><td><a hx-get=\"/documents/{doc_id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/documents/{doc_id}\">{doc_id}</a></td>\
                  <td>{title}</td>\
