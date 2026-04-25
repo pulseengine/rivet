@@ -158,11 +158,14 @@ Proof.
   intros s a r Hneq.
   unfold check_artifact_rule.
   destruct (artifact_kind_eqb (art_kind a) (rule_source_kind r)) eqn:Heq.
-  - (* eqb says true but we know they're not equal — derive contradiction *)
+  - (* eqb says true but we know they're not equal — derive contradiction.
+       Non-matching constructors discriminate (Heq becomes false=true);
+       matching CustomKind unfolds String.eqb to derive s1 = s2 then subst;
+       matching simple constructors close via Hneq applied to reflexivity. *)
     destruct (art_kind a); destruct (rule_source_kind r);
-      simpl in Heq; try discriminate; try contradiction.
-    (* CustomKind case *)
-    apply String.eqb_eq in Heq. contradiction.
+      simpl in Heq; try discriminate;
+      try (apply String.eqb_eq in Heq; subst);
+      exfalso; apply Hneq; reflexivity.
   - reflexivity.
 Qed.
 

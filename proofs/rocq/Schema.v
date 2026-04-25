@@ -590,9 +590,14 @@ Proof.
       exfalso.
       assert (art_kind a <> rule_source_kind r) as Hneq.
       { apply Hno_source. left. reflexivity. }
-      (* We need artifact_kind_eqb correct — it returns true here *)
+      (* artifact_kind_eqb returns true here, so kinds must be equal:
+         non-matching constructors discriminate (Heq becomes false=true);
+         matching simple constructors solve via Hneq + reflexivity;
+         matching CustomKind unfolds String.eqb to derive s1 = s2. *)
       destruct (art_kind a); destruct (rule_source_kind r);
-        try discriminate; contradiction.
+        simpl in Heq; try discriminate;
+        try (apply String.eqb_eq in Heq; subst);
+        apply Hneq; reflexivity.
     + simpl. apply IH.
       intros a' Hin. apply Hno_source. right. exact Hin.
 Qed.
