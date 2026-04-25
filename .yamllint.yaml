@@ -13,3 +13,8 @@ rules:
     spaces: 2
   empty-lines:
     max: 2
+  # Prose in `description: >` blocks contains literal "{id}" route tokens
+  # and "{{embed}}" template syntax (FEAT-128, REQ-060). yamllint's
+  # braces rule misfires on these even inside block scalars. Disable —
+  # we don't use flow-style maps anywhere in the corpus.
+  braces: disable

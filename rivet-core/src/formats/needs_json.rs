@@ -81,7 +81,6 @@ use std::path::Path;
 
 use serde::Deserialize;
 
-use crate::adapter::{Adapter, AdapterConfig, AdapterSource};
 use crate::error::Error;
 use crate::model::{Artifact, Link};
 
@@ -360,125 +359,6 @@ fn convert_need(
 }
 
 // ---------------------------------------------------------------------------
-// Adapter trait implementation
-// ---------------------------------------------------------------------------
-
-/// Adapter for importing sphinx-needs `needs.json` files.
-pub struct NeedsJsonAdapter {
-    supported: Vec<String>,
-}
-
-impl NeedsJsonAdapter {
-    pub fn new() -> Self {
-        Self { supported: vec![] }
-    }
-}
-
-impl Default for NeedsJsonAdapter {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Adapter for NeedsJsonAdapter {
-    fn id(&self) -> &str {
-        "needs-json"
-    }
-
-    fn name(&self) -> &str {
-        "sphinx-needs JSON"
-    }
-
-    fn supported_types(&self) -> &[String] {
-        &self.supported
-    }
-
-    fn import(
-        &self,
-        source: &AdapterSource,
-        config: &AdapterConfig,
-    ) -> Result<Vec<Artifact>, Error> {
-        let nj_config = adapter_config_to_needs_config(config);
-
-        match source {
-            AdapterSource::Path(path) => {
-                let content = std::fs::read_to_string(path)
-                    .map_err(|e| Error::Io(format!("{}: {e}", path.display())))?;
-                import_needs_json_inner(&content, &nj_config, Some(path))
-            }
-            AdapterSource::Bytes(bytes) => {
-                let content = std::str::from_utf8(bytes)
-                    .map_err(|e| Error::Adapter(format!("invalid UTF-8: {e}")))?;
-                import_needs_json_inner(content, &nj_config, None)
-            }
-            AdapterSource::Directory(dir) => import_needs_json_directory(dir, &nj_config),
-        }
-    }
-
-    fn export(&self, _artifacts: &[Artifact], _config: &AdapterConfig) -> Result<Vec<u8>, Error> {
-        Err(Error::Adapter(
-            "needs-json adapter does not support export".into(),
-        ))
-    }
-}
-
-/// Walk a directory for `*.json` files and import each as needs.json.
-fn import_needs_json_directory(
-    dir: &Path,
-    config: &NeedsJsonConfig,
-) -> Result<Vec<Artifact>, Error> {
-    let mut artifacts = Vec::new();
-    let entries =
-        std::fs::read_dir(dir).map_err(|e| Error::Io(format!("{}: {e}", dir.display())))?;
-
-    for entry in entries {
-        let entry = entry.map_err(|e| Error::Io(e.to_string()))?;
-        let path = entry.path();
-        if path.extension().is_some_and(|ext| ext == "json") {
-            let content = std::fs::read_to_string(&path)
-                .map_err(|e| Error::Io(format!("{}: {e}", path.display())))?;
-            match import_needs_json_inner(&content, config, Some(&path)) {
-                Ok(arts) => artifacts.extend(arts),
-                Err(e) => log::warn!("skipping {}: {e}", path.display()),
-            }
-        } else if path.is_dir() {
-            artifacts.extend(import_needs_json_directory(&path, config)?);
-        }
-    }
-
-    Ok(artifacts)
-}
-
-/// Convert flat `AdapterConfig` entries into a structured `NeedsJsonConfig`.
-///
-/// Recognised keys:
-/// - `type-mapping.<sphinx_type>` = `<rivet_type>`
-/// - `id-transform` = `preserve` | `underscores-to-dashes` (default)
-/// - `link-type` = `<type>` (default: `satisfies`)
-fn adapter_config_to_needs_config(config: &AdapterConfig) -> NeedsJsonConfig {
-    let mut type_mapping = HashMap::new();
-
-    for (key, value) in &config.entries {
-        if let Some(sphinx_type) = key.strip_prefix("type-mapping.") {
-            type_mapping.insert(sphinx_type.to_owned(), value.clone());
-        }
-    }
-
-    let id_transform = match config.get("id-transform") {
-        Some("preserve") => IdTransform::Preserve,
-        _ => IdTransform::UnderscoresToDashes,
-    };
-
-    let default_link_type = config.get("link-type").map(|s| s.to_owned());
-
-    NeedsJsonConfig {
-        type_mapping,
-        id_transform,
-        default_link_type,
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -701,32 +581,6 @@ mod tests {
         assert_eq!(arts[0].id, "comp-req--fast");
         assert_eq!(arts[1].id, "stkh-req--perf");
         assert_eq!(arts[1].links[0].target, "comp-req--fast");
-    }
-
-    // ----- Test: adapter config conversion ------------------------------
-
-    // rivet: verifies REQ-025
-    #[test]
-    fn adapter_config_to_needs_config_round_trip() {
-        let mut entries = BTreeMap::new();
-        entries.insert("type-mapping.stkh_req".into(), "stakeholder-req".into());
-        entries.insert("type-mapping.comp_req".into(), "component-req".into());
-        entries.insert("id-transform".into(), "preserve".into());
-        entries.insert("link-type".into(), "derives-from".into());
-
-        let ac = AdapterConfig { entries };
-        let nc = adapter_config_to_needs_config(&ac);
-
-        assert_eq!(
-            nc.type_mapping.get("stkh_req"),
-            Some(&"stakeholder-req".to_owned())
-        );
-        assert_eq!(
-            nc.type_mapping.get("comp_req"),
-            Some(&"component-req".to_owned())
-        );
-        assert!(matches!(nc.id_transform, IdTransform::Preserve));
-        assert_eq!(nc.default_link_type.as_deref(), Some("derives-from"));
     }
 
     // ----- Test: version fallback (empty-string key) --------------------

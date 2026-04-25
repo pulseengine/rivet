@@ -74,8 +74,14 @@ fn docs_embeds_lists_known_tokens() {
     }
 
     // The output must be self-describing, not just a name dump.
-    assert!(stdout.contains("NAME"), "expected NAME header, got:\n{stdout}");
-    assert!(stdout.contains("ARGS"), "expected ARGS header, got:\n{stdout}");
+    assert!(
+        stdout.contains("NAME"),
+        "expected NAME header, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("ARGS"),
+        "expected ARGS header, got:\n{stdout}"
+    );
     // Legacy markers help users understand that artifact/links/table live
     // in the inline resolver rather than resolve_embed.
     assert!(
@@ -101,14 +107,10 @@ fn docs_embeds_json() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-    let val: serde_json::Value =
-        serde_json::from_str(&stdout).expect("output must be valid JSON");
+    let val: serde_json::Value = serde_json::from_str(&stdout).expect("output must be valid JSON");
     assert_eq!(val["command"], "docs-embeds");
     let embeds = val["embeds"].as_array().expect("embeds must be array");
-    let names: Vec<&str> = embeds
-        .iter()
-        .filter_map(|v| v["name"].as_str())
-        .collect();
+    let names: Vec<&str> = embeds.iter().filter_map(|v| v["name"].as_str()).collect();
     for required in ["stats", "coverage", "query", "group", "artifact"] {
         assert!(names.contains(&required), "missing {required} in {names:?}");
     }

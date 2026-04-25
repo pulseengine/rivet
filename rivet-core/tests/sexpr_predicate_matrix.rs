@@ -69,10 +69,7 @@ fn base_artifact() -> Artifact {
         fields: {
             let mut m = BTreeMap::new();
             m.insert("priority".into(), serde_yaml::Value::String("must".into()));
-            m.insert(
-                "asil".into(),
-                serde_yaml::Value::String("ASIL-D".into()),
-            );
+            m.insert("asil".into(), serde_yaml::Value::String("ASIL-D".into()));
             m.insert(
                 "level".into(),
                 serde_yaml::Value::Number(serde_yaml::Number::from(3_i64)),
@@ -264,13 +261,19 @@ fn has_tag_no_match_when_absent() {
 #[test]
 fn has_tag_rejects_missing_argument() {
     let errs = err(r#"(has-tag)"#);
-    assert!(errs.iter().any(|e| e.message.contains("'has-tag' requires")));
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("'has-tag' requires"))
+    );
 }
 
 #[test]
 fn has_tag_rejects_extra_argument() {
     let errs = err(r#"(has-tag "a" "b")"#);
-    assert!(errs.iter().any(|e| e.message.contains("'has-tag' requires")));
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("'has-tag' requires"))
+    );
 }
 
 // ── has-field ──────────────────────────────────────────────────────────
@@ -297,7 +300,10 @@ fn has_field_well_known_always_present() {
 #[test]
 fn has_field_rejects_wrong_arity() {
     let errs = err(r#"(has-field)"#);
-    assert!(errs.iter().any(|e| e.message.contains("'has-field' requires")));
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("'has-field' requires"))
+    );
 }
 
 // ── matches (regex) ────────────────────────────────────────────────────
@@ -331,7 +337,10 @@ fn matches_invalid_regex_is_parse_error() {
 #[test]
 fn matches_rejects_wrong_arity() {
     let errs = err(r#"(matches id)"#);
-    assert!(errs.iter().any(|e| e.message.contains("'matches' requires")));
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("'matches' requires"))
+    );
 }
 
 // ── contains ───────────────────────────────────────────────────────────
@@ -349,7 +358,10 @@ fn contains_no_match_when_substring_absent() {
 #[test]
 fn contains_rejects_wrong_arity() {
     let errs = err(r#"(contains title)"#);
-    assert!(errs.iter().any(|e| e.message.contains("'contains' requires")));
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("'contains' requires"))
+    );
 }
 
 // ── linked-by ──────────────────────────────────────────────────────────
@@ -372,10 +384,7 @@ fn linked_by_matches_specific_target() {
 
 #[test]
 fn linked_by_no_match_wrong_target() {
-    assert!(!ok(
-        r#"(linked-by "satisfies" "SC-99")"#,
-        &base_artifact()
-    ));
+    assert!(!ok(r#"(linked-by "satisfies" "SC-99")"#, &base_artifact()));
 }
 
 #[test]
@@ -413,7 +422,10 @@ fn linked_to_no_match_for_missing_target() {
 #[test]
 fn linked_to_rejects_wrong_arity() {
     let errs = err(r#"(linked-to)"#);
-    assert!(errs.iter().any(|e| e.message.contains("'linked-to' requires")));
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("'linked-to' requires"))
+    );
 }
 
 // ── linked-from (REQUIRES STORE GRAPH) ─────────────────────────────────
@@ -561,8 +573,7 @@ fn linked_from_source_filter_is_honoured() {
     assert!(matches_filter_with_store(&wild, &sc, &graph, &store));
 
     // Non-existent source MUST not match — this is the bug fix.
-    let missing =
-        sexpr_eval::parse_filter(r#"(linked-from "satisfies" "REQ-NOPE")"#).unwrap();
+    let missing = sexpr_eval::parse_filter(r#"(linked-from "satisfies" "REQ-NOPE")"#).unwrap();
     assert!(
         !matches_filter_with_store(&missing, &sc, &graph, &store),
         "`(linked-from \"satisfies\" \"REQ-NOPE\")` must not match when no such source exists"
@@ -619,9 +630,10 @@ fn links_count_rejects_wrong_arity() {
 fn links_count_rejects_non_symbol_operator() {
     // String-literal as operator should be flagged, not silently parsed.
     let errs = err(r#"(links-count "satisfies" ">" 1)"#);
-    assert!(errs
-        .iter()
-        .any(|e| e.message.contains("'links-count' second argument")));
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("'links-count' second argument"))
+    );
 }
 
 // ── not / and / or / implies / excludes ────────────────────────────────
@@ -670,7 +682,10 @@ fn or_zero_args_is_identity_false() {
 #[test]
 fn implies_rejects_wrong_arity() {
     let errs = err(r#"(implies a)"#);
-    assert!(errs.iter().any(|e| e.message.contains("'implies' requires")));
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("'implies' requires"))
+    );
 }
 
 #[test]
@@ -679,23 +694,18 @@ fn excludes_semantics_match_definition() {
     let a = base_artifact();
     // A: has-tag "stpa" — true
     // B: has-tag "missing" — false
-    assert!(ok(
-        r#"(excludes (has-tag "stpa") (has-tag "missing"))"#,
-        &a
-    ));
+    assert!(ok(r#"(excludes (has-tag "stpa") (has-tag "missing"))"#, &a));
     // Both true → excludes is false.
-    assert!(!ok(
-        r#"(excludes (has-tag "stpa") (has-tag "safety"))"#,
-        &a
-    ));
+    assert!(!ok(r#"(excludes (has-tag "stpa") (has-tag "safety"))"#, &a));
 }
 
 #[test]
 fn excludes_rejects_wrong_arity() {
     let errs = err(r#"(excludes a)"#);
-    assert!(errs
-        .iter()
-        .any(|e| e.message.contains("'excludes' requires")));
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("'excludes' requires"))
+    );
 }
 
 // ── forall / exists / count — require a Store ──────────────────────────
@@ -730,10 +740,8 @@ fn forall_positive_via_parse_filter() {
         make_req("REQ-1", &["safety"]),
         make_req("REQ-2", &["safety"]),
     ]);
-    let expr = sexpr_eval::parse_filter(
-        r#"(forall (= type "requirement") (has-tag "safety"))"#,
-    )
-    .unwrap();
+    let expr =
+        sexpr_eval::parse_filter(r#"(forall (= type "requirement") (has-tag "safety"))"#).unwrap();
     let any = store.iter().next().unwrap();
     assert!(matches_filter_with_store(&expr, any, &graph, &store));
 }
@@ -744,10 +752,8 @@ fn forall_negative_one_violates() {
         make_req("REQ-1", &["safety"]),
         make_req("REQ-2", &[]), // violates
     ]);
-    let expr = sexpr_eval::parse_filter(
-        r#"(forall (= type "requirement") (has-tag "safety"))"#,
-    )
-    .unwrap();
+    let expr =
+        sexpr_eval::parse_filter(r#"(forall (= type "requirement") (has-tag "safety"))"#).unwrap();
     let any = store.iter().next().unwrap();
     assert!(!matches_filter_with_store(&expr, any, &graph, &store));
 }
@@ -760,28 +766,18 @@ fn forall_rejects_wrong_arity() {
 
 #[test]
 fn exists_positive_via_parse_filter() {
-    let (store, graph) = store_of(vec![
-        make_req("REQ-1", &[]),
-        make_req("REQ-2", &["safety"]),
-    ]);
-    let expr = sexpr_eval::parse_filter(
-        r#"(exists (= type "requirement") (has-tag "safety"))"#,
-    )
-    .unwrap();
+    let (store, graph) = store_of(vec![make_req("REQ-1", &[]), make_req("REQ-2", &["safety"])]);
+    let expr =
+        sexpr_eval::parse_filter(r#"(exists (= type "requirement") (has-tag "safety"))"#).unwrap();
     let any = store.iter().next().unwrap();
     assert!(matches_filter_with_store(&expr, any, &graph, &store));
 }
 
 #[test]
 fn exists_negative_no_match() {
-    let (store, graph) = store_of(vec![
-        make_req("REQ-1", &[]),
-        make_req("REQ-2", &["eu"]),
-    ]);
-    let expr = sexpr_eval::parse_filter(
-        r#"(exists (= type "requirement") (has-tag "safety"))"#,
-    )
-    .unwrap();
+    let (store, graph) = store_of(vec![make_req("REQ-1", &[]), make_req("REQ-2", &["eu"])]);
+    let expr =
+        sexpr_eval::parse_filter(r#"(exists (= type "requirement") (has-tag "safety"))"#).unwrap();
     let any = store.iter().next().unwrap();
     assert!(!matches_filter_with_store(&expr, any, &graph, &store));
 }
@@ -796,10 +792,7 @@ fn exists_rejects_wrong_arity() {
 fn count_positive_any_match() {
     // `count` returns true if any artifact matches the scope.
     let (store, graph) = store_of(vec![make_req("REQ-1", &["safety"])]);
-    let expr = sexpr_eval::parse_filter(
-        r#"(count (has-tag "safety"))"#,
-    )
-    .unwrap();
+    let expr = sexpr_eval::parse_filter(r#"(count (has-tag "safety"))"#).unwrap();
     let any = store.iter().next().unwrap();
     assert!(matches_filter_with_store(&expr, any, &graph, &store));
 }
@@ -807,10 +800,7 @@ fn count_positive_any_match() {
 #[test]
 fn count_negative_no_match() {
     let (store, graph) = store_of(vec![make_req("REQ-1", &[])]);
-    let expr = sexpr_eval::parse_filter(
-        r#"(count (has-tag "safety"))"#,
-    )
-    .unwrap();
+    let expr = sexpr_eval::parse_filter(r#"(count (has-tag "safety"))"#).unwrap();
     let any = store.iter().next().unwrap();
     assert!(!matches_filter_with_store(&expr, any, &graph, &store));
 }
@@ -842,10 +832,12 @@ fn chain_store() -> (Store, LinkGraph) {
         status: None,
         tags: vec![],
         links: tgt
-            .map(|t| vec![Link {
-                link_type: "satisfies".into(),
-                target: t.into(),
-            }])
+            .map(|t| {
+                vec![Link {
+                    link_type: "satisfies".into(),
+                    target: t.into(),
+                }]
+            })
             .unwrap_or_default(),
         fields: BTreeMap::new(),
         provenance: None,
@@ -888,9 +880,10 @@ fn reachable_from_wrong_link_type_no_match() {
 #[test]
 fn reachable_from_rejects_wrong_arity() {
     let errs = err(r#"(reachable-from "REQ-A")"#);
-    assert!(errs
-        .iter()
-        .any(|e| e.message.contains("'reachable-from' requires")));
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("'reachable-from' requires"))
+    );
 }
 
 #[test]
@@ -914,9 +907,10 @@ fn reachable_to_no_match_wrong_direction() {
 #[test]
 fn reachable_to_rejects_wrong_arity() {
     let errs = err(r#"(reachable-to "REQ-A")"#);
-    assert!(errs
-        .iter()
-        .any(|e| e.message.contains("'reachable-to' requires")));
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("'reachable-to' requires"))
+    );
 }
 
 // ── Structural error cases ─────────────────────────────────────────────
@@ -924,18 +918,20 @@ fn reachable_to_rejects_wrong_arity() {
 #[test]
 fn unknown_head_form_is_rejected() {
     let errs = err(r#"(foobar a b)"#);
-    assert!(errs
-        .iter()
-        .any(|e| e.message.contains("unknown form 'foobar'")));
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("unknown form 'foobar'"))
+    );
 }
 
 #[test]
 fn bare_symbol_at_top_level_is_rejected() {
     // `foo` is a symbol atom, not a bool — top-level atoms must be booleans.
     let errs = err(r#"foo"#);
-    assert!(errs
-        .iter()
-        .any(|e| e.message.contains("unexpected atom at top level")));
+    assert!(
+        errs.iter()
+            .any(|e| e.message.contains("unexpected atom at top level"))
+    );
 }
 
 #[test]
@@ -961,15 +957,9 @@ fn empty_list_evaluates_true() {
 #[test]
 fn multiple_top_level_exprs_combine_as_and() {
     // Two top-level forms are joined with AND.
-    let expr = sexpr_eval::parse_filter(
-        r#"(= type "requirement") (has-tag "stpa")"#,
-    )
-    .unwrap();
+    let expr = sexpr_eval::parse_filter(r#"(= type "requirement") (has-tag "stpa")"#).unwrap();
     assert!(matches_filter(&expr, &base_artifact(), &empty_graph()));
 
-    let expr2 = sexpr_eval::parse_filter(
-        r#"(= type "requirement") (has-tag "missing")"#,
-    )
-    .unwrap();
+    let expr2 = sexpr_eval::parse_filter(r#"(= type "requirement") (has-tag "missing")"#).unwrap();
     assert!(!matches_filter(&expr2, &base_artifact(), &empty_graph()));
 }

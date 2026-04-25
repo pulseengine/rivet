@@ -281,8 +281,7 @@ impl EmbedRequest {
             if !rest_trim.starts_with('(') {
                 return Err(EmbedError {
                     kind: EmbedErrorKind::MalformedSyntax(
-                        "query embed requires a parenthesised s-expression: {{query:(...)}}"
-                            .into(),
+                        "query embed requires a parenthesised s-expression: {{query:(...)}}".into(),
                     ),
                     raw_text: input.to_string(),
                 });
@@ -334,10 +333,7 @@ impl EmbedRequest {
             input[name_end..].trim_start_matches(':')
         };
         let (args_part, options_part) = match args_and_options.find(' ') {
-            Some(pos) => (
-                &args_and_options[..pos],
-                Some(&args_and_options[pos + 1..]),
-            ),
+            Some(pos) => (&args_and_options[..pos], Some(&args_and_options[pos + 1..])),
             None => (args_and_options, None),
         };
 
@@ -500,11 +496,7 @@ fn render_stats_single_type(type_name: &str, ctx: &EmbedContext<'_>) -> String {
     if name.is_empty() {
         return "<div class=\"embed-stats\"><span class=\"embed-error\">stats:type requires a type name, e.g. <code>{{stats:type:requirement}}</code></span></div>\n".to_string();
     }
-    let count = ctx
-        .store
-        .iter()
-        .filter(|a| a.artifact_type == name)
-        .count();
+    let count = ctx.store.iter().filter(|a| a.artifact_type == name).count();
 
     format!(
         "<div class=\"embed-stats embed-stats-single\">\n\
@@ -602,10 +594,7 @@ fn severity_rank(s: crate::schema::Severity) -> u8 {
 // ── Coverage renderer ───────────────────────────────────────────────────
 
 /// Render `{{coverage}}` or `{{coverage:RULE_NAME}}`.
-fn render_coverage(
-    request: &EmbedRequest,
-    ctx: &EmbedContext<'_>,
-) -> Result<String, EmbedError> {
+fn render_coverage(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> Result<String, EmbedError> {
     let report = coverage::compute_coverage(ctx.store, ctx.schema, ctx.graph);
     let filter_rule = request.args.first().map(|s| s.as_str());
 
@@ -616,8 +605,11 @@ fn render_coverage(
     if let Some(name) = filter_rule {
         let exists = report.entries.iter().any(|e| e.rule_name == name);
         if !exists {
-            let known: Vec<&str> =
-                report.entries.iter().map(|e| e.rule_name.as_str()).collect();
+            let known: Vec<&str> = report
+                .entries
+                .iter()
+                .map(|e| e.rule_name.as_str())
+                .collect();
             let hint = if known.is_empty() {
                 "no traceability rules are defined in the loaded schemas".to_string()
             } else {
@@ -737,7 +729,8 @@ fn render_diagnostics(
             // Defensive: any other value would have been rejected upstream.
             // If this arm fires, there's a contract bug — fail loudly.
             Some(other) => unreachable!(
-                "render_diagnostics severity filter '{other}' should have been rejected upstream",
+                "render_diagnostics severity filter '{}' should have been rejected upstream",
+                other
             ),
         })
         .collect();
@@ -821,10 +814,7 @@ fn render_diagnostics(
 /// With args: renders a specific matrix for the given source→target types.
 /// Unknown artifact-type names are rejected so a typo no longer renders
 /// a silent blank table.
-fn render_matrix(
-    request: &EmbedRequest,
-    ctx: &EmbedContext<'_>,
-) -> Result<String, EmbedError> {
+fn render_matrix(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> Result<String, EmbedError> {
     let from_type = request.args.first().map(|s| s.as_str());
     let to_type = request.args.get(1).map(|s| s.as_str());
 
@@ -1676,10 +1666,9 @@ mod tests {
 
     #[test]
     fn parse_query_with_nested_and_options() {
-        let req = EmbedRequest::parse(
-            "query:(and (= type \"requirement\") (has-tag \"stpa\")) limit=25",
-        )
-        .unwrap();
+        let req =
+            EmbedRequest::parse("query:(and (= type \"requirement\") (has-tag \"stpa\")) limit=25")
+                .unwrap();
         assert_eq!(req.name, "query");
         assert_eq!(
             req.args,
@@ -1779,13 +1768,7 @@ mod tests {
         let schema = Schema::merge(&[]);
         let graph = LinkGraph::build(&store, &schema);
 
-        let html = run_embed(
-            r#"query:(= type "requirement")"#,
-            &store,
-            &schema,
-            &graph,
-        )
-        .unwrap();
+        let html = run_embed(r#"query:(= type "requirement")"#, &store, &schema, &graph).unwrap();
         assert!(html.contains("REQ-1"), "got: {html}");
         assert!(html.contains("REQ-2"), "got: {html}");
         assert!(!html.contains("FEAT-1"), "got: {html}");
@@ -1899,7 +1882,10 @@ mod tests {
             html.contains("<th>Asil</th>"),
             "expected Asil column: {html}"
         );
-        assert!(html.contains("ASIL-B"), "custom field value missing: {html}");
+        assert!(
+            html.contains("ASIL-B"),
+            "custom field value missing: {html}"
+        );
         // Default Status column must be absent when `fields=` is overridden.
         assert!(
             !html.contains("<th>Status</th>"),
@@ -1912,8 +1898,7 @@ mod tests {
         // Regression guard: `:limit 10` used to be silently dropped because
         // the parser only recognized `key=value` tokens. Now it is rejected
         // with a hint steering the user to the correct syntax.
-        let err = EmbedRequest::parse("query:(= type \"requirement\") :limit 10")
-            .unwrap_err();
+        let err = EmbedRequest::parse("query:(= type \"requirement\") :limit 10").unwrap_err();
         let msg = match &err.kind {
             EmbedErrorKind::MalformedSyntax(m) => m.clone(),
             other => panic!("expected MalformedSyntax, got {other:?}"),
@@ -2024,15 +2009,11 @@ mod tests {
     fn group_embed_by_custom_field() {
         // ASIL is a common custom YAML field; group-by that.
         let mut a = plain("A", "requirement", None, &[]);
-        a.fields.insert(
-            "asil".into(),
-            serde_yaml::Value::String("ASIL-B".into()),
-        );
+        a.fields
+            .insert("asil".into(), serde_yaml::Value::String("ASIL-B".into()));
         let mut b = plain("B", "requirement", None, &[]);
-        b.fields.insert(
-            "asil".into(),
-            serde_yaml::Value::String("ASIL-B".into()),
-        );
+        b.fields
+            .insert("asil".into(), serde_yaml::Value::String("ASIL-B".into()));
         let c = plain("C", "requirement", None, &[]); // no asil → unset
         let store = make_store(vec![a, b, c]);
         let schema = Schema::merge(&[]);
@@ -2050,26 +2031,22 @@ mod tests {
         // where the second arg was discarded and every artifact fell into
         // bucket "unset" because FIELD was read as the literal type name.
         let mut req_a = plain("REQ-1", "requirement", None, &[]);
-        req_a.fields.insert(
-            "asil".into(),
-            serde_yaml::Value::String("ASIL-B".into()),
-        );
+        req_a
+            .fields
+            .insert("asil".into(), serde_yaml::Value::String("ASIL-B".into()));
         let mut req_b = plain("REQ-2", "requirement", None, &[]);
-        req_b.fields.insert(
-            "asil".into(),
-            serde_yaml::Value::String("ASIL-D".into()),
-        );
+        req_b
+            .fields
+            .insert("asil".into(), serde_yaml::Value::String("ASIL-D".into()));
         // Non-requirement artifact — should be excluded by type filter.
         let mut test_a = plain("TEST-1", "test", None, &[]);
-        test_a.fields.insert(
-            "asil".into(),
-            serde_yaml::Value::String("ASIL-B".into()),
-        );
+        test_a
+            .fields
+            .insert("asil".into(), serde_yaml::Value::String("ASIL-B".into()));
         let store = make_store(vec![req_a, req_b, test_a]);
         let schema = Schema::merge(&[]);
         let graph = LinkGraph::build(&store, &schema);
-        let html =
-            run_embed("group:requirement:asil", &store, &schema, &graph).unwrap();
+        let html = run_embed("group:requirement:asil", &store, &schema, &graph).unwrap();
         assert!(html.contains("ASIL-B"), "got: {html}");
         assert!(html.contains("ASIL-D"), "got: {html}");
         // Total must be 2 (only the two requirements), not 3.
@@ -2143,12 +2120,10 @@ mod tests {
             // examples list multiple variants separated by "  /  ";
             // testing the first is enough to catch regressions.
             let first = spec.example.split("  /  ").next().unwrap().trim();
-            let inner = first
-                .trim_start_matches("{{")
-                .trim_end_matches("}}")
-                .trim();
-            EmbedRequest::parse(inner)
-                .unwrap_or_else(|e| panic!("registry example for '{}' failed to parse: {e}", spec.name));
+            let inner = first.trim_start_matches("{{").trim_end_matches("}}").trim();
+            EmbedRequest::parse(inner).unwrap_or_else(|e| {
+                panic!("registry example for '{}' failed to parse: {e}", spec.name)
+            });
         }
     }
 

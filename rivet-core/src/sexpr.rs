@@ -134,8 +134,6 @@ impl rowan::Language for SExprLanguage {
 
 /// Convenience alias.
 pub type SyntaxNode = rowan::SyntaxNode<SExprLanguage>;
-/// Convenience alias.
-pub type SyntaxToken = rowan::SyntaxToken<SExprLanguage>;
 
 // ── Lexer ───────────────────────────────────────────────────────────────
 
@@ -431,28 +429,6 @@ impl<'src> Parser<'src> {
     }
 }
 
-// ── Utilities ───────────────────────────────────────────────────────────
-
-/// Compute line-start byte offsets for mapping byte offsets to line:col.
-pub fn line_starts(source: &str) -> Vec<usize> {
-    let mut starts = vec![0];
-    for (i, b) in source.bytes().enumerate() {
-        if b == b'\n' {
-            starts.push(i + 1);
-        }
-    }
-    starts
-}
-
-/// Convert a byte offset to (line, col), both 0-based.
-pub fn offset_to_line_col(line_starts: &[usize], offset: usize) -> (usize, usize) {
-    let line = line_starts
-        .partition_point(|&s| s <= offset)
-        .saturating_sub(1);
-    let col = offset - line_starts[line];
-    (line, col)
-}
-
 // ── Tests ───────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -593,15 +569,6 @@ mod tests {
         let (green, errors) = parse(source);
         assert!(errors.is_empty());
         assert_eq!(SyntaxNode::new_root(green).text().to_string(), source);
-    }
-
-    #[test]
-    fn line_col_mapping() {
-        let source = "line1\nline2\nline3";
-        let starts = line_starts(source);
-        assert_eq!(offset_to_line_col(&starts, 0), (0, 0));
-        assert_eq!(offset_to_line_col(&starts, 6), (1, 0));
-        assert_eq!(offset_to_line_col(&starts, 14), (2, 2));
     }
 
     #[test]

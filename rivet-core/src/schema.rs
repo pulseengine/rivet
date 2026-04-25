@@ -64,6 +64,11 @@ pub struct SchemaFile {
     pub traceability_rules: Vec<TraceabilityRule>,
     #[serde(default, rename = "conditional-rules")]
     pub conditional_rules: Vec<ConditionalRule>,
+    /// Optional agent-pipelines block: declares oracles + pipelines for
+    /// `rivet close-gaps`. See `rivet_core::agent_pipelines`. Schemas
+    /// without this block are invisible to the pipeline runner.
+    #[serde(default, rename = "agent-pipelines")]
+    pub agent_pipelines: Option<crate::agent_pipelines::AgentPipelines>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

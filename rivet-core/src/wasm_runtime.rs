@@ -272,82 +272,6 @@ impl WasmAdapter {
         Ok(linker)
     }
 
-    /// Call the guest `id` function.
-    #[allow(dead_code)]
-    fn call_id(&self) -> Result<String, WasmError> {
-        let mut store = self.create_store()?;
-        let linker = self.create_linker()?;
-        let instance = linker
-            .instantiate(&mut store, &self.component)
-            .map_err(|e| WasmError::Instantiation(e.to_string()))?;
-
-        // TODO: Use generated bindings from `wasmtime::component::bindgen!`
-        // once the WIT is finalized. For now, look up the function by name.
-        let func = instance
-            .get_func(&mut store, "id")
-            .ok_or_else(|| WasmError::Guest("adapter does not export 'id' function".into()))?;
-
-        let mut results = [wasmtime::component::Val::String("".into())];
-        func.call(&mut store, &[], &mut results)
-            .map_err(|e| WasmError::Guest(e.to_string()))?;
-
-        match &results[0] {
-            wasmtime::component::Val::String(s) => Ok(s.to_string()),
-            other => Err(WasmError::Conversion(format!(
-                "expected string from id(), got {:?}",
-                other
-            ))),
-        }
-    }
-
-    /// Call the guest `name` function.
-    #[allow(dead_code)]
-    fn call_name(&self) -> Result<String, WasmError> {
-        let mut store = self.create_store()?;
-        let linker = self.create_linker()?;
-        let instance = linker
-            .instantiate(&mut store, &self.component)
-            .map_err(|e| WasmError::Instantiation(e.to_string()))?;
-
-        let func = instance
-            .get_func(&mut store, "name")
-            .ok_or_else(|| WasmError::Guest("adapter does not export 'name' function".into()))?;
-
-        let mut results = [wasmtime::component::Val::String("".into())];
-        func.call(&mut store, &[], &mut results)
-            .map_err(|e| WasmError::Guest(e.to_string()))?;
-
-        match &results[0] {
-            wasmtime::component::Val::String(s) => Ok(s.to_string()),
-            other => Err(WasmError::Conversion(format!(
-                "expected string from name(), got {:?}",
-                other
-            ))),
-        }
-    }
-
-    /// Call the guest `supported-types` function.
-    #[allow(dead_code)]
-    fn call_supported_types(&self) -> Result<Vec<String>, WasmError> {
-        let mut store = self.create_store()?;
-        let linker = self.create_linker()?;
-        let instance = linker
-            .instantiate(&mut store, &self.component)
-            .map_err(|e| WasmError::Instantiation(e.to_string()))?;
-
-        let func = instance
-            .get_func(&mut store, "supported-types")
-            .ok_or_else(|| {
-                WasmError::Guest("adapter does not export 'supported-types' function".into())
-            })?;
-
-        // TODO: Proper deserialization of list<string> result via generated bindings.
-        // For now, return an empty list as a placeholder.
-        let _ = func;
-        log::debug!("supported-types: using placeholder (empty list)");
-        Ok(vec![])
-    }
-
     /// Call the guest `import` function via generated bindings.
     ///
     /// This reads source data into bytes, sends them to the WASM guest, and
@@ -474,73 +398,6 @@ impl WasmAdapter {
             .map_err(|e| WasmError::Guest(format!("render error: {:?}", e)))
     }
 
-    /// Call the guest `analyze` function from the renderer interface.
-    ///
-    /// This creates a fresh WASI-enabled store, instantiates the component,
-    /// and calls `pulseengine:rivet/renderer.analyze` to run all registered
-    /// analysis passes on the AADL instance tree.
-    pub fn call_analyze(
-        &self,
-        root: &str,
-        aadl_dir: Option<&Path>,
-    ) -> Result<Vec<AnalysisDiagnostic>, WasmError> {
-        let mut wasi_builder = wasmtime_wasi::WasiCtxBuilder::new();
-        wasi_builder.inherit_stderr();
-
-        if let Some(dir) = aadl_dir {
-            wasi_builder
-                .preopened_dir(
-                    dir,
-                    ".",
-                    wasmtime_wasi::DirPerms::READ,
-                    wasmtime_wasi::FilePerms::READ,
-                )
-                .map_err(|e| WasmError::Instantiation(format!("preopened dir: {}", e)))?;
-        }
-
-        let state = HostState {
-            wasi: wasi_builder.build(),
-            table: wasmtime::component::ResourceTable::new(),
-            limiter: self
-                .runtime_config
-                .max_memory_bytes
-                .map(|max| MemoryLimiter { max_memory: max }),
-        };
-
-        let mut store = Store::new(&self.engine, state);
-
-        if let Some(fuel) = self.runtime_config.fuel {
-            store
-                .set_fuel(fuel)
-                .map_err(|e| WasmError::Instantiation(e.to_string()))?;
-        }
-        if self.runtime_config.max_memory_bytes.is_some() {
-            store.limiter(|state| state.limiter.as_mut().unwrap());
-        }
-
-        let linker = self.create_linker()?;
-
-        let bindings =
-            wit_bindings::SparComponent::instantiate(&mut store, &self.component, &linker)
-                .map_err(|e| WasmError::Instantiation(e.to_string()))?;
-
-        let diagnostics = bindings
-            .pulseengine_rivet_renderer()
-            .call_analyze(&mut store, root)
-            .map_err(|e| WasmError::Guest(e.to_string()))?
-            .map_err(|e| WasmError::Guest(format!("analyze error: {:?}", e)))?;
-
-        Ok(diagnostics
-            .into_iter()
-            .map(|d| AnalysisDiagnostic {
-                severity: d.severity,
-                message: d.message,
-                component_path: d.component_path,
-                analysis_name: d.analysis_name,
-            })
-            .collect())
-    }
-
     /// Call the guest `export` function via generated bindings.
     fn call_export(
         &self,
@@ -589,32 +446,20 @@ impl WasmAdapter {
 
 impl Adapter for WasmAdapter {
     fn id(&self) -> &str {
-        // The Adapter trait returns `&str`, but we need to call into WASM
-        // each time.  We use a leaked Box to produce a stable &str.
-        // In production this would be cached at construction time.
-        //
-        // For now, return the file stem as a fallback identifier so the
-        // adapter is usable even before full WASM calls are wired up.
-        // TODO: call self.call_id() and cache the result during construction.
         let stem = self
             .path
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("wasm-adapter");
-        // SAFETY: We leak a small string once per adapter load.  In practice
-        // adapters are loaded once at startup, so this is acceptable.
         Box::leak(stem.to_string().into_boxed_str())
     }
 
     fn name(&self) -> &str {
-        // Same strategy as id() — use path-based fallback.
         let display = format!("WASM adapter ({})", self.path.display());
         Box::leak(display.into_boxed_str())
     }
 
     fn supported_types(&self) -> &[String] {
-        // TODO: Cache result of call_supported_types() during construction.
-        // Returning a static empty slice for now.
         &[]
     }
 

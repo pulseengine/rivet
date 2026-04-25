@@ -1295,20 +1295,63 @@ impl SyncAdapter for OslcSyncAdapter {
 
     /// Push local artifacts to the remote OSLC service.
     ///
-    /// For each artifact, converts it to an OSLC resource and POSTs it to
-    /// the service URL (used as a creation factory). Existing resources would
-    /// need to be updated via PUT to their individual URIs — a full
-    /// implementation would first diff to decide create vs. update.
+    /// Performs a bidirectional-sync-aware push in four phases:
+    ///
+    /// 1. Query the service URL for current remote state, preserving each
+    ///    member's JSON-LD `@id` URI.
+    /// 2. Compute a diff via [`compute_diff`] over local and remote
+    ///    artifact sets (comparison is by `Artifact::id`).
+    /// 3. For each `local_only` artifact: POST to the service URL (used as
+    ///    a creation factory).
+    /// 4. For each `modified` artifact: PUT to the existing remote URI.
+    ///
+    /// `remote_only` and `unchanged` artifacts are skipped — push is
+    /// non-destructive. Deletion of remote-only artifacts is intentionally
+    /// left to a future `reconcile` operation.
     async fn push(&self, service_url: &str, artifacts: &[Artifact]) -> Result<(), Error> {
-        for artifact in artifacts {
-            let oslc_resource = artifact_to_oslc(artifact)?;
+        // Phase 1 — pull current remote state, preserving @id URIs.
+        let query_response = self.client.query(service_url, "", "").await?;
+        let mut remote_uris: BTreeMap<String, String> = BTreeMap::new();
+        let mut remote_artifacts: Vec<Artifact> = Vec::new();
+        for member_value in &query_response.members {
+            let resource = parse_member_resource(member_value)?;
+            let artifact = oslc_to_artifact(&resource)?;
+            if let Some(uri) = member_value.get("@id").and_then(|v| v.as_str()) {
+                remote_uris.insert(artifact.id.clone(), uri.to_string());
+            }
+            remote_artifacts.push(artifact);
+        }
+
+        // Phase 2 — diff local against remote.
+        let diff = compute_diff(artifacts, &remote_artifacts);
+
+        // Phase 3 — create new artifacts (local_only) via POST.
+        for id in &diff.local_only {
+            let local = artifacts.iter().find(|a| &a.id == id).ok_or_else(|| {
+                Error::Adapter(format!("local_only id {id} missing from local set"))
+            })?;
+            let oslc_resource = artifact_to_oslc(local)?;
             let json_value = serde_json::to_value(&oslc_resource)
                 .map_err(|e| Error::Adapter(format!("failed to serialize OSLC resource: {e}")))?;
-
             self.client
                 .create_resource(service_url, &json_value)
                 .await?;
         }
+
+        // Phase 4 — update modified artifacts via PUT to their URIs.
+        for id in &diff.modified {
+            let local = artifacts.iter().find(|a| &a.id == id).ok_or_else(|| {
+                Error::Adapter(format!("modified id {id} missing from local set"))
+            })?;
+            let remote_uri = remote_uris.get(id).ok_or_else(|| {
+                Error::Adapter(format!("cannot update {id}: remote member has no @id URI"))
+            })?;
+            let oslc_resource = artifact_to_oslc(local)?;
+            let json_value = serde_json::to_value(&oslc_resource)
+                .map_err(|e| Error::Adapter(format!("failed to serialize OSLC resource: {e}")))?;
+            self.client.update_resource(remote_uri, &json_value).await?;
+        }
+
         Ok(())
     }
 

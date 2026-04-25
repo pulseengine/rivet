@@ -82,8 +82,6 @@ pub enum CommitClass {
     BrokenRef,
     /// No artifact references at all (and not exempt).
     Orphan,
-    /// Exempt by commit type (e.g. chore, ci, docs).
-    Exempt,
 }
 
 /// A broken reference found in a commit.
@@ -518,10 +516,6 @@ pub fn analyze_commits(
             }
             CommitClass::Orphan => {
                 orphans.push(commit);
-            }
-            CommitClass::Exempt => {
-                // classify_commit_refs doesn't return Exempt, but for completeness
-                exempt.push(commit);
             }
         }
     }

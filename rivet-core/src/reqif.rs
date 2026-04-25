@@ -990,14 +990,6 @@ struct EnumFieldMeta {
     allowed: Vec<String>,
 }
 
-/// Build a ReqIF document from Rivet artifacts.
-///
-/// Shorthand for `build_reqif_with_schema(artifacts, None)` — emits flat
-/// STRING attributes for every field, ignoring `allowed-values` constraints.
-pub fn build_reqif(artifacts: &[Artifact]) -> ReqIfRoot {
-    build_reqif_with_schema(artifacts, None)
-}
-
 /// Build a ReqIF document from Rivet artifacts, optionally consulting a
 /// Schema to emit `DATATYPE-DEFINITION-ENUMERATION` constraints.
 ///

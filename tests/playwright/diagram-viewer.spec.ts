@@ -12,7 +12,11 @@ import { waitForHtmx } from "./helpers";
  */
 const VIEWER_PAGES = [
   // Top-level link graph — always has toolbar.
-  { name: "graph", url: "/graph" },
+  // ?limit=2000 bypasses the default 200-node budget (added in 2fafe1a)
+  // so the dogfood dataset (~742 artifacts) renders the actual SVG
+  // instead of the "graph above node budget" placeholder. 2000 is
+  // MAX_NODE_BUDGET in render/graph.rs.
+  { name: "graph", url: "/graph?limit=2000" },
   // Doc linkage view.
   { name: "doc-linkage", url: "/doc-linkage" },
   // Help / schema page renders the schema-linkage mermaid diagram.

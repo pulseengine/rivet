@@ -196,7 +196,7 @@ artifacts:
   - id: FEAT-011
     type: feature
     title: OSLC client for bidirectional sync
-    status: draft
+    status: approved
     description: >
       OSLC RM/QM client for syncing artifacts with Polarion, DOORS,
       and codebeamer. Support TRS for incremental sync.

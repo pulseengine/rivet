@@ -185,8 +185,7 @@ fn stats_filter_empty_is_zero() {
         .output()
         .expect("stats --filter empty run");
     assert!(output.status.success());
-    let parsed: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("JSON");
+    let parsed: serde_json::Value = serde_json::from_slice(&output.stdout).expect("JSON");
     let total = parsed.get("total").and_then(|v| v.as_u64()).unwrap_or(0);
     assert_eq!(total, 0, "empty filter must zero out stats total");
 }

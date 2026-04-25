@@ -512,9 +512,30 @@ fn classify_filter_error(source: &str, message: &str) -> Option<String> {
     let trimmed = source.trim_start();
 
     const HEADS: &[&str] = &[
-        "and", "or", "not", "implies", "excludes", "=", "!=", ">", "<", ">=", "<=",
-        "has-tag", "has-field", "in", "matches", "contains", "linked-by", "linked-from",
-        "linked-to", "links-count", "reachable-from", "reachable-to", "forall", "exists",
+        "and",
+        "or",
+        "not",
+        "implies",
+        "excludes",
+        "=",
+        "!=",
+        ">",
+        "<",
+        ">=",
+        "<=",
+        "has-tag",
+        "has-field",
+        "in",
+        "matches",
+        "contains",
+        "linked-by",
+        "linked-from",
+        "linked-to",
+        "links-count",
+        "reachable-from",
+        "reachable-to",
+        "forall",
+        "exists",
         "count",
     ];
     const INFIX: &[&str] = &[
@@ -837,9 +858,7 @@ fn lower_list(node: &crate::sexpr::SyntaxNode, errors: &mut Vec<LowerError>) -> 
                 {
                     errors.push(LowerError {
                         offset,
-                        message: format!(
-                            "'matches' regex pattern does not compile: {e}"
-                        ),
+                        message: format!("'matches' regex pattern does not compile: {e}"),
                     });
                     return None;
                 }
@@ -1430,8 +1449,7 @@ mod tests {
         assert!(expr.is_err(), "invalid regex must error at lower time");
         let msg = format!("{:?}", expr.err().unwrap());
         assert!(
-            msg.to_lowercase().contains("regex")
-                || msg.to_lowercase().contains("compile"),
+            msg.to_lowercase().contains("regex") || msg.to_lowercase().contains("compile"),
             "error must mention regex/compile: {msg}"
         );
     }

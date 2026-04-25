@@ -532,12 +532,7 @@ pub(crate) fn render_variants_overview(state: &AppState) -> String {
                 -1,
                 -1,
             ),
-            VariantStatus::NoModel => (
-                "no model".to_string(),
-                "color:var(--text-muted)",
-                -1,
-                -1,
-            ),
+            VariantStatus::NoModel => ("no model".to_string(), "color:var(--text-muted)", -1, -1),
         };
         let pct = if total > 0 && artifact_count > 0 {
             format!("{:.1}%", (artifact_count as f64) * 100.0 / (total as f64))

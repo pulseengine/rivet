@@ -1,7 +1,6 @@
 // ── Reusable UI components ──────────────────────────────────────────────
 // Allow dead_code: functions here are foundation stubs used by future render tasks.
 #![allow(dead_code)]
-
 // SAFETY-REVIEW (SCRC Phase 1, DD-058): File-scope blanket allow for
 // the v0.4.3 clippy restriction-lint escalation. These lints are
 // enabled at workspace scope at `warn` so new violations surface in

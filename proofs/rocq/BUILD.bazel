@@ -24,13 +24,16 @@ rocq_library(
     deps = [":rivet_schema"],
 )
 
-# Proof verification test — confirms all proofs compile and check
+# Proof verification test — confirms all proofs compile and check.
+#
+# The library targets above (rivet_schema, rivet_validation) already do
+# the actual compilation; this target depends on them so that bazel test
+# fails iff either library failed to compile (which means proof checking
+# failed). Listing srcs here too would re-compile Validation.v in a
+# context where `Require Import Schema.` doesn't resolve — the LoadPath
+# only includes the dep libraries, not co-listed srcs.
 rocq_proof_test(
     name = "rivet_metamodel_test",
-    srcs = [
-        "Schema.v",
-        "Validation.v",
-    ],
     deps = [
         ":rivet_schema",
         ":rivet_validation",

@@ -19,6 +19,7 @@ pub const SCHEMA_COMMON: &str = include_str!("../../schemas/common.yaml");
 pub const SCHEMA_DEV: &str = include_str!("../../schemas/dev.yaml");
 pub const SCHEMA_STPA: &str = include_str!("../../schemas/stpa.yaml");
 pub const SCHEMA_ASPICE: &str = include_str!("../../schemas/aspice.yaml");
+pub const SCHEMA_ISO_26262: &str = include_str!("../../schemas/iso-26262.yaml");
 pub const SCHEMA_CYBERSECURITY: &str = include_str!("../../schemas/cybersecurity.yaml");
 pub const SCHEMA_AADL: &str = include_str!("../../schemas/aadl.yaml");
 pub const SCHEMA_SCORE: &str = include_str!("../../schemas/score.yaml");
@@ -52,6 +53,7 @@ pub const SCHEMA_NAMES: &[&str] = &[
     "stpa-ai",
     "stpa-sec",
     "aspice",
+    "iso-26262",
     "cybersecurity",
     "aadl",
     "score",
@@ -119,6 +121,7 @@ pub fn embedded_schema(name: &str) -> Option<&'static str> {
         "dev" => Some(SCHEMA_DEV),
         "stpa" => Some(SCHEMA_STPA),
         "aspice" => Some(SCHEMA_ASPICE),
+        "iso-26262" => Some(SCHEMA_ISO_26262),
         "cybersecurity" => Some(SCHEMA_CYBERSECURITY),
         "aadl" => Some(SCHEMA_AADL),
         "score" => Some(SCHEMA_SCORE),

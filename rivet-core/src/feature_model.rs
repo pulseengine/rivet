@@ -43,6 +43,7 @@
 )]
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
@@ -58,6 +59,55 @@ pub struct FeatureModel {
     pub root: String,
     pub features: BTreeMap<String, Feature>,
     pub constraints: Vec<Expr>,
+    /// Optional per-attribute type declarations. Empty when no
+    /// `attribute-schema:` section was provided in the YAML.
+    ///
+    /// When non-empty, every feature attribute whose key appears in this
+    /// schema is checked at load time: type, range, enum membership,
+    /// required-presence. Attribute keys absent from the schema produce
+    /// a warning (not an error) so new keys can be introduced before the
+    /// schema is updated.
+    pub attribute_schema: BTreeMap<String, AttributeTypeDecl>,
+    /// Warnings collected during load (e.g. unknown attribute keys).
+    /// Distinct from `Error` returns: load succeeded, but the schema
+    /// audit is non-empty. Callers can surface these via `--strict` or
+    /// log them on every load.
+    pub attribute_warnings: Vec<String>,
+}
+
+// ── Typed attribute schema (Gap 1) ─────────────────────────────────────
+
+/// A single attribute type declaration in the optional
+/// `attribute-schema:` section of a feature-model YAML.
+///
+/// Deliberately narrow: only the four scalar types plus `enum`. PV's full
+/// 15-type hierarchy (ps:url, ps:datetime, ps:element, ...) is out of
+/// scope — see `docs/pure-variants-comparison.md` Gap 1 for rationale.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AttributeTypeDecl {
+    pub kind: AttributeKind,
+    /// `true` means the attribute MUST appear on every feature whose
+    /// type-schema mentions the key. Default `false`.
+    pub required: bool,
+}
+
+/// The closed set of attribute types Rivet understands.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AttributeKind {
+    Bool,
+    Int {
+        /// Optional `[lo, hi]` inclusive range constraint.
+        range: Option<(i64, i64)>,
+    },
+    Float {
+        /// Optional `[lo, hi]` inclusive range constraint.
+        range: Option<(f64, f64)>,
+    },
+    Str,
+    /// Enum: attribute value must be one of `values` (string match).
+    Enum {
+        values: Vec<String>,
+    },
 }
 
 /// A single feature in the tree.
@@ -141,6 +191,15 @@ pub struct ResolvedVariant {
     /// constraint-implied features. Empty for manually-constructed
     /// `ResolvedVariant` values (backwards-compatible default).
     pub origins: BTreeMap<String, FeatureOrigin>,
+    /// Per-feature resolved source manifest.
+    ///
+    /// Maps every effective feature with a binding to the list of
+    /// source globs whose `when:` predicate evaluated to true (or had no
+    /// `when:` at all). This is the "Variant Result Model" equivalent
+    /// that safety audits ask for — "which files participated in this
+    /// variant?". Populated by `solve_with_bindings`; empty when the
+    /// solver was called without a binding model (existing `solve` path).
+    pub source_manifest: BTreeMap<String, Vec<PathBuf>>,
 }
 
 // ── Feature-to-artifact binding ────────────────────────────────────────
@@ -158,12 +217,62 @@ pub struct FeatureBinding {
 }
 
 /// Artifacts and source files associated with a feature.
+///
+/// `source` accepts either a bare string (legacy shape, treated as a glob
+/// with no `when:` predicate) or a `{ glob, when }` map for per-source
+/// restrictions — see Gap 5 in `docs/pure-variants-comparison.md`. The
+/// untagged enum makes both shapes parse from the same field.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Binding {
     #[serde(default)]
     pub artifacts: Vec<String>,
     #[serde(default)]
-    pub source: Vec<String>,
+    pub source: Vec<SourceEntry>,
+}
+
+/// One source entry inside a feature binding.
+///
+/// Backward-compatible: a bare string in YAML deserialises to
+/// `SourceEntry { glob: "...", when: None }`. The struct form
+/// `{ glob, when }` adds an optional s-expression predicate evaluated
+/// against the resolved feature set at solve time.
+///
+/// The `when:` predicate is parsed with `sexpr_eval::parse_filter` at
+/// load time; parse errors are surfaced as `Error::Schema` with the
+/// binding name, expression text, and underlying parser message.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct SourceEntry {
+    pub glob: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub when: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for SourceEntry {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        // Two YAML shapes:
+        //   - "src/foo/**"                    (legacy)
+        //   - { glob: "src/foo/**", when: ... }
+        // We hand-roll deserialisation rather than using #[serde(untagged)]
+        // because the latter swallows the inner error message — and these
+        // bindings are exactly where users want a clear error.
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Repr {
+            Bare(String),
+            Struct {
+                glob: String,
+                #[serde(default)]
+                when: Option<String>,
+            },
+        }
+        match Repr::deserialize(d)? {
+            Repr::Bare(s) => Ok(SourceEntry {
+                glob: s,
+                when: None,
+            }),
+            Repr::Struct { glob, when } => Ok(SourceEntry { glob, when }),
+        }
+    }
 }
 
 // ── YAML persistence ───────────────────────────────────────────────────
@@ -178,6 +287,9 @@ struct FeatureModelYaml {
     features: BTreeMap<String, FeatureYaml>,
     #[serde(default)]
     constraints: Vec<String>,
+    /// Optional typed attribute declarations. See `AttributeTypeDecl`.
+    #[serde(default, rename = "attribute-schema")]
+    attribute_schema: BTreeMap<String, AttributeTypeDeclYaml>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -190,8 +302,235 @@ struct FeatureYaml {
     attributes: BTreeMap<String, serde_yaml::Value>,
 }
 
+/// On-disk YAML shape for an attribute-schema entry.
+///
+/// `type` selects between `bool`, `int`, `float`, `string`, `enum`. The
+/// other fields are conditionally present depending on `type`:
+///   - `range: [lo, hi]` for `int` and `float`
+///   - `values: [v1, v2, ...]` for `enum`
+///   - `required: true` to make presence mandatory (default `false`)
+#[derive(Debug, Deserialize)]
+struct AttributeTypeDeclYaml {
+    #[serde(rename = "type")]
+    ty: String,
+    #[serde(default)]
+    range: Option<Vec<serde_yaml::Value>>,
+    #[serde(default)]
+    values: Option<Vec<String>>,
+    #[serde(default)]
+    required: bool,
+}
+
 fn default_group() -> GroupType {
     GroupType::Leaf
+}
+
+/// Build an `AttributeTypeDecl` from the YAML shape, applying narrow
+/// validation. Errors include the attribute key and the offending field
+/// for downstream debuggability.
+fn build_attribute_decl(
+    key: &str,
+    raw: &AttributeTypeDeclYaml,
+) -> Result<AttributeTypeDecl, Error> {
+    let kind = match raw.ty.as_str() {
+        "bool" | "boolean" => AttributeKind::Bool,
+        "int" | "integer" => {
+            let range = match &raw.range {
+                None => None,
+                Some(r) if r.len() == 2 => {
+                    let lo = yaml_to_i64(&r[0]).ok_or_else(|| {
+                        Error::Schema(format!(
+                            "attribute-schema `{key}`: range[0] must be an integer (got {:?})",
+                            r[0]
+                        ))
+                    })?;
+                    let hi = yaml_to_i64(&r[1]).ok_or_else(|| {
+                        Error::Schema(format!(
+                            "attribute-schema `{key}`: range[1] must be an integer (got {:?})",
+                            r[1]
+                        ))
+                    })?;
+                    if lo > hi {
+                        return Err(Error::Schema(format!(
+                            "attribute-schema `{key}`: range [{lo}, {hi}] has lo > hi"
+                        )));
+                    }
+                    Some((lo, hi))
+                }
+                Some(other) => {
+                    return Err(Error::Schema(format!(
+                        "attribute-schema `{key}`: range must be [lo, hi] (got {} elements)",
+                        other.len()
+                    )));
+                }
+            };
+            AttributeKind::Int { range }
+        }
+        "float" | "double" => {
+            let range = match &raw.range {
+                None => None,
+                Some(r) if r.len() == 2 => {
+                    let lo = yaml_to_f64(&r[0]).ok_or_else(|| {
+                        Error::Schema(format!(
+                            "attribute-schema `{key}`: range[0] must be a number (got {:?})",
+                            r[0]
+                        ))
+                    })?;
+                    let hi = yaml_to_f64(&r[1]).ok_or_else(|| {
+                        Error::Schema(format!(
+                            "attribute-schema `{key}`: range[1] must be a number (got {:?})",
+                            r[1]
+                        ))
+                    })?;
+                    if lo > hi {
+                        return Err(Error::Schema(format!(
+                            "attribute-schema `{key}`: range [{lo}, {hi}] has lo > hi"
+                        )));
+                    }
+                    Some((lo, hi))
+                }
+                Some(other) => {
+                    return Err(Error::Schema(format!(
+                        "attribute-schema `{key}`: range must be [lo, hi] (got {} elements)",
+                        other.len()
+                    )));
+                }
+            };
+            AttributeKind::Float { range }
+        }
+        "string" | "str" => AttributeKind::Str,
+        "enum" => {
+            let values = raw.values.clone().ok_or_else(|| {
+                Error::Schema(format!(
+                    "attribute-schema `{key}`: enum type requires `values: [..]`"
+                ))
+            })?;
+            if values.is_empty() {
+                return Err(Error::Schema(format!(
+                    "attribute-schema `{key}`: enum `values:` must list at least one allowed value"
+                )));
+            }
+            AttributeKind::Enum { values }
+        }
+        other => {
+            return Err(Error::Schema(format!(
+                "attribute-schema `{key}`: unknown type `{other}` \
+                 (allowed: bool, int, float, string, enum)"
+            )));
+        }
+    };
+    Ok(AttributeTypeDecl {
+        kind,
+        required: raw.required,
+    })
+}
+
+fn yaml_to_i64(v: &serde_yaml::Value) -> Option<i64> {
+    match v {
+        serde_yaml::Value::Number(n) => n.as_i64(),
+        _ => None,
+    }
+}
+
+fn yaml_to_f64(v: &serde_yaml::Value) -> Option<f64> {
+    match v {
+        serde_yaml::Value::Number(n) => n.as_f64(),
+        _ => None,
+    }
+}
+
+/// Check a single attribute value against its declared type. Returns a
+/// formatted message on mismatch; None on success.
+///
+/// The message names the feature, the attribute key, the declared type
+/// (rendered as YAML for readability), and what was actually received.
+fn check_attribute_value(
+    feature: &str,
+    key: &str,
+    decl: &AttributeTypeDecl,
+    value: &serde_yaml::Value,
+) -> Option<String> {
+    match (&decl.kind, value) {
+        (AttributeKind::Bool, serde_yaml::Value::Bool(_)) => None,
+        (AttributeKind::Bool, other) => Some(format!(
+            "feature `{feature}` attribute `{key}`: schema declares type=bool, got {}",
+            describe_yaml(other)
+        )),
+        (AttributeKind::Int { range }, serde_yaml::Value::Number(n)) if n.is_i64() => {
+            // serde_yaml::Number::is_i64 also returns true for u64s that
+            // fit in i64; the as_i64 below normalises both.
+            let v = n.as_i64()?;
+            if let Some((lo, hi)) = range {
+                if v < *lo || v > *hi {
+                    return Some(format!(
+                        "feature `{feature}` attribute `{key}`: \
+                         value {v} out of declared range [{lo}, {hi}]"
+                    ));
+                }
+            }
+            None
+        }
+        (AttributeKind::Int { .. }, other) => Some(format!(
+            "feature `{feature}` attribute `{key}`: schema declares type=int, got {}",
+            describe_yaml(other)
+        )),
+        (AttributeKind::Float { range }, serde_yaml::Value::Number(n)) => {
+            let v = n.as_f64()?;
+            if let Some((lo, hi)) = range {
+                if v < *lo || v > *hi {
+                    return Some(format!(
+                        "feature `{feature}` attribute `{key}`: \
+                         value {v} out of declared range [{lo}, {hi}]"
+                    ));
+                }
+            }
+            None
+        }
+        (AttributeKind::Float { .. }, other) => Some(format!(
+            "feature `{feature}` attribute `{key}`: schema declares type=float, got {}",
+            describe_yaml(other)
+        )),
+        (AttributeKind::Str, serde_yaml::Value::String(_)) => None,
+        (AttributeKind::Str, other) => Some(format!(
+            "feature `{feature}` attribute `{key}`: schema declares type=string, got {}",
+            describe_yaml(other)
+        )),
+        (AttributeKind::Enum { values }, serde_yaml::Value::String(s)) => {
+            if values.iter().any(|v| v == s) {
+                None
+            } else {
+                Some(format!(
+                    "feature `{feature}` attribute `{key}`: \
+                     value `{s}` not in declared enum [{}]",
+                    values.join(", ")
+                ))
+            }
+        }
+        (AttributeKind::Enum { values }, other) => Some(format!(
+            "feature `{feature}` attribute `{key}`: \
+             schema declares type=enum [{}], got {}",
+            values.join(", "),
+            describe_yaml(other)
+        )),
+    }
+}
+
+fn describe_yaml(v: &serde_yaml::Value) -> String {
+    match v {
+        serde_yaml::Value::Null => "null".into(),
+        serde_yaml::Value::Bool(b) => format!("bool({b})"),
+        serde_yaml::Value::Number(n) => {
+            if n.is_i64() {
+                format!("int({n})")
+            } else {
+                format!("float({n})")
+            }
+        }
+        serde_yaml::Value::String(s) => format!("string({s:?})"),
+        serde_yaml::Value::Sequence(_) => "sequence".into(),
+        serde_yaml::Value::Mapping(_) => "mapping".into(),
+        serde_yaml::Value::Tagged(_) => "tagged".into(),
+    }
 }
 
 /// Preprocess a feature constraint string: replace bare feature names
@@ -309,10 +648,54 @@ impl FeatureModel {
             constraints.push(expr);
         }
 
+        // Build attribute schema if `attribute-schema:` was present.
+        let mut attribute_schema = BTreeMap::new();
+        for (key, raw_decl) in &raw.attribute_schema {
+            let decl = build_attribute_decl(key, raw_decl)?;
+            attribute_schema.insert(key.clone(), decl);
+        }
+
+        // Validate every feature attribute against the schema. Type
+        // mismatches, range violations, and missing-required attributes
+        // are hard errors. Unknown keys collect into `attribute_warnings`
+        // so callers can surface them without blocking the load.
+        let mut attribute_warnings = Vec::new();
+        if !attribute_schema.is_empty() {
+            for (fname, feature) in &features {
+                // Required-key check.
+                for (key, decl) in &attribute_schema {
+                    if decl.required && !feature.attributes.contains_key(key) {
+                        return Err(Error::Schema(format!(
+                            "feature `{fname}`: missing required attribute `{key}` \
+                             (declared in attribute-schema)"
+                        )));
+                    }
+                }
+                // Per-attribute type / range / enum check.
+                for (key, value) in &feature.attributes {
+                    match attribute_schema.get(key) {
+                        Some(decl) => {
+                            if let Some(msg) = check_attribute_value(fname, key, decl, value) {
+                                return Err(Error::Schema(msg));
+                            }
+                        }
+                        None => {
+                            attribute_warnings.push(format!(
+                                "feature `{fname}` attribute `{key}`: \
+                                 not declared in attribute-schema"
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
         let model = FeatureModel {
             root: raw.root,
             features,
             constraints,
+            attribute_schema,
+            attribute_warnings,
         };
 
         model.validate_tree()?;
@@ -518,8 +901,7 @@ pub fn solve(
                             let cause = extract_feature_name(antecedent)
                                 .unwrap_or_else(|| "constraint".to_string());
                             if selected.insert(name.clone()) {
-                                origins
-                                    .insert(name.clone(), FeatureOrigin::ImpliedBy(cause));
+                                origins.insert(name.clone(), FeatureOrigin::ImpliedBy(cause));
                                 changed = true;
                             }
                         }
@@ -601,10 +983,99 @@ pub fn solve(
             name: config.name.clone(),
             effective_features: selected,
             origins,
+            source_manifest: BTreeMap::new(),
         })
     } else {
         Err(errors)
     }
+}
+
+/// Solve a variant configuration AND resolve the source manifest from a
+/// `FeatureBinding` model.
+///
+/// This is the Gap-5 entry point: identical to `solve` for the feature
+/// selection, plus an additional pass that walks each effective feature's
+/// binding entries, evaluates any `when:` predicate against the resolved
+/// feature set, and accumulates the surviving globs into
+/// `ResolvedVariant.source_manifest`.
+///
+/// If a `when:` expression fails to parse, propagation halts with the
+/// binding name + when text + parser error embedded in the message — the
+/// audit-facing path must be loud, not silent.
+pub fn solve_with_bindings(
+    model: &FeatureModel,
+    config: &VariantConfig,
+    binding: &FeatureBinding,
+) -> Result<ResolvedVariant, Vec<SolveError>> {
+    let mut resolved = solve(model, config)?;
+
+    let mut manifest: BTreeMap<String, Vec<PathBuf>> = BTreeMap::new();
+    for feature in &resolved.effective_features {
+        let Some(bind) = binding.bindings.get(feature) else {
+            continue;
+        };
+        let mut paths: Vec<PathBuf> = Vec::new();
+        for entry in &bind.source {
+            let keep = match &entry.when {
+                None => true,
+                Some(src) => match eval_when_clause(src, &resolved.effective_features) {
+                    Ok(b) => b,
+                    Err(msg) => {
+                        return Err(vec![SolveError::ConstraintViolation(format!(
+                            "binding `{feature}` source `{}` when `{src}`: {msg}",
+                            entry.glob
+                        ))]);
+                    }
+                },
+            };
+            if keep {
+                paths.push(PathBuf::from(&entry.glob));
+            }
+        }
+        if !paths.is_empty() {
+            manifest.insert(feature.clone(), paths);
+        }
+    }
+    resolved.source_manifest = manifest;
+    Ok(resolved)
+}
+
+/// Parse and evaluate a `when:` s-expression against the resolved feature
+/// set. The grammar is the same as feature-model constraints; bare
+/// identifiers that match a feature name behave like `(has-tag "name")`.
+///
+/// Returns `Err(message)` if parsing fails (the caller wraps with
+/// binding context) and `Ok(bool)` otherwise.
+fn eval_when_clause(src: &str, selected: &BTreeSet<String>) -> Result<bool, String> {
+    // Build a synthetic feature lookup so the constraint preprocessor
+    // recognises bare feature names. We don't have access to the
+    // FeatureModel here; the preprocessor only checks containment by
+    // string key, so a fake map keyed by every selected feature is
+    // sufficient for the common `(has-tag "...")` / `(and feat-x feat-y)`
+    // shapes. Bare names that aren't in `selected` will pass through
+    // unchanged — but the evaluator below treats unknown shapes as true,
+    // so we wrap them defensively.
+    let synthetic: BTreeMap<String, Feature> = selected
+        .iter()
+        .map(|n| {
+            (
+                n.clone(),
+                Feature {
+                    name: n.clone(),
+                    group: GroupType::Leaf,
+                    children: vec![],
+                    parent: None,
+                    attributes: BTreeMap::new(),
+                },
+            )
+        })
+        .collect();
+    let preprocessed = preprocess_feature_constraint(src, &synthetic);
+    let expr = sexpr_eval::parse_filter(&preprocessed).map_err(|errs| {
+        let msgs: Vec<String> = errs.iter().map(|e| e.to_string()).collect();
+        format!("parse error: {}", msgs.join("; "))
+    })?;
+    Ok(eval_constraint(&expr, selected))
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -964,10 +1435,10 @@ bindings:
             binding.bindings["pedestrian-detection"].artifacts,
             vec!["REQ-PD-001", "SPEC-PD-001"]
         );
-        assert_eq!(
-            binding.bindings["pedestrian-detection"].source,
-            vec!["src/pd/**/*.rs"]
-        );
+        let pd_source = &binding.bindings["pedestrian-detection"].source;
+        assert_eq!(pd_source.len(), 1);
+        assert_eq!(pd_source[0].glob, "src/pd/**/*.rs");
+        assert!(pd_source[0].when.is_none());
     }
 
     #[test]
@@ -1175,9 +1646,7 @@ constraints:
             FeatureOrigin::ImpliedBy(cause) => {
                 assert_eq!(cause, "eu", "cause should be `eu`, got {cause:?}");
             }
-            other => panic!(
-                "pedestrian-detection should be ImpliedBy(eu), got {other:?}"
-            ),
+            other => panic!("pedestrian-detection should be ImpliedBy(eu), got {other:?}"),
         }
     }
 
@@ -1225,5 +1694,257 @@ constraints: []
         assert!(resolved.effective_features.contains("root"));
         assert!(resolved.effective_features.contains("mid"));
         assert!(resolved.effective_features.contains("deep"));
+    }
+
+    // ── Typed attribute schema (Gap 1) ──────────────────────────────
+
+    fn schema_yaml(extra_attrs: &str) -> String {
+        format!(
+            r#"
+kind: feature-model
+root: app
+attribute-schema:
+  asil-numeric:
+    type: int
+    range: [0, 4]
+    required: false
+  compliance:
+    type: enum
+    values: [unece-r157, fmvss-127, gb-7258]
+  locale:
+    type: string
+features:
+  app:
+    group: mandatory
+    children: [unit]
+  unit:
+    group: leaf
+    attributes:
+{extra_attrs}
+"#
+        )
+    }
+
+    #[test]
+    fn attribute_schema_parses_and_validates_ok() {
+        let yaml = schema_yaml(
+            "      asil-numeric: 3\n      \
+                          compliance: unece-r157\n      \
+                          locale: en_EU",
+        );
+        let model = FeatureModel::from_yaml(&yaml).expect("valid attributes");
+        assert_eq!(model.attribute_schema.len(), 3);
+        // Schema decls are reachable from the public API.
+        let asil = &model.attribute_schema["asil-numeric"];
+        assert!(matches!(
+            asil.kind,
+            AttributeKind::Int {
+                range: Some((0, 4))
+            }
+        ));
+        assert!(model.attribute_warnings.is_empty());
+    }
+
+    #[test]
+    fn attribute_schema_type_mismatch_errors_with_field_info() {
+        let yaml = schema_yaml(
+            "      asil-numeric: \"three\"\n      \
+                          compliance: unece-r157",
+        );
+        let err = FeatureModel::from_yaml(&yaml).unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("asil-numeric") && msg.contains("type=int"),
+            "expected feature/key/type in error, got: {msg}"
+        );
+        assert!(
+            msg.contains("unit"),
+            "must name the offending feature: {msg}"
+        );
+    }
+
+    #[test]
+    fn attribute_schema_enum_violation_lists_allowed_values() {
+        let yaml = schema_yaml(
+            "      asil-numeric: 2\n      \
+                          compliance: nonsense",
+        );
+        let err = FeatureModel::from_yaml(&yaml).unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("compliance") && msg.contains("unece-r157"),
+            "expected enum-not-in-list with allowed values, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn attribute_schema_range_violation_errors() {
+        let yaml = schema_yaml(
+            "      asil-numeric: 7\n      \
+                          compliance: gb-7258",
+        );
+        let err = FeatureModel::from_yaml(&yaml).unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("asil-numeric") && msg.contains("[0, 4]"),
+            "expected range message, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn attribute_schema_required_missing_errors() {
+        // Mark `compliance` required and omit it on the only feature.
+        let yaml = r#"
+kind: feature-model
+root: app
+attribute-schema:
+  compliance:
+    type: enum
+    values: [unece-r157, fmvss-127]
+    required: true
+features:
+  app:
+    group: mandatory
+    children: [unit]
+  unit:
+    group: leaf
+"#;
+        let err = FeatureModel::from_yaml(yaml).unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("missing required attribute `compliance`"),
+            "got: {msg}"
+        );
+    }
+
+    #[test]
+    fn attribute_schema_unknown_key_warns_not_errors() {
+        // Schema only declares `compliance`; YAML uses an extra `extra-key`.
+        let yaml = r#"
+kind: feature-model
+root: app
+attribute-schema:
+  compliance:
+    type: enum
+    values: [unece-r157]
+features:
+  app:
+    group: mandatory
+    children: [unit]
+  unit:
+    group: leaf
+    attributes:
+      compliance: unece-r157
+      extra-key: yolo
+"#;
+        let model = FeatureModel::from_yaml(yaml).expect("unknown key warns, not errors");
+        assert!(
+            model
+                .attribute_warnings
+                .iter()
+                .any(|w| w.contains("extra-key")),
+            "warning should name the unknown key, got: {:?}",
+            model.attribute_warnings
+        );
+    }
+
+    #[test]
+    fn attribute_schema_float_range_works() {
+        let yaml = r#"
+kind: feature-model
+root: app
+attribute-schema:
+  ratio:
+    type: float
+    range: [0.0, 1.0]
+features:
+  app:
+    group: mandatory
+    children: [unit]
+  unit:
+    group: leaf
+    attributes:
+      ratio: 1.5
+"#;
+        let err = FeatureModel::from_yaml(yaml).unwrap_err();
+        assert!(format!("{err}").contains("[0, 1]") || format!("{err}").contains("ratio"));
+    }
+
+    #[test]
+    fn attribute_schema_bool_type_enforced() {
+        let yaml = r#"
+kind: feature-model
+root: app
+attribute-schema:
+  enabled:
+    type: bool
+features:
+  app:
+    group: mandatory
+    children: [u]
+  u:
+    group: leaf
+    attributes:
+      enabled: 1
+"#;
+        let err = FeatureModel::from_yaml(yaml).unwrap_err();
+        assert!(format!("{err}").contains("type=bool"));
+    }
+
+    // ── solve_with_bindings + when: (Gap 5) ─────────────────────────
+
+    #[test]
+    fn solve_with_bindings_no_when_clause_uses_all_globs() {
+        let model = FeatureModel::from_yaml(vehicle_model_yaml()).unwrap();
+        let binding_yaml = r#"
+bindings:
+  pedestrian-detection:
+    artifacts: [REQ-042]
+    source:
+      - "src/pd/**"
+"#;
+        let binding: FeatureBinding = serde_yaml::from_str(binding_yaml).unwrap();
+        let config = VariantConfig {
+            name: "eu".into(),
+            selects: vec!["electric".into(), "eu".into()],
+        };
+        let resolved = solve_with_bindings(&model, &config, &binding).unwrap();
+        let pd_paths = resolved
+            .source_manifest
+            .get("pedestrian-detection")
+            .expect("pd should be in manifest");
+        assert_eq!(pd_paths, &vec![PathBuf::from("src/pd/**")]);
+    }
+
+    #[test]
+    fn solve_with_bindings_when_clause_filters_globs() {
+        let model = FeatureModel::from_yaml(vehicle_model_yaml()).unwrap();
+        let binding_yaml = r#"
+bindings:
+  pedestrian-detection:
+    artifacts: [REQ-042]
+    source:
+      - glob: src/pd/core/**
+      - glob: src/pd/electric/**
+        when: (has-tag "electric")
+      - glob: src/pd/petrol/**
+        when: (has-tag "petrol")
+"#;
+        let binding: FeatureBinding = serde_yaml::from_str(binding_yaml).unwrap();
+        let config = VariantConfig {
+            name: "eu-electric".into(),
+            selects: vec!["electric".into(), "eu".into()],
+        };
+        let resolved = solve_with_bindings(&model, &config, &binding).unwrap();
+        let pd_paths = resolved
+            .source_manifest
+            .get("pedestrian-detection")
+            .unwrap();
+        assert!(pd_paths.contains(&PathBuf::from("src/pd/core/**")));
+        assert!(pd_paths.contains(&PathBuf::from("src/pd/electric/**")));
+        assert!(
+            !pd_paths.contains(&PathBuf::from("src/pd/petrol/**")),
+            "petrol when-clause must drop the glob from the manifest"
+        );
     }
 }

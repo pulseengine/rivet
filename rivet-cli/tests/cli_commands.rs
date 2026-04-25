@@ -1408,8 +1408,7 @@ fn validate_fail_on_error_ignores_warnings() {
 
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
-    let parsed: serde_json::Value =
-        serde_json::from_str(&stdout).expect("validate JSON");
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("validate JSON");
 
     // Sanity: 0 errors, at least 1 warning.
     assert_eq!(
@@ -1418,11 +1417,7 @@ fn validate_fail_on_error_ignores_warnings() {
         "expected 0 errors, got:\n{stdout}"
     );
     assert!(
-        parsed
-            .get("warnings")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0)
-            >= 1,
+        parsed.get("warnings").and_then(|v| v.as_u64()).unwrap_or(0) >= 1,
         "expected >=1 warning, got:\n{stdout}"
     );
 
@@ -1480,8 +1475,7 @@ fn coverage_json_echoes_threshold() {
         .output()
         .expect("coverage");
     assert!(output.status.success());
-    let parsed: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("coverage JSON");
+    let parsed: serde_json::Value = serde_json::from_slice(&output.stdout).expect("coverage JSON");
     let threshold = parsed
         .get("threshold")
         .expect("threshold block present when --fail-under set");
@@ -1624,8 +1618,7 @@ fn stats_json_counts_match_validate() {
         .output()
         .expect("stats");
     assert!(stats.status.success());
-    let stats_json: serde_json::Value =
-        serde_json::from_slice(&stats.stdout).expect("stats JSON");
+    let stats_json: serde_json::Value = serde_json::from_slice(&stats.stdout).expect("stats JSON");
 
     let validate = Command::new(rivet_bin())
         .args(["--project", root_str, "validate", "--format", "json"])
@@ -1667,8 +1660,7 @@ fn schema_list_json_produces_valid_output() {
         "schema list-json must succeed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let parsed: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("valid JSON");
+    let parsed: serde_json::Value = serde_json::from_slice(&output.stdout).expect("valid JSON");
     assert_eq!(
         parsed.get("command").and_then(|v| v.as_str()),
         Some("schema-list-json"),
@@ -1707,13 +1699,7 @@ fn schema_get_json_returns_path_and_content() {
     for name in ["validate", "stats", "coverage", "list"] {
         // Path mode
         let out = Command::new(rivet_bin())
-            .args([
-                "--project",
-                root_str,
-                "schema",
-                "get-json",
-                name,
-            ])
+            .args(["--project", root_str, "schema", "get-json", name])
             .output()
             .expect("get-json path");
         assert!(
@@ -1797,10 +1783,7 @@ fn shipped_json_schemas_are_valid_json() {
         // title, type.
         assert!(parsed.is_object(), "{name} must be a JSON object");
         for key in ["$schema", "title", "type"] {
-            assert!(
-                parsed.get(key).is_some(),
-                "{name} must declare '{key}'"
-            );
+            assert!(parsed.get(key).is_some(), "{name} must declare '{key}'");
         }
     }
 }
@@ -1821,8 +1804,7 @@ fn validate_json_output_matches_shipped_schema() {
         .output()
         .expect("validate");
 
-    let parsed: serde_json::Value =
-        serde_json::from_slice(&out.stdout).expect("validate JSON");
+    let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).expect("validate JSON");
 
     // Light-weight schema conformance (no external crate): check the
     // required fields listed in validate-output.schema.json are all
@@ -1831,10 +1813,9 @@ fn validate_json_output_matches_shipped_schema() {
         .join("schemas")
         .join("json")
         .join("validate-output.schema.json");
-    let schema: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(&schema_path).expect("read schema"),
-    )
-    .expect("schema JSON");
+    let schema: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&schema_path).expect("read schema"))
+            .expect("schema JSON");
     let required = schema
         .get("required")
         .and_then(|v| v.as_array())
@@ -1867,17 +1848,15 @@ fn stats_json_output_matches_shipped_schema() {
         .output()
         .expect("stats");
 
-    let parsed: serde_json::Value =
-        serde_json::from_slice(&out.stdout).expect("stats JSON");
+    let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).expect("stats JSON");
 
     let schema_path = project_root()
         .join("schemas")
         .join("json")
         .join("stats-output.schema.json");
-    let schema: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(&schema_path).expect("read schema"),
-    )
-    .expect("schema JSON");
+    let schema: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&schema_path).expect("read schema"))
+            .expect("schema JSON");
     let required = schema
         .get("required")
         .and_then(|v| v.as_array())
@@ -1909,10 +1888,7 @@ fn validate_fail_on_invalid_value_rejected() {
         .output()
         .expect("validate");
 
-    assert!(
-        !out.status.success(),
-        "--fail-on bogus must fail"
-    );
+    assert!(!out.status.success(), "--fail-on bogus must fail");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         stderr.contains("bogus") || stderr.contains("fail-on"),
@@ -1930,7 +1906,13 @@ fn query_ids_format_matches_list_filter() {
 
     // `rivet list --type requirement` — one line per matching artifact (id + title).
     let list_out = Command::new(&bin)
-        .args(["--project", &root.display().to_string(), "list", "--type", "requirement"])
+        .args([
+            "--project",
+            &root.display().to_string(),
+            "list",
+            "--type",
+            "requirement",
+        ])
         .output()
         .expect("run rivet list");
     assert!(list_out.status.success(), "rivet list must succeed");
@@ -2002,8 +1984,7 @@ fn query_json_format_envelope() {
         String::from_utf8_lossy(&out.stderr)
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
-    let val: serde_json::Value =
-        serde_json::from_str(&stdout).expect("output must be valid JSON");
+    let val: serde_json::Value = serde_json::from_str(&stdout).expect("output must be valid JSON");
 
     assert_eq!(
         val["filter"].as_str(),
@@ -2013,7 +1994,9 @@ fn query_json_format_envelope() {
     assert!(val["count"].is_number(), "count must be a number");
     assert!(val["total"].is_number(), "total must be a number");
     assert!(val["truncated"].is_boolean(), "truncated must be a bool");
-    let arts = val["artifacts"].as_array().expect("artifacts must be array");
+    let arts = val["artifacts"]
+        .as_array()
+        .expect("artifacts must be array");
     assert!(arts.len() <= 5, "respects --limit");
     for a in arts {
         assert!(a["id"].is_string());
@@ -2045,4 +2028,369 @@ fn query_invalid_filter_reports_parse_error() {
         stderr.contains("invalid filter") || stderr.contains("filter"),
         "stderr should mention the filter error; got: {stderr}"
     );
+}
+
+// ── rivet externals discover ────────────────────────────────────────────
+// rivet: verifies REQ-027
+
+/// `rivet externals discover` reads MODULE.bazel and reports bazel_dep entries,
+/// enriching them with git_override URLs and commits.
+#[test]
+fn externals_discover_bazel_text() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tmp.path().join("MODULE.bazel"),
+        r#"module(name = "test_project", version = "1.0.0")
+bazel_dep(name = "rules_go", version = "0.41.0")
+bazel_dep(name = "rules_rust", version = "0.30.0")
+git_override(module_name = "rules_rust", remote = "https://github.com/bazelbuild/rules_rust", commit = "abc123def456")
+"#,
+    )
+    .unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "externals",
+            "discover",
+            "--path",
+            tmp.path().to_str().unwrap(),
+        ])
+        .output()
+        .expect("run rivet externals discover");
+
+    assert!(
+        out.status.success(),
+        "must exit 0; stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("Discovered 2 external(s)"), "got: {stdout}");
+    assert!(
+        stdout.contains("rules_go (bazel, version 0.41.0)"),
+        "got: {stdout}"
+    );
+    assert!(
+        stdout.contains("rules_rust (bazel, version 0.30.0)"),
+        "got: {stdout}"
+    );
+    assert!(
+        stdout.contains("git: https://github.com/bazelbuild/rules_rust"),
+        "git_override URL must be surfaced; got: {stdout}"
+    );
+    assert!(
+        stdout.contains("ref: abc123def456"),
+        "commit ref; got: {stdout}"
+    );
+}
+
+/// `rivet externals discover --format json` emits parseable JSON with the
+/// serde-derived shape of `DiscoveredExternal`.
+#[test]
+fn externals_discover_bazel_json() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tmp.path().join("MODULE.bazel"),
+        r#"module(name = "test_project", version = "1.0.0")
+bazel_dep(name = "rules_go", version = "0.41.0")
+"#,
+    )
+    .unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "externals",
+            "discover",
+            "--path",
+            tmp.path().to_str().unwrap(),
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run rivet externals discover --format json");
+
+    assert!(out.status.success(), "must exit 0");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("output must be valid JSON");
+    let arr = parsed.as_array().expect("top-level must be array");
+    assert_eq!(arr.len(), 1, "one dep");
+    assert_eq!(arr[0]["name"], "rules_go");
+    assert_eq!(arr[0]["source"], "bazel");
+    assert_eq!(arr[0]["version"], "0.41.0");
+}
+
+/// With no manifests present, the command reports zero externals (not an error).
+#[test]
+fn externals_discover_empty_project() {
+    let tmp = tempfile::tempdir().unwrap();
+    let out = Command::new(rivet_bin())
+        .args([
+            "externals",
+            "discover",
+            "--path",
+            tmp.path().to_str().unwrap(),
+        ])
+        .output()
+        .expect("run rivet externals discover");
+
+    assert!(out.status.success(), "empty project is not an error");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("No externals discovered"),
+        "should say 'No externals discovered'; got: {stdout}"
+    );
+}
+
+// ── rivet variant matrix ────────────────────────────────────────────────
+// rivet: verifies FEAT-001
+
+fn write_matrix_fixture(dir: &std::path::Path) {
+    let model = r#"
+kind: feature-model
+root: product
+features:
+  product:
+    group: mandatory
+    children: [scope]
+    attributes:
+      asil: "QM"
+      ci-runner: "ubuntu-latest"
+  scope:
+    group: alternative
+    children: [tiny, full]
+  tiny:
+    group: leaf
+  full:
+    group: leaf
+constraints: []
+"#;
+    let binding = r#"
+bindings: {}
+variants:
+  - name: tiny-ci
+    selects: [tiny]
+  - name: full-ci
+    selects: [full]
+"#;
+    std::fs::write(dir.join("model.yaml"), model).unwrap();
+    std::fs::write(dir.join("binding.yaml"), binding).unwrap();
+}
+
+/// End-to-end: the command prints a GHA strategy fragment for each
+/// variant in the binding, with fail-fast: false by default.
+#[test]
+fn variant_matrix_emits_github_actions_fragment() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_matrix_fixture(tmp.path());
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "variant",
+            "matrix",
+            "--model",
+            tmp.path().join("model.yaml").to_str().unwrap(),
+            "--binding",
+            tmp.path().join("binding.yaml").to_str().unwrap(),
+        ])
+        .output()
+        .expect("run rivet variant matrix");
+
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("strategy:"), "got: {stdout}");
+    assert!(stdout.contains("fail-fast: false"));
+    assert!(stdout.contains("- variant: tiny-ci"));
+    assert!(stdout.contains("- variant: full-ci"));
+    assert!(stdout.contains("attr_asil: \"QM\""));
+    assert!(stdout.contains("runner: ubuntu-latest"));
+    // Round-trips as YAML.
+    let _: serde_yaml::Value =
+        serde_yaml::from_str(&stdout).expect("emitted fragment is valid YAML");
+}
+
+/// `--variant NAME` restricts the matrix to a single entry.
+#[test]
+fn variant_matrix_filters_by_variant_name() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_matrix_fixture(tmp.path());
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "variant",
+            "matrix",
+            "--model",
+            tmp.path().join("model.yaml").to_str().unwrap(),
+            "--binding",
+            tmp.path().join("binding.yaml").to_str().unwrap(),
+            "--variant",
+            "full-ci",
+        ])
+        .output()
+        .expect("run rivet variant matrix --variant");
+
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("- variant: full-ci"));
+    assert!(!stdout.contains("- variant: tiny-ci"));
+    assert!(stdout.contains("Variants:     1 (filtered from 2)"));
+}
+
+/// An empty binding exits non-zero with a guiding error.
+#[test]
+fn variant_matrix_empty_binding_errors() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tmp.path().join("model.yaml"),
+        r#"kind: feature-model
+root: p
+features:
+  p:
+    group: mandatory
+constraints: []
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        tmp.path().join("binding.yaml"),
+        "bindings: {}\nvariants: []\n",
+    )
+    .unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "variant",
+            "matrix",
+            "--model",
+            tmp.path().join("model.yaml").to_str().unwrap(),
+            "--binding",
+            tmp.path().join("binding.yaml").to_str().unwrap(),
+        ])
+        .output()
+        .expect("run rivet variant matrix");
+
+    assert!(!out.status.success(), "empty matrix must error");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("no variants to emit"),
+        "stderr should guide user; got: {stderr}"
+    );
+}
+
+/// Opt-in actionlint test. Runs only when (a) `RIVET_ACTIONLINT=1` is
+/// set (set by CI; off locally by default), and (b) the `actionlint`
+/// binary is on PATH. Otherwise prints a skip message and passes.
+///
+/// This is the strongest possible mechanical check that the emitted
+/// workflow is GHA-valid: actionlint statically validates the syntax
+/// against the GHA schema. Failure here means we emitted malformed
+/// workflow YAML that would fail at dispatch time.
+// rivet: verifies FEAT-130
+#[test]
+fn variant_matrix_actionlint_validates_emitted_workflow() {
+    if std::env::var("RIVET_ACTIONLINT").as_deref() != Ok("1") {
+        eprintln!("[skipped] set RIVET_ACTIONLINT=1 to enable");
+        return;
+    }
+    if Command::new("actionlint")
+        .arg("--version")
+        .output()
+        .is_err()
+    {
+        eprintln!("[skipped] actionlint not on PATH");
+        return;
+    }
+
+    let tmp = tempfile::tempdir().unwrap();
+    write_matrix_fixture(tmp.path());
+
+    // Emit a job-wrapped fragment, which actionlint can validate as a
+    // standalone (almost-)workflow.
+    let out = Command::new(rivet_bin())
+        .args([
+            "variant",
+            "matrix",
+            "--model",
+            tmp.path().join("model.yaml").to_str().unwrap(),
+            "--binding",
+            tmp.path().join("binding.yaml").to_str().unwrap(),
+            "--wrap",
+            "job",
+        ])
+        .output()
+        .expect("run rivet variant matrix --wrap job");
+    assert!(out.status.success());
+    let fragment = String::from_utf8_lossy(&out.stdout);
+
+    // Wrap the job fragment in a complete workflow shell so actionlint
+    // sees a parseable file. The `on: push` is the minimum trigger.
+    let workflow = format!("name: ci\non:\n  push:\n{fragment}");
+    let wf_path = tmp.path().join("test.yml");
+    std::fs::write(&wf_path, workflow).unwrap();
+
+    let lint = Command::new("actionlint")
+        .arg(&wf_path)
+        .output()
+        .expect("run actionlint");
+
+    if !lint.status.success() {
+        let stdout = String::from_utf8_lossy(&lint.stdout);
+        let stderr = String::from_utf8_lossy(&lint.stderr);
+        let body = std::fs::read_to_string(&wf_path).unwrap_or_default();
+        panic!(
+            "actionlint failed:\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}\n\
+             --- workflow ---\n{body}"
+        );
+    }
+}
+
+/// `--variants-dir` loads standalone variant YAMLs alongside binding-inline.
+#[test]
+fn variant_matrix_loads_variants_dir() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_matrix_fixture(tmp.path());
+    // Wipe inline variants; put them as files instead.
+    std::fs::write(
+        tmp.path().join("binding.yaml"),
+        "bindings: {}\nvariants: []\n",
+    )
+    .unwrap();
+    let vdir = tmp.path().join("variants");
+    std::fs::create_dir(&vdir).unwrap();
+    std::fs::write(
+        vdir.join("tiny-ci.yaml"),
+        "name: tiny-ci\nselects: [tiny]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        vdir.join("full-ci.yaml"),
+        "name: full-ci\nselects: [full]\n",
+    )
+    .unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "variant",
+            "matrix",
+            "--model",
+            tmp.path().join("model.yaml").to_str().unwrap(),
+            "--binding",
+            tmp.path().join("binding.yaml").to_str().unwrap(),
+            "--variants-dir",
+            vdir.to_str().unwrap(),
+        ])
+        .output()
+        .expect("run rivet variant matrix --variants-dir");
+
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("- variant: tiny-ci"));
+    assert!(stdout.contains("- variant: full-ci"));
 }

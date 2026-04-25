@@ -44,7 +44,7 @@
 )]
 
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{Context, Result};
@@ -62,11 +62,16 @@ use rivet_core::schema::Severity;
 use rivet_core::store::Store;
 use rivet_core::validate;
 
+mod check;
+mod close_gaps;
 mod docs;
 mod mcp;
+mod pipelines_cmd;
 mod render;
+mod runs_cmd;
 mod schema_cmd;
 mod serve;
+mod templates_cmd;
 
 /// Validate that a `--format` value is one of the accepted options.
 fn validate_format(format: &str, valid: &[&str]) -> Result<()> {
@@ -249,6 +254,15 @@ enum Command {
         /// Install git hooks (commit-msg, pre-commit) that call rivet for validation
         #[arg(long)]
         hooks: bool,
+
+        /// With --agents: also scaffold the `.rivet/` workspace tree —
+        /// `.rivet-version` pin file, `.rivet/context/` placeholders
+        /// (review-roles, risk-tolerance, domain-glossary), and
+        /// `.rivet/agents/rivet-rule.md`. Project-owned files are never
+        /// overwritten once created; rerun with `rivet upgrade --resync-project`
+        /// only if you really want to regenerate them.
+        #[arg(long, requires = "agents")]
+        bootstrap: bool,
     },
 
     /// Validate artifacts against schemas
@@ -556,6 +570,17 @@ enum Command {
         update: bool,
     },
 
+    /// Build-system-aware external project discovery (REQ-027).
+    ///
+    /// Reads MODULE.bazel and flake.lock from the project root and reports
+    /// the cross-repo dependencies declared there, without modifying
+    /// rivet.yaml. Use the output to populate the [externals] section
+    /// manually, or pipe JSON into other tools.
+    Externals {
+        #[command(subcommand)]
+        action: ExternalsAction,
+    },
+
     /// Analyze change impact between current state and a baseline
     Impact {
         /// Git ref to compare against (branch, tag, or commit)
@@ -594,6 +619,54 @@ enum Command {
     Variant {
         #[command(subcommand)]
         action: VariantAction,
+    },
+
+    /// Audit trail over `.rivet/runs/`
+    Runs {
+        #[command(subcommand)]
+        action: RunsAction,
+    },
+
+    /// Inspect and validate `agent-pipelines:` blocks from active schemas
+    Pipelines {
+        #[command(subcommand)]
+        action: PipelinesAction,
+    },
+
+    /// Inspect, render, copy, and diff per-pipeline-kind prompt templates.
+    /// See docs/templates.md (TODO) for the kind catalogue.
+    Templates {
+        #[command(subcommand)]
+        action: TemplatesAction,
+    },
+
+    /// Oracle-gated gap-closure loop. MVP: structural pipeline + dev schema.
+    CloseGaps {
+        /// Variant to scope against (requires bindings).
+        #[arg(long)]
+        variant: Option<String>,
+        /// Keep only the top-N gaps after ranking; 0 = unlimited.
+        #[arg(long, default_value = "10")]
+        top: usize,
+        /// Output format: "json" (stable contract for tool adapters) or "text".
+        #[arg(long, default_value = "json")]
+        format: String,
+        /// Dry-run: never writes a commit or PR. Run artefacts still land in `.rivet/runs/`.
+        #[arg(long, default_value = "true")]
+        dry_run: bool,
+    },
+
+    /// Oracle subcommands: reusable mechanical checks that agent pipelines
+    /// declare in a schema's `agent-pipelines:` block.
+    ///
+    /// Each oracle either passes (exit 0) or fires (exit 1). On
+    /// `--format json` the result is emitted as canonical JSON on stdout so
+    /// downstream oracles can consume it without re-parsing text.
+    ///
+    /// See docs/oracles.md for the catalog and JSON schemas.
+    Check {
+        #[command(subcommand)]
+        action: CheckAction,
     },
 
     /// Import artifacts using a custom WASM adapter component
@@ -913,6 +986,124 @@ enum SnapshotAction {
     List,
 }
 
+#[derive(Debug, Subcommand)]
+enum ExternalsAction {
+    /// Discover externals from build-system manifests (MODULE.bazel, flake.lock).
+    Discover {
+        /// Project root directory (default: current directory).
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+        /// Output format: "text" (default) or "json".
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum RunsAction {
+    /// List runs under .rivet/runs/, newest first.
+    List {
+        /// Keep only the first N entries; 0 = unlimited.
+        #[arg(long, default_value = "20")]
+        limit: usize,
+        /// Output format: text (default) or json.
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+    /// Show one run's detail by id.
+    Show {
+        run_id: String,
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+    /// Query runs by filters (pipeline/schema/variant/status/invoker).
+    Query {
+        #[arg(long)]
+        pipeline: Option<String>,
+        #[arg(long)]
+        schema: Option<String>,
+        #[arg(long)]
+        variant: Option<String>,
+        #[arg(long)]
+        status: Option<String>,
+        /// Substring match on invocation.invoker.
+        #[arg(long)]
+        invoker_contains: Option<String>,
+        #[arg(short, long, default_value = "json")]
+        format: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum PipelinesAction {
+    /// List active pipelines across every loaded schema.
+    List {
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+    /// Show one schema's resolved agent-pipelines block.
+    Show {
+        schema: String,
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+    /// Advisory checker over `.rivet/` config. Reports unresolved
+    /// placeholders, unknown oracle/template references, missing
+    /// reviewer groups. Default: prints findings and exits 0 — the
+    /// report is informational, rivet does not refuse its own
+    /// subcommand. Use `--strict` for CI-gating (exit 1 on errors).
+    Validate {
+        #[arg(short, long, default_value = "text")]
+        format: String,
+        /// Exit 1 on any error instead of the advisory default.
+        #[arg(long)]
+        strict: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum TemplatesAction {
+    /// List every template kind (built-in + project override) and which
+    /// files exist per kind.
+    List {
+        /// Output format: `text` (default) or `json`.
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+    /// Print one template's body. `--format raw` (default) emits as-is;
+    /// `--format rendered` substitutes `--var key=value` placeholders.
+    Show {
+        /// `<kind>/<file>.md`, e.g. `structural/discover.md`.
+        target: String,
+        /// `raw` (default) or `rendered`.
+        #[arg(short, long, default_value = "raw")]
+        format: String,
+        /// Bind a `{{key}}` placeholder. Repeatable.
+        #[arg(long = "var", value_name = "KEY=VALUE")]
+        vars: Vec<String>,
+    },
+    /// Copy a kind's embedded files into
+    /// `.rivet/templates/pipelines/<kind>/`. Records provenance in
+    /// `.rivet/.rivet-version`. Refuses to overwrite existing files.
+    CopyToProject {
+        /// Built-in kind name (`structural`, `discovery`, …).
+        kind: String,
+        /// Output format: `text` (default) or `json`.
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+    /// Diff a project override against the current embedded version of
+    /// the same template — shows drift after rivet ships a template
+    /// update. Skips with a notice if the file hasn't been copied.
+    Diff {
+        /// `<kind>/<file>.md`, e.g. `structural/discover.md`.
+        target: String,
+        /// Output format: `text` (default, prints unified diff) or `json`.
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+}
+
 #[derive(Subcommand)]
 enum VariantAction {
     /// Scaffold a starter feature-model.yaml + bindings/<name>.yaml with
@@ -1068,6 +1259,128 @@ enum VariantAction {
         #[arg(short, long, default_value = "text")]
         format: String,
     },
+    /// Print the per-feature source manifest for a resolved variant.
+    ///
+    /// Resolves the variant against the feature model, then walks the
+    /// binding model and evaluates every `when:` predicate against the
+    /// effective feature set. The output enumerates exactly which source
+    /// globs participated in this variant — the audit-facing answer to
+    /// "what files went into this build?" (Gap 5,
+    /// docs/pure-variants-comparison.md).
+    Manifest {
+        /// Path to feature model YAML file
+        #[arg(long)]
+        model: PathBuf,
+
+        /// Path to variant configuration YAML file
+        #[arg(long)]
+        variant: PathBuf,
+
+        /// Path to binding model YAML file (artifacts/feature bindings).
+        #[arg(long)]
+        binding: PathBuf,
+
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
+    /// Emit a CI matrix driven by the declared variants in a binding file.
+    ///
+    /// Iterates every VariantConfig in the binding's `variants:` list,
+    /// solves each against the feature model, and renders one matrix entry
+    /// per variant. Format `github-actions` produces a `strategy.matrix:`
+    /// fragment ready to paste into a workflow.
+    Matrix {
+        /// Path to feature model YAML.
+        #[arg(long)]
+        model: PathBuf,
+        /// Path to binding YAML containing `variants:` declarations.
+        #[arg(long)]
+        binding: PathBuf,
+        /// Output format: "github-actions" (default), "gitlab", or "azure".
+        #[arg(short, long, default_value = "github-actions")]
+        format: String,
+        /// Restrict to variants matching one of these exact names. Repeatable.
+        #[arg(long = "variant", value_name = "NAME")]
+        variants: Vec<String>,
+        /// Only include variants whose root-feature attribute matches.
+        /// Format: `key=value`. Repeatable (AND).
+        #[arg(long = "attr", value_name = "K=V")]
+        attrs: Vec<String>,
+        /// Wrap the emitted fragment. `fragment` (default) prints just the
+        /// `strategy:` block; `job` wraps in a minimal `jobs.build:` skeleton.
+        #[arg(long, default_value = "fragment")]
+        wrap: String,
+        /// Default runner label when a variant has no `ci-runner` attribute.
+        #[arg(long, default_value = "ubuntu-latest")]
+        default_runner: String,
+        /// Which root-feature attribute key carries the runner label.
+        #[arg(long, default_value = "ci-runner")]
+        runner_attr: String,
+        /// Fail (exit 2) if the resulting matrix would exceed this many jobs.
+        /// GitHub Actions' documented cap is 256.
+        #[arg(long, default_value = "256")]
+        max_jobs: usize,
+        /// Emit `fail-fast: true` (GHA default). Without this flag, rivet
+        /// emits `fail-fast: false` so one variant failure does not cancel
+        /// peers — the safety-critical default.
+        #[arg(long)]
+        fail_fast: bool,
+        /// Load additional variants from every `*.yaml` file in this
+        /// directory. Useful for projects that store variants as
+        /// standalone files (`rivet variant check <FILE>`-compatible).
+        /// Variants declared inline in the binding file are loaded first;
+        /// name collisions error.
+        #[arg(long, value_name = "DIR")]
+        variants_dir: Option<PathBuf>,
+    },
+}
+
+/// Oracle subcommands under `rivet check`.
+///
+/// Each oracle is either passing (exit 0) or firing (exit 1). JSON output
+/// (`--format json`) is the machine contract — downstream oracles read it
+/// directly without re-parsing.
+#[derive(Subcommand)]
+enum CheckAction {
+    /// Verify every link whose type declares `inverse:` in the schema has
+    /// its inverse registered on the target.
+    Bidirectional {
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
+    /// Verify a `released` artifact carries a reviewer distinct from the
+    /// author (and optionally with a matching role).
+    ReviewSignoff {
+        /// Artifact ID (e.g. REQ-001).
+        artifact_id: String,
+
+        /// Required reviewer role, matched against `fields["reviewer-role"]`.
+        /// When omitted, only reviewer presence + author-distinctness are
+        /// checked.
+        #[arg(long)]
+        role: Option<String>,
+
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
+    /// Run validation and emit a canonical JSON gaps summary grouped by
+    /// artifact. Exits 1 when any error-severity diagnostic is present.
+    GapsJson {
+        /// Scope validation to a named baseline (cumulative).
+        #[arg(long)]
+        baseline: Option<String>,
+
+        /// Output format: "json" (default) or "text". This oracle emits
+        /// JSON by default because its primary consumer is another tool.
+        #[arg(short, long, default_value = "json")]
+        format: String,
+    },
 }
 
 fn main() -> ExitCode {
@@ -1109,10 +1422,15 @@ fn run(cli: Cli) -> Result<bool> {
         force_regen,
         yes: _yes,
         hooks,
+        bootstrap,
     } = &cli.command
     {
         if *agents {
-            return cmd_init_agents(&cli, *migrate, *force_regen);
+            cmd_init_agents(&cli, *migrate, *force_regen)?;
+            if *bootstrap {
+                return cmd_init_bootstrap(&cli);
+            }
+            return Ok(true);
         }
         if *hooks {
             return cmd_init_hooks(dir);
@@ -1290,6 +1608,9 @@ fn run(cli: Cli) -> Result<bool> {
         }
         Command::Sync { local } => cmd_sync(&cli, *local),
         Command::Lock { update } => cmd_lock(&cli, *update),
+        Command::Externals { action } => match action {
+            ExternalsAction::Discover { path, format } => cmd_externals_discover(path, format),
+        },
         Command::Baseline { action } => match action {
             BaselineAction::Verify { name, strict } => cmd_baseline_verify(&cli, name, *strict),
             BaselineAction::List => cmd_baseline_list(&cli),
@@ -1344,6 +1665,117 @@ fn run(cli: Cli) -> Result<bool> {
                 feature,
                 format,
             } => cmd_variant_explain(model, variant, feature.as_deref(), format),
+            VariantAction::Manifest {
+                model,
+                variant,
+                binding,
+                format,
+            } => cmd_variant_manifest(model, variant, binding, format),
+            VariantAction::Matrix {
+                model,
+                binding,
+                format,
+                variants,
+                attrs,
+                wrap,
+                default_runner,
+                runner_attr,
+                max_jobs,
+                fail_fast,
+                variants_dir,
+            } => cmd_variant_matrix(
+                model,
+                binding,
+                format,
+                variants,
+                attrs,
+                wrap,
+                default_runner,
+                runner_attr,
+                *max_jobs,
+                *fail_fast,
+                variants_dir.as_deref(),
+            ),
+        },
+        Command::Runs { action } => match action {
+            RunsAction::List { limit, format } => runs_cmd::cmd_list(&cli.project, *limit, format),
+            RunsAction::Show { run_id, format } => runs_cmd::cmd_show(&cli.project, run_id, format),
+            RunsAction::Query {
+                pipeline,
+                schema,
+                variant,
+                status,
+                invoker_contains,
+                format,
+            } => runs_cmd::cmd_query(
+                &cli.project,
+                pipeline.as_deref(),
+                schema.as_deref(),
+                variant.as_deref(),
+                status.as_deref(),
+                invoker_contains.as_deref(),
+                format,
+            ),
+        },
+        Command::Pipelines { action } => {
+            let schemas_dir = resolve_schemas_dir(&cli);
+            match action {
+                PipelinesAction::List { format } => {
+                    pipelines_cmd::cmd_list(&cli.project, &schemas_dir, format)
+                }
+                PipelinesAction::Show { schema, format } => {
+                    pipelines_cmd::cmd_show(&cli.project, &schemas_dir, schema, format)
+                }
+                PipelinesAction::Validate { format, strict } => {
+                    pipelines_cmd::cmd_validate(&cli.project, &schemas_dir, format, *strict)
+                }
+            }
+        }
+        Command::Templates { action } => match action {
+            TemplatesAction::List { format } => templates_cmd::cmd_list(&cli.project, format),
+            TemplatesAction::Show {
+                target,
+                format,
+                vars,
+            } => templates_cmd::cmd_show(&cli.project, target, format, vars),
+            TemplatesAction::CopyToProject { kind, format } => templates_cmd::cmd_copy_to_project(
+                &cli.project,
+                kind,
+                env!("CARGO_PKG_VERSION"),
+                format,
+            ),
+            TemplatesAction::Diff { target, format } => {
+                templates_cmd::cmd_diff(&cli.project, target, format)
+            }
+        },
+        Command::CloseGaps {
+            variant,
+            top,
+            format,
+            dry_run,
+        } => {
+            let schemas_dir = resolve_schemas_dir(&cli);
+            close_gaps::run(close_gaps::CloseGapsOptions {
+                project_root: &cli.project,
+                schemas_dir: &schemas_dir,
+                top_n: *top,
+                variant: variant.as_deref(),
+                format,
+                dry_run: *dry_run,
+                rivet_version: env!("CARGO_PKG_VERSION"),
+                invoker: "human:cli",
+            })
+        }
+        Command::Check { action } => match action {
+            CheckAction::Bidirectional { format } => cmd_check_bidirectional(&cli, format),
+            CheckAction::ReviewSignoff {
+                artifact_id,
+                role,
+                format,
+            } => cmd_check_review_signoff(&cli, artifact_id, role.as_deref(), format),
+            CheckAction::GapsJson { baseline, format } => {
+                cmd_check_gaps_json(&cli, baseline.as_deref(), format)
+            }
         },
         #[cfg(feature = "wasm")]
         Command::Import {
@@ -2704,6 +3136,280 @@ rivet stats        # Show summary statistics
 /// Hooks chain with existing hooks: if a hook file already exists, it is
 /// renamed to `<hook>.prev` and called after rivet's check succeeds.
 /// This allows coexistence with other hook managers (husky, pre-commit, lefthook).
+/// Scaffold the `.rivet/` workspace tree. Creates directory structure +
+/// pin file + project-owned placeholder files. Templates are NOT copied
+/// here — that's `rivet templates copy-to-project`'s job. This runs only
+/// when the user passes `--bootstrap` and always after `cmd_init_agents`.
+///
+/// Ownership contract: every file written here is PROJECT-OWNED once
+/// created; `rivet init --agents --bootstrap` refuses to overwrite any
+/// project-owned file that already exists. Use `rivet upgrade
+/// --resync-project` if you really want to regenerate them.
+fn cmd_init_bootstrap(cli: &Cli) -> Result<bool> {
+    use rivet_core::ownership::{WriteMode, guard_write, rivet_dir};
+    use rivet_core::rivet_version::{FileRecord, RivetVersion, ScaffoldedFrom, content_sha256};
+
+    let project_root = cli.project.clone();
+    let rivet_dir = rivet_dir(&project_root);
+
+    // 1. Top-level `.rivet/` directory + subdirs.
+    for sub in [
+        ".rivet",
+        ".rivet/pipelines",
+        ".rivet/context",
+        ".rivet/agents",
+        ".rivet/runs",
+    ] {
+        let p = project_root.join(sub);
+        if !p.exists() {
+            std::fs::create_dir_all(&p).with_context(|| format!("creating {}", p.display()))?;
+        }
+    }
+
+    // 2. Project-owned placeholder files. Each goes through the ownership
+    //    guard so re-running this command on an existing scaffold refuses
+    //    to clobber user content.
+    let mut file_records: Vec<FileRecord> = Vec::new();
+
+    // 2a. Context placeholders
+    let context_files: &[(&str, &str)] = &[
+        (".rivet/context/review-roles.yaml", REVIEW_ROLES_STARTER),
+        (".rivet/context/risk-tolerance.yaml", RISK_TOLERANCE_STARTER),
+        (".rivet/context/domain-glossary.md", DOMAIN_GLOSSARY_STARTER),
+    ];
+    for (rel, content) in context_files {
+        let abs = project_root.join(rel);
+        let exists = abs.exists();
+        match guard_write(&rivet_dir, &abs, WriteMode::Scaffold, exists) {
+            Ok(()) => {
+                std::fs::write(&abs, content)
+                    .with_context(|| format!("writing {}", abs.display()))?;
+                file_records.push(FileRecord {
+                    path: rel.to_string(),
+                    from_template: format!("builtin:{}", rel.rsplit_once('/').unwrap().1),
+                    scaffolded_sha: content_sha256(content.as_bytes()),
+                });
+                eprintln!("  scaffolded {}", rel);
+            }
+            Err(e) if format!("{e}").contains("refusing to overwrite") => {
+                eprintln!("  kept {} (already project-owned)", rel);
+            }
+            Err(e) => return Err(anyhow::anyhow!("{e}")),
+        }
+    }
+
+    // 2b. Agent-facing project rule. Pulls in what `cmd_init_agents`
+    //     already wrote into AGENTS.md so the agent has a single canonical
+    //     file to read.
+    let rule_path = project_root.join(".rivet/agents/rivet-rule.md");
+    let rule_exists = rule_path.exists();
+    match guard_write(&rivet_dir, &rule_path, WriteMode::Scaffold, rule_exists) {
+        Ok(()) => {
+            let content = rivet_rule_starter(cli);
+            std::fs::write(&rule_path, &content)
+                .with_context(|| format!("writing {}", rule_path.display()))?;
+            file_records.push(FileRecord {
+                path: ".rivet/agents/rivet-rule.md".into(),
+                from_template: "builtin:rivet-rule.md".into(),
+                scaffolded_sha: content_sha256(content.as_bytes()),
+            });
+            eprintln!("  scaffolded .rivet/agents/rivet-rule.md");
+        }
+        Err(_) => {
+            eprintln!("  kept .rivet/agents/rivet-rule.md (already project-owned)");
+        }
+    }
+
+    // 3. Pin file — .rivet/.rivet-version. Writes even if present; this
+    //    records the scaffold event.
+    let version_path = rivet_dir.join(".rivet-version");
+    let pin = RivetVersion {
+        rivet_cli: env!("CARGO_PKG_VERSION").to_string(),
+        template_version: 1,
+        scaffolded_at: iso8601_now(),
+        files: file_records,
+        scaffolded_from: ScaffoldedFrom {
+            templates_version: 1,
+            schemas: Default::default(),
+        },
+    };
+    let yaml = pin.to_yaml().map_err(|e| anyhow::anyhow!("{e}"))?;
+    std::fs::write(&version_path, yaml)
+        .with_context(|| format!("writing {}", version_path.display()))?;
+    eprintln!(
+        "  pinned .rivet/.rivet-version (rivet-cli {})",
+        pin.rivet_cli
+    );
+
+    // 4. Report next steps so the user knows what's expected.
+    println!();
+    println!("Bootstrap complete. Next steps before `rivet close-gaps` will run:");
+    println!(
+        "  1. Edit .rivet/context/review-roles.yaml — replace TODOs with actual reviewer groups"
+    );
+    println!(
+        "  2. Edit .rivet/context/risk-tolerance.yaml — set integrity-level thresholds for your project"
+    );
+    println!(
+        "  3. Optional: `rivet templates copy-to-project <kind>` to customise pipeline prompts"
+    );
+    println!("  4. Run `rivet pipelines validate` — confirms every Tier-3 placeholder is resolved");
+    println!();
+    println!("See .rivet/agents/rivet-rule.md for the project-specialised agent instructions.");
+
+    Ok(true)
+}
+
+fn iso8601_now() -> String {
+    // Kept tiny so we don't pull in chrono; matches runs::new_run_id format.
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    let days = secs.div_euclid(86_400);
+    let rem = secs.rem_euclid(86_400) as u32;
+    let h = rem / 3600;
+    let m = (rem / 60) % 60;
+    let s = rem % 60;
+    let (y, mo, d) = civil_from_days(days);
+    format!("{y:04}-{mo:02}-{d:02}T{h:02}:{m:02}:{s:02}Z")
+}
+
+fn civil_from_days(z: i64) -> (i64, u32, u32) {
+    let z = z + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u32;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    (y, m, d)
+}
+
+fn rivet_rule_starter(cli: &Cli) -> String {
+    // Project-specialised version of the skill rule. Agents read this on
+    // trigger; rivet never rewrites it after scaffold, so it's the
+    // authoritative project-specific instruction file.
+    let project_name = cli
+        .project
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("this project");
+    format!(
+        "# rivet in {project_name}\n\
+        \n\
+        This file was scaffolded once by `rivet init --agents --bootstrap`.\n\
+        Edit freely — rivet never rewrites it. For the generic skill surface\n\
+        see `.claude/skills/rivet-rule/SKILL.md` (or the equivalent for your\n\
+        agent tool).\n\
+        \n\
+        ## How this project uses rivet\n\
+        \n\
+        - Schemas:  see `rivet.yaml :: project.schemas`\n\
+        - Variants: see `rivet variant list`\n\
+        - Pipelines: run `rivet pipelines list` to see active agent-pipelines\n\
+        \n\
+        ## The loop\n\
+        \n\
+        ```bash\n\
+        rivet pipelines validate          # hard gate; fix .rivet/context/ until clean\n\
+        rivet close-gaps --format json    # ranks gaps, produces proposals\n\
+        # for each gap (parallel sub-agents):\n\
+        #   execute the template-pair's discover.md in the scratch worktree\n\
+        #   fresh-session validate.md runs `rivet validate` cold\n\
+        #   emit.md produces the draft PR\n\
+        rivet runs record --run-id <id> --outcome outcomes.json\n\
+        ```\n\
+        \n\
+        ## Project conventions to enforce\n\
+        \n\
+        - Every commit under `artifacts/**/*.yaml` needs a trailer per the\n\
+          project's commits.trailers config in rivet.yaml.\n\
+        - Never commit without a fresh `rivet validate` in the scratch\n\
+          worktree where the change was made.\n\
+        - When a gap is `human-review-required`, read `.rivet/context/`\n\
+          first — domain glossary + review roles + risk tolerance carry\n\
+          project-specific context no prompt should override.\n\
+        \n\
+        ## Project-specific notes\n\
+        \n\
+        <!-- Add anything here that makes your project special: domain\n\
+             terminology, review customs, release procedures, review groups\n\
+             and their GitHub handles. The agent reads this on trigger. -->\n"
+    )
+}
+
+const REVIEW_ROLES_STARTER: &str = r#"# .rivet/context/review-roles.yaml
+#
+# Maps reviewer-group names referenced in your schemas' agent-pipelines
+# blocks (via `{context.review-roles.X}` placeholders) to concrete
+# reviewers in your organisation.
+#
+# This file is PROJECT-OWNED. Rivet scaffolds it once and never rewrites
+# it. Add / remove roles as your pipelines require them.
+#
+# Each role is a list of identifiers — the shape (GitHub handles, teams,
+# emails, Slack group IDs) is a project-level decision. Every downstream
+# closure PR will tag the listed reviewers.
+
+dev-team:
+  # TODO: replace with actual reviewers for this project.
+  # Example formats:
+  #   GitHub handles:   ["@alice", "@bob"]
+  #   GitHub team ref:  ["@yourorg/dev-leads"]
+  #   Email addresses:  ["alice@example.com"]
+  - "{{PLACEHOLDER: list at least one reviewer or mark accepted-empty}}"
+
+qa-lead:
+  - "{{PLACEHOLDER: required for safety-critical schemas (ASPICE, 26262)}}"
+
+safety-officer:
+  - "{{PLACEHOLDER: required for ISO 26262 ASIL decomposition closures}}"
+"#;
+
+const RISK_TOLERANCE_STARTER: &str = r#"# .rivet/context/risk-tolerance.yaml
+#
+# Integrity-level thresholds for coverage/evidence oracles in your
+# project. Schemas reference these via `{context.risk-tolerance.X}`.
+#
+# PROJECT-OWNED. Rivet scaffolds once; edit freely thereafter.
+
+mc-dc-asil-d: 95.0       # ISO 26262-6 Table 12 row MC/DC
+mc-dc-asil-c: 85.0
+branch-asil-b: 70.0
+statement-asil-a: 50.0
+
+# Add / remove keys to match the oracles your schemas actually use.
+# If your schemas don't reference coverage thresholds at all, this file
+# can stay minimal but should still be present.
+"#;
+
+const DOMAIN_GLOSSARY_STARTER: &str = r#"# Domain glossary
+
+<!-- PROJECT-OWNED. Rivet scaffolds once, never rewrites. Fill in the
+     terms your project uses — an agent will consult this when drafting
+     content for human-review-required gaps so synthesised stubs match
+     your organisation's vocabulary. -->
+
+## Core terms
+
+- **requirement** — {{PLACEHOLDER: what "requirement" means in this project — formality, approval workflow, naming}}
+- **safety goal** — {{PLACEHOLDER: if relevant; else mark accepted-empty}}
+- **mitigation** — {{PLACEHOLDER}}
+
+## Variant vocabulary
+
+- **production build** — {{PLACEHOLDER: which variant name(s) map to production}}
+- **developer build** — {{PLACEHOLDER: dev-only variants}}
+
+## Stakeholder shorthands
+
+- **the-team** — {{PLACEHOLDER: e.g. which GH team: @yourorg/sw-team}}
+"#;
+
 fn cmd_init_hooks(dir: &std::path::Path) -> Result<bool> {
     let dir = if dir == std::path::Path::new(".") {
         std::env::current_dir().context("resolving current directory")?
@@ -3861,9 +4567,7 @@ fn cmd_validate(
     let has_threshold_hit = match fail_on_threshold {
         Severity::Error => errors > 0 || cross_errors > 0,
         Severity::Warning => errors > 0 || cross_errors > 0 || warnings > 0,
-        Severity::Info => {
-            errors > 0 || cross_errors > 0 || warnings > 0 || infos > 0
-        }
+        Severity::Info => errors > 0 || cross_errors > 0 || warnings > 0 || infos > 0,
     };
     Ok(!has_threshold_hit)
 }
@@ -6177,13 +6881,16 @@ fn cmd_docs(
 fn cmd_docs_check(cli: &Cli, format: &str, fix: bool) -> Result<bool> {
     use clap::CommandFactory;
     use rivet_core::doc_check::{
-        apply_fixes, collect_docs, default_invariants, run_all, DocCheckContext,
+        DocCheckContext, apply_fixes, collect_docs, default_invariants, run_all,
     };
     use std::collections::BTreeSet;
 
     validate_format(format, &["text", "json"])?;
 
-    let project_root = cli.project.canonicalize().unwrap_or_else(|_| cli.project.clone());
+    let project_root = cli
+        .project
+        .canonicalize()
+        .unwrap_or_else(|_| cli.project.clone());
 
     // Read project config so the docs scan honors any `docs:` paths from
     // `rivet.yaml` (e.g. `rivet/docs`, `crates/*/docs`) — otherwise the gate
@@ -6266,8 +6973,7 @@ fn cmd_docs_check(cli: &Cli, format: &str, fix: bool) -> Result<bool> {
     let mut report = run_all(&ctx, &invariants);
 
     if fix {
-        let applied = apply_fixes(&ctx, &report)
-            .with_context(|| "applying auto-fixes")?;
+        let applied = apply_fixes(&ctx, &report).with_context(|| "applying auto-fixes")?;
         if applied > 0 {
             eprintln!("doc-check: applied {applied} auto-fix(es); re-running");
             // Rebuild and rerun since auto-fixes may have removed some
@@ -6490,10 +7196,7 @@ fn cmd_schema_list_json(cli: &Cli, format: &str) -> Result<bool> {
         println!("{}", serde_json::to_string_pretty(&output).unwrap());
     } else {
         println!("JSON schemas for rivet --format json outputs:\n");
-        let header = format!(
-            "  {:<12} {:<72} {}",
-            "Name", "Path", "Describes"
-        );
+        let header = format!("  {:<12} {:<72} {}", "Name", "Path", "Describes");
         println!("{header}");
         let sep = "-".repeat(110);
         println!("  {sep}");
@@ -7173,6 +7876,51 @@ fn cmd_sync(cli: &Cli, local_only: bool) -> Result<bool> {
     Ok(true)
 }
 
+fn cmd_externals_discover(path: &Path, format: &str) -> Result<bool> {
+    let bazel = rivet_core::providers::discover_bazel_externals(path)
+        .map_err(|e| anyhow::anyhow!("bazel discovery: {e}"))?;
+    let nix = rivet_core::providers::discover_nix_externals(path)
+        .map_err(|e| anyhow::anyhow!("nix discovery: {e}"))?;
+
+    let mut all = bazel;
+    all.extend(nix);
+
+    match format {
+        "json" => {
+            let out =
+                serde_json::to_string_pretty(&all).context("serializing discovered externals")?;
+            println!("{out}");
+        }
+        _ => {
+            if all.is_empty() {
+                println!(
+                    "No externals discovered in {} (looked for MODULE.bazel, flake.lock).",
+                    path.display()
+                );
+            } else {
+                println!(
+                    "Discovered {} external(s) in {}:",
+                    all.len(),
+                    path.display()
+                );
+                for ext in &all {
+                    println!("  {} ({}, version {})", ext.name, ext.source, ext.version);
+                    if let Some(url) = &ext.git_url {
+                        println!("    git: {url}");
+                    }
+                    if let Some(r) = &ext.git_ref {
+                        println!("    ref: {r}");
+                    }
+                    if let Some(p) = &ext.local_path {
+                        println!("    path: {}", p.display());
+                    }
+                }
+            }
+        }
+    }
+    Ok(true)
+}
+
 fn cmd_lock(cli: &Cli, update: bool) -> Result<bool> {
     if update {
         eprintln!("Note: --update refreshes all pins to latest refs");
@@ -7522,8 +8270,7 @@ fn cmd_variant_init(name: &str, dir: &std::path::Path, force: bool) -> Result<bo
         dir.to_path_buf()
     };
 
-    std::fs::create_dir_all(&target)
-        .with_context(|| format!("creating {}", target.display()))?;
+    std::fs::create_dir_all(&target).with_context(|| format!("creating {}", target.display()))?;
     let bindings_dir = target.join("bindings");
     std::fs::create_dir_all(&bindings_dir)
         .with_context(|| format!("creating {}", bindings_dir.display()))?;
@@ -7534,10 +8281,7 @@ fn cmd_variant_init(name: &str, dir: &std::path::Path, force: bool) -> Result<bo
     if !force {
         for p in [&fm_path, &binding_path] {
             if p.exists() {
-                anyhow::bail!(
-                    "refusing to overwrite {} (use --force)",
-                    p.display()
-                );
+                anyhow::bail!("refusing to overwrite {} (use --force)", p.display());
             }
         }
     }
@@ -7601,8 +8345,7 @@ bindings:
 "#
     );
 
-    std::fs::write(&fm_path, fm_yaml)
-        .with_context(|| format!("writing {}", fm_path.display()))?;
+    std::fs::write(&fm_path, fm_yaml).with_context(|| format!("writing {}", fm_path.display()))?;
     std::fs::write(&binding_path, binding_yaml)
         .with_context(|| format!("writing {}", binding_path.display()))?;
 
@@ -7996,8 +8739,8 @@ fn cmd_variant_features(
     variant_path: &std::path::Path,
     format: &str,
 ) -> Result<bool> {
-    let fmt = rivet_core::variant_emit::EmitFormat::parse(format)
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let fmt =
+        rivet_core::variant_emit::EmitFormat::parse(format).map_err(|e| anyhow::anyhow!("{e}"))?;
     let (model, resolved) = load_and_solve_variant(model_path, variant_path)?;
     let out = rivet_core::variant_emit::emit(&model, &resolved, fmt)
         .map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -8068,11 +8811,7 @@ fn cmd_variant_attr(
         None => {
             eprintln!(
                 "error: feature `{feature}` has no attribute `{key}` (declared keys: {})",
-                f.attributes
-                    .keys()
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .join(", ")
+                f.attributes.keys().cloned().collect::<Vec<_>>().join(", ")
             );
             std::process::exit(2);
         }
@@ -8189,7 +8928,9 @@ fn cmd_variant_explain(
                 let v = match o {
                     FeatureOrigin::UserSelected => serde_json::json!({ "kind": "selected" }),
                     FeatureOrigin::Mandatory => serde_json::json!({ "kind": "mandatory" }),
-                    FeatureOrigin::ImpliedBy(c) => serde_json::json!({ "kind": "implied", "by": c }),
+                    FeatureOrigin::ImpliedBy(c) => {
+                        serde_json::json!({ "kind": "implied", "by": c })
+                    }
                     FeatureOrigin::AllowedButUnbound => serde_json::json!({ "kind": "allowed" }),
                 };
                 (n.clone(), v)
@@ -8201,8 +8942,7 @@ fn cmd_variant_explain(
             .filter(|k| !resolved.effective_features.contains(*k))
             .cloned()
             .collect();
-        let constraints: Vec<String> =
-            model.constraints.iter().map(|c| format!("{c:?}")).collect();
+        let constraints: Vec<String> = model.constraints.iter().map(|c| format!("{c:?}")).collect();
         let attrs: serde_json::Map<String, serde_json::Value> = resolved
             .effective_features
             .iter()
@@ -8292,6 +9032,217 @@ fn cmd_variant_explain(
     Ok(true)
 }
 
+/// `rivet variant manifest` — print the per-feature source manifest for
+/// a resolved variant. The manifest is the audit-facing output
+/// described in `docs/pure-variants-comparison.md` Gap 5.
+fn cmd_variant_manifest(
+    model_path: &std::path::Path,
+    variant_path: &std::path::Path,
+    binding_path: &std::path::Path,
+    format: &str,
+) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
+
+    let model_yaml = std::fs::read_to_string(model_path)
+        .with_context(|| format!("reading {}", model_path.display()))?;
+    let model = rivet_core::feature_model::FeatureModel::from_yaml(&model_yaml)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    let variant_yaml = std::fs::read_to_string(variant_path)
+        .with_context(|| format!("reading {}", variant_path.display()))?;
+    let variant: rivet_core::feature_model::VariantConfig =
+        serde_yaml::from_str(&variant_yaml).context("parsing variant config")?;
+
+    let binding_yaml = std::fs::read_to_string(binding_path)
+        .with_context(|| format!("reading {}", binding_path.display()))?;
+    let binding: rivet_core::feature_model::FeatureBinding =
+        serde_yaml::from_str(&binding_yaml).context("parsing binding model")?;
+
+    let resolved = rivet_core::feature_model::solve_with_bindings(&model, &variant, &binding)
+        .map_err(|errs| {
+            let msgs: Vec<String> = errs.iter().map(|e| format!("{e}")).collect();
+            anyhow::anyhow!(
+                "variant `{}` failed to resolve manifest:\n  {}",
+                variant.name,
+                msgs.join("\n  ")
+            )
+        })?;
+
+    if format == "json" {
+        let manifest_json: serde_json::Map<String, serde_json::Value> = resolved
+            .source_manifest
+            .iter()
+            .map(|(feature, paths)| {
+                let arr: Vec<serde_json::Value> = paths
+                    .iter()
+                    .map(|p| serde_json::Value::String(p.display().to_string()))
+                    .collect();
+                (feature.clone(), serde_json::Value::Array(arr))
+            })
+            .collect();
+        let total_globs: usize = resolved.source_manifest.values().map(|v| v.len()).sum();
+        let output = serde_json::json!({
+            "variant": resolved.name,
+            "feature_count": resolved.effective_features.len(),
+            "manifest_entry_count": resolved.source_manifest.len(),
+            "manifest_glob_count": total_globs,
+            "manifest": manifest_json,
+        });
+        println!("{}", serde_json::to_string_pretty(&output)?);
+    } else {
+        println!("Variant '{}': source manifest", resolved.name);
+        if resolved.source_manifest.is_empty() {
+            println!("  (no bound source entries for this variant)");
+        } else {
+            for (feature, paths) in &resolved.source_manifest {
+                println!("  {feature}:");
+                for p in paths {
+                    println!("    {}", p.display());
+                }
+            }
+        }
+    }
+
+    Ok(true)
+}
+
+/// `rivet variant matrix` — emit a CI matrix driven by declared variants.
+#[allow(clippy::too_many_arguments)]
+fn cmd_variant_matrix(
+    model_path: &std::path::Path,
+    binding_path: &std::path::Path,
+    format: &str,
+    variant_names: &[String],
+    attr_filters: &[String],
+    wrap: &str,
+    default_runner: &str,
+    runner_attr: &str,
+    max_jobs: usize,
+    fail_fast: bool,
+    variants_dir: Option<&std::path::Path>,
+) -> Result<bool> {
+    validate_format(format, &["github-actions", "gitlab", "azure"])?;
+
+    let wrap_kind = match wrap {
+        "fragment" => rivet_core::variant_emit::GhaWrap::Fragment,
+        "job" => rivet_core::variant_emit::GhaWrap::Job,
+        other => anyhow::bail!("unknown --wrap `{other}`: expected `fragment` or `job`"),
+    };
+
+    let model_yaml = std::fs::read_to_string(model_path)
+        .with_context(|| format!("reading {}", model_path.display()))?;
+    let model = rivet_core::feature_model::FeatureModel::from_yaml(&model_yaml)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    let binding_yaml = std::fs::read_to_string(binding_path)
+        .with_context(|| format!("reading {}", binding_path.display()))?;
+    let mut binding: rivet_core::feature_model::FeatureBinding =
+        serde_yaml::from_str(&binding_yaml).context("parsing binding model")?;
+
+    // If --variants-dir is given, load every *.yaml there as a VariantConfig
+    // and append. Name collisions with binding-inline variants are fatal.
+    if let Some(dir) = variants_dir {
+        let mut existing: std::collections::BTreeSet<String> =
+            binding.variants.iter().map(|v| v.name.clone()).collect();
+        let entries = std::fs::read_dir(dir)
+            .with_context(|| format!("reading variants dir {}", dir.display()))?;
+        let mut paths: Vec<std::path::PathBuf> = entries
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("yaml"))
+            .collect();
+        paths.sort();
+        for path in paths {
+            let yaml = std::fs::read_to_string(&path)
+                .with_context(|| format!("reading {}", path.display()))?;
+            let vc: rivet_core::feature_model::VariantConfig = serde_yaml::from_str(&yaml)
+                .with_context(|| format!("parsing variant file {}", path.display()))?;
+            if !existing.insert(vc.name.clone()) {
+                anyhow::bail!(
+                    "variant name collision: `{}` appears in both binding's inline \
+                     variants: list and {}",
+                    vc.name,
+                    path.display()
+                );
+            }
+            binding.variants.push(vc);
+        }
+    }
+
+    if binding.variants.is_empty() {
+        anyhow::bail!(
+            "no variants to emit. Declare variants either inline under `variants:` \
+             in the binding file, or point --variants-dir at a directory containing \
+             per-variant YAML files. An empty GHA matrix errors at workflow dispatch."
+        );
+    }
+
+    let mut attrs: Vec<(String, String)> = Vec::new();
+    for spec in attr_filters {
+        match spec.split_once('=') {
+            Some((k, v)) => attrs.push((k.to_string(), v.to_string())),
+            None => anyhow::bail!("invalid --attr `{spec}`: expected `key=value`"),
+        }
+    }
+
+    let filters = rivet_core::variant_emit::MatrixFilters {
+        variants: variant_names.to_vec(),
+        attrs,
+        runner_attr: runner_attr.to_string(),
+        default_runner: Some(default_runner.to_string()),
+    };
+
+    let spec = rivet_core::variant_emit::build_matrix_spec(&model, &binding, &filters)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    if spec.len() > max_jobs {
+        anyhow::bail!(
+            "matrix would produce {} jobs, exceeding --max-jobs {}. \
+             Filter with --variant NAME or --attr K=V, or raise the cap.",
+            spec.len(),
+            max_jobs
+        );
+    }
+
+    let source = format!("{} + {}", model_path.display(), binding_path.display());
+    let header = vec![
+        "Generated by: rivet variant matrix".to_string(),
+        format!("Source:       {source}"),
+        format!(
+            "Variants:     {} (filtered from {})",
+            spec.len(),
+            binding.variants.len()
+        ),
+        "DO NOT EDIT — regenerate with `rivet variant matrix` on model change.".to_string(),
+    ];
+
+    let out = match format {
+        "github-actions" => {
+            let opts = rivet_core::variant_emit::GhaOpts {
+                wrap: wrap_kind,
+                fail_fast_off: !fail_fast,
+                header_comments: header,
+            };
+            rivet_core::variant_emit::emit_matrix_github_actions(&spec, &opts)
+        }
+        "gitlab" => {
+            let opts = rivet_core::variant_emit::MatrixCommonOpts {
+                header_comments: header,
+            };
+            rivet_core::variant_emit::emit_matrix_gitlab(&spec, &opts)
+        }
+        "azure" => {
+            let opts = rivet_core::variant_emit::MatrixCommonOpts {
+                header_comments: header,
+            };
+            rivet_core::variant_emit::emit_matrix_azure(&spec, &opts)
+        }
+        other => anyhow::bail!("unreachable format `{other}` after validation"),
+    };
+    print!("{out}");
+    Ok(true)
+}
+
 /// YAML→JSON conversion for non-scalar attribute values printed by
 /// `rivet variant attr`. Mirrors the internal helper in `variant_emit`
 /// but is small enough to keep here rather than expose publicly.
@@ -8321,7 +9272,10 @@ fn rivet_core_yaml_to_json(v: &serde_yaml::Value) -> serde_json::Value {
             for (k, v) in m {
                 let key = match k {
                     serde_yaml::Value::String(s) => s.clone(),
-                    other => serde_yaml::to_string(other).unwrap_or_default().trim().to_string(),
+                    other => serde_yaml::to_string(other)
+                        .unwrap_or_default()
+                        .trim()
+                        .to_string(),
                 };
                 out.insert(key, rivet_core_yaml_to_json(v));
             }
@@ -8476,6 +9430,106 @@ fn apply_baseline_scope(
         eprintln!("warning: --baseline specified but no baselines defined in rivet.yaml");
         store
     }
+}
+
+// ── Oracle subcommands: `rivet check …` ─────────────────────────────────
+
+/// `rivet check bidirectional` — fire if any link with a declared inverse
+/// lacks its inverse on the target.
+fn cmd_check_bidirectional(cli: &Cli, format: &str) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
+    let ctx = ProjectContext::load(cli)?;
+    let report = check::bidirectional::compute(&ctx.store, &ctx.schema, &ctx.graph);
+
+    if format == "json" {
+        println!("{}", check::bidirectional::render_json(&report));
+    } else {
+        print!("{}", check::bidirectional::render_text(&report));
+    }
+
+    if !report.violations.is_empty() {
+        for v in &report.violations {
+            eprintln!(
+                "bidirectional: {} -({}) -> {}: missing inverse '{}' on {}",
+                v.source, v.link_type, v.target, v.expected_inverse, v.target
+            );
+        }
+        return Ok(false);
+    }
+    Ok(true)
+}
+
+/// `rivet check review-signoff <id>` — fire if a `released` artifact lacks
+/// a reviewer distinct from the author (and optionally a matching role).
+fn cmd_check_review_signoff(
+    cli: &Cli,
+    artifact_id: &str,
+    role: Option<&str>,
+    format: &str,
+) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
+    let ctx = ProjectContext::load(cli)?;
+
+    let artifact = ctx.store.get(artifact_id).ok_or_else(|| {
+        anyhow::anyhow!(
+            "artifact '{artifact_id}' not found in store (loaded {} total)",
+            ctx.store.len()
+        )
+    })?;
+
+    let report = check::review_signoff::compute(artifact, role);
+
+    if format == "json" {
+        println!("{}", check::review_signoff::render_json(&report));
+    } else {
+        print!("{}", check::review_signoff::render_text(&report));
+    }
+
+    if !report.ok {
+        for r in &report.reasons {
+            eprintln!("review-signoff [{}]: {r}", report.artifact_id);
+        }
+        return Ok(false);
+    }
+    Ok(true)
+}
+
+/// `rivet check gaps-json` — run validation and emit a canonical JSON
+/// summary of all diagnostics, grouped by artifact.
+fn cmd_check_gaps_json(cli: &Cli, baseline_name: Option<&str>, format: &str) -> Result<bool> {
+    validate_format(format, &["json", "text"])?;
+    let ctx = ProjectContext::load(cli)?;
+
+    let (store, graph) = if let Some(bl) = baseline_name {
+        if let Some(ref baselines) = ctx.config.baselines {
+            let scoped = ctx.store.scoped(bl, baselines);
+            let g = LinkGraph::build(&scoped, &ctx.schema);
+            (scoped, g)
+        } else {
+            eprintln!("warning: --baseline specified but no baselines defined in rivet.yaml");
+            (ctx.store, ctx.graph)
+        }
+    } else {
+        (ctx.store, ctx.graph)
+    };
+
+    let report = check::gaps_json::compute(&store, &ctx.schema, &graph);
+
+    if format == "text" {
+        print!("{}", check::gaps_json::render_text(&report));
+    } else {
+        println!("{}", check::gaps_json::render_json(&report));
+    }
+
+    if report.by_severity.error > 0 {
+        eprintln!(
+            "gaps-json: {} error(s) found across {} artifact(s)",
+            report.by_severity.error,
+            report.gaps.len()
+        );
+        return Ok(false);
+    }
+    Ok(true)
 }
 
 struct ProjectContext {
@@ -9210,11 +10264,7 @@ fn cmd_stamp(
         // making this filter a no-op and causing
         // `rivet stamp all --missing-provenance` to overwrite timestamps
         // on every existing artifact — silent-accept of a buggy filter.
-        ids.retain(|aid| {
-            store
-                .get(aid)
-                .is_some_and(|a| a.provenance.is_none())
-        });
+        ids.retain(|aid| store.get(aid).is_some_and(|a| a.provenance.is_none()));
     }
 
     if ids.is_empty() {
@@ -9692,9 +10742,7 @@ fn cmd_query(cli: &Cli, sexpr: &str, limit: usize, format: &str) -> Result<bool>
                     let links: Vec<serde_json::Value> = a
                         .links
                         .iter()
-                        .map(|l| {
-                            serde_json::json!({"type": l.link_type, "target": l.target})
-                        })
+                        .map(|l| serde_json::json!({"type": l.link_type, "target": l.target}))
                         .collect();
                     serde_json::json!({
                         "id": a.id,

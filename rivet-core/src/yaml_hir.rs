@@ -317,8 +317,7 @@ pub fn extract_schema_driven(
                     }
                 }
             }
-        }
-        else {
+        } else {
             // Unknown top-level keys: most are legitimate (project metadata
             // like `name:`, `version:`, free-form fields). But a key whose
             // *singular* form matches a known section (e.g. user wrote

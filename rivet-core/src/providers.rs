@@ -46,11 +46,13 @@
 
 use std::path::{Path, PathBuf};
 
+use serde::Serialize;
+
 use crate::bazel::{Override, parse_module_bazel};
 use crate::model::ExternalProject;
 
 /// Discovered external dependency from a build-system manifest.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct DiscoveredExternal {
     /// Dependency name as declared in the manifest.
     pub name: String,

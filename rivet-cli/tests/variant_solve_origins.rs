@@ -39,11 +39,7 @@ fn rivet_bin() -> std::path::PathBuf {
     workspace_root.join("target").join("debug").join("rivet")
 }
 
-fn write_model_and_variant() -> (
-    tempfile::TempDir,
-    std::path::PathBuf,
-    std::path::PathBuf,
-) {
+fn write_model_and_variant() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path().to_path_buf();
 
@@ -114,17 +110,24 @@ fn variant_solve_text_output_labels_origins() {
         "root `app` must be labeled (mandatory). stdout:\n{stdout}"
     );
     assert!(
-        stdout.contains("base") && stdout.lines().any(|l| l.contains("base") && l.contains("(mandatory)")),
+        stdout.contains("base")
+            && stdout
+                .lines()
+                .any(|l| l.contains("base") && l.contains("(mandatory)")),
         "base is a mandatory child of app. stdout:\n{stdout}"
     );
     // User-named features carry (selected).
     assert!(
-        stdout.lines().any(|l| l.contains("oauth") && l.contains("(selected)")),
+        stdout
+            .lines()
+            .any(|l| l.contains("oauth") && l.contains("(selected)")),
         "oauth is user-selected. stdout:\n{stdout}"
     );
     // Constraint-implied feature carries "implied by".
     assert!(
-        stdout.lines().any(|l| l.contains("token-cache") && l.contains("implied by oauth")),
+        stdout
+            .lines()
+            .any(|l| l.contains("token-cache") && l.contains("implied by oauth")),
         "token-cache must be labeled `implied by oauth`. stdout:\n{stdout}"
     );
     // Prefix `+` per the pain-point spec.
@@ -164,9 +167,7 @@ fn variant_solve_json_output_is_backwards_compatible() {
     assert!(v["feature_count"].is_number());
 
     // New field: origins map keyed by feature name, each with `kind`.
-    let origins = v["origins"]
-        .as_object()
-        .expect("origins must be an object");
+    let origins = v["origins"].as_object().expect("origins must be an object");
     assert!(!origins.is_empty());
 
     let token_cache = origins

@@ -150,6 +150,7 @@ fn test_schema() -> Schema {
             alternate_backlinks: vec![],
         }],
         conditional_rules: vec![],
+        agent_pipelines: None,
     }])
 }
 
