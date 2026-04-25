@@ -241,13 +241,16 @@ pub proof fn lemma_coverage_bounded(covered: nat, total: nat)
     if total > 0 {
         assert(covered * 100 <= total * 100) by {
             // covered <= total implies covered * 100 <= total * 100
-            vstd::arithmetic::mul_internals::lemma_mul_inequality(
+            vstd::arithmetic::mul::lemma_mul_inequality(
                 covered as int, total as int, 100);
         }
         // (covered * 100) / total <= (total * 100) / total == 100
         assert((covered * 100) / total <= 100) by {
-            vstd::arithmetic::div_internals::lemma_div_is_ordered(
+            vstd::arithmetic::div_mod::lemma_div_is_ordered(
                 covered * 100, total * 100, total as int);
+            // (total * 100) / total == 100, required to discharge the bound.
+            vstd::arithmetic::div_mod::lemma_div_multiples_vanish(
+                100, total as int);
         }
     }
 }
@@ -280,7 +283,7 @@ pub struct GhostDiagnostic {
 /// Spec: a diagnostic sequence has no errors.
 pub open spec fn no_errors(diags: Seq<GhostDiagnostic>) -> bool {
     forall|i: int| 0 <= i < diags.len() ==>
-        !matches!(diags[i].severity, GhostSeverity::Error)
+        !(diags[i].severity is Error)
 }
 
 /// Spec: all artifacts in the store have types present in the type_set.
@@ -396,7 +399,7 @@ pub open spec fn coverage_validation_agreement(
     (total > 0 && covered == total) ==> {
         forall|i: int| 0 <= i < diags.len() ==>
             diags[i].rule_tag != rule_tag
-            || !matches!(diags[i].severity, GhostSeverity::Error)
+            || !(diags[i].severity is Error)
     }
 }
 
