@@ -598,8 +598,9 @@ Proof.
         simpl in Heq; try discriminate;
         try (apply String.eqb_eq in Heq; subst);
         apply Hneq; reflexivity.
-    + (* a does not have the source kind — filter drops it, recurse *)
-      rewrite Heq. simpl. apply IH.
+    + (* a does not have the source kind — filter drops it, recurse.
+         Use cbn to fully reduce `false && X` (Rocq 9.0's simpl doesn't). *)
+      cbn. apply IH.
       intros a' Hin. apply Hno_source. right. exact Hin.
 Qed.
 
