@@ -184,8 +184,7 @@ Proof.
   - simpl. apply le_n.
   - simpl. destruct (store_contains s (link_target h)).
     + simpl. apply le_S. exact IH.
-    + simpl. rewrite length_app. simpl.
-      apply le_n_S. exact IH.
+    + simpl. apply le_n_S. exact IH.
 Qed.
 
 Lemma check_artifact_rules_length : forall s a rules,
