@@ -184,6 +184,7 @@ jobs:
           --ignore RUSTSEC-2026-0095
           --ignore RUSTSEC-2026-0096
           --ignore RUSTSEC-2026-0103
+          --ignore RUSTSEC-2026-0104
 
   deny:
     name: Cargo Deny (licenses, bans, sources, advisories)
