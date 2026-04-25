@@ -312,19 +312,24 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        crate: [rivet-core, rivet-cli]
+        include:
+          - { crate: rivet-cli, shard: '0/1', shard_id: '0-of-1' }
+          - { crate: rivet-core, shard: '0/4', shard_id: '0-of-4' }
+          - { crate: rivet-core, shard: '1/4', shard_id: '1-of-4' }
+          - { crate: rivet-core, shard: '2/4', shard_id: '2-of-4' }
+          - { crate: rivet-core, shard: '3/4', shard_id: '3-of-4' }
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          key: mutants-${{ matrix.crate }}
+          key: mutants-${{ matrix.crate }}-${{ matrix.shard_id }}
       - name: Install cargo-mutants
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-mutants
       - name: Run cargo-mutants
-        run: cargo mutants -p ${{ matrix.crate }} --timeout 90 --jobs 4 --output mutants-out -- --lib || true
+        run: cargo mutants -p ${{ matrix.crate }} --shard ${{ matrix.shard }} --timeout 90 --jobs 4 --output mutants-out -- --lib || true
       - name: Check surviving mutants
         run: |
           MISSED=0
@@ -341,7 +346,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mutants-report-${{ matrix.crate }}
+          name: mutants-report-${{ matrix.crate }}-${{ matrix.shard_id }}
           path: mutants-out/
 
   # ── Fuzz testing (main only — too slow for PRs) ───────────────────
@@ -409,8 +414,17 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
-      - uses: model-checking/kani-github-action@v1
-      - run: cargo kani -p rivet-core
+      # PR runs: smoke-test only (--only-codegen, ~5 min). Full Kani
+      # runs on push to main (still 45 min budget). The 27-harness
+      # full suite was overrunning the 45 min budget mid-unwind.
+      - if: github.event_name == 'pull_request'
+        uses: model-checking/kani-github-action@v1
+        with:
+          args: '-p rivet-core --only-codegen'
+      - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: model-checking/kani-github-action@v1
+      - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: cargo kani -p rivet-core
 
   # ── Verus SMT verification ──────────────────────────────────────────
   # Toolchain + workspace are now correct (rules_verus@fc7b636 past the
@@ -445,6 +459,15 @@ jobs:
           nix_path: nixpkgs=channel:nixos-unstable
       - name: Verify Verus specs
         run: bazel test //verus:rivet_specs_verify
+      - name: Upload Verus test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verus-test-log
+          path: |
+            bazel-out/*/testlogs/verus/rivet_specs_verify/test.log
+            bazel-testlogs/verus/rivet_specs_verify/test.log
+          if-no-files-found: warn
 
   # ── Rocq metamodel proofs ─────────────────────────────────────────
   # Not yet a hard gate: the proofs were written against an older Rocq and
