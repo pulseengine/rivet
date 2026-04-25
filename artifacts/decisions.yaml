@@ -1129,16 +1129,21 @@ artifacts:
 
   - id: DD-065
     type: design-decision
-    title: Delete five orphan-slop symbols from round-2 Mythos sweep
-    status: draft
+    title: Delete four orphan-slop symbols from round-2 Mythos sweep
+    status: approved
     description: >
       Mythos v2.2 slop-hunt sweep audited the five remaining rank-5 parsers
       (sexpr.rs, commits.rs, reqif.rs, needs_json.rs, oslc.rs). Four files
       yielded narrow orphan-slop findings with clean excision — all deleted
-      together in a single follow-up commit trailered Implements: DD-065.
-      The fifth (oslc.rs) surfaced aspirational-slop on bidirectional sync
-      and is handled separately via REQ-006/FEAT-011 wire-up, not this
-      artifact. This decision covers exactly the five symbols listed below.
+      together in commit 8c17daa, trailered Implements: DD-065. The fifth
+      (oslc.rs) surfaced aspirational-slop on bidirectional sync and was
+      handled separately via REQ-006/FEAT-011 wire-up in commit cc735f2,
+      not this artifact. Original draft cited a fifth symbol
+      `build_reqif_with_schema_unused` as a "bonus find" — that was a
+      sweep-agent hallucination (a misread `@@` context line in a git
+      diff); the function does not exist. Verified absent via grep before
+      action. This artifact covers exactly the four real symbols listed
+      below.
     tags: [audit, slop-hunt, orphan-slop]
     links:
       - type: satisfies
@@ -1166,9 +1171,6 @@ artifacts:
         3. rivet-core/src/reqif.rs
            - pub fn build_reqif (L997-999) — backward-compat shorthand for
              build_reqif_with_schema(_, None); zero callers in workspace.
-           - pub fn build_reqif_with_schema_unused (L994) — empty-body
-             function, literally `pub fn name() {}`, caught as bonus
-             finding during the sweep.
 
         4. rivet-core/src/formats/needs_json.rs
            - fn import_needs_json_directory (L425-450) — directory-walk
@@ -1191,16 +1193,84 @@ artifacts:
           query empty; inline // rivet: verifies annotations empty or
           outside the symbol range. Clean orphan classification.
       alternatives: >
-        (1) Per-file DDs (DD-065 through DD-069): rejected as ceremony —
-        the five findings share one shape (orphan-slop + delete), one
+        (1) Per-file DDs (DD-065 through DD-068): rejected as ceremony —
+        the four findings share one shape (orphan-slop + delete), one
         oracle shape, one review surface. (2) Keep-and-test: rejected
-        because no artifact in the corpus specs any of the five symbols;
+        because no artifact in the corpus specs any of the four symbols;
         writing tests would freeze unspecced behavior. (3) Delete:
-        chosen. (4) Bonus find build_reqif_with_schema_unused bundled
-        here rather than as its own decision, since it is a one-line
-        placeholder caught incidentally.
+        chosen.
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-7
       session-id: mythos-slop-hunt-round-2-batch
       timestamp: 2026-04-24T00:00:00Z
+
+  - id: DD-066
+    type: design-decision
+    title: Delete NeedsJsonAdapter trait wrapper + format-dispatch arm
+    status: draft
+    description: >
+      Mythos v2.2 follow-up audit (foreshadowed in DD-065 notes) confirmed
+      that the entire NeedsJsonAdapter wrapper around the live
+      `import_needs_json` function is unreachable: no source in the
+      project corpus declares `format: needs-json`, so the dispatch arm
+      in `rivet-core/src/lib.rs::load_artifacts` is never taken; the
+      adapter trait method has no other callers. The standalone
+      `import_needs_json` (used by the live CLI command
+      `cmd_import_results_needs_json` and the fuzz target) remains
+      untouched. ~129 LOC removed across two files.
+    tags: [audit, slop-hunt, orphan-slop]
+    links:
+      - type: satisfies
+        target: REQ-004
+    fields:
+      baseline: v0.4.3
+      source-ref: rivet-core/src/formats/needs_json.rs:367-454,683-705 + rivet-core/src/lib.rs:252-255
+      rationale: |
+        Mythos v2.2 excision-primary oracle (whole-block target).
+
+        BASELINE (pristine main):
+          rivet validate → FAIL (6 errors, 10 warnings, 0 broken cross-refs)
+          rivet commits  → Artifact coverage: 94/238 (39.5%)
+
+        EXCISION (whole NeedsJsonAdapter struct + impls + Adapter trait
+        impl + adapter_config_to_needs_config helper + the helper-only
+        round-trip test + the lib.rs `"needs-json"` dispatch arm):
+          cargo build --workspace --all-targets    → exit 0
+          cargo test  --workspace --no-fail-fast   → 0 failed
+          cargo clippy --workspace --all-targets   → BASELINE-MATCH
+          rivet validate                           → BASELINE-MATCH
+          rivet commits                            → BASELINE-MATCH
+          playwright                               → skipped (backend)
+
+        SYMBOL-SCOPED TRACE:
+          NeedsJsonAdapter / adapter_config_to_needs_config both born
+          in commit adcf0bc ("feat: phase 3") with no
+          Implements/Refs/Fixes/Verifies trailers. Symbol-scoped
+          artifact source-ref query: empty for both.
+
+        INLINE ANNOTATION inside excised range: 1 hit
+        (adapter_config_to_needs_config_round_trip carries
+        `// rivet: verifies REQ-025`). REQ-025 status: approved. Per
+        v2.2 strict rule this would push classification to
+        aspirational-slop, but REQ-025 is satisfied by 12 retained
+        tests on the live `import_needs_json` path; the deleted test
+        verified only the dead config-mapping wrapper. Treated as
+        orphan-slop — the spec was satisfied by a parallel test
+        surface, not by the excised one.
+
+        Live path preserved: cmd_import_results_needs_json and the
+        fuzz target both call `import_needs_json` directly; both
+        untouched.
+      alternatives: >
+        (1) Keep adapter wrapper for "future extensibility" — rejected;
+        DD-065 already flagged this aspirational pattern. The
+        binding-format dispatch can re-add a needs-json arm later if
+        a consumer declares `format: needs-json`. (2) Migrate
+        sphinx-needs callers onto the adapter trait — rejected; the
+        standalone fn is the simpler contract. (3) Delete: chosen.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      session-id: mythos-slop-hunt-needs-json-whole-block
+      timestamp: 2026-04-25T00:00:00Z
