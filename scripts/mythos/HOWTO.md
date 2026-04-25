@@ -1,14 +1,21 @@
 # Mythos-Style Slop Hunt — Rivet Reality Audit
 
-A four-prompt pipeline adapted from the Anthropic Mythos red-team template
-(red.anthropic.com, April 2026). Sigil uses it to hunt security bugs; we
-use it to hunt **slop** — code that claims to use a good technique but
-doesn't really, homegrown reimplementations with no justification, modules
-with no callers, features advertised in comments that no test exercises.
+A four-prompt pipeline adapted from the red-team agent scaffold Anthropic
+published with Claude Mythos (red.anthropic.com, April 2026). Sigil uses
+it to hunt security bugs; we use it to hunt **slop** — code that claims
+to use a good technique but doesn't really, homegrown reimplementations
+with no justification, modules with no callers, features advertised in
+comments that no test exercises.
 
-The architecture is the same as Mythos: let the agent reason freely, but
-require a machine-checkable oracle for every reported finding so
-hallucinations don't ship as follow-up work.
+> Note on naming: "Mythos" in this directory and title is homage to where
+> the methodology came into public view. Claude Mythos is the LLM
+> Anthropic released; the methodology itself is their red-team agent
+> scaffold and works with any frontier model. We use it here with
+> Claude Code's Opus.
+
+The architecture is the same as Anthropic's red-team scaffold: let the
+agent reason freely, but require a machine-checkable oracle for every
+reported finding so hallucinations don't ship as follow-up work.
 
 ## What counts as "slop"
 
@@ -168,7 +175,7 @@ From a Claude Code session in `/Users/r/git/pulseengine/rivet`:
    entry. Human promotes to `approved` after deciding delete vs. unify
    vs. add-test.
 
-One agent per file in step 2 is Mythos's parallelism trick. Do not run
+One agent per file in step 2 is the red-team scaffold's parallelism trick. Do not run
 one agent across the whole codebase — it converges on surface issues.
 
 ## 5. Per-finding outcomes
