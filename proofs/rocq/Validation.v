@@ -181,7 +181,7 @@ Proof.
   intros s a.
   unfold check_broken_links.
   induction (art_links a) as [| h rest IH].
-  - simpl. apply Nat.le_refl.
+  - simpl. apply le_n.
   - simpl. destruct (store_contains s (link_target h)).
     + simpl. apply le_S. exact IH.
     + simpl. rewrite app_length. simpl.
@@ -194,7 +194,7 @@ Proof.
   intros s a rules.
   unfold check_artifact_rules.
   induction rules as [| r rest IH].
-  - simpl. apply Nat.le_refl.
+  - simpl. apply le_n.
   - simpl. rewrite app_length.
     unfold check_artifact_rule.
     destruct (artifact_kind_eqb (art_kind a) (rule_source_kind r)).
