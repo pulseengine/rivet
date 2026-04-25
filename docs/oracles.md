@@ -5,7 +5,7 @@ Oracles are reusable, mechanical checks that either pass (exit 0) or fire
 pipeline declared in a schema's `agent-pipelines:` block can gate a step
 on a single oracle's outcome.
 
-This document lists the oracle catalog shipped in v0.4.4 and their JSON
+This document lists the oracle catalog shipped in v0.4.3 and their JSON
 output schemas. The JSON shape is the contract pipelines consume —
 downstream tools must not re-parse text output.
 
