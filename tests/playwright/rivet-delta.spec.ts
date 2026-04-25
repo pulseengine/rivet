@@ -65,6 +65,12 @@ function mdToHtml(md: string): string {
   html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
   // Bold.
   html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  // Images (must come before links — `![alt](url)` would otherwise be
+  // partly consumed by the link regex as `[alt](url)`).
+  html = html.replace(
+    /!\[([^\]]+)\]\(([^)]+)\)/g,
+    '<img alt="$1" src="$2">',
+  );
   // Links.
   html = html.replace(
     /\[([^\]]+)\]\(([^)]+)\)/g,
@@ -184,7 +190,11 @@ test.describe("rivet-delta PR-comment output", () => {
     await expect(
       page.locator("h2", { hasText: "Rivet artifact delta" }),
     ).toBeVisible();
-    await expect(page.locator("code", { hasText: "REQ-NEW-1" })).toBeVisible();
+    await expect(
+      page
+        .locator("code:not(.language-mermaid)", { hasText: "REQ-NEW-1" })
+        .first(),
+    ).toBeVisible();
     await expect(
       page.locator("details summary", { hasText: "Modified" }),
     ).toBeVisible();
@@ -283,6 +293,9 @@ test.describe("rivet-delta PR-comment output", () => {
 
     // Use the project's bundled mermaid (served by `rivet serve` at
     // /assets/mermaid.js) so the parser version matches production.
+    // Navigate first so <script src="/assets/mermaid.js"> resolves
+    // against the dev server instead of about:blank.
+    await page.goto("/");
     await page.setContent(`
       <!doctype html><html><body>
         <pre class="mermaid">${mermaidSrc

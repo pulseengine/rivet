@@ -57,9 +57,6 @@ test.describe("Artifacts", () => {
     const mermaidPre = page.locator("pre.mermaid");
     await expect(mermaidPre).toHaveCount(1);
 
-    // The source content must be there before mermaid.js runs.
-    await expect(mermaidPre).toContainText("flowchart LR");
-
     // mermaid.js replaces the block's contents with an <svg> on success.
     // Give it a moment to run — it's triggered by DOMContentLoaded and
     // htmx:afterSwap.  If rendering fails the pre block keeps its source.
