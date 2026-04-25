@@ -60,8 +60,8 @@ pub fn cmd_list(project_root: &Path, limit: usize, format: &str) -> Result<bool>
             return Ok(true);
         }
         println!(
-            "{:<30}  {:<10}  {:>4}  {:>4}  {:>4}  {}",
-            "run_id", "status", "gaps", "auto", "rev", "invoker"
+            "{:<30}  {:<10}  {:>4}  {:>4}  {:>4}  invoker",
+            "run_id", "status", "gaps", "auto", "rev"
         );
         for e in &entries {
             let status = status_label(e);

@@ -101,6 +101,8 @@ pub struct CloseGapsOptions<'a> {
     pub top_n: usize,
     pub variant: Option<&'a str>,
     pub format: &'a str, // "json" | "text"
+    /// Reserved for the `--dry-run` flag plumb-through; not yet read.
+    #[allow(dead_code)]
     pub dry_run: bool,
     pub rivet_version: &'a str,
     pub invoker: &'a str,

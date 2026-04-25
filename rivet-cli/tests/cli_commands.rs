@@ -2280,10 +2280,9 @@ constraints: []
     );
 }
 
-/// Opt-in actionlint test. Runs only when:
-///   - RIVET_ACTIONLINT=1 is set (set by CI; off locally by default), AND
-///   - the `actionlint` binary is on PATH.
-/// Otherwise prints a skip message and passes.
+/// Opt-in actionlint test. Runs only when (a) `RIVET_ACTIONLINT=1` is
+/// set (set by CI; off locally by default), and (b) the `actionlint`
+/// binary is on PATH. Otherwise prints a skip message and passes.
 ///
 /// This is the strongest possible mechanical check that the emitted
 /// workflow is GHA-valid: actionlint statically validates the syntax
@@ -2328,18 +2327,7 @@ fn variant_matrix_actionlint_validates_emitted_workflow() {
 
     // Wrap the job fragment in a complete workflow shell so actionlint
     // sees a parseable file. The `on: push` is the minimum trigger.
-    let workflow = format!(
-        "name: ci\non:\n  push:\n{}",
-        fragment
-            .lines()
-            .map(|l| if l.starts_with('#') {
-                l.to_string()
-            } else {
-                l.to_string()
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
-    );
+    let workflow = format!("name: ci\non:\n  push:\n{fragment}");
     let wf_path = tmp.path().join("test.yml");
     std::fs::write(&wf_path, workflow).unwrap();
 

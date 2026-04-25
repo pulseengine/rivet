@@ -23,14 +23,14 @@
 //!
 //! Templates live in `rivet_core::templates`. This CLI surface lets users:
 //!
-//! - `list`         — show every kind (built-in + project-override) and
-//!                    which files are present
-//! - `show`         — print one template's body, raw or substituted
+//! - `list` — show every kind (built-in + project-override) and which
+//!   files are present
+//! - `show` — print one template's body, raw or substituted
 //! - `copy-to-project` — vendor a kind's embedded files into
-//!                    `.rivet/templates/pipelines/<kind>/`, recording
-//!                    provenance in `.rivet/.rivet-version`
-//! - `diff`         — show the unified diff between a project override
-//!                    and the current embedded version (drift detector)
+//!   `.rivet/templates/pipelines/<kind>/`, recording provenance in
+//!   `.rivet/.rivet-version`
+//! - `diff` — show the unified diff between a project override and the
+//!   current embedded version (drift detector)
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -40,7 +40,7 @@ use anyhow::{Context, Result};
 use rivet_core::ownership::{WriteMode, guard_write};
 use rivet_core::rivet_version::{FileRecord, RivetVersion, ScaffoldedFrom, content_sha256};
 use rivet_core::templates::{
-    self, TemplateFile, embedded_marker, kind_is_known, list_kinds, list_project_overrides, load,
+    TemplateFile, embedded_marker, kind_is_known, list_kinds, list_project_overrides, load,
     override_path, resolve, substitute,
 };
 

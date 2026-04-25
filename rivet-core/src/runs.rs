@@ -331,9 +331,11 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let manifest = sample_manifest("2026-04-23T00-00-00Z-efgh");
         let handle = open_run(tmp.path(), &manifest).unwrap();
-        let mut summary = RunSummary::default();
-        summary.gaps_found = 5;
-        summary.auto_closed = 3;
+        let summary = RunSummary {
+            gaps_found: 5,
+            auto_closed: 3,
+            ..Default::default()
+        };
         handle
             .finalise("2026-04-23T16:02:15Z".to_string(), 0, summary)
             .unwrap();
