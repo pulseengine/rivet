@@ -60,10 +60,16 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    env:
+      RIVET_ACTIONLINT: "1"
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - name: Install actionlint
+        uses: taiki-e/install-action@v2
+        with:
+          tool: actionlint
       - name: Run tests (JUnit XML output)
         run: |
           cargo install cargo-nextest --locked 2>/dev/null || true

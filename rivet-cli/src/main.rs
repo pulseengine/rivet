@@ -1298,7 +1298,7 @@ enum VariantAction {
         /// Path to binding YAML containing `variants:` declarations.
         #[arg(long)]
         binding: PathBuf,
-        /// Output format: "github-actions" (default).
+        /// Output format: "github-actions" (default), "gitlab", or "azure".
         #[arg(short, long, default_value = "github-actions")]
         format: String,
         /// Restrict to variants matching one of these exact names. Repeatable.
@@ -9123,7 +9123,7 @@ fn cmd_variant_matrix(
     fail_fast: bool,
     variants_dir: Option<&std::path::Path>,
 ) -> Result<bool> {
-    validate_format(format, &["github-actions"])?;
+    validate_format(format, &["github-actions", "gitlab", "azure"])?;
 
     let wrap_kind = match wrap {
         "fragment" => rivet_core::variant_emit::GhaWrap::Fragment,
@@ -9225,13 +9225,29 @@ fn cmd_variant_matrix(
         "DO NOT EDIT — regenerate with `rivet variant matrix` on model change.".to_string(),
     ];
 
-    let opts = rivet_core::variant_emit::GhaOpts {
-        wrap: wrap_kind,
-        fail_fast_off: !fail_fast,
-        header_comments: header,
+    let out = match format {
+        "github-actions" => {
+            let opts = rivet_core::variant_emit::GhaOpts {
+                wrap: wrap_kind,
+                fail_fast_off: !fail_fast,
+                header_comments: header,
+            };
+            rivet_core::variant_emit::emit_matrix_github_actions(&spec, &opts)
+        }
+        "gitlab" => {
+            let opts = rivet_core::variant_emit::MatrixCommonOpts {
+                header_comments: header,
+            };
+            rivet_core::variant_emit::emit_matrix_gitlab(&spec, &opts)
+        }
+        "azure" => {
+            let opts = rivet_core::variant_emit::MatrixCommonOpts {
+                header_comments: header,
+            };
+            rivet_core::variant_emit::emit_matrix_azure(&spec, &opts)
+        }
+        other => anyhow::bail!("unreachable format `{other}` after validation"),
     };
-
-    let out = rivet_core::variant_emit::emit_matrix_github_actions(&spec, &opts);
     print!("{out}");
     Ok(true)
 }

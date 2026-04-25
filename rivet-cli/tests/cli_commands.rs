@@ -2282,6 +2282,81 @@ constraints: []
     );
 }
 
+/// Opt-in actionlint test. Runs only when:
+///   - RIVET_ACTIONLINT=1 is set (set by CI; off locally by default), AND
+///   - the `actionlint` binary is on PATH.
+/// Otherwise prints a skip message and passes.
+///
+/// This is the strongest possible mechanical check that the emitted
+/// workflow is GHA-valid: actionlint statically validates the syntax
+/// against the GHA schema. Failure here means we emitted malformed
+/// workflow YAML that would fail at dispatch time.
+// rivet: verifies FEAT-130
+#[test]
+fn variant_matrix_actionlint_validates_emitted_workflow() {
+    if std::env::var("RIVET_ACTIONLINT").as_deref() != Ok("1") {
+        eprintln!("[skipped] set RIVET_ACTIONLINT=1 to enable");
+        return;
+    }
+    if Command::new("actionlint").arg("--version").output().is_err() {
+        eprintln!("[skipped] actionlint not on PATH");
+        return;
+    }
+
+    let tmp = tempfile::tempdir().unwrap();
+    write_matrix_fixture(tmp.path());
+
+    // Emit a job-wrapped fragment, which actionlint can validate as a
+    // standalone (almost-)workflow.
+    let out = Command::new(rivet_bin())
+        .args([
+            "variant",
+            "matrix",
+            "--model",
+            tmp.path().join("model.yaml").to_str().unwrap(),
+            "--binding",
+            tmp.path().join("binding.yaml").to_str().unwrap(),
+            "--wrap",
+            "job",
+        ])
+        .output()
+        .expect("run rivet variant matrix --wrap job");
+    assert!(out.status.success());
+    let fragment = String::from_utf8_lossy(&out.stdout);
+
+    // Wrap the job fragment in a complete workflow shell so actionlint
+    // sees a parseable file. The `on: push` is the minimum trigger.
+    let workflow = format!(
+        "name: ci\non:\n  push:\n{}",
+        fragment
+            .lines()
+            .map(|l| if l.starts_with('#') {
+                l.to_string()
+            } else {
+                l.to_string()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+    let wf_path = tmp.path().join("test.yml");
+    std::fs::write(&wf_path, workflow).unwrap();
+
+    let lint = Command::new("actionlint")
+        .arg(&wf_path)
+        .output()
+        .expect("run actionlint");
+
+    if !lint.status.success() {
+        let stdout = String::from_utf8_lossy(&lint.stdout);
+        let stderr = String::from_utf8_lossy(&lint.stderr);
+        let body = std::fs::read_to_string(&wf_path).unwrap_or_default();
+        panic!(
+            "actionlint failed:\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}\n\
+             --- workflow ---\n{body}"
+        );
+    }
+}
+
 /// `--variants-dir` loads standalone variant YAMLs alongside binding-inline.
 #[test]
 fn variant_matrix_loads_variants_dir() {

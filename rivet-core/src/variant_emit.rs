@@ -655,6 +655,116 @@ fn escape_yaml_scalar(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
+/// Header-comment lines shared across all matrix emitters.
+#[derive(Debug, Clone, Default)]
+pub struct MatrixCommonOpts {
+    pub header_comments: Vec<String>,
+}
+
+/// Render a `MatrixSpec` as a GitLab CI `parallel.matrix:` fragment.
+///
+/// The output is a `test:` job with a `parallel:` matrix where each
+/// entry is one variant. GitLab treats each map under `matrix:` as a
+/// distinct job — when every value is a scalar (not an array), the
+/// entry produces exactly one job. Users will typically rename `test:`
+/// and add their own `script:` / `stage:` fields.
+///
+/// Variable naming: UPPERCASE convention matching CI environment
+/// variable practice. Attributes are `ATTR_<KEY>:` to dodge collisions
+/// with GitLab-reserved variable names like `CI_*`.
+pub fn emit_matrix_gitlab(spec: &MatrixSpec, opts: &MatrixCommonOpts) -> String {
+    let mut out = String::new();
+    for line in &opts.header_comments {
+        writeln!(&mut out, "# {line}").ok();
+    }
+    writeln!(&mut out, "test:").ok();
+    writeln!(&mut out, "  parallel:").ok();
+    writeln!(&mut out, "    matrix:").ok();
+    for entry in &spec.variants {
+        writeln!(&mut out, "      - VARIANT: {}", entry.variant).ok();
+        writeln!(
+            &mut out,
+            "        FEATURES: \"{}\"",
+            entry.features.join(",")
+        )
+        .ok();
+        for (k, v) in &entry.attrs {
+            writeln!(
+                &mut out,
+                "        ATTR_{}: \"{}\"",
+                k.to_uppercase(),
+                escape_yaml_scalar(v)
+            )
+            .ok();
+        }
+        if let Some(runner) = &entry.runner {
+            writeln!(&mut out, "        RUNNER: {runner}").ok();
+        }
+    }
+    out
+}
+
+/// Render a `MatrixSpec` as an Azure DevOps `strategy.matrix:` fragment.
+///
+/// Azure's matrix is a *map* of job-name → variable-map, unlike GitHub
+/// Actions (list of include entries) and GitLab (list of variable maps).
+/// Each top-level key becomes a parallel job. Variant names are
+/// converted to Azure-acceptable job keys by replacing `-` with `_`
+/// (Azure requires `[A-Za-z][A-Za-z0-9_]*`).
+pub fn emit_matrix_azure(spec: &MatrixSpec, opts: &MatrixCommonOpts) -> String {
+    let mut out = String::new();
+    for line in &opts.header_comments {
+        writeln!(&mut out, "# {line}").ok();
+    }
+    writeln!(&mut out, "strategy:").ok();
+    writeln!(&mut out, "  matrix:").ok();
+    for entry in &spec.variants {
+        let job_key = azure_job_key(&entry.variant);
+        writeln!(&mut out, "    {job_key}:").ok();
+        writeln!(&mut out, "      VARIANT: {}", entry.variant).ok();
+        writeln!(
+            &mut out,
+            "      FEATURES: \"{}\"",
+            entry.features.join(",")
+        )
+        .ok();
+        for (k, v) in &entry.attrs {
+            writeln!(
+                &mut out,
+                "      ATTR_{}: \"{}\"",
+                k.to_uppercase(),
+                escape_yaml_scalar(v)
+            )
+            .ok();
+        }
+        if let Some(runner) = &entry.runner {
+            writeln!(&mut out, "      RUNNER: {runner}").ok();
+        }
+    }
+    out
+}
+
+/// Convert a variant name to an Azure-acceptable job-key:
+/// `[A-Za-z][A-Za-z0-9_]*`. Replaces hyphens and other punctuation with
+/// underscores. Prepends `J_` if the name starts with a digit.
+fn azure_job_key(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    for (i, ch) in s.chars().enumerate() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch);
+        } else {
+            out.push('_');
+        }
+        if i == 0 && ch.is_ascii_digit() {
+            // Recover: prepend J_ in front of the digit just pushed.
+            let leading = out.remove(0);
+            out.insert_str(0, "J_");
+            out.push(leading);
+        }
+    }
+    out
+}
+
 // ── Tests ──────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1014,5 +1124,53 @@ variants:
         let spec = build_matrix_spec(&model, &binding, &MatrixFilters::default()).unwrap();
         let out = emit_matrix_github_actions(&spec, &GhaOpts::default());
         assert!(out.contains("fail-fast: false"));
+    }
+
+    #[test]
+    fn matrix_gitlab_emits_parallel_matrix_shape() {
+        let (model, binding) = load_matrix_fixture();
+        let spec = build_matrix_spec(&model, &binding, &MatrixFilters::default()).unwrap();
+        let out = emit_matrix_gitlab(&spec, &MatrixCommonOpts::default());
+        assert!(out.contains("test:"));
+        assert!(out.contains("parallel:"));
+        assert!(out.contains("matrix:"));
+        // Each entry is a list-item map with VARIANT/FEATURES/RUNNER scalars.
+        assert!(out.contains("- VARIANT: tiny-ci"));
+        assert!(out.contains("- VARIANT: full-ci"));
+        // Attributes uppercase + ATTR_-prefixed.
+        assert!(out.contains("ATTR_ASIL: \"QM\""));
+        assert!(out.contains("RUNNER: ubuntu-latest"));
+        // Round-trip parse.
+        let _: serde_yaml::Value =
+            serde_yaml::from_str(&out).expect("gitlab YAML parses");
+    }
+
+    #[test]
+    fn matrix_azure_emits_strategy_matrix_map() {
+        let (model, binding) = load_matrix_fixture();
+        let spec = build_matrix_spec(&model, &binding, &MatrixFilters::default()).unwrap();
+        let out = emit_matrix_azure(&spec, &MatrixCommonOpts::default());
+        assert!(out.contains("strategy:"));
+        assert!(out.contains("matrix:"));
+        // Top-level map keys per variant. Hyphens become underscores per
+        // Azure's identifier rule.
+        assert!(out.contains("tiny_ci:"));
+        assert!(out.contains("full_ci:"));
+        // Variables nested under each job-key.
+        assert!(out.contains("VARIANT: tiny-ci"));
+        assert!(out.contains("VARIANT: full-ci"));
+        assert!(out.contains("ATTR_ASIL: \"QM\""));
+        // Round-trip parse.
+        let _: serde_yaml::Value =
+            serde_yaml::from_str(&out).expect("azure YAML parses");
+    }
+
+    #[test]
+    fn azure_job_key_normalises_punctuation() {
+        assert_eq!(azure_job_key("tiny-ci"), "tiny_ci");
+        assert_eq!(azure_job_key("eu_autonomous"), "eu_autonomous");
+        assert_eq!(azure_job_key("v1.0"), "v1_0");
+        // Leading digit gets a J_ prefix so the key is a valid identifier.
+        assert_eq!(azure_job_key("1tiny"), "J_1tiny");
     }
 }
