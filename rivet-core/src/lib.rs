@@ -249,10 +249,6 @@ pub fn load_artifacts(
             let adapter = formats::aadl::AadlAdapter::new();
             adapter::Adapter::import(&adapter, &source_input, &adapter_config)
         }
-        "needs-json" => {
-            let adapter = formats::needs_json::NeedsJsonAdapter::new();
-            adapter::Adapter::import(&adapter, &source_input, &adapter_config)
-        }
         #[cfg(feature = "wasm")]
         "wasm" => {
             let adapter_path = source.adapter.as_ref().ok_or_else(|| {
