@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1777147906565,
+  "lastUpdate": 1777155402893,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "deeafeb16473e54701fa2f5e6d0e8697b7322f1e",
-          "message": "feat(release): attach VSIX to GitHub Release + fix Marketplace publish (#163)\n\nTwo related bugs in the VS Code extension release flow:\n\n1. **VSIX wasn't attached to the GitHub Release.** The `build-vsix` job\n   in ci.yml ran on tag push and uploaded the VSIX as a workflow artifact\n   only — users couldn't download it from the Release page, they had to\n   dig through the Actions tab.\n\n2. **`publish-vsix` never actually ran on Marketplace.** It was gated on\n   `needs: [build-vsix, release-results]`, but `release-results` doesn't\n   exist as a job in ci.yml (it lives in release.yml, a separate\n   workflow — GitHub Actions workflows can't depend on each other's\n   jobs). Result: the Marketplace publish job was never scheduled on\n   any tag, which is why only the spar extension currently appears on\n   the Marketplace — rivet's has never actually shipped.\n\n**Fix:** move both jobs into release.yml where they belong, wire them\ninto the existing tag-triggered pipeline:\n\n- `build-vsix` → runs alongside `build-binaries`\n- `create-release` → now depends on build-vsix too, and globs `*.vsix`\n  in the asset collection step so the VSIX attaches to the Release\n- `publish-vsix-marketplace` → runs after create-release so the VSIX\n  is guaranteed on the Release page even if Marketplace publish fails.\n  Now prints a `::warning::` if VSCE_PAT is unset instead of silently\n  skipping, which is what hid the \"extension isn't on Marketplace\" bug\n  in the first place.\n\nAlso bumps `vscode-rivet/package.json` version from 0.3.0 → 0.4.0 so\nthe next released extension matches the workspace version.\n\n**Follow-up for the user:** configure the VSCE_PAT secret in the rivet\nrepo settings (Azure DevOps PAT with Marketplace > Manage scope).\nWithout it the warning will continue to fire on every release until\nconfigured.\n\nTrace: skip",
-          "timestamp": "2026-04-21T23:21:13-05:00",
-          "tree_id": "ccc41c25b53dfa8c94f5cd1cffea999fc02dadbd",
-          "url": "https://github.com/pulseengine/rivet/commit/deeafeb16473e54701fa2f5e6d0e8697b7322f1e"
-        },
-        "date": 1776836730971,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 82128,
-            "range": "± 487",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 873304,
-            "range": "± 13392",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 16311756,
-            "range": "± 1279198",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1939,
-            "range": "± 19",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 24951,
-            "range": "± 544",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 357835,
-            "range": "± 2772",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 97,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 989817,
-            "range": "± 7591",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 166897,
-            "range": "± 19183",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1948415,
-            "range": "± 24378",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 37335205,
-            "range": "± 3066873",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 107678,
-            "range": "± 676",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 959445,
-            "range": "± 4250",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 14241292,
-            "range": "± 1105556",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4126,
-            "range": "± 10",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 45303,
-            "range": "± 1971",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 747588,
-            "range": "± 17744",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 63878,
-            "range": "± 194",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 705852,
-            "range": "± 17259",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 9238906,
-            "range": "± 313142",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 767,
-            "range": "± 10",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 6954,
-            "range": "± 28",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 92088,
-            "range": "± 1491",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 21917,
-            "range": "± 313",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 151688,
-            "range": "± 1334",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1404931,
-            "range": "± 8019",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1584272,
             "range": "± 22583",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f39dbc2d92b81b9018c8edb6707289208ce84954",
+          "message": "Merge pull request #211 from pulseengine/fix/playwright-stale-tests\n\nfix(tests/playwright): batch stale-test cleanups (5 of 10)",
+          "timestamp": "2026-04-25T17:10:16-05:00",
+          "tree_id": "37def75fcbbd3f14c71765228b230eaaa363d2bd",
+          "url": "https://github.com/pulseengine/rivet/commit/f39dbc2d92b81b9018c8edb6707289208ce84954"
+        },
+        "date": 1777155402483,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 81756,
+            "range": "± 964",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 853989,
+            "range": "± 17622",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 11096137,
+            "range": "± 446709",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2190,
+            "range": "± 30",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 26441,
+            "range": "± 343",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 366840,
+            "range": "± 6348",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 94,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 94,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 93,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1184976,
+            "range": "± 28685",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 161706,
+            "range": "± 2677",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1895946,
+            "range": "± 25210",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 22725353,
+            "range": "± 525533",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 125917,
+            "range": "± 2880",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1071243,
+            "range": "± 24143",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 10898312,
+            "range": "± 284576",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4204,
+            "range": "± 80",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 59627,
+            "range": "± 452",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 770114,
+            "range": "± 13924",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 60468,
+            "range": "± 247",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 667099,
+            "range": "± 3098",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7480048,
+            "range": "± 42658",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 800,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7459,
+            "range": "± 73",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 109034,
+            "range": "± 1868",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 24951,
+            "range": "± 230",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 178555,
+            "range": "± 2885",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1656025,
+            "range": "± 34059",
             "unit": "ns/iter"
           }
         ]
