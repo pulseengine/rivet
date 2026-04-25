@@ -184,7 +184,7 @@ Proof.
   - simpl. apply le_n.
   - simpl. destruct (store_contains s (link_target h)).
     + simpl. apply le_S. exact IH.
-    + simpl. rewrite app_length. simpl.
+    + simpl. rewrite length_app. simpl.
       apply le_n_S. exact IH.
 Qed.
 
@@ -195,7 +195,7 @@ Proof.
   unfold check_artifact_rules.
   induction rules as [| r rest IH].
   - simpl. apply le_n.
-  - simpl. rewrite app_length.
+  - simpl. rewrite length_app.
     unfold check_artifact_rule.
     destruct (artifact_kind_eqb (art_kind a) (rule_source_kind r)).
     + destruct (existsb _ (art_links a)).

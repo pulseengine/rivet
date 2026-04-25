@@ -307,7 +307,7 @@ Lemma validation_work_add_one : forall s a rules,
   validation_work s rules + List.length rules.
 Proof.
   intros. unfold validation_work.
-  rewrite app_length. simpl.
+  rewrite length_app. simpl.
   rewrite Nat.add_1_r.
   rewrite Nat.mul_succ_l.
   rewrite Nat.add_comm. reflexivity.
