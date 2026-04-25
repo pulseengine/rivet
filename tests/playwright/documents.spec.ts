@@ -161,7 +161,7 @@ test.describe("Documents", () => {
     await page.goto(docLinks[0]);
     await waitForHtmx(page);
     const headings = await page
-      .locator("article h2, article h3, article h4, main h2, main h3, main h4")
+      .locator(".doc-body h2, .doc-body h3, .doc-body h4")
       .evaluateAll((els) =>
         els.map((el) => ({
           tag: el.tagName.toLowerCase(),
