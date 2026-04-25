@@ -729,7 +729,8 @@ fn render_diagnostics(
             // Defensive: any other value would have been rejected upstream.
             // If this arm fires, there's a contract bug — fail loudly.
             Some(other) => unreachable!(
-                "render_diagnostics severity filter '{other}' should have been rejected upstream",
+                "render_diagnostics severity filter '{}' should have been rejected upstream",
+                other
             ),
         })
         .collect();
