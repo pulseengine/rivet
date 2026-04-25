@@ -26,6 +26,9 @@ pub enum Error {
     #[error("Results error: {0}")]
     Results(String),
 
+    #[error("Coverage evidence error: {0}")]
+    CoverageEvidence(String),
+
     #[error("Ownership violation: {0}")]
     Ownership(String),
 }

@@ -44,6 +44,7 @@ pub mod commits;
 pub mod compliance;
 pub mod convergence;
 pub mod coverage;
+pub mod coverage_evidence;
 pub mod db;
 pub mod diff;
 pub mod doc_check;
