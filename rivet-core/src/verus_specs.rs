@@ -247,7 +247,7 @@ pub proof fn lemma_coverage_bounded(covered: nat, total: nat)
         // (covered * 100) / total <= (total * 100) / total == 100
         assert((covered * 100) / total <= 100) by {
             vstd::arithmetic::div_mod::lemma_div_is_ordered(
-                covered * 100, total * 100, total as int);
+                (covered * 100) as int, (total * 100) as int, total as int);
             // (total * 100) / total == 100, required to discharge the bound.
             vstd::arithmetic::div_mod::lemma_div_multiples_vanish(
                 100, total as int);
