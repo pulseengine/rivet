@@ -598,7 +598,8 @@ Proof.
         simpl in Heq; try discriminate;
         try (apply String.eqb_eq in Heq; subst);
         apply Hneq; reflexivity.
-    + simpl. apply IH.
+    + (* a does not have the source kind — filter drops it, recurse *)
+      rewrite Heq. simpl. apply IH.
       intros a' Hin. apply Hno_source. right. exact Hin.
 Qed.
 
