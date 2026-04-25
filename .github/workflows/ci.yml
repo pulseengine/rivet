@@ -472,16 +472,7 @@ jobs:
         with:
           nix_path: nixpkgs=channel:nixos-unstable
       - name: Verify Rocq proofs
-        # Build only the Schema library: rules_rocq_rust has a LoadPath
-        # issue where rivet_validation depending on rivet_schema fails
-        # to resolve `Require Import Schema.` (tried bare and
-        # `From rivet_schema Require Import Schema.` — both fail with
-        # "Cannot find a physical path bound to logical path Schema").
-        # Restoring full Validation.v verification needs the systematic
-        # Rocq 9 port the workflow comment already flagged. For now,
-        # Schema.v's proofs (with Admitted gaps documented as
-        # REQ-004 follow-up work) are verified.
-        run: bazel build //proofs/rocq:rivet_schema
+        run: bazel test //proofs/rocq:rivet_metamodel_test
 
   # ── MSRV check ──────────────────────────────────────────────────────
   msrv:
