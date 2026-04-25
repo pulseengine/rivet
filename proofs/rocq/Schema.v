@@ -605,7 +605,16 @@ Lemma no_source_no_violations : forall s r,
   count_violations s r = 0.
 Admitted.
 
-(** Zero violations implies the rule is satisfied (validation soundness). *)
+(** Zero violations implies the rule is satisfied (validation soundness).
+
+    Admitted entirely — the existing proof body relied on Rocq < 9.0
+    behavior where `simpl` would auto-rewrite Heq into the goal and
+    `exact Hexists` would unify across the alpha-renamed lambda. Both
+    are stricter in Rocq 9.0. The proof was authored when the Bazel
+    target was empty (`rocq_library` had `srcs = []` per commit 2fafe1a)
+    so it never compiled — restoring it requires a full re-derivation
+    plus the auxiliary lemma needed for `no_source_no_violations`.
+    REQ-004 follow-up. *)
 Theorem zero_violations_implies_satisfied : forall s r,
   count_violations s r = 0 ->
   forall a, In a s ->
@@ -614,30 +623,6 @@ Theorem zero_violations_implies_satisfied : forall s r,
       (fun l => link_kind_eqb (link_kind l) (rule_link_kind r) &&
                 store_contains s (link_target l))
       (art_links a) = true.
-Proof.
-  intros s r Hcount a Hin Hkind.
-  unfold count_violations in Hcount.
-  induction s as [| h rest IH].
-  - inversion Hin.
-  - simpl in Hin. destruct Hin as [Heq | Hin_rest].
-    + subst h.
-      simpl in Hcount.
-      rewrite Hkind in Hcount.
-      destruct (existsb _ (art_links a)) eqn:Hexists.
-      * exact Hexists.
-      * simpl in Hcount. discriminate.
-    + apply IH.
-      * simpl in Hcount.
-        destruct (artifact_kind_eqb (art_kind h) (rule_source_kind r) &&
-                  negb (existsb _ (art_links h))).
-        -- simpl in Hcount. apply Nat.succ_inj in Hcount.
-           (* filter of rest must also be 0 *)
-           (* This requires more careful reasoning about filter *)
-           (* We leave this as admitted for now *)
-           admit.
-        -- exact Hcount.
-      * exact Hin_rest.
-      * exact Hkind.
 Admitted.
 
 (* ========================================================================= *)
