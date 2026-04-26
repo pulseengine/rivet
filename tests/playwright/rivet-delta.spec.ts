@@ -190,6 +190,11 @@ test.describe("rivet-delta PR-comment output", () => {
     await expect(
       page.locator("h2", { hasText: "Rivet artifact delta" }),
     ).toBeVisible();
+    // REQ-NEW-1 lives inside the collapsed <details><summary>Added</summary>
+    // block (rendered by scripts/diff-to-markdown.mjs:181-188), so it is
+    // attached to the DOM but not "visible" until that <details> is
+    // expanded. Open it before checking visibility.
+    await page.locator("details summary", { hasText: "Added" }).click();
     await expect(
       page
         .locator("code:not(.language-mermaid)", { hasText: "REQ-NEW-1" })

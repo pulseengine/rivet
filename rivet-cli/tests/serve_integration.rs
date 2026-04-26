@@ -1106,3 +1106,64 @@ fn stats_page_shows_variant_banner_when_scoped() {
     child.kill().ok();
     child.wait().ok();
 }
+
+// ── /embed/* path rewriting (REQ-007 + tests/playwright/api.spec.ts:291) ──
+
+#[test]
+fn embed_artifact_returns_200_with_embed_layout() {
+    // Regression: the wrap_full_page middleware strips /embed and routes
+    // to /artifacts/{id} so the dashboard can iframe-embed an artifact
+    // without registering duplicate routes.  A previous URI-rewriting
+    // bug (round-tripping `Uri::into_parts` / `from_parts`) left the
+    // inner router with an empty matched path, returning a wrapped 404
+    // — exactly the symptom Playwright's api.spec.ts:291 catches.
+    let (mut child, port) = start_server();
+    let (status, body, _) = fetch(port, "/embed/artifacts/REQ-001", false);
+    assert_eq!(
+        status, 200,
+        "/embed/artifacts/REQ-001 must route through to artifact_detail"
+    );
+    // embed_layout (no nav, no .shell) — distinct from page_layout.
+    assert!(
+        !body.contains("class=\"shell\""),
+        "/embed/* must not render the sidebar shell"
+    );
+    assert!(
+        !body.contains("Main navigation"),
+        "/embed/* must not render the main nav"
+    );
+    // Artifact body still renders (REQ-001 always exists in the test fixture).
+    assert!(
+        body.contains("REQ-001"),
+        "embed body must contain the artifact ID, got body of length {}",
+        body.len()
+    );
+    // htmx is loaded so the embedded view stays interactive.
+    assert!(
+        body.contains("htmx"),
+        "embed body must include htmx (script tag)"
+    );
+    child.kill().ok();
+    child.wait().ok();
+}
+
+#[test]
+fn embed_unknown_artifact_returns_200_with_not_found_body() {
+    // Unknown artifact under /embed should still go through the embed
+    // layout — render_artifact_detail returns a 200 with a "Not Found"
+    // body, which the embed wrap preserves. Exercises the same
+    // middleware-strip path as the happy case.
+    let (mut child, port) = start_server();
+    let (status, body, _) = fetch(port, "/embed/artifacts/DOES-NOT-EXIST", false);
+    assert_eq!(status, 200);
+    assert!(
+        body.contains("Not Found"),
+        "embed body for unknown artifact should include 'Not Found'"
+    );
+    assert!(
+        !body.contains("Main navigation"),
+        "/embed/* must not render the main nav even for not-found"
+    );
+    child.kill().ok();
+    child.wait().ok();
+}
