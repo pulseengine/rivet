@@ -3,7 +3,11 @@ import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: ".",
   testMatch: "*.spec.ts",
-  timeout: 30_000,
+  // 60s per-test timeout: /graph with the dogfood dataset (742 nodes, 1477
+  // edges) takes ~25-30s for synchronous layout + SVG generation in
+  // render_graph_view, leaving <5s for the .toBeVisible() assertion under
+  // the previous 30s budget. CI runner load makes this tighter still.
+  timeout: 60_000,
   retries: process.env.CI ? 1 : 0,
   workers: 1, // serial — single server instance
   use: {
