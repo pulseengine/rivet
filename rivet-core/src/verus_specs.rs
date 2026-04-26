@@ -346,13 +346,14 @@ pub open spec fn reachable_in(
             0 <= i < g.forward[src].len()
             && (#[trigger] g.forward[src][i]).target == dst
             && g.forward[src][i].link_tag == link_tag)
-        // Multi-step: go through an intermediate node
-        || (g.forward.contains_key(src) && exists|mid: GhostId, i: int|
+        // Multi-step: go through an intermediate node (the i-th forward
+        // link's target). Eliminating the explicit `mid` quantifier lets
+        // Verus auto-trigger on g.forward[src][i].
+        || (g.forward.contains_key(src) && exists|i: int|
             0 <= i < g.forward[src].len()
-            && (#[trigger] g.forward[src][i]).target == mid
-            && g.forward[src][i].link_tag == link_tag
-            && mid != src
-            && reachable_in(g, mid, dst, link_tag, (fuel - 1) as nat))
+            && (#[trigger] g.forward[src][i]).link_tag == link_tag
+            && g.forward[src][i].target != src
+            && reachable_in(g, g.forward[src][i].target, dst, link_tag, (fuel - 1) as nat))
     }
 }
 
