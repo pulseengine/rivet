@@ -314,10 +314,14 @@ jobs:
       matrix:
         include:
           - { crate: rivet-cli, shard: '0/1', shard_id: '0-of-1' }
-          - { crate: rivet-core, shard: '0/4', shard_id: '0-of-4' }
-          - { crate: rivet-core, shard: '1/4', shard_id: '1-of-4' }
-          - { crate: rivet-core, shard: '2/4', shard_id: '2-of-4' }
-          - { crate: rivet-core, shard: '3/4', shard_id: '3-of-4' }
+          - { crate: rivet-core, shard: '0/8', shard_id: '0-of-8' }
+          - { crate: rivet-core, shard: '1/8', shard_id: '1-of-8' }
+          - { crate: rivet-core, shard: '2/8', shard_id: '2-of-8' }
+          - { crate: rivet-core, shard: '3/8', shard_id: '3-of-8' }
+          - { crate: rivet-core, shard: '4/8', shard_id: '4-of-8' }
+          - { crate: rivet-core, shard: '5/8', shard_id: '5-of-8' }
+          - { crate: rivet-core, shard: '6/8', shard_id: '6-of-8' }
+          - { crate: rivet-core, shard: '7/8', shard_id: '7-of-8' }
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
