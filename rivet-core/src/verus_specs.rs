@@ -204,8 +204,11 @@ pub proof fn lemma_build_yields_symmetric(s: GhostStore, g: GhostLinkGraph)
     ensures
         backlink_symmetric(g, s),
 {
-    // Directly from preconditions — the algorithm's build loop maintains
-    // the symmetric invariant at each step.
+    // The requires clauses are literally the two conjuncts of
+    // backlink_symmetric. Assert it explicitly so Verus's SMT can connect
+    // the trigger patterns of the requires-side foralls to the
+    // spec-fn-side foralls.
+    assert(backlink_symmetric(g, s));
 }
 
 // -----------------------------------------------------------------------
