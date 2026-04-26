@@ -864,33 +864,64 @@ pub async fn run(app_state: AppState, bind: String, watch: bool) -> Result<()> {
             mcp_config,
         );
 
+    // Build the dashboard view routes once, then mount them at both
+    // `/` (the regular dashboard) and `/embed` (sidebar-free for
+    // iframe / VS Code WebView embedding).
+    //
+    // Mounting via `Router::nest` is the supported axum 0.8 way to
+    // handle prefix-stripping — the inner router sees `/artifacts/{id}`
+    // for both `/artifacts/REQ-001` and `/embed/artifacts/REQ-001`. An
+    // earlier version of `wrap_full_page` tried to strip `/embed` by
+    // mutating the request URI in middleware, but axum 0.8's router
+    // ignores URI mutation done in `from_fn_with_state` middleware
+    // (the matcher uses internal path state set up beforehand). The
+    // result was a wrapped 404 — see `tests/serve_integration.rs ::
+    // embed_artifact_returns_200_with_embed_layout` for the regression
+    // guard.
+    let view_routes = || -> Router<SharedState> {
+        Router::new()
+            .route("/", get(views::index))
+            .route("/artifacts", get(views::artifacts_list))
+            .route("/artifacts/{id}", get(views::artifact_detail))
+            .route("/artifacts/{id}/preview", get(views::artifact_preview))
+            .route("/artifacts/{id}/graph", get(views::artifact_graph))
+            .route("/validate", get(views::validate_view))
+            .route("/matrix", get(views::matrix_view))
+            .route("/matrix/cell", get(views::matrix_cell_detail))
+            .route("/graph", get(views::graph_view))
+            .route("/stats", get(views::stats_view))
+            .route("/coverage", get(views::coverage_view))
+            .route("/documents", get(views::documents_list))
+            .route("/documents/{id}", get(views::document_detail))
+            .route("/search", get(views::search_view))
+            .route("/verification", get(views::verification_view))
+            .route("/stpa", get(views::stpa_view))
+            .route("/eu-ai-act", get(views::eu_ai_act_view))
+            .route("/results", get(views::results_view))
+            .route("/results/{run_id}", get(views::result_detail))
+            .route("/source", get(views::source_tree_view))
+            .route("/source/{*path}", get(views::source_file_view))
+            .route("/diff", get(views::diff_view))
+            .route("/doc-linkage", get(views::doc_linkage_view))
+            .route("/traceability", get(views::traceability_view))
+            .route("/traceability/history", get(views::traceability_history))
+            .route("/help", get(views::help_view))
+            .route("/help/docs", get(views::help_docs_list))
+            .route("/help/docs/{*slug}", get(views::help_docs_topic))
+            .route("/help/schema", get(views::help_schema_list))
+            .route("/help/schema/{name}", get(views::help_schema_show))
+            .route("/help/links", get(views::help_links_view))
+            .route("/help/rules", get(views::help_rules_view))
+            .route("/externals", get(views::externals_list))
+            .route("/externals/{prefix}", get(views::external_detail))
+            .route("/variants", get(views::variants_list))
+    };
+
     let app = Router::new()
-        .route("/", get(views::index))
-        .route("/artifacts", get(views::artifacts_list))
-        .route("/artifacts/{id}", get(views::artifact_detail))
-        .route("/artifacts/{id}/preview", get(views::artifact_preview))
-        .route("/artifacts/{id}/graph", get(views::artifact_graph))
-        .route("/validate", get(views::validate_view))
-        .route("/matrix", get(views::matrix_view))
-        .route("/matrix/cell", get(views::matrix_cell_detail))
-        .route("/graph", get(views::graph_view))
-        .route("/stats", get(views::stats_view))
-        .route("/coverage", get(views::coverage_view))
-        .route("/documents", get(views::documents_list))
-        .route("/documents/{id}", get(views::document_detail))
-        .route("/search", get(views::search_view))
-        .route("/verification", get(views::verification_view))
-        .route("/stpa", get(views::stpa_view))
-        .route("/eu-ai-act", get(views::eu_ai_act_view))
-        .route("/results", get(views::results_view))
-        .route("/results/{run_id}", get(views::result_detail))
-        .route("/source", get(views::source_tree_view))
-        .route("/source/{*path}", get(views::source_file_view))
+        .merge(view_routes())
+        .nest("/embed", view_routes())
+        // Routes that exist only at the root (assets, APIs, hooks).
         .route("/source-raw/{*path}", get(source_raw))
-        .route("/diff", get(views::diff_view))
-        .route("/doc-linkage", get(views::doc_linkage_view))
-        .route("/traceability", get(views::traceability_view))
-        .route("/traceability/history", get(views::traceability_history))
         .route("/api/links/{id}", get(api_artifact_links))
         .route("/oembed", get(api::oembed))
         .nest(
@@ -905,16 +936,6 @@ pub async fn run(app_state: AppState, bind: String, watch: bool) -> Result<()> {
                 .with_state(state.clone()),
         )
         .route("/wasm/{*path}", get(wasm_asset))
-        .route("/help", get(views::help_view))
-        .route("/help/docs", get(views::help_docs_list))
-        .route("/help/docs/{*slug}", get(views::help_docs_topic))
-        .route("/help/schema", get(views::help_schema_list))
-        .route("/help/schema/{name}", get(views::help_schema_show))
-        .route("/help/links", get(views::help_links_view))
-        .route("/help/rules", get(views::help_rules_view))
-        .route("/externals", get(views::externals_list))
-        .route("/externals/{prefix}", get(views::external_detail))
-        .route("/variants", get(views::variants_list))
         .route("/docs-asset/{*path}", get(docs_asset))
         .route("/assets/htmx.js", get(htmx_asset))
         .route("/assets/mermaid.js", get(mermaid_asset))
@@ -979,37 +1000,18 @@ async fn wrap_full_page(
         || original_path == "/embed";
     let method = req.method().clone();
 
-    // Strip /embed prefix so existing route handlers match.
+    // The /embed/* routes are registered separately via
+    // `Router::nest("/embed", …)` (see `run` above) so we do NOT mutate
+    // the request URI here.  An earlier version of this middleware
+    // tried to strip /embed in-place via `head.uri = rewritten`, but
+    // axum 0.8's router consults internal path state set up before
+    // top-level `from_fn_with_state` middleware runs and ignores the
+    // URI mutation — confirmed by `tests/serve_integration.rs ::
+    // embed_artifact_returns_200_with_embed_layout`, which kept seeing
+    // a wrapped 404 with the in-place rewrite.
     //
-    // axum 0.8 routing uses `req.uri().path()` at request-time to
-    // dispatch, so rewriting the URI in a top-level middleware is
-    // sufficient to redirect /embed/foo → /foo without registering
-    // duplicate routes.  Two subtleties:
-    //
-    //   1. `Uri::from_parts(parts).unwrap()` can panic if the URI loses
-    //      its scheme/authority and we keep them set; build the new URI
-    //      directly from path+query so the result is a relative-form URI
-    //      (which is what hyper hands axum for incoming requests anyway).
-    //   2. The matcher in axum 0.8 also caches `OriginalUri` in
-    //      extensions; we don't strip that, so callers that inspect the
-    //      original /embed/... path can still do so.
-    let req = if is_embed && original_path.starts_with("/embed") {
-        let new_path = original_path.strip_prefix("/embed").unwrap_or("/");
-        let new_path = if new_path.is_empty() { "/" } else { new_path };
-        let new_pq = if query.is_empty() {
-            new_path.to_string()
-        } else {
-            format!("{new_path}?{query}")
-        };
-        let new_uri: axum::http::Uri = new_pq
-            .parse()
-            .expect("rewritten /embed path is a valid relative URI");
-        let (mut head, body) = req.into_parts();
-        head.uri = new_uri;
-        axum::extract::Request::from_parts(head, body)
-    } else {
-        req
-    };
+    // What we still need from `is_embed` here: pick the right layout
+    // when wrapping the inner handler's HTML body below.
     let path = if is_embed && original_path.starts_with("/embed") {
         original_path
             .strip_prefix("/embed")
