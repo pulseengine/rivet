@@ -156,7 +156,7 @@ pub open spec fn backlink_symmetric(g: GhostLinkGraph, s: GhostStore) -> bool {
         g.backward.contains_key(tgt)
         && 0 <= j < g.backward[tgt].len()
         ==> {
-            let bl = g.backward[tgt][j];
+            let bl = #[trigger] g.backward[tgt][j];
             let src = bl.source;
             g.forward.contains_key(src)
             && exists|i: int|
