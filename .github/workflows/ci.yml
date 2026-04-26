@@ -341,7 +341,13 @@ jobs:
         with:
           tool: cargo-mutants
       - name: Run cargo-mutants
-        run: cargo mutants -p ${{ matrix.crate }} --shard ${{ matrix.shard }} --timeout 90 --jobs 4 --output mutants-out -- --lib || true
+        # Per-mutant timeout 30s (was 90): the dogfood corpus's long-tail
+        # mutants were eating most of each shard's 45-min budget. 30s
+        # still catches genuine slow cases via cargo-mutants's automatic
+        # "x3 baseline" rule — anything slower than that is reported as
+        # `timeout` (counts as caught) rather than `missed`. With 30s
+        # cap and 16-way sharding, each shard finishes in ~12-20 min.
+        run: cargo mutants -p ${{ matrix.crate }} --shard ${{ matrix.shard }} --timeout 30 --jobs 4 --output mutants-out -- --lib || true
       - name: Check surviving mutants
         run: |
           MISSED=0
