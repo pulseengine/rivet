@@ -344,12 +344,12 @@ pub open spec fn reachable_in(
         // One-step: direct link exists
         (g.forward.contains_key(src) && exists|i: int|
             0 <= i < g.forward[src].len()
-            && g.forward[src][i].target == dst
+            && (#[trigger] g.forward[src][i]).target == dst
             && g.forward[src][i].link_tag == link_tag)
         // Multi-step: go through an intermediate node
         || (g.forward.contains_key(src) && exists|mid: GhostId, i: int|
             0 <= i < g.forward[src].len()
-            && g.forward[src][i].target == mid
+            && (#[trigger] g.forward[src][i]).target == mid
             && g.forward[src][i].link_tag == link_tag
             && mid != src
             && reachable_in(g, mid, dst, link_tag, (fuel - 1) as nat))
