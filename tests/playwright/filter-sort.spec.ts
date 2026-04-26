@@ -236,8 +236,14 @@ test.describe("Artifacts Filter/Sort/Pagination", () => {
     // Verify the input is wired for URL push-on-type.
     await expect(searchInput).toHaveAttribute("hx-push-url", "true");
 
-    // Type a query — HTMX fires a debounced hx-get and pushes the URL.
-    await searchInput.fill("OSLC");
+    // Type a query — HTMX fires a debounced hx-get on `keyup changed`
+    // (see rivet-cli/src/serve/components.rs ~line 216), so we need to
+    // generate real keypress events. Playwright's `fill()` sets the
+    // value via JS and only fires `input`, not `keyup`, so HTMX would
+    // never see the trigger. `pressSequentially` types one char at a
+    // time, dispatching keydown/keypress/keyup for each.
+    await searchInput.click();
+    await searchInput.pressSequentially("OSLC");
     await waitForHtmx(page);
 
     // URL must now carry ?q=OSLC.

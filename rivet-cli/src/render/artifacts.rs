@@ -44,6 +44,101 @@ use super::RenderResult;
 use super::helpers::badge_for_type;
 use crate::serve::components::ViewParams;
 
+/// Wrap any `<pre class="mermaid">…</pre>` block inside an HTML fragment
+/// (typically the output of `render_markdown` on an artifact description)
+/// in the shared `.svg-viewer` shell with the standard zoom-fit /
+/// fullscreen / popout toolbar.
+///
+/// The dashboard renders mermaid diagrams from two surfaces:
+///
+/// * The structured `diagram:` field — already wrapped in `.svg-viewer`
+///   by `render_artifact_detail` below.
+/// * Fenced ```mermaid blocks inside the artifact's `description` —
+///   emitted by `rivet_core::markdown::render_markdown` as bare
+///   `<pre class="mermaid">`.
+///
+/// Without this wrapping the description-based diagrams missed the
+/// toolbar, breaking the cross-view diagram-viewer parity contract
+/// pinned by `tests/playwright/artifacts.spec.ts:70`.
+///
+/// The transform is a textual scan rather than a DOM rewrite to keep
+/// the render path dependency-free; pulldown-cmark always emits the
+/// open tag verbatim as `<pre class="mermaid">` (see the
+/// `MERMAID_OPEN` sentinel in `rivet_core::markdown`), so a literal
+/// substring match is reliable.
+fn wrap_markdown_mermaid_in_svg_viewer(html: &str) -> String {
+    const NEEDLE: &str = "<pre class=\"mermaid\">";
+    if !html.contains(NEEDLE) {
+        return html.to_string();
+    }
+    const TOOLBAR: &str = "<div class=\"svg-viewer\">\
+         <div class=\"svg-viewer-toolbar\">\
+           <button onclick=\"svgZoomFit(this)\" title=\"Zoom to fit\">\u{229e}</button>\
+           <button onclick=\"svgFullscreen(this)\" title=\"Fullscreen\">\u{26f6}</button>\
+           <button onclick=\"svgPopout(this)\" title=\"Open in new window\">\u{2197}</button>\
+         </div>";
+    let mut out = String::with_capacity(html.len() + 256);
+    let mut cursor = 0;
+    while let Some(start) = html[cursor..].find(NEEDLE) {
+        let abs_start = cursor + start;
+        out.push_str(&html[cursor..abs_start]);
+        // Find the matching `</pre>` close.  No nested `<pre>` is
+        // possible inside a fenced code block, so the first `</pre>`
+        // after the open is the right one.
+        if let Some(close_rel) = html[abs_start..].find("</pre>") {
+            let close_end = abs_start + close_rel + "</pre>".len();
+            out.push_str(TOOLBAR);
+            out.push_str(&html[abs_start..close_end]);
+            out.push_str("</div>"); // .svg-viewer
+            cursor = close_end;
+        } else {
+            // Unterminated — emit the rest as-is and stop.
+            out.push_str(&html[abs_start..]);
+            return out;
+        }
+    }
+    out.push_str(&html[cursor..]);
+    out
+}
+
+#[cfg(test)]
+mod mermaid_wrap_tests {
+    use super::*;
+
+    // rivet: verifies REQ-007 (artifact diagram viewer parity)
+    #[test]
+    fn wraps_single_mermaid_block_in_svg_viewer() {
+        let html = "<p>intro</p><pre class=\"mermaid\">graph LR\nA-->B</pre><p>outro</p>";
+        let wrapped = wrap_markdown_mermaid_in_svg_viewer(html);
+        assert!(wrapped.contains("<div class=\"svg-viewer\">"));
+        assert!(wrapped.contains("svg-viewer-toolbar"));
+        assert!(wrapped.contains("title=\"Fullscreen\""));
+        // Pre block still in place.
+        assert!(wrapped.contains("<pre class=\"mermaid\">graph LR"));
+        // Surrounding paragraphs preserved.
+        assert!(wrapped.contains("<p>intro</p>"));
+        assert!(wrapped.contains("<p>outro</p>"));
+    }
+
+    // rivet: verifies REQ-007
+    #[test]
+    fn no_mermaid_means_no_change() {
+        let html = "<p>plain description with <code>foo</code></p>";
+        assert_eq!(wrap_markdown_mermaid_in_svg_viewer(html), html);
+    }
+
+    // rivet: verifies REQ-007
+    #[test]
+    fn wraps_multiple_mermaid_blocks() {
+        let html =
+            "<pre class=\"mermaid\">A</pre> mid <pre class=\"mermaid\">B</pre>";
+        let wrapped = wrap_markdown_mermaid_in_svg_viewer(html);
+        // Two viewer wrappers present.
+        assert_eq!(wrapped.matches("<div class=\"svg-viewer\">").count(), 2);
+        assert_eq!(wrapped.matches("svg-viewer-toolbar").count(), 2);
+    }
+}
+
 // ── Artifacts list ────────────────────────────────────────────────────────
 
 pub(crate) fn render_artifacts_list(ctx: &RenderContext, params: &ViewParams) -> String {
@@ -451,9 +546,15 @@ pub(crate) fn render_artifact_detail(ctx: &RenderContext, id: &str) -> RenderRes
         html_escape(&artifact.title)
     ));
     if let Some(desc) = &artifact.description {
+        // Render markdown, then wrap any `<pre class="mermaid">` blocks in
+        // the same `.svg-viewer` toolbar shell used by the dedicated
+        // `diagram:` field below — so a mermaid diagram embedded in a
+        // description gets the same zoom-fit / fullscreen / popout
+        // controls as one supplied via the structured field. Pins the
+        // diagram-viewer parity contract (tests/playwright/artifacts.spec.ts:70).
+        let rendered = wrap_markdown_mermaid_in_svg_viewer(&render_markdown(desc));
         html.push_str(&format!(
-            "<dt>Description</dt><dd class=\"artifact-desc\">{}</dd>",
-            render_markdown(desc)
+            "<dt>Description</dt><dd class=\"artifact-desc artifact-diagram\">{rendered}</dd>"
         ));
     }
     if let Some(status) = &artifact.status {

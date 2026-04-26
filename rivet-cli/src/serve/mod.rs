@@ -979,18 +979,31 @@ async fn wrap_full_page(
         || original_path == "/embed";
     let method = req.method().clone();
 
-    // Strip /embed prefix so existing route handlers match
+    // Strip /embed prefix so existing route handlers match.
+    //
+    // axum 0.8 routing uses `req.uri().path()` at request-time to
+    // dispatch, so rewriting the URI in a top-level middleware is
+    // sufficient to redirect /embed/foo → /foo without registering
+    // duplicate routes.  Two subtleties:
+    //
+    //   1. `Uri::from_parts(parts).unwrap()` can panic if the URI loses
+    //      its scheme/authority and we keep them set; build the new URI
+    //      directly from path+query so the result is a relative-form URI
+    //      (which is what hyper hands axum for incoming requests anyway).
+    //   2. The matcher in axum 0.8 also caches `OriginalUri` in
+    //      extensions; we don't strip that, so callers that inspect the
+    //      original /embed/... path can still do so.
     let req = if is_embed && original_path.starts_with("/embed") {
         let new_path = original_path.strip_prefix("/embed").unwrap_or("/");
         let new_path = if new_path.is_empty() { "/" } else { new_path };
-        let mut parts = req.uri().clone().into_parts();
         let new_pq = if query.is_empty() {
             new_path.to_string()
         } else {
             format!("{new_path}?{query}")
         };
-        parts.path_and_query = Some(new_pq.parse().unwrap());
-        let new_uri = axum::http::Uri::from_parts(parts).unwrap();
+        let new_uri: axum::http::Uri = new_pq
+            .parse()
+            .expect("rewritten /embed path is a valid relative URI");
         let (mut head, body) = req.into_parts();
         head.uri = new_uri;
         axum::extract::Request::from_parts(head, body)
@@ -1010,12 +1023,20 @@ async fn wrap_full_page(
 
     // Only wrap GET requests to view routes (not assets or APIs)
     // For "/" without print/embed, the index handler already renders the full page.
+    //
+    // /search is a fragment-only endpoint — the Cmd+K JS fetches it via
+    // `fetch()` (no `HX-Request` header) and dumps the body into
+    // `#cmd-k-results`. If we wrap it in the full layout, a second
+    // `<input id="cmd-k-input">` ends up nested inside `#cmd-k-results`,
+    // tripping Playwright's strict-mode locator and confusing keyboard
+    // navigation. Treat /search like the other API endpoints.
     if method == axum::http::Method::GET
         && !is_htmx
         && (path != "/" || is_print || is_embed)
         && !path.starts_with("/api/")
         && !path.starts_with("/mcp")
         && !path.starts_with("/oembed")
+        && !path.starts_with("/search")
         && !path.starts_with("/assets/")
         && !path.starts_with("/wasm/")
         && !path.starts_with("/source-raw/")
