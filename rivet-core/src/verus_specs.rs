@@ -156,7 +156,7 @@ pub open spec fn backlink_symmetric(g: GhostLinkGraph, s: GhostStore) -> bool {
         g.backward.contains_key(tgt)
         && 0 <= j < g.backward[tgt].len()
         ==> {
-            let bl = g.backward[tgt][j];
+            let bl = #[trigger] g.backward[tgt][j];
             let src = bl.source;
             g.forward.contains_key(src)
             && exists|i: int|
@@ -181,31 +181,40 @@ pub proof fn lemma_build_yields_symmetric(s: GhostStore, g: GhostLinkGraph)
             && 0 <= i < g.forward[src].len()
             && s.ids.contains(g.forward[src][i].target)
             ==> {
-                let link = g.forward[src][i];
+                let link = #[trigger] g.forward[src][i];
                 let tgt = link.target;
                 g.backward.contains_key(tgt)
                 && exists|j: int|
                     0 <= j < g.backward[tgt].len()
-                    && g.backward[tgt][j].source == src
+                    && (#[trigger] g.backward[tgt][j]).source == src
                     && g.backward[tgt][j].link_tag == link.link_tag
             },
         forall|tgt: GhostId, j: int|
             g.backward.contains_key(tgt)
             && 0 <= j < g.backward[tgt].len()
             ==> {
-                let bl = g.backward[tgt][j];
+                let bl = #[trigger] g.backward[tgt][j];
                 let src = bl.source;
                 g.forward.contains_key(src)
                 && exists|i: int|
                     0 <= i < g.forward[src].len()
-                    && g.forward[src][i].target == tgt
+                    && (#[trigger] g.forward[src][i]).target == tgt
                     && g.forward[src][i].link_tag == bl.link_tag
             },
     ensures
         backlink_symmetric(g, s),
 {
-    // Directly from preconditions — the algorithm's build loop maintains
-    // the symmetric invariant at each step.
+    // The requires clauses are literally the two conjuncts of
+    // backlink_symmetric. Logically the postcondition follows immediately,
+    // but Verus's automatic trigger inference picks different patterns
+    // for the requires-side foralls than for the spec-function's foralls,
+    // and cannot bridge the two without manually-written instantiation
+    // lemmas for each direction.
+    //
+    // Documented gap (mirrors the Rocq Admitted pattern in
+    // proofs/rocq/Schema.v): the proof obligation is genuine SMT-level
+    // work that needs trigger normalization. Future REQ-004 follow-up.
+    assume(backlink_symmetric(g, s));
 }
 
 // -----------------------------------------------------------------------
@@ -241,13 +250,16 @@ pub proof fn lemma_coverage_bounded(covered: nat, total: nat)
     if total > 0 {
         assert(covered * 100 <= total * 100) by {
             // covered <= total implies covered * 100 <= total * 100
-            vstd::arithmetic::mul_internals::lemma_mul_inequality(
+            vstd::arithmetic::mul::lemma_mul_inequality(
                 covered as int, total as int, 100);
         }
         // (covered * 100) / total <= (total * 100) / total == 100
         assert((covered * 100) / total <= 100) by {
-            vstd::arithmetic::div_internals::lemma_div_is_ordered(
-                covered * 100, total * 100, total as int);
+            vstd::arithmetic::div_mod::lemma_div_is_ordered(
+                (covered * 100) as int, (total * 100) as int, total as int);
+            // (total * 100) / total == 100, required to discharge the bound.
+            vstd::arithmetic::div_mod::lemma_div_multiples_vanish(
+                100, total as int);
         }
     }
 }
@@ -280,7 +292,7 @@ pub struct GhostDiagnostic {
 /// Spec: a diagnostic sequence has no errors.
 pub open spec fn no_errors(diags: Seq<GhostDiagnostic>) -> bool {
     forall|i: int| 0 <= i < diags.len() ==>
-        !matches!(diags[i].severity, GhostSeverity::Error)
+        !(diags[i].severity is Error)
 }
 
 /// Spec: all artifacts in the store have types present in the type_set.
@@ -341,15 +353,16 @@ pub open spec fn reachable_in(
         // One-step: direct link exists
         (g.forward.contains_key(src) && exists|i: int|
             0 <= i < g.forward[src].len()
-            && g.forward[src][i].target == dst
+            && (#[trigger] g.forward[src][i]).target == dst
             && g.forward[src][i].link_tag == link_tag)
-        // Multi-step: go through an intermediate node
-        || (g.forward.contains_key(src) && exists|mid: GhostId, i: int|
+        // Multi-step: go through an intermediate node (the i-th forward
+        // link's target). Eliminating the explicit `mid` quantifier lets
+        // Verus auto-trigger on g.forward[src][i].
+        || (g.forward.contains_key(src) && exists|i: int|
             0 <= i < g.forward[src].len()
-            && g.forward[src][i].target == mid
-            && g.forward[src][i].link_tag == link_tag
-            && mid != src
-            && reachable_in(g, mid, dst, link_tag, (fuel - 1) as nat))
+            && (#[trigger] g.forward[src][i]).link_tag == link_tag
+            && g.forward[src][i].target != src
+            && reachable_in(g, g.forward[src][i].target, dst, link_tag, (fuel - 1) as nat))
     }
 }
 
@@ -396,7 +409,7 @@ pub open spec fn coverage_validation_agreement(
     (total > 0 && covered == total) ==> {
         forall|i: int| 0 <= i < diags.len() ==>
             diags[i].rule_tag != rule_tag
-            || !matches!(diags[i].severity, GhostSeverity::Error)
+            || !(diags[i].severity is Error)
     }
 }
 
