@@ -147,7 +147,7 @@ test.describe("Rendering invariants — embed layout", () => {
 });
 
 test.describe("Rendering invariants — render-shape contracts", () => {
-  test("mermaid in artifact `description` renders as <pre class='mermaid'>", async ({
+  test("mermaid in artifact `description` renders as <pre class='mermaid'> wrapped in .svg-viewer", async ({
     page,
   }) => {
     // ARCH-CORE-001 has a fenced ```mermaid block in its `description` (see
@@ -155,12 +155,16 @@ test.describe("Rendering invariants — render-shape contracts", () => {
     // rivet-core/src/markdown.rs converts these to <pre class="mermaid">
     // so the dashboard's mermaid.js loader picks them up.
     //
-    // We pin TWO things at once:
+    // PR #217 closed the description-mermaid asymmetry: render/artifacts.rs
+    // now post-processes render_markdown output to wrap any <pre.mermaid>
+    // in the same .svg-viewer container with toolbar that the dedicated
+    // `diagram:` field uses (see render/artifacts.rs:489 area).
+    //
+    // We pin BOTH:
     //   1. The fenced block IS recognised and emitted as <pre.mermaid>.
-    //   2. Description-mermaid is currently NOT wrapped in .svg-viewer
-    //      (only the dedicated `diagram:` field is). This asymmetry is a
-    //      known UX gap; if it changes, this assertion forces the change
-    //      to be intentional.
+    //   2. Description-mermaid IS now wrapped in .svg-viewer (parity with
+    //      diagram-field rendering). If a future change un-wraps it, this
+    //      assertion forces the change to be intentional.
     await page.goto("/artifacts/ARCH-CORE-001");
     await waitForHtmx(page);
 
@@ -174,13 +178,11 @@ test.describe("Rendering invariants — render-shape contracts", () => {
     // Body should contain the diagram source so mermaid.js can render it.
     await expect(mermaidPre).toContainText("flowchart");
 
-    // Pinning the current asymmetry: the description-embedded mermaid is
-    // NOT inside an .svg-viewer wrapper. (Only the top-level `diagram:`
-    // field gets one — see render/artifacts.rs:489.)
+    // Description-embedded mermaid is now wrapped in .svg-viewer (PR #217).
     const wrappedInViewer = await desc
       .locator(".svg-viewer pre.mermaid")
       .count();
-    expect(wrappedInViewer).toBe(0);
+    expect(wrappedInViewer).toBeGreaterThan(0);
   });
 });
 
