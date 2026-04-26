@@ -2166,10 +2166,7 @@ mod tests {
     fn epoch_to_ymd_hm_2024_12_31_end_of_day() {
         // 2024-12-31 23:59:59 UTC — exercises mp + 3 with mp = 9 (m =
         // 12) and confirms hour/minute decomposition from time-of-day.
-        assert_eq!(
-            epoch_to_ymd_hm(1_735_689_599),
-            (2024, 12, 31, 23, 59),
-        );
+        assert_eq!(epoch_to_ymd_hm(1_735_689_599), (2024, 12, 31, 23, 59),);
     }
 
     #[test]
@@ -2177,10 +2174,7 @@ mod tests {
         // 2024-04-25 12:34:56 UTC — exercises mp + 3 branch (mp = 1 →
         // m = 4) and a non-zero hour AND minute. 56s rounds down to
         // minute 34.
-        assert_eq!(
-            epoch_to_ymd_hm(1_714_048_496),
-            (2024, 4, 25, 12, 34),
-        );
+        assert_eq!(epoch_to_ymd_hm(1_714_048_496), (2024, 4, 25, 12, 34),);
     }
 
     #[test]
@@ -2190,10 +2184,7 @@ mod tests {
         // give m = 1 = January).
         // Kills: rivet-core/src/embed.rs:1320 — replace `-` with `/` in
         // the `mp - 9` else branch.
-        assert_eq!(
-            epoch_to_ymd_hm(1_707_955_200),
-            (2024, 2, 15, 0, 0),
-        );
+        assert_eq!(epoch_to_ymd_hm(1_707_955_200), (2024, 2, 15, 0, 0),);
     }
 
     #[test]
@@ -2206,10 +2197,7 @@ mod tests {
         // doe/36524 = 0` → yoe = 0/365 = 0 (would compute y = 2000
         // and the wrong day).
         // Kills: rivet-core/src/embed.rs:1315 — replace `+` with `*`.
-        assert_eq!(
-            epoch_to_ymd_hm(1_078_012_800),
-            (2004, 2, 29, 0, 0),
-        );
+        assert_eq!(epoch_to_ymd_hm(1_078_012_800), (2004, 2, 29, 0, 0),);
     }
 
     #[test]
@@ -2221,10 +2209,7 @@ mod tests {
         // 199 → wrong year as well.
         // Kills: rivet-core/src/embed.rs:1315 — replace `+` with `-`
         // and `+` with `*` on the `+ doe/36524` term.
-        assert_eq!(
-            epoch_to_ymd_hm(7_263_216_000),
-            (2200, 3, 1, 0, 0),
-        );
+        assert_eq!(epoch_to_ymd_hm(7_263_216_000), (2200, 3, 1, 0, 0),);
     }
 
     /// `epoch_to_iso8601()` is the public ISO-8601 wrapper; mutants
@@ -2255,10 +2240,7 @@ mod tests {
         // year (div by 400) and Feb 29 exists.
         // Kills: rivet-core/src/embed.rs:1315 — replace `-` with `+`
         // and `-` with `/` on the `- doe/146096` term.
-        assert_eq!(
-            epoch_to_ymd_hm(13_574_563_200),
-            (2400, 2, 29, 0, 0),
-        );
+        assert_eq!(epoch_to_ymd_hm(13_574_563_200), (2400, 2, 29, 0, 0),);
     }
 
     // ── Mutation-killing tests for render_coverage thresholds ───────

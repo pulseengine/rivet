@@ -2233,47 +2233,32 @@ mod tests {
 
     #[test]
     fn epoch_secs_to_iso8601_2024_jan_1_midnight() {
-        assert_eq!(
-            epoch_secs_to_iso8601(1_704_067_200),
-            "2024-01-01T00:00:00Z",
-        );
+        assert_eq!(epoch_secs_to_iso8601(1_704_067_200), "2024-01-01T00:00:00Z",);
     }
 
     #[test]
     fn epoch_secs_to_iso8601_2024_dec_31_end_of_day() {
-        assert_eq!(
-            epoch_secs_to_iso8601(1_735_689_599),
-            "2024-12-31T23:59:59Z",
-        );
+        assert_eq!(epoch_secs_to_iso8601(1_735_689_599), "2024-12-31T23:59:59Z",);
     }
 
     #[test]
     fn epoch_secs_to_iso8601_2024_apr_25_with_seconds() {
         // 2024-04-25 12:34:56 UTC — the seconds field exercises
         // `time_secs % 60` (different from minute decomposition).
-        assert_eq!(
-            epoch_secs_to_iso8601(1_714_048_496),
-            "2024-04-25T12:34:56Z",
-        );
+        assert_eq!(epoch_secs_to_iso8601(1_714_048_496), "2024-04-25T12:34:56Z",);
     }
 
     #[test]
     fn epoch_secs_to_iso8601_2024_feb_15() {
         // mp = 11 path (m = mp - 9 = 2 → February).
-        assert_eq!(
-            epoch_secs_to_iso8601(1_707_955_200),
-            "2024-02-15T00:00:00Z",
-        );
+        assert_eq!(epoch_secs_to_iso8601(1_707_955_200), "2024-02-15T00:00:00Z",);
     }
 
     #[test]
     fn epoch_secs_to_iso8601_2200_mar_1_century_skipped_leap() {
         // 2200 is NOT a leap year (divisible by 100, not 400).
         // doe = 73048 — exercises the `+ doe/36524` correction.
-        assert_eq!(
-            epoch_secs_to_iso8601(7_263_216_000),
-            "2200-03-01T00:00:00Z",
-        );
+        assert_eq!(epoch_secs_to_iso8601(7_263_216_000), "2200-03-01T00:00:00Z",);
     }
 
     #[test]
@@ -2638,7 +2623,11 @@ mod tests {
             .collect();
         assert_eq!(
             rel_ids,
-            vec!["REL-1".to_string(), "REL-2".to_string(), "REL-3".to_string()],
+            vec![
+                "REL-1".to_string(),
+                "REL-2".to_string(),
+                "REL-3".to_string()
+            ],
             "REL counter must increment from 1 by +=1 per link",
         );
     }
