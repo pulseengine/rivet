@@ -3653,7 +3653,7 @@ fn cmd_init_agents(cli: &Cli, migrate: bool, force_regen: bool) -> Result<bool> 
         config
             .docs
             .iter()
-            .map(|d| format!("`{}`", d))
+            .map(|d| format!("`{}`", d.path()))
             .collect::<Vec<_>>()
             .join(", ")
     };
@@ -6880,9 +6880,7 @@ fn cmd_docs(
 /// Run `rivet docs check` — assert documentation matches reality.
 fn cmd_docs_check(cli: &Cli, format: &str, fix: bool) -> Result<bool> {
     use clap::CommandFactory;
-    use rivet_core::doc_check::{
-        DocCheckContext, apply_fixes, collect_docs, default_invariants, run_all,
-    };
+    use rivet_core::doc_check::{DocCheckContext, apply_fixes, default_invariants, run_all};
     use std::collections::BTreeSet;
 
     validate_format(format, &["text", "json"])?;
@@ -6897,9 +6895,19 @@ fn cmd_docs_check(cli: &Cli, format: &str, fix: bool) -> Result<bool> {
     // silently misses every markdown file outside the top-level `docs/`.
     // Missing or unreadable config degrades to the default `docs/` scan.
     let project_config = rivet_core::load_project_config(&project_root.join("rivet.yaml")).ok();
-    let extra_doc_dirs: Vec<std::path::PathBuf> = project_config
+    let scan_roots: Vec<rivet_core::doc_check::DocScanRoot> = project_config
         .as_ref()
-        .map(|c| c.docs.iter().map(std::path::PathBuf::from).collect())
+        .map(|c| {
+            c.docs
+                .iter()
+                .map(|e| {
+                    rivet_core::doc_check::DocScanRoot::with_exclude(
+                        std::path::PathBuf::from(e.path()),
+                        e.exclude().to_vec(),
+                    )
+                })
+                .collect()
+        })
         .unwrap_or_default();
     let external_namespaces: Vec<String> = project_config
         .as_ref()
@@ -6917,9 +6925,22 @@ fn cmd_docs_check(cli: &Cli, format: &str, fix: bool) -> Result<bool> {
         })
         .unwrap_or_default();
 
-    // 1. Collect docs.
-    let docs = collect_docs(&project_root, &extra_doc_dirs)
-        .with_context(|| format!("scanning docs under {}", project_root.display()))?;
+    // 1. Collect docs (honoring per-root `exclude:` allowlists).
+    let (docs, scan_summary) =
+        rivet_core::doc_check::collect_docs_with_summary(&project_root, &scan_roots)
+            .with_context(|| format!("scanning docs under {}", project_root.display()))?;
+    // Print the per-root scan summary so the user sees how many files
+    // were silently allowlisted under each docs entry.
+    for rs in &scan_summary.roots {
+        if rs.excluded > 0 {
+            eprintln!(
+                "rivet docs check: {} included, {} excluded by allowlist under {}",
+                rs.included,
+                rs.excluded,
+                rs.path.display(),
+            );
+        }
+    }
 
     // 2. Build known-subcommand set from clap metadata (keeps check in sync
     //    with the actual CLI at compile time).
@@ -7270,7 +7291,8 @@ fn cmd_context(cli: &Cli) -> Result<bool> {
             .join(", ")
     ));
     if !config.docs.is_empty() {
-        out.push_str(&format!("- **Docs:** {}\n", config.docs.join(", ")));
+        let names: Vec<&str> = config.docs.iter().map(|e| e.path()).collect();
+        out.push_str(&format!("- **Docs:** {}\n", names.join(", ")));
     }
     if let Some(ref r) = config.results {
         out.push_str(&format!("- **Results:** {r}\n"));
@@ -9612,17 +9634,31 @@ impl ProjectContext {
     }
 
     /// Load project with artifacts, schema, link graph, and documents.
+    ///
+    /// The docs scanner emits one stderr warning per file declined for
+    /// missing or malformed YAML front-matter (see
+    /// [`document::load_documents_with_report`]). Files matching an
+    /// `exclude:` glob in the corresponding `docs:` entry are silently
+    /// allowlisted so generated content can stay in-tree without spam.
     fn load_with_docs(cli: &Cli) -> Result<Self> {
         let mut ctx = Self::load(cli)?;
 
         let mut doc_store = DocumentStore::new();
-        for docs_path in &ctx.config.docs {
-            let dir = cli.project.join(docs_path);
-            let docs = document::load_documents(&dir)
-                .with_context(|| format!("loading docs from '{docs_path}'"))?;
+        let mut total = rivet_core::document::ScanReport::default();
+        for entry in &ctx.config.docs {
+            let dir = cli.project.join(entry.path());
+            let (docs, report) = document::load_documents_with_report(&dir, entry.exclude())
+                .with_context(|| format!("loading docs from '{}'", entry.path()))?;
             for doc in docs {
                 doc_store.insert(doc);
             }
+            total.merge(&report);
+        }
+        if total.warned > 0 || total.excluded > 0 {
+            eprintln!(
+                "rivet docs: {} loaded, {} skipped (warnings above), {} excluded by allowlist",
+                total.loaded, total.warned, total.excluded,
+            );
         }
         ctx.doc_store = Some(doc_store);
         Ok(ctx)
@@ -10923,9 +10959,11 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
     // Load documents and results from config
     if config_path.exists() {
         if let Ok(config) = rivet_core::load_project_config(&config_path) {
-            for docs_path in &config.docs {
-                let dir = project_dir.join(docs_path);
-                if let Ok(docs) = rivet_core::document::load_documents(&dir) {
+            for entry in &config.docs {
+                let dir = project_dir.join(entry.path());
+                if let Ok((docs, _report)) =
+                    rivet_core::document::load_documents_with_report(&dir, entry.exclude())
+                {
                     for doc in docs {
                         doc_store.insert(doc);
                     }

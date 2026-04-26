@@ -441,13 +441,14 @@ fn load_docs_and_results(
 ) -> Result<(DocumentStore, ResultStore, Vec<PathBuf>)> {
     let mut doc_store = DocumentStore::new();
     let mut doc_dirs = Vec::new();
-    for docs_path in &config.docs {
-        let dir = project_path.join(docs_path);
+    for entry in &config.docs {
+        let dir = project_path.join(entry.path());
         if dir.is_dir() {
             doc_dirs.push(dir.clone());
         }
-        let docs = rivet_core::document::load_documents(&dir)
-            .with_context(|| format!("loading docs from '{docs_path}'"))?;
+        let (docs, _report) =
+            rivet_core::document::load_documents_with_report(&dir, entry.exclude())
+                .with_context(|| format!("loading docs from '{}'", entry.path()))?;
         for doc in docs {
             doc_store.insert(doc);
         }
