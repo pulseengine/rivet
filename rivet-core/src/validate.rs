@@ -1876,6 +1876,143 @@ then:
         assert!(s.contains("the message"));
     }
 
+    /// Schema with a single artifact type "test" that has the given fields.
+    fn schema_with_fields(fields: Vec<FieldDef>) -> Schema {
+        let mut file = minimal_schema("test");
+        file.artifact_types = vec![ArtifactTypeDef {
+            name: "test".to_string(),
+            description: String::new(),
+            fields,
+            link_fields: vec![],
+            aspice_process: None,
+            common_mistakes: vec![],
+            example: None,
+            yaml_section: None,
+            yaml_sections: vec![],
+            yaml_section_suffix: None,
+            shorthand_links: std::collections::BTreeMap::new(),
+        }];
+        Schema::merge(&[file])
+    }
+
+    fn required_field(name: &str) -> FieldDef {
+        FieldDef {
+            name: name.to_string(),
+            field_type: "string".to_string(),
+            required: true,
+            description: None,
+            allowed_values: None,
+        }
+    }
+
+    // Verifies: REQ-004
+    // Kills:
+    //   validate.rs:170:31 replace `&&` with `||`
+    //   validate.rs:170:34 delete `!` on `!artifact.fields.contains_key(...)`
+    //   validate.rs:177:20 delete `!` on `!has_base`
+    //   validate.rs:173:21 delete match arm "description"
+    //   validate.rs:174:21 delete match arm "status"
+    #[test]
+    fn required_field_check_distinguishes_present_and_missing() {
+        // Case A: field is required and missing → emit "required-field".
+        let schema = schema_with_fields(vec![required_field("safety")]);
+        let art_missing = make_artifact("A", "test", None, None, vec![], vec![]);
+        let d_missing = run_validate(&schema, art_missing, vec![]);
+        assert_eq!(
+            rule_count(&d_missing, "required-field"),
+            1,
+            "missing required field must emit; mutating `&&` -> `||` would \
+             also emit (so this case alone doesn't pin), but together with \
+             case B below that mutant flips behaviour",
+        );
+
+        // Case B: field is required and present → NO diagnostic.
+        let art_present =
+            make_artifact("A", "test", None, None, vec![("safety", "ASIL_B")], vec![]);
+        let d_present = run_validate(&schema, art_present, vec![]);
+        assert_eq!(
+            rule_count(&d_present, "required-field"),
+            0,
+            "required field that is present must NOT emit; mutating `!` \
+             on contains_key (line 170:34) flips: would emit when field is \
+             present. Mutating `&&` -> `||` (line 170:31) makes the guard \
+             enter even when field.required=false, also wrong here.",
+        );
+
+        // Case C: required field "description" is satisfied by the
+        // top-level Artifact.description rather than fields map.
+        let schema_desc = schema_with_fields(vec![required_field("description")]);
+        let art_desc = make_artifact(
+            "A",
+            "test",
+            None,
+            Some("a real description"),
+            vec![],
+            vec![],
+        );
+        let d_desc = run_validate(&schema_desc, art_desc, vec![]);
+        assert_eq!(
+            rule_count(&d_desc, "required-field"),
+            0,
+            "description on the artifact itself must satisfy a required \
+             'description' field. Mutating `delete match arm \"description\"` \
+             (line 173) drops the special case — has_base becomes false, \
+             diagnostic gets emitted. Mutating `delete !` on `!has_base` \
+             (line 177) inverts the gate — diagnostic gets emitted.",
+        );
+
+        // Case D: required "status" satisfied by the top-level status.
+        let schema_status = schema_with_fields(vec![required_field("status")]);
+        let art_status = make_artifact("A", "test", Some("approved"), None, vec![], vec![]);
+        let d_status = run_validate(&schema_status, art_status, vec![]);
+        assert_eq!(
+            rule_count(&d_status, "required-field"),
+            0,
+            "status on the artifact must satisfy a required 'status' field; \
+             mutating `delete match arm \"status\"` (line 174) breaks this.",
+        );
+    }
+
+    // Verifies: REQ-004
+    // Kills:
+    //   validate.rs:198:28 delete `!` on `!allowed.iter().any(...)`
+    //   validate.rs:198:54 replace `==` with `!=`
+    #[test]
+    fn allowed_values_string_check_distinguishes_in_and_out_of_set() {
+        // Field with explicit allowed-values list.
+        let schema = schema_with_fields(vec![FieldDef {
+            name: "safety".to_string(),
+            field_type: "string".to_string(),
+            required: false,
+            description: None,
+            allowed_values: Some(vec!["ASIL_A".into(), "ASIL_B".into()]),
+        }]);
+
+        // Out-of-set value → emit "allowed-values".
+        let art_bad = make_artifact("A", "test", None, None, vec![("safety", "ASIL_X")], vec![]);
+        let d_bad = run_validate(&schema, art_bad, vec![]);
+        assert_eq!(
+            rule_count(&d_bad, "allowed-values"),
+            1,
+            "out-of-set value must emit; deleting `!` on `!any(==)` (line \
+             198:28) would emit only when value IS in set; replacing `==` \
+             with `!=` (line 198:54) would treat any non-equal item as \
+             matching, so the inner closure becomes \"any inequality\" — \
+             with multiple allowed values, that's true for at least one, \
+             so the outer .any() returns true and the negation skips emit",
+        );
+
+        // In-set value → no diagnostic.
+        let art_good = make_artifact("A", "test", None, None, vec![("safety", "ASIL_B")], vec![]);
+        let d_good = run_validate(&schema, art_good, vec![]);
+        assert_eq!(
+            rule_count(&d_good, "allowed-values"),
+            0,
+            "in-set value must not emit; replacing `==` with `!=` would \
+             flip the per-item check and emit incorrectly",
+        );
+    }
+
     // Verifies: REQ-004
     // Kills:
     //   validate.rs:523:5 replace validate_documents -> Vec<Diagnostic> with vec![]
