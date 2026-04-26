@@ -181,24 +181,24 @@ pub proof fn lemma_build_yields_symmetric(s: GhostStore, g: GhostLinkGraph)
             && 0 <= i < g.forward[src].len()
             && s.ids.contains(g.forward[src][i].target)
             ==> {
-                let link = g.forward[src][i];
+                let link = #[trigger] g.forward[src][i];
                 let tgt = link.target;
                 g.backward.contains_key(tgt)
                 && exists|j: int|
                     0 <= j < g.backward[tgt].len()
-                    && g.backward[tgt][j].source == src
+                    && (#[trigger] g.backward[tgt][j]).source == src
                     && g.backward[tgt][j].link_tag == link.link_tag
             },
         forall|tgt: GhostId, j: int|
             g.backward.contains_key(tgt)
             && 0 <= j < g.backward[tgt].len()
             ==> {
-                let bl = g.backward[tgt][j];
+                let bl = #[trigger] g.backward[tgt][j];
                 let src = bl.source;
                 g.forward.contains_key(src)
                 && exists|i: int|
                     0 <= i < g.forward[src].len()
-                    && g.forward[src][i].target == tgt
+                    && (#[trigger] g.forward[src][i]).target == tgt
                     && g.forward[src][i].link_tag == bl.link_tag
             },
     ensures
