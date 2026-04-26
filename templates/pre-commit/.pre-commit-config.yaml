@@ -1,0 +1,122 @@
+# Canonical pre-commit configuration for PulseEngine Rust repositories.
+#
+# Source of truth: pulseengine/rivet:templates/pre-commit/.pre-commit-config.yaml
+# Documented in: pulseengine/rivet:docs/pre-commit.md
+#
+# Tier annotations (T1 / T2 / T3) below match the tier system documented in
+# docs/pre-commit.md. Adopter repositories pick a tier and trim hooks to match.
+# The tier groupings are advisory; safety-critical work should target T2 or T3.
+#
+# CUSTOMIZE markers indicate places adopter repositories must adjust:
+#   - rust-toolchain pinning (cargo +<channel> ...)
+#   - per-project paths in `files:` regex patterns
+#   - rivet artifact directory layout
+
+repos:
+  # ── T1 — Generic file hygiene ─────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace          # T1
+      - id: end-of-file-fixer            # T1
+      - id: check-yaml                   # T1
+        args: ['--allow-multiple-documents']
+      - id: check-toml                   # T1
+      - id: check-json                   # T1
+      - id: check-added-large-files      # T1
+        args: ['--maxkb=500']
+        # CUSTOMIZE: exclude vendored/minified assets per project.
+        # exclude: '^path/to/vendored/asset$'
+      - id: check-merge-conflict         # T1
+      - id: detect-private-key           # T1
+      - id: check-case-conflict          # T1
+      - id: check-symlinks               # T1
+      - id: mixed-line-ending            # T1
+        args: ['--fix=lf']
+
+  # ── T1 — YAML lint ────────────────────────────────────────────────────
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.37.0
+    hooks:
+      - id: yamllint                     # T1
+        # CUSTOMIZE: drop the `args` line if your repo has no .yamllint.yaml.
+        args: ['-c', '.yamllint.yaml']
+
+  # ── T1 — Rust core (formatting, lint, tests) ──────────────────────────
+  - repo: local
+    hooks:
+      - id: cargo-fmt                    # T1
+        name: cargo fmt
+        entry: cargo fmt --all -- --check
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: cargo-clippy                 # T1
+        name: cargo clippy -D warnings
+        # CUSTOMIZE: pin the Rust channel to match rust-toolchain.toml.
+        entry: cargo +stable clippy --all-targets -- -D warnings
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: cargo-test                   # T1
+        name: cargo test
+        entry: cargo test --all
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      # ── T1 — Rivet traceability (dogfood) ───────────────────────────
+      - id: rivet-validate               # T1
+        name: rivet validate (dogfood)
+        # CUSTOMIZE: invoke `rivet` from your install of choice (see
+        # docs/pre-commit.md "Installing rivet for hooks").
+        entry: rivet validate
+        language: system
+        pass_filenames: false
+        # CUSTOMIZE: file globs must cover your artifact + schema layout.
+        files: '(artifacts/.*\.yaml|schemas/.*\.yaml|safety/.*\.yaml|rivet\.yaml)$'
+
+      - id: rivet-commit-msg             # T1
+        name: rivet commit-msg check
+        entry: rivet commit-msg-check
+        language: system
+        stages: [commit-msg]
+        always_run: true
+
+      # ── T2 — Supply-chain & advisory checks (pre-push) ──────────────
+      - id: cargo-audit                  # T2
+        name: cargo audit
+        entry: cargo audit
+        language: system
+        pass_filenames: false
+        files: '(Cargo\.toml|Cargo\.lock)$'
+        stages: [pre-push]
+
+      - id: cargo-deny                   # T2
+        name: cargo deny check
+        entry: cargo deny check
+        language: system
+        pass_filenames: false
+        files: '(Cargo\.toml|Cargo\.lock|deny\.toml)$'
+        stages: [pre-push]
+
+      - id: cargo-bench-check            # T2
+        name: cargo bench --no-run
+        entry: cargo bench --no-run
+        language: system
+        types: [rust]
+        pass_filenames: false
+        stages: [pre-push]
+
+      # ── T3 — Mutation testing (verification-heavy, slow) ────────────
+      - id: cargo-mutants                # T3
+        name: cargo mutants (smoke)
+        # CUSTOMIZE: scope `-p <crate>` to the most safety-critical crate.
+        # See docs/mutation-testing.md (issue #185) for batching guidance.
+        entry: bash -c 'cargo mutants --timeout 60 --jobs 4 -p YOUR_CRATE -- --lib 2>&1 | tail -5'
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+        verbose: true
