@@ -1348,7 +1348,16 @@ fn reqif_creation_timestamp() -> String {
     let duration = now
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default();
-    let secs = duration.as_secs();
+    epoch_secs_to_iso8601(duration.as_secs())
+}
+
+/// Convert seconds since the Unix epoch to an ISO 8601 UTC timestamp.
+///
+/// Pulled out of `reqif_creation_timestamp` so the arithmetic can be
+/// pinned by deterministic unit tests (otherwise mutation-testing
+/// reports it as a sea of surviving arithmetic mutants because the
+/// original wraps `SystemTime::now()` directly).
+fn epoch_secs_to_iso8601(secs: u64) -> String {
     let days = secs / 86400;
     let time_secs = secs % 86400;
     let hours = time_secs / 3600;
@@ -2189,5 +2198,509 @@ mod tests {
             .unwrap();
         assert_eq!(re.len(), 1);
         assert!(re[0].provenance.is_none());
+    }
+
+    // ── Mutation-killing tests ──────────────────────────────────────
+    //
+    // Targets surviving mutants reported by `cargo mutants -p
+    // rivet-core --shard 1/4 --shard 2/4` for this module.
+
+    /// Adapter trait identity strings — `id()` and `name()` are public
+    /// API used by `rivet adapters list` and the export/import CLI.
+    /// Mutants would replace them with empty / "xyzzy" strings.
+    ///
+    /// Kills: rivet-core/src/reqif.rs:562 / 566 — replace
+    /// `<impl Adapter for ReqIfAdapter>::id`/`name` with "" / "xyzzy".
+    #[test]
+    fn adapter_id_and_name_are_stable() {
+        let a = ReqIfAdapter::new();
+        assert_eq!(a.id(), "reqif");
+        assert_eq!(a.name(), "ReqIF 1.2 XML");
+    }
+
+    /// `epoch_secs_to_iso8601` is the testable extract of
+    /// `reqif_creation_timestamp`; pin it on known epochs to kill all
+    /// 27 surviving arithmetic mutants in the year/month/day/h/m/s
+    /// breakdown.
+    ///
+    /// Kills: rivet-core/src/reqif.rs:1352-1365 — every replace `/`/
+    /// `%`/`+`/`-`/`*` in `reqif_creation_timestamp`'s extracted
+    /// helper.
+    #[test]
+    fn epoch_secs_to_iso8601_unix_epoch() {
+        assert_eq!(epoch_secs_to_iso8601(0), "1970-01-01T00:00:00Z");
+    }
+
+    #[test]
+    fn epoch_secs_to_iso8601_2024_jan_1_midnight() {
+        assert_eq!(
+            epoch_secs_to_iso8601(1_704_067_200),
+            "2024-01-01T00:00:00Z",
+        );
+    }
+
+    #[test]
+    fn epoch_secs_to_iso8601_2024_dec_31_end_of_day() {
+        assert_eq!(
+            epoch_secs_to_iso8601(1_735_689_599),
+            "2024-12-31T23:59:59Z",
+        );
+    }
+
+    #[test]
+    fn epoch_secs_to_iso8601_2024_apr_25_with_seconds() {
+        // 2024-04-25 12:34:56 UTC — the seconds field exercises
+        // `time_secs % 60` (different from minute decomposition).
+        assert_eq!(
+            epoch_secs_to_iso8601(1_714_048_496),
+            "2024-04-25T12:34:56Z",
+        );
+    }
+
+    #[test]
+    fn epoch_secs_to_iso8601_2024_feb_15() {
+        // mp = 11 path (m = mp - 9 = 2 → February).
+        assert_eq!(
+            epoch_secs_to_iso8601(1_707_955_200),
+            "2024-02-15T00:00:00Z",
+        );
+    }
+
+    #[test]
+    fn epoch_secs_to_iso8601_2200_mar_1_century_skipped_leap() {
+        // 2200 is NOT a leap year (divisible by 100, not 400).
+        // doe = 73048 — exercises the `+ doe/36524` correction.
+        assert_eq!(
+            epoch_secs_to_iso8601(7_263_216_000),
+            "2200-03-01T00:00:00Z",
+        );
+    }
+
+    #[test]
+    fn epoch_secs_to_iso8601_2400_feb_29_quad_century_leap() {
+        // 2400 IS a leap year (divisible by 400).  doe = 146096 —
+        // unique value that exercises the `- doe/146096` correction.
+        assert_eq!(
+            epoch_secs_to_iso8601(13_574_563_200),
+            "2400-02-29T00:00:00Z",
+        );
+    }
+
+    /// `reqif_creation_timestamp()` itself must produce a syntactically
+    /// valid ISO 8601 string (so consumers like StrictDoc don't choke).
+    /// The `xyzzy` / `String::new()` mutants on the helper would still
+    /// be caught by the deterministic tests above; this protects the
+    /// public format contract.
+    #[test]
+    fn reqif_creation_timestamp_is_iso8601_shape() {
+        let s = reqif_creation_timestamp();
+        // YYYY-MM-DDTHH:MM:SSZ is exactly 20 chars.
+        assert_eq!(s.len(), 20, "got: {s}");
+        assert!(s.ends_with('Z'), "got: {s}");
+        // Cheap shape check: characters at known positions.
+        assert_eq!(s.as_bytes()[4], b'-');
+        assert_eq!(s.as_bytes()[7], b'-');
+        assert_eq!(s.as_bytes()[10], b'T');
+        assert_eq!(s.as_bytes()[13], b':');
+        assert_eq!(s.as_bytes()[16], b':');
+    }
+
+    /// `parse_reqif` recognises `ReqIF.Name` and `ReqIF.ChapterName` as
+    /// the title field, NOT as a generic `fields["ReqIF.Name"]` entry.
+    /// The "delete match arm" mutants drop the special-casing and the
+    /// value falls through to the wildcard arm, leaking it into
+    /// `fields` and leaving `title` empty.
+    ///
+    /// Kills: rivet-core/src/reqif.rs:764 / 774 — delete match arms
+    /// "ReqIF.Name" / "ReqIF.ChapterName".
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_reqif_name_attribute_becomes_title() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<REQ-IF xmlns="http://www.omg.org/spec/ReqIF/20110401/reqif.xsd">
+  <THE-HEADER>
+    <REQ-IF-HEADER IDENTIFIER="name-test"/>
+  </THE-HEADER>
+  <CORE-CONTENT>
+    <REQ-IF-CONTENT>
+      <DATATYPES/>
+      <SPEC-TYPES>
+        <SPEC-OBJECT-TYPE IDENTIFIER="SOT-req" LONG-NAME="requirement">
+          <SPEC-ATTRIBUTES>
+            <ATTRIBUTE-DEFINITION-STRING IDENTIFIER="ATTR-NAME" LONG-NAME="ReqIF.Name"/>
+          </SPEC-ATTRIBUTES>
+        </SPEC-OBJECT-TYPE>
+      </SPEC-TYPES>
+      <SPEC-OBJECTS>
+        <SPEC-OBJECT IDENTIFIER="R-1">
+          <TYPE><SPEC-OBJECT-TYPE-REF>SOT-req</SPEC-OBJECT-TYPE-REF></TYPE>
+          <VALUES>
+            <ATTRIBUTE-VALUE-STRING THE-VALUE="Memory isolation">
+              <DEFINITION><ATTRIBUTE-DEFINITION-STRING-REF>ATTR-NAME</ATTRIBUTE-DEFINITION-STRING-REF></DEFINITION>
+            </ATTRIBUTE-VALUE-STRING>
+          </VALUES>
+        </SPEC-OBJECT>
+      </SPEC-OBJECTS>
+      <SPEC-RELATIONS/>
+    </REQ-IF-CONTENT>
+  </CORE-CONTENT>
+</REQ-IF>"#;
+        let arts = parse_reqif(xml, &HashMap::new()).unwrap();
+        assert_eq!(arts.len(), 1);
+        assert_eq!(arts[0].title, "Memory isolation");
+        // Must NOT leak into fields — the mutant-deleted arm would put
+        // it there.
+        assert!(
+            !arts[0].fields.contains_key("ReqIF.Name"),
+            "ReqIF.Name leaked into fields: {:?}",
+            arts[0].fields,
+        );
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_reqif_chaptername_attribute_becomes_title() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<REQ-IF xmlns="http://www.omg.org/spec/ReqIF/20110401/reqif.xsd">
+  <THE-HEADER>
+    <REQ-IF-HEADER IDENTIFIER="chapter-test"/>
+  </THE-HEADER>
+  <CORE-CONTENT>
+    <REQ-IF-CONTENT>
+      <DATATYPES/>
+      <SPEC-TYPES>
+        <SPEC-OBJECT-TYPE IDENTIFIER="SOT-sec" LONG-NAME="section">
+          <SPEC-ATTRIBUTES>
+            <ATTRIBUTE-DEFINITION-STRING IDENTIFIER="ATTR-CHAP" LONG-NAME="ReqIF.ChapterName"/>
+          </SPEC-ATTRIBUTES>
+        </SPEC-OBJECT-TYPE>
+      </SPEC-TYPES>
+      <SPEC-OBJECTS>
+        <SPEC-OBJECT IDENTIFIER="S-1">
+          <TYPE><SPEC-OBJECT-TYPE-REF>SOT-sec</SPEC-OBJECT-TYPE-REF></TYPE>
+          <VALUES>
+            <ATTRIBUTE-VALUE-STRING THE-VALUE="Safety Goals">
+              <DEFINITION><ATTRIBUTE-DEFINITION-STRING-REF>ATTR-CHAP</ATTRIBUTE-DEFINITION-STRING-REF></DEFINITION>
+            </ATTRIBUTE-VALUE-STRING>
+          </VALUES>
+        </SPEC-OBJECT>
+      </SPEC-OBJECTS>
+      <SPEC-RELATIONS/>
+    </REQ-IF-CONTENT>
+  </CORE-CONTENT>
+</REQ-IF>"#;
+        let arts = parse_reqif(xml, &HashMap::new()).unwrap();
+        assert_eq!(arts.len(), 1);
+        assert_eq!(arts[0].title, "Safety Goals");
+        assert!(!arts[0].fields.contains_key("ReqIF.ChapterName"));
+    }
+
+    /// Empty string values must NOT overwrite the typed fields (`status`,
+    /// `tags`, `reqif_*`) — the `!av.the_value.is_empty()` guards on
+    /// lines 754-775 protect against this.  A mutant that deletes the
+    /// `!` would let blank values clobber otherwise-set defaults.
+    ///
+    /// Kills: rivet-core/src/reqif.rs:754, 760, 765, 770, 775 — delete
+    /// `!` in parse_reqif's empty-value guards.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_empty_attribute_values_do_not_overwrite_id_or_title() {
+        // Two attributes for the same SPEC-OBJECT: one populated, one
+        // empty.  The empty ReqIF.Name must not overwrite the
+        // populated LONG-NAME-derived title.
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<REQ-IF xmlns="http://www.omg.org/spec/ReqIF/20110401/reqif.xsd">
+  <THE-HEADER>
+    <REQ-IF-HEADER IDENTIFIER="empty-test"/>
+  </THE-HEADER>
+  <CORE-CONTENT>
+    <REQ-IF-CONTENT>
+      <DATATYPES/>
+      <SPEC-TYPES>
+        <SPEC-OBJECT-TYPE IDENTIFIER="SOT-req" LONG-NAME="requirement">
+          <SPEC-ATTRIBUTES>
+            <ATTRIBUTE-DEFINITION-STRING IDENTIFIER="ATTR-NAME" LONG-NAME="ReqIF.Name"/>
+            <ATTRIBUTE-DEFINITION-STRING IDENTIFIER="ATTR-FID" LONG-NAME="ReqIF.ForeignID"/>
+          </SPEC-ATTRIBUTES>
+        </SPEC-OBJECT-TYPE>
+      </SPEC-TYPES>
+      <SPEC-OBJECTS>
+        <SPEC-OBJECT IDENTIFIER="R-1" LONG-NAME="Fallback title">
+          <TYPE><SPEC-OBJECT-TYPE-REF>SOT-req</SPEC-OBJECT-TYPE-REF></TYPE>
+          <VALUES>
+            <ATTRIBUTE-VALUE-STRING THE-VALUE="">
+              <DEFINITION><ATTRIBUTE-DEFINITION-STRING-REF>ATTR-NAME</ATTRIBUTE-DEFINITION-STRING-REF></DEFINITION>
+            </ATTRIBUTE-VALUE-STRING>
+            <ATTRIBUTE-VALUE-STRING THE-VALUE="">
+              <DEFINITION><ATTRIBUTE-DEFINITION-STRING-REF>ATTR-FID</ATTRIBUTE-DEFINITION-STRING-REF></DEFINITION>
+            </ATTRIBUTE-VALUE-STRING>
+          </VALUES>
+        </SPEC-OBJECT>
+      </SPEC-OBJECTS>
+      <SPEC-RELATIONS/>
+    </REQ-IF-CONTENT>
+  </CORE-CONTENT>
+</REQ-IF>"#;
+        let arts = parse_reqif(xml, &HashMap::new()).unwrap();
+        assert_eq!(arts.len(), 1);
+        // Empty ReqIF.Name → reqif_name stays None → fall back to
+        // LONG-NAME ("Fallback title"). Mutant (`!` deleted) would set
+        // reqif_name = Some("") and the title would be empty.
+        assert_eq!(arts[0].title, "Fallback title");
+        // Empty ReqIF.ForeignID → reqif_foreign_id stays None → ID
+        // falls back to IDENTIFIER ("R-1"). Mutant would set
+        // reqif_foreign_id = Some("") → id = "" → broken artifact.
+        assert_eq!(arts[0].id, "R-1");
+    }
+
+    /// `status` and `tags` recognition through both UPPER and lowercase
+    /// long-names.  The "delete match arm" mutants for the `"status" |
+    /// "STATUS"` and `"tags" | "TAGS"` arms (line 833 / 836 in the
+    /// enum-values handler) cause those values to be miscategorised
+    /// into `fields`.
+    ///
+    /// Kills: rivet-core/src/reqif.rs:833 / 836 — delete match arm
+    /// "status" | "STATUS" / "tags" | "TAGS" in the enum-values branch.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_enum_status_attribute_sets_status_field() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<REQ-IF xmlns="http://www.omg.org/spec/ReqIF/20110401/reqif.xsd">
+  <THE-HEADER>
+    <REQ-IF-HEADER IDENTIFIER="enum-status-test"/>
+  </THE-HEADER>
+  <CORE-CONTENT>
+    <REQ-IF-CONTENT>
+      <DATATYPES>
+        <DATATYPE-DEFINITION-ENUMERATION IDENTIFIER="DT-STATUS" LONG-NAME="StatusEnum">
+          <SPECIFIED-VALUES>
+            <ENUM-VALUE IDENTIFIER="EV-DRAFT" LONG-NAME="draft"/>
+            <ENUM-VALUE IDENTIFIER="EV-APPR"  LONG-NAME="approved"/>
+          </SPECIFIED-VALUES>
+        </DATATYPE-DEFINITION-ENUMERATION>
+      </DATATYPES>
+      <SPEC-TYPES>
+        <SPEC-OBJECT-TYPE IDENTIFIER="SOT-req" LONG-NAME="requirement">
+          <SPEC-ATTRIBUTES>
+            <ATTRIBUTE-DEFINITION-ENUMERATION IDENTIFIER="ATTR-STAT" LONG-NAME="status">
+              <TYPE><DATATYPE-DEFINITION-ENUMERATION-REF>DT-STATUS</DATATYPE-DEFINITION-ENUMERATION-REF></TYPE>
+            </ATTRIBUTE-DEFINITION-ENUMERATION>
+          </SPEC-ATTRIBUTES>
+        </SPEC-OBJECT-TYPE>
+      </SPEC-TYPES>
+      <SPEC-OBJECTS>
+        <SPEC-OBJECT IDENTIFIER="R-1" LONG-NAME="A req">
+          <TYPE><SPEC-OBJECT-TYPE-REF>SOT-req</SPEC-OBJECT-TYPE-REF></TYPE>
+          <VALUES>
+            <ATTRIBUTE-VALUE-ENUMERATION>
+              <DEFINITION><ATTRIBUTE-DEFINITION-ENUMERATION-REF>ATTR-STAT</ATTRIBUTE-DEFINITION-ENUMERATION-REF></DEFINITION>
+              <VALUES>
+                <ENUM-VALUE-REF>EV-APPR</ENUM-VALUE-REF>
+              </VALUES>
+            </ATTRIBUTE-VALUE-ENUMERATION>
+          </VALUES>
+        </SPEC-OBJECT>
+      </SPEC-OBJECTS>
+      <SPEC-RELATIONS/>
+    </REQ-IF-CONTENT>
+  </CORE-CONTENT>
+</REQ-IF>"#;
+        let arts = parse_reqif(xml, &HashMap::new()).unwrap();
+        assert_eq!(arts.len(), 1);
+        // status comes from the enum value's LONG-NAME via the matched
+        // `"status" | "STATUS"` arm.  Mutant (arm deleted) would put
+        // "approved" into fields["status"] instead.
+        assert_eq!(arts[0].status, Some("approved".into()));
+        assert!(
+            !arts[0].fields.contains_key("status"),
+            "status leaked into fields: {:?}",
+            arts[0].fields,
+        );
+    }
+
+    /// Tags from an enum-valued attribute must populate the artifact's
+    /// `tags` field, NOT leak into `fields` as a custom field.
+    ///
+    /// Kills: rivet-core/src/reqif.rs:836 — delete match arm
+    /// "tags" | "TAGS" in parse_reqif's enum-values handler.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_enum_tags_attribute_sets_tags_field() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<REQ-IF xmlns="http://www.omg.org/spec/ReqIF/20110401/reqif.xsd">
+  <THE-HEADER>
+    <REQ-IF-HEADER IDENTIFIER="enum-tags-test"/>
+  </THE-HEADER>
+  <CORE-CONTENT>
+    <REQ-IF-CONTENT>
+      <DATATYPES>
+        <DATATYPE-DEFINITION-ENUMERATION IDENTIFIER="DT-T" LONG-NAME="TagsEnum">
+          <SPECIFIED-VALUES>
+            <ENUM-VALUE IDENTIFIER="EV-SAFETY" LONG-NAME="safety"/>
+            <ENUM-VALUE IDENTIFIER="EV-CORE"   LONG-NAME="core"/>
+          </SPECIFIED-VALUES>
+        </DATATYPE-DEFINITION-ENUMERATION>
+      </DATATYPES>
+      <SPEC-TYPES>
+        <SPEC-OBJECT-TYPE IDENTIFIER="SOT-req" LONG-NAME="requirement">
+          <SPEC-ATTRIBUTES>
+            <ATTRIBUTE-DEFINITION-ENUMERATION IDENTIFIER="ATTR-T" LONG-NAME="tags">
+              <TYPE><DATATYPE-DEFINITION-ENUMERATION-REF>DT-T</DATATYPE-DEFINITION-ENUMERATION-REF></TYPE>
+            </ATTRIBUTE-DEFINITION-ENUMERATION>
+          </SPEC-ATTRIBUTES>
+        </SPEC-OBJECT-TYPE>
+      </SPEC-TYPES>
+      <SPEC-OBJECTS>
+        <SPEC-OBJECT IDENTIFIER="R-1" LONG-NAME="A req">
+          <TYPE><SPEC-OBJECT-TYPE-REF>SOT-req</SPEC-OBJECT-TYPE-REF></TYPE>
+          <VALUES>
+            <ATTRIBUTE-VALUE-ENUMERATION>
+              <DEFINITION><ATTRIBUTE-DEFINITION-ENUMERATION-REF>ATTR-T</ATTRIBUTE-DEFINITION-ENUMERATION-REF></DEFINITION>
+              <VALUES>
+                <ENUM-VALUE-REF>EV-SAFETY</ENUM-VALUE-REF>
+                <ENUM-VALUE-REF>EV-CORE</ENUM-VALUE-REF>
+              </VALUES>
+            </ATTRIBUTE-VALUE-ENUMERATION>
+          </VALUES>
+        </SPEC-OBJECT>
+      </SPEC-OBJECTS>
+      <SPEC-RELATIONS/>
+    </REQ-IF-CONTENT>
+  </CORE-CONTENT>
+</REQ-IF>"#;
+        let arts = parse_reqif(xml, &HashMap::new()).unwrap();
+        assert_eq!(arts.len(), 1);
+        // Tags arm matched → tags populated.  Mutant (arm deleted)
+        // would put "safety, core" into fields["tags"].
+        assert_eq!(arts[0].tags, vec!["safety".to_string(), "core".to_string()]);
+        assert!(
+            !arts[0].fields.contains_key("tags"),
+            "tags leaked into fields: {:?}",
+            arts[0].fields,
+        );
+    }
+
+    /// Each SPEC-RELATION must be assigned a unique REL-N identifier.
+    /// The `+= 1` increment in build_reqif_with_schema mutates to `*= 1`
+    /// which would yield `REL-0` for every relation.
+    ///
+    /// Kills: rivet-core/src/reqif.rs:1295 — replace `+=` with `*=`.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_rel_identifiers_increment_per_link() {
+        let arts = vec![
+            Artifact {
+                id: "REQ-1".into(),
+                artifact_type: "requirement".into(),
+                title: "R1".into(),
+                description: None,
+                status: None,
+                tags: vec![],
+                links: vec![
+                    Link {
+                        link_type: "verifies".into(),
+                        target: "TC-1".into(),
+                    },
+                    Link {
+                        link_type: "verifies".into(),
+                        target: "TC-2".into(),
+                    },
+                ],
+                fields: BTreeMap::new(),
+                provenance: None,
+                source_file: None,
+            },
+            Artifact {
+                id: "REQ-2".into(),
+                artifact_type: "requirement".into(),
+                title: "R2".into(),
+                description: None,
+                status: None,
+                tags: vec![],
+                links: vec![Link {
+                    link_type: "verifies".into(),
+                    target: "TC-3".into(),
+                }],
+                fields: BTreeMap::new(),
+                provenance: None,
+                source_file: None,
+            },
+        ];
+
+        let root = build_reqif_with_schema(&arts, None);
+        let rel_ids: Vec<String> = root
+            .core_content
+            .req_if_content
+            .spec_relations
+            .relations
+            .iter()
+            .map(|r| r.identifier.clone())
+            .collect();
+        assert_eq!(
+            rel_ids,
+            vec!["REL-1".to_string(), "REL-2".to_string(), "REL-3".to_string()],
+            "REL counter must increment from 1 by +=1 per link",
+        );
+    }
+
+    /// Walking a directory must pick up `.reqif` AND `.xml` files (the
+    /// `||` in `ext == "reqif" || ext == "xml"` on line 630).  Mutating
+    /// to `&&` short-circuits to nothing — the `==` flips invert the
+    /// extension checks.  This test verifies a mixed-extension
+    /// directory imports all files, not just one.
+    ///
+    /// Kills: rivet-core/src/reqif.rs:630 — replace `||` with `&&`,
+    /// replace either `==` with `!=` in import_reqif_directory.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_import_reqif_directory_picks_up_both_extensions() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+
+        // Minimal valid ReqIF with a single SPEC-OBJECT — content
+        // that parses successfully under each filename.
+        let xml_template = |id: &str, name: &str| {
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+<REQ-IF xmlns="http://www.omg.org/spec/ReqIF/20110401/reqif.xsd">
+  <THE-HEADER><REQ-IF-HEADER IDENTIFIER="hdr-{id}"/></THE-HEADER>
+  <CORE-CONTENT><REQ-IF-CONTENT>
+    <DATATYPES/>
+    <SPEC-TYPES><SPEC-OBJECT-TYPE IDENTIFIER="SOT-req" LONG-NAME="requirement"/></SPEC-TYPES>
+    <SPEC-OBJECTS>
+      <SPEC-OBJECT IDENTIFIER="{id}" LONG-NAME="{name}">
+        <TYPE><SPEC-OBJECT-TYPE-REF>SOT-req</SPEC-OBJECT-TYPE-REF></TYPE>
+      </SPEC-OBJECT>
+    </SPEC-OBJECTS>
+    <SPEC-RELATIONS/>
+  </REQ-IF-CONTENT></CORE-CONTENT>
+</REQ-IF>"#
+            )
+        };
+
+        // .reqif file
+        let reqif_path = dir.path().join("a.reqif");
+        let mut f = std::fs::File::create(&reqif_path).unwrap();
+        f.write_all(xml_template("R-1", "From reqif").as_bytes())
+            .unwrap();
+
+        // .xml file
+        let xml_path = dir.path().join("b.xml");
+        let mut f = std::fs::File::create(&xml_path).unwrap();
+        f.write_all(xml_template("R-2", "From xml").as_bytes())
+            .unwrap();
+
+        // .txt file (must be SKIPPED — neither reqif nor xml)
+        let txt_path = dir.path().join("c.txt");
+        let mut f = std::fs::File::create(&txt_path).unwrap();
+        f.write_all(b"not reqif").unwrap();
+
+        let arts = import_reqif_directory(dir.path(), &HashMap::new()).unwrap();
+        let mut ids: Vec<String> = arts.iter().map(|a| a.id.clone()).collect();
+        ids.sort();
+        // Both .reqif AND .xml imported (kills `||`→`&&`); .txt
+        // skipped.  Mutant `==`→`!=` on either leg would skip a real
+        // file (count != 2).
+        assert_eq!(ids, vec!["R-1".to_string(), "R-2".to_string()]);
     }
 }

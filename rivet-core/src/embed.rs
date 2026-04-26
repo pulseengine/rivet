@@ -2136,4 +2136,611 @@ mod tests {
             assert!(names.contains(&required));
         }
     }
+
+    // ── Mutation-killing tests for epoch_to_ymd_hm ──────────────────
+    // The Howard Hinnant civil_from_days algorithm is dense arithmetic
+    // (lots of /, %, +, -, *).  cargo-mutants reports ~33 surviving
+    // mutants in this function — test against several known epochs that
+    // exercise both the `mp < 10 → mp + 3` and `mp - 9` branches plus
+    // the `m <= 2 → y + 1` correction so any single arithmetic flip
+    // produces a wrong y/m/d/h/min triple.
+    //
+    // Kills: rivet-core/src/embed.rs:1306-1317 — every replace `/`/`%`/
+    // `+`/`-`/`*` in epoch_to_ymd_hm.
+
+    #[test]
+    fn epoch_to_ymd_hm_unix_epoch_is_1970_01_01() {
+        // 1970-01-01 00:00:00 UTC — exercises mp - 9 branch (mp = 10)
+        // and the m <= 2 → y + 1 year correction (1969 + 1 = 1970).
+        assert_eq!(epoch_to_ymd_hm(0), (1970, 1, 1, 0, 0));
+    }
+
+    #[test]
+    fn epoch_to_ymd_hm_2024_01_01_midnight() {
+        // 2024-01-01 00:00:00 UTC.  Same year-correction branch as
+        // 1970-01-01 (mp = 10 → m = 1, y + 1).
+        assert_eq!(epoch_to_ymd_hm(1_704_067_200), (2024, 1, 1, 0, 0));
+    }
+
+    #[test]
+    fn epoch_to_ymd_hm_2024_12_31_end_of_day() {
+        // 2024-12-31 23:59:59 UTC — exercises mp + 3 with mp = 9 (m =
+        // 12) and confirms hour/minute decomposition from time-of-day.
+        assert_eq!(
+            epoch_to_ymd_hm(1_735_689_599),
+            (2024, 12, 31, 23, 59),
+        );
+    }
+
+    #[test]
+    fn epoch_to_ymd_hm_2024_04_25_lunchtime() {
+        // 2024-04-25 12:34:56 UTC — exercises mp + 3 branch (mp = 1 →
+        // m = 4) and a non-zero hour AND minute. 56s rounds down to
+        // minute 34.
+        assert_eq!(
+            epoch_to_ymd_hm(1_714_048_496),
+            (2024, 4, 25, 12, 34),
+        );
+    }
+
+    #[test]
+    fn epoch_to_ymd_hm_2024_02_15_exercises_mp_eq_11() {
+        // 2024-02-15 00:00:00 UTC — doy = 351 → mp = 11 → m = mp - 9 = 2.
+        // Distinguishes the `mp - 9` arithmetic from `mp / 9` (would
+        // give m = 1 = January).
+        // Kills: rivet-core/src/embed.rs:1320 — replace `-` with `/` in
+        // the `mp - 9` else branch.
+        assert_eq!(
+            epoch_to_ymd_hm(1_707_955_200),
+            (2024, 2, 15, 0, 0),
+        );
+    }
+
+    #[test]
+    fn epoch_to_ymd_hm_2004_02_29_leap_day() {
+        // 2004-02-29 00:00:00 UTC — doe = 1460 (one day after first
+        // tetrad), where doe/1460 = 1 and doe/36524 = 0.  The yoe
+        // formula reduces to (doe - 1 + 0 - 0) / 365 = 1459/365 = 3.
+        // The `+ doe/36524` term is 0, but the `+`→`*` mutant turns
+        // `(doe - doe/1460) + doe/36524` into `(doe - doe/1460) *
+        // doe/36524 = 0` → yoe = 0/365 = 0 (would compute y = 2000
+        // and the wrong day).
+        // Kills: rivet-core/src/embed.rs:1315 — replace `+` with `*`.
+        assert_eq!(
+            epoch_to_ymd_hm(1_078_012_800),
+            (2004, 2, 29, 0, 0),
+        );
+    }
+
+    #[test]
+    fn epoch_to_ymd_hm_2200_03_01_century_boundary() {
+        // 2200-03-01 00:00:00 UTC — doe = 73048 (start of doe/36524 =
+        // 2 band).  Original yoe = (73048 - 50 + 2 - 0)/365 = 200.
+        // Mutant `+`→`-` on `+ doe/36524`: (73048 - 50 - 2 - 0)/365 =
+        // 199 → wrong year.  Mutant `+`→`*`: (73048 - 50*2 - 0)/365 =
+        // 199 → wrong year as well.
+        // Kills: rivet-core/src/embed.rs:1315 — replace `+` with `-`
+        // and `+` with `*` on the `+ doe/36524` term.
+        assert_eq!(
+            epoch_to_ymd_hm(7_263_216_000),
+            (2200, 3, 1, 0, 0),
+        );
+    }
+
+    /// `epoch_to_iso8601()` is the public ISO-8601 wrapper; mutants
+    /// replace its body with `""` or `"xyzzy".into()`.  Pin the format
+    /// shape so any wholesale-replacement mutant is caught.
+    ///
+    /// Kills: rivet-core/src/embed.rs:1296 — replace
+    /// `epoch_to_iso8601 -> String` with String::new() / "xyzzy".into().
+    #[test]
+    fn epoch_to_iso8601_returns_iso8601_shape() {
+        let s = epoch_to_iso8601();
+        // Format: YYYY-MM-DDTHH:MM:00Z (seconds always 00 in this
+        // helper).  At least 19 chars (more if year > 9999), ends 'Z'.
+        assert!(s.len() >= 19, "too short: {s}");
+        assert!(s.ends_with(":00Z"), "wrong tail: {s}");
+        assert!(s.contains('T'), "missing T separator: {s}");
+        // No-op replacement mutants would produce "" or "xyzzy".
+        assert!(!s.is_empty());
+        assert_ne!(s, "xyzzy");
+    }
+
+    #[test]
+    fn epoch_to_ymd_hm_2400_02_29_quad_century_leap_day() {
+        // 2400-02-29 00:00:00 UTC — doe = 146096 (last day of an era).
+        // doe/146096 = 1 here; for any other date in our test suite
+        // it is 0, so this is the only case that distinguishes
+        // mutants on the `- doe/146096` term.  Year 2400 IS a leap
+        // year (div by 400) and Feb 29 exists.
+        // Kills: rivet-core/src/embed.rs:1315 — replace `-` with `+`
+        // and `-` with `/` on the `- doe/146096` term.
+        assert_eq!(
+            epoch_to_ymd_hm(13_574_563_200),
+            (2400, 2, 29, 0, 0),
+        );
+    }
+
+    // ── Mutation-killing tests for render_coverage thresholds ───────
+    // The bar-class ladder uses three boundary `>=` comparisons that
+    // mutate to `<` (`bar-full`/`bar-good`/`bar-warn`/`bar-danger`).
+    // We build four real schema-driven coverage scenarios to exercise
+    // every ladder branch through render_coverage.
+    //
+    // Kills: rivet-core/src/embed.rs:647 / 649 / 651 — replace `>=`
+    // with `<` in render_coverage.
+    fn coverage_test_schema() -> Schema {
+        let yaml = r#"schema:
+  name: cov-test
+  version: 0.0.0
+artifact-types:
+  - name: requirement
+    description: A req
+  - name: test
+    description: A test
+link-types:
+  - name: verifies
+    description: Test verifies a req
+traceability-rules:
+  - name: req-cov
+    description: Reqs must be verified
+    source-type: requirement
+    required-link: verifies
+    target-types: [test]
+"#;
+        let file: crate::schema::SchemaFile = serde_yaml::from_str(yaml).unwrap();
+        Schema::merge(&[file])
+    }
+
+    fn run_coverage_at(percent: u32) -> String {
+        // Build N requirements where exactly `percent`% are linked to
+        // a test so render_coverage will tag the row with the
+        // appropriate bar-* class.
+        let total = 20usize;
+        let covered = (total * percent as usize) / 100;
+        let mut artifacts: Vec<Artifact> = Vec::new();
+        for i in 0..total {
+            let mut req = plain(&format!("REQ-{i:03}"), "requirement", None, &[]);
+            if i < covered {
+                req.links.push(crate::model::Link {
+                    link_type: "verifies".into(),
+                    target: format!("TC-{i:03}"),
+                });
+            }
+            artifacts.push(req);
+        }
+        for i in 0..covered {
+            artifacts.push(plain(&format!("TC-{i:03}"), "test", None, &[]));
+        }
+        let store = make_store(artifacts);
+        let schema = coverage_test_schema();
+        let graph = LinkGraph::build(&store, &schema);
+        run_embed("coverage", &store, &schema, &graph).unwrap()
+    }
+
+    #[test]
+    fn coverage_bar_class_full_at_100_percent() {
+        let html = run_coverage_at(100);
+        assert!(html.contains("bar-full"), "got: {html}");
+    }
+
+    #[test]
+    fn coverage_bar_class_good_at_85_percent() {
+        let html = run_coverage_at(85);
+        assert!(html.contains("bar-good"), "got: {html}");
+        assert!(!html.contains("bar-full"), "got: {html}");
+    }
+
+    #[test]
+    fn coverage_bar_class_warn_at_55_percent() {
+        let html = run_coverage_at(55);
+        assert!(html.contains("bar-warn"), "got: {html}");
+        assert!(!html.contains("bar-good"), "got: {html}");
+    }
+
+    #[test]
+    fn coverage_bar_class_danger_at_25_percent() {
+        let html = run_coverage_at(25);
+        assert!(html.contains("bar-danger"), "got: {html}");
+        assert!(!html.contains("bar-warn"), "got: {html}");
+    }
+
+    // Direct ladder pin via render_coverage call: must exercise the
+    // function under test, not just a copy of its body.  Use a real
+    // schema with one rule and a store that produces 100% coverage.
+    //
+    // Kills: rivet-core/src/embed.rs:933-937 (render_matrix_table
+    // ladder uses the identical pattern, and this test exercises the
+    // same comparison shape).
+    #[test]
+    fn render_matrix_table_full_uses_bar_full_class() {
+        use crate::matrix::{MatrixRow, MatrixTarget, TraceabilityMatrix};
+
+        let m_full = TraceabilityMatrix {
+            source_type: "requirement".into(),
+            target_type: "test".into(),
+            link_type: "verifies".into(),
+            rows: vec![MatrixRow {
+                source_id: "REQ-1".into(),
+                source_title: "T".into(),
+                targets: vec![MatrixTarget {
+                    id: "TC-1".into(),
+                    title: "tc".into(),
+                }],
+            }],
+            covered: 1,
+            total: 1,
+        };
+        assert!(render_matrix_table(&m_full).contains("bar-full"));
+
+        // 80% — must be "bar-good" (>= 80) and NOT "bar-full" (< 100).
+        let m_good = TraceabilityMatrix {
+            source_type: "requirement".into(),
+            target_type: "test".into(),
+            link_type: "verifies".into(),
+            rows: (0..5)
+                .map(|i| MatrixRow {
+                    source_id: format!("REQ-{i}"),
+                    source_title: "T".into(),
+                    targets: if i < 4 {
+                        vec![MatrixTarget {
+                            id: format!("TC-{i}"),
+                            title: "tc".into(),
+                        }]
+                    } else {
+                        vec![]
+                    },
+                })
+                .collect(),
+            covered: 4,
+            total: 5,
+        };
+        let html_good = render_matrix_table(&m_good);
+        assert!(html_good.contains("bar-good"), "got: {html_good}");
+        assert!(!html_good.contains("bar-full"), "got: {html_good}");
+
+        // 50% — must be "bar-warn" and NOT "bar-good" (< 80).
+        let m_warn = TraceabilityMatrix {
+            source_type: "requirement".into(),
+            target_type: "test".into(),
+            link_type: "verifies".into(),
+            rows: (0..4)
+                .map(|i| MatrixRow {
+                    source_id: format!("REQ-{i}"),
+                    source_title: "T".into(),
+                    targets: if i < 2 {
+                        vec![MatrixTarget {
+                            id: format!("TC-{i}"),
+                            title: "tc".into(),
+                        }]
+                    } else {
+                        vec![]
+                    },
+                })
+                .collect(),
+            covered: 2,
+            total: 4,
+        };
+        let html_warn = render_matrix_table(&m_warn);
+        assert!(html_warn.contains("bar-warn"), "got: {html_warn}");
+        assert!(!html_warn.contains("bar-good"), "got: {html_warn}");
+
+        // 25% — must be "bar-danger" (< 50).
+        let m_danger = TraceabilityMatrix {
+            source_type: "requirement".into(),
+            target_type: "test".into(),
+            link_type: "verifies".into(),
+            rows: (0..4)
+                .map(|i| MatrixRow {
+                    source_id: format!("REQ-{i}"),
+                    source_title: "T".into(),
+                    targets: if i < 1 {
+                        vec![MatrixTarget {
+                            id: format!("TC-{i}"),
+                            title: "tc".into(),
+                        }]
+                    } else {
+                        vec![]
+                    },
+                })
+                .collect(),
+            covered: 1,
+            total: 4,
+        };
+        let html_danger = render_matrix_table(&m_danger);
+        assert!(html_danger.contains("bar-danger"), "got: {html_danger}");
+        assert!(!html_danger.contains("bar-warn"), "got: {html_danger}");
+    }
+
+    // ── Mutation-killing tests for find_rule_for_types ──────────────
+    // Kills: rivet-core/src/embed.rs:998 — replace `&&` with `||`
+    // (would match when EITHER source OR target matches — too lax),
+    // replace either `==` with `!=` (would invert a leg).
+    #[test]
+    fn find_rule_for_types_requires_both_source_and_target_match() {
+        let yaml = r#"schema:
+  name: test
+  version: 0.0.0
+artifact-types:
+  - name: requirement
+    description: A requirement
+  - name: test
+    description: A test
+  - name: feature
+    description: A feature
+link-types:
+  - name: verifies
+    description: Test verifies a requirement
+traceability-rules:
+  - name: req-verifies-test
+    description: Every req has a verifying test
+    source-type: requirement
+    required-link: verifies
+    target-types: [test]
+"#;
+        let file: crate::schema::SchemaFile = serde_yaml::from_str(yaml).unwrap();
+        let schema = Schema::merge(&[file]);
+        let store = Store::new();
+        let graph = LinkGraph::build(&store, &schema);
+        let diags: Vec<Diagnostic> = vec![];
+        let ctx = EmbedContext {
+            store: &store,
+            schema: &schema,
+            graph: &graph,
+            diagnostics: &diags,
+            baseline: None,
+        };
+
+        // Both match → Some.
+        assert!(
+            find_rule_for_types(&ctx, "requirement", "test").is_some(),
+            "rule with matching source+target must be found"
+        );
+        // Source mismatch (target matches) → None.  Kills `||` mutant
+        // (would return Some) and source-leg `==`→`!=` mutant
+        // (would return Some when given the WRONG source).
+        assert!(
+            find_rule_for_types(&ctx, "feature", "test").is_none(),
+            "wrong source must return None"
+        );
+        // Target mismatch (source matches) → None.  Kills target-leg
+        // `==`→`!=` mutant (would return Some when given the WRONG
+        // target).
+        assert!(
+            find_rule_for_types(&ctx, "requirement", "feature").is_none(),
+            "wrong target must return None"
+        );
+    }
+
+    // ── Mutation-killing tests for render_diagnostics severity arms ─
+    // Kills: rivet-core/src/embed.rs:725-727, 783, 787, 791 — every
+    // `==` → `!=` flip in the severity-equality predicates and the
+    // count footers.
+    #[test]
+    fn render_diagnostics_severity_filter_and_summary_counts() {
+        use crate::schema::Severity;
+
+        let diags = vec![
+            Diagnostic {
+                severity: Severity::Error,
+                artifact_id: Some("A1".into()),
+                rule: "r1".into(),
+                message: "boom".into(),
+                source_file: None,
+                line: None,
+                column: None,
+            },
+            Diagnostic {
+                severity: Severity::Warning,
+                artifact_id: Some("A2".into()),
+                rule: "r2".into(),
+                message: "watch out".into(),
+                source_file: None,
+                line: None,
+                column: None,
+            },
+            Diagnostic {
+                severity: Severity::Warning,
+                artifact_id: Some("A3".into()),
+                rule: "r3".into(),
+                message: "also watch".into(),
+                source_file: None,
+                line: None,
+                column: None,
+            },
+            Diagnostic {
+                severity: Severity::Info,
+                artifact_id: Some("A4".into()),
+                rule: "r4".into(),
+                message: "fyi".into(),
+                source_file: None,
+                line: None,
+                column: None,
+            },
+        ];
+        let store = Store::new();
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let ctx = EmbedContext {
+            store: &store,
+            schema: &schema,
+            graph: &graph,
+            diagnostics: &diags,
+            baseline: None,
+        };
+
+        // Filter to only errors → exactly 1 row, summary "1 error".
+        // Mutant `==`→`!=` on the error arm would include the 2
+        // warnings + 1 info instead, producing 3 rows.
+        let req_err = EmbedRequest::parse("diagnostics:error").unwrap();
+        let html_err = render_diagnostics(&req_err, &ctx).unwrap();
+        assert!(html_err.contains("A1"), "error row missing: {html_err}");
+        assert!(!html_err.contains("A2"), "warn leaked: {html_err}");
+        assert!(!html_err.contains("A4"), "info leaked: {html_err}");
+
+        let req_warn = EmbedRequest::parse("diagnostics:warning").unwrap();
+        let html_warn = render_diagnostics(&req_warn, &ctx).unwrap();
+        assert!(html_warn.contains("A2") && html_warn.contains("A3"));
+        assert!(!html_warn.contains("A1"), "error leaked: {html_warn}");
+        assert!(!html_warn.contains("A4"), "info leaked: {html_warn}");
+
+        let req_info = EmbedRequest::parse("diagnostics:info").unwrap();
+        let html_info = render_diagnostics(&req_info, &ctx).unwrap();
+        assert!(html_info.contains("A4"), "info row missing: {html_info}");
+        assert!(!html_info.contains("A1") && !html_info.contains("A2"));
+
+        // No filter → all 4 + summary "4 issues: 1 error, 2 warnings,
+        // 1 info".  The summary numbers come from three more `==`
+        // checks (lines 783, 787, 791).  Any flip changes the counts.
+        let req_all = EmbedRequest::parse("diagnostics").unwrap();
+        let html_all = render_diagnostics(&req_all, &ctx).unwrap();
+        assert!(
+            html_all.contains("1 error"),
+            "missing 1 error in summary: {html_all}",
+        );
+        assert!(
+            html_all.contains("2 warnings"),
+            "missing 2 warnings in summary: {html_all}",
+        );
+        assert!(
+            html_all.contains("1 info"),
+            "missing 1 info in summary: {html_all}",
+        );
+    }
+
+    // ── Mutation-killing tests for render_query truncation note ─────
+    // Kills: rivet-core/src/embed.rs:1114 — replace `>` with `>=`.
+    // When total == matches.len() (no truncation), original takes the
+    // else-branch ("N results."); mutant takes the if-branch
+    // ("Showing N of N — narrow the filter or raise limit=").
+    #[test]
+    fn query_embed_no_truncation_note_when_all_match() {
+        let store = make_store(vec![
+            plain("REQ-1", "requirement", None, &[]),
+            plain("REQ-2", "requirement", None, &[]),
+        ]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        // limit defaults large enough to fit both — total == matches
+        // exactly.  Original: "2 results." Mutant (`>=`): "Showing 2
+        // of 2 — narrow the filter or raise limit=" footer.
+        let html = run_embed(r#"query:(= type "requirement")"#, &store, &schema, &graph).unwrap();
+        assert!(html.contains("2 results"), "got: {html}");
+        assert!(
+            !html.contains("Showing 2 of 2"),
+            "spurious truncation note in: {html}",
+        );
+        assert!(
+            !html.contains("narrow the filter"),
+            "spurious truncation hint in: {html}",
+        );
+    }
+
+    // ── Mutation-killing test for render_query id column wrapping ──
+    // Kills: rivet-core/src/embed.rs:1103 — replace `==` with `!=`.
+    // Original wraps the id column in <code>; mutant wraps every
+    // OTHER column instead, leaving id plain.
+    #[test]
+    fn query_embed_only_id_column_is_wrapped_in_code() {
+        let store = make_store(vec![plain("REQ-1", "requirement", None, &[])]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let html = run_embed(r#"query:(= type "requirement")"#, &store, &schema, &graph).unwrap();
+
+        // id wrapped → "<code>REQ-1</code>" present.  title NOT
+        // wrapped → no "<code>Title of REQ-1</code>".
+        assert!(
+            html.contains("<code>REQ-1</code>"),
+            "id missing <code> wrapping: {html}",
+        );
+        assert!(
+            !html.contains("<code>Title of REQ-1</code>"),
+            "title got <code> wrapping by mistake: {html}",
+        );
+    }
+
+    // ── Mutation-killing test for render_coverage uncovered details ─
+    // Kills: rivet-core/src/embed.rs:678 — delete `!` in the
+    // `if !entry.uncovered_ids.is_empty()` guard.
+    //
+    // The deleted-! mutant flips the meaning: the <details> block is
+    // emitted only when the list is empty, never when it has items.
+    // We render a single rule with NO uncovered ids and verify there
+    // is no <details> block at all.
+    #[test]
+    fn coverage_filter_with_zero_uncovered_does_not_emit_details() {
+        // Build a schema with one rule, then a store + graph that
+        // satisfies it 100%. Filter to that rule via the embed.
+        let yaml = r#"schema:
+  name: test-cov
+  version: 0.0.0
+artifact-types:
+  - name: requirement
+    description: A requirement
+  - name: test
+    description: A test
+link-types:
+  - name: verifies
+    description: Test verifies a req
+traceability-rules:
+  - name: cov-rule
+    description: Tests verify reqs
+    source-type: requirement
+    required-link: verifies
+    target-types: [test]
+"#;
+        let file: crate::schema::SchemaFile = serde_yaml::from_str(yaml).unwrap();
+        let schema = Schema::merge(&[file]);
+
+        let mut req1 = plain("REQ-1", "requirement", None, &[]);
+        req1.links.push(crate::model::Link {
+            link_type: "verifies".into(),
+            target: "TC-1".into(),
+        });
+        let store = make_store(vec![req1, plain("TC-1", "test", None, &[])]);
+        let graph = LinkGraph::build(&store, &schema);
+
+        let html = run_embed("coverage:cov-rule", &store, &schema, &graph).unwrap();
+        // The rule must actually appear in the table.  The line-630
+        // `==`→`!=` mutant flips the filter and produces "no coverage
+        // rules defined" instead.
+        assert!(html.contains("cov-rule"), "rule row missing: {html}");
+        // 100% covered → empty uncovered list → original suppresses
+        // <details>; mutant (delete `!` on line 678) would still emit
+        // one.
+        assert!(
+            !html.contains("Uncovered artifacts"),
+            "stray uncovered-artifacts <details> block: {html}",
+        );
+    }
+
+    // ── Mutation-killing test for render_group two-arg empty guard ──
+    // Kills: rivet-core/src/embed.rs:1166 — replace match guard
+    // `!second.is_empty()` with `true`.  Original treats `group:X:`
+    // (empty second arg) as the one-arg form (group all artifacts by
+    // X); mutant treats it as the two-arg form with type=X / field=""
+    // → no artifact of type "X" matches the field "" → "No artifacts
+    // to group" message.
+    #[test]
+    fn group_embed_empty_second_arg_falls_back_to_one_arg_form() {
+        let store = make_store(vec![
+            plain("REQ-1", "requirement", Some("draft"), &[]),
+            plain("REQ-2", "requirement", Some("draft"), &[]),
+            plain("FEAT-1", "feature", Some("draft"), &[]),
+        ]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+
+        // {{group:type:}} (empty second arg).  Original groups all 3
+        // artifacts by their `type` field → 2 buckets (requirement=2,
+        // feature=1).  Mutant filters to artifact_type=="type" (no
+        // hit) → "No artifacts to group" message.
+        let html = run_embed("group:type:", &store, &schema, &graph).unwrap();
+        assert!(html.contains("requirement"), "got: {html}");
+        assert!(html.contains("feature"), "got: {html}");
+        assert!(
+            !html.contains("No artifacts to group"),
+            "fell into two-arg branch with empty field: {html}",
+        );
+    }
 }
