@@ -101,44 +101,6 @@ fn wrap_markdown_mermaid_in_svg_viewer(html: &str) -> String {
     out
 }
 
-#[cfg(test)]
-mod mermaid_wrap_tests {
-    use super::*;
-
-    // rivet: verifies REQ-007 (artifact diagram viewer parity)
-    #[test]
-    fn wraps_single_mermaid_block_in_svg_viewer() {
-        let html = "<p>intro</p><pre class=\"mermaid\">graph LR\nA-->B</pre><p>outro</p>";
-        let wrapped = wrap_markdown_mermaid_in_svg_viewer(html);
-        assert!(wrapped.contains("<div class=\"svg-viewer\">"));
-        assert!(wrapped.contains("svg-viewer-toolbar"));
-        assert!(wrapped.contains("title=\"Fullscreen\""));
-        // Pre block still in place.
-        assert!(wrapped.contains("<pre class=\"mermaid\">graph LR"));
-        // Surrounding paragraphs preserved.
-        assert!(wrapped.contains("<p>intro</p>"));
-        assert!(wrapped.contains("<p>outro</p>"));
-    }
-
-    // rivet: verifies REQ-007
-    #[test]
-    fn no_mermaid_means_no_change() {
-        let html = "<p>plain description with <code>foo</code></p>";
-        assert_eq!(wrap_markdown_mermaid_in_svg_viewer(html), html);
-    }
-
-    // rivet: verifies REQ-007
-    #[test]
-    fn wraps_multiple_mermaid_blocks() {
-        let html =
-            "<pre class=\"mermaid\">A</pre> mid <pre class=\"mermaid\">B</pre>";
-        let wrapped = wrap_markdown_mermaid_in_svg_viewer(html);
-        // Two viewer wrappers present.
-        assert_eq!(wrapped.matches("<div class=\"svg-viewer\">").count(), 2);
-        assert_eq!(wrapped.matches("svg-viewer-toolbar").count(), 2);
-    }
-}
-
 // ── Artifacts list ────────────────────────────────────────────────────────
 
 pub(crate) fn render_artifacts_list(ctx: &RenderContext, params: &ViewParams) -> String {
@@ -904,4 +866,43 @@ fn find_source_ref(s: &str) -> Option<SourceRefMatch> {
         i += 1;
     }
     None
+}
+
+// ── Tests ────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // rivet: verifies REQ-007 (artifact diagram viewer parity)
+    #[test]
+    fn wraps_single_mermaid_block_in_svg_viewer() {
+        let html = "<p>intro</p><pre class=\"mermaid\">graph LR\nA-->B</pre><p>outro</p>";
+        let wrapped = wrap_markdown_mermaid_in_svg_viewer(html);
+        assert!(wrapped.contains("<div class=\"svg-viewer\">"));
+        assert!(wrapped.contains("svg-viewer-toolbar"));
+        assert!(wrapped.contains("title=\"Fullscreen\""));
+        // Pre block still in place.
+        assert!(wrapped.contains("<pre class=\"mermaid\">graph LR"));
+        // Surrounding paragraphs preserved.
+        assert!(wrapped.contains("<p>intro</p>"));
+        assert!(wrapped.contains("<p>outro</p>"));
+    }
+
+    // rivet: verifies REQ-007
+    #[test]
+    fn no_mermaid_means_no_change() {
+        let html = "<p>plain description with <code>foo</code></p>";
+        assert_eq!(wrap_markdown_mermaid_in_svg_viewer(html), html);
+    }
+
+    // rivet: verifies REQ-007
+    #[test]
+    fn wraps_multiple_mermaid_blocks() {
+        let html = "<pre class=\"mermaid\">A</pre> mid <pre class=\"mermaid\">B</pre>";
+        let wrapped = wrap_markdown_mermaid_in_svg_viewer(html);
+        // Two viewer wrappers present.
+        assert_eq!(wrapped.matches("<div class=\"svg-viewer\">").count(), 2);
+        assert_eq!(wrapped.matches("svg-viewer-toolbar").count(), 2);
+    }
 }
