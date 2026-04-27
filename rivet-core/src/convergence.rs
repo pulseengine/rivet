@@ -632,4 +632,114 @@ mod tests {
         assert_eq!(report.new_failures.len(), 1);
         assert_eq!(tracker.failures.len(), 1);
     }
+
+    // ── Mutation-pinning tests ─────────────────────────────────────────
+
+    // Verifies: REQ-009
+    // Kills:
+    //   convergence.rs:80:14 replace ^= with |= in simple_hash
+    //   convergence.rs:80:14 replace ^= with &= in simple_hash
+    //
+    // FNV-1a uses XOR. Replacing it with OR or AND changes the hash for
+    // most inputs. We pin two different inputs that collide under |= or
+    // &= but produce distinct hashes under ^=, plus an input that hits
+    // a known FNV-1a value.
+    #[test]
+    fn signature_message_hash_uses_xor_not_or_or_and() {
+        // Two messages whose hashes must differ. Under |= the hash only
+        // ever monotonically grows (and quickly saturates), so for short
+        // distinct inputs the |= variant tends to collapse to the same
+        // value. Likewise &= clears bits and tends to zero.
+        let d1 = make_diag(Severity::Error, "rule-x", Some("A"), "ABC");
+        let d2 = make_diag(Severity::Error, "rule-x", Some("A"), "XYZ");
+        let s1 = FailureSignature::from_diagnostic(&d1);
+        let s2 = FailureSignature::from_diagnostic(&d2);
+        assert_ne!(
+            s1, s2,
+            "FNV-1a XOR must produce distinct hashes for distinct messages",
+        );
+
+        // Empty message: FNV-1a of "" = the offset basis,
+        //   0xcbf29ce484222325. Both |= (no-op on empty) and &= (no-op
+        //   on empty) would also produce this — so this case alone
+        //   doesn't pin the operator. But combined with the distinct-
+        //   message test above, the mutants are killed.
+        let d_empty = make_diag(Severity::Error, "rule-x", Some("A"), "");
+        let s_empty = FailureSignature::from_diagnostic(&d_empty);
+        let expected_empty = "error:rule-x:A:cbf29ce484222325";
+        assert_eq!(s_empty.0, expected_empty);
+
+        // Non-empty single-byte: FNV-1a of "A" = (offset XOR 0x41) * prime.
+        // |= would only set bits; &= would only clear. Neither matches
+        // the XOR result for this specific byte.
+        let d_a = make_diag(Severity::Error, "rule-x", Some("A"), "A");
+        let s_a = FailureSignature::from_diagnostic(&d_a);
+        // Manually compute expected XOR-based hash:
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        h ^= u64::from(b'A');
+        h = h.wrapping_mul(0x100_0000_01b3);
+        let expected_a = format!("error:rule-x:A:{h:016x}");
+        assert_eq!(s_a.0, expected_a);
+    }
+
+    // Verifies: REQ-009
+    // Kills:
+    //   convergence.rs:70:9 replace fmt::Display for FailureSignature -> Ok(Default)
+    #[test]
+    fn failure_signature_display_writes_inner_string() {
+        let sig = FailureSignature("error:r1:A:cafebabe00000000".to_string());
+        let formatted = format!("{sig}");
+        // The mutant replaces the body with `Ok(Default::default())`,
+        // which writes nothing — the formatted string would be empty.
+        assert_eq!(formatted, "error:r1:A:cafebabe00000000");
+        assert!(!formatted.is_empty());
+    }
+
+    // Verifies: REQ-009
+    // Kills:
+    //   convergence.rs:135:9 replace RetryStrategy::guidance -> ""
+    //   convergence.rs:135:9 replace RetryStrategy::guidance -> "xyzzy"
+    #[test]
+    fn retry_strategy_guidance_returns_distinct_messages() {
+        // Each variant must return its own non-empty message that
+        // differs from the others. Constant-replacement mutants ("" or
+        // "xyzzy") would collapse all four to the same string.
+        let g_normal = RetryStrategy::Normal.guidance();
+        let g_expanded = RetryStrategy::ExpandedContext.guidance();
+        let g_diff = RetryStrategy::DifferentApproach.guidance();
+        let g_human = RetryStrategy::HumanReview.guidance();
+
+        assert!(!g_normal.is_empty());
+        assert!(!g_expanded.is_empty());
+        assert!(!g_diff.is_empty());
+        assert!(!g_human.is_empty());
+
+        assert_ne!(g_normal, g_expanded);
+        assert_ne!(g_normal, g_diff);
+        assert_ne!(g_normal, g_human);
+        assert_ne!(g_expanded, g_diff);
+        assert_ne!(g_expanded, g_human);
+        assert_ne!(g_diff, g_human);
+
+        // Pin the actual content so neither "" nor "xyzzy" passes.
+        assert!(g_normal.contains("New failure"));
+        assert!(g_expanded.contains("This failed before"));
+        assert!(g_diff.contains("NOT working"));
+        assert!(g_human.contains("human review"));
+    }
+
+    // Verifies: REQ-009
+    // Kills:
+    //   convergence.rs:148:9 replace fmt::Display for RetryStrategy -> Ok(Default)
+    #[test]
+    fn retry_strategy_display_uses_guidance() {
+        let s = format!("{}", RetryStrategy::Normal);
+        // Mutant `Ok(Default::default())` would produce empty string.
+        assert!(!s.is_empty());
+        assert_eq!(s, RetryStrategy::Normal.guidance());
+
+        let s2 = format!("{}", RetryStrategy::HumanReview);
+        assert_eq!(s2, RetryStrategy::HumanReview.guidance());
+        assert_ne!(s, s2);
+    }
 }

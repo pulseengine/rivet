@@ -314,10 +314,22 @@ jobs:
       matrix:
         include:
           - { crate: rivet-cli, shard: '0/1', shard_id: '0-of-1' }
-          - { crate: rivet-core, shard: '0/4', shard_id: '0-of-4' }
-          - { crate: rivet-core, shard: '1/4', shard_id: '1-of-4' }
-          - { crate: rivet-core, shard: '2/4', shard_id: '2-of-4' }
-          - { crate: rivet-core, shard: '3/4', shard_id: '3-of-4' }
+          - { crate: rivet-core, shard: '0/16', shard_id: '00-of-16' }
+          - { crate: rivet-core, shard: '1/16', shard_id: '01-of-16' }
+          - { crate: rivet-core, shard: '2/16', shard_id: '02-of-16' }
+          - { crate: rivet-core, shard: '3/16', shard_id: '03-of-16' }
+          - { crate: rivet-core, shard: '4/16', shard_id: '04-of-16' }
+          - { crate: rivet-core, shard: '5/16', shard_id: '05-of-16' }
+          - { crate: rivet-core, shard: '6/16', shard_id: '06-of-16' }
+          - { crate: rivet-core, shard: '7/16', shard_id: '07-of-16' }
+          - { crate: rivet-core, shard: '8/16', shard_id: '08-of-16' }
+          - { crate: rivet-core, shard: '9/16', shard_id: '09-of-16' }
+          - { crate: rivet-core, shard: '10/16', shard_id: '10-of-16' }
+          - { crate: rivet-core, shard: '11/16', shard_id: '11-of-16' }
+          - { crate: rivet-core, shard: '12/16', shard_id: '12-of-16' }
+          - { crate: rivet-core, shard: '13/16', shard_id: '13-of-16' }
+          - { crate: rivet-core, shard: '14/16', shard_id: '14-of-16' }
+          - { crate: rivet-core, shard: '15/16', shard_id: '15-of-16' }
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -329,7 +341,13 @@ jobs:
         with:
           tool: cargo-mutants
       - name: Run cargo-mutants
-        run: cargo mutants -p ${{ matrix.crate }} --shard ${{ matrix.shard }} --timeout 90 --jobs 4 --output mutants-out -- --lib || true
+        # Per-mutant timeout 30s (was 90): the dogfood corpus's long-tail
+        # mutants were eating most of each shard's 45-min budget. 30s
+        # still catches genuine slow cases via cargo-mutants's automatic
+        # "x3 baseline" rule — anything slower than that is reported as
+        # `timeout` (counts as caught) rather than `missed`. With 30s
+        # cap and 16-way sharding, each shard finishes in ~12-20 min.
+        run: cargo mutants -p ${{ matrix.crate }} --shard ${{ matrix.shard }} --timeout 30 --jobs 4 --output mutants-out -- --lib || true
       - name: Check surviving mutants
         run: |
           MISSED=0

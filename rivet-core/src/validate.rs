@@ -1594,4 +1594,467 @@ then:
             validate_says_covered, entry.covered, entry.total
         );
     }
+
+    // ── Mutation-pinning tests for link cardinality ────────────────────
+    //
+    // Each test pins one or more surviving mutants in
+    // `validate_structural`'s cardinality-and-target-type block (lines
+    // 296-345). Strategy: build a schema that defines exactly one
+    // link_field with a chosen cardinality, then drive the artifact's
+    // link count to each interesting boundary.
+
+    /// Schema with a single artifact type "test" that has one link
+    /// field "satisfies" with the given cardinality and `required` flag.
+    /// Target type is "tgt".
+    fn cardinality_schema(card: Cardinality, required: bool) -> Schema {
+        let mut file = minimal_schema("test");
+        file.artifact_types = vec![
+            ArtifactTypeDef {
+                name: "test".to_string(),
+                description: String::new(),
+                fields: vec![],
+                link_fields: vec![LinkFieldDef {
+                    name: "satisfies".to_string(),
+                    link_type: "satisfies".to_string(),
+                    target_types: vec!["tgt".to_string()],
+                    required,
+                    cardinality: card,
+                    description: None,
+                }],
+                aspice_process: None,
+                common_mistakes: vec![],
+                example: None,
+                yaml_section: None,
+                yaml_sections: vec![],
+                yaml_section_suffix: None,
+                shorthand_links: std::collections::BTreeMap::new(),
+            },
+            ArtifactTypeDef {
+                name: "tgt".to_string(),
+                description: String::new(),
+                fields: vec![],
+                link_fields: vec![],
+                aspice_process: None,
+                common_mistakes: vec![],
+                example: None,
+                yaml_section: None,
+                yaml_sections: vec![],
+                yaml_section_suffix: None,
+                shorthand_links: std::collections::BTreeMap::new(),
+            },
+        ];
+        Schema::merge(&[file])
+    }
+
+    fn link(target: &str) -> Link {
+        Link {
+            link_type: "satisfies".to_string(),
+            target: target.to_string(),
+        }
+    }
+
+    /// Build a Store + LinkGraph from the artifact under test plus
+    /// some target artifacts.
+    fn run_validate(
+        schema: &Schema,
+        artifact: Artifact,
+        targets: Vec<Artifact>,
+    ) -> Vec<Diagnostic> {
+        let mut store = Store::new();
+        store.insert(artifact).unwrap();
+        for t in targets {
+            store.insert(t).unwrap();
+        }
+        let graph = LinkGraph::build(&store, schema);
+        validate_structural(&store, schema, &graph)
+    }
+
+    fn rule_count(diags: &[Diagnostic], rule: &str) -> usize {
+        diags.iter().filter(|d| d.rule == rule).count()
+    }
+
+    // Verifies: REQ-004
+    // Kills:
+    //   validate.rs:297:44 replace match guard `count != 1` with true/false
+    //   validate.rs:297:50 replace `!=` with `==`
+    //   validate.rs:293:41 replace `==` with `!=`  (link_type filter)
+    #[test]
+    fn cardinality_exactly_one_distinguishes_zero_one_two() {
+        let schema = cardinality_schema(Cardinality::ExactlyOne, false);
+        let targets = vec![
+            minimal_artifact("T-1", "tgt"),
+            minimal_artifact("T-2", "tgt"),
+        ];
+
+        // 0 links: must produce a diagnostic.
+        let art_0 = make_artifact("A", "test", None, None, vec![], vec![]);
+        let d0 = run_validate(&schema, art_0, targets.clone());
+        assert_eq!(
+            rule_count(&d0, "cardinality"),
+            1,
+            "ExactlyOne with 0 links must emit cardinality diagnostic; \
+             mutating `count != 1` -> true would emit when count is 1; \
+             mutating it to false would never emit",
+        );
+
+        // 1 link: must NOT produce a diagnostic.
+        let art_1 = make_artifact("A", "test", None, None, vec![], vec![link("T-1")]);
+        let d1 = run_validate(&schema, art_1, targets.clone());
+        assert_eq!(
+            rule_count(&d1, "cardinality"),
+            0,
+            "ExactlyOne with 1 link must NOT emit; mutant `count != 1` -> \
+             true would emit anyway",
+        );
+
+        // 2 links: must produce a diagnostic.
+        let art_2 = make_artifact(
+            "A",
+            "test",
+            None,
+            None,
+            vec![],
+            vec![link("T-1"), link("T-2")],
+        );
+        let d2 = run_validate(&schema, art_2, targets);
+        assert_eq!(
+            rule_count(&d2, "cardinality"),
+            1,
+            "ExactlyOne with 2 links must emit; mutant `count != 1` -> false \
+             would not emit. Also pins `==` -> `!=` on link_type filter \
+             which would mis-count.",
+        );
+    }
+
+    // Verifies: REQ-004
+    // Kills:
+    //   validate.rs:311:43 replace match guard `count == 0 && link_field.required` with true/false
+    //   validate.rs:311:49 replace `==` with `!=`
+    //   validate.rs:311:54 replace `&&` with `||`
+    #[test]
+    fn cardinality_one_or_many_only_emits_when_required_and_zero() {
+        // required=true: 0 links → emit; 1 link → no emit.
+        let schema_req = cardinality_schema(Cardinality::OneOrMany, true);
+        let targets = vec![minimal_artifact("T-1", "tgt")];
+
+        let art_zero = make_artifact("A", "test", None, None, vec![], vec![]);
+        let d_zero_req = run_validate(&schema_req, art_zero.clone(), targets.clone());
+        assert_eq!(
+            rule_count(&d_zero_req, "cardinality"),
+            1,
+            "OneOrMany required=true with 0 links must emit; \
+             mutating `count == 0` -> false would not emit; \
+             mutating the entire guard to false would also not emit",
+        );
+
+        let art_one = make_artifact("A", "test", None, None, vec![], vec![link("T-1")]);
+        let d_one_req = run_validate(&schema_req, art_one, targets.clone());
+        assert_eq!(
+            rule_count(&d_one_req, "cardinality"),
+            0,
+            "OneOrMany required=true with 1 link must not emit; \
+             mutating guard to true would emit; \
+             mutating `==` -> `!=` would emit when count != 0",
+        );
+
+        // required=false: 0 links → must NOT emit (the && short-circuits).
+        let schema_nonreq = cardinality_schema(Cardinality::OneOrMany, false);
+        let d_zero_nonreq = run_validate(&schema_nonreq, art_zero, targets);
+        assert_eq!(
+            rule_count(&d_zero_nonreq, "cardinality"),
+            0,
+            "OneOrMany required=false with 0 links must not emit; \
+             mutating `&&` -> `||` would emit even though required=false",
+        );
+    }
+
+    // Verifies: REQ-004
+    // Kills:
+    //   validate.rs:325:43 replace match guard `count > 1` with true/false
+    //   validate.rs:325:49 replace `>` with `==`/`<`/`>=`
+    #[test]
+    fn cardinality_zero_or_one_distinguishes_zero_one_two() {
+        let schema = cardinality_schema(Cardinality::ZeroOrOne, false);
+        let targets = vec![
+            minimal_artifact("T-1", "tgt"),
+            minimal_artifact("T-2", "tgt"),
+        ];
+
+        // 0 links: must NOT emit.
+        let art_0 = make_artifact("A", "test", None, None, vec![], vec![]);
+        assert_eq!(
+            rule_count(
+                &run_validate(&schema, art_0, targets.clone()),
+                "cardinality",
+            ),
+            0,
+            "ZeroOrOne with 0 links must not emit; mutant `count > 1` -> \
+             true / `>` -> `>=` would emit",
+        );
+
+        // 1 link: must NOT emit.
+        let art_1 = make_artifact("A", "test", None, None, vec![], vec![link("T-1")]);
+        assert_eq!(
+            rule_count(
+                &run_validate(&schema, art_1, targets.clone()),
+                "cardinality",
+            ),
+            0,
+            "ZeroOrOne with 1 link must not emit; mutant `>` -> `==` (i.e. \
+             count == 1) would falsely emit; mutant `>` -> `>=` would too",
+        );
+
+        // 2 links: must emit.
+        let art_2 = make_artifact(
+            "A",
+            "test",
+            None,
+            None,
+            vec![],
+            vec![link("T-1"), link("T-2")],
+        );
+        assert_eq!(
+            rule_count(&run_validate(&schema, art_2, targets), "cardinality"),
+            1,
+            "ZeroOrOne with 2 links must emit; mutant `count > 1` -> false / \
+             `>` -> `<` would not emit",
+        );
+    }
+
+    // Verifies: REQ-004
+    // Kills:
+    //   validate.rs:344:35 replace `!=` with `==` in link target-type loop
+    //   validate.rs:348:24 delete `!` (target_types.is_empty())
+    //   validate.rs:349:25 replace `&&` with `||`
+    //   validate.rs:349:28 delete `!` (target_types.contains)
+    #[test]
+    fn link_target_type_filter_pins_inequality_and_negations() {
+        let schema = cardinality_schema(Cardinality::ExactlyOne, false);
+        // Wrong-type target: should emit a "link-target-type" diagnostic.
+        // Right-type target: should not.
+        let wrong_target = make_artifact("T-WRONG", "test", None, None, vec![], vec![]);
+        let right_target = minimal_artifact("T-RIGHT", "tgt");
+
+        // Artifact links to wrong type.
+        let art_wrong = make_artifact("A", "test", None, None, vec![], vec![link("T-WRONG")]);
+        let diags = run_validate(&schema, art_wrong, vec![wrong_target.clone()]);
+        assert_eq!(
+            rule_count(&diags, "link-target-type"),
+            1,
+            "wrong-type target must produce link-target-type diagnostic; \
+             mutating `!= -> ==` on the link_type filter would skip the \
+             check; deleting `!` on `target_types.is_empty()` would treat \
+             the type list as empty and admit any target",
+        );
+
+        // Artifact links to right type → no link-target-type diagnostic.
+        let art_right = make_artifact("A", "test", None, None, vec![], vec![link("T-RIGHT")]);
+        let diags = run_validate(&schema, art_right, vec![right_target]);
+        assert_eq!(
+            rule_count(&diags, "link-target-type"),
+            0,
+            "right-type target must NOT produce link-target-type diagnostic; \
+             mutating `&& -> ||` or deleting `!` on `target_types.contains` \
+             would emit incorrectly",
+        );
+    }
+
+    // Verifies: REQ-004
+    // Kills:
+    //   validate.rs:81:9 replace Diagnostic::fmt -> Ok(Default::default())
+    #[test]
+    fn diagnostic_display_writes_message() {
+        let d = Diagnostic::new(
+            Severity::Error,
+            Some("REQ-001".to_string()),
+            "rule-name",
+            "the message",
+        );
+        let s = format!("{d}");
+        // Mutant returns Ok(()) and writes nothing — would be empty.
+        assert!(!s.is_empty(), "Diagnostic Display must not be empty");
+        assert!(s.contains("the message"));
+    }
+
+    /// Schema with a single artifact type "test" that has the given fields.
+    fn schema_with_fields(fields: Vec<FieldDef>) -> Schema {
+        let mut file = minimal_schema("test");
+        file.artifact_types = vec![ArtifactTypeDef {
+            name: "test".to_string(),
+            description: String::new(),
+            fields,
+            link_fields: vec![],
+            aspice_process: None,
+            common_mistakes: vec![],
+            example: None,
+            yaml_section: None,
+            yaml_sections: vec![],
+            yaml_section_suffix: None,
+            shorthand_links: std::collections::BTreeMap::new(),
+        }];
+        Schema::merge(&[file])
+    }
+
+    fn required_field(name: &str) -> FieldDef {
+        FieldDef {
+            name: name.to_string(),
+            field_type: "string".to_string(),
+            required: true,
+            description: None,
+            allowed_values: None,
+        }
+    }
+
+    // Verifies: REQ-004
+    // Kills:
+    //   validate.rs:170:31 replace `&&` with `||`
+    //   validate.rs:170:34 delete `!` on `!artifact.fields.contains_key(...)`
+    //   validate.rs:177:20 delete `!` on `!has_base`
+    //   validate.rs:173:21 delete match arm "description"
+    //   validate.rs:174:21 delete match arm "status"
+    #[test]
+    fn required_field_check_distinguishes_present_and_missing() {
+        // Case A: field is required and missing → emit "required-field".
+        let schema = schema_with_fields(vec![required_field("safety")]);
+        let art_missing = make_artifact("A", "test", None, None, vec![], vec![]);
+        let d_missing = run_validate(&schema, art_missing, vec![]);
+        assert_eq!(
+            rule_count(&d_missing, "required-field"),
+            1,
+            "missing required field must emit; mutating `&&` -> `||` would \
+             also emit (so this case alone doesn't pin), but together with \
+             case B below that mutant flips behaviour",
+        );
+
+        // Case B: field is required and present → NO diagnostic.
+        let art_present =
+            make_artifact("A", "test", None, None, vec![("safety", "ASIL_B")], vec![]);
+        let d_present = run_validate(&schema, art_present, vec![]);
+        assert_eq!(
+            rule_count(&d_present, "required-field"),
+            0,
+            "required field that is present must NOT emit; mutating `!` \
+             on contains_key (line 170:34) flips: would emit when field is \
+             present. Mutating `&&` -> `||` (line 170:31) makes the guard \
+             enter even when field.required=false, also wrong here.",
+        );
+
+        // Case C: required field "description" is satisfied by the
+        // top-level Artifact.description rather than fields map.
+        let schema_desc = schema_with_fields(vec![required_field("description")]);
+        let art_desc = make_artifact(
+            "A",
+            "test",
+            None,
+            Some("a real description"),
+            vec![],
+            vec![],
+        );
+        let d_desc = run_validate(&schema_desc, art_desc, vec![]);
+        assert_eq!(
+            rule_count(&d_desc, "required-field"),
+            0,
+            "description on the artifact itself must satisfy a required \
+             'description' field. Mutating `delete match arm \"description\"` \
+             (line 173) drops the special case — has_base becomes false, \
+             diagnostic gets emitted. Mutating `delete !` on `!has_base` \
+             (line 177) inverts the gate — diagnostic gets emitted.",
+        );
+
+        // Case D: required "status" satisfied by the top-level status.
+        let schema_status = schema_with_fields(vec![required_field("status")]);
+        let art_status = make_artifact("A", "test", Some("approved"), None, vec![], vec![]);
+        let d_status = run_validate(&schema_status, art_status, vec![]);
+        assert_eq!(
+            rule_count(&d_status, "required-field"),
+            0,
+            "status on the artifact must satisfy a required 'status' field; \
+             mutating `delete match arm \"status\"` (line 174) breaks this.",
+        );
+    }
+
+    // Verifies: REQ-004
+    // Kills:
+    //   validate.rs:198:28 delete `!` on `!allowed.iter().any(...)`
+    //   validate.rs:198:54 replace `==` with `!=`
+    #[test]
+    fn allowed_values_string_check_distinguishes_in_and_out_of_set() {
+        // Field with explicit allowed-values list.
+        let schema = schema_with_fields(vec![FieldDef {
+            name: "safety".to_string(),
+            field_type: "string".to_string(),
+            required: false,
+            description: None,
+            allowed_values: Some(vec!["ASIL_A".into(), "ASIL_B".into()]),
+        }]);
+
+        // Out-of-set value → emit "allowed-values".
+        let art_bad = make_artifact("A", "test", None, None, vec![("safety", "ASIL_X")], vec![]);
+        let d_bad = run_validate(&schema, art_bad, vec![]);
+        assert_eq!(
+            rule_count(&d_bad, "allowed-values"),
+            1,
+            "out-of-set value must emit; deleting `!` on `!any(==)` (line \
+             198:28) would emit only when value IS in set; replacing `==` \
+             with `!=` (line 198:54) would treat any non-equal item as \
+             matching, so the inner closure becomes \"any inequality\" — \
+             with multiple allowed values, that's true for at least one, \
+             so the outer .any() returns true and the negation skips emit",
+        );
+
+        // In-set value → no diagnostic.
+        let art_good = make_artifact("A", "test", None, None, vec![("safety", "ASIL_B")], vec![]);
+        let d_good = run_validate(&schema, art_good, vec![]);
+        assert_eq!(
+            rule_count(&d_good, "allowed-values"),
+            0,
+            "in-set value must not emit; replacing `==` with `!=` would \
+             flip the per-item check and emit incorrectly",
+        );
+    }
+
+    // Verifies: REQ-004
+    // Kills:
+    //   validate.rs:523:5 replace validate_documents -> Vec<Diagnostic> with vec![]
+    //   validate.rs:527:16 delete `!` in validate_documents (would invert
+    //     the missing-id check)
+    #[test]
+    fn validate_documents_emits_for_unknown_artifact_reference() {
+        // validate_documents flags documents that reference artifact IDs
+        // not present in the store. Build a doc store containing one
+        // reference to a non-existent ID.
+        use crate::document::{DocReference, Document, DocumentStore};
+        use std::collections::BTreeMap;
+        let mut docs = DocumentStore::new();
+        let doc = Document {
+            id: "DOC-1".to_string(),
+            doc_type: "document".to_string(),
+            title: "Test Doc".to_string(),
+            status: None,
+            glossary: BTreeMap::new(),
+            body: String::new(),
+            sections: vec![],
+            references: vec![DocReference {
+                artifact_id: "MISSING".to_string(),
+                line: 1,
+                col: 0,
+                byte_offset: 0,
+                len: 11,
+            }],
+            source_file: None,
+        };
+        docs.insert(doc);
+        let store = Store::new();
+        let diags = validate_documents(&docs, &store);
+        // Mutant `vec![]` returns zero diagnostics regardless of input.
+        // Mutant `delete !` flips the check: would emit only when the
+        // reference IS present, i.e. zero in this case.
+        assert_eq!(
+            diags.len(),
+            1,
+            "validate_documents must emit exactly one diagnostic for a \
+             reference to a missing artifact",
+        );
+        assert_eq!(diags[0].rule, "doc-broken-ref");
+    }
 }

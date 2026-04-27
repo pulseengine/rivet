@@ -484,4 +484,82 @@ mod tests {
         let runs = load_evidence_dir(&dir).unwrap();
         assert!(runs.is_empty());
     }
+
+    // ── Mutation-pinning tests ─────────────────────────────────────────
+    //
+    // These tests pin specific surviving mutants reported by
+    // `cargo mutants -p rivet-core --file rivet-core/src/coverage_evidence.rs`.
+    // Each test asserts a value that the mutant cannot satisfy.
+
+    // rivet: verifies REQ-009
+    // Kills:
+    //   coverage_evidence.rs:86:9 replace computed_percentage -> 0.0
+    //   coverage_evidence.rs:86:9 replace computed_percentage -> 1.0
+    //   coverage_evidence.rs:86:9 replace computed_percentage -> -1.0
+    //   coverage_evidence.rs:89:55 replace * with + in computed_percentage
+    //   coverage_evidence.rs:89:55 replace * with / in computed_percentage
+    //   coverage_evidence.rs:89:34 replace / with % in computed_percentage
+    //   coverage_evidence.rs:89:34 replace / with * in computed_percentage
+    #[test]
+    fn computed_percentage_partial_value() {
+        // 3/4 = 0.75 ; * 100 = 75.0 — distinguishes:
+        //   const 0.0 / 1.0 / -1.0 (none equal 75.0)
+        //   * with +  → 0.75 + 100  = 100.75    (≠ 75.0)
+        //   * with /  → 0.75 / 100  = 0.0075    (≠ 75.0)
+        //   / with %  → 3 % 4 = 3 → 3.0 * 100 = 300.0 (≠ 75.0)
+        //   / with *  → 3 * 4 = 12 → 12.0 * 100 = 1200.0 (≠ 75.0)
+        let e = ev("X", 4, 3);
+        let p = e.computed_percentage();
+        assert!(
+            (p - 75.0).abs() < 1e-9,
+            "computed_percentage(4,3) = {p}, expected 75.0",
+        );
+    }
+
+    // rivet: verifies REQ-009
+    // Kills: coverage_evidence.rs:86:23 replace == with != in computed_percentage
+    #[test]
+    fn computed_percentage_total_zero_returns_one_hundred() {
+        // total == 0 branch: must return exactly 100.0.
+        // Mutant `!=` flips the branch and would compute (0/0)*100 = NaN.
+        let e = ev("Y", 0, 0);
+        let p = e.computed_percentage();
+        assert!(
+            (p - 100.0).abs() < f64::EPSILON,
+            "computed_percentage(0,0) = {p}, expected 100.0",
+        );
+    }
+
+    // rivet: verifies REQ-009
+    // Kills: coverage_evidence.rs:86:23 replace == with != in computed_percentage
+    //   (companion to the total==0 case — confirms total>0 path runs)
+    #[test]
+    fn computed_percentage_total_nonzero_full_coverage() {
+        // total > 0 branch must NOT short-circuit to 100.0 unconditionally;
+        // this case happens to also be 100.0 but goes through the math
+        // path. Combined with the partial test above, the 100.0 const
+        // mutants are killed.
+        let e = ev("Z", 5, 5);
+        assert!((e.computed_percentage() - 100.0).abs() < f64::EPSILON);
+    }
+
+    // rivet: verifies REQ-009
+    // Kills:
+    //   coverage_evidence.rs:179:9 replace CoverageStore::is_empty -> true
+    //   coverage_evidence.rs:179:9 replace CoverageStore::is_empty -> false
+    #[test]
+    fn coverage_store_is_empty_true_on_new() {
+        // Mutant `false`: empty store would report non-empty.
+        let store = CoverageStore::new();
+        assert!(store.is_empty());
+    }
+
+    // rivet: verifies REQ-009
+    #[test]
+    fn coverage_store_is_empty_false_after_insert() {
+        // Mutant `true`: a populated store would report empty.
+        let mut store = CoverageStore::new();
+        store.insert(make_run("r1", "2026-04-25T00:00:00Z", vec![]));
+        assert!(!store.is_empty());
+    }
 }

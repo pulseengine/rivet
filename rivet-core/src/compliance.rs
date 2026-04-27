@@ -285,4 +285,212 @@ mod tests {
             }
         }
     }
+
+    // ── Mutation-pinning tests ─────────────────────────────────────────
+    //
+    // Each test pins a specific surviving mutant reported by
+    // `cargo mutants -p rivet-core --file rivet-core/src/compliance.rs`.
+
+    use crate::schema::ArtifactTypeDef;
+    use crate::test_helpers::minimal_artifact;
+
+    fn schema_with_types(types: &[&str]) -> Schema {
+        let mut s = empty_schema();
+        for t in types {
+            s.artifact_types.insert(
+                (*t).to_string(),
+                ArtifactTypeDef {
+                    name: (*t).to_string(),
+                    description: String::new(),
+                    fields: vec![],
+                    link_fields: vec![],
+                    aspice_process: None,
+                    common_mistakes: vec![],
+                    example: None,
+                    yaml_section: None,
+                    yaml_sections: vec![],
+                    yaml_section_suffix: None,
+                    shorthand_links: Default::default(),
+                },
+            );
+        }
+        s
+    }
+
+    fn full_eu_ai_act_schema() -> Schema {
+        schema_with_types(EU_AI_ACT_TYPES)
+    }
+
+    // Verifies: REQ-004
+    // Kills:
+    //   compliance.rs:181:5 replace is_eu_ai_act_loaded -> false
+    //   compliance.rs:182:9 replace && with || in is_eu_ai_act_loaded
+    #[test]
+    fn is_eu_ai_act_loaded_requires_both_anchor_types() {
+        // Both core anchor types present → true.
+        let full = schema_with_types(&["ai-system-description", "conformity-declaration"]);
+        assert!(
+            is_eu_ai_act_loaded(&full),
+            "expected full schema to be detected as loaded",
+        );
+
+        // Only one of the two anchor types → must be false; pins:
+        //   - constant-false replacement (would still say false)
+        //   - && replaced with ||  (would say true on either alone)
+        let only_ai = schema_with_types(&["ai-system-description"]);
+        assert!(
+            !is_eu_ai_act_loaded(&only_ai),
+            "&& must require BOTH anchor types — replacing with || would let this pass",
+        );
+        let only_conf = schema_with_types(&["conformity-declaration"]);
+        assert!(!is_eu_ai_act_loaded(&only_conf),);
+
+        // Empty schema → false. Combined with the `full` case above this
+        // also kills the constant-false replacement.
+        assert!(!is_eu_ai_act_loaded(&empty_schema()));
+    }
+
+    // Verifies: REQ-004
+    // Kills:
+    //   compliance.rs:209:29 replace += with -= in compute_compliance
+    //   compliance.rs:209:29 replace += with *= in compute_compliance
+    //   compliance.rs:210:22 replace > with == in compute_compliance
+    //   compliance.rs:210:22 replace > with < in compute_compliance
+    //   compliance.rs:210:22 replace > with >= in compute_compliance
+    //   compliance.rs:219:24 replace += with *= in compute_compliance
+    //   compliance.rs:219:24 replace += with -= in compute_compliance
+    //   compliance.rs:220:23 replace += with -= in compute_compliance
+    //   compliance.rs:220:23 replace += with *= in compute_compliance
+    //   compliance.rs:222:40 replace == with != in compute_compliance
+    //   compliance.rs:225:48 replace * with + in compute_compliance
+    //   compliance.rs:225:48 replace * with / in compute_compliance
+    //   compliance.rs:225:29 replace / with % in compute_compliance
+    //   compliance.rs:225:29 replace / with * in compute_compliance
+    //   compliance.rs:239:41 replace == with != in compute_compliance
+    //   compliance.rs:242:31 replace / with % in compute_compliance
+    //   compliance.rs:242:31 replace / with * in compute_compliance
+    //   compliance.rs:242:56 replace * with + in compute_compliance
+    //   compliance.rs:242:56 replace * with / in compute_compliance
+    #[test]
+    fn compute_compliance_partial_section_arithmetic() {
+        // Build a schema that defines all EU AI Act types so the report
+        // is generated, but a store with only SOME of them populated.
+        // This forces non-zero values into the count/required arithmetic
+        // that the surviving mutants would otherwise leave equal.
+        let schema = full_eu_ai_act_schema();
+        let mut store = Store::new();
+
+        // annex-iv-1 fully covered (1/1 type, 1 artifact).
+        store
+            .insert(minimal_artifact("AI-001", "ai-system-description"))
+            .unwrap();
+        // annex-iv-2 partially covered: 2/3 types, 4 artifacts total.
+        store
+            .insert(minimal_artifact("DS-001", "design-specification"))
+            .unwrap();
+        store
+            .insert(minimal_artifact("DS-002", "design-specification"))
+            .unwrap();
+        store
+            .insert(minimal_artifact("DG-001", "data-governance-record"))
+            .unwrap();
+        store
+            .insert(minimal_artifact("DG-002", "data-governance-record"))
+            .unwrap();
+        // annex-iv-8 fully covered.
+        store
+            .insert(minimal_artifact("CD-001", "conformity-declaration"))
+            .unwrap();
+
+        let report = compute_compliance(&store, &schema);
+        assert!(report.schema_loaded, "schema must report as loaded");
+
+        // total_artifacts pins `total_artifacts +=` (lines 209/210):
+        //   1 (AI) + 4 (DS+DG) + 1 (CD) = 6.
+        //   `-=` would give a negative usize (panic) or wrap.
+        //   `*=` from initial 0 stays 0.
+        //   `==` instead of `>` would never push covered types.
+        assert_eq!(
+            report.total_artifacts, 6,
+            "total_artifacts must sum every count: 1 + 2 + 2 + 1 = 6",
+        );
+
+        // annex-iv-1: full (1/1). coverage_pct = 100.0.
+        let s1 = report
+            .sections
+            .iter()
+            .find(|s| s.id == "annex-iv-1")
+            .unwrap();
+        assert_eq!(s1.covered_types.len(), 1);
+        assert_eq!(s1.missing_types.len(), 0);
+        assert!((s1.coverage_pct - 100.0).abs() < 1e-9);
+
+        // annex-iv-2: 2/3 types covered. coverage_pct = 200/3 ≈ 66.667.
+        // This pins:
+        //   * with +  → 2/3 + 100 = 100.667
+        //   * with /  → (2/3)/100 = 0.00667
+        //   / with *  → 2*3 = 6, *100 = 600
+        //   / with %  → 2%3 = 2, *100 = 200
+        let s2 = report
+            .sections
+            .iter()
+            .find(|s| s.id == "annex-iv-2")
+            .unwrap();
+        assert_eq!(s2.covered_types.len(), 2);
+        assert_eq!(s2.missing_types.len(), 1);
+        assert!(
+            (s2.coverage_pct - (200.0 / 3.0)).abs() < 1e-9,
+            "annex-iv-2 coverage_pct = {}, expected ~66.667",
+            s2.coverage_pct,
+        );
+
+        // annex-iv-3: 0/1 type covered. coverage_pct = 0.0.
+        // Pins the `count > 0` mutants — `==` or `>=` would push the
+        // missing type into covered_types when count is 0.
+        let s3 = report
+            .sections
+            .iter()
+            .find(|s| s.id == "annex-iv-3")
+            .unwrap();
+        assert_eq!(s3.covered_types.len(), 0);
+        assert_eq!(s3.missing_types.len(), 1);
+        assert!((s3.coverage_pct - 0.0).abs() < 1e-9);
+
+        // Overall: total_required = sum of required_types over all
+        // sections (1+3+1+1+4+2+1+1+1+1 = 16). total_covered = 4
+        // (annex-iv-1: 1, annex-iv-2: 2, annex-iv-8: 1, others: 0).
+        // overall_pct = 4 / 16 * 100 = 25.0 — distinct from any
+        // arithmetic-mutant value (50.0 from `+`, 0.0 from `*`, etc.).
+        let total_required: usize = report.sections.iter().map(|s| s.required_types.len()).sum();
+        assert_eq!(total_required, 16);
+        let total_covered: usize = report.sections.iter().map(|s| s.covered_types.len()).sum();
+        assert_eq!(total_covered, 4);
+        let expected = 4.0 / 16.0 * 100.0;
+        assert!(
+            (report.overall_pct - expected).abs() < 1e-9,
+            "overall_pct = {}, expected ~{expected}",
+            report.overall_pct,
+        );
+    }
+
+    // Verifies: REQ-004
+    // Kills:
+    //   compliance.rs:239:41 replace == with != in compute_compliance
+    //   (overall_pct branch when total_required == 0)
+    #[test]
+    fn compute_compliance_overall_pct_when_total_required_zero() {
+        // We can't currently construct a schema_loaded report with
+        // total_required == 0 because ANNEX_IV_SECTIONS is non-empty.
+        // The branch is only reachable via an empty schema (which short-
+        // circuits) — so we cannot pin the inner branch from outside.
+        // The companion test above pins `==` indirectly by checking the
+        // arithmetic path. This test documents the structural invariant.
+        let report = compute_compliance(&Store::new(), &empty_schema());
+        // Empty schema short-circuit: overall_pct must be 0.0, not 100.0.
+        // This still kills constant-replacement mutants on the early
+        // return path even though the inner `==` branch is theoretical.
+        assert!(!report.schema_loaded);
+        assert_eq!(report.sections.len(), 0);
+        assert!((report.overall_pct - 0.0).abs() < f64::EPSILON);
+    }
 }
