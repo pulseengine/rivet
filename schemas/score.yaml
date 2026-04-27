@@ -545,6 +545,14 @@ artifact-types:
       - name: expected-result
         type: text
         required: false
+      - name: mutation-score-target
+        type: number
+        required: false
+        description: >
+          Target mutation-kill rate for this test spec, as a fraction in
+          [0.0, 1.0]. Per-ASIL/DAL recommendations live in
+          docs/mutation-testing.md. Compared against the measured
+          `mutation-score` on the corresponding test-exec.
     link-fields:
       - name: fully-verifies
         link-type: fully-verifies
@@ -588,6 +596,38 @@ artifact-types:
         type: structured
         required: false
         description: OS, toolchain, hardware configuration
+      - name: mutation-score
+        type: number
+        required: false
+        description: >
+          Measured mutation-kill rate for this execution, as a fraction in
+          [0.0, 1.0]. Recorded by the cargo-mutants run that produced this
+          test-exec. See docs/mutation-testing.md for ASIL/DAL targets.
+      - name: mutants-tested
+        type: number
+        required: false
+        description: >
+          Total number of mutants generated and tested in this run.
+          Optional but useful for understanding the basis of `mutation-score`.
+      - name: mutants-killed
+        type: number
+        required: false
+        description: Number of mutants caught by the test suite.
+      - name: mutants-missed
+        type: number
+        required: false
+        description: >
+          Number of mutants that survived the test suite. Each missed
+          mutant is a coverage gap. Should equal `mutants-tested -
+          mutants-killed - mutants-timeout - mutants-unviable`.
+      - name: mutants-timeout
+        type: number
+        required: false
+        description: Number of mutants that timed out (treated as killed by cargo-mutants).
+      - name: mutants-unviable
+        type: number
+        required: false
+        description: Number of mutants that did not compile (excluded from score).
     link-fields:
       - name: belongs-to
         link-type: belongs-to
