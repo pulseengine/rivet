@@ -53,6 +53,13 @@ struct DocTopic {
 }
 
 const TOPICS: &[DocTopic] = &[
+    // ── Getting started ────────────────────────────────────────────────
+    DocTopic {
+        slug: "quickstart",
+        title: "10-step oracle-gated quickstart",
+        category: "Getting started",
+        content: QUICKSTART_DOC,
+    },
     // ── Reference topics ───────────────────────────────────────────────
     DocTopic {
         slug: "artifact-format",
@@ -2135,3 +2142,5 @@ With the `supply-chain-dev` bridge:
   https://in-toto.io/
 "#
 );
+
+const QUICKSTART_DOC: &str = include_str!("quickstart.md");

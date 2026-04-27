@@ -5,6 +5,127 @@
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-04-27
+
+Theme: oracle-gated agent pipelines + restored formal-method backstops +
+mutation testing as a hard signal. The agent-first pillar (CLI + MCP +
+LSP) now has a documented oracle-driven workflow (Mythos slop-hunt), an
+external-coverage consumer (witness coverage), and a 16-shard mutation
+matrix that surfaced and killed ~125 surviving mutants across the core
+crate. Verus and Rocq verification jobs are fully restored, the
+dashboard's variant scoping is coherent across all eight relevant
+handlers, and `rivet docs check` no longer silently passes on
+non-rivet markdown that drifted into a scanned directory.
+
+### Added
+
+- **README rewrite + `rivet quickstart`** — new oracle-gated 10-step
+  walk-through (`rivet docs quickstart` or the `rivet quickstart`
+  alias). Each step has a deterministic oracle command + expected
+  output so an AI agent can follow the doc autonomously. README now
+  leads with the three-pillar synthesis (typed atoms, oracle-gated
+  agents, agent-first form factor) instead of a feature list.
+- **Mythos slop-hunt agent pipeline** — `scripts/mythos/{rank,discover,validate,emit}.md`
+  + `HOWTO.md`. Four-prompt audit adapted from Anthropic's red-team
+  scaffold. Hunts dead code, duplicate parsers, and untraceable
+  modules. Excision-primary / trace-interpretive oracle. (#205)
+- **Agent-pipelines schema block** — `agent-pipelines:` per-schema
+  declaration of which oracles apply, how to rank gaps, and what
+  closure routing applies. Surfaced through `rivet pipelines list` /
+  `rivet pipelines show` / `rivet close-gaps`. (#205)
+- **CoverageStore** — typed witness-coverage consumer for external
+  coverage-evidence files. Lets `rivet validate` and `rivet coverage`
+  ingest tarpaulin/llvm-cov-style evidence as first-class artifacts
+  with module digests, run metadata, and per-module summaries. (#208)
+- **Variant scoping for 8 dashboard handlers** —
+  `?variant=<name>` query parameter is now honoured uniformly across
+  `/artifacts`, `/coverage`, `/stpa`, `/matrix`, `/stats`, `/graph`,
+  `/source`, and `/diagnostics`. Closes the incoherence flagged in the
+  PR #215 audit. (#223)
+- **Docs warn-or-allowlist** — `rivet docs check` now surfaces non-rivet
+  markdown files that drifted into a scanned directory under
+  `rivet.yaml: docs:`. Default is `warn`; `rivet.yaml:
+  docs-check.allowlist` flips specific paths back to silent. Resolves
+  Task #56 — files like vendor docs no longer break the gate but no
+  longer hide either. (#224)
+- **10 new Playwright rendering-invariant tests** — coverage of the
+  full route surface, with explicit `.svg-viewer` wrap pins, mermaid
+  inline-render assertions, and graph-route timeouts validated. (#215)
+
+### Changed
+
+- **Mutation testing — 16-shard `rivet-core` matrix, 30 s timeout** —
+  CI now shards the rivet-core mutation run across 16 jobs with a 30 s
+  per-mutant timeout (down from 90 s). The shard reduction surfaced
+  ~125 previously-untested mutants; PR #218 + #221 added ~64 new tests
+  to kill them across `embed`, `reqif`, `validate`, `commits`,
+  `coverage_evidence`, `compliance`, `convergence`, `links`, and
+  `store`. Net effect: mutation run is faster *and* the kill rate is
+  higher. (#218, #221)
+- **Verus verification fully restored** — corrected `vstd` lemma paths
+  after upstream rename, replaced `matches!` macros with `is`
+  operators, fixed `lemma_div_multiples_vanish` invocation, added
+  `#[trigger]` annotations to backlink-symmetry / reachable-in
+  quantifiers, eliminated mid-quantifier in multi-step reachable case,
+  cast nat→int in `lemma_div_is_ordered`. 15 specs proven. (#212)
+- **Rocq proofs fully restored** — restored `Validation.v` import,
+  replaced every `Admitted.` with a real proof. Schema and validation
+  semantics now machine-checked end-to-end. (#210)
+<!-- rivet-docs-check: ignore UNKNOWN-999 -->
+- **Serve middleware preserves response status** —
+  `wrap_full_page` was unconditionally rewriting downstream
+  4xx/5xx responses to 200. Status is now preserved through the
+  full-page wrapper so `/artifacts/UNKNOWN-999` correctly returns
+  HTTP 404, etc. (#213)
+- **Dashboard `/embed/*` route mounting** — moved under `Router::nest`
+  so the embed routes inherit the same middleware stack as the rest of
+  the dashboard (auth, layout-wrap exclusion, CSP). (#218)
+
+### Fixed
+
+- **Playwright suite green (384 passed)** — closed the remaining 8
+  dashboard test failures (description-mermaid wrap, graph-render
+  timeout, source-browser cross-reference, doc-linkage reverse index,
+  variant-banner persistence). (#211, #213, #215, #217, #220)
+- **Graph-route per-test timeout** — bumped 30 s → 60 s for slow CI
+  runners; the layout engine occasionally exceeded the old budget on
+  the larger test fixture. (#214)
+- **`cargo fmt` drift** in mutation-test additions cleaned up. (#219)
+- **CI**: Kani PR-smoke wiring, mutation shard config, Verus log
+  upload. (#209)
+
+### Tests
+
+- **+10 Playwright rendering-invariant tests** — pin the
+  `.svg-viewer` wrap, mermaid inline rendering, and graph-route
+  timeouts. (#215)
+- **+~64 rivet-core unit tests** killing surviving mutants across
+  `embed`, `reqif`, `validate`, `commits`, `coverage_evidence`,
+  `compliance`, `convergence`, `links`, `store`. (#218, #221)
+- **CoverageStore unit + integration tests** — round-trip + summary
+  invariants on witness coverage. (#208)
+
+### Distribution
+
+- **Workspace version bump** to `0.5.0` in `Cargo.toml`. The
+  `rivet-cli`, `rivet-core`, and `etch` crates inherit via
+  `version.workspace = true`.
+- **VS Code extension** `vscode-rivet/package.json` bumped to `0.5.0`.
+- **npm root package** `@pulseengine/rivet` bumped to `0.5.0`. Platform
+  package versions are filled in by the `release-npm.yml` workflow on
+  tag.
+
+### Status (v0.5.x in flight)
+
+- **Variant tooling** — six open product questions tracked in
+  `.rivet/mythos/variant-matrix-design.md` (matrix emission, t-wise
+  sampling, attribute-schema scope, audit cardinality, CLI
+  ergonomics, dashboard interplay).
+- **Formal-method gaps** — three documented gaps in Verus coverage
+  (variant solver completeness, salsa incremental fixpoint, ReqIF
+  round-trip). The larger gale-style differential-testing bar is
+  a follow-up release item.
+
 ## [0.4.3] — 2026-04-23
 
 ### `rivet variant` — build-system query surface and solve debugger

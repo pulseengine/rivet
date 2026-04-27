@@ -518,6 +518,13 @@ enum Command {
         fix: bool,
     },
 
+    /// Print the 10-step oracle-gated quickstart (alias for `rivet docs quickstart`).
+    Quickstart {
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
     /// Generate .rivet/agent-context.md from current project state
     Context,
 
@@ -1451,6 +1458,9 @@ fn run(cli: Cli) -> Result<bool> {
         }
         return cmd_docs(topic.as_deref(), *list, grep.as_deref(), format, *context);
     }
+    if let Command::Quickstart { format } = &cli.command {
+        return cmd_docs(Some("quickstart"), false, None, format, 2);
+    }
     if let Command::Context = &cli.command {
         return cmd_context(&cli);
     }
@@ -1467,6 +1477,7 @@ fn run(cli: Cli) -> Result<bool> {
     match &cli.command {
         Command::Init { .. }
         | Command::Docs { .. }
+        | Command::Quickstart { .. }
         | Command::Context
         | Command::CommitMsgCheck { .. }
         | Command::Lsp
