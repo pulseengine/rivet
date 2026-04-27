@@ -537,14 +537,15 @@ Proof.
     split; [reflexivity |].
     unfold has_link_to.
     exists l1. split; [exact Hl1_in |].
-    split; [exact Ht1_id | reflexivity].
+    (* Ht1_id : art_id t1 = link_target l1; we need link_target l1 = art_id t1 *)
+    split; [symmetry; exact Ht1_id | reflexivity].
   - (* t1 -> t2 *)
     apply reach_direct with (lk := link_kind l2).
     exists t1. split; [exact Ht1_in |].
     split; [reflexivity |].
     unfold has_link_to.
     exists l2. split; [exact Hl2_in |].
-    split; [exact Ht2_id | reflexivity].
+    split; [symmetry; exact Ht2_id | reflexivity].
 Qed.
 
 (* ========================================================================= *)
