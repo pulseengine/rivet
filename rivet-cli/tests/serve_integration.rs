@@ -1147,6 +1147,136 @@ fn embed_artifact_returns_200_with_embed_layout() {
     child.wait().ok();
 }
 
+// ── Variant scoping: handlers closed in feat/variant-scoping-coherence ──
+//
+// Before the fix, eight dashboard handlers silently dropped `?variant=`
+// while the layout banner showed scoped — a coherence bug pinned by the
+// Playwright "is silently UNSCOPED" test in rendering-invariants.spec.ts.
+//
+// These integration tests verify that each handler now (a) still returns
+// 200 when given `?variant=minimal-ci`, (b) renders the variant banner
+// (proving the same param the layout reads is the param the handler
+// honors), and (c) returns 400 with the standard error fragment for an
+// unknown variant — the same contract artifacts_list / coverage_view
+// already implement.
+
+fn assert_scoped_ok(port: u16, route: &str) {
+    let (status, body, _) = fetch(port, &format!("{route}?variant=minimal-ci"), false);
+    assert_eq!(status, 200, "{route} should return 200 when scoped");
+    assert!(
+        body.contains("Filtered to variant"),
+        "{route} should render the variant banner when ?variant is set"
+    );
+    assert!(
+        body.contains("minimal-ci"),
+        "{route} banner should name the active variant"
+    );
+}
+
+fn assert_scoped_400_on_unknown(port: u16, route: &str) {
+    let (status, body, _) = fetch(port, &format!("{route}?variant=does-not-exist"), false);
+    assert_eq!(
+        status, 400,
+        "{route} should return 400 for an unknown variant name"
+    );
+    assert!(
+        body.contains("Invalid variant scope"),
+        "{route} 400 body should be the standard variant_error_response"
+    );
+}
+
+#[test]
+fn newly_scoped_handlers_render_variant_banner() {
+    // Pin the per-handler scoping contract for the eight handlers closed
+    // by feat/variant-scoping-coherence: each route must (a) accept
+    // `?variant=minimal-ci`, (b) render the layout banner, (c) reject
+    // unknown variant names with 400.
+    //
+    // /search is excluded here because the wrap_full_page middleware
+    // intentionally does NOT wrap /search responses (it is a fragment-only
+    // endpoint consumed by the Cmd+K JS via fetch). It still has the same
+    // variant-scoping contract, just no banner — see the dedicated test
+    // `search_handler_honors_variant_scope` below.
+    //
+    // /externals is intentionally excluded from the strict-scoping list
+    // (Choice C: explicit ignore + comment in views.rs) — externals are
+    // loaded from sibling repos and don't participate in this project's
+    // feature-model bindings, so a variant filter has no semantic meaning
+    // there. The asymmetry is documented inline in views::externals_list.
+    let (mut child, port) = start_server();
+
+    for route in [
+        "/graph",
+        "/verification",
+        "/eu-ai-act",
+        "/traceability",
+        "/doc-linkage",
+        "/documents",
+        "/results",
+    ] {
+        assert_scoped_ok(port, route);
+        assert_scoped_400_on_unknown(port, route);
+    }
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+#[test]
+fn search_handler_honors_variant_scope() {
+    // /search is a fragment endpoint excluded from the layout middleware,
+    // so it does NOT carry the variant banner. But the scoping contract
+    // is otherwise the same as the seven banner-routes:
+    //   * unknown variant → 400 with the "Invalid variant scope" body
+    //   * valid variant   → 200 and the search results are filtered
+    //     against the scoped store.
+    let (mut child, port) = start_server();
+
+    let (status_ok, body_ok, _) = fetch(port, "/search?q=REQ&variant=minimal-ci", false);
+    assert_eq!(status_ok, 200, "/search should return 200 when scoped");
+    // Non-empty body — the fragment shouldn't be a server error.
+    assert!(
+        !body_ok.contains("thread 'main' panicked"),
+        "/search should not panic when scoped"
+    );
+
+    let (status_bad, body_bad, _) = fetch(port, "/search?q=REQ&variant=does-not-exist", false);
+    assert_eq!(
+        status_bad, 400,
+        "/search should reject unknown variant names"
+    );
+    assert!(
+        body_bad.contains("Invalid variant scope"),
+        "/search 400 body should be the standard variant_error_response"
+    );
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+#[test]
+fn externals_view_accepts_variant_param_without_400() {
+    // /externals deliberately ignores `variant` (per the Choice C comment
+    // in views::externals_list). The handler must still accept the param
+    // gracefully so bookmarked URLs like /externals?variant=minimal-ci
+    // don't error — the layout banner picks up the param via middleware.
+    let (mut child, port) = start_server();
+    let (status, _body, _) = fetch(port, "/externals?variant=minimal-ci", false);
+    assert_eq!(
+        status, 200,
+        "/externals must accept ?variant gracefully even when it has no semantic effect"
+    );
+    let (status_unknown, _, _) = fetch(port, "/externals?variant=does-not-exist", false);
+    // Choice C means the handler doesn't validate the variant — the layout
+    // still renders the page and the banner shows the error inline.
+    assert_eq!(
+        status_unknown, 200,
+        "/externals must not reject unknown variants — Choice C (explicit ignore)"
+    );
+    child.kill().ok();
+    child.wait().ok();
+}
+
 #[test]
 fn embed_unknown_artifact_returns_200_with_not_found_body() {
     // Unknown artifact under /embed should still go through the embed

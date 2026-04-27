@@ -88,7 +88,17 @@ pub(crate) async fn stats_view(
 // ── Externals ────────────────────────────────────────────────────────────
 
 /// GET /externals — list all configured external projects.
-pub(crate) async fn externals_list(State(state): State<SharedState>) -> Html<String> {
+///
+/// Variant scoping is **deliberately ignored** here: external projects are
+/// loaded from sibling repos and do not participate in this project's
+/// feature-model bindings, so a variant filter has no semantic meaning for
+/// the externals overview. The `variant` param is accepted (so the layout
+/// banner stays consistent and bookmarked URLs degrade gracefully) but does
+/// not change which externals are listed.
+pub(crate) async fn externals_list(
+    State(state): State<SharedState>,
+    Query(_params): Query<ViewParams>,
+) -> Html<String> {
     let state = state.read().await;
     let ctx = state.as_render_context();
     Html(crate::render::externals::render_externals_list(&ctx))
@@ -160,6 +170,12 @@ pub(crate) struct GraphParams {
     focus: Option<String>,
     /// Optional override of the node render budget. Capped in the renderer.
     limit: Option<usize>,
+    /// Active variant scope (by name). When set, the graph is built
+    /// against a store filtered to artifacts bound to the variant's
+    /// effective features. Variant scoping reduces the node count,
+    /// which materially helps graph layout performance on large
+    /// projects.
+    variant: Option<String>,
 }
 
 fn default_depth() -> usize {
@@ -170,9 +186,12 @@ fn default_depth() -> usize {
 pub(crate) async fn graph_view(
     State(state): State<SharedState>,
     Query(params): Query<GraphParams>,
-) -> Html<String> {
+) -> Response {
     let state = state.read().await;
-    let ctx = state.as_render_context();
+    let scope = match try_build_scope(&state, &params.variant) {
+        Ok(s) => s,
+        Err(resp) => return resp,
+    };
     let rparams = crate::render::graph::GraphParams {
         types: params.types,
         link_types: params.link_types,
@@ -180,7 +199,11 @@ pub(crate) async fn graph_view(
         focus: params.focus,
         limit: params.limit,
     };
-    Html(crate::render::graph::render_graph_view(&ctx, &rparams))
+    let html = match scope.as_ref() {
+        Some(s) => crate::render::graph::render_graph_view(&s.render_context(&state), &rparams),
+        None => crate::render::graph::render_graph_view(&state.as_render_context(), &rparams),
+    };
+    Html(html).into_response()
 }
 
 // ── Ego graph for a single artifact ──────────────────────────────────────
@@ -307,10 +330,20 @@ pub(crate) async fn coverage_view(
 
 // ── Documents ────────────────────────────────────────────────────────────
 
-pub(crate) async fn documents_list(State(state): State<SharedState>) -> Html<String> {
+pub(crate) async fn documents_list(
+    State(state): State<SharedState>,
+    Query(params): Query<ViewParams>,
+) -> Response {
     let state = state.read().await;
-    let ctx = state.as_render_context();
-    Html(crate::render::documents::render_documents_list(&ctx))
+    let scope = match try_build_scope(&state, &params.variant) {
+        Ok(s) => s,
+        Err(resp) => return resp,
+    };
+    let html = match scope.as_ref() {
+        Some(s) => crate::render::documents::render_documents_list(&s.render_context(&state)),
+        None => crate::render::documents::render_documents_list(&state.as_render_context()),
+    };
+    Html(html).into_response()
 }
 
 pub(crate) async fn document_detail(
@@ -328,26 +361,49 @@ pub(crate) async fn document_detail(
 #[derive(Debug, serde::Deserialize)]
 pub(crate) struct SearchParams {
     q: Option<String>,
+    /// Active variant scope (by name). When set, search is restricted
+    /// to artifacts bound to the variant's effective features.
+    variant: Option<String>,
 }
 
 pub(crate) async fn search_view(
     State(state): State<SharedState>,
     Query(params): Query<SearchParams>,
-) -> Html<String> {
+) -> Response {
     let state = state.read().await;
-    let ctx = state.as_render_context();
-    Html(crate::render::search::render_search_view(
-        &ctx,
-        params.q.as_deref(),
-    ))
+    let scope = match try_build_scope(&state, &params.variant) {
+        Ok(s) => s,
+        Err(resp) => return resp,
+    };
+    let html = match scope.as_ref() {
+        Some(s) => crate::render::search::render_search_view(
+            &s.render_context(&state),
+            params.q.as_deref(),
+        ),
+        None => crate::render::search::render_search_view(
+            &state.as_render_context(),
+            params.q.as_deref(),
+        ),
+    };
+    Html(html).into_response()
 }
 
 // ── Verification ─────────────────────────────────────────────────────────
 
-pub(crate) async fn verification_view(State(state): State<SharedState>) -> Html<String> {
+pub(crate) async fn verification_view(
+    State(state): State<SharedState>,
+    Query(params): Query<ViewParams>,
+) -> Response {
     let state = state.read().await;
-    let ctx = state.as_render_context();
-    Html(crate::render::results::render_verification_view(&ctx))
+    let scope = match try_build_scope(&state, &params.variant) {
+        Ok(s) => s,
+        Err(resp) => return resp,
+    };
+    let html = match scope.as_ref() {
+        Some(s) => crate::render::results::render_verification_view(&s.render_context(&state)),
+        None => crate::render::results::render_verification_view(&state.as_render_context()),
+    };
+    Html(html).into_response()
 }
 
 // ── STPA ─────────────────────────────────────────────────────────────────
@@ -371,18 +427,38 @@ pub(crate) async fn stpa_view(
 // ── EU AI Act ────────────────────────────────────────────────────────────
 
 /// GET /eu-ai-act — EU AI Act Annex IV compliance dashboard.
-pub(crate) async fn eu_ai_act_view(State(state): State<SharedState>) -> Html<String> {
+pub(crate) async fn eu_ai_act_view(
+    State(state): State<SharedState>,
+    Query(params): Query<ViewParams>,
+) -> Response {
     let state = state.read().await;
-    let ctx = state.as_render_context();
-    Html(crate::render::eu_ai_act::render_eu_ai_act(&ctx))
+    let scope = match try_build_scope(&state, &params.variant) {
+        Ok(s) => s,
+        Err(resp) => return resp,
+    };
+    let html = match scope.as_ref() {
+        Some(s) => crate::render::eu_ai_act::render_eu_ai_act(&s.render_context(&state)),
+        None => crate::render::eu_ai_act::render_eu_ai_act(&state.as_render_context()),
+    };
+    Html(html).into_response()
 }
 
 // ── Results ──────────────────────────────────────────────────────────────
 
-pub(crate) async fn results_view(State(state): State<SharedState>) -> Html<String> {
+pub(crate) async fn results_view(
+    State(state): State<SharedState>,
+    Query(params): Query<ViewParams>,
+) -> Response {
     let state = state.read().await;
-    let ctx = state.as_render_context();
-    Html(crate::render::results::render_results_view(&ctx))
+    let scope = match try_build_scope(&state, &params.variant) {
+        Ok(s) => s,
+        Err(resp) => return resp,
+    };
+    let html = match scope.as_ref() {
+        Some(s) => crate::render::results::render_results_view(&s.render_context(&state)),
+        None => crate::render::results::render_results_view(&state.as_render_context()),
+    };
+    Html(html).into_response()
 }
 
 pub(crate) async fn result_detail(
@@ -436,10 +512,20 @@ pub(crate) async fn diff_view(
 
 // ── Document linkage view ────────────────────────────────────────────────
 
-pub(crate) async fn doc_linkage_view(State(state): State<SharedState>) -> Html<String> {
+pub(crate) async fn doc_linkage_view(
+    State(state): State<SharedState>,
+    Query(params): Query<ViewParams>,
+) -> Response {
     let state = state.read().await;
-    let ctx = state.as_render_context();
-    Html(crate::render::doc_linkage::render_doc_linkage_view(&ctx))
+    let scope = match try_build_scope(&state, &params.variant) {
+        Ok(s) => s,
+        Err(resp) => return resp,
+    };
+    let html = match scope.as_ref() {
+        Some(s) => crate::render::doc_linkage::render_doc_linkage_view(&s.render_context(&state)),
+        None => crate::render::doc_linkage::render_doc_linkage_view(&state.as_render_context()),
+    };
+    Html(html).into_response()
 }
 
 // ── Traceability explorer ────────────────────────────────────────────────
@@ -449,6 +535,10 @@ pub(crate) struct TraceParams {
     root_type: Option<String>,
     status: Option<String>,
     search: Option<String>,
+    /// Active variant scope (by name). When set, the traceability tree
+    /// is built against artifacts bound to the variant's effective
+    /// features.
+    variant: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -459,17 +549,28 @@ pub(crate) struct TraceHistoryParams {
 pub(crate) async fn traceability_view(
     State(state): State<SharedState>,
     Query(params): Query<TraceParams>,
-) -> Html<String> {
+) -> Response {
     let state = state.read().await;
-    let ctx = state.as_render_context();
+    let scope = match try_build_scope(&state, &params.variant) {
+        Ok(s) => s,
+        Err(resp) => return resp,
+    };
     let rparams = crate::render::traceability::TraceParams {
         root_type: params.root_type,
         status: params.status,
         search: params.search,
     };
-    Html(crate::render::traceability::render_traceability_view(
-        &ctx, &rparams,
-    ))
+    let html = match scope.as_ref() {
+        Some(s) => crate::render::traceability::render_traceability_view(
+            &s.render_context(&state),
+            &rparams,
+        ),
+        None => crate::render::traceability::render_traceability_view(
+            &state.as_render_context(),
+            &rparams,
+        ),
+    };
+    Html(html).into_response()
 }
 
 pub(crate) async fn traceability_history(
