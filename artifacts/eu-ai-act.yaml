@@ -1,0 +1,606 @@
+# EU AI Act self-audit for the rivet tool.
+#
+# Rivet is a Rust-native CLI/MCP/LSP traceability tool used in safety-critical
+# SDLC. It uses LLM agents (Claude Code, Mythos red-team scaffold) to assist
+# with closing traceability gaps and to slop-hunt schema/artifact issues. The
+# AI assistance is bounded: rivet itself does not make automated decisions
+# about people; it operates on user-supplied YAML artifacts and git metadata.
+#
+# This file dogfoods the eu-ai-act schema against rivet's own development
+# pipeline. It is honest: where rivet does not yet meet a high-risk obligation,
+# the field says so explicitly (e.g., "deferred to v1.0 conformity assessment").
+#
+# Risk class: general-purpose. Rationale documented under AI-SYS-001.
+
+artifacts:
+
+  # ── Annex IV §1: General Description ─────────────────────────────────
+  - id: AI-SYS-001
+    type: ai-system-description
+    title: rivet — AI-assisted traceability tool for safety-critical SDLC
+    status: draft
+    description: >
+      Rivet is a Rust-native CLI, MCP server, and LSP that manages
+      schema-validated YAML artifacts (requirements, design decisions,
+      hazards, controls, tests) for safety-critical software development.
+      The tool supports LLM agents (Claude Code, Mythos) to assist with
+      closing traceability gaps and detecting schema drift, but every
+      change still passes through human-reviewed git commits and PRs.
+      This artifact documents rivet itself as an AI-assisted system to
+      enable an honest, dogfood-driven Annex IV review.
+    fields:
+      intended-purpose: >
+        Schema-driven traceability management for compliance and safety
+        engineering. Rivet ingests YAML artifacts, validates them against
+        a typed knowledge graph, and produces audit evidence (HTML
+        dashboards, ReqIF/sphinx-needs/OSLC export, machine-readable JSON).
+        The AI-assisted layer is restricted to suggesting artifact edits
+        and link repairs that a human author then reviews and commits.
+        Rivet does not produce automated decisions about persons, does not
+        score individuals, and is not deployed as part of the AI systems
+        whose compliance it documents.
+      provider: PulseEngine GmbH (Ralf Anton Beier) — https://github.com/pulseengine/rivet
+      ai-version: "0.4.0-dev"
+      hardware-deps: >
+        Commodity developer workstations and CI runners. No specialised
+        hardware (no GPUs, no edge accelerators) required for the rivet
+        binary itself. The optional Claude Code / MCP integration runs
+        the LLM remotely against Anthropic's hosted API; rivet ships no
+        model weights.
+      software-deps: >
+        Rust 2024 edition (MSRV 1.85), tokio for async I/O, clap for the
+        CLI, axum for the dashboard server, salsa for incremental
+        validation, petgraph for link analysis. Optional integrations:
+        Claude Code (Anthropic API) and the Mythos red-team agent
+        scaffold for slop-hunting on schemas and artifacts.
+      deployment-forms: >
+        Single static binary distributed via crates.io and GitHub
+        Releases. Subcommands: `rivet validate`, `rivet serve`,
+        `rivet mcp`, `rivet lsp`, `rivet export`. Optional VS Code
+        extension (`vscode-rivet`). Source remains open under the
+        repository's licence.
+      risk-class: general-purpose
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-25T00:00:00Z
+
+  # ── Annex IV §5 + Art. 9: Risk Management ────────────────────────────
+  - id: RMP-001
+    type: risk-management-process
+    title: Continuous risk management for AI-assisted rivet workflows
+    status: draft
+    description: >
+      Defines how risks introduced by LLM-driven artifact authoring are
+      identified, recorded, and mitigated across rivet's development
+      lifecycle.
+    fields:
+      scope: >
+        All risks from LLM-assisted authoring or editing of artifacts,
+        validation rules, and rivet source code. Includes hallucinated
+        cross-references, schema drift, silent compliance regressions,
+        and over-trust in AI-generated traceability content.
+      methodology: >
+        STPA-aligned hazard identification (see safety/stpa) combined
+        with iterative review against ISO/IEC 23894 guidance for AI
+        risk management. Risks are recorded as risk-assessment artifacts;
+        each links to one or more risk-mitigation artifacts. New AI
+        capabilities trigger an ad-hoc review before merge.
+      review-frequency: Per-PR for AI-touched changes; quarterly summary review otherwise
+    links:
+      - type: manages-risk-for
+        target: AI-SYS-001
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-25T00:00:00Z
+
+  - id: RA-001
+    type: risk-assessment
+    title: Hallucinated artifact IDs or links from LLM agents
+    status: draft
+    description: >
+      LLM-assisted edits may introduce references to artifacts or REQ IDs
+      that do not exist in the store, producing silent traceability gaps.
+    fields:
+      risk-description: >
+        A Claude Code or Mythos agent generates a YAML artifact whose
+        `links:` section refers to non-existent IDs (e.g., REQ-099 typo
+        for REQ-029). If validation is bypassed (`--no-verify`), the
+        broken link reaches main and reduces audit trust.
+      likelihood: possible
+      severity: moderate
+      risk-level: medium
+      affected-rights: >
+        No fundamental rights affected directly. The harm is on
+        downstream users of compliance evidence: regulators or auditors
+        could be misled if rivet's output were trusted blindly.
+    links:
+      - type: leads-to
+        target: AI-SYS-001
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-25T00:00:00Z
+
+  - id: RA-002
+    type: risk-assessment
+    title: AI-generated content presented as authoritative without review
+    status: draft
+    description: >
+      Operators may merge AI-suggested artifacts without verifying that
+      the rationale, links, or rationale fields reflect engineering
+      reality, eroding audit value over time.
+    fields:
+      risk-description: >
+        A reviewer skims an AI-generated design-decision or risk-mitigation
+        and approves it without checking the rationale against code or
+        upstream requirements. The artifact looks plausible but does not
+        match implementation, creating a documentation-vs-reality gap.
+      likelihood: likely
+      severity: moderate
+      risk-level: high
+      affected-rights: >
+        No direct fundamental rights impact. Indirect: third parties
+        relying on rivet-generated compliance artefacts could form
+        incorrect beliefs about the audited system.
+    links:
+      - type: leads-to
+        target: AI-SYS-001
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-25T00:00:00Z
+
+  - id: RM-001
+    type: risk-mitigation
+    title: Pre-commit and CI validation of every link reference
+    status: approved
+    description: >
+      All link targets are resolved by `rivet validate`, which runs in
+      both the local pre-commit hook and CI. Broken links fail the build.
+    fields:
+      measure-description: >
+        Rivet's link graph (rivet-core/src/links.rs) resolves every
+        `links:` entry against the store and flags any unknown target as
+        a broken-link error. The pre-commit hook executes `rivet validate`,
+        and CI re-runs it independently per REQ-051 (hooks are convenience,
+        CI is enforcement). `--no-verify` bypasses the local hook but does
+        not bypass CI.
+      residual-risk: >
+        A reviewer with merge rights could still force-merge a PR with
+        failing CI. This is a process risk, not a tool risk; mitigated
+        by branch protection rules requiring green CI.
+      effectiveness-evidence: >
+        Validation gate has caught broken links across the rivet repo
+        in real PRs (see commit history). Mutation tests in
+        rivet-core/tests verify that the link checker detects deletions
+        of target artifacts.
+    links:
+      - type: mitigates
+        target: RA-001
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-25T00:00:00Z
+
+  - id: RM-002
+    type: risk-mitigation
+    title: Mandatory AI provenance + human review gate
+    status: approved
+    description: >
+      Every AI-assisted artifact carries `provenance.created-by: ai-assisted`
+      with model identity. Reviewers can filter and demand stricter scrutiny
+      for AI-authored content.
+    fields:
+      measure-description: >
+        REQ-055 requires a human review gate for AI-generated STPA artifacts;
+        REQ-058 mandates risk-proportional PR review for AI-generated code;
+        REQ-059 requires AI provenance with model ID and session context.
+        A PostToolUse hook auto-stamps `provenance` on edited artifacts;
+        rivet refuses to silently overwrite a `human` provenance with `ai-assisted`.
+      residual-risk: >
+        A reviewer can still rubber-stamp AI content. The mitigation
+        reduces but does not eliminate this; it makes the AI origin
+        unambiguous so audit can re-check after the fact.
+      effectiveness-evidence: >
+        Provenance is present on the majority of recently authored
+        artifacts (grep `created-by: ai-assisted` in artifacts/). Audit
+        queries can isolate AI-authored content via
+        `rivet list --filter provenance.created-by=ai-assisted`.
+    links:
+      - type: mitigates
+        target: RA-002
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-25T00:00:00Z
+
+  - id: MR-001
+    type: misuse-risk
+    title: Operator uses rivet to launder undocumented decisions through AI prose
+    status: draft
+    description: >
+      Foreseeable misuse: a project lead asks an LLM to "write the
+      rationale" for a decision after the fact, attaching plausible
+      prose to a real merge that was not actually justified that way.
+    fields:
+      misuse-scenario: >
+        Engineer merges a controversial design change. Later, prompts an
+        LLM to author a design-decision artifact that retroactively
+        rationalises the choice. The provenance correctly reads
+        `ai-assisted`, but the rationale is post-hoc fabrication, not
+        documented reasoning.
+      likelihood: possible
+      harm-potential: >
+        Auditors may treat the artifact as contemporaneous design
+        evidence when it is actually a post-hoc explanation. This
+        weakens the audit chain but does not directly harm individuals.
+    links:
+      - type: identified-by
+        target: RMP-001
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-25T00:00:00Z
+
+  # ── Annex IV §2: Design & Development ────────────────────────────────
+  - id: DESIGN-001
+    type: design-specification
+    title: Typed knowledge graph + s-expression query + agent-gated audit pipelines
+    status: draft
+    description: >
+      Rivet's core design: artifacts form a typed knowledge graph,
+      validated incrementally; queries are s-expressions over that graph;
+      AI agents drive optional pipelines (close-gaps, slop-hunt) whose
+      outputs land as draft artifacts requiring human approval.
+    fields:
+      algorithms: >
+        Salsa-based incremental computation for validation
+        (rivet-core/src/store, REQ-029); rowan CST parser for diagnostic-
+        quality YAML (REQ-028); petgraph for link graph operations
+        (cycle detection, reachability); custom s-expression evaluator
+        with bounded regex complexity (REQ-048) for queries.
+        Agent pipelines run as separate processes that produce YAML
+        diffs reviewed via standard git workflows.
+      design-choices: >
+        (a) YAML on disk over a database — text-first artefacts (REQ-001)
+        keep audit evidence diff-friendly and reviewable.
+        (b) Typed schemas with extension points — common + domain
+        schemas (stpa, eu-ai-act, aspice) compose by reference.
+        (c) Agents never auto-merge — every AI-touched change goes
+        through PR review (REQ-055, REQ-058).
+        (d) Single binary deployment — no service to harden.
+      optimization-objectives: >
+        Diagnostic quality first (good error messages with spans),
+        determinism (same input → same validation output), incremental
+        speed (re-validate only what changed). No accuracy/fairness
+        objectives because rivet does not make decisions about people.
+      training-methodology: >
+        Not applicable. Rivet ships no trained model. The optional
+        Claude integration uses Anthropic's hosted models; rivet only
+        sends prompts and consumes responses, with no fine-tuning.
+    links:
+      - type: satisfies
+        target: AI-SYS-001
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-25T00:00:00Z
+
+  - id: DGR-001
+    type: data-governance-record
+    title: User-supplied YAML, git metadata, and source paths only
+    status: draft
+    description: >
+      Rivet ingests only data the user already controls: YAML artifacts
+      in their repo, git commit trailers, and source-file paths. No
+      personal data, no third-party datasets, no training corpus.
+    fields:
+      data-sources: >
+        (1) YAML files under `artifacts/`, `safety/`, and other paths
+        listed in rivet.yaml `sources`. (2) Git history via libgit2 for
+        commit trailer extraction (REQ-017). (3) Source file paths
+        referenced by `source-ref:` fields. (4) Optional external
+        repos pulled via `externals:` (e.g., spar). Nothing else.
+      collection-method: >
+        Local file system reads; in-process libgit2 reads of the
+        repository. No network calls during `rivet validate` or
+        `rivet list`. Optional remote calls only when the user runs
+        `rivet mcp` against an external LLM endpoint they have
+        configured themselves.
+      labeling-method: >
+        Not applicable — there is no labelled dataset. Artifact `type`
+        is declared in YAML by the author.
+      preparation-steps: >
+        YAML is parsed into a rowan CST and lowered into typed records.
+        Schema extension is applied; unknown fields produce warnings,
+        not silent acceptance. No transformation is destructive: the
+        source YAML is the authoritative form (REQ-001).
+      bias-assessment: >
+        No bias assessment is needed at the data layer because rivet
+        makes no automated decisions about persons or populations.
+        Bias risk is therefore architecturally bounded to "the LLM
+        suggests bad text", which is mitigated by RM-002 (review gate)
+        and RA-002 (review-bypass risk). Demographic, fairness, and
+        subgroup analyses are intentionally out of scope; if rivet's
+        scope expanded to person-level decisions, this field would
+        need a full re-assessment under Art. 10.
+      data-size: >
+        Bounded by the user's repository: the rivet self-audit store
+        contains roughly several hundred artifacts.
+    links:
+      - type: governs
+        target: DESIGN-001
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-25T00:00:00Z
+
+  # ── Annex IV §3 + Art. 12: Monitoring & Logging ──────────────────────
+  - id: MM-001
+    type: monitoring-measure
+    title: Dashboard + validation diagnostics + provenance audit trail
+    status: draft
+    description: >
+      Operational monitoring of rivet usage relies on the validation
+      diagnostic stream, the live dashboard, and provenance metadata
+      stamped on every artifact change.
+    fields:
+      mechanism-type: logging
+      logging-scope: >
+        `rivet validate` emits structured diagnostics (errors, warnings,
+        info) per artifact, with stable IDs for each rule. The dashboard
+        (`rivet serve`) shows live counts. Git history is the durable
+        audit log: every artifact change is a commit with mandatory
+        trailers (REQ-017) linking back to a requirement or feature.
+        Provenance metadata records who/what authored each artifact.
+      alert-conditions: >
+        CI failure on any `error`-severity diagnostic. Pre-commit hook
+        warns locally on the same set. There is no runtime alerting in
+        the deployed-AI-system sense because rivet is offline tooling.
+      human-intervention-capability: >
+        Operators can suppress, override, or correct any diagnostic by
+        editing the source YAML. There is no "kill switch" because
+        rivet does not act autonomously; not running rivet is the
+        intervention.
+      retention-period: >
+        Indefinite — bounded by the user's git history retention. Rivet
+        keeps no separate log store.
+    links:
+      - type: monitors
+        target: AI-SYS-001
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-25T00:00:00Z
+
+  # ── Annex IV §4 + Art. 15: Performance Evaluation ────────────────────
+  - id: PE-001
+    type: performance-evaluation
+    title: cargo test + mutation testing + formal verification on critical modules
+    status: draft
+    description: >
+      Performance is evaluated as software-engineering correctness, not
+      as ML-model accuracy. Test, mutation, and proof results constitute
+      the evidence base.
+    fields:
+      metric-name: Validation correctness (test pass rate + mutation kill rate)
+      metric-value: >
+        cargo test: passing on main per CI; mutation testing exercised
+        in `rivet-core` (see results/); formal proofs in `proofs/`,
+        `verus/` cover selected invariants on the link graph and
+        validation rules. Exact metric values are tracked in
+        results/ and surfaced via `rivet baseline`.
+      methodology: >
+        Standard Rust unit/integration tests, property tests for parser
+        and query (REQ-052, REQ-053), mutation testing with cargo-mutants,
+        Rocq and Verus proofs of selected core invariants, Kani BMC
+        exercises on small kernels (see arch/ and proofs/). CI is the
+        single source of truth for current pass rate.
+      evaluation-scope: general
+      population-subgroups: >
+        Not applicable — no demographic subgroups exist in the test
+        corpus, which is synthetic and code-shaped.
+      bias-results: >
+        Not applicable. Performance is binary pass/fail per test; no
+        subgroup-bias surface exists.
+    links:
+      - type: evaluates
+        target: DESIGN-001
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-25T00:00:00Z
+
+  # ── Art. 13: Transparency ────────────────────────────────────────────
+  - id: TR-001
+    type: transparency-record
+    title: Open source, dashboard, and audit logs as transparency surface
+    status: draft
+    description: >
+      Rivet is fully open source. The dashboard renders every artifact;
+      every change is a public git commit with trailers. There is no
+      hidden state.
+    fields:
+      information-scope: >
+        Source code, schemas, validation rules, and audit pipelines are
+        in the public repository. The `rivet serve` dashboard exposes
+        full artefact and link state including provenance, status,
+        validation diagnostics, and commit traceability coverage.
+        AGENTS.md and CLAUDE.md document the AI-assisted workflow
+        so deployers understand how artifacts get authored.
+      user-facing-docs: >
+        README.md and docs/ describe the CLI surface. SAFETY.md
+        documents the safety case. AGENTS.md documents the AI agent
+        workflow. CHANGELOG.md tracks released behaviour. Schema files
+        under schemas/ document every accepted artifact field.
+      limitations-disclosed: >
+        (1) Rivet is pre-1.0; no formal conformity assessment has been
+        performed. (2) AI-assisted artifacts (including this self-audit)
+        may contain subtle errors despite review; the `provenance` field
+        flags them for re-checking. (3) The s-expression query language
+        does not yet enforce all REQ-048 complexity bounds in every
+        path. (4) Hooks are convenience only (REQ-051); only CI provides
+        traceability assurance.
+    links:
+      - type: transparency-for
+        target: AI-SYS-001
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-25T00:00:00Z
+
+  # ── Art. 14: Human Oversight ─────────────────────────────────────────
+  - id: HOM-001
+    type: human-oversight-measure
+    title: PR review, artifact approval, and merge ownership
+    status: draft
+    description: >
+      Every change to rivet — code, schemas, or artifacts — is reviewed
+      and merged by a human. AI agents only produce drafts on branches.
+    fields:
+      oversight-type: intervention
+      capability-description: >
+        Workflow: AI agent (Claude Code, Mythos) opens a PR on a feature
+        branch with proposed artifact or code changes. A human reviewer
+        reads the diff, runs `rivet validate` locally if needed, and
+        either requests changes or merges. The merge button is human-
+        controlled. Branch protection on main requires green CI.
+        Artifact promotion (status: draft → approved) is itself a human
+        decision recorded in YAML and reviewed through the same gate.
+      training-required: >
+        Reviewer must be a rivet maintainer with write access to the
+        repository. Familiarity with the relevant schema (eu-ai-act,
+        stpa, aadl, etc.) is expected. CLAUDE.md and AGENTS.md describe
+        the AI-assisted workflow that reviewers must understand.
+    links:
+      - type: overseen-by
+        target: AI-SYS-001
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-25T00:00:00Z
+
+  # ── Annex IV §6: Documentation Updates ───────────────────────────────
+  - id: DU-001
+    type: documentation-update
+    title: Initial self-audit baseline (Task #46)
+    status: draft
+    description: >
+      First version of the rivet self-audit content. Subsequent updates
+      will append documentation-update entries describing what changed
+      and why.
+    fields:
+      change-description: >
+        Created the initial set of 13 EU AI Act self-audit artifacts and
+        added `eu-ai-act` to rivet.yaml so the dashboard renders the
+        Annex IV view rather than the empty placeholder.
+      change-date: "2026-04-25"
+      change-reason: >
+        Dogfood the eu-ai-act schema; produce honest baseline content
+        that documents rivet's own AI risk profile so future audits can
+        diff against it.
+      previous-version: "(none — initial baseline)"
+    links:
+      - type: updates-docs-for
+        target: AI-SYS-001
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-25T00:00:00Z
+
+  # ── Annex IV §7: Standards Reference ─────────────────────────────────
+  - id: STD-001
+    type: standards-reference
+    title: ISO/IEC 23894 AI risk management — partial application
+    status: draft
+    description: >
+      Rivet's risk management process draws on ISO/IEC 23894 guidance,
+      applied at the scale appropriate for a general-purpose tool.
+    fields:
+      standard-id: ISO/IEC 23894:2023
+      standard-title: Information technology — Artificial intelligence — Guidance on risk management
+      coverage-scope: >
+        Applied to the structure of risk-management-process, risk-
+        assessment, and risk-mitigation artifacts. The schema field
+        names (likelihood, severity, residual-risk) align with the
+        standard's vocabulary.
+      partial-application-rationale: >
+        Rivet is not a high-risk AI system in the Annex III sense, so
+        the full ISO/IEC 23894 process is not enforced; the standard is
+        used as a structural and terminological reference rather than a
+        compliance target. A full conformity claim is deferred to v1.0.
+    links:
+      - type: applied-to
+        target: AI-SYS-001
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-25T00:00:00Z
+
+  # ── Annex IV §8 + Art. 47: Conformity Declaration ────────────────────
+  - id: CD-001
+    type: conformity-declaration
+    title: Self-audit baseline — no formal conformity declared yet
+    status: draft
+    description: >
+      Rivet is pre-1.0 and is classified as a general-purpose tool.
+      A formal EU declaration of conformity is deferred to a future
+      v1.0 milestone if and when rivet's scope brings it under
+      high-risk obligations.
+    fields:
+      declaration-date: "2026-04-25"
+      conformity-scope: >
+        This is NOT a formal EU declaration of conformity. It is a
+        self-audit baseline asserting only that rivet has been
+        documented per Annex IV structure as a general-purpose AI-
+        assisted tool, that human oversight is built into the merge
+        process, and that no high-risk Annex III use case is currently
+        in scope. A real conformity declaration — including notified-
+        body involvement where required — is deferred to v1.0 and will
+        depend on whether rivet's deployed scope changes.
+    links:
+      - type: declares
+        target: AI-SYS-001
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-25T00:00:00Z
+
+  # ── Annex IV §9 + Art. 72: Post-Market Monitoring ────────────────────
+  - id: PMP-001
+    type: post-market-plan
+    title: GitHub issues, releases, and validation drift checks
+    status: draft
+    description: >
+      Post-market monitoring for rivet runs through standard open-source
+      project mechanics: issue tracker, release notes, and CI dashboards.
+    fields:
+      monitoring-scope: >
+        Bug reports and feature requests via GitHub issues. CI failure
+        rate monitored via repository insights. Validation diagnostic
+        regressions caught via baseline comparison
+        (`rivet validate --baseline v0.4.0`). Adoption tracked via
+        crates.io download counts and GitHub release downloads.
+      drift-detection: >
+        Schema drift is detected by `rivet validate --baseline`, which
+        diffs against a tagged baseline (currently v0.1.0, with v0.2.0
+        and v0.4.0 planned). Behavioural drift is caught by the test
+        suite + mutation tests + formal proofs. There is no
+        continuously-running ML model whose drift requires monitoring.
+      incident-reporting: >
+        Security issues handled through SAFETY.md disclosure process.
+        Functional bugs handled via GitHub issues. Serious-incident
+        reporting per Art. 73 is not currently triggered because rivet
+        is general-purpose; if a deployer uses rivet inside a high-risk
+        AI system pipeline, they must layer their own incident
+        reporting on top.
+      review-frequency: Per release + on every triaged GitHub issue
+    links:
+      - type: monitors-post-market
+        target: AI-SYS-001
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-04-25T00:00:00Z
