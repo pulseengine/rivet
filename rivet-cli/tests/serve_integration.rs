@@ -1148,6 +1148,46 @@ fn embed_artifact_returns_200_with_embed_layout() {
 }
 
 #[test]
+fn eu_ai_act_dashboard_renders_real_content() {
+    // Verifies that with the rivet self-audit artifacts in place + the
+    // eu-ai-act schema loaded via rivet.yaml, the /eu-ai-act dashboard
+    // renders the populated Annex IV view rather than the empty
+    // placeholder ("schema is not loaded for this project").
+    //
+    // Oracle for the eu-ai-act self-audit dogfood task: confirms the
+    // is_eu_ai_act_loaded() check returns true for rivet's own store and
+    // the dashboard surfaces real compliance content.
+    let (mut child, port) = start_server();
+    let (status, body, _headers) = fetch(port, "/eu-ai-act", false);
+
+    assert_eq!(status, 200, "GET /eu-ai-act must return 200");
+
+    // Must NOT be the empty-placeholder card.
+    assert!(
+        !body.contains("schema is not loaded for this project"),
+        "/eu-ai-act must render the populated dashboard, not the placeholder.\n\
+         Check that rivet.yaml lists `eu-ai-act` under schemas and that\n\
+         artifacts/eu-ai-act.yaml provides ai-system-description and\n\
+         conformity-declaration entries (is_eu_ai_act_loaded gate).\n\
+         Body excerpt: {}",
+        body.chars().take(400).collect::<String>()
+    );
+
+    // Must render the real Annex IV section table.
+    assert!(
+        body.contains("Compliance by Annex IV Section"),
+        "/eu-ai-act must include the populated Annex IV section table"
+    );
+    assert!(
+        body.contains("Overall Compliance"),
+        "/eu-ai-act must include the overall compliance stat box"
+    );
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+#[test]
 fn embed_unknown_artifact_returns_200_with_not_found_body() {
     // Unknown artifact under /embed should still go through the embed
     // layout — render_artifact_detail returns a 200 with a "Not Found"
