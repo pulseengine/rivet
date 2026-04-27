@@ -183,6 +183,55 @@ pub trait DocInvariant {
 // Scanning
 // ────────────────────────────────────────────────────────────────────────
 
+/// One docs-root entry to scan, plus an optional allowlist of glob
+/// patterns whose matching files are silently skipped (no warning, no
+/// link-graph participation).
+///
+/// Constructed from the project's `rivet.yaml` `docs:` list — see
+/// [`crate::model::DocsEntry`] for the surface forms and the glob dialect.
+#[derive(Debug, Clone, Default)]
+pub struct DocScanRoot {
+    /// Filesystem path of the docs root (absolute or relative to the
+    /// project root).
+    pub path: PathBuf,
+    /// Glob patterns matched against the path *relative to `path`*.
+    pub exclude: Vec<String>,
+}
+
+impl DocScanRoot {
+    pub fn new(path: impl Into<PathBuf>) -> Self {
+        Self {
+            path: path.into(),
+            exclude: Vec::new(),
+        }
+    }
+
+    pub fn with_exclude(path: impl Into<PathBuf>, exclude: Vec<String>) -> Self {
+        Self {
+            path: path.into(),
+            exclude,
+        }
+    }
+}
+
+/// Aggregate counts of files that the doc-check scanner declined or
+/// silently allowlisted, broken out per docs root. Surfaced by `rivet
+/// docs check` and `rivet validate` so the user can see what's hidden.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ScanSummary {
+    pub roots: Vec<RootSummary>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RootSummary {
+    /// The docs root that was walked (path component of the entry).
+    pub path: PathBuf,
+    /// Files included in the scan (had no exclude match).
+    pub included: usize,
+    /// Files matched by an `exclude:` glob — silent allowlist hits.
+    pub excluded: usize,
+}
+
 /// Collect candidate doc files: `README.md`, `CHANGELOG.md`, `AGENTS.md`,
 /// `CLAUDE.md` at the project root, every `*.md` under `docs/`, and every
 /// `*.md` under the `extra_dirs` passed by the caller (typically the
@@ -190,8 +239,29 @@ pub trait DocInvariant {
 /// Paths in `extra_dirs` may be absolute or relative to `project_root`.
 ///
 /// De-dupes by relative path so overlapping roots don't add a doc twice.
+///
+/// Convenience wrapper around [`collect_docs_with_summary`] for callers
+/// that don't care about the per-root counts.
 pub fn collect_docs(project_root: &Path, extra_dirs: &[PathBuf]) -> std::io::Result<Vec<DocFile>> {
+    let roots: Vec<DocScanRoot> = extra_dirs.iter().cloned().map(DocScanRoot::new).collect();
+    let (docs, _) = collect_docs_with_summary(project_root, &roots)?;
+    Ok(docs)
+}
+
+/// Collect candidate doc files honouring per-root allowlists, returning
+/// the `DocFile`s plus a per-root [`ScanSummary`].
+///
+/// Each [`DocScanRoot`] supplies an `exclude` list of glob patterns that
+/// are matched against the file path *relative to the root* using the
+/// dialect documented on [`crate::model::DocsEntry`]. Excluded files are
+/// dropped silently (no warning); included files are returned for the
+/// invariant engine to evaluate.
+pub fn collect_docs_with_summary(
+    project_root: &Path,
+    roots: &[DocScanRoot],
+) -> std::io::Result<(Vec<DocFile>, ScanSummary)> {
     let mut out = Vec::new();
+    let mut summary = ScanSummary::default();
 
     for top in ["README.md", "CHANGELOG.md", "AGENTS.md", "CLAUDE.md"] {
         let p = project_root.join(top);
@@ -202,25 +272,57 @@ pub fn collect_docs(project_root: &Path, extra_dirs: &[PathBuf]) -> std::io::Res
     }
 
     let mut walked: std::collections::BTreeSet<PathBuf> = std::collections::BTreeSet::new();
-    let mut walk_once = |dir: PathBuf, out: &mut Vec<DocFile>| -> std::io::Result<()> {
+
+    let walk_root = |root: &DocScanRoot,
+                     walked: &mut std::collections::BTreeSet<PathBuf>,
+                     out: &mut Vec<DocFile>|
+     -> std::io::Result<RootSummary> {
+        let dir = if root.path.is_absolute() {
+            root.path.clone()
+        } else {
+            project_root.join(&root.path)
+        };
+        let mut rs = RootSummary {
+            path: root.path.clone(),
+            ..Default::default()
+        };
         if !dir.is_dir() {
-            return Ok(());
+            return Ok(rs);
         }
         let canonical = dir.canonicalize().unwrap_or_else(|_| dir.clone());
         if !walked.insert(canonical) {
-            return Ok(());
+            return Ok(rs);
         }
-        walk_md(&dir, project_root, out)
+        let compiled: Vec<regex::Regex> = root
+            .exclude
+            .iter()
+            .filter_map(|pat| match crate::document::glob_to_regex(pat) {
+                Ok(re) => Some(re),
+                Err(e) => {
+                    eprintln!(
+                        "warning: invalid docs exclude pattern {pat:?} on {}: {e}",
+                        root.path.display(),
+                    );
+                    None
+                }
+            })
+            .collect();
+        walk_md(&dir, project_root, &dir, &compiled, out, &mut rs)?;
+        Ok(rs)
     };
 
-    walk_once(project_root.join("docs"), &mut out)?;
-    for extra in extra_dirs {
-        let resolved = if extra.is_absolute() {
-            extra.clone()
-        } else {
-            project_root.join(extra)
-        };
-        walk_once(resolved, &mut out)?;
+    // Implicit `docs/` root (with no exclude list).
+    let default_root = DocScanRoot::new("docs");
+    let rs = walk_root(&default_root, &mut walked, &mut out)?;
+    if rs.included + rs.excluded > 0 {
+        summary.roots.push(rs);
+    }
+
+    for root in roots {
+        let rs = walk_root(root, &mut walked, &mut out)?;
+        if rs.included + rs.excluded > 0 {
+            summary.roots.push(rs);
+        }
     }
 
     // Final de-dupe by rel_path in case a doc was reachable via both the
@@ -228,22 +330,42 @@ pub fn collect_docs(project_root: &Path, extra_dirs: &[PathBuf]) -> std::io::Res
     out.sort_by(|a, b| a.rel_path.cmp(&b.rel_path));
     out.dedup_by(|a, b| a.rel_path == b.rel_path);
 
-    Ok(out)
+    Ok((out, summary))
 }
 
-fn walk_md(dir: &Path, project_root: &Path, out: &mut Vec<DocFile>) -> std::io::Result<()> {
+fn walk_md(
+    dir: &Path,
+    project_root: &Path,
+    root_base: &Path,
+    exclude: &[regex::Regex],
+    out: &mut Vec<DocFile>,
+    rs: &mut RootSummary,
+) -> std::io::Result<()> {
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
         if path.is_dir() {
-            walk_md(&path, project_root, out)?;
+            walk_md(&path, project_root, root_base, exclude, out, rs)?;
         } else if path.extension().is_some_and(|e| e == "md") {
+            // Match the path *relative to the root* against the
+            // exclude globs — that's the contract the user wires up
+            // in rivet.yaml.
+            let rel_to_root = path
+                .strip_prefix(root_base)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .to_string();
+            if exclude.iter().any(|re| re.is_match(&rel_to_root)) {
+                rs.excluded += 1;
+                continue;
+            }
             let content = std::fs::read_to_string(&path)?;
             let rel = path
                 .strip_prefix(project_root)
                 .unwrap_or(&path)
                 .to_path_buf();
             out.push(DocFile::new(rel, content));
+            rs.included += 1;
         }
     }
     Ok(())

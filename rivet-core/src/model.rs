@@ -284,6 +284,75 @@ pub struct ExternalProject {
     pub prefix: String,
 }
 
+/// One entry in the `docs:` list of `rivet.yaml`.
+///
+/// Two surface forms are accepted (untagged) so existing configs stay valid:
+///
+/// ```yaml
+/// docs:
+///   - docs                                    # legacy: just a path
+///   - path: arch                              # detailed: path + opt-out globs
+///     exclude: ["generated/**", "*.draft.md"]
+/// ```
+///
+/// `exclude` patterns are matched against the path of a candidate file
+/// *relative to the docs entry's path* and use a small glob dialect:
+/// `*` matches any sequence of characters except `/`, `**` matches any
+/// sequence including `/`, `?` matches a single character. A pattern with
+/// no `/` matches against the file name only (so `*.draft.md` matches at
+/// every depth).
+///
+/// A file that matches any `exclude` pattern is silently skipped during
+/// the docs scan — no warning, no participation in the link graph. Files
+/// that the scanner declines for other reasons (missing front-matter,
+/// malformed front-matter) trigger a stderr warning so the user can
+/// either fix them or extend `exclude:`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum DocsEntry {
+    /// Legacy form: a bare path string. No exclude list.
+    Path(String),
+    /// Detailed form: explicit path plus an opt-out allowlist.
+    Detailed {
+        path: String,
+        #[serde(default)]
+        exclude: Vec<String>,
+    },
+}
+
+impl DocsEntry {
+    /// Path component of the entry (relative to the project root).
+    #[must_use]
+    pub fn path(&self) -> &str {
+        match self {
+            DocsEntry::Path(p) => p.as_str(),
+            DocsEntry::Detailed { path, .. } => path.as_str(),
+        }
+    }
+
+    /// The glob patterns whose matching files are silently excluded from
+    /// the rivet-doc scan. Empty for legacy bare-path entries.
+    #[must_use]
+    pub fn exclude(&self) -> &[String] {
+        match self {
+            DocsEntry::Path(_) => &[],
+            DocsEntry::Detailed { exclude, .. } => exclude.as_slice(),
+        }
+    }
+}
+
+impl From<String> for DocsEntry {
+    fn from(s: String) -> Self {
+        DocsEntry::Path(s)
+    }
+}
+
+impl From<&str> for DocsEntry {
+    fn from(s: &str) -> Self {
+        DocsEntry::Path(s.to_string())
+    }
+}
+
 /// Project configuration loaded from `rivet.yaml`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectConfig {
@@ -291,8 +360,11 @@ pub struct ProjectConfig {
     #[serde(default)]
     pub sources: Vec<SourceConfig>,
     /// Directories containing markdown documents (with YAML frontmatter).
+    ///
+    /// Each entry may be a bare path (legacy form) or a `{path, exclude}`
+    /// table — see [`DocsEntry`] for the allowlist syntax.
     #[serde(default)]
-    pub docs: Vec<String>,
+    pub docs: Vec<DocsEntry>,
     /// Directory containing test result YAML files.
     #[serde(default)]
     pub results: Option<String>,

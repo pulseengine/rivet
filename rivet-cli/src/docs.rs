@@ -325,10 +325,24 @@ sources:                    # Artifact sources
     #   key: value
 
 docs:                       # Documentation directories (for [[ID]] scanning)
-  - docs
+  - docs                    # legacy: just a path
+  - path: arch              # detailed: path + opt-out allowlist
+    exclude:                # silently skip these (still scanned otherwise)
+      - "generated/**"      # `**` matches any subtree
+      - "*.draft.md"        # bare patterns match the file name only
 
 results: results            # Test results directory (JUnit XML, LCOV)
 ```
+
+### Loud-by-default doc scanning
+
+The doc scanner emits a stderr warning for every `.md` file it declines
+(no YAML front-matter, malformed front-matter). This is by design:
+silently-skipped files don't participate in the link graph, so artifact
+IDs in their prose go invisible. The warning includes a hint to add the
+file to `docs[].exclude` if the silence was intentional. A summary line
+at the end of the scan reports `<loaded> loaded, <warned> skipped,
+<excluded> excluded by allowlist`.
 
 ## Available Schemas
 
