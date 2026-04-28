@@ -40,6 +40,15 @@ use crate::document::DocumentStore;
 use crate::links::LinkGraph;
 use crate::schema::{Cardinality, Schema, Severity};
 use crate::store::Store;
+use regex::Regex;
+use std::sync::LazyLock;
+
+/// Regex matching an artifact-id-shaped token in prose: leading
+/// uppercase letter, optional uppercase / digit chars, a `-`, and a
+/// numeric suffix. `\b` boundaries avoid substrings of larger
+/// identifiers. Matches `H-3`, `REQ-028`, `SYSREQ-001`, `CC-12`, etc.
+static ID_MENTION_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\b[A-Z][A-Z0-9]*-[0-9]+\b").unwrap());
 
 /// A single validation diagnostic.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -509,6 +518,71 @@ pub fn validate_structural(store: &Store, schema: &Schema, graph: &LinkGraph) ->
                         ),
                     });
                 }
+            }
+        }
+    }
+
+    // 10. Prose-mention without typed link.
+    //
+    // When an artifact's `description` (or a string-typed value in
+    // `fields`) names another artifact id (e.g. "satisfies REQ-028"),
+    // that mention should be matched by a typed link to keep the prose
+    // and the typed graph coherent. Severity is Warning, not Error:
+    // authors sometimes mention an id casually ("similar to DD-001") and
+    // the warning is the discipline nudge — not a hard rule. Use
+    // `--fail-on warning` for projects that want hard enforcement.
+    //
+    // Suppress when:
+    //   * the mention is the artifact's own id (self-reference),
+    //   * the mentioned id does not resolve in the corpus (broken refs
+    //     are a separate concern; see broken-link / doc-broken-ref),
+    //   * the artifact already has any typed link to that id.
+    //
+    // Dedupe per (artifact, mentioned-id) so that prose mentioning
+    // REQ-028 three times yields one warning, matching the
+    // unknown-link-type pass's per-(artifact, link-type) policy.
+    // (BTreeSet is already imported at the top of pass 8 above.)
+    for artifact in store.iter() {
+        let linked_targets: BTreeSet<&str> =
+            artifact.links.iter().map(|l| l.target.as_str()).collect();
+        let mut warned: BTreeSet<String> = BTreeSet::new();
+
+        let mut scan = |text: &str| {
+            for m in ID_MENTION_RE.find_iter(text) {
+                let mentioned = m.as_str();
+                if mentioned == artifact.id {
+                    continue;
+                }
+                if !store.contains(mentioned) {
+                    continue;
+                }
+                if linked_targets.contains(mentioned) {
+                    continue;
+                }
+                if !warned.insert(mentioned.to_string()) {
+                    continue;
+                }
+                diagnostics.push(Diagnostic {
+                    source_file: None,
+                    line: None,
+                    column: None,
+                    severity: Severity::Warning,
+                    artifact_id: Some(artifact.id.clone()),
+                    rule: "prose-mention-without-typed-link".to_string(),
+                    message: format!(
+                        "prose mentions '{mentioned}' but no typed link to it; \
+                         add a link in `links:` or remove the mention"
+                    ),
+                });
+            }
+        };
+
+        if let Some(desc) = &artifact.description {
+            scan(desc);
+        }
+        for value in artifact.fields.values() {
+            if let Some(s) = value.as_str() {
+                scan(s);
             }
         }
     }
@@ -1592,6 +1666,125 @@ then:
             validate_says_covered, coverage_says_covered,
             "validate and coverage must agree (validate_covered={}, coverage={}/{})",
             validate_says_covered, entry.covered, entry.total
+        );
+    }
+
+    // --- prose-mention-without-typed-link (issue #207) ---
+    //
+    // Helper: build a two-artifact store where `description_of_a` is
+    // arbitrary prose attached to A-1, and B-1 is a target that may or
+    // may not be referenced by a typed link. Returns just the prose-
+    // mention diagnostics filtered out of a full validation pass.
+    fn prose_mention_diags(
+        description_of_a: Option<&str>,
+        a_fields: Vec<(&str, &str)>,
+        a_links: Vec<Link>,
+    ) -> Vec<Diagnostic> {
+        use crate::store::Store;
+
+        let schema_file = minimal_schema("test");
+        let schema = Schema::merge(&[schema_file]);
+
+        let a = make_artifact("A-1", "test", None, description_of_a, a_fields, a_links);
+        let b = make_artifact("B-1", "test", None, None, vec![], vec![]);
+
+        let mut store = Store::new();
+        store.insert(a).unwrap();
+        store.insert(b).unwrap();
+        let graph = LinkGraph::build(&store, &schema);
+
+        crate::validate::validate(&store, &schema, &graph)
+            .into_iter()
+            .filter(|d| d.rule == "prose-mention-without-typed-link")
+            .collect()
+    }
+
+    // rivet: verifies REQ-004
+    #[test]
+    fn prose_mention_warns_when_no_typed_link() {
+        let diags = prose_mention_diags(Some("This artifact relates to B-1."), vec![], vec![]);
+        assert_eq!(diags.len(), 1, "expected one warning, got {diags:?}");
+        assert_eq!(diags[0].severity, Severity::Warning);
+        assert_eq!(diags[0].artifact_id.as_deref(), Some("A-1"));
+        assert!(
+            diags[0].message.contains("B-1"),
+            "message should name the mentioned id: {}",
+            diags[0].message
+        );
+    }
+
+    // rivet: verifies REQ-004
+    #[test]
+    fn prose_mention_suppressed_when_typed_link_present() {
+        let diags = prose_mention_diags(
+            Some("This artifact relates to B-1."),
+            vec![],
+            vec![Link {
+                link_type: "satisfies".to_string(),
+                target: "B-1".to_string(),
+            }],
+        );
+        assert!(
+            diags.is_empty(),
+            "typed link to B-1 must suppress prose-mention warning, got {diags:?}"
+        );
+    }
+
+    // rivet: verifies REQ-004
+    #[test]
+    fn prose_mention_suppressed_when_self_reference() {
+        let diags = prose_mention_diags(
+            Some("This artifact, A-1, is the canonical example."),
+            vec![],
+            vec![],
+        );
+        assert!(
+            diags.is_empty(),
+            "self-id mention must not warn, got {diags:?}"
+        );
+    }
+
+    // rivet: verifies REQ-004
+    #[test]
+    fn prose_mention_suppressed_when_id_does_not_resolve() {
+        // GHOST-999 is not in the store; broken-ref handling is a
+        // separate concern, not this rule's job.
+        let diags = prose_mention_diags(Some("Unlike GHOST-999, this works."), vec![], vec![]);
+        assert!(
+            diags.is_empty(),
+            "unresolved id must not warn, got {diags:?}"
+        );
+    }
+
+    // rivet: verifies REQ-004
+    #[test]
+    fn prose_mention_scans_string_field_values() {
+        // The mention is in a string-typed `fields` value, not in
+        // `description`. Should still warn.
+        let diags = prose_mention_diags(
+            None,
+            vec![("rationale", "Decided like B-1 was decided.")],
+            vec![],
+        );
+        assert_eq!(diags.len(), 1, "expected one warning, got {diags:?}");
+        assert!(diags[0].message.contains("B-1"));
+    }
+
+    // rivet: verifies REQ-004
+    #[test]
+    fn prose_mention_dedupes_per_id_per_artifact() {
+        // Three mentions of B-1 in the same description must yield
+        // exactly one warning, matching the unknown-link-type pass's
+        // per-(artifact, link-type) dedup policy.
+        let diags = prose_mention_diags(
+            Some("B-1 here. B-1 again. And once more: B-1."),
+            vec![],
+            vec![],
+        );
+        assert_eq!(
+            diags.len(),
+            1,
+            "repeated mentions of one id must dedupe, got {diags:?}"
         );
     }
 }
