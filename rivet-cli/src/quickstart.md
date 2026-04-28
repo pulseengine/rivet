@@ -76,19 +76,39 @@ the preset that fits the domain:
 test -f rivet.yaml && test -d artifacts && test -d docs && echo OK
 ```
 
-Expected: `OK`. `init` creates a seed `artifacts/requirements.yaml`
-with placeholder REQ-001 + FEAT-001 — a worked example you can inspect
-(`cat artifacts/requirements.yaml`) and then delete in step 3.
+Expected: `OK`.
+
+> **If you picked a non-`dev` preset** (e.g. `stpa`, `aspice`,
+> `eu-ai-act`, `safety-case`): your seed file is a **complete worked
+> example in your domain's vocabulary**, not a placeholder. For `stpa`
+> it's `artifacts/safety.yaml` with `loss`, `hazard`, and `uca`
+> artifacts already linked correctly. **Read your seed first**
+> (`cat artifacts/*.yaml`) and run `rivet docs schema/<your-preset>`
+> for the full type catalogue. Then **skip to step 4** — your seed
+> already covers what steps 3 and 6 demonstrate. Steps 5 and 7–10
+> work the same regardless of preset (substitute artifact IDs).
+>
+> **If you're using the `dev` preset** (the rest of this walkthrough
+> assumes this): the seed `artifacts/requirements.yaml` has a
+> placeholder REQ-001 + FEAT-001. Read it for reference, then continue
+> with step 3 to write your own.
+
+Tip: `rivet schema show <bad-type>` errors with a list of all valid
+types in the loaded schema — treat it as a free schema dump.
 
 ---
 
 ## 3. Add a typed artifact
 
+> **`dev` preset only.** If you used `stpa`/`aspice`/`eu-ai-act`/
+> `safety-case`, your seed is already a working artifact set — skip
+> ahead to step 4 to validate it.
+
 **Goal**: write one valid requirement.
 
 ```bash
-# Replace the seed with your own clean slate. The seed REQ-001 collides
-# with what we're about to write — delete it.
+# Replace the dev-preset seed with your own clean slate. Its REQ-001
+# collides with what we're about to write — delete it.
 rm artifacts/requirements.yaml
 
 cat > artifacts/sample.yaml <<'EOF'
@@ -315,6 +335,16 @@ Steps 1–10 work cleanly on a fresh directory. To bring rivet into an
 existing project (a real codebase with real source-of-truth docs), the
 flow is the same but with three additions.
 
+### What `rivet init` touches in a non-empty repo
+
+Before you run `rivet init` against a real repo with thousands of
+files, the contract: **`init` creates `rivet.yaml`, `artifacts/`,
+`docs/`, and a single seed artifact file inside `artifacts/`. It does
+not touch any other directory.** Your `src/`, `specs/`, `docs/` (if it
+already exists — `init` skips it), `.git/`, and any other tree are
+untouched. The seed is the only thing you'll want to delete or replace
+when you start curating real artifacts.
+
 ### Pick the closest built-in preset
 
 `rivet docs schemas-overview` lists every shipped preset. Pick the one
@@ -415,9 +445,69 @@ artifact-types:
         cardinality: zero-or-many
 ```
 
-For larger presets like `aspice`, the same pattern applies: extend the
-shipped `sw-req` / `sys-req` types, but the field/link-field lists are
-longer. Always start by dumping the base with `rivet schema show`.
+#### ASPICE worked overlay (real-world Polarion-import case)
+
+For an ASPICE bring-up, the same pattern applies but `sw-req`'s shape
+is genuinely different — it has a **required** `derived-from` link
+restricted to `[system-req, system-arch-component]`. Skipping the
+link-field redeclaration trips G.2 *and* `swe1-derives-from-sys` at
+the same time. Complete copy-pasteable overlay:
+
+```yaml
+schema:
+  name: legacy-repo-overlay
+  version: "0.1.0"
+  extends: [common, aspice]
+
+artifact-types:
+  - name: sw-req                       # MUST match base type name
+    description: ASPICE sw-req with Polarion provenance
+    fields:                            # base + additions; list ALL
+      - name: req-type
+        type: string
+        required: false
+        allowed-values: [functional, performance, interface, constraint, safety]
+      - name: priority
+        type: string
+        required: false
+      - name: verification-criteria
+        type: text
+        required: false
+      - name: polarion_id              # the addition
+        type: string
+        required: false
+      - name: polarion_status          # the addition
+        type: string
+        required: false
+      - name: asil                     # the addition
+        type: string
+        required: false
+        allowed-values: [QM, A, B, C, D]
+    link-fields:                       # MUST repeat — required link!
+      - name: derived-from
+        link-type: derives-from
+        target-types: [system-req, system-arch-component]
+        required: true
+        cardinality: one-or-many
+```
+
+**Stub-parent tradeoff** (hits everyone importing one SW req from
+Polarion): ASPICE's `sw-req` *requires* a `derives-from` link to a
+`system-req` or `system-arch-component`. If you curate a single
+`sw-req` from a Polarion export, you must also curate a parent stub:
+
+```yaml
+- id: SYSREQ-PRODUCER
+  type: system-req
+  title: Producer subsystem (imported stub)
+  status: imported-stub          # WARN, not INFO — visible in review
+  description: |
+    NOTE: Stub. Real content lives in upstream system document XYZ
+    not yet imported into rivet.
+```
+
+The `imported-stub` status raises a WARN per gotcha G.5 so reviewers
+see at a glance which artifacts are placeholders.
 
 #### Step 3: Register the overlay
 
