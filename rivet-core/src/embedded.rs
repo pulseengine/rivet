@@ -32,6 +32,22 @@ pub const SCHEMA_ISO_PAS_8800: &str = include_str!("../../schemas/iso-pas-8800.y
 pub const SCHEMA_SOTIF: &str = include_str!("../../schemas/sotif.yaml");
 pub const SCHEMA_SUPPLY_CHAIN: &str = include_str!("../../schemas/supply-chain.yaml");
 
+// ── Embedded migration recipes ──────────────────────────────────────────
+
+pub const MIGRATION_DEV_TO_ASPICE: &str =
+    include_str!("../../schemas/migrations/dev-to-aspice.yaml");
+
+/// All shipped migration recipes: `(name, content)`.
+pub const MIGRATION_RECIPES: &[(&str, &str)] = &[("dev-to-aspice", MIGRATION_DEV_TO_ASPICE)];
+
+/// Look up an embedded migration recipe by name (e.g. `"dev-to-aspice"`).
+pub fn embedded_migration_recipe(name: &str) -> Option<&'static str> {
+    MIGRATION_RECIPES
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, c)| *c)
+}
+
 // ── Embedded bridge schema content ──────────────────────────────────────
 
 pub const BRIDGE_EU_AI_ACT_ASPICE: &str =

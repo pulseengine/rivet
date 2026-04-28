@@ -66,6 +66,7 @@ mod check;
 mod close_gaps;
 mod docs;
 mod mcp;
+mod migrate_cmd;
 mod pipelines_cmd;
 mod render;
 mod runs_cmd;
@@ -973,6 +974,38 @@ enum SchemaAction {
         /// Print the schema content instead of just its path
         #[arg(long)]
         content: bool,
+    },
+    /// Migrate artifacts from one preset/version to another (Phase 1: mechanical-only).
+    ///
+    /// Phase 1 of issue #236. Default is plan-only (dry-run). Use
+    /// `--apply` to rewrite artifact YAML in place against the target
+    /// preset. `--abort` restores from the pre-migration snapshot.
+    /// `--status` reports current state. `--finish` deletes the
+    /// snapshot after `rivet validate` confirms the migrated tree is
+    /// healthy.
+    ///
+    /// See `rivet docs schema-migrate` for the full guide.
+    Migrate {
+        /// Target preset (e.g., "aspice"). Source is inferred from
+        /// the project's current `rivet.yaml`.
+        target: String,
+
+        /// Apply the migration (mechanical-only in Phase 1; bails on
+        /// any conflict).
+        #[arg(long, conflicts_with_all = ["abort", "status", "finish"])]
+        apply: bool,
+
+        /// Abort the in-flight migration and restore from snapshot.
+        #[arg(long, conflicts_with_all = ["apply", "status", "finish"])]
+        abort: bool,
+
+        /// Print the current migration state machine pointer.
+        #[arg(long, conflicts_with_all = ["apply", "abort", "finish"])]
+        status: bool,
+
+        /// Validate and finalize a COMPLETE migration (deletes snapshot).
+        #[arg(long, conflicts_with_all = ["apply", "abort", "status"])]
+        finish: bool,
     },
 }
 
@@ -7143,6 +7176,35 @@ fn cmd_schema(cli: &Cli, action: &SchemaAction) -> Result<bool> {
         SchemaAction::GetJson { name, content } => {
             return cmd_schema_get_json(cli, name, *content);
         }
+        SchemaAction::Migrate {
+            target,
+            apply,
+            abort,
+            status,
+            finish,
+        } => {
+            let schemas_dir = resolve_schemas_dir(cli);
+            let project_root = cli.project.clone();
+            let config_path = cli.project.join("rivet.yaml");
+            let source_preset = if config_path.exists() {
+                let config = rivet_core::load_project_config(&config_path)
+                    .with_context(|| format!("loading {}", config_path.display()))?;
+                infer_source_preset(&config.project.schemas)
+            } else {
+                "dev".to_string()
+            };
+            return if *abort {
+                migrate_cmd::cmd_abort(&project_root)
+            } else if *status {
+                migrate_cmd::cmd_status(&project_root)
+            } else if *finish {
+                migrate_cmd::cmd_finish(&project_root)
+            } else if *apply {
+                migrate_cmd::cmd_apply(&project_root, &schemas_dir, &source_preset, target)
+            } else {
+                migrate_cmd::cmd_plan(&project_root, &schemas_dir, &source_preset, target)
+            };
+        }
         _ => {}
     }
 
@@ -7187,10 +7249,27 @@ fn cmd_schema(cli: &Cli, action: &SchemaAction) -> Result<bool> {
             };
             schema_cmd::cmd_info(&schema_file, format)
         }
-        SchemaAction::ListJson { .. } | SchemaAction::GetJson { .. } => unreachable!(),
+        SchemaAction::ListJson { .. }
+        | SchemaAction::GetJson { .. }
+        | SchemaAction::Migrate { .. } => unreachable!(),
     };
     print!("{output}");
     Ok(true)
+}
+
+/// Infer the project's source preset from its loaded schema list.
+///
+/// Heuristic: pick the first non-`common` entry. The set of presets
+/// rivet ships with maps 1:1 to a marquee schema (`dev`, `aspice`,
+/// `stpa`, …); projects that load multiple non-common schemas get
+/// the first one and are expected to specify the source preset
+/// explicitly in a future Phase. For Phase 1 this is enough.
+fn infer_source_preset(schemas: &[String]) -> String {
+    schemas
+        .iter()
+        .find(|s| s.as_str() != "common")
+        .cloned()
+        .unwrap_or_else(|| "dev".to_string())
 }
 
 /// The four CLI subcommands that emit machine-readable JSON along with the
