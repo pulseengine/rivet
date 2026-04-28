@@ -17,15 +17,15 @@ real bugs and one big doc gap. All three are fixed here.
 - **`rivet init --preset aspice` seed now validates clean** (#233).
   Two bugs in the shipped aspice preset: the `common` schema registers
   `allocated-to` with `inverse: allocated-from` but never declares
-  `allocated-from` as a forward token, so the seed's `SWARCH-001 ->
-  allocated-from -> SWREQ-001` link was rejected. And the seed's
-  `SYSREQ-001` had no `derives-from` target, so the
+  `allocated-from` as a forward token, so the seed's
+  `sw-arch-component -> allocated-from -> sw-req` link was rejected.
+  And the seed's `system-req` had no `derives-from` target, so the
   `sys2-derives-from-sys1` rule failed on the first
   `rivet validate` post-init. Now: `aspice` declares `allocated-from`
-  as a forward link-type, and the seed grows a `STKHR-001`
-  stakeholder-req as the V-model root with `SYSREQ-001 -> derives-from
-  -> STKHR-001`. `rivet init --preset aspice && rivet validate` now
-  returns `Result: PASS (0 warnings)`.
+  as a forward link-type, and the seed grows a `stakeholder-req`
+  V-model root with the `system-req -> derives-from -> stakeholder-req`
+  link wired up. `rivet init --preset aspice && rivet validate`
+  now returns `Result: PASS (0 warnings)`.
 
 ### Added
 
