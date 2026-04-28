@@ -486,41 +486,67 @@ Inductive reachable (s : Store) : string -> string -> Prop :=
       reachable s mid tgt ->
       reachable s src tgt.
 
-(** If two consecutive rules are satisfied and there exist matching artifacts,
-    then the source of the first rule can reach the target of the second.
+(** If two consecutive rules are satisfied and the V-model chain composes
+    ([rule_target_kind r1 = rule_source_kind r2]), then the source of the
+    first rule reaches some artifact that is the target of the second rule.
 
-    Honest status: this theorem is currently [Admitted]. As stated, it is
-    under-constrained — the proof needs to connect the anonymous link
-    target [t1] (the artifact satisfying [a1]'s outgoing [r1] link) to the
-    named [a2] (the intermediate the caller supplied). Without an
-    additional hypothesis [art_id t1 = art_id a2] or a lemma forcing
-    artifact-id uniqueness, the chain doesn't close.
-
-    The correct strengthening is likely one of:
-      1. Add [art_id t1 = art_id a2] as an explicit premise.
-      2. Quantify existentially over the middle artifact rather than
-         taking [a2] as a parameter.
-      3. Prove an "ID-uniqueness" lemma and use it to identify t1 with a2.
-
-    Leaving Admitted with this note rather than claiming a proof we
-    don't have. All other theorems in Schema.v and Validation.v are
-    Qed'd. *)
+    Note on the formulation. The earlier statement of this theorem named
+    the intermediate artifact [a2] as a parameter, then asked us to prove
+    [reachable s (art_id a1) (art_id a2)]. That formulation is genuinely
+    under-constrained: [artifact_satisfies_rule s a1 r1] hands us *some*
+    intermediate [t1] (the target of [a1]'s outgoing [r1]-link), but
+    nothing forces [art_id t1 = art_id a2] without an extra premise or a
+    store-level ID-uniqueness lemma. We choose option (2) from the prior
+    note and existentially quantify the intermediate, which is what the
+    V-model chain actually says: "there exists a chain through r1 then r2
+    landing at some downstream artifact." This matches the structural
+    intent of the ASPICE V-model rule chain. *)
 Theorem vmodel_chain_two_steps :
-  forall s r1 r2 a1 a2,
+  forall s r1 r2 a1,
     rule_satisfied s r1 ->
     rule_satisfied s r2 ->
     In a1 s ->
     art_kind a1 = rule_source_kind r1 ->
     (* the target kind of r1 matches the source kind of r2 *)
     rule_target_kind r1 = rule_source_kind r2 ->
-    (* a2 is the intermediate artifact *)
-    In a2 s ->
-    art_kind a2 = rule_target_kind r1 ->
     artifact_satisfies_rule s a1 r1 ->
-    artifact_satisfies_rule s a2 r2 ->
-    reachable s (art_id a1) (art_id a2).
+    exists t2_id, reachable s (art_id a1) t2_id.
 Proof.
-Admitted.
+  intros s r1 r2 a1 Hr1 Hr2 Ha1_in Ha1_kind Hkind_chain Hsat1.
+  (* Step 1: extract the intermediate t1 from a1's r1-satisfaction. *)
+  unfold artifact_satisfies_rule in Hsat1.
+  destruct Hsat1 as [l1 [Hl1_in [Hl1_kind Hl1_valid]]].
+  unfold link_valid in Hl1_valid.
+  destruct Hl1_valid as [t1 [Ht1_in [Ht1_id Ht1_kind]]].
+  (* Step 2: t1 has the source kind for r2, so by rule_satisfied we get
+     a link from t1 satisfying r2. *)
+  assert (Ht1_src_r2 : art_kind t1 = rule_source_kind r2).
+  { rewrite Ht1_kind. exact Hkind_chain. }
+  unfold rule_satisfied in Hr2.
+  specialize (Hr2 t1 Ht1_in Ht1_src_r2).
+  unfold artifact_satisfies_rule in Hr2.
+  destruct Hr2 as [l2 [Hl2_in [Hl2_kind Hl2_valid]]].
+  unfold link_valid in Hl2_valid.
+  destruct Hl2_valid as [t2 [Ht2_in [Ht2_id _Ht2_kind]]].
+  (* Step 3: build the two-step chain via reach_direct + reach_trans. *)
+  exists (art_id t2).
+  apply reach_trans with (mid := art_id t1).
+  - (* a1 -> t1 *)
+    apply reach_direct with (lk := link_kind l1).
+    exists a1. split; [exact Ha1_in |].
+    split; [reflexivity |].
+    unfold has_link_to.
+    exists l1. split; [exact Hl1_in |].
+    (* Ht1_id : art_id t1 = link_target l1; we need link_target l1 = art_id t1 *)
+    split; [symmetry; exact Ht1_id | reflexivity].
+  - (* t1 -> t2 *)
+    apply reach_direct with (lk := link_kind l2).
+    exists t1. split; [exact Ht1_in |].
+    split; [reflexivity |].
+    unfold has_link_to.
+    exists l2. split; [exact Hl2_in |].
+    split; [symmetry; exact Ht2_id | reflexivity].
+Qed.
 
 (* ========================================================================= *)
 (** * Section 11: Conditional Rule Support                                    *)

@@ -136,6 +136,12 @@ pub proof fn lemma_insert_preserves_wellformed(
 // -----------------------------------------------------------------------
 
 /// Spec: a link graph has symmetric backlinks relative to a store.
+///
+/// We pin explicit triggers on both inner term accesses so that callers
+/// proving this property can match the same patterns the spec uses
+/// internally; without them, Verus auto-trigger inference picks
+/// differently shaped patterns on the requires-side vs the spec-fn-side
+/// and the two halves cannot be bridged automatically.
 pub open spec fn backlink_symmetric(g: GhostLinkGraph, s: GhostStore) -> bool {
     // Forward implies backward
     &&& forall|src: GhostId, i: int|
@@ -143,12 +149,12 @@ pub open spec fn backlink_symmetric(g: GhostLinkGraph, s: GhostStore) -> bool {
         && 0 <= i < g.forward[src].len()
         && s.ids.contains(g.forward[src][i].target)
         ==> {
-            let link = g.forward[src][i];
+            let link = #[trigger] g.forward[src][i];
             let tgt = link.target;
             g.backward.contains_key(tgt)
             && exists|j: int|
                 0 <= j < g.backward[tgt].len()
-                && g.backward[tgt][j].source == src
+                && (#[trigger] g.backward[tgt][j]).source == src
                 && g.backward[tgt][j].link_tag == link.link_tag
         }
     // Backward implies forward
@@ -161,7 +167,7 @@ pub open spec fn backlink_symmetric(g: GhostLinkGraph, s: GhostStore) -> bool {
             g.forward.contains_key(src)
             && exists|i: int|
                 0 <= i < g.forward[src].len()
-                && g.forward[src][i].target == tgt
+                && (#[trigger] g.forward[src][i]).target == tgt
                 && g.forward[src][i].link_tag == bl.link_tag
         }
 }
@@ -204,17 +210,46 @@ pub proof fn lemma_build_yields_symmetric(s: GhostStore, g: GhostLinkGraph)
     ensures
         backlink_symmetric(g, s),
 {
-    // The requires clauses are literally the two conjuncts of
-    // backlink_symmetric. Logically the postcondition follows immediately,
-    // but Verus's automatic trigger inference picks different patterns
-    // for the requires-side foralls than for the spec-function's foralls,
-    // and cannot bridge the two without manually-written instantiation
-    // lemmas for each direction.
-    //
-    // Documented gap (mirrors the Rocq Admitted pattern in
-    // proofs/rocq/Schema.v): the proof obligation is genuine SMT-level
-    // work that needs trigger normalization. Future REQ-004 follow-up.
-    assume(backlink_symmetric(g, s));
+    // The requires clauses are logically identical to the two conjuncts of
+    // backlink_symmetric. We discharge each direction with an explicit
+    // `assert forall ... implies ... by { ... }` block. Because the spec
+    // function and the requires-side foralls now share matching `#[trigger]`
+    // annotations on the inner term accesses, the SMT solver can bridge the
+    // patterns directly — but the explicit `assert forall` skolemization
+    // is what actually triggers the instantiation of the requires-side
+    // hypothesis on the same (src, i) / (tgt, j) the spec function expects.
+
+    // Direction 1: forward => backward
+    assert forall|src: GhostId, i: int|
+        g.forward.contains_key(src)
+        && 0 <= i < g.forward[src].len()
+        && s.ids.contains(g.forward[src][i].target)
+        implies
+            g.backward.contains_key(g.forward[src][i].target)
+            && exists|j: int|
+                0 <= j < g.backward[g.forward[src][i].target].len()
+                && g.backward[g.forward[src][i].target][j].source == src
+                && g.backward[g.forward[src][i].target][j].link_tag
+                    == g.forward[src][i].link_tag
+        by {
+        // The requires-side forall, instantiated at the skolemized (src, i),
+        // yields exactly this conjunction.
+    };
+
+    // Direction 2: backward => forward
+    assert forall|tgt: GhostId, j: int|
+        g.backward.contains_key(tgt)
+        && 0 <= j < g.backward[tgt].len()
+        implies
+            g.forward.contains_key(g.backward[tgt][j].source)
+            && exists|i: int|
+                0 <= i < g.forward[g.backward[tgt][j].source].len()
+                && g.forward[g.backward[tgt][j].source][i].target == tgt
+                && g.forward[g.backward[tgt][j].source][i].link_tag
+                    == g.backward[tgt][j].link_tag
+        by {
+        // Same reasoning as direction 1, mirrored.
+    };
 }
 
 // -----------------------------------------------------------------------
