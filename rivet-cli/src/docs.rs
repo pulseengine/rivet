@@ -151,6 +151,12 @@ const TOPICS: &[DocTopic] = &[
         category: "Reference",
         content: HTML_EXPORT_DOC,
     },
+    DocTopic {
+        slug: "mcp",
+        title: "MCP server — wire format, tool catalog, and smoke tests",
+        category: "Reference",
+        content: MCP_DOC,
+    },
     // ── Schema topics ──────────────────────────────────────────────────
     DocTopic {
         slug: "schemas-overview",
@@ -413,11 +419,16 @@ rivet snapshot list         List all captured snapshots
 ## MCP Server
 
 ```
-rivet mcp                   Start the MCP server (stdio transport)
+rivet mcp                          Start the MCP server (stdio transport)
+rivet mcp --list-tools             Print the registered tool catalog and exit
+rivet mcp --list-tools -f json     Emit the JSON-RPC tools/list payload
+rivet mcp --probe                  Run an in-process tools/call rivet_list smoke test
 ```
 
 Exposes rivet tools to AI agents via the Model Context Protocol.
 The server uses stdio transport and only binds to the local process.
+See `rivet docs mcp` for the wire format, the 15-tool catalog, and the
+3-message handshake.
 
 ## Schema Commands
 
@@ -1461,6 +1472,270 @@ Options:
 When `--single-page` is used, all reports are combined into a single
 `index.html` with internal anchors.  `config.js` is not generated in
 single-page mode (everything is inline).
+"#;
+
+// ── MCP server documentation ────────────────────────────────────────────
+
+const MCP_DOC: &str = r#"# MCP Server — Wire Format, Tool Catalog, and Smoke Tests
+
+## Overview
+
+`rivet mcp` exposes the typed-graph (artifacts, links, schemas, validation,
+coverage, snapshots) to MCP-speaking clients — Claude Code, Cursor, custom
+agents — via the [Model Context Protocol](https://modelcontextprotocol.io/).
+The server runs in-process: it loads the project once, caches the store /
+schema / link graph, and serves all subsequent tool calls from that cache.
+
+The server has no network surface. Transport is stdio: the client launches
+`rivet mcp` as a child process and exchanges JSON-RPC messages over the
+child's stdin / stdout. Mutations land in the project's YAML files on disk;
+the cache is refreshed on demand via the `rivet_reload` tool.
+
+For a list of every tool the server advertises with one-line summaries, run
+`rivet mcp --list-tools`. For a quick "is the server reachable from my
+project?" smoke test, run `rivet mcp --probe`. Both are described below.
+
+## Wire Format
+
+The wire format is **line-delimited JSON-RPC 2.0** over stdio. Each message
+is one line of JSON terminated by `\n`. There is **no** Content-Length
+framing of the kind LSP uses — clients that wrap the transport with LSP
+framing will see no responses and time out.
+
+A message is either a request (has `id`), a response (has `id` and either
+`result` or `error`), or a notification (no `id`, no response expected).
+
+```
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{...}}\n
+{"jsonrpc":"2.0","id":1,"result":{...}}\n
+{"jsonrpc":"2.0","method":"notifications/initialized"}\n
+{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}\n
+```
+
+Anything emitted on stderr is diagnostic / log output; clients should
+forward it to their own logs but never parse it as JSON-RPC.
+
+## The 3-Message Handshake
+
+Every session starts with the same handshake. The middle message is a
+**notification** — no `id`, no response — and is easy to forget. Servers
+that follow the spec strictly will reject `tools/list` until they see it.
+
+1. **Client → server**: `initialize` request. The client declares its
+   protocol version and capabilities.
+
+   ```json
+   {
+     "jsonrpc": "2.0",
+     "id": 1,
+     "method": "initialize",
+     "params": {
+       "protocolVersion": "2024-11-05",
+       "capabilities": {},
+       "clientInfo": {"name": "my-client", "version": "0.1.0"}
+     }
+   }
+   ```
+
+2. **Server → client**: `initialize` response. Lists the server's
+   capabilities (rivet advertises `tools` and `resources`).
+
+   ```json
+   {
+     "jsonrpc": "2.0",
+     "id": 1,
+     "result": {
+       "protocolVersion": "2024-11-05",
+       "capabilities": {"tools": {...}, "resources": {...}},
+       "serverInfo": {"name": "rivet", "version": "0.5.0"}
+     }
+   }
+   ```
+
+3. **Client → server**: `notifications/initialized` notification. **No
+   id, no response.** This is the gate — the server treats it as the
+   client's signal that it is ready to receive tool calls.
+
+   ```json
+   {"jsonrpc": "2.0", "method": "notifications/initialized"}
+   ```
+
+After the notification, the client may freely send `tools/list`,
+`tools/call`, `resources/list`, and `resources/read` requests.
+
+## The 15-Tool Catalog
+
+The server registers fifteen tools. The authoritative listing — including
+the full input schema for each — is `rivet mcp --list-tools` (text) or
+`rivet mcp --list-tools --format json` (the JSON-RPC `tools/list` payload).
+
+| Tool                    | Purpose                                                  | Inputs (required first)                |
+|-------------------------|----------------------------------------------------------|----------------------------------------|
+| `rivet_validate`        | Run validators, return PASS / FAIL with diagnostics      | (none)                                 |
+| `rivet_list`            | List artifacts, optional type / status filters           | `type_filter?`, `status_filter?`       |
+| `rivet_get`             | Fetch one artifact (fields, links, metadata)             | `id`                                   |
+| `rivet_stats`           | Counts by type, orphans, broken-link totals              | (none)                                 |
+| `rivet_coverage`        | Per-rule traceability coverage                           | `rule?`                                |
+| `rivet_schema`          | Artifact types, link types, traceability rules           | `type?`                                |
+| `rivet_query`           | S-expression filter; matches with full bodies            | `filter`, `limit?`                     |
+| `rivet_embed`           | Resolve a `{{...}}` embed (e.g. `coverage:matrix`)       | `query`                                |
+| `rivet_snapshot_capture`| Persist a validation snapshot for delta tracking         | `name?`                                |
+| `rivet_add`             | Insert a new artifact via CST mutation                   | `type`, `title`, `status?`, ...        |
+| `rivet_modify`          | Mutate fields / status / tags on an existing artifact    | `id`, then any of the setters          |
+| `rivet_link`            | Add a typed link between two artifacts                   | `source`, `link_type`, `target`        |
+| `rivet_unlink`          | Remove a typed link                                      | `source`, `link_type`, `target`        |
+| `rivet_remove`          | Delete an artifact (refuses if backlinked unless force)  | `id`, `force?`                         |
+| `rivet_reload`          | Reload the cache from disk after external file changes   | (none)                                 |
+
+The first nine tools are read-only and run against the cache. The next
+five mutate YAML on disk and require a `rivet_reload` afterwards (see
+"Mutation Convention" below). `rivet_reload` itself is the cache primitive.
+
+In addition to tools, the server publishes two **resources**:
+
+- `rivet://diagnostics` — the JSON of the latest validation run.
+- `rivet://coverage` — the JSON of the latest coverage report.
+- `rivet://artifacts/{id}` — the JSON of a single artifact (computed on read).
+
+## Response Envelope Gotcha
+
+`tools/call` replies look like:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 17,
+  "result": {
+    "content": [
+      {"type": "text", "text": "{\"count\": 759, \"artifacts\": [...]}"}
+    ],
+    "isError": false
+  }
+}
+```
+
+The structured payload — the actual artifact list, diagnostic dump, etc. —
+arrives as a **stringified JSON document inside `result.content[0].text`**.
+Clients must parse that string a second time to get a usable object. This
+is intentional on the MCP side (the `text` content type is reserved for
+LLM-readable strings), but it surprises everyone the first time. A
+typed-content variant is on the MCP roadmap; until then, every client
+that wants structured output writes:
+
+```python
+result = call_tool("rivet_list", {})
+payload = json.loads(result["content"][0]["text"])
+```
+
+`rivet mcp --probe` does this parse for you and prints the inner JSON
+directly, which is one of the reasons it exists.
+
+## Smoke-Test Recipes
+
+Three ways to verify a server is reachable, in order of effort.
+
+### 1. `rivet mcp --list-tools`
+
+The fastest sanity check — does not start the server, does not need a
+project. Just enumerates the tool catalog the server would advertise.
+
+```
+$ rivet mcp --list-tools
+rivet MCP server — 15 registered tools
+
+  rivet_add
+    Add a new artifact to the project via CST mutation. Call rivet_reload after.
+    params: description?, fields?, links?, status?, tags?, title, type
+  ...
+```
+
+For the JSON-RPC `tools/list` payload exactly as the wire server would
+return it (useful for unit-testing client code without a subprocess):
+
+```
+$ rivet mcp --list-tools --format json | jq '.result.tools[].name'
+"rivet_add"
+"rivet_coverage"
+...
+```
+
+### 2. `rivet mcp --probe`
+
+Runs the in-process equivalent of `tools/call rivet_list` (no arguments)
+against the current project and prints the decoded payload. Confirms the
+project loads, the schema parses, and the cache populates — i.e. that
+the same code path a real MCP client would hit actually returns artifacts.
+
+```
+$ rivet mcp --probe
+{
+  "count": 759,
+  "artifacts": [
+    {"id": "REQ-001", "type": "requirement", ...},
+    ...
+  ]
+}
+```
+
+Exits non-zero if the project fails to load. Pair with `--project <path>`
+to probe a project other than the current directory.
+
+### 3. Bash-Only Wire Test
+
+For clients that want to verify the wire shape directly, pipe JSON-RPC
+into `rivet mcp` and read the responses back out. This is the only
+recipe that exercises the actual stdio transport:
+
+```bash
+{
+  printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"sh","version":"0"}}}'
+  printf '%s\n' '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+  printf '%s\n' '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
+  sleep 0.5
+} | rivet mcp 2>/dev/null | head -3
+```
+
+You should see three JSON lines: an `initialize` response, no body for
+the notification (the server emits nothing for notifications), then a
+`tools/list` response with the fifteen tools embedded in
+`result.tools`. The `sleep` is needed because the server reads stdin
+until EOF and would otherwise block waiting for the next request.
+
+## Mutation Convention
+
+The five mutation tools — `rivet_add`, `rivet_modify`, `rivet_link`,
+`rivet_unlink`, `rivet_remove` — write directly to the project's YAML
+files via the same CST-preserving mutator the CLI uses. They do **not**
+update the in-memory cache that the read tools serve from.
+
+Right after a successful mutation, the client must call `rivet_reload`
+to refresh the cache. Otherwise subsequent `rivet_list`, `rivet_get`,
+`rivet_validate`, etc. will return stale data — they will not see the
+artifact that was just added, or will still see the link that was just
+removed.
+
+```
+rivet_add { ... }       → file changes on disk, cache stale
+rivet_reload            → cache repopulates from disk
+rivet_validate          → fresh diagnostics, includes the new artifact
+```
+
+This split exists by design: the mutator runs in milliseconds, while
+`rivet_reload` walks the full project (parser, schema check, link graph
+rebuild). Batching N mutations + 1 reload at the end is much cheaper
+than reloading after each one. Audit log entries (under
+`.rivet/mcp-audit.jsonl`) are written immediately by the mutators
+regardless — reload state does not affect the audit trail.
+
+## Pointers
+
+- MCP specification: <https://modelcontextprotocol.io/>
+- Crate used by rivet: `rmcp` — <https://crates.io/crates/rmcp>
+- Integration tests: `rivet-cli/tests/mcp_integration.rs`
+- CLI reference: `rivet docs cli`
+- Mutation semantics: `rivet docs mutation`
+
+Related: [[FEAT-010]], [[REQ-007]], [[REQ-047]]
 "#;
 
 // ── Phase 3 documentation topics ────────────────────────────────────────
