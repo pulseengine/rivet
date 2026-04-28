@@ -1,0 +1,39 @@
+# cargo-mutants configuration template
+#
+# Reusable starting point for pulseengine repos that adopt mutation testing.
+# Copy to the repo root as `mutants.toml`. Tune per-crate as needed; the
+# defaults below match rivet's pre-push smoke profile.
+#
+# Reference: https://mutants.rs/mutants_toml.html
+# Schema field counterpart: see `mutation-score` on `test-exec` in
+# schemas/score.yaml; record measured scores there for traceability.
+
+# Per-mutant test timeout, in seconds. cargo-mutants kills the test process
+# if a mutant takes longer than (baseline_test_time * timeout_multiplier),
+# clamped to at least `minimum_test_timeout`. 60s is the rivet smoke value.
+minimum_test_timeout = 60
+
+# Skip generated, vendored, and proof-only paths. Mutating these costs CI
+# time without exercising real code paths.
+exclude_globs = [
+    "target/**",
+    "vendor/**",
+    "**/generated/**",
+    "proofs/**",
+    "verus/**",
+    "fuzz/fuzz_targets/**",
+]
+
+# Pass `--lib` to the underlying `cargo test`. Mutation testing typically
+# targets library code; integration / E2E tests are too slow to be useful
+# as kill criteria. Override per-crate if you need to include `--tests`.
+additional_cargo_test_args = ["--lib"]
+
+# Functions cargo-mutants should not touch. Common cases:
+#   - `Drop::drop` (mutating Drop usually corrupts unrelated tests)
+#   - logging / tracing macros (no behavioural effect)
+# Add patterns specific to your crate.
+skip_calls = [
+    "tracing::trace",
+    "tracing::debug",
+]
