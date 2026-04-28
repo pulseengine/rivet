@@ -493,21 +493,40 @@ artifact-types:
 
 **Stub-parent tradeoff** (hits everyone importing one SW req from
 Polarion): ASPICE's `sw-req` *requires* a `derives-from` link to a
-`system-req` or `system-arch-component`. If you curate a single
-`sw-req` from a Polarion export, you must also curate a parent stub:
+`system-req` or `system-arch-component`. And `system-req` itself
+*requires* a `derives-from` link to a `stakeholder-req`. So curating
+one `sw-req` cascades into a two-stub chain:
 
 ```yaml
+- id: STKHR-PRODUCER
+  type: stakeholder-req
+  title: Producer subsystem stakeholder need (imported stub)
+  status: imported-stub          # WARN per G.5 — visible in review
+  description: |
+    NOTE: Stub. Real content lives in upstream stakeholder document
+    not yet imported into rivet.
+
 - id: SYSREQ-PRODUCER
   type: system-req
   title: Producer subsystem (imported stub)
-  status: imported-stub          # WARN, not INFO — visible in review
+  status: imported-stub
   description: |
-    NOTE: Stub. Real content lives in upstream system document XYZ
-    not yet imported into rivet.
+    NOTE: Stub. Real content lives in upstream system document XYZ.
+  links:
+    - type: derives-from
+      target: STKHR-PRODUCER     # the chain bottoms out here
 ```
 
 The `imported-stub` status raises a WARN per gotcha G.5 so reviewers
-see at a glance which artifacts are placeholders.
+see at a glance which artifacts are placeholders. Run
+`rivet schema show <type>` for any base type to see the full chain
+of required `derives-from` links.
+
+> **Note**: link-type direction matters here. The overlay above uses
+> `derives-from` (forward direction). The `aspice` schema also has
+> `allocated-from`/`allocated-to` and similar pairs where the inverse
+> direction is the canonical one — see gotcha G.3 if you see
+> `link type 'allocated-from' is not defined in the schema` errors.
 
 #### Step 3: Register the overlay
 
