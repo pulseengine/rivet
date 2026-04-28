@@ -1980,6 +1980,18 @@ artifacts:
 
 const ASPICE_SAMPLE: &str = "\
 artifacts:
+  - id: STKHR-001
+    type: stakeholder-req
+    title: Operators need full sensor history for fleet diagnostics
+    status: draft
+    description: >
+      Fleet operators need access to a complete time-series record of
+      every sensor reading so anomalies discovered post-trip can be
+      diagnosed against ground-truth data.
+    fields:
+      priority: must
+      source: fleet-operations-stakeholder-doc-v1
+
   - id: SYSREQ-001
     type: system-req
     title: System shall provide data logging
@@ -1991,6 +2003,9 @@ artifacts:
       priority: must
       verification-criteria: >
         Verify that sensor data is recorded at 100Hz under nominal load.
+    links:
+      - type: derives-from
+        target: STKHR-001
 
   - id: SWREQ-001
     type: sw-req

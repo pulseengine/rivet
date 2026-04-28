@@ -419,6 +419,19 @@ link-types:
     source-types: [verification-verdict]
     target-types: [verification-execution]
 
+  # `allocated-from` is the forward direction used by ASPICE
+  # `sw-arch-component` to point at its allocating sw-req. The common
+  # schema declares the inverse-named pair (`allocated-to` with
+  # `inverse: allocated-from`) but only registers the forward token
+  # `allocated-to`. ASPICE swaps the canonical direction for SWE.2,
+  # so we declare `allocated-from` here as a forward link-type to
+  # avoid the gotcha-G.3 footgun in the seed.
+  - name: allocated-from
+    inverse: allocated-to
+    description: SW arch component is allocated from a SW requirement (SWE.2)
+    source-types: [sw-arch-component]
+    target-types: [sw-req, system-arch-component]
+
 # ──────────────────────────────────────────────────────────────────────────
 # ASPICE traceability rules
 #
