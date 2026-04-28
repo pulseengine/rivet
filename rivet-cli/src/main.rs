@@ -891,7 +891,28 @@ enum Command {
     Lsp,
 
     /// Start the MCP server (stdio transport)
-    Mcp,
+    ///
+    /// With no flags, runs the server on stdio. Use `--list-tools` to
+    /// dump the registered tool catalog without starting the server, or
+    /// `--probe` to run an in-process `tools/call rivet_list` smoke test.
+    Mcp {
+        /// Print the registered tool catalog (name, description, input
+        /// schema summary) and exit. Does NOT start the server.
+        #[arg(long, conflicts_with = "probe")]
+        list_tools: bool,
+
+        /// Run an in-process `tools/call rivet_list` (no args) against the
+        /// current project and print the decoded result. Does NOT start a
+        /// long-running stdio server.
+        #[arg(long, conflicts_with = "list_tools")]
+        probe: bool,
+
+        /// Output format for `--list-tools`: "text" (default, human-readable
+        /// table) or "json" (the JSON-RPC `tools/list` payload exactly as
+        /// the wire server would return it).
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1470,8 +1491,13 @@ fn run(cli: Cli) -> Result<bool> {
     if let Command::Lsp = &cli.command {
         return cmd_lsp(&cli);
     }
-    if let Command::Mcp = &cli.command {
-        return cmd_mcp(&cli);
+    if let Command::Mcp {
+        list_tools,
+        probe,
+        format,
+    } = &cli.command
+    {
+        return cmd_mcp(&cli, *list_tools, *probe, format);
     }
 
     match &cli.command {
@@ -1481,7 +1507,7 @@ fn run(cli: Cli) -> Result<bool> {
         | Command::Context
         | Command::CommitMsgCheck { .. }
         | Command::Lsp
-        | Command::Mcp => unreachable!(),
+        | Command::Mcp { .. } => unreachable!(),
         Command::Stpa { path, schema } => cmd_stpa(path, schema.as_deref(), &cli),
         Command::Validate {
             format,
@@ -10771,7 +10797,20 @@ fn strip_html_tags(html: &str) -> String {
         .replace("&quot;", "\"")
 }
 
-fn cmd_mcp(cli: &Cli) -> Result<bool> {
+fn cmd_mcp(cli: &Cli, list_tools: bool, probe: bool, format: &str) -> Result<bool> {
+    if list_tools {
+        validate_format(format, &["text", "json"])?;
+        let out = mcp::render_tool_catalog(format)?;
+        print!("{out}");
+        return Ok(true);
+    }
+
+    if probe {
+        let out = mcp::probe_rivet_list(&cli.project)?;
+        println!("{out}");
+        return Ok(true);
+    }
+
     let rt = tokio::runtime::Runtime::new().context("creating tokio runtime")?;
     rt.block_on(mcp::run(cli.project.clone()))?;
     Ok(true)

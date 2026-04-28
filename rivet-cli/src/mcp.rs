@@ -235,6 +235,27 @@ impl RivetServer {
         &self.project_dir
     }
 
+    /// Enumerate the tools registered with this server.
+    ///
+    /// Returns the static tool catalog (name, description, input schema) that
+    /// `tools/list` would emit over the wire. Used by `rivet mcp --list-tools`
+    /// to surface the catalog without speaking JSON-RPC.
+    pub fn tool_catalog() -> Vec<(String, Option<String>, serde_json::Value)> {
+        let router = Self::tool_router();
+        router
+            .list_all()
+            .into_iter()
+            .map(|t| {
+                let schema_value = serde_json::Value::Object((*t.input_schema).clone());
+                (
+                    t.name.to_string(),
+                    t.description.as_ref().map(|c| c.to_string()),
+                    schema_value,
+                )
+            })
+            .collect()
+    }
+
     fn err(msg: impl std::fmt::Display) -> McpError {
         McpError::new(
             rmcp::model::ErrorCode::INTERNAL_ERROR,
@@ -1186,4 +1207,125 @@ pub async fn run(project_dir: PathBuf) -> Result<()> {
 
     eprintln!("rivet mcp: shutting down.");
     Ok(())
+}
+
+// ── Discoverability helpers (--list-tools, --probe) ────────────────────
+
+/// Render the registered tool catalog as either a JSON-RPC `tools/list`
+/// payload (the same shape the server emits over the wire) or a readable
+/// text table.
+///
+/// `format` accepts `"text"` (default) or `"json"`. The JSON form mirrors
+/// what `tools/list` returns: `{ "jsonrpc": "2.0", "id": 1, "result": {
+/// "tools": [...] } }`.
+pub fn render_tool_catalog(format: &str) -> Result<String> {
+    let tools = RivetServer::tool_catalog();
+
+    match format {
+        "json" => {
+            let tools_json: Vec<Value> = tools
+                .iter()
+                .map(|(name, desc, schema)| {
+                    let mut obj = serde_json::Map::new();
+                    obj.insert("name".to_string(), Value::String(name.clone()));
+                    if let Some(d) = desc {
+                        obj.insert("description".to_string(), Value::String(d.clone()));
+                    }
+                    obj.insert("inputSchema".to_string(), schema.clone());
+                    Value::Object(obj)
+                })
+                .collect();
+
+            let payload = json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {
+                    "tools": tools_json,
+                },
+            });
+            Ok(serde_json::to_string_pretty(&payload)?)
+        }
+        "text" => {
+            let mut out = String::new();
+            out.push_str(&format!(
+                "rivet MCP server — {} registered tools\n\n",
+                tools.len()
+            ));
+
+            for (name, desc, schema) in &tools {
+                out.push_str(&format!("  {name}\n"));
+                if let Some(d) = desc {
+                    out.push_str(&format!("    {d}\n"));
+                }
+                out.push_str(&format!("    params: {}\n", summarize_input_schema(schema)));
+                out.push('\n');
+            }
+
+            out.push_str("Tip: `rivet mcp --list-tools --format json` emits the JSON-RPC\n");
+            out.push_str("`tools/list` payload that an MCP client would receive.\n");
+            out.push_str("See `rivet docs mcp` for the wire format and handshake.\n");
+            Ok(out)
+        }
+        other => anyhow::bail!("unknown format '{other}' (expected 'text' or 'json')"),
+    }
+}
+
+/// One-line summary of a JSON Schema: parameter names with required/optional
+/// flag. Used by the text rendering of `--list-tools`.
+fn summarize_input_schema(schema: &Value) -> String {
+    let obj = match schema.as_object() {
+        Some(o) => o,
+        None => return "(none)".to_string(),
+    };
+
+    let required: std::collections::BTreeSet<String> = obj
+        .get("required")
+        .and_then(Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(Value::as_str)
+                .map(String::from)
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let props = obj.get("properties").and_then(Value::as_object);
+
+    let Some(props) = props else {
+        return "(none)".to_string();
+    };
+
+    if props.is_empty() {
+        return "(none)".to_string();
+    }
+
+    let mut parts: Vec<String> = props
+        .iter()
+        .map(|(name, _)| {
+            if required.contains(name) {
+                name.clone()
+            } else {
+                format!("{name}?")
+            }
+        })
+        .collect();
+    parts.sort();
+    parts.join(", ")
+}
+
+/// Run the in-process equivalent of `tools/call rivet_list` (with no
+/// arguments) and return the decoded text payload.
+///
+/// This is the core of `rivet mcp --probe`: a smoke test that verifies the
+/// MCP code path returns artifacts for the current project, without ever
+/// starting a stdio server or speaking JSON-RPC.
+pub fn probe_rivet_list(project_dir: &Path) -> Result<String> {
+    let project = load_project(project_dir)
+        .with_context(|| format!("loading project from {}", project_dir.display()))?;
+
+    // tool_list_cached is the exact handler dispatched to by the
+    // `rivet_list` MCP tool. Calling it here keeps `--probe` a faithful
+    // reflection of what an MCP client would observe.
+    let result = tool_list_cached(&project, None, None);
+    Ok(serde_json::to_string_pretty(&result)?)
 }
