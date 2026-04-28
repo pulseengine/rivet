@@ -242,6 +242,12 @@ const TOPICS: &[DocTopic] = &[
         category: "Schemas",
         content: SUPPLY_CHAIN_DOC,
     },
+    DocTopic {
+        slug: "schema-migrate",
+        title: "rivet schema migrate — preset migration with snapshot/abort",
+        category: "Reference",
+        content: SCHEMA_MIGRATE_DOC,
+    },
 ];
 
 // ── Embedded documentation ──────────────────────────────────────────────
@@ -437,6 +443,8 @@ rivet schema list           List all artifact types
 rivet schema show TYPE      Show type details with example YAML
 rivet schema links          List all link types with inverses
 rivet schema rules          List all traceability rules
+rivet schema migrate TGT    Plan + apply preset migration with snapshot
+                            (see rivet docs schema-migrate)
 ```
 
 ## Documentation Commands
@@ -2419,3 +2427,145 @@ With the `supply-chain-dev` bridge:
 );
 
 const QUICKSTART_DOC: &str = include_str!("quickstart.md");
+
+const SCHEMA_MIGRATE_DOC: &str = r#"# rivet schema migrate
+
+`rivet schema migrate` rewrites artifact YAML when you switch presets or
+upgrade a preset version. Phase 1 (issue #236) ships a strictly
+mechanical-only flow with full snapshot/abort. Phase 2 will add
+git-rebase-style conflict resolution (`--continue`, `--skip`, conflict
+markers in YAML).
+
+## Quick start
+
+```
+rivet schema migrate aspice                  # plan only (dry-run)
+rivet schema migrate aspice --apply          # apply mechanical changes
+rivet schema migrate aspice --status         # show state machine pointer
+rivet schema migrate aspice --finish         # validate + delete snapshot
+rivet schema migrate aspice --abort          # restore from snapshot
+```
+
+The default invocation is plan-only and never modifies the project tree.
+
+## State machine
+
+```
+            (no migration)
+                  │
+                  ▼  rivet schema migrate <target>
+              [PLANNED]
+                  │
+                  ▼  --apply
+            [IN_PROGRESS]
+                  │
+                  ▼  (no conflicts, mechanical-only path)
+              [COMPLETE]
+                  │  --finish
+                  ▼
+              (deleted)
+```
+
+`--abort` from any state restores the project tree from the snapshot
+captured before `--apply` and deletes the migration directory.
+
+Phase 1 deliberately does not implement the `[CONFLICT]` state — if the
+plan contains any conflicts, `--apply` bails loudly with exit 1 and
+leaves the project untouched.
+
+## Storage layout
+
+A migration is stored under `.rivet/migrations/<YYYYMMDD-HHMM>-<source>-to-<target>/`:
+
+| File              | Purpose                                          |
+|-------------------|--------------------------------------------------|
+| `plan.yaml`       | Full diff: per-artifact, per-field action class. |
+| `manifest.yaml`   | Recipe + state + change counts (audit trail).    |
+| `state`           | Single-line: `PLANNED | IN_PROGRESS | COMPLETE`. |
+| `snapshot/`       | Full pre-migration `artifacts/` + `rivet.yaml`.  |
+
+Only one migration may be in flight per project. The directory survives
+across sessions — multi-day migrations are fine.
+
+## Recipe format
+
+Recipes live in `schemas/migrations/<source>-to-<target>.yaml` (or are
+embedded in the binary). Phase 1 ships exactly one recipe:
+`dev-to-aspice`. Adding more is just YAML.
+
+```yaml
+migration:
+  name: dev-to-aspice
+  source: { preset: dev }
+  target: { preset: aspice }
+  description: |
+    Mechanical mapping for the most common dev -> aspice transition.
+
+  type-rewrites:
+    - from: requirement
+      to: sw-req
+    - from: feature
+      to: sw-arch-component
+    - from: design-decision
+      to: design-decision     # identity rewrite
+
+  link-rewrites:
+    - from: satisfies
+      to: derives-from
+
+  policies:
+    unmapped-fields: keep-as-orphan   # drop | keep-as-orphan | strict
+    unmapped-link-types: drop         # keep | drop | strict
+```
+
+### Action classes
+
+The diff engine assigns each per-artifact change to one of three
+classes (mirrors `git rebase --interactive`'s pick / edit / drop):
+
+| Class                   | Examples                                    | Auto-applied? |
+|-------------------------|---------------------------------------------|---------------|
+| `mechanical`            | `requirement` -> `sw-req`; `satisfies` -> `derives-from` | yes (always) |
+| `decidable-with-policy` | Source field with no target mapping; resolved by `policies.unmapped-fields` | yes |
+| `conflict`              | Field needs value-mapping (`priority: 5` -> enum); link target type changed | NO in Phase 1 |
+
+### Policy: `unmapped-fields`
+
+| Value             | Behaviour                                                         |
+|-------------------|-------------------------------------------------------------------|
+| `drop` (default)  | Silently drop the field. Loses data — use only for known throwaway fields. |
+| `keep-as-orphan`  | Stash under `fields.legacy.<original-name>`. Recommended for production. |
+| `strict`          | Treat as a conflict. `--apply` will bail.                        |
+
+### Policy: `unmapped-link-types`
+
+| Value          | Behaviour                                                              |
+|----------------|------------------------------------------------------------------------|
+| `keep` (default) | Keep the link as-is; `rivet validate` may flag it later if the type isn't declared in the new schema. |
+| `drop`         | Drop the link.                                                         |
+| `strict`       | Treat as a conflict. `--apply` will bail.                             |
+
+## What Phase 1 does NOT do
+
+- No `--continue` / `--skip` / `--edit` (Phase 2)
+- No conflict markers in YAML (Phase 2)
+- No dashboard surface
+- No interactive wizard
+- No automatic rivet.yaml update — after `--apply` you still need to
+  swap your loaded schemas (e.g. dev -> aspice). Migration touches
+  artifacts, not config.
+- No provenance entries on migrated artifacts
+- No automatic recipe registration; only the shipped `dev-to-aspice`
+  recipe is available
+
+## Tips
+
+- Always run plan-only first and read `plan.yaml` before `--apply`.
+- The snapshot is byte-faithful for `artifacts/` and `rivet.yaml`.
+  `--abort` produces an byte-identical restore. (`docs/`, `.rivet/`,
+  test results, etc. are not snapshotted because Phase 1 doesn't touch
+  them.)
+- `--finish` is destructive (it deletes the snapshot). Run `rivet
+  validate` first to convince yourself the migrated tree is healthy.
+- If you need to redo a migration: `--abort` and start over.
+"#;
