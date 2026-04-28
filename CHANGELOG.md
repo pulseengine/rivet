@@ -5,6 +5,101 @@
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-04-28
+
+Theme: post-0.5.0 first-contact polish. Three fresh-user dogfood passes
+(plus three parallel scenario-based ones — safety engineer / STPA,
+compliance lead / Polarion-import, AI integrator / MCP) surfaced two
+real bugs and one big doc gap. All three are fixed here.
+
+### Fixed
+
+- **`rivet init --preset aspice` seed now validates clean** (#233).
+  Two bugs in the shipped aspice preset: the `common` schema registers
+  `allocated-to` with `inverse: allocated-from` but never declares
+  `allocated-from` as a forward token, so the seed's `SWARCH-001 ->
+  allocated-from -> SWREQ-001` link was rejected. And the seed's
+  `SYSREQ-001` had no `derives-from` target, so the
+  `sys2-derives-from-sys1` rule failed on the first
+  `rivet validate` post-init. Now: `aspice` declares `allocated-from`
+  as a forward link-type, and the seed grows a `STKHR-001`
+  stakeholder-req as the V-model root with `SYSREQ-001 -> derives-from
+  -> STKHR-001`. `rivet init --preset aspice && rivet validate` now
+  returns `Result: PASS (0 warnings)`.
+
+### Added
+
+- **`rivet mcp --list-tools` and `rivet mcp --probe`** (#231). Two
+  new flags for MCP discoverability — Scenario-C dogfood found that
+  AI integrators wiring rivet's MCP server into a custom client burned
+  ~30 minutes on JSON-RPC framing and writing throwaway requests just
+  to enumerate the tool catalog.
+  - `--list-tools` walks the registered tool router and prints the
+    catalog (15 tools today). Default output is a human table;
+    `--format json` emits the JSON-RPC `tools/list` payload exactly
+    as the wire server would. Does not start the server.
+  - `--probe` runs the in-process equivalent of
+    `tools/call rivet_list` (no args) against the current project and
+    prints the decoded `result.content[0].text` payload — same envelope
+    a real MCP client would observe — without spinning up stdio.
+  - Both reuse the same handlers the wire server dispatches to, so
+    output cannot drift from a real session.
+- **`rivet docs mcp` embedded topic** (#231). New ~1400-word doc
+  covering: line-delimited JSON-RPC framing (NOT LSP-style
+  Content-Length), the 3-message handshake (`initialize` ->
+  `notifications/initialized` -> `tools/list`/`tools/call`), the
+  full 15-tool catalog with input-schema summaries, the
+  `result.content[0].text` envelope gotcha (tool results arrive as a
+  stringified JSON document, not a structured object), the
+  `rivet_reload`-after-mutation convention, and copy-pasteable
+  smoke-test recipes.
+
+### Changed
+
+- **Quickstart rewrite for fresh-user clarity** (#230). Two clean-room
+  dogfood passes plus three parallel scenario-based passes (safety
+  engineer / STPA, compliance / Polarion-import / ASPICE overlay,
+  AI integrator / MCP) surfaced six concrete issues that confuse a
+  real first-contact user, all fixed here. Highlights:
+  - New "What is rivet?" preamble (typed YAML + schema + graph + four
+    interfaces; DOORS/Polarion/Jira analogy) so readers don't have to
+    assemble the mental model by osmosis.
+  - Step 2 now branches on preset choice: for `dev`, the seed is a
+    placeholder (write your own in step 3); for `stpa`/`aspice`/etc.,
+    the seed is a worked example in domain vocabulary — read it,
+    skip step 3, jump to step 4.
+  - Step 3's `rm artifacts/requirements.yaml` is gated to `dev` only
+    so non-`dev` seed files aren't accidentally nuked.
+  - Step 7's Python oracle uses the actual JSON key (`errors`, not
+    `error_count`); a real broken link now exits 1.
+  - Step 9 replaces the Mythos red-team scaffold reference (out of
+    scope for first contact) with "add a living document" using
+    markdown frontmatter + `{{stats}}` / `{{coverage}}` /
+    `[[REQ-001]]` embeds + an explicit `rivet serve` restart oracle.
+  - New "Existing-repo bring-up" appendix: explicit `rivet init`
+    non-destructiveness contract, complete copy-pasteable ASPICE
+    `sw-req` overlay (with `polarion_id` / `polarion_status` / `asil`
+    additions and the required `derived-from` link-field with
+    target-types verbatim from `rivet schema show`), and the
+    `sw-req -> system-req -> stakeholder-req` stub-parent chain
+    explained.
+  - New "Common gotchas" appendix G.1 - G.7: LSP overlay blindness,
+    overlay merge field-drop, forward/inverse link-type direction,
+    doc vs artifact refs, `imported-stub` honesty, lifecycle severity
+    scaling intent, `rivet schema show` preset locality.
+  - Wall-time wins (round 3 dogfood vs round 1): STPA bring-up went
+    from 13 min to 36 sec; Polarion -> ASPICE overlay went from 7 min
+    to 3.8 min.
+
+Workspace, vscode-rivet, and npm root package versions bumped to
+0.5.1. Platform packages stay on the release-npm.yml override path.
+
+Verified: cargo check, cargo clippy --workspace -- -D warnings,
+cargo test -p rivet-cli, `rivet init --preset aspice && rivet validate`
+returns PASS, `rivet docs mcp` prints the new topic,
+`rivet mcp --list-tools` produces a 15-tool catalog,
+`rivet mcp --probe` returns artifacts.
+
 ## [0.5.0] — 2026-04-27
 
 Theme: oracle-gated agent pipelines + restored formal-method backstops +
