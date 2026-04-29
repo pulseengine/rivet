@@ -1,14 +1,19 @@
-//! `rivet schema migrate` — Phase 1 implementation of issue #236.
+//! `rivet schema migrate` — Phase 1 + Phase 2 of issue #236.
 //!
-//! Mechanical-only migration with full snapshot/abort. No conflict
-//! resolution UI yet (Phase 2).
+//! Phase 1 shipped mechanical-only migration with full snapshot/abort.
+//! Phase 2 adds the conflict-resolution UX: rebase-style conflict
+//! markers in artifact YAML, plus `--continue`, `--skip`, `--edit`.
 //!
 //! Subcommands:
 //!   * default (no flag) — plan only; writes plan.yaml + manifest.yaml
-//!   * `--apply`         — applies mechanical-only changes; bails on conflict
-//!   * `--abort`         — restores from snapshot
-//!   * `--status`        — prints state machine pointer
-//!   * `--finish`        — validates and deletes snapshot
+//!   * `--apply` — applies mechanical/decidable changes; pauses on the
+//!     first conflict and writes markers (Phase 2)
+//!   * `--continue` — verify markers gone + validate, advance to next conflict
+//!   * `--skip` — restore the conflicted artifact from snapshot, advance
+//!   * `--edit <ID>` — re-open a previously-resolved conflict
+//!   * `--abort` — restores entire project from snapshot
+//!   * `--status` — prints state machine pointer + current conflict
+//!   * `--finish` — validates and deletes snapshot
 
 // SAFETY-REVIEW (SCRC Phase 1, DD-058): see schema_cmd.rs for rationale.
 #![allow(
@@ -35,8 +40,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result};
 
 use rivet_core::migrate::{
-    self, ActionClass, MigrationLayout, MigrationManifest, MigrationRecipeFile, MigrationState,
-    RewriteMap,
+    self, ActionClass, ChangeKind, MigrationLayout, MigrationManifest, MigrationRecipeFile,
+    MigrationState, PlannedChange, ResolutionStatus, RewriteMap,
 };
 
 /// Resolve a recipe by `target_preset` against (in order):
@@ -171,6 +176,12 @@ pub fn cmd_plan(
 }
 
 /// `rivet schema migrate <target> --apply`.
+///
+/// Phase 2: applies all mechanical/decidable changes immediately. If
+/// the plan has conflicts, pauses at the first one — writing
+/// rebase-style markers into the affected artifact YAML and setting
+/// state to CONFLICT. The user resolves with `--continue` / `--skip`
+/// / `--abort`.
 pub fn cmd_apply(
     project_root: &Path,
     schemas_dir: &Path,
@@ -190,15 +201,6 @@ pub fn cmd_apply(
 
     // 2. Load the plan.
     let rewrite = read_plan(&layout)?;
-    if rewrite.has_conflicts() {
-        anyhow::bail!(
-            "migration plan has {} conflict(s); Phase 1 --apply is mechanical-only. \
-             Inspect {} and resolve conflicts manually, or wait for Phase 2's \
-             rebase-style conflict markers.",
-            rewrite.count(ActionClass::Conflict),
-            layout.plan_path().display(),
-        );
-    }
 
     // 3. Mark IN_PROGRESS, snapshot the current state.
     layout.write_state(MigrationState::InProgress)?;
@@ -208,14 +210,14 @@ pub fn cmd_apply(
     let recipe_file = resolve_recipe(schemas_dir, source_preset, target_preset)?;
     let recipe = &recipe_file.migration;
 
-    // 5. Apply per-file.
+    // 5. Apply mechanical/decidable per-file (skip conflict-class entries).
     let by_file = rewrite.by_file();
     let mut rewrites_applied = 0usize;
     for (file_path, changes) in &by_file {
-        let path = PathBuf::from(file_path);
+        let path = resolve_artifact_path(project_root, file_path);
         let original = std::fs::read_to_string(&path)
             .with_context(|| format!("reading {}", path.display()))?;
-        let new_content = migrate::apply_to_file(&original, changes, recipe)
+        let new_content = migrate::apply_to_file_partial(&original, changes, recipe)
             .with_context(|| format!("rewriting {}", path.display()))?;
         if new_content != original {
             std::fs::write(&path, &new_content)
@@ -224,7 +226,45 @@ pub fn cmd_apply(
         }
     }
 
-    // 6. Mark COMPLETE.
+    // 6. Pause at the first unresolved conflict, if any.
+    if let Some(conflict) = next_unresolved_conflict(&layout, &rewrite)? {
+        write_markers_for_conflict(&layout, &conflict, source_preset, target_preset)?;
+        layout.write_state(MigrationState::Conflict)?;
+        layout.write_current_conflict(Some(&conflict.artifact_id))?;
+        update_manifest_state(&layout, MigrationState::Conflict)?;
+        record_resolution(&layout, &conflict.artifact_id, ResolutionStatus::Pending)?;
+
+        let total = rewrite.count(ActionClass::Conflict);
+        println!(
+            "Applied migration: {} (paused on conflict)",
+            rewrite.recipe_name
+        );
+        println!("  files rewritten:  {rewrites_applied}");
+        println!("  state:            CONFLICT");
+        println!(
+            "  current conflict: {} ({} of {})",
+            conflict.artifact_id, 1, total
+        );
+        if let Some(file) = &conflict.source_file {
+            println!("  edit file:        {file}");
+        }
+        println!();
+        println!("Next steps:");
+        println!(
+            "  1. Open the file above and pick a value (remove the <<<<<<<, =======, >>>>>>> markers)."
+        );
+        println!(
+            "  2. rivet schema migrate {target_preset} --continue   # advance after resolving"
+        );
+        println!(
+            "  3. rivet schema migrate {target_preset} --skip       # drop this artifact from the migration"
+        );
+        println!("  4. rivet schema migrate {target_preset} --abort      # restore everything");
+        // Non-zero exit so CI catches an unfinished migration.
+        return Ok(false);
+    }
+
+    // 7. No conflicts — full COMPLETE.
     layout.write_state(MigrationState::Complete)?;
     update_manifest_state(&layout, MigrationState::Complete)?;
 
@@ -237,6 +277,217 @@ pub fn cmd_apply(
     println!("Next: rivet validate     # check the migrated tree");
     println!("      rivet schema migrate {target_preset} --finish   # delete snapshot");
     println!("      rivet schema migrate {target_preset} --abort    # restore pre-migration state");
+    Ok(true)
+}
+
+/// `rivet schema migrate <target> --continue`.
+pub fn cmd_continue(project_root: &Path, schemas_dir: &Path) -> Result<bool> {
+    let layout = migrate::find_latest_migration(project_root)
+        .ok_or_else(|| anyhow::anyhow!("no migration directory found"))?;
+    let state = layout.read_state()?;
+    if state != MigrationState::Conflict {
+        anyhow::bail!(
+            "migration is in state '{}', not CONFLICT — nothing to continue",
+            state.as_str()
+        );
+    }
+    let current = layout
+        .read_current_conflict()
+        .ok_or_else(|| anyhow::anyhow!("CONFLICT state but no current-conflict pointer"))?;
+    let rewrite = read_plan(&layout)?;
+    let conflict = migrate::first_conflict_for_artifact(&rewrite, &current).ok_or_else(|| {
+        anyhow::anyhow!("plan has no conflict for current-conflict pointer {current}")
+    })?;
+    let file_rel = conflict
+        .source_file
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("conflict has no source_file"))?;
+    let path = resolve_artifact_path(project_root, &file_rel);
+    let content =
+        std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+    let hits = migrate::scan_conflict_markers(&content);
+    if !hits.is_empty() {
+        anyhow::bail!(
+            "{} still contains {} conflict marker(s) at line(s) {:?}; \
+             remove them and pick a value before --continue",
+            path.display(),
+            hits.len(),
+            hits
+        );
+    }
+
+    // Sanity-check that the file still parses as YAML.
+    serde_yaml::from_str::<serde_yaml::Value>(&content)
+        .with_context(|| format!("post-resolution {} is not valid YAML", path.display()))?;
+
+    record_resolution(&layout, &current, ResolutionStatus::Resolved)?;
+    layout.write_current_conflict(None)?;
+
+    // Advance to next conflict (if any).
+    if let Some(next) = next_unresolved_conflict(&layout, &rewrite)? {
+        // Determine source/target for marker labelling — the manifest
+        // captured them when the plan was written.
+        let manifest = read_manifest(&layout)?;
+        write_markers_for_conflict(
+            &layout,
+            &next,
+            &manifest.source_preset,
+            &manifest.target_preset,
+        )?;
+        layout.write_state(MigrationState::Conflict)?;
+        layout.write_current_conflict(Some(&next.artifact_id))?;
+        update_manifest_state(&layout, MigrationState::Conflict)?;
+        record_resolution(&layout, &next.artifact_id, ResolutionStatus::Pending)?;
+
+        println!("Resolved {current}.");
+        println!("Next conflict:  {}", next.artifact_id);
+        if let Some(f) = &next.source_file {
+            println!("Edit file:      {f}");
+        }
+        return Ok(false);
+    }
+
+    layout.write_state(MigrationState::Complete)?;
+    update_manifest_state(&layout, MigrationState::Complete)?;
+    let _ = schemas_dir; // not needed once we read manifest above
+    println!("Resolved {current}.");
+    println!("Migration complete. State: COMPLETE.");
+    println!("Next: rivet validate");
+    println!("      rivet schema migrate <target> --finish");
+    Ok(true)
+}
+
+/// `rivet schema migrate <target> --skip`.
+pub fn cmd_skip(project_root: &Path, schemas_dir: &Path) -> Result<bool> {
+    let layout = migrate::find_latest_migration(project_root)
+        .ok_or_else(|| anyhow::anyhow!("no migration directory found"))?;
+    let state = layout.read_state()?;
+    if state != MigrationState::Conflict {
+        anyhow::bail!(
+            "migration is in state '{}', not CONFLICT — nothing to skip",
+            state.as_str()
+        );
+    }
+    let current = layout
+        .read_current_conflict()
+        .ok_or_else(|| anyhow::anyhow!("CONFLICT state but no current-conflict pointer"))?;
+    let rewrite = read_plan(&layout)?;
+    let conflict = migrate::first_conflict_for_artifact(&rewrite, &current).ok_or_else(|| {
+        anyhow::anyhow!("plan has no conflict for current-conflict pointer {current}")
+    })?;
+    let file_rel = conflict
+        .source_file
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("conflict has no source_file"))?;
+
+    // The snapshot stores files relative to project root.
+    let relative_for_snapshot: PathBuf = {
+        let p = PathBuf::from(&file_rel);
+        if p.is_absolute() {
+            p.strip_prefix(project_root).map(PathBuf::from).unwrap_or(p)
+        } else {
+            p
+        }
+    };
+
+    // The project file currently has conflict markers, so it isn't
+    // parseable YAML. Rebuild it from the snapshot by re-applying the
+    // mechanical/decidable changes for *all other* artifacts in the
+    // file, then swap in the snapshot's pristine copy of the
+    // conflicted artifact.
+    let manifest = read_manifest(&layout)?;
+    let recipe_file = resolve_recipe(
+        schemas_dir,
+        &manifest.source_preset,
+        &manifest.target_preset,
+    )?;
+    let recipe = &recipe_file.migration;
+
+    let snap_file_path = layout.snapshot_dir().join(&relative_for_snapshot);
+    let snap_text = std::fs::read_to_string(&snap_file_path)
+        .with_context(|| format!("reading {}", snap_file_path.display()))?;
+    let rewrite = read_plan(&layout)?;
+    // All changes for this file, sans the conflicts on the artifact
+    // we're skipping (so the rest still gets the mechanical pass).
+    let changes_for_file: Vec<&PlannedChange> = rewrite
+        .changes
+        .iter()
+        .filter(|c| {
+            c.source_file
+                .as_deref()
+                .is_some_and(|f| f == file_rel.as_str())
+        })
+        .filter(|c| !(c.artifact_id == current && c.action == ActionClass::Conflict))
+        .collect();
+    let rebuilt = migrate::apply_to_file_partial(&snap_text, &changes_for_file, recipe)
+        .with_context(|| format!("rebuilding {}", snap_file_path.display()))?;
+    let abs_proj_path = resolve_artifact_path(project_root, &file_rel);
+    std::fs::write(&abs_proj_path, rebuilt)
+        .with_context(|| format!("writing {}", abs_proj_path.display()))?;
+
+    // Now swap the conflicted artifact back to its pre-migration form.
+    migrate::restore_artifact_from_snapshot(
+        &layout.snapshot_dir(),
+        project_root,
+        &relative_for_snapshot,
+        &current,
+    )
+    .with_context(|| format!("restoring {current} from snapshot"))?;
+
+    record_resolution(&layout, &current, ResolutionStatus::Skipped)?;
+    layout.write_current_conflict(None)?;
+
+    if let Some(next) = next_unresolved_conflict(&layout, &rewrite)? {
+        let manifest = read_manifest(&layout)?;
+        write_markers_for_conflict(
+            &layout,
+            &next,
+            &manifest.source_preset,
+            &manifest.target_preset,
+        )?;
+        layout.write_state(MigrationState::Conflict)?;
+        layout.write_current_conflict(Some(&next.artifact_id))?;
+        update_manifest_state(&layout, MigrationState::Conflict)?;
+        record_resolution(&layout, &next.artifact_id, ResolutionStatus::Pending)?;
+        println!("Skipped {current}. Restored from snapshot.");
+        println!("Next conflict:  {}", next.artifact_id);
+        if let Some(f) = &next.source_file {
+            println!("Edit file:      {f}");
+        }
+        return Ok(false);
+    }
+
+    layout.write_state(MigrationState::Complete)?;
+    update_manifest_state(&layout, MigrationState::Complete)?;
+    println!("Skipped {current}. Restored from snapshot.");
+    println!("Migration complete. State: COMPLETE.");
+    Ok(true)
+}
+
+/// `rivet schema migrate <target> --edit <ID>`.
+pub fn cmd_edit(project_root: &Path, artifact_id: &str) -> Result<bool> {
+    let layout = migrate::find_latest_migration(project_root)
+        .ok_or_else(|| anyhow::anyhow!("no migration directory found"))?;
+    let rewrite = read_plan(&layout)?;
+    let conflict = migrate::first_conflict_for_artifact(&rewrite, artifact_id)
+        .ok_or_else(|| anyhow::anyhow!("no conflict in the plan for artifact {artifact_id}"))?;
+    let manifest = read_manifest(&layout)?;
+    write_markers_for_conflict(
+        &layout,
+        conflict,
+        &manifest.source_preset,
+        &manifest.target_preset,
+    )?;
+    layout.write_state(MigrationState::Conflict)?;
+    layout.write_current_conflict(Some(artifact_id))?;
+    update_manifest_state(&layout, MigrationState::Conflict)?;
+    record_resolution(&layout, artifact_id, ResolutionStatus::Pending)?;
+    println!("Re-opened conflict for {artifact_id}.");
+    println!("State: CONFLICT");
+    if let Some(f) = &conflict.source_file {
+        println!("Edit file:  {f}");
+    }
+    println!("Run --continue or --skip after resolving.");
     Ok(true)
 }
 
@@ -280,6 +531,44 @@ pub fn cmd_status(project_root: &Path) -> Result<bool> {
                         manifest.decidable_count,
                         manifest.conflict_count
                     );
+                    if !manifest.resolutions.is_empty() {
+                        let resolved = manifest
+                            .resolutions
+                            .values()
+                            .filter(|s| matches!(s, ResolutionStatus::Resolved))
+                            .count();
+                        let skipped = manifest
+                            .resolutions
+                            .values()
+                            .filter(|s| matches!(s, ResolutionStatus::Skipped))
+                            .count();
+                        let pending = manifest
+                            .resolutions
+                            .values()
+                            .filter(|s| matches!(s, ResolutionStatus::Pending))
+                            .count();
+                        println!(
+                            "Resolutions: {resolved} resolved, {skipped} skipped, {pending} pending"
+                        );
+                    }
+                }
+            }
+            if state == MigrationState::Conflict {
+                if let Some(current) = layout.read_current_conflict() {
+                    println!("Current conflict: {current}");
+                    // Surface the file the user should edit.
+                    if let Ok(rewrite) = read_plan(&layout) {
+                        if let Some(c) = migrate::first_conflict_for_artifact(&rewrite, &current) {
+                            if let Some(f) = &c.source_file {
+                                println!("Edit file:        {f}");
+                            }
+                        }
+                    }
+                    println!();
+                    println!("Run one of:");
+                    println!("  rivet schema migrate <target> --continue   # after resolving");
+                    println!("  rivet schema migrate <target> --skip       # drop this artifact");
+                    println!("  rivet schema migrate <target> --abort      # restore everything");
                 }
             }
         }
@@ -335,6 +624,7 @@ fn write_manifest(
         mechanical_count: rewrite.count(ActionClass::Mechanical),
         decidable_count: rewrite.count(ActionClass::DecidableWithPolicy),
         conflict_count: rewrite.count(ActionClass::Conflict),
+        resolutions: std::collections::BTreeMap::new(),
     };
     let yaml = serde_yaml::to_string(&manifest).context("serializing manifest")?;
     std::fs::write(layout.manifest_path(), yaml)
@@ -354,6 +644,111 @@ fn update_manifest_state(layout: &MigrationLayout, state: MigrationState) -> Res
     let yaml = serde_yaml::to_string(&manifest).context("serializing manifest")?;
     std::fs::write(&path, yaml).context("writing manifest")?;
     Ok(())
+}
+
+/// Resolve a path stored in plan.yaml against the project root. Handles
+/// both absolute paths (Phase 1 — `load_project_full` stamps absolute
+/// `source_file`s onto artifacts) and relative paths (test fixtures
+/// hand-write the plan).
+fn resolve_artifact_path(project_root: &Path, raw: &str) -> PathBuf {
+    let p = PathBuf::from(raw);
+    if p.is_absolute() {
+        p
+    } else {
+        project_root.join(p)
+    }
+}
+
+fn read_manifest(layout: &MigrationLayout) -> Result<MigrationManifest> {
+    let yaml = std::fs::read_to_string(layout.manifest_path()).context("reading manifest")?;
+    serde_yaml::from_str(&yaml).context("parsing manifest")
+}
+
+fn record_resolution(
+    layout: &MigrationLayout,
+    artifact_id: &str,
+    status: ResolutionStatus,
+) -> Result<()> {
+    let path = layout.manifest_path();
+    if !path.exists() {
+        return Ok(());
+    }
+    let yaml = std::fs::read_to_string(&path).context("reading manifest")?;
+    let mut manifest: MigrationManifest =
+        serde_yaml::from_str(&yaml).context("parsing manifest")?;
+    manifest.resolutions.insert(artifact_id.to_string(), status);
+    let yaml = serde_yaml::to_string(&manifest).context("serializing manifest")?;
+    std::fs::write(&path, yaml).context("writing manifest")?;
+    Ok(())
+}
+
+/// Find the first conflict in the plan that hasn't been resolved or
+/// skipped yet. Order matches plan.yaml — stable across `--continue`
+/// runs.
+fn next_unresolved_conflict(
+    layout: &MigrationLayout,
+    rewrite: &RewriteMap,
+) -> Result<Option<PlannedChange>> {
+    let manifest = read_manifest(layout)?;
+    for change in &rewrite.changes {
+        if change.action != ActionClass::Conflict {
+            continue;
+        }
+        match manifest.resolutions.get(&change.artifact_id) {
+            Some(ResolutionStatus::Resolved) | Some(ResolutionStatus::Skipped) => continue,
+            _ => return Ok(Some(change.clone())),
+        }
+    }
+    Ok(None)
+}
+
+/// Stamp conflict markers on the artifact YAML pointed at by the
+/// PlannedChange. Currently supports FieldValueConflict; other conflict
+/// kinds (e.g. unmapped-fields-strict) bail with a clear message
+/// directing the user at `--abort` for now.
+fn write_markers_for_conflict(
+    layout: &MigrationLayout,
+    conflict: &PlannedChange,
+    source_preset: &str,
+    target_preset: &str,
+) -> Result<()> {
+    let file_rel = conflict
+        .source_file
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("conflict change has no source_file"))?;
+    // Resolve relative to the project root (= layout.root.parent.parent.parent).
+    let project_root = layout
+        .root
+        .parent()
+        .and_then(|p| p.parent())
+        .and_then(|p| p.parent())
+        .ok_or_else(|| anyhow::anyhow!("cannot derive project root from migration layout"))?;
+    let path = resolve_artifact_path(project_root, file_rel);
+    let original =
+        std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+
+    match &conflict.change {
+        ChangeKind::FieldValueConflict { .. } => {
+            let new_content = migrate::write_conflict_markers(
+                &original,
+                &conflict.artifact_id,
+                conflict,
+                source_preset,
+                target_preset,
+            )
+            .with_context(|| format!("writing markers into {}", path.display()))?;
+            std::fs::write(&path, new_content)
+                .with_context(|| format!("writing {}", path.display()))?;
+            Ok(())
+        }
+        other => {
+            anyhow::bail!(
+                "conflict kind {other:?} is not yet handled by Phase 2 markers; \
+                 use --abort and adjust the recipe / source artifact, or wait \
+                 for a later phase"
+            )
+        }
+    }
 }
 
 fn current_unix_secs() -> u64 {

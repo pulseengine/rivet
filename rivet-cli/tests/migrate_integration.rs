@@ -18,9 +18,10 @@
     clippy::print_stderr
 )]
 
-//! Integration tests for `rivet schema migrate` Phase 1 (issue #236).
+//! Integration tests for `rivet schema migrate` Phase 1 + Phase 2
+//! (issue #236).
 //!
-//! Covers:
+//! Phase 1 coverage:
 //!  * `--apply` rewrites a fresh `dev` project into ASPICE shape and
 //!    `rivet validate` passes.
 //!  * `--abort` restores byte-identical pre-migration state.
@@ -28,6 +29,17 @@
 //!  * Roundtrip-style: A -> B yields a valid B project (the deeper
 //!    A -> B -> A property test depends on a reverse recipe; tracked
 //!    for a later phase).
+//!
+//! Phase 2 coverage:
+//!  * `--apply` pauses on the first conflict and writes markers; state
+//!    flips to CONFLICT.
+//!  * `--continue` advances after the user resolves markers; rejects
+//!    files with leftover markers.
+//!  * `--skip` restores the conflicted artifact from snapshot and
+//!    advances.
+//!  * `--edit <id>` re-opens a previously-resolved conflict.
+//!  * `rivet docs check` flags artifact YAMLs with leftover markers via
+//!    the `MigrationConflict` invariant.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -293,6 +305,275 @@ fn finish_deletes_snapshot_and_keeps_manifest() {
     assert!(
         mig_dir.join("manifest.yaml").exists(),
         "manifest should be retained for audit"
+    );
+}
+
+// ── Phase 2: conflict resolution flow ──────────────────────────────────
+
+/// Build a fake migration directory pre-populated with a single
+/// `FieldValueConflict` (priority numeric -> enum). Returns the
+/// project tempdir and the migration directory's relative dir name.
+fn make_conflicted_project() -> (tempfile::TempDir, PathBuf, String) {
+    let tmp = tempfile::tempdir().expect("temp");
+    let dir = tmp.path().to_path_buf();
+
+    // Minimal project: rivet.yaml, artifacts/req.yaml.
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        "project:\n  name: t\n  version: \"0.1.0\"\n  schemas:\n    - common\n    - dev\nsources:\n  - path: artifacts\n    format: generic-yaml\n",
+    )
+    .unwrap();
+    let art_yaml = "artifacts:\n  - id: REQ-001\n    type: requirement\n    title: First\n    fields:\n      priority: 5\n";
+    std::fs::write(dir.join("artifacts/req.yaml"), art_yaml).unwrap();
+
+    // Hand-built migration directory.
+    let mig_name = "20260101-0000-dev-to-aspice".to_string();
+    let mig_root = dir.join(".rivet").join("migrations").join(&mig_name);
+    std::fs::create_dir_all(&mig_root).unwrap();
+
+    // Plan with one conflict entry (priority value 5 -> enum).
+    // Use the public type names of rivet_core::migrate.
+    use rivet_core::migrate::{
+        ActionClass, ChangeKind, MigrationManifest, MigrationState, PlannedChange,
+        ResolutionStatus, RewriteMap,
+    };
+    let rewrite = RewriteMap {
+        recipe_name: "dev-to-aspice".into(),
+        source_preset: "dev".into(),
+        target_preset: "aspice".into(),
+        changes: vec![PlannedChange {
+            artifact_id: "REQ-001".into(),
+            source_file: Some("artifacts/req.yaml".into()),
+            action: ActionClass::Conflict,
+            change: ChangeKind::FieldValueConflict {
+                in_type: "sw-req".into(),
+                field: "priority".into(),
+                from_value: "5".into(),
+                target_constraint: "[must|should|could|wont]".into(),
+            },
+        }],
+    };
+    std::fs::write(
+        mig_root.join("plan.yaml"),
+        serde_yaml::to_string(&rewrite).unwrap(),
+    )
+    .unwrap();
+
+    let manifest = MigrationManifest {
+        recipe: "dev-to-aspice".into(),
+        source_preset: "dev".into(),
+        target_preset: "aspice".into(),
+        created_at: "unix:0".into(),
+        state: MigrationState::Planned,
+        mechanical_count: 0,
+        decidable_count: 0,
+        conflict_count: 1,
+        resolutions: BTreeMap::new(),
+    };
+    let _ = ResolutionStatus::Pending; // ensure import is referenced
+    std::fs::write(
+        mig_root.join("manifest.yaml"),
+        serde_yaml::to_string(&manifest).unwrap(),
+    )
+    .unwrap();
+    std::fs::write(mig_root.join("state"), "PLANNED").unwrap();
+
+    (tmp, dir, mig_name)
+}
+
+#[test]
+fn apply_pauses_on_conflict_and_writes_markers() {
+    let (_tmp, dir, mig_name) = make_conflicted_project();
+    // `apply` will discover the existing PLANNED migration and try to
+    // re-plan against the live project. Our hand-written plan is the
+    // one used because cmd_apply finds the latest PLANNED migration.
+    let apply = run_rivet(&dir, &["schema", "migrate", "aspice", "--apply"]);
+    // Non-zero exit because conflict left in flight.
+    assert!(
+        !apply.status.success(),
+        "apply should not succeed when paused on conflict; stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&apply.stdout),
+        String::from_utf8_lossy(&apply.stderr)
+    );
+
+    // State must be CONFLICT, current-conflict points to REQ-001.
+    let state = std::fs::read_to_string(
+        dir.join(".rivet")
+            .join("migrations")
+            .join(&mig_name)
+            .join("state"),
+    )
+    .unwrap();
+    assert_eq!(state.trim(), "CONFLICT", "state file: {state:?}");
+
+    let current = std::fs::read_to_string(
+        dir.join(".rivet")
+            .join("migrations")
+            .join(&mig_name)
+            .join("current-conflict"),
+    )
+    .unwrap();
+    assert_eq!(current.trim(), "REQ-001");
+
+    // The artifact YAML now contains conflict markers.
+    let after = std::fs::read_to_string(dir.join("artifacts/req.yaml")).unwrap();
+    assert!(after.contains("<<<<<<<"), "no open marker: {after}");
+    assert!(after.contains("======="), "no separator: {after}");
+    assert!(after.contains(">>>>>>>"), "no close marker: {after}");
+    assert!(after.contains("source: dev"));
+    assert!(after.contains("target: aspice"));
+}
+
+#[test]
+fn continue_advances_after_user_resolves_markers() {
+    let (_tmp, dir, mig_name) = make_conflicted_project();
+    // Trigger the conflict pause.
+    let _ = run_rivet(&dir, &["schema", "migrate", "aspice", "--apply"]);
+
+    // Programmatically pretend the user resolved the conflict by
+    // writing a clean file with `priority: must`.
+    let resolved = "artifacts:\n  - id: REQ-001\n    type: requirement\n    title: First\n    fields:\n      priority: must\n";
+    std::fs::write(dir.join("artifacts/req.yaml"), resolved).unwrap();
+
+    let cont = run_rivet(&dir, &["schema", "migrate", "aspice", "--continue"]);
+    assert!(
+        cont.status.success(),
+        "continue failed. stderr: {}\nstdout: {}",
+        String::from_utf8_lossy(&cont.stderr),
+        String::from_utf8_lossy(&cont.stdout)
+    );
+
+    let state = std::fs::read_to_string(
+        dir.join(".rivet")
+            .join("migrations")
+            .join(&mig_name)
+            .join("state"),
+    )
+    .unwrap();
+    assert_eq!(state.trim(), "COMPLETE");
+
+    // current-conflict pointer should be gone.
+    let cur = dir
+        .join(".rivet")
+        .join("migrations")
+        .join(&mig_name)
+        .join("current-conflict");
+    assert!(!cur.exists(), "current-conflict file should be removed");
+}
+
+#[test]
+fn continue_rejects_unresolved_markers() {
+    let (_tmp, dir, _) = make_conflicted_project();
+    let _ = run_rivet(&dir, &["schema", "migrate", "aspice", "--apply"]);
+
+    // Don't touch the file — markers still in place.
+    let cont = run_rivet(&dir, &["schema", "migrate", "aspice", "--continue"]);
+    assert!(
+        !cont.status.success(),
+        "continue should refuse with markers present"
+    );
+    let stderr = String::from_utf8_lossy(&cont.stderr);
+    assert!(
+        stderr.to_lowercase().contains("conflict marker")
+            || stderr.contains("<<<<<<<")
+            || stderr.contains("conflict marker(s)"),
+        "expected marker complaint, got: {stderr}"
+    );
+}
+
+#[test]
+fn skip_restores_artifact_from_snapshot() {
+    let (_tmp, dir, mig_name) = make_conflicted_project();
+    // Pre-conflict file content; snapshot must match it after apply.
+    let pre = std::fs::read_to_string(dir.join("artifacts/req.yaml")).unwrap();
+
+    let _ = run_rivet(&dir, &["schema", "migrate", "aspice", "--apply"]);
+
+    let mid = std::fs::read_to_string(dir.join("artifacts/req.yaml")).unwrap();
+    assert_ne!(pre, mid, "apply should have stamped markers");
+
+    let skip = run_rivet(&dir, &["schema", "migrate", "aspice", "--skip"]);
+    assert!(
+        skip.status.success(),
+        "skip failed: {}",
+        String::from_utf8_lossy(&skip.stderr)
+    );
+
+    let after = std::fs::read_to_string(dir.join("artifacts/req.yaml")).unwrap();
+    // The artifact was restored — it should not contain conflict
+    // markers anymore.
+    assert!(!after.contains("<<<<<<<"));
+    assert!(!after.contains(">>>>>>>"));
+    // priority should be back to the pre-migration numeric value.
+    assert!(after.contains("priority: 5"), "after: {after}");
+
+    let state = std::fs::read_to_string(
+        dir.join(".rivet")
+            .join("migrations")
+            .join(&mig_name)
+            .join("state"),
+    )
+    .unwrap();
+    // Only one conflict in the plan, so skip leaves us COMPLETE.
+    assert_eq!(state.trim(), "COMPLETE");
+}
+
+#[test]
+fn edit_reopens_resolved_conflict() {
+    let (_tmp, dir, mig_name) = make_conflicted_project();
+    let _ = run_rivet(&dir, &["schema", "migrate", "aspice", "--apply"]);
+    // Resolve.
+    let resolved = "artifacts:\n  - id: REQ-001\n    type: requirement\n    title: First\n    fields:\n      priority: must\n";
+    std::fs::write(dir.join("artifacts/req.yaml"), resolved).unwrap();
+    let cont = run_rivet(&dir, &["schema", "migrate", "aspice", "--continue"]);
+    assert!(cont.status.success());
+
+    // Re-open via --edit.
+    let edit = run_rivet(&dir, &["schema", "migrate", "aspice", "--edit", "REQ-001"]);
+    assert!(
+        edit.status.success(),
+        "edit failed: {}",
+        String::from_utf8_lossy(&edit.stderr)
+    );
+
+    let state = std::fs::read_to_string(
+        dir.join(".rivet")
+            .join("migrations")
+            .join(&mig_name)
+            .join("state"),
+    )
+    .unwrap();
+    assert_eq!(state.trim(), "CONFLICT");
+
+    let after = std::fs::read_to_string(dir.join("artifacts/req.yaml")).unwrap();
+    assert!(after.contains("<<<<<<<"), "markers re-written: {after}");
+    let cur = std::fs::read_to_string(
+        dir.join(".rivet")
+            .join("migrations")
+            .join(&mig_name)
+            .join("current-conflict"),
+    )
+    .unwrap();
+    assert_eq!(cur.trim(), "REQ-001");
+}
+
+#[test]
+fn docs_check_flags_unresolved_conflict_markers() {
+    let (_tmp, dir, _) = make_conflicted_project();
+    // Stamp markers via --apply.
+    let _ = run_rivet(&dir, &["schema", "migrate", "aspice", "--apply"]);
+
+    // `rivet docs check` should now flag MigrationConflict.
+    let check = run_rivet(&dir, &["docs", "check", "-f", "json"]);
+    let stdout = String::from_utf8_lossy(&check.stdout);
+    assert!(
+        !check.status.success(),
+        "docs check should fail when markers are present; stdout: {stdout}"
+    );
+    assert!(
+        stdout.contains("MigrationConflict"),
+        "expected MigrationConflict in JSON output: {stdout}"
     );
 }
 

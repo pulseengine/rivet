@@ -2596,19 +2596,25 @@ const QUICKSTART_DOC: &str = include_str!("quickstart.md");
 const SCHEMA_MIGRATE_DOC: &str = r#"# rivet schema migrate
 
 `rivet schema migrate` rewrites artifact YAML when you switch presets or
-upgrade a preset version. Phase 1 (issue #236) ships a strictly
-mechanical-only flow with full snapshot/abort. Phase 2 will add
-git-rebase-style conflict resolution (`--continue`, `--skip`, conflict
-markers in YAML).
+upgrade a preset version. Phase 1 (issue #236) shipped the mechanical
+diff + snapshot/abort. Phase 2 added the git-rebase-style conflict
+resolution flow: when `--apply` hits a value-mapping conflict it writes
+markers into the affected artifact YAML, sets state to CONFLICT, and
+exits non-zero so CI catches an unfinished migration. The user resolves
+the conflict in-place and runs `--continue`, or drops the artifact with
+`--skip`.
 
 ## Quick start
 
 ```
 rivet schema migrate aspice                  # plan only (dry-run)
-rivet schema migrate aspice --apply          # apply mechanical changes
+rivet schema migrate aspice --apply          # apply; pause on first conflict
+rivet schema migrate aspice --continue       # resume after editing markers
+rivet schema migrate aspice --skip           # drop the current conflicted artifact
+rivet schema migrate aspice --edit ID        # re-open a previously-resolved conflict
 rivet schema migrate aspice --status         # show state machine pointer
 rivet schema migrate aspice --finish         # validate + delete snapshot
-rivet schema migrate aspice --abort          # restore from snapshot
+rivet schema migrate aspice --abort          # restore everything from snapshot
 ```
 
 The default invocation is plan-only and never modifies the project tree.
@@ -2623,31 +2629,75 @@ The default invocation is plan-only and never modifies the project tree.
                   │
                   ▼  --apply
             [IN_PROGRESS]
-                  │
-                  ▼  (no conflicts, mechanical-only path)
-              [COMPLETE]
-                  │  --finish
-                  ▼
+                  │           ┌── conflict?
+                  ▼           ▼
+              [COMPLETE]   [CONFLICT]──┬── --continue ──▶ next conflict / [COMPLETE]
+                  │                    ├── --skip     ──▶ next conflict / [COMPLETE]
+                  │  --finish          ├── --edit     ──▶ stay [CONFLICT] on chosen artifact
+                  ▼                    └── --abort    ──▶ snapshot restore (any state)
               (deleted)
 ```
 
 `--abort` from any state restores the project tree from the snapshot
 captured before `--apply` and deletes the migration directory.
 
-Phase 1 deliberately does not implement the `[CONFLICT]` state — if the
-plan contains any conflicts, `--apply` bails loudly with exit 1 and
-leaves the project untouched.
+## Conflict resolution flow (Phase 2)
+
+When `--apply` encounters a value-mapping conflict (e.g. `priority: 5`
+on a target type whose `priority` field is enum `[must|should|could|wont]`),
+it:
+
+1. Applies all mechanical / decidable-with-policy changes for that file.
+2. Splices rebase-style markers into the conflicted artifact's
+   field, like:
+
+   ```yaml
+   - id: REQ-001
+     type: sw-req       # was: requirement (auto-renamed)
+     fields:
+       priority: <<<<<<< source: dev (priority: 5)
+         5
+         ======= target: aspice (sw-req.priority: [must|should|could|wont])
+         <choose one>
+         >>>>>>>
+   ```
+3. Sets state to `CONFLICT`, writes the artifact ID to
+   `.rivet/migrations/<id>/current-conflict`, and exits non-zero.
+
+You then:
+
+* Open the file. Replace the marker block with a single value.
+  (Anything that lands inside `<<<<<<<` … `>>>>>>>` is fine; the
+  important part is removing all three marker lines.)
+* Run `rivet schema migrate <target> --continue`. The CLI verifies no
+  markers remain in the file, re-parses it as YAML, marks the artifact
+  resolved in `manifest.yaml`, and moves to the next conflict (or
+  `COMPLETE`).
+
+If you'd rather drop the conflicted artifact from the migration entirely
+(restoring its pre-migration form), run `--skip` instead. The artifact
+is replaced by its snapshot copy; the rest of the migration carries on.
+
+To revisit a previously-resolved conflict (e.g. you picked the wrong
+value), run `rivet schema migrate <target> --edit <ID>`. The state
+returns to `CONFLICT` with markers re-stamped on that artifact, ready
+for another `--continue` / `--skip`.
+
+A `MigrationConflict` invariant in `rivet docs check` flags any artifact
+YAML that still contains marker lines, so you can't accidentally commit
+an unresolved conflict.
 
 ## Storage layout
 
 A migration is stored under `.rivet/migrations/<YYYYMMDD-HHMM>-<source>-to-<target>/`:
 
-| File              | Purpose                                          |
-|-------------------|--------------------------------------------------|
-| `plan.yaml`       | Full diff: per-artifact, per-field action class. |
-| `manifest.yaml`   | Recipe + state + change counts (audit trail).    |
-| `state`           | Single-line: `PLANNED | IN_PROGRESS | COMPLETE`. |
-| `snapshot/`       | Full pre-migration `artifacts/` + `rivet.yaml`.  |
+| File                  | Purpose                                                              |
+|-----------------------|----------------------------------------------------------------------|
+| `plan.yaml`           | Full diff: per-artifact, per-field action class.                     |
+| `manifest.yaml`       | Recipe + state + change counts + per-artifact resolution status.     |
+| `state`               | Single-line: `PLANNED | IN_PROGRESS | CONFLICT | COMPLETE`.          |
+| `current-conflict`    | (Phase 2) Artifact ID `--apply` paused on. Absent when not in CONFLICT. |
+| `snapshot/`           | Full pre-migration `artifacts/` + `rivet.yaml`.                      |
 
 Only one migration may be in flight per project. The directory survives
 across sessions — multi-day migrations are fine.
@@ -2710,29 +2760,31 @@ classes (mirrors `git rebase --interactive`'s pick / edit / drop):
 | `drop`         | Drop the link.                                                         |
 | `strict`       | Treat as a conflict. `--apply` will bail.                             |
 
-## What Phase 1 does NOT do
+## What is still deferred
 
-- No `--continue` / `--skip` / `--edit` (Phase 2)
-- No conflict markers in YAML (Phase 2)
-- No dashboard surface
-- No interactive wizard
-- No automatic rivet.yaml update — after `--apply` you still need to
-  swap your loaded schemas (e.g. dev -> aspice). Migration touches
-  artifacts, not config.
-- No provenance entries on migrated artifacts
-- No automatic recipe registration; only the shipped `dev-to-aspice`
-  recipe is available
+- No dashboard `/migrations/<id>` surface (Phase 3)
+- No `rivet recipes` subcommand / recipe distribution (Phase 3)
+- No interactive TUI wizard
+- No automatic rivet.yaml update — after the migration completes you
+  still need to swap your loaded schemas (e.g. dev -> aspice). Migration
+  touches artifacts, not config.
+- No provenance entries auto-stamped on migrated artifacts (post-MVP)
+- No automatic recipe registration beyond the shipped `dev-to-aspice`
+  recipe; add new recipes under `<schemas-dir>/migrations/`.
 
 ## Tips
 
 - Always run plan-only first and read `plan.yaml` before `--apply`.
 - The snapshot is byte-faithful for `artifacts/` and `rivet.yaml`.
-  `--abort` produces an byte-identical restore. (`docs/`, `.rivet/`,
-  test results, etc. are not snapshotted because Phase 1 doesn't touch
-  them.)
+  `--abort` produces a byte-identical restore. (`docs/`, `.rivet/`,
+  test results, etc. are not snapshotted because the migration doesn't
+  touch them.)
 - `--finish` is destructive (it deletes the snapshot). Run `rivet
   validate` first to convince yourself the migrated tree is healthy.
 - If you need to redo a migration: `--abort` and start over.
+- `rivet docs check` runs the `MigrationConflict` invariant — committing
+  artifact YAML with `<<<<<<<` / `=======` / `>>>>>>>` lines fails the
+  gate, so don't worry about pushing a half-resolved migration.
 "#;
 
 const DOCS_COVERAGE_DOC: &str = r#"# rivet docs check --coverage

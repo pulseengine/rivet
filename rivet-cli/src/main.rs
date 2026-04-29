@@ -999,37 +999,55 @@ enum SchemaAction {
         #[arg(long)]
         content: bool,
     },
-    /// Migrate artifacts from one preset/version to another (Phase 1: mechanical-only).
+    /// Migrate artifacts from one preset/version to another.
     ///
-    /// Phase 1 of issue #236. Default is plan-only (dry-run). Use
-    /// `--apply` to rewrite artifact YAML in place against the target
-    /// preset. `--abort` restores from the pre-migration snapshot.
-    /// `--status` reports current state. `--finish` deletes the
-    /// snapshot after `rivet validate` confirms the migrated tree is
-    /// healthy.
+    /// Phase 1 of issue #236 shipped the diff engine + mechanical
+    /// apply. Phase 2 adds rebase-style conflict resolution
+    /// (`--continue`, `--skip`, `--edit`).
+    ///
+    /// Default is plan-only (dry-run). Use `--apply` to rewrite
+    /// artifact YAML in place; the CLI pauses at the first conflict
+    /// (writing markers into the file) and you resolve them
+    /// interactively. `--abort` restores from snapshot.
     ///
     /// See `rivet docs schema-migrate` for the full guide.
+    #[command(disable_help_flag = false)]
     Migrate {
         /// Target preset (e.g., "aspice"). Source is inferred from
         /// the project's current `rivet.yaml`.
         target: String,
 
-        /// Apply the migration (mechanical-only in Phase 1; bails on
-        /// any conflict).
-        #[arg(long, conflicts_with_all = ["abort", "status", "finish"])]
+        /// Apply the migration; pause on first conflict (Phase 2).
+        #[arg(long, conflicts_with_all = ["abort", "status", "finish", "continue_", "skip", "edit"])]
         apply: bool,
 
         /// Abort the in-flight migration and restore from snapshot.
-        #[arg(long, conflicts_with_all = ["apply", "status", "finish"])]
+        #[arg(long, conflicts_with_all = ["apply", "status", "finish", "continue_", "skip", "edit"])]
         abort: bool,
 
         /// Print the current migration state machine pointer.
-        #[arg(long, conflicts_with_all = ["apply", "abort", "finish"])]
+        #[arg(long, conflicts_with_all = ["apply", "abort", "finish", "continue_", "skip", "edit"])]
         status: bool,
 
         /// Validate and finalize a COMPLETE migration (deletes snapshot).
-        #[arg(long, conflicts_with_all = ["apply", "abort", "status"])]
+        #[arg(long, conflicts_with_all = ["apply", "abort", "status", "continue_", "skip", "edit"])]
         finish: bool,
+
+        /// Resume after resolving the current conflict in-place
+        /// (Phase 2). Verifies markers are gone and the file still
+        /// parses, then advances.
+        #[arg(long = "continue", conflicts_with_all = ["apply", "abort", "status", "finish", "skip", "edit"])]
+        continue_: bool,
+
+        /// Drop the current conflicted artifact from the migration
+        /// (restores it from the snapshot) and advance (Phase 2).
+        #[arg(long, conflicts_with_all = ["apply", "abort", "status", "finish", "continue_", "edit"])]
+        skip: bool,
+
+        /// Re-open a previously-resolved or skipped conflict for
+        /// re-editing (Phase 2). Takes the artifact id.
+        #[arg(long, value_name = "ARTIFACT_ID", conflicts_with_all = ["apply", "abort", "status", "finish", "continue_", "skip"])]
+        edit: Option<String>,
     },
 }
 
@@ -7585,6 +7603,9 @@ fn cmd_schema(cli: &Cli, action: &SchemaAction) -> Result<bool> {
             abort,
             status,
             finish,
+            continue_,
+            skip,
+            edit,
         } => {
             let schemas_dir = resolve_schemas_dir(cli);
             let project_root = cli.project.clone();
@@ -7602,6 +7623,12 @@ fn cmd_schema(cli: &Cli, action: &SchemaAction) -> Result<bool> {
                 migrate_cmd::cmd_status(&project_root)
             } else if *finish {
                 migrate_cmd::cmd_finish(&project_root)
+            } else if *continue_ {
+                migrate_cmd::cmd_continue(&project_root, &schemas_dir)
+            } else if *skip {
+                migrate_cmd::cmd_skip(&project_root, &schemas_dir)
+            } else if let Some(id) = edit {
+                migrate_cmd::cmd_edit(&project_root, id)
             } else if *apply {
                 migrate_cmd::cmd_apply(&project_root, &schemas_dir, &source_preset, target)
             } else {

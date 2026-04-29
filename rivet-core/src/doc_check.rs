@@ -400,6 +400,7 @@ pub fn default_invariants() -> Vec<Box<dyn DocInvariant>> {
         Box::new(SoftGateHonesty),
         Box::new(ConfigExampleFreshness),
         Box::new(ArtifactIdValidity),
+        Box::new(MigrationConflict),
     ]
 }
 
@@ -1175,6 +1176,88 @@ fn collect_frontmatter_ids(content: &str) -> BTreeSet<String> {
     // Shut up unused-var linter.
     let _ = bytes;
     out
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Invariant: MigrationConflict
+// ────────────────────────────────────────────────────────────────────────
+
+/// Phase 2 (#236) acceptance criterion: prevents accidentally committing
+/// artifact YAML with unresolved migration conflict markers.
+///
+/// Walks every `*.yaml` / `*.yml` under `<project>/artifacts/` and emits
+/// a violation for each line that begins with the rebase-style markers
+/// `<<<<<<<`, `=======`, or `>>>>>>>` produced by `rivet schema migrate
+/// --apply`. The user resolves the conflict via `rivet schema migrate
+/// --continue` (which also checks for residual markers) or `--skip`.
+pub struct MigrationConflict;
+
+impl DocInvariant for MigrationConflict {
+    fn name(&self) -> &'static str {
+        "MigrationConflict"
+    }
+
+    fn check(&self, ctx: &DocCheckContext<'_>) -> Vec<Violation> {
+        let mut out = Vec::new();
+        let root = ctx.project_root.join("artifacts");
+        if !root.is_dir() {
+            return out;
+        }
+        let mut files = Vec::new();
+        collect_artifact_yaml_files(&root, &mut files);
+        for path in files {
+            let Ok(content) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let rel = path
+                .strip_prefix(ctx.project_root)
+                .unwrap_or(&path)
+                .to_path_buf();
+            for (idx, line) in content.lines().enumerate() {
+                let trimmed = line.trim_start();
+                let kind = if trimmed.starts_with("<<<<<<<") {
+                    Some("open")
+                } else if trimmed.starts_with("=======") {
+                    Some("separator")
+                } else if trimmed.starts_with(">>>>>>>") {
+                    Some("close")
+                } else {
+                    None
+                };
+                if let Some(k) = kind {
+                    out.push(Violation {
+                        file: rel.clone(),
+                        line: idx + 1,
+                        invariant: "MigrationConflict".to_string(),
+                        claim: format!("artifact YAML contains migration conflict marker ({k})"),
+                        reality: "run `rivet schema migrate --status` for context, then \
+                                  `rivet schema migrate <target> --continue` after resolving"
+                            .to_string(),
+                        auto_fixable: false,
+                    });
+                }
+            }
+        }
+        out
+    }
+}
+
+fn collect_artifact_yaml_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.is_dir() {
+            collect_artifact_yaml_files(&p, out);
+        } else if p
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| e == "yaml" || e == "yml")
+        {
+            out.push(p);
+        }
+    }
 }
 
 // ────────────────────────────────────────────────────────────────────────
