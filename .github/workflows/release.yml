@@ -281,15 +281,27 @@ jobs:
           sha256sum * > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
-      - name: Create Release
+      - name: Create or update Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${GITHUB_REF#refs/tags/}"
-          gh release create "$VERSION" \
-            --title "Rivet $VERSION" \
-            --generate-notes \
-            release/*
+          # Idempotent: if a release already exists for this tag (e.g.
+          # the maintainer ran `gh release create` manually after pushing
+          # the tag), upload assets to the existing release. Otherwise
+          # create the release with assets. `--clobber` lets re-runs
+          # overwrite assets that a previous failed attempt partially
+          # uploaded.
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "::notice::Release $VERSION already exists; uploading assets"
+            gh release upload "$VERSION" --clobber release/*
+          else
+            echo "::notice::Creating Release $VERSION with assets"
+            gh release create "$VERSION" \
+              --title "Rivet $VERSION" \
+              --generate-notes \
+              release/*
+          fi
 
   # ── Publish VS Code Extension to Marketplace ──────────────────────────
   # Runs after create-release so the VSIX is always on the Release page
