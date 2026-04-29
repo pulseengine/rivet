@@ -1,0 +1,83 @@
+# cargo-mutants nightly mutation-testing workflow template.
+#
+# Adopters copy this file to `.github/workflows/mutants.yml` and adjust:
+#   - the matrix `crate` list to the crates they want covered
+#   - the schedule cron (default: 02:00 UTC nightly)
+#   - the `MUTANTS_TIMEOUT` if their crate's test suite needs more headroom
+#
+# See docs/mutation-testing.md (in rivet) for the rationale, ASIL/DAL
+# score targets, and how to mark unreachable mutants.
+#
+# This workflow is deliberately separate from CI:
+#   - CI runs on every PR and must stay fast (minutes).
+#   - cargo-mutants is slow (often >30 min for a non-trivial crate) and
+#     belongs on a nightly schedule + manual dispatch only.
+
+name: Mutants
+
+on:
+  schedule:
+    # Nightly at 02:00 UTC. Adjust to your maintenance window.
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      crate:
+        description: 'Crate to mutate (default: all)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # Per-mutant timeout in seconds. Should match `minimum_test_timeout`
+  # in mutants.toml or be slightly higher.
+  MUTANTS_TIMEOUT: '60'
+
+jobs:
+  mutants:
+    name: cargo mutants (${{ matrix.crate }})
+    runs-on: ubuntu-latest
+    # Mutation runs are intentionally slow. 90 minutes is a reasonable
+    # ceiling per crate; bump if your suite is larger.
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        # CUSTOMIZE: list one entry per crate to mutate. Splitting per crate
+        # lets the matrix parallelise and keeps each shard under timeout.
+        crate:
+          - rivet-core
+          - rivet-cli
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # Mutation runs invalidate caches frequently; keep a separate key.
+          key: mutants-${{ matrix.crate }}
+
+      - name: Install cargo-mutants
+        run: cargo install --locked cargo-mutants
+
+      - name: Run mutation tests
+        run: |
+          cargo mutants \
+            --jobs 4 \
+            --minimum-test-timeout "${MUTANTS_TIMEOUT}" \
+            -p "${{ matrix.crate }}" \
+            --in-place \
+            --no-shuffle
+
+      - name: Upload mutants.out
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutants-${{ matrix.crate }}
+          path: mutants.out/
+          retention-days: 14
