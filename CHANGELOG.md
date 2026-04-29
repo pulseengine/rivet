@@ -5,6 +5,70 @@
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-04-29
+
+Theme: schema migration + cited-source faithfulness. Two marquee
+features landing together — both surfaced during the post-0.5.0
+fresh-user dogfood (#236, #237).
+
+### Added
+
+- **`rivet schema migrate <target-preset>`** — git-rebase-style preset/
+  version migration with snapshot/abort. Phase 1 ships the diff engine
+  + plan/apply/abort/status/finish. Three change classes (mechanical,
+  decidable-with-policy, conflict). Mechanical-only auto-applied;
+  conflicts bail loudly (Phase 2 will add merge-conflict-style markers
+  + `--continue` / `--skip`). Storage layout under `.rivet/migrations/
+  <ts>-<src>-to-<tgt>/` with full pre-migration snapshot, manifest,
+  state file. One canned recipe ships:
+  `schemas/migrations/dev-to-aspice.yaml` covering type renames
+  (`requirement` -> `sw-req`, `feature` -> `sw-arch-component`),
+  link-type renames (`satisfies` -> `derives-from`), and policy
+  declarations (`unmapped-fields: keep-as-orphan`). 8 unit tests
+  + 5 integration tests covering apply, abort byte-symmetry, and
+  roundtrip. `rivet docs schema-migrate` documents the state machine
+  and recipe format. (#238 / issue #236)
+
+- **`cited-source` typed schema field** — first-class affordance for
+  artifacts citing external sources. Field shape:
+  `{ uri, kind: file|url|github|oslc|reqif|polarion, sha256, last-checked }`.
+  Phase 1 ships the `kind: file` backend: `rivet validate`
+  re-reads cited files, recomputes sha256, emits a new
+  `cited-source-drift` diagnostic on mismatch (severity Warning by
+  default, Error with `--strict-cited-sources`). URI scheme allowlist
+  enforced at validation time to mitigate exfiltration / SSRF surface.
+  New `rivet check sources` subcommand walks every cited-source and
+  surfaces drift; `--update` interactively refreshes hashes,
+  `--update --apply` batch-updates. The `dev` preset's `requirement`
+  type opts in first; other presets adopt incrementally via overlay.
+  `rivet docs schema-cited-sources` documents per-kind backend
+  behaviour, the `last-checked` semantics, and the security model.
+  (#239 / issue #237)
+
+  Phase 2 backends (`url`, `github`, `oslc`, `reqif`, `polarion`)
+  are deferred. Phase 3 LLM-judge layer documented as opt-in
+  `Severity::Info` future work; *not* shipped here. The cited paper
+  (arXiv 2604.19459) is explicitly *not* the motivation — it studies
+  formal-proof faithfulness, not prose-to-prose comparison;
+  RAG-grounding (FActScore, FaithEval) is the right literature for
+  the LLM-judge path if/when it materializes.
+
+### Workspace
+
+- Workspace, vscode-rivet, and npm root package versions bumped to
+  0.6.0. Platform packages stay on the release-npm.yml override path.
+
+### Verified
+
+- cargo check, cargo clippy --workspace -- -D warnings,
+  cargo test -p rivet-cli (passes including new migrate + cited-source
+  integration tests),
+- `rivet schema migrate aspice` (plan + apply on a fresh `dev`
+  project) returns PASS,
+- `rivet validate` on a `cited-source: { kind: file, ... }` fixture
+  catches drift after the underlying file changes,
+- `rivet check sources --update --apply` restores PASS state.
+
 ## [0.5.1] — 2026-04-28
 
 Theme: post-0.5.0 first-contact polish. Three fresh-user dogfood passes
