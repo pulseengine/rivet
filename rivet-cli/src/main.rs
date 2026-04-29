@@ -530,6 +530,17 @@ enum Command {
         /// (check only) apply auto-fixes for fixable violations in place
         #[arg(long)]
         fix: bool,
+
+        /// (check only) walk the clap subcommand tree and report which
+        /// subcommands have a documented topic in the embedded docs
+        /// registry.
+        #[arg(long)]
+        coverage: bool,
+
+        /// (check --coverage only) exit non-zero if any subcommand is
+        /// uncovered. Default is warn-only.
+        #[arg(long)]
+        strict: bool,
     },
 
     /// Print the 10-step oracle-gated quickstart (alias for `rivet docs quickstart`).
@@ -1539,10 +1550,20 @@ fn run(cli: Cli) -> Result<bool> {
         format,
         context,
         fix,
+        coverage,
+        strict,
     } = &cli.command
     {
         if matches!(topic.as_deref(), Some("check")) {
+            if *coverage {
+                return cmd_docs_coverage(format, *strict);
+            }
             return cmd_docs_check(&cli, format, *fix);
+        }
+        // Allow `rivet docs --coverage` (no `check` topic) as a shorthand —
+        // the coverage gate doesn't depend on any other doc-check state.
+        if *coverage {
+            return cmd_docs_coverage(format, *strict);
         }
         return cmd_docs(topic.as_deref(), *list, grep.as_deref(), format, *context);
     }
@@ -7220,6 +7241,325 @@ fn render_docs_check_json(report: &rivet_core::doc_check::CheckReport) -> String
         "violation_count": report.violations.len(),
         "violations": items,
         "by_invariant": report.by_invariant(),
+    });
+    let mut out = serde_json::to_string_pretty(&payload).unwrap_or_default();
+    out.push('\n');
+    out
+}
+
+// ── Subcommand-coverage gate ────────────────────────────────────────────
+//
+// `rivet docs check --coverage` walks the live clap CLI tree and asserts
+// every subcommand path has a topic in the embedded docs registry. This
+// is the inverse of the existing `SubcommandReferences` invariant, which
+// flags markdown referencing non-existent subcommands — here we flag
+// existing subcommands without documentation.
+//
+// See `rivet docs docs-coverage` for the full design. Quick rules:
+//   * A subcommand is covered if its slug (or a parent slug) matches a
+//     registered topic, OR if the parent's name appears as a topic.
+//   * Built-ins like `help` are exempt via `COVERAGE_ALLOWLIST`.
+//   * Default is warn-only (exit 0); `--strict` makes uncovered fail.
+
+/// Top-level subcommands whose docs are inherently unnecessary or are
+/// surfaced via a different channel. Keep this list short — adding an
+/// entry must be justified.
+const COVERAGE_ALLOWLIST: &[&str] = &[
+    // clap-builtin help renderer; user help is the topic itself.
+    "help",
+    // Pre-commit hook helper — usage is documented by the hook, not as a
+    // standalone topic.
+    "commit-msg-check",
+];
+
+/// Manual subcommand-to-topic map. Used when a single umbrella topic
+/// (typically `cli`) documents a family of subcommands that don't each
+/// have their own dedicated topic.
+///
+/// Keys are top-level clap subcommand names; values are the topic slug
+/// that documents them. Entries here must correspond to a real topic in
+/// `docs::TOPICS` — if the topic disappears, the gate will surface every
+/// affected subcommand as uncovered.
+const COVERAGE_TOPIC_MAP: &[(&str, &str)] = &[
+    // The `cli` topic is the canonical CLI reference and documents most
+    // top-level commands that don't have a dedicated topic.
+    ("init", "cli"),
+    ("validate", "cli"),
+    ("get", "cli"),
+    ("list", "cli"),
+    ("stats", "cli"),
+    ("coverage", "cli"),
+    ("matrix", "cli"),
+    ("stpa", "cli"),
+    ("diff", "cli"),
+    ("export", "cli"),
+    ("schema", "cli"),
+    ("docs", "cli"),
+    ("quickstart", "quickstart"),
+    ("context", "cli"),
+    ("commits", "commit-traceability"),
+    ("serve", "cli"),
+    ("sync", "cross-repo"),
+    ("lock", "cross-repo"),
+    ("externals", "cross-repo"),
+    ("impact", "impact"),
+    ("import-results", "cli"),
+    ("next-id", "mutation"),
+    ("add", "mutation"),
+    ("link", "mutation"),
+    ("unlink", "mutation"),
+    ("modify", "mutation"),
+    ("remove", "mutation"),
+    ("batch", "mutation"),
+    ("embed", "embed-syntax"),
+    ("query", "cli"),
+    ("stamp", "cli"),
+    ("lsp", "cli"),
+    ("mcp", "mcp"),
+    ("check", "cli"),
+    ("import", "needs-json"),
+];
+
+/// One row in the coverage report: a single subcommand path.
+#[derive(Debug, Clone)]
+struct CoverageRow {
+    /// Subcommand path joined by `/` — e.g. `"schema/show"`.
+    path: String,
+    /// Depth in the tree (0 = top-level).
+    depth: usize,
+    /// Topic slug that provides coverage, or `None` when uncovered.
+    covered_by: Option<String>,
+    /// True when the path is exempt via `COVERAGE_ALLOWLIST`.
+    allow_listed: bool,
+}
+
+impl CoverageRow {
+    fn is_covered(&self) -> bool {
+        self.covered_by.is_some() || self.allow_listed
+    }
+}
+
+/// Slugify a subcommand path for topic lookup. `schema/show` -> `schema-show`.
+fn coverage_slug(path: &str) -> String {
+    path.replace('/', "-")
+}
+
+/// Walk a clap `Command` and collect every subcommand path. Internal
+/// `help` synthetic command is included so the allow-list can decide
+/// whether to drop it.
+fn collect_subcommand_paths(root: &clap::Command) -> Vec<(String, usize)> {
+    let mut out = Vec::new();
+    for sub in root.get_subcommands() {
+        walk_subcommand(sub, "", 0, &mut out);
+    }
+    out
+}
+
+fn walk_subcommand(
+    cmd: &clap::Command,
+    parent_path: &str,
+    depth: usize,
+    out: &mut Vec<(String, usize)>,
+) {
+    let name = cmd.get_name();
+    let path = if parent_path.is_empty() {
+        name.to_string()
+    } else {
+        format!("{parent_path}/{name}")
+    };
+    out.push((path.clone(), depth));
+    for child in cmd.get_subcommands() {
+        walk_subcommand(child, &path, depth + 1, out);
+    }
+}
+
+/// Compute the coverage rows for a given clap tree and topic-slug set.
+/// Pulled into its own function so the unit tests can exercise it without
+/// shelling out to the full CLI.
+fn compute_coverage_rows(
+    root: &clap::Command,
+    topic_slugs: &std::collections::BTreeSet<String>,
+    allow_list: &[&str],
+    topic_map: &[(&str, &str)],
+) -> Vec<CoverageRow> {
+    let paths = collect_subcommand_paths(root);
+    let mut rows = Vec::with_capacity(paths.len());
+    for (path, depth) in paths {
+        // Exempt clap-builtin synthetic subcommands first so `help` etc.
+        // never show up as gaps.
+        let top = path.split('/').next().unwrap_or(&path);
+        let allow_listed = allow_list.contains(&top) || allow_list.contains(&path.as_str());
+
+        let covered_by = if allow_listed {
+            None
+        } else {
+            resolve_coverage(&path, top, topic_slugs, topic_map)
+        };
+
+        rows.push(CoverageRow {
+            path,
+            depth,
+            covered_by,
+            allow_listed,
+        });
+    }
+    rows
+}
+
+/// Resolve the covering topic slug for a single subcommand path, applying
+/// the matching rules in priority order:
+///
+/// 1. Exact slug match using `/` as the separator (e.g. `schema/show` →
+///    a `schema/show` topic; matches the natural docs::TOPICS slug shape).
+/// 2. Exact slug match using `-` as the separator (e.g. `schema-show`).
+/// 3. Parent-walk: drop the last segment and retry both separators.
+/// 4. Manual top-level mapping via `COVERAGE_TOPIC_MAP` — used when a
+///    single umbrella topic (typically `cli`) documents a family.
+fn resolve_coverage(
+    path: &str,
+    top: &str,
+    topic_slugs: &std::collections::BTreeSet<String>,
+    topic_map: &[(&str, &str)],
+) -> Option<String> {
+    // 1. & 2. Exact slug match.
+    if topic_slugs.contains(path) {
+        return Some(path.to_string());
+    }
+    let dashed = coverage_slug(path);
+    if topic_slugs.contains(&dashed) {
+        return Some(dashed);
+    }
+
+    // 3. Parent walk.
+    let mut cur = path;
+    while let Some(idx) = cur.rfind('/') {
+        cur = &cur[..idx];
+        if topic_slugs.contains(cur) {
+            return Some(cur.to_string());
+        }
+        let slug = coverage_slug(cur);
+        if topic_slugs.contains(&slug) {
+            return Some(slug);
+        }
+    }
+
+    // 4. Manual umbrella mapping on the top-level name.
+    for (name, slug) in topic_map {
+        if *name == top && topic_slugs.contains(*slug) {
+            return Some((*slug).to_string());
+        }
+    }
+    None
+}
+
+/// Run `rivet docs check --coverage` — assert every subcommand path has
+/// an embedded doc topic.
+fn cmd_docs_coverage(format: &str, strict: bool) -> Result<bool> {
+    use clap::CommandFactory;
+    use std::collections::BTreeSet;
+
+    validate_format(format, &["text", "json"])?;
+
+    let root = Cli::command();
+    let topic_slugs: BTreeSet<String> = docs::topic_slugs().into_iter().map(String::from).collect();
+    let rows = compute_coverage_rows(&root, &topic_slugs, COVERAGE_ALLOWLIST, COVERAGE_TOPIC_MAP);
+
+    let total = rows.iter().filter(|r| !r.allow_listed).count();
+    // Covered = paths that resolve to a topic (and thus aren't allow-listed).
+    let covered = rows
+        .iter()
+        .filter(|r| r.covered_by.is_some() && !r.allow_listed)
+        .count();
+    let uncovered: Vec<&CoverageRow> = rows.iter().filter(|r| !r.is_covered()).collect();
+
+    match format {
+        "json" => print!("{}", render_coverage_json(&rows, total, covered)),
+        _ => print!("{}", render_coverage_text(&rows, total, covered)),
+    }
+
+    let pass = uncovered.is_empty();
+    if !pass && !strict {
+        eprintln!(
+            "rivet docs check --coverage: {} subcommand(s) uncovered (warn-only; use --strict to fail)",
+            uncovered.len()
+        );
+        return Ok(true);
+    }
+    Ok(pass)
+}
+
+fn render_coverage_text(rows: &[CoverageRow], total: usize, covered: usize) -> String {
+    use std::fmt::Write as _;
+    let mut s = String::new();
+    let _ = writeln!(s, "rivet docs check --coverage\n");
+
+    // Group by top-level so the report reads top-down.
+    let mut last_top = "";
+    for row in rows {
+        let top = row.path.split('/').next().unwrap_or(&row.path);
+        if top != last_top {
+            if !last_top.is_empty() {
+                let _ = writeln!(s);
+            }
+            last_top = top;
+        }
+        let indent = "  ".repeat(row.depth + 1);
+        let mark = if row.allow_listed {
+            "·"
+        } else if row.is_covered() {
+            "✓"
+        } else {
+            "✗"
+        };
+        let detail = if row.allow_listed {
+            "(allow-listed)".to_string()
+        } else if let Some(slug) = &row.covered_by {
+            format!("(doc: {slug})")
+        } else {
+            "MISSING DOC".to_string()
+        };
+        let _ = writeln!(s, "{indent}{mark} {} {}", row.path, detail);
+    }
+
+    let pct = covered
+        .saturating_mul(100)
+        .checked_div(total)
+        .unwrap_or(100);
+    let _ = writeln!(s, "\nCoverage: {covered}/{total} ({pct}%)");
+
+    let uncovered: Vec<&CoverageRow> = rows.iter().filter(|r| !r.is_covered()).collect();
+    if !uncovered.is_empty() {
+        let names: Vec<String> = uncovered.iter().map(|r| r.path.clone()).collect();
+        let _ = writeln!(s, "Uncovered: {}", names.join(", "));
+    }
+    s
+}
+
+fn render_coverage_json(rows: &[CoverageRow], total: usize, covered: usize) -> String {
+    let items: Vec<serde_json::Value> = rows
+        .iter()
+        .map(|r| {
+            serde_json::json!({
+                "path": r.path,
+                "depth": r.depth,
+                "covered": r.is_covered(),
+                "covered_by": r.covered_by,
+                "allow_listed": r.allow_listed,
+            })
+        })
+        .collect();
+    let uncovered: Vec<&str> = rows
+        .iter()
+        .filter(|r| !r.is_covered())
+        .map(|r| r.path.as_str())
+        .collect();
+    let payload = serde_json::json!({
+        "command": "docs-coverage",
+        "status": if uncovered.is_empty() { "pass" } else { "fail" },
+        "total": total,
+        "covered": covered,
+        "uncovered": uncovered,
+        "subcommands": items,
     });
     let mut out = serde_json::to_string_pretty(&payload).unwrap_or_default();
     out.push('\n');
@@ -13060,6 +13400,133 @@ mod stats_tests {
             assert!(
                 *count > 0,
                 "type '{name}' has 0 count but still appears in stats"
+            );
+        }
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Subcommand-coverage gate tests
+// ────────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod coverage_gate_tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    fn slugs(names: &[&str]) -> BTreeSet<String> {
+        names.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    /// A small fake clap tree: one parent (`fruit`) with two children
+    /// (`apple`, `banana`) — exactly the kind of fixture the
+    /// implementation sketch in the task asked for.
+    fn fake_tree() -> clap::Command {
+        clap::Command::new("rivet").subcommand(
+            clap::Command::new("fruit")
+                .subcommand(clap::Command::new("apple"))
+                .subcommand(clap::Command::new("banana")),
+        )
+    }
+
+    #[test]
+    fn collect_paths_walks_tree() {
+        let cmd = fake_tree();
+        let mut paths = collect_subcommand_paths(&cmd);
+        paths.sort();
+        assert_eq!(
+            paths,
+            vec![
+                ("fruit".to_string(), 0),
+                ("fruit/apple".to_string(), 1),
+                ("fruit/banana".to_string(), 1),
+            ]
+        );
+    }
+
+    #[test]
+    fn parent_topic_covers_all_leaves() {
+        let cmd = fake_tree();
+        let topics = slugs(&["fruit"]);
+        let rows = compute_coverage_rows(&cmd, &topics, &[], &[]);
+        // All three rows resolved via the `fruit` topic — the parent
+        // walk is what catches the leaves.
+        assert_eq!(rows.len(), 3);
+        for r in &rows {
+            assert!(r.is_covered(), "row {r:?} should be covered by fruit");
+            assert_eq!(r.covered_by.as_deref(), Some("fruit"));
+        }
+    }
+
+    #[test]
+    fn exact_leaf_topic_wins_over_parent() {
+        let cmd = fake_tree();
+        // Both `fruit` AND `fruit-apple` exist — the leaf-specific
+        // topic should win.
+        let topics = slugs(&["fruit", "fruit-apple"]);
+        let rows = compute_coverage_rows(&cmd, &topics, &[], &[]);
+        let apple = rows.iter().find(|r| r.path == "fruit/apple").unwrap();
+        assert_eq!(apple.covered_by.as_deref(), Some("fruit-apple"));
+        let banana = rows.iter().find(|r| r.path == "fruit/banana").unwrap();
+        assert_eq!(banana.covered_by.as_deref(), Some("fruit"));
+    }
+
+    #[test]
+    fn missing_topic_is_uncovered() {
+        let cmd = fake_tree();
+        let topics = slugs(&["something-else"]);
+        let rows = compute_coverage_rows(&cmd, &topics, &[], &[]);
+        for r in &rows {
+            assert!(!r.is_covered(), "row {r:?} should be uncovered");
+            assert!(r.covered_by.is_none());
+        }
+    }
+
+    #[test]
+    fn allow_list_exempts_path() {
+        let cmd = fake_tree();
+        let topics = BTreeSet::new();
+        let rows = compute_coverage_rows(&cmd, &topics, &["fruit"], &[]);
+        for r in &rows {
+            assert!(
+                r.allow_listed,
+                "fruit subtree must be allow-listed; got {r:?}"
+            );
+            assert!(r.is_covered(), "allow-listed must read as covered");
+            assert!(r.covered_by.is_none(), "no covering topic for allow-listed");
+        }
+    }
+
+    #[test]
+    fn topic_map_provides_umbrella_coverage() {
+        let cmd = fake_tree();
+        let topics = slugs(&["cli"]);
+        // `fruit` -> `cli` umbrella mapping.
+        let map = &[("fruit", "cli")];
+        let rows = compute_coverage_rows(&cmd, &topics, &[], map);
+        for r in &rows {
+            assert_eq!(r.covered_by.as_deref(), Some("cli"));
+        }
+    }
+
+    #[test]
+    fn coverage_slug_replaces_slashes() {
+        assert_eq!(coverage_slug("schema/show"), "schema-show");
+        assert_eq!(coverage_slug("variant"), "variant");
+        assert_eq!(coverage_slug("a/b/c"), "a-b-c");
+    }
+
+    /// Sanity-check the real CLI tree: every `(top, slug)` pair in the
+    /// production map must point at a topic that actually exists. If
+    /// somebody removes a topic, the gate would silently regress every
+    /// command in that family back to "uncovered" — catch it here.
+    #[test]
+    fn production_topic_map_references_real_topics() {
+        let topics: BTreeSet<String> = docs::topic_slugs().into_iter().map(String::from).collect();
+        for (name, slug) in COVERAGE_TOPIC_MAP {
+            assert!(
+                topics.contains(*slug),
+                "COVERAGE_TOPIC_MAP entry ({name}, {slug}) points at a non-existent topic"
             );
         }
     }
