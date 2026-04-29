@@ -374,7 +374,9 @@ enum Command {
         #[arg(long)]
         filter: Option<String>,
 
-        /// Output format: "text" (default) or "json"
+        /// Output format. Default modes accept "text" or "json"; with
+        /// `--matrix` the V&V coverage view also accepts "markdown" and
+        /// "html".
         #[arg(short, long, default_value = "text")]
         format: String,
 
@@ -393,6 +395,12 @@ enum Command {
         /// Scope coverage to a named baseline (cumulative)
         #[arg(long)]
         baseline: Option<String>,
+
+        /// Render the V&V coverage matrix from `repo-status` artifacts
+        /// (rivet#188). Combine with `--format` to choose text, json,
+        /// markdown, or html output. Mutually exclusive with `--tests`.
+        #[arg(long, conflicts_with = "tests")]
+        matrix: bool,
     },
 
     /// Generate a traceability matrix
@@ -1629,8 +1637,11 @@ fn run(cli: Cli) -> Result<bool> {
             tests,
             scan_paths,
             baseline,
+            matrix,
         } => {
-            if *tests {
+            if *matrix {
+                cmd_coverage_matrix(&cli, format, baseline.as_deref())
+            } else if *tests {
                 cmd_coverage_tests(&cli, format, scan_paths)
             } else {
                 cmd_coverage(
@@ -5386,6 +5397,301 @@ fn cmd_coverage_tests(cli: &Cli, format: &str, scan_paths: &[PathBuf]) -> Result
         "Summary: {}/{} requirements have test coverage ({:.1}%)",
         covered_count, total_coverable, pct,
     );
+
+    Ok(true)
+}
+
+// ── V&V coverage matrix (rivet#188 sub-issue 2) ────────────────────────
+//
+// Reads `repo-status` artifacts (schema `vv-coverage`, sub-issue 1, PR #232)
+// from the local project and renders a per-repo × per-technique matrix in
+// text, json, markdown, or html. Cell values:
+//
+//   - "absent"  — technique not in `techniques-applied`
+//   - "applied" — in `techniques-applied`, not in `techniques-gated-in-ci`
+//   - "gated"   — in `techniques-gated-in-ci` (implies applied)
+//
+// JSON uses those exact strings; the human-readable formats use a small
+// glyph legend documented in the rendered output.
+
+#[derive(Debug)]
+struct RepoStatusRow {
+    id: String,
+    repo: String,
+    applied: Vec<String>,
+    gated: Vec<String>,
+    notes: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MatrixCell {
+    Absent,
+    Applied,
+    Gated,
+}
+
+impl MatrixCell {
+    fn for_row(row: &RepoStatusRow, technique: &str) -> Self {
+        if row.gated.iter().any(|t| t == technique) {
+            Self::Gated
+        } else if row.applied.iter().any(|t| t == technique) {
+            Self::Applied
+        } else {
+            Self::Absent
+        }
+    }
+
+    fn json_str(self) -> &'static str {
+        match self {
+            Self::Absent => "absent",
+            Self::Applied => "applied",
+            Self::Gated => "gated",
+        }
+    }
+
+    fn glyph(self) -> &'static str {
+        match self {
+            Self::Absent => "·",
+            Self::Applied => "○",
+            Self::Gated => "●",
+        }
+    }
+}
+
+const MATRIX_LEGEND: &str = "legend: · absent  ○ applied (not CI-gated)  ● applied + CI-gated";
+
+fn read_string_list(
+    fields: &std::collections::BTreeMap<String, serde_yaml::Value>,
+    key: &str,
+) -> Vec<String> {
+    fields
+        .get(key)
+        .and_then(|v| v.as_sequence())
+        .map(|seq| {
+            seq.iter()
+                .filter_map(|v| v.as_str())
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn collect_repo_status_rows(store: &Store) -> Vec<RepoStatusRow> {
+    let mut rows: Vec<RepoStatusRow> = store
+        .iter()
+        .filter(|a| a.artifact_type == "repo-status")
+        .map(|a| {
+            let repo = a
+                .fields
+                .get("repo")
+                .and_then(|v| v.as_str())
+                .map(str::to_owned)
+                .unwrap_or_else(|| a.id.to_string());
+            let applied = read_string_list(&a.fields, "techniques-applied");
+            let gated = read_string_list(&a.fields, "techniques-gated-in-ci");
+            let notes = a
+                .fields
+                .get("notes")
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_owned);
+            RepoStatusRow {
+                id: a.id.to_string(),
+                repo,
+                applied,
+                gated,
+                notes,
+            }
+        })
+        .collect();
+    rows.sort_by(|a, b| a.repo.cmp(&b.repo).then_with(|| a.id.cmp(&b.id)));
+    rows
+}
+
+fn matrix_columns(rows: &[RepoStatusRow]) -> Vec<String> {
+    let mut cols: Vec<String> = rows
+        .iter()
+        .flat_map(|r| r.applied.iter().chain(r.gated.iter()).cloned())
+        .collect();
+    cols.sort();
+    cols.dedup();
+    cols
+}
+
+fn render_matrix_text(rows: &[RepoStatusRow], cols: &[String]) {
+    println!("V&V coverage matrix");
+    println!("{}", MATRIX_LEGEND);
+    println!();
+
+    if rows.is_empty() {
+        println!("(no `repo-status` artifacts found)");
+        return;
+    }
+
+    let repo_w = rows
+        .iter()
+        .map(|r| r.repo.chars().count())
+        .max()
+        .unwrap_or(4)
+        .max(4);
+    let col_w = cols
+        .iter()
+        .map(|c| c.chars().count())
+        .max()
+        .unwrap_or(0)
+        .max(1);
+
+    // Header.
+    print!("  {:<width$}", "repo", width = repo_w);
+    for c in cols {
+        print!("  {:<width$}", c, width = col_w);
+    }
+    println!();
+    print!("  {}", "-".repeat(repo_w));
+    for _ in cols {
+        print!("  {}", "-".repeat(col_w));
+    }
+    println!();
+
+    // Rows.
+    for row in rows {
+        print!("  {:<width$}", row.repo, width = repo_w);
+        for c in cols {
+            let cell = MatrixCell::for_row(row, c);
+            print!("  {:<width$}", cell.glyph(), width = col_w);
+        }
+        println!();
+    }
+}
+
+fn render_matrix_markdown(rows: &[RepoStatusRow], cols: &[String]) {
+    println!("# V&V coverage matrix\n");
+    println!("_{}_\n", MATRIX_LEGEND);
+
+    if rows.is_empty() {
+        println!("_No `repo-status` artifacts found in the local project._");
+        return;
+    }
+
+    // Header row.
+    print!("| repo |");
+    for c in cols {
+        print!(" {} |", c);
+    }
+    println!();
+    // Separator.
+    print!("|---|");
+    for _ in cols {
+        print!("---|");
+    }
+    println!();
+    // Body.
+    for row in rows {
+        print!("| {} |", row.repo);
+        for c in cols {
+            let cell = MatrixCell::for_row(row, c);
+            print!(" {} |", cell.glyph());
+        }
+        println!();
+    }
+}
+
+fn html_escape(input: &str) -> String {
+    input
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
+
+fn render_matrix_html(rows: &[RepoStatusRow], cols: &[String]) {
+    println!("<section class=\"vv-coverage-matrix\">");
+    println!("  <h1>V&amp;V coverage matrix</h1>");
+    println!("  <p class=\"legend\">{}</p>", html_escape(MATRIX_LEGEND));
+
+    if rows.is_empty() {
+        println!("  <p><em>No <code>repo-status</code> artifacts found.</em></p>");
+        println!("</section>");
+        return;
+    }
+
+    println!("  <table>");
+    print!("    <thead><tr><th>repo</th>");
+    for c in cols {
+        print!("<th>{}</th>", html_escape(c));
+    }
+    println!("</tr></thead>");
+    println!("    <tbody>");
+    for row in rows {
+        print!(
+            "      <tr><th scope=\"row\">{}</th>",
+            html_escape(&row.repo)
+        );
+        for c in cols {
+            let cell = MatrixCell::for_row(row, c);
+            print!(
+                "<td class=\"cell-{}\">{}</td>",
+                cell.json_str(),
+                cell.glyph()
+            );
+        }
+        println!("</tr>");
+    }
+    println!("    </tbody>");
+    println!("  </table>");
+    println!("</section>");
+}
+
+fn render_matrix_json(rows: &[RepoStatusRow], cols: &[String]) {
+    let repos_json: Vec<serde_json::Value> = rows
+        .iter()
+        .map(|r| {
+            let cells: Vec<serde_json::Value> = cols
+                .iter()
+                .map(|c| {
+                    let cell = MatrixCell::for_row(r, c);
+                    serde_json::json!({
+                        "technique": c,
+                        "status": cell.json_str(),
+                    })
+                })
+                .collect();
+            serde_json::json!({
+                "id": r.id,
+                "repo": r.repo,
+                "techniques_applied": r.applied,
+                "techniques_gated_in_ci": r.gated,
+                "notes": r.notes,
+                "cells": cells,
+            })
+        })
+        .collect();
+
+    let output = serde_json::json!({
+        "command": "coverage-matrix",
+        "columns": cols,
+        "repos": repos_json,
+    });
+    println!("{}", serde_json::to_string_pretty(&output).unwrap());
+}
+
+/// Render the V&V coverage matrix from `repo-status` artifacts.
+fn cmd_coverage_matrix(cli: &Cli, format: &str, baseline_name: Option<&str>) -> Result<bool> {
+    validate_format(format, &["text", "json", "markdown", "html"])?;
+    let ctx = ProjectContext::load(cli)?;
+    let store = apply_baseline_scope(ctx.store, baseline_name, &ctx.config);
+
+    let rows = collect_repo_status_rows(&store);
+    let cols = matrix_columns(&rows);
+
+    match format {
+        "json" => render_matrix_json(&rows, &cols),
+        "markdown" => render_matrix_markdown(&rows, &cols),
+        "html" => render_matrix_html(&rows, &cols),
+        _ => render_matrix_text(&rows, &cols),
+    }
 
     Ok(true)
 }

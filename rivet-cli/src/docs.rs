@@ -254,6 +254,18 @@ const TOPICS: &[DocTopic] = &[
         category: "Reference",
         content: SCHEMA_MIGRATE_DOC,
     },
+    DocTopic {
+        slug: "coverage-matrix",
+        title: "rivet coverage --matrix — V&V coverage view from repo-status artifacts",
+        category: "Reference",
+        content: COVERAGE_MATRIX_DOC,
+    },
+    DocTopic {
+        slug: "schema/vv-coverage",
+        title: "V&V coverage schema (repo-status type)",
+        category: "Schemas",
+        content: embedded::SCHEMA_VV_COVERAGE,
+    },
 ];
 
 // ── Embedded documentation ──────────────────────────────────────────────
@@ -2706,4 +2718,94 @@ classes (mirrors `git rebase --interactive`'s pick / edit / drop):
 - `--finish` is destructive (it deletes the snapshot). Run `rivet
   validate` first to convince yourself the migrated tree is healthy.
 - If you need to redo a migration: `--abort` and start over.
+"#;
+
+const COVERAGE_MATRIX_DOC: &str = r#"# rivet coverage --matrix
+
+The V&V coverage view: a per-repo × per-technique matrix of which
+verification techniques the project applies and which subset is gated
+in CI. Reads `repo-status` artifacts (schema `vv-coverage`, see
+`rivet docs schema/vv-coverage`) from the local project.
+
+This is sub-issue 2 of [rivet#188](https://github.com/pulseengine/rivet/issues/188).
+Sub-issue 1 (the schema) shipped in PR #232; sub-issue 3 (cross-repo
+aggregator) is still open.
+
+## Quick start
+
+```sh
+# Pretty-print the matrix in the terminal.
+rivet coverage --matrix
+
+# Markdown for pasting into a PR description or wiki.
+rivet coverage --matrix --format markdown
+
+# HTML fragment for embedding in a dashboard.
+rivet coverage --matrix --format html > matrix.html
+
+# Structured JSON for downstream tooling.
+rivet coverage --matrix --format json | jq '.repos[].repo'
+```
+
+## What gets rendered
+
+One row per `repo-status` artifact, sorted by `repo`. Columns are the
+sorted union of `techniques-applied` ∪ `techniques-gated-in-ci`
+across every row, so the matrix only contains techniques at least one
+repo cares about.
+
+Each cell is one of:
+
+| State | Glyph | JSON       | Meaning                                  |
+|-------|-------|------------|------------------------------------------|
+| absent  | `·` | `"absent"`   | Technique not in `techniques-applied`. |
+| applied | `○` | `"applied"`  | Applied but not gated in CI.           |
+| gated   | `●` | `"gated"`    | Applied **and** gated in CI.           |
+
+## Authoring `repo-status`
+
+```yaml
+- id: RS-RIVET
+  type: repo-status
+  title: rivet
+  status: valid
+  fields:
+    repo: pulseengine/rivet
+    techniques-applied: [proptest, miri, kani, mutation]
+    techniques-gated-in-ci: [proptest, miri]
+    notes: Reference V&V repo for the pulseengine workspace.
+```
+
+`repo` is the canonical `owner/name` form and is the join key the
+cross-repo aggregator (sub-issue 3) will use. Techniques are open-ended
+strings; see `rivet docs schema/vv-coverage` for the recommended set
+(verus, kani, rocq, lean, proptest, loom, miri, fuzz, mutation, …).
+
+## Output formats
+
+- **`text`** (default) — fixed-width table with the legend on top.
+  Designed for terminal eyeballing.
+- **`markdown`** — pipe table with a separator row. Pastes verbatim into
+  a PR body or `docs/` page.
+- **`html`** — `<section><table>` fragment with `cell-{absent,applied,gated}`
+  classes you can style from the dashboard's CSS. The matrix is escaped
+  for safe inline embedding.
+- **`json`** — structured `{command, columns, repos[]}` envelope. Each
+  repo carries its raw `techniques_applied`/`techniques_gated_in_ci`
+  lists plus a precomputed `cells[]` list (one entry per column) so
+  consumers don't have to recompute set membership.
+
+## Exit codes
+
+`rivet coverage --matrix` is a report, not a gate — it always exits
+`0` when invocation succeeds. CI gating belongs in the cross-repo
+aggregator (sub-issue 3) where policy lives.
+
+## Limitations
+
+- Single-repo only. Aggregating across pulseengine repos is sub-issue 3.
+- `--filter` and `--fail-under` apply to the traceability coverage
+  view, not the matrix; combining them with `--matrix` is silently
+  ignored.
+- `--matrix` and `--tests` are mutually exclusive.
 "#;

@@ -1561,6 +1561,393 @@ fn coverage_without_fail_under_is_report_only() {
     );
 }
 
+// ── rivet coverage --matrix (rivet#188 sub-issue 2) ────────────────────
+
+/// Build a tmpdir project that loads the embedded `vv-coverage` schema
+/// and ships three `repo-status` artifacts covering the legend's three
+/// states: gated, applied-not-gated, and absent.
+fn vv_coverage_project() -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let dir = tmp.path();
+
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        "project:\n  name: vv-coverage-test\n  version: \"0.1.0\"\n  \
+         schemas: [common, vv-coverage]\nsources:\n  - path: artifacts\n    \
+         format: generic-yaml\n",
+    )
+    .expect("write rivet.yaml");
+
+    let artifacts_dir = dir.join("artifacts");
+    std::fs::create_dir_all(&artifacts_dir).expect("artifacts dir");
+
+    std::fs::write(
+        artifacts_dir.join("repo-status.yaml"),
+        "artifacts:\n  - id: RS-RIVET\n    type: repo-status\n    \
+         title: rivet\n    status: valid\n    fields:\n      \
+         repo: pulseengine/rivet\n      \
+         techniques-applied: [proptest, miri, kani]\n      \
+         techniques-gated-in-ci: [proptest, miri]\n      \
+         notes: Reference repo for the V&V matrix\n  \
+         - id: RS-LOOM\n    type: repo-status\n    title: loom\n    \
+         status: valid\n    fields:\n      repo: pulseengine/loom\n      \
+         techniques-applied: [proptest, kani]\n      \
+         techniques-gated-in-ci: [proptest]\n  \
+         - id: RS-GALE\n    type: repo-status\n    title: gale\n    \
+         status: draft\n    fields:\n      repo: pulseengine/gale\n      \
+         techniques-applied: [kani]\n",
+    )
+    .expect("write repo-status fixture");
+
+    tmp
+}
+
+/// `--matrix --format markdown` renders a pipe-table with the legend,
+/// every repo on its own row, and the union of techniques as columns.
+#[test]
+fn coverage_matrix_markdown() {
+    let tmp = vv_coverage_project();
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            tmp.path().to_str().unwrap(),
+            "coverage",
+            "--matrix",
+            "--format",
+            "markdown",
+        ])
+        .output()
+        .expect("coverage --matrix --format markdown");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "must exit 0. stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+
+    // Heading + legend.
+    assert!(
+        stdout.contains("# V&V coverage matrix"),
+        "heading. {stdout}"
+    );
+    assert!(stdout.contains("legend:"), "legend present. {stdout}");
+    // Header row + separator (markdown table).
+    assert!(stdout.contains("| repo |"), "table header. {stdout}");
+    assert!(stdout.contains("|---|"), "table separator. {stdout}");
+    // All three repos appear in their own rows.
+    for repo in ["pulseengine/rivet", "pulseengine/loom", "pulseengine/gale"] {
+        assert!(
+            stdout.contains(&format!("| {} |", repo)),
+            "row for {repo}. {stdout}"
+        );
+    }
+    // Columns are the union (sorted) of `techniques-applied` across rows.
+    for col in ["proptest", "miri", "kani"] {
+        assert!(stdout.contains(col), "column {col}. {stdout}");
+    }
+    // Glyph legend in cells: gated > applied > absent.
+    assert!(stdout.contains('●'), "gated glyph. {stdout}");
+    assert!(stdout.contains('○'), "applied glyph. {stdout}");
+    assert!(stdout.contains('·'), "absent glyph. {stdout}");
+}
+
+/// `--matrix --format html` emits a `<table>` with one tbody row per
+/// repo and `cell-{absent,applied,gated}` classes for downstream styling.
+#[test]
+fn coverage_matrix_html() {
+    let tmp = vv_coverage_project();
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            tmp.path().to_str().unwrap(),
+            "coverage",
+            "--matrix",
+            "--format",
+            "html",
+        ])
+        .output()
+        .expect("coverage --matrix --format html");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "must exit 0. stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+
+    assert!(stdout.contains("<section"), "html section. {stdout}");
+    assert!(stdout.contains("<table>"), "html table. {stdout}");
+    assert!(stdout.contains("<thead>"), "html thead. {stdout}");
+    assert!(stdout.contains("<tbody>"), "html tbody. {stdout}");
+    assert!(
+        stdout.contains("<th scope=\"row\">pulseengine/rivet</th>"),
+        "row header for rivet. {stdout}"
+    );
+    // `&` in headings escaped, classes wired up.
+    assert!(stdout.contains("V&amp;V"), "& escaped. {stdout}");
+    assert!(stdout.contains("cell-gated"), "gated cell class. {stdout}");
+    assert!(
+        stdout.contains("cell-applied"),
+        "applied cell class. {stdout}"
+    );
+    assert!(
+        stdout.contains("cell-absent"),
+        "absent cell class. {stdout}"
+    );
+}
+
+/// `--matrix --format json` is the structured envelope: `command`,
+/// `columns`, and `repos[]` with per-cell `{technique, status}` records.
+#[test]
+fn coverage_matrix_json() {
+    let tmp = vv_coverage_project();
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            tmp.path().to_str().unwrap(),
+            "coverage",
+            "--matrix",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("coverage --matrix --format json");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "must exit 0. stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("matrix JSON must parse");
+
+    assert_eq!(
+        parsed.get("command").and_then(|v| v.as_str()),
+        Some("coverage-matrix"),
+        "command tag. {stdout}"
+    );
+
+    let columns = parsed
+        .get("columns")
+        .and_then(|v| v.as_array())
+        .expect("columns array");
+    let column_names: Vec<&str> = columns.iter().filter_map(|v| v.as_str()).collect();
+    // Sorted union of techniques across all rows.
+    assert_eq!(
+        column_names,
+        vec!["kani", "miri", "proptest"],
+        "columns. {stdout}"
+    );
+
+    let repos = parsed
+        .get("repos")
+        .and_then(|v| v.as_array())
+        .expect("repos array");
+    assert_eq!(repos.len(), 3, "three repo-status rows. {stdout}");
+
+    // Find rivet row, assert the three cell statuses are correct.
+    let rivet = repos
+        .iter()
+        .find(|r| r.get("repo").and_then(|v| v.as_str()) == Some("pulseengine/rivet"))
+        .expect("rivet row");
+    let cells = rivet
+        .get("cells")
+        .and_then(|v| v.as_array())
+        .expect("rivet cells");
+    let by_technique: std::collections::BTreeMap<&str, &str> = cells
+        .iter()
+        .filter_map(|c| {
+            let t = c.get("technique")?.as_str()?;
+            let s = c.get("status")?.as_str()?;
+            Some((t, s))
+        })
+        .collect();
+    assert_eq!(by_technique.get("proptest"), Some(&"gated"));
+    assert_eq!(by_technique.get("miri"), Some(&"gated"));
+    assert_eq!(by_technique.get("kani"), Some(&"applied"));
+
+    // gale only applies kani — proptest and miri must be absent.
+    let gale = repos
+        .iter()
+        .find(|r| r.get("repo").and_then(|v| v.as_str()) == Some("pulseengine/gale"))
+        .expect("gale row");
+    let gale_cells = gale
+        .get("cells")
+        .and_then(|v| v.as_array())
+        .expect("gale cells");
+    let gale_by: std::collections::BTreeMap<&str, &str> = gale_cells
+        .iter()
+        .filter_map(|c| {
+            let t = c.get("technique")?.as_str()?;
+            let s = c.get("status")?.as_str()?;
+            Some((t, s))
+        })
+        .collect();
+    assert_eq!(gale_by.get("kani"), Some(&"applied"));
+    assert_eq!(gale_by.get("proptest"), Some(&"absent"));
+    assert_eq!(gale_by.get("miri"), Some(&"absent"));
+}
+
+/// `--matrix --format text` (default text mode) renders the legend and a
+/// fixed-width table that's easy to eyeball in a terminal.
+#[test]
+fn coverage_matrix_text_default() {
+    let tmp = vv_coverage_project();
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            tmp.path().to_str().unwrap(),
+            "coverage",
+            "--matrix",
+        ])
+        .output()
+        .expect("coverage --matrix");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "must exit 0. stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+
+    assert!(stdout.contains("V&V coverage matrix"), "title. {stdout}");
+    assert!(stdout.contains("legend:"), "legend. {stdout}");
+    assert!(stdout.contains("pulseengine/rivet"), "rivet row. {stdout}");
+    assert!(stdout.contains("●"), "gated glyph. {stdout}");
+}
+
+/// Unknown `--format` values for `--matrix` fail with a helpful error
+/// listing the four valid options.
+#[test]
+fn coverage_matrix_invalid_format_fails() {
+    let tmp = vv_coverage_project();
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            tmp.path().to_str().unwrap(),
+            "coverage",
+            "--matrix",
+            "--format",
+            "csv",
+        ])
+        .output()
+        .expect("coverage --matrix --format csv");
+
+    assert!(
+        !out.status.success(),
+        "invalid format must fail. stdout: {}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("invalid format"), "diagnostic. {stderr}");
+    for fmt in ["text", "json", "markdown", "html"] {
+        assert!(stderr.contains(fmt), "lists '{fmt}'. {stderr}");
+    }
+}
+
+/// `--matrix` and `--tests` are mutually exclusive at the clap layer so
+/// users can't accidentally combine the V&V matrix with the
+/// test-marker scanner.
+#[test]
+fn coverage_matrix_conflicts_with_tests_flag() {
+    let tmp = vv_coverage_project();
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            tmp.path().to_str().unwrap(),
+            "coverage",
+            "--matrix",
+            "--tests",
+        ])
+        .output()
+        .expect("coverage --matrix --tests");
+
+    assert!(
+        !out.status.success(),
+        "matrix + tests must conflict. stdout: {}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.to_lowercase().contains("conflict") || stderr.contains("cannot be used"),
+        "clap conflict diagnostic. {stderr}"
+    );
+}
+
+/// Empty project — no `repo-status` artifacts — still renders cleanly
+/// in every format and exits 0 (the matrix is a report, not a gate).
+#[test]
+fn coverage_matrix_empty_project() {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let dir = tmp.path();
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        "project:\n  name: empty\n  version: \"0.1.0\"\n  \
+         schemas: [common, vv-coverage]\nsources:\n  - path: artifacts\n    \
+         format: generic-yaml\n",
+    )
+    .expect("rivet.yaml");
+    std::fs::create_dir_all(dir.join("artifacts")).expect("artifacts");
+
+    for (fmt, marker) in [
+        ("text", "no `repo-status` artifacts"),
+        ("markdown", "No `repo-status`"),
+        ("html", "No <code>repo-status</code>"),
+    ] {
+        let out = Command::new(rivet_bin())
+            .args([
+                "--project",
+                dir.to_str().unwrap(),
+                "coverage",
+                "--matrix",
+                "--format",
+                fmt,
+            ])
+            .output()
+            .expect("coverage --matrix on empty project");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            out.status.success(),
+            "empty {fmt} must exit 0. stdout:\n{stdout}\nstderr:\n{stderr}"
+        );
+        assert!(
+            stdout.contains(marker),
+            "{fmt}: empty marker '{marker}' missing. {stdout}"
+        );
+    }
+
+    // JSON: empty repos array, command tag still set.
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir.to_str().unwrap(),
+            "coverage",
+            "--matrix",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("coverage --matrix --format json on empty project");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("empty matrix JSON parses");
+    assert_eq!(
+        parsed.get("command").and_then(|v| v.as_str()),
+        Some("coverage-matrix")
+    );
+    assert!(
+        parsed
+            .get("repos")
+            .and_then(|v| v.as_array())
+            .map(|a| a.is_empty())
+            == Some(true),
+        "repos empty. {stdout}"
+    );
+}
+
 /// `rivet stats --format json` exposes diagnostic counts so consumers
 /// don't need a second `rivet validate --format json` call just to
 /// get the severity breakdown.
