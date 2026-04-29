@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1777406184213,
+  "lastUpdate": 1777435318334,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "d52e99f4930d902b86f7ee7e5d81966410cdedc9",
-          "message": "docs(variant): build-system emitter walkthrough + exit-code contract (#198)\n\n* feat(sexpr): count-compare lowering + matches parse-time regex check + doc clarifications\n\nThree followups from the v0.4.3 sexpr audit:\n\n1. `(> (count <scope>) N)` now lowers to a new `CountCompare` expr\n   variant that evaluates the count against the store once and\n   compares to an integer threshold. Previously the audit documented\n   `(count ...)` as \"meant for numeric comparisons\" but no lowering\n   existed — you could only use it as a standalone predicate\n   (equivalent to `(exists <scope> true)`). Now every comparison\n   operator (>, <, >=, <=, =, !=) accepts a `(count ...)` LHS with an\n   integer RHS.\n\n2. `(matches <field> \"<regex>\")` validates the regex at lower time\n   instead of silently returning false at runtime on malformed\n   patterns. Closes the \"mysterious empty result\" footgun the audit\n   flagged — users typing `(matches id \"[\")` used to see nothing\n   match and spend time debugging; now they get a parse error with\n   the compiler's message. Non-literal patterns (rare; from field\n   interpolation) still use the runtime-lenient path.\n\n3. docs/getting-started.md gains dedicated sections for count\n   comparisons and regex validation, plus a note that dotted\n   accessors like `links.satisfies.target` are not supported — use\n   the purpose-built `linked-by` / `linked-from` / `linked-to` /\n   `links-count` predicates. Closes the doc drift where the filter\n   language's scope was implicit.\n\nRegression tests:\n- count_compare_gt_threshold — basic shape lowers\n- count_compare_requires_integer_rhs — string on the right errors\n- count_compare_all_six_operators_lower — all six comparison ops\n- matches_rejects_invalid_regex_at_lower_time — unclosed brackets\n  produce parse error\n- matches_accepts_valid_regex — good patterns still work\n\nUpdated sexpr_fuzz.rs expr_to_sexpr pretty-printer to handle the new\nExpr::CountCompare variant (fuzz roundtrip stays equivalent).\n\nUpdated sexpr_predicate_matrix.rs test that pinned the old lenient\nregex behavior to the new strict behavior.\n\nImplements: REQ-004\nRefs: DD-058\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n* feat(variant): rivet variant features/value/attr for 7 build systems\n\nNew subcommands on the variant-scoped CLI surface (REQ-046):\n  rivet variant features --format {json,env,cargo,cmake,cpp-header,bazel,make}\n  rivet variant value    FEATURE  (exit 0/1/2 = on/off/unknown)\n  rivet variant attr     FEATURE KEY\n\nFeature attributes are declared on the feature-model YAML under each\nfeature as a typed key/value map, round-tripped through solve(), and\nemitted in the requested format with long namespaced identifiers\n(RIVET_FEATURE_*, RIVET_ATTR_*). Every format is loud on constraint\nviolations — a failing solve exits non-zero with the violation list,\nnever a partial emission.\n\nNon-scalar attribute values (lists/maps) only serialise through the\nJSON formatter; the build-system formatters return Error::Schema rather\nthan invent a silent flattening convention.\n\nCoverage:\n  - 11 unit tests in rivet_core::variant_emit::tests (per-format rendering)\n  - 11 integration tests in rivet-cli/tests/variant_emit.rs (CLI end-to-end,\n    exit-code contract, loud-on-failure path)\n\nImplements: REQ-046\nRefs: DD-050\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n* docs(variant): build-system emitter walkthrough + exit-code contract\n\nAdds to docs/getting-started.md:\n- Feature attributes section (typed key/value metadata on each feature)\n- Build-system emitters table covering all 7 --format values\n- Worked example per format (Rust/cargo, CMake, C/C++, Bazel, Make, sh, JSON)\n- value/attr single-feature queries with exit-code contract (0/1/2)\n\nTrace: skip\n\n---------\n\nCo-authored-by: Claude Opus 4.7 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-04-23T00:13:59-05:00",
-          "tree_id": "98a1c8b8afa5c344eb243cad90f0a07b8a530d66",
-          "url": "https://github.com/pulseengine/rivet/commit/d52e99f4930d902b86f7ee7e5d81966410cdedc9"
-        },
-        "date": 1776921627429,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 81186,
-            "range": "± 2072",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 870498,
-            "range": "± 4759",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 12944292,
-            "range": "± 1290454",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1925,
-            "range": "± 49",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 24709,
-            "range": "± 406",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 367493,
-            "range": "± 2639",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 97,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 999523,
-            "range": "± 13053",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 168005,
-            "range": "± 777",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1913930,
-            "range": "± 164415",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 28975313,
-            "range": "± 2536874",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 120185,
-            "range": "± 2908",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 1063642,
-            "range": "± 10307",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 13779989,
-            "range": "± 1494934",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4091,
-            "range": "± 190",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 43807,
-            "range": "± 715",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 741467,
-            "range": "± 11270",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 65425,
-            "range": "± 271",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 714110,
-            "range": "± 24680",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 9933922,
-            "range": "± 97968",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 772,
-            "range": "± 13",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 6638,
-            "range": "± 136",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 88844,
-            "range": "± 1013",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 24185,
-            "range": "± 141",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 172907,
-            "range": "± 2102",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1623860,
-            "range": "± 18621",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1355559,
             "range": "± 19085",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4ef103cb09618632bde0589c070aaceb68012531",
+          "message": "feat(schema): rivet schema migrate Phase 1 — diff engine + plan/apply/abort + dev-to-aspice recipe (#238)\n\n* feat(schemas): canned dev-to-aspice migration recipe\n\nPhase 1 of issue #236. Ships exactly one mechanical migration recipe:\nthe most common \"outgrew the dev preset\" path. Renames `requirement`,\n`feature`, and `design-decision` to their ASPICE 4.0 equivalents and\nrewrites `satisfies` links to `derives-from`. Default\n`unmapped-fields: keep-as-orphan` policy stashes unmapped fields\nunder `fields.legacy.*` so nothing is lost on migration.\n\nImplements: REQ-010\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n* feat(schema): diff engine for schema migrations\n\nPhase 1 of issue #236. New `rivet_core::migrate` module provides:\n\n* MigrationRecipe / MigrationRecipeFile — YAML recipe shape with\n  type-rewrites, link-rewrites, and policies (unmapped-fields:\n  drop|keep-as-orphan|strict; unmapped-link-types: keep|drop|strict).\n* diff_artifacts() — given source artifacts + recipe + optional\n  target schema, computes a RewriteMap of PlannedChange entries\n  classified as mechanical / decidable-with-policy / conflict.\n* apply_to_file() — mechanical-only YAML rewrite at the\n  serde_yaml::Value level. Bails loudly on conflict-class changes.\n* MigrationLayout / MigrationState — directory-layout helpers for\n  `.rivet/migrations/<ts>/` with plan.yaml, manifest.yaml, state, and\n  snapshot/.\n* copy_tree / remove_tree — recursive fs helpers used by the\n  CLI's snapshot + abort path.\n\nEmbeds the shipped dev-to-aspice recipe via include_str! and exposes\nembedded_migration_recipe() for CLI lookup.\n\nEight unit tests cover: type-rename emission, link-rename\ndeduplication, unmapped-field detection with policy, apply rewrites\ntype+link, keep-as-orphan stash, conflict bail, recipe parse, state\nroundtrip.\n\nImplements: REQ-010\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n* feat(cli): rivet schema migrate — plan/apply/abort/status/finish\n\nPhase 1 of issue #236. New `rivet schema migrate <target>` subcommand:\n\n* default (no flag): plan-only — writes\n  `.rivet/migrations/<YYYYMMDD-HHMM>-<src>-to-<tgt>/plan.yaml` plus\n  manifest and a `state` file with PLANNED. Prints a summary of\n  mechanical / decidable / conflict counts.\n* `--apply`: rewrites artifact YAML in place. Bails loudly with\n  exit 1 if the plan has any conflict-class changes (Phase 1 is\n  mechanical-only). Captures a byte-faithful snapshot of `artifacts/`\n  and `rivet.yaml` before rewriting.\n* `--abort`: restores from snapshot and deletes the migration\n  directory. Byte-identical rollback for the snapshotted subtree.\n* `--status`: prints the current state machine pointer +\n  recipe/changeset summary from manifest.yaml.\n* `--finish`: deletes the snapshot after confirming COMPLETE state.\n\nRecipe resolution: tries `<schemas-dir>/migrations/<src>-to-<tgt>.yaml`\nfirst, then falls back to the embedded recipe set. Phase 1 ships\none recipe; future phases will gain a registry. Source preset is\ninferred from `rivet.yaml` (first non-`common` schema entry).\n\nImplements: REQ-007\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n* docs(schema): embedded rivet docs schema-migrate topic\n\nNew `rivet docs schema-migrate` topic covering the Phase 1 CLI\nsurface (plan / apply / abort / status / finish), the state\nmachine, the storage layout under `.rivet/migrations/<ts>/`, the\nrecipe format with action classes, and the policy semantics for\nunmapped fields and link types. Also lists what Phase 1 deliberately\ndefers (conflict markers, --continue/--skip/--edit, dashboard,\nprovenance entries).\n\nAdds a one-line entry under the existing `rivet docs cli` schema\ncommands section pointing users at the new topic.\n\nTrace: skip\n\n* test(schema): integration tests for migrate apply + abort + roundtrip\n\nFive end-to-end tests covering the Phase 1 surface area of issue #236:\n\n* plan_dev_to_aspice_writes_plan_and_manifest — fresh dev project,\n  default plan invocation creates a single migration directory\n  with plan.yaml, manifest.yaml, and `state == PLANNED`.\n* apply_rewrites_dev_to_aspice_and_validate_passes — `--apply` on\n  a clean dev project rewrites types and links, the migrated tree\n  has no `requirement` / `feature` left, and after patching\n  `rivet.yaml` to load aspice schemas, `rivet validate` exits 0.\n* abort_restores_byte_identical_artifacts — pre-migration snapshot\n  is captured, `apply` mutates files, `abort` restores them\n  byte-identically (compared via a recursive directory walk).\n* finish_deletes_snapshot_and_keeps_manifest — `--finish` on a\n  COMPLETE migration removes `snapshot/` but keeps `manifest.yaml`\n  for audit.\n* roundtrip_dev_to_aspice_keeps_artifact_count_constant — the\n  half-roundtrip we have without an aspice-to-dev recipe; asserts\n  no spurious additions/deletions through the rewrite. Full A->B->A\n  test deferred until a reverse recipe ships.\n\nVerifies: REQ-007, REQ-010\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.7 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-04-28T22:55:37-05:00",
+          "tree_id": "93b9719576c4dcf18075cd56991da31ee7486541",
+          "url": "https://github.com/pulseengine/rivet/commit/4ef103cb09618632bde0589c070aaceb68012531"
+        },
+        "date": 1777435317679,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 63236,
+            "range": "± 221",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 675001,
+            "range": "± 3297",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 9845732,
+            "range": "± 751316",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1487,
+            "range": "± 5",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 18426,
+            "range": "± 598",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 270162,
+            "range": "± 1051",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 84,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 84,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 84,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 909961,
+            "range": "± 4640",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 129084,
+            "range": "± 1045",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1493483,
+            "range": "± 9162",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 24968896,
+            "range": "± 2479202",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 92258,
+            "range": "± 698",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 776805,
+            "range": "± 34669",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 9564225,
+            "range": "± 1081859",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 3201,
+            "range": "± 5",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 33739,
+            "range": "± 113",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 565708,
+            "range": "± 4774",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 47839,
+            "range": "± 631",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 537162,
+            "range": "± 2437",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 6201714,
+            "range": "± 236584",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 606,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 5379,
+            "range": "± 10",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 70013,
+            "range": "± 196",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 18981,
+            "range": "± 64",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 133143,
+            "range": "± 335",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1253318,
+            "range": "± 6367",
             "unit": "ns/iter"
           }
         ]
