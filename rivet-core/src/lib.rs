@@ -40,6 +40,7 @@
 pub mod adapter;
 pub mod agent_pipelines;
 pub mod bazel;
+pub mod cited_source;
 pub mod commits;
 pub mod compliance;
 pub mod convergence;

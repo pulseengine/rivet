@@ -122,6 +122,12 @@ const TOPICS: &[DocTopic] = &[
         content: CONDITIONAL_RULES_DOC,
     },
     DocTopic {
+        slug: "schema-cited-sources",
+        title: "Cited-source typed field — sha256-stamped external references",
+        category: "Reference",
+        content: SCHEMA_CITED_SOURCES_DOC,
+    },
+    DocTopic {
         slug: "impact",
         title: "Change impact analysis",
         category: "Reference",
@@ -435,6 +441,22 @@ Exposes rivet tools to AI agents via the Model Context Protocol.
 The server uses stdio transport and only binds to the local process.
 See `rivet docs mcp` for the wire format, the 15-tool catalog, and the
 3-message handshake.
+
+## Oracle Subcommands (`rivet check`)
+
+```
+rivet check bidirectional           Verify every link with an inverse has it on the target
+rivet check review-signoff ID       Verify a released artifact has a reviewer
+rivet check gaps-json               Validation gaps as canonical JSON
+rivet check sources                 List artifacts with cited-source + hash status
+rivet check sources --update        Interactive y/N stamp refresh per drift
+rivet check sources --update --apply  Batch refresh, non-interactive
+```
+
+`rivet check sources` and `rivet validate --strict-cited-sources` together
+implement the deterministic external-source faithfulness check (issue
+#237). Phase 1 only handles `kind: file`; remote backends ship in
+Phase 2. See `rivet docs schema-cited-sources`.
 
 ## Schema Commands
 
@@ -1856,6 +1878,122 @@ each other. If two rules with the same condition impose conflicting
 requirements, the schema is rejected with a diagnostic.
 
 Related: [[REQ-023]], [[DD-018]], [[FEAT-040]]
+"#;
+
+const SCHEMA_CITED_SOURCES_DOC: &str = r#"# Cited-source typed field
+
+The `cited-source` field is a first-class typed schema construct that
+stamps an artifact with a hash-verifiable reference to an external
+source. Run `rivet validate` to detect drift; run `rivet check sources
+--update` to refresh the stamps.
+
+Phase 1 (current) implements the `kind: file` backend only. Remote kinds
+(`url`, `github`, `oslc`, `reqif`, `polarion`) are recognised by the
+schema and round-trip cleanly, but their backends ship in Phase 2.
+
+## Field shape
+
+```yaml
+- id: REQ-001
+  type: requirement
+  fields:
+    cited-source:
+      uri: ./testdata/source.txt           # required
+      kind: file                           # required: file | url | github | oslc | reqif | polarion
+      sha256: ba78…                        # optional but warned-on if missing
+      last-checked: 2026-04-27T00:00:00Z   # optional ISO-8601 UTC
+```
+
+## Per-kind backend behaviour
+
+| kind     | Phase 1 behaviour                                        | Phase 2 (planned)                       |
+|----------|----------------------------------------------------------|-----------------------------------------|
+| file     | re-read file on disk, recompute sha256, compare          | unchanged                               |
+| url      | accepted by schema, skipped at validate                  | HTTP fetch with `--check-remote-sources`|
+| github   | accepted by schema, skipped at validate                  | GitHub API with `GITHUB_TOKEN`          |
+| oslc     | accepted by schema, skipped at validate                  | gated by `oslc` feature flag            |
+| reqif    | accepted by schema, skipped at validate                  | gated by `reqif` feature flag           |
+| polarion | accepted by schema, skipped at validate                  | gated by `polarion` feature flag        |
+
+## URI resolution (kind: file)
+
+- Bare relative paths (`./doc.md`, `testdata/x.txt`) are resolved
+  against the project root (the directory containing `rivet.yaml`).
+- Absolute paths (`/etc/hosts`) are used as-is.
+- The `file://` scheme is honoured: `file:///abs/path` is absolute,
+  `file://relative/path` is joined to the project root.
+
+## Diagnostics
+
+Rule names emitted by `rivet validate`:
+
+- `cited-source-shape` (Error) — the field is malformed (missing uri /
+  kind, unknown kind, scheme outside the allowlist).
+- `cited-source-drift` (Warning by default; Error with
+  `--strict-cited-sources`) — sha256 stamp does not match the file on
+  disk, or the stamp is missing entirely.
+- `cited-source-stale` (Info) — `last-checked` is missing.
+- `cited-source-skipped` (Info, only with `--check-remote-sources`) —
+  remote kind acknowledged but not yet verified (Phase 1).
+
+## Security model — URI scheme allowlist
+
+The cited-source field rejects any URI scheme outside this allowlist at
+validate time:
+
+    file, http, https, github, oslc, reqif, polarion
+
+Bare relative paths (no scheme) are accepted only for `kind: file`.
+Arbitrary schemes (`javascript:`, `ftp:`, custom protocols) are blocked
+before any backend touches them — defence against exfiltration / SSRF
+from untrusted YAML.
+
+Network-touching backends (`url`, `github`, `oslc`, `reqif`, `polarion`)
+remain opt-in via `--check-remote-sources` (Phase 2 work).
+
+## CLI surface
+
+```bash
+# Default validate — checks kind: file only, no network.
+rivet validate
+
+# Treat cited-source-drift as a hard failure (CI gate).
+rivet validate --strict-cited-sources
+
+# Phase 2 — flag accepted by Phase 1, no-op for now.
+rivet validate --check-remote-sources
+
+# Audit & refresh workflow.
+rivet check sources                       # list every cited-source + status
+rivet check sources --update              # interactive y/N per drift
+rivet check sources --update --apply      # batch refresh
+```
+
+## last-checked semantics
+
+`last-checked` is a stamp, not a verification gate. Phase 1 emits an
+`Info`-severity `cited-source-stale` diagnostic when the field is
+absent; future phases may add a per-schema staleness threshold (`>30
+days for fast-moving sources`) if real-world demand justifies it.
+
+The `rivet check sources --update --apply` flow always rewrites
+`last-checked` to the current UTC time when it touches an artifact.
+
+## Migration note (Phase 1 caveat)
+
+Existing schemas declaring `upstream-ref: string` (currently `dev`'s
+`requirement` plus references in `aadl` and `supply-chain`) are NOT
+migrated by Phase 1. The migration recipe needs the `rivet schema
+migrate` machinery from issue #236. Phase 1 simply adds `cited-source`
+as an additional optional field next to `upstream-ref` — projects can
+opt in incrementally.
+
+## Related
+
+- Issue #237 — feature design and rollout phases.
+- Issue #236 — `rivet schema migrate` (required for the upstream-ref
+  migration recipe).
+- `rivet docs cli` for the full flag reference.
 "#;
 
 const IMPACT_DOC: &str = r#"# Change Impact Analysis

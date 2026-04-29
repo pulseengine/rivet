@@ -305,6 +305,19 @@ enum Command {
         /// warning (or error) fails the run.
         #[arg(long, default_value = "error")]
         fail_on: String,
+
+        /// Promote `cited-source-drift` warnings to errors. See
+        /// `rivet docs schema-cited-sources` for the field shape.
+        #[arg(long = "strict-cited-sources")]
+        strict_cited_sources: bool,
+
+        /// Reserved for Phase 2 — flag is accepted but the remote
+        /// backends (`url`, `github`, `oslc`, `reqif`, `polarion`) are
+        /// not yet implemented. Phase 1 only verifies `kind: file`. When
+        /// set, remote-kind sources emit an Info diagnostic noting they
+        /// were skipped.
+        #[arg(long = "check-remote-sources")]
+        check_remote_sources: bool,
     },
 
     /// Show a single artifact by ID
@@ -1442,6 +1455,27 @@ enum CheckAction {
         #[arg(short, long, default_value = "json")]
         format: String,
     },
+
+    /// List artifacts with `cited-source` and the current hash status
+    /// (match / drift / missing-hash / read-error / skipped-remote).
+    /// Phase 1 only handles `kind: file` — see
+    /// `rivet docs schema-cited-sources`.
+    Sources {
+        /// Refresh sha256 + last-checked stamps. By default prompts
+        /// per-artifact; pair with `--apply` for non-interactive batch
+        /// updates.
+        #[arg(long)]
+        update: bool,
+
+        /// Skip the prompt and apply every refresh non-interactively.
+        /// Requires `--update`.
+        #[arg(long, requires = "update")]
+        apply: bool,
+
+        /// Output format: "text" (default) or "json".
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
 }
 
 fn main() -> ExitCode {
@@ -1552,6 +1586,8 @@ fn run(cli: Cli) -> Result<bool> {
             variant,
             binding,
             fail_on,
+            strict_cited_sources,
+            check_remote_sources,
         } => cmd_validate(
             &cli,
             format,
@@ -1563,6 +1599,8 @@ fn run(cli: Cli) -> Result<bool> {
             variant.as_deref(),
             binding.as_deref(),
             fail_on,
+            *strict_cited_sources,
+            *check_remote_sources,
         ),
         Command::List {
             r#type,
@@ -1846,6 +1884,11 @@ fn run(cli: Cli) -> Result<bool> {
             CheckAction::GapsJson { baseline, format } => {
                 cmd_check_gaps_json(&cli, baseline.as_deref(), format)
             }
+            CheckAction::Sources {
+                update,
+                apply,
+                format,
+            } => cmd_check_sources(&cli, *update, *apply, format),
         },
         #[cfg(feature = "wasm")]
         Command::Import {
@@ -4181,6 +4224,8 @@ fn cmd_validate(
     variant_path: Option<&std::path::Path>,
     binding_path: Option<&std::path::Path>,
     fail_on: &str,
+    strict_cited_sources: bool,
+    check_remote_sources: bool,
 ) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
     let fail_on_threshold = parse_fail_on(fail_on)?;
@@ -4346,6 +4391,20 @@ fn cmd_validate(
         }
     };
     diagnostics.extend(validate::validate_documents(&doc_store, &store));
+
+    // Cited-source validation (Phase 1: kind: file backend).
+    //
+    // The store iterator yields references; clone artifacts to feed the
+    // owning `IntoIterator<Item = Artifact>` validator. Drift / missing-hash
+    // diagnostics default to Severity::Warning; `--strict-cited-sources`
+    // promotes them to Error.
+    let cited_source_diags = rivet_core::cited_source::validate_cited_sources(
+        store.iter().cloned(),
+        &cli.project,
+        strict_cited_sources,
+        check_remote_sources,
+    );
+    diagnostics.extend(cited_source_diags);
 
     // Cross-repo link validation (skipped with --skip-external-validation)
     let mut cross_repo_broken: Vec<rivet_core::externals::BrokenRef> = Vec::new();
@@ -6359,6 +6418,8 @@ fn cmd_diff(
                         variant: None,
                         binding: None,
                         fail_on: "error".to_string(),
+                        strict_cited_sources: false,
+                        check_remote_sources: false,
                     },
                 };
                 let head_cli = Cli {
@@ -6375,6 +6436,8 @@ fn cmd_diff(
                         variant: None,
                         binding: None,
                         fail_on: "error".to_string(),
+                        strict_cited_sources: false,
+                        check_remote_sources: false,
                     },
                 };
                 let bc = ProjectContext::load(&base_cli)?;
@@ -9683,6 +9746,42 @@ fn cmd_check_gaps_json(cli: &Cli, baseline_name: Option<&str>, format: &str) -> 
         return Ok(false);
     }
     Ok(true)
+}
+
+/// `rivet check sources [--update [--apply]]` — list artifacts with
+/// `cited-source`, optionally refreshing their sha256 / last-checked
+/// stamps. Phase 1 only handles `kind: file`.
+fn cmd_check_sources(cli: &Cli, update: bool, apply: bool, format: &str) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
+    let ctx = ProjectContext::load(cli)?;
+
+    let report = check::sources::compute(ctx.store.iter(), &cli.project);
+
+    if format == "json" {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        print!("{}", check::sources::render_text(&report));
+    }
+
+    if update {
+        let interactive = !apply;
+        let applied = check::sources::apply_updates(&report, interactive)?;
+        if format != "json" {
+            println!();
+            println!("Updated {applied} artifact(s).");
+        }
+    }
+
+    // The oracle's exit-code semantics: pass when no drift / read-error /
+    // missing-hash / shape-error remains. After --apply, drift and
+    // missing-hash will have been written back, but we report on the
+    // pre-update state so that the caller can see what happened. For
+    // pipelines that want post-update assurance, re-run validate.
+    let firing = report.by_status.drift
+        + report.by_status.missing_hash
+        + report.by_status.read_error
+        + report.by_status.shape_error;
+    Ok(firing == 0)
 }
 
 struct ProjectContext {

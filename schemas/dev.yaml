@@ -31,6 +31,15 @@ artifact-types:
         type: string
         required: false
         description: Reference to an upstream issue or external tracking item
+      - name: cited-source
+        type: cited-source
+        required: false
+        description: >
+          Typed cited-source field — sha256-stamped reference to an
+          external source. Shape: { uri, kind, sha256, last-checked },
+          where kind is one of file | url | github | oslc | reqif |
+          polarion. Phase 1 only verifies kind: file. See
+          `rivet docs schema-cited-sources` for the full reference.
     link-fields:
       - name: satisfies
         link-type: satisfies
