@@ -31,6 +31,7 @@ pub const SCHEMA_RESEARCH: &str = include_str!("../../schemas/research.yaml");
 pub const SCHEMA_ISO_PAS_8800: &str = include_str!("../../schemas/iso-pas-8800.yaml");
 pub const SCHEMA_SOTIF: &str = include_str!("../../schemas/sotif.yaml");
 pub const SCHEMA_SUPPLY_CHAIN: &str = include_str!("../../schemas/supply-chain.yaml");
+pub const SCHEMA_VV_COVERAGE: &str = include_str!("../../schemas/vv-coverage.yaml");
 
 // ── Embedded migration recipes ──────────────────────────────────────────
 
@@ -79,6 +80,7 @@ pub const SCHEMA_NAMES: &[&str] = &[
     "iso-pas-8800",
     "sotif",
     "supply-chain",
+    "vv-coverage",
 ];
 
 /// Metadata for a built-in bridge schema.
@@ -149,6 +151,7 @@ pub fn embedded_schema(name: &str) -> Option<&'static str> {
         "iso-pas-8800" => Some(SCHEMA_ISO_PAS_8800),
         "sotif" => Some(SCHEMA_SOTIF),
         "supply-chain" => Some(SCHEMA_SUPPLY_CHAIN),
+        "vv-coverage" => Some(SCHEMA_VV_COVERAGE),
         _ => None,
     }
 }

@@ -1,0 +1,94 @@
+# V&V coverage schema (rivet#188 sub-issue #1).
+#
+# Repo-level artifact type capturing which Verification & Validation
+# techniques a project applies, and which subset is gated as a required
+# CI check. This is the source-of-truth shape consumed by the planned
+# `rivet coverage --matrix` rendering surface and the cross-repo
+# pulseengine V&V coverage matrix aggregator.
+#
+# Inclusion of a technique in `techniques-applied` says "the repo runs
+# this technique somewhere". Inclusion in `techniques-gated-in-ci` says
+# "the technique blocks merge / release". The two are deliberately
+# separate so the matrix can show drift between "we have it" and "it
+# is enforced".
+#
+# References:
+#   - rivet#188 — V&V coverage matrix dashboard
+#   - rivet#184 — pulseengine-wide V&V coverage initiative (hub)
+
+schema:
+  name: vv-coverage
+  version: "0.1.0"
+  extends: [common]
+  description: >
+    V&V coverage matrix schema. Defines `repo-status`, the repo-level
+    artifact type used to record which verification techniques are
+    applied and which are gated in CI. Companion to `rivet coverage
+    --matrix` (#188) and the pulseengine-wide coverage hub (#184).
+
+# ──────────────────────────────────────────────────────────────────────────
+# Artifact types
+# ──────────────────────────────────────────────────────────────────────────
+artifact-types:
+
+  - name: repo-status
+    description: >
+      Repository-level V&V coverage record. One per project, summarising
+      the verification techniques the repo applies and which subset is
+      gated as a required CI check.
+
+      Recommended technique identifiers (open-ended; the matrix view
+      standardises on the names below across pulseengine):
+
+        - Formal methods:    verus, kani, rocq, lean, aeneas, mirai
+        - Property-based:    proptest, loom
+        - Dynamic analysis:  miri, asan, tsan, lsan
+        - Fuzzing & diff:    fuzz, differential
+        - Mutation:          mutation
+        - Performance:       criterion
+        - Traceability:      rivet-validate
+        - Hygiene:           cargo-deny, cargo-audit, semver-check
+
+      Authors may use technique identifiers outside this set; the
+      aggregator will surface unknown identifiers in a "non-standard"
+      column rather than reject them.
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+      - name: repo
+        type: string
+        required: true
+        description: >
+          Canonical repository identifier in `owner/name` form
+          (e.g. `pulseengine/rivet`). Stable across renames; matches
+          the cross-repo aggregator's join key.
+      - name: techniques-applied
+        type: list<string>
+        required: true
+        description: >
+          V&V techniques present in the repo (test suites, harnesses,
+          configs, hooks). Inclusion does not imply CI enforcement —
+          see `techniques-gated-in-ci`.
+      - name: techniques-gated-in-ci
+        type: list<string>
+        required: false
+        description: >
+          Subset of `techniques-applied` that block merge or release in
+          CI. The matrix view distinguishes "we have it" from "it
+          enforces" using this field.
+      - name: notes
+        type: text
+        required: false
+        description: >
+          Free-form notes about coverage gaps, partial adoption, or
+          pending work. Surfaced in matrix tooltips.
+    link-fields:
+      - name: derives-from
+        link-type: derives-from
+        cardinality: zero-or-many
+        description: >
+          Optional pointer to the requirement, feature, or hub artifact
+          that motivated this coverage choice (for example the V&V
+          initiative hub).
