@@ -254,7 +254,27 @@ const TOPICS: &[DocTopic] = &[
         category: "Reference",
         content: SCHEMA_MIGRATE_DOC,
     },
+    DocTopic {
+        slug: "docs-coverage",
+        title: "rivet docs check --coverage — subcommand-coverage gate",
+        category: "Reference",
+        content: DOCS_COVERAGE_DOC,
+    },
 ];
+
+/// Return all registered topic slugs in declaration order.
+///
+/// Used by the subcommand-coverage gate to cross-reference clap subcommand
+/// paths against documented topics.
+pub fn topic_slugs() -> Vec<&'static str> {
+    TOPICS.iter().map(|t| t.slug).collect()
+}
+
+/// True iff a topic with this slug is registered.
+#[allow(dead_code)]
+pub fn has_topic(slug: &str) -> bool {
+    TOPICS.iter().any(|t| t.slug == slug)
+}
 
 // ── Embedded documentation ──────────────────────────────────────────────
 
@@ -472,10 +492,17 @@ rivet schema migrate TGT    Plan + apply preset migration with snapshot
 ## Documentation Commands
 
 ```
-rivet docs                  List available documentation topics
-rivet docs TOPIC            Show a specific topic
-rivet docs --grep PATTERN   Search across all documentation
+rivet docs                          List available documentation topics
+rivet docs TOPIC                    Show a specific topic
+rivet docs --grep PATTERN           Search across all documentation
+rivet docs check                    Run doc-vs-reality invariants
+rivet docs check --coverage         Subcommand-coverage gate (warn)
+rivet docs check --coverage --strict  Fail-on-uncovered (CI gate)
 ```
+
+`rivet docs check --coverage` walks the live clap CLI tree and asserts
+every subcommand has an embedded `rivet docs <topic>` entry. See
+`rivet docs docs-coverage` for the matching rules and the allow-list.
 
 ## Scaffolding
 
@@ -2706,4 +2733,89 @@ classes (mirrors `git rebase --interactive`'s pick / edit / drop):
 - `--finish` is destructive (it deletes the snapshot). Run `rivet
   validate` first to convince yourself the migrated tree is healthy.
 - If you need to redo a migration: `--abort` and start over.
+"#;
+
+const DOCS_COVERAGE_DOC: &str = r#"# rivet docs check --coverage
+
+The subcommand-coverage gate walks the live clap CLI tree and asserts that
+every subcommand path has a documented topic in the embedded `rivet docs`
+registry. It complements the existing `SubcommandReferences` invariant —
+which catches docs referencing non-existent subcommands — by checking the
+reverse direction: every subcommand that EXISTS should be DOCUMENTED.
+
+## Quick start
+
+```
+rivet docs check --coverage             # warn-only report
+rivet docs check --coverage --strict    # fail-on-uncovered (CI gate)
+rivet docs check --coverage --format json
+```
+
+The default warn-only mode always exits 0 so the gate can land in CI as a
+visibility step before the obvious gaps are filled. Once the inventory is
+clean, flip `--strict` on to make uncovered subcommands fail the build.
+
+## Coverage rules
+
+A subcommand path X (e.g. `schema/show`) is covered if any of:
+
+1. A topic with the same slug exists (`rivet docs schema-show` — slashes
+   become dashes for slug lookup).
+2. The path itself is a top-level subcommand whose name has a topic
+   (e.g. `mcp` is covered by the `mcp` topic).
+3. The parent subcommand has a topic (e.g. all `schema/*` paths are
+   covered by the `schema` parent — currently mapped to `cli`).
+4. The subcommand is in the explicit allow-list (built-in commands like
+   `help` that are inherently undocumented).
+
+The mapping is intentionally generous: a single `cli` reference topic
+covers every nested action under `schema`, `baseline`, `snapshot`, etc.,
+provided the parent subcommand itself has a section in `rivet docs cli`.
+
+## Report format
+
+Plain text:
+
+```
+rivet docs check --coverage
+
+  Top-level subcommands:
+    ✓ init               (doc: quickstart)
+    ✓ validate           (doc: cli)
+    ✗ variant            MISSING DOC
+    ...
+
+  Coverage: 42/55 (76%)
+  Uncovered: variant, baseline, snapshot, runs, pipelines, templates,
+             close-gaps, mcp
+```
+
+JSON output (`--format json`) matches the `docs check` envelope and lists
+each subcommand path with `covered: bool` plus the topic slug that
+provides coverage (when applicable).
+
+## CI integration
+
+```yaml
+- name: Subcommand-coverage gate
+  run: cargo run --release -p rivet-cli -- docs check --coverage
+  # add --strict once the obvious gaps are filled
+```
+
+The CI step is idempotent: it re-derives the subcommand tree from clap's
+runtime metadata, so adding a new subcommand without a doc topic will fail
+the gate immediately under `--strict`.
+
+## Allow-list
+
+The following clap subcommands are exempt from the gate because they
+ship no user-facing documentation surface:
+
+| Subcommand          | Reason                                                       |
+|---------------------|--------------------------------------------------------------|
+| `help`              | clap-builtin help renderer                                    |
+| `commit-msg-check`  | Internal pre-commit hook — usage is documented by the hook    |
+
+Add new exemptions only when there's a real reason — the goal of the gate
+is to surface gaps, not paper over them.
 "#;
