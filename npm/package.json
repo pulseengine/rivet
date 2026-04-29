@@ -1,6 +1,6 @@
 {
   "name": "@pulseengine/rivet",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "Rivet — SDLC traceability, validation, and MCP server for safety-critical systems (ISO 26262, DO-178C, ASPICE, STPA)",
   "main": "index.js",
   "bin": {
