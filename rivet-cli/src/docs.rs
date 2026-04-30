@@ -260,6 +260,12 @@ const TOPICS: &[DocTopic] = &[
         category: "Reference",
         content: DOCS_COVERAGE_DOC,
     },
+    DocTopic {
+        slug: "docs-check",
+        title: "rivet docs check — invariant engine and embedded-doc checks",
+        category: "Reference",
+        content: DOCS_CHECK_DOC,
+    },
 ];
 
 /// Return all registered topic slugs in declaration order.
@@ -268,6 +274,16 @@ const TOPICS: &[DocTopic] = &[
 /// paths against documented topics.
 pub fn topic_slugs() -> Vec<&'static str> {
     TOPICS.iter().map(|t| t.slug).collect()
+}
+
+/// Return every registered topic as `(slug, body)` pairs.
+///
+/// Used by the embedded-doc invariants in `rivet docs check`
+/// (`EmbeddedVersionLiterals`, `EmbeddedFlagReferences`,
+/// `EmbeddedTodoMarkers`) to scan the strings shipped in the binary
+/// — the markdown scanner only sees files on disk.
+pub fn topic_bodies() -> Vec<(&'static str, &'static str)> {
+    TOPICS.iter().map(|t| (t.slug, t.content)).collect()
 }
 
 /// True iff a topic with this slug is registered.
@@ -1604,10 +1620,14 @@ that follow the spec strictly will reject `tools/list` until they see it.
      "result": {
        "protocolVersion": "2024-11-05",
        "capabilities": {"tools": {...}, "resources": {...}},
-       "serverInfo": {"name": "rivet", "version": "0.5.0"}
+       "serverInfo": {"name": "rivet", "version": "<rmcp-version>"}
      }
    }
    ```
+
+   The `version` field reflects the underlying [rmcp](https://crates.io/crates/rmcp)
+   crate version — not rivet's. It changes with `rmcp` upgrades and is not
+   tied to the rivet release line.
 
 3. **Client → server**: `notifications/initialized` notification. **No
    id, no response.** This is the gate — the server treats it as the
@@ -2031,7 +2051,7 @@ artifacts via the link graph.
 ## Usage
 
     rivet impact --since main           # Compare against main branch
-    rivet impact --since v0.5.0         # Compare against a tag
+    rivet impact --since vX.Y.Z         # Compare against a release tag
     rivet impact --baseline ./old/      # Compare against a directory
     rivet impact --since HEAD~5 --depth 2  # Limit traversal depth
     rivet impact --since main --format json
@@ -2870,4 +2890,90 @@ ship no user-facing documentation surface:
 
 Add new exemptions only when there's a real reason — the goal of the gate
 is to surface gaps, not paper over them.
+"#;
+
+const DOCS_CHECK_DOC: &str = r#"# rivet docs check — invariant engine
+
+`rivet docs check` runs a set of doc-vs-reality invariants over the
+project's markdown docs and the binary's embedded `rivet docs <topic>`
+bodies. Each invariant emits a typed violation describing the claim
+(what the doc says) and reality (what the code or store says). Used as
+a CI gate, it catches drift before users do.
+
+## Quick start
+
+```
+rivet docs check                   # text report
+rivet docs check --format json     # JSON report
+rivet docs check --fix             # apply auto-fixes (currently
+                                   # only ancillary package.json
+                                   # version bumps)
+```
+
+## Markdown invariants
+
+These invariants scan files on disk under `docs/`, plus README.md,
+CHANGELOG.md, AGENTS.md, and CLAUDE.md (and any roots configured via
+`rivet.yaml` `docs:`).
+
+| Invariant                | Catches                                                    |
+|--------------------------|------------------------------------------------------------|
+| `SubcommandReferences`   | `rivet <word>` prose mentions for non-existent subcommands |
+| `EmbedTokenReferences`   | `{{name:...}}` for unknown embed kinds                     |
+| `VersionConsistency`     | Future versions mentioned in prose; package.json drift     |
+| `ArtifactCounts`         | "N requirements" claims with no `{{stats}}` or AUDIT marker |
+| `SchemaReferences`       | `schemas/foo.yaml` references that resolve nowhere          |
+| `SoftGateHonesty`        | "X enforced in CI" prose for `continue-on-error: true` jobs |
+| `ConfigExampleFreshness` | ```yaml fenced blocks that fail to parse                    |
+| `ArtifactIdValidity`     | `REQ-NNN`-shaped IDs not in the artifact store              |
+| `MigrationConflict`      | rebase-style markers in artifact YAML (`<<<<<<<` etc.)      |
+
+## Embedded-doc invariants
+
+Three invariants scan the strings shipped in the `rivet docs <topic>`
+registry — the bodies the binary prints, not files on disk. The
+markdown scanner does not see those strings, so without these checks
+stale literals shipped in a release are invisible until a user
+complains.
+
+### `EmbeddedVersionLiterals`
+
+Every `vX.Y.Z` / `X.Y.Z` token in a topic body must equal the workspace
+version or appear in `rivet.yaml` `docs-check.allowed-version-literals`.
+Use the allowlist for legitimate references:
+
+```yaml
+docs-check:
+  allowed-version-literals:
+    - "1.3.0"        # rmcp crate pin
+    - "0.1.0"        # shipped schema header version
+```
+
+Entries without a leading `v` also match the `v`-prefixed form, so a
+single `0.1.0` covers both shapes.
+
+### `EmbeddedFlagReferences`
+
+Every `rivet <subcmd> --<flag>` token in a topic body must reference a
+flag declared on that subcommand in the live clap tree. Walks
+parent-up so a flag declared on the root or on an intermediate
+subcommand resolves correctly. When the *subcommand* itself is
+unknown, the violation is left to `SubcommandReferences` to report —
+not double-counted here.
+
+### `EmbeddedTodoMarkers`
+
+Embedded topic bodies must not contain `TODO`, `FIXME`, or `XXX`
+markers. Author notes belong in commits or issue trackers, not in
+user-facing doc strings shipped in release binaries.
+
+## CI integration
+
+```yaml
+- name: Doc-check
+  run: cargo run --release -p rivet-cli -- docs check
+```
+
+The gate exits non-zero on any violation. Run with `--format json` for
+machine-readable output (the same envelope the dashboard ingests).
 "#;
