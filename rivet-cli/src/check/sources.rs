@@ -38,7 +38,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use rivet_core::cited_source::{
-    self, CheckOutcome, CitedSource, check_cited_source, parse_cited_source,
+    self, CheckOutcome, CitedSource, STALE_DAYS_DEFAULT, StaleStatus, check_cited_source,
+    classify_staleness_now, parse_cited_source,
 };
 use rivet_core::model::Artifact;
 use serde::Serialize;
@@ -67,6 +68,42 @@ impl EntryStatus {
     }
 }
 
+/// Side-channel staleness report — orthogonal to `EntryStatus` because a
+/// `MATCH` entry can still be stale (last-checked is old or missing).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StaleVerdict {
+    Fresh,
+    MissingTimestamp,
+    Old,
+    Unparseable,
+}
+
+impl StaleVerdict {
+    fn label(self) -> &'static str {
+        match self {
+            StaleVerdict::Fresh => "FRESH",
+            StaleVerdict::MissingTimestamp => "STALE-MISSING",
+            StaleVerdict::Old => "STALE-OLD",
+            StaleVerdict::Unparseable => "STALE-UNPARSEABLE",
+        }
+    }
+
+    fn from_status(s: StaleStatus) -> Self {
+        match s {
+            StaleStatus::Fresh => StaleVerdict::Fresh,
+            StaleStatus::Missing => StaleVerdict::MissingTimestamp,
+            StaleStatus::Old { .. } => StaleVerdict::Old,
+            StaleStatus::Unparseable => StaleVerdict::Unparseable,
+        }
+    }
+
+    /// True for any non-fresh verdict — used by `--strict` exit code.
+    pub fn is_stale(self) -> bool {
+        !matches!(self, StaleVerdict::Fresh)
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Entry {
     pub artifact_id: String,
@@ -79,6 +116,13 @@ pub struct Entry {
     pub computed_sha256: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_checked: Option<String>,
+    /// Side-channel: `last-checked` freshness verdict. Always emitted
+    /// for kind: file entries; omitted (None) for shape-errors and remote-skipped.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stale: Option<StaleVerdict>,
+    /// Age in days when `stale = Old`. None otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stale_age_days: Option<i64>,
     /// File path on disk for `kind: file` entries (for `--update`).
     #[serde(skip)]
     pub source_file: Option<PathBuf>,
@@ -95,6 +139,7 @@ pub struct StatusCounts {
     pub read_error: usize,
     pub skipped_remote: usize,
     pub shape_error: usize,
+    pub stale: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -132,6 +177,8 @@ pub fn compute<'a>(
                     stamped_sha256: None,
                     computed_sha256: None,
                     last_checked: None,
+                    stale: None,
+                    stale_age_days: None,
                     source_file: artifact.source_file.clone(),
                     detail: Some(e.to_string()),
                 });
@@ -161,6 +208,24 @@ pub fn compute<'a>(
             EntryStatus::ShapeError => by_status.shape_error += 1,
         }
 
+        // Compute the staleness side-channel for kind: file. Remote
+        // kinds skip this — we can't reason about freshness without
+        // the actual backend.
+        let (stale, stale_age_days) = if parsed.kind.is_local() {
+            let s = classify_staleness_now(parsed.last_checked.as_deref(), STALE_DAYS_DEFAULT);
+            let age = match s {
+                StaleStatus::Old { age_days } => Some(age_days),
+                _ => None,
+            };
+            let v = StaleVerdict::from_status(s);
+            if v.is_stale() {
+                by_status.stale += 1;
+            }
+            (Some(v), age)
+        } else {
+            (None, None)
+        };
+
         entries.push(Entry {
             artifact_id: artifact.id.clone(),
             uri: parsed.uri.clone(),
@@ -169,6 +234,8 @@ pub fn compute<'a>(
             stamped_sha256: parsed.sha256.clone(),
             computed_sha256: computed,
             last_checked: parsed.last_checked.clone(),
+            stale,
+            stale_age_days,
             source_file: artifact.source_file.clone(),
             detail,
         });
@@ -191,18 +258,30 @@ pub fn render_text(report: &Report) -> String {
         out.push_str("No artifacts have a cited-source field.\n");
         return out;
     }
-    let _ = writeln!(out, "{:<14} {:<14} {:<8} URI", "ARTIFACT", "STATUS", "KIND",);
+    let _ = writeln!(
+        out,
+        "{:<14} {:<14} {:<18} {:<8} URI",
+        "ARTIFACT", "STATUS", "FRESHNESS", "KIND",
+    );
     for e in &report.entries {
+        let stale_label = e.stale.map(|s| s.label()).unwrap_or("-");
         let _ = writeln!(
             out,
-            "{:<14} {:<14} {:<8} {}",
+            "{:<14} {:<14} {:<18} {:<8} {}",
             e.artifact_id,
             e.status.label(),
+            stale_label,
             e.kind,
             e.uri
         );
         if let Some(detail) = &e.detail {
             let _ = writeln!(out, "    detail: {detail}");
+        }
+        if let Some(age) = e.stale_age_days {
+            let _ = writeln!(
+                out,
+                "    last-checked age: {age} day(s) (threshold: {STALE_DAYS_DEFAULT})"
+            );
         }
         if let (Some(stamped), Some(computed)) = (&e.stamped_sha256, &e.computed_sha256) {
             if e.status == EntryStatus::Drift {
@@ -214,7 +293,7 @@ pub fn render_text(report: &Report) -> String {
     let _ = writeln!(out);
     let _ = writeln!(
         out,
-        "Total: {} (match: {}, drift: {}, missing-hash: {}, read-error: {}, skipped-remote: {}, shape-error: {})",
+        "Total: {} (match: {}, drift: {}, missing-hash: {}, read-error: {}, skipped-remote: {}, shape-error: {}, stale: {})",
         report.total,
         report.by_status.r#match,
         report.by_status.drift,
@@ -222,6 +301,7 @@ pub fn render_text(report: &Report) -> String {
         report.by_status.read_error,
         report.by_status.skipped_remote,
         report.by_status.shape_error,
+        report.by_status.stale,
     );
     if report.by_status.skipped_remote > 0 {
         let _ = writeln!(

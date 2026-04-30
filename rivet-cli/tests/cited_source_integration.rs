@@ -250,6 +250,224 @@ fn check_sources_lists_entries_in_text_mode() {
     assert!(stdout.contains("file"), "stdout: {stdout}");
 }
 
+/// B7 (issue #249) — `rivet check sources --strict` is a read-only
+/// audit gate. On a clean fixture it exits 0; after editing the source
+/// file off-disk, it exits 1 (drift). After `--update --apply` it
+/// returns to exit 0.
+#[test]
+fn check_sources_strict_audit_gate() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    let source = seed(dir);
+    let original = sha256_hex(b"v1\n");
+    write_artifact(dir, &original);
+
+    // Clean fixture: --strict exits 0.
+    let out = run_rivet(dir, &["check", "sources", "--strict"]);
+    assert!(
+        out.status.success(),
+        "check sources --strict should pass on clean fixture.\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // Drift the source file.
+    std::fs::write(&source, "v2\n").unwrap();
+
+    // Now --strict must exit 1 — and crucially MUST NOT modify the YAML.
+    let yaml_before = std::fs::read_to_string(dir.join("artifacts").join("req.yaml")).unwrap();
+    let out = run_rivet(dir, &["check", "sources", "--strict"]);
+    let yaml_after = std::fs::read_to_string(dir.join("artifacts").join("req.yaml")).unwrap();
+    assert_eq!(
+        yaml_before, yaml_after,
+        "--strict must not mutate any YAML; got diff",
+    );
+    assert!(
+        !out.status.success(),
+        "check sources --strict should fail on drift.\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // Apply the fix in a separate invocation — same as the issue's
+    // recommended pattern (audit and fix are not the same command).
+    let upd = run_rivet(dir, &["check", "sources", "--update", "--apply"]);
+    assert!(upd.status.code() != Some(2));
+
+    // Strict gate should now pass again.
+    let out = run_rivet(dir, &["check", "sources", "--strict"]);
+    assert!(
+        out.status.success(),
+        "check sources --strict should pass after --update --apply.\nstdout: {}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+}
+
+/// B7 (issue #249) — --strict and --update are mutually exclusive.
+#[test]
+fn check_sources_strict_and_update_are_mutually_exclusive() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    seed(dir);
+    let original = sha256_hex(b"v1\n");
+    write_artifact(dir, &original);
+
+    let out = run_rivet(dir, &["check", "sources", "--strict", "--update"]);
+    assert!(
+        !out.status.success(),
+        "expected clap to reject --strict + --update"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("cannot be used") || stderr.contains("conflict"),
+        "expected mutex error. stderr: {stderr}",
+    );
+}
+
+/// B8 (issue #249) — `--strict-cited-source-stale` promotes the
+/// previously-Info `cited-source-stale` diagnostic to an Error and
+/// makes `validate` exit 1.
+#[test]
+fn validate_strict_cited_source_stale_fails_on_old_last_checked() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    seed(dir);
+    let original = sha256_hex(b"v1\n");
+    // Override the artifact YAML with a stale last-checked (1970-01-01).
+    let yaml = format!(
+        r#"artifacts:
+  - id: REQ-001
+    type: requirement
+    title: A test requirement
+    status: draft
+    fields:
+      cited-source:
+        uri: ./testdata/source.txt
+        kind: file
+        sha256: {original}
+        last-checked: 1970-01-01T00:00:00Z
+"#
+    );
+    std::fs::write(dir.join("artifacts").join("req.yaml"), yaml).unwrap();
+
+    // Default validate: passes (Info diagnostic only).
+    let out = run_rivet(dir, &["validate", "--direct"]);
+    assert!(
+        out.status.success(),
+        "default validate should pass on stale cited-source.\nstdout: {}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+
+    // --strict-cited-source-stale: exit 1.
+    let out = run_rivet(
+        dir,
+        &["validate", "--direct", "--strict-cited-source-stale"],
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "--strict-cited-source-stale should fail.\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    // Look for the human-readable text rather than the rule name (the
+    // rule name appears only in JSON output).
+    assert!(
+        stdout.contains("day(s) old") || stderr.contains("day(s) old"),
+        "expected stale-age diagnostic. stdout={stdout} stderr={stderr}"
+    );
+}
+
+/// B9 (issue #249) — `rivet schema migrate --list` enumerates recipes.
+#[test]
+fn schema_migrate_list_text() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    seed(dir);
+
+    let out = run_rivet(dir, &["schema", "migrate", "--list"]);
+    assert!(
+        out.status.success(),
+        "--list should always exit 0.\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("dev-to-aspice"),
+        "expected built-in recipe in output. stdout: {stdout}"
+    );
+    assert!(
+        stdout.contains("built-in"),
+        "expected origin column. stdout: {stdout}"
+    );
+}
+
+/// B9 (issue #249) — `--list --format json` emits valid JSON with the
+/// expected shape.
+#[test]
+fn schema_migrate_list_json() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    seed(dir);
+
+    let out = run_rivet(dir, &["schema", "migrate", "--list", "--format", "json"]);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let v: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("not valid JSON: {e}\n--- stdout ---\n{stdout}"));
+    assert_eq!(v["oracle"], "schema-migrate-recipes");
+    let recipes = v["recipes"].as_array().expect("recipes array");
+    assert!(
+        recipes.iter().any(|r| r["name"] == "dev-to-aspice"),
+        "expected dev-to-aspice in JSON. got: {recipes:?}"
+    );
+}
+
+/// B9 (issue #249) — project-local recipes appear with origin
+/// "project-local".
+#[test]
+fn schema_migrate_list_includes_project_local() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    seed(dir);
+
+    // Write a project-local recipe.
+    let migrations = dir.join("schemas").join("migrations");
+    std::fs::create_dir_all(&migrations).unwrap();
+    std::fs::write(
+        migrations.join("dev-to-stpa.yaml"),
+        "migration:\n  name: dev-to-stpa\n  source: { preset: dev }\n  target: { preset: stpa }\n  description: 'project-local recipe'\n",
+    )
+    .unwrap();
+
+    let out = run_rivet(dir, &["schema", "migrate", "--list", "--format", "json"]);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let recipes = v["recipes"].as_array().expect("recipes array");
+    let local = recipes
+        .iter()
+        .find(|r| r["name"] == "dev-to-stpa")
+        .expect("dev-to-stpa in recipes");
+    assert_eq!(local["origin"], "project-local");
+}
+
+/// B9 (issue #249) — `--list` and `--apply` are mutually exclusive.
+#[test]
+fn schema_migrate_list_and_apply_are_mutually_exclusive() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    seed(dir);
+
+    let out = run_rivet(dir, &["schema", "migrate", "--list", "--apply", "aspice"]);
+    assert!(!out.status.success(), "expected clap to reject mutex");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("cannot be used") || stderr.contains("conflict"),
+        "expected mutex error. stderr: {stderr}"
+    );
+}
+
 #[test]
 fn validate_rejects_arbitrary_uri_scheme() {
     let tmp = tempfile::tempdir().unwrap();

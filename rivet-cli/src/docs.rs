@@ -1959,7 +1959,10 @@ Rule names emitted by `rivet validate`:
 - `cited-source-drift` (Warning by default; Error with
   `--strict-cited-sources`) — sha256 stamp does not match the file on
   disk, or the stamp is missing entirely.
-- `cited-source-stale` (Info) — `last-checked` is missing.
+- `cited-source-stale` (Info by default; Error with
+  `--strict-cited-source-stale`) — `last-checked` is missing,
+  unparseable, or older than 30 days. The 30-day threshold is a global
+  default; per-schema overrides are deferred to a follow-up feature.
 - `cited-source-skipped` (Info, only with `--check-remote-sources`) —
   remote kind acknowledged but not yet verified (Phase 1).
 
@@ -1987,6 +1990,11 @@ rivet validate
 # Treat cited-source-drift as a hard failure (CI gate).
 rivet validate --strict-cited-sources
 
+# Treat cited-source-stale (last-checked > 30d, missing, or unparseable)
+# as a hard failure. Pair with --strict-cited-sources for a full audit
+# gate.
+rivet validate --strict-cited-source-stale
+
 # Phase 2 — flag accepted by Phase 1, no-op for now.
 rivet validate --check-remote-sources
 
@@ -1994,14 +2002,37 @@ rivet validate --check-remote-sources
 rivet check sources                       # list every cited-source + status
 rivet check sources --update              # interactive y/N per drift
 rivet check sources --update --apply      # batch refresh
+
+# Read-only audit gate. Exit 1 on any drift / missing-hash / read-error
+# / shape-error / stale (last-checked > 30d). Never modifies any YAML.
+# Mutually exclusive with --update — audit and fix are separate
+# invocations so CI never sees a "ran-then-fixed" mutation pattern.
+rivet check sources --strict
 ```
+
+## Audit gate pattern (issue #249)
+
+For platform engineers who want a clean read-only audit gate in CI:
+
+```bash
+# In CI: read-only check. Fails if any cited-source has drifted, is
+# missing a hash, has a read error, or has a stale last-checked.
+rivet check sources --strict
+
+# Equivalent gate via `rivet validate`:
+rivet validate --strict-cited-sources --strict-cited-source-stale
+```
+
+The `check sources --strict` form emits a richer per-artifact table
+(useful for debugging which file drifted); the `validate` form is
+preferred when you want a single command to gate the whole project.
 
 ## last-checked semantics
 
-`last-checked` is a stamp, not a verification gate. Phase 1 emits an
-`Info`-severity `cited-source-stale` diagnostic when the field is
-absent; future phases may add a per-schema staleness threshold (`>30
-days for fast-moving sources`) if real-world demand justifies it.
+`last-checked` is a stamp **and** a freshness signal. The
+`cited-source-stale` Info diagnostic fires when `last-checked` is
+missing, unparseable, or older than the threshold (30 days by default
+in v0.7.x). Per-schema thresholds are deferred to a follow-up feature.
 
 The `rivet check sources --update --apply` flow always rewrites
 `last-checked` to the current UTC time when it touches an artifact.
@@ -2607,6 +2638,8 @@ the conflict in-place and runs `--continue`, or drops the artifact with
 ## Quick start
 
 ```
+rivet schema migrate --list                  # enumerate available recipes
+rivet schema migrate --list --format json    # same, machine-readable
 rivet schema migrate aspice                  # plan only (dry-run)
 rivet schema migrate aspice --apply          # apply; pause on first conflict
 rivet schema migrate aspice --continue       # resume after editing markers
@@ -2618,6 +2651,47 @@ rivet schema migrate aspice --abort          # restore everything from snapshot
 ```
 
 The default invocation is plan-only and never modifies the project tree.
+
+## Discovering recipes (`--list`)
+
+`rivet schema migrate --list` walks the recipe registry and prints one
+row per available recipe (built-in + every YAML under
+`<schemas-dir>/migrations/`). Project-local recipes shadow built-ins
+of the same name. The flag is target-free and read-only — always exits
+0.
+
+```
+NAME                   ORIGIN     SOURCE         TARGET         DESCRIPTION
+dev-to-aspice          built-in   dev            aspice         Mechanical mapping for the most common dev -> aspice transition.
+dev-to-stpa            project-local  dev        stpa           Custom recipe for our STPA workflow.
+    path: schemas/migrations/dev-to-stpa.yaml
+
+Total: 2 (built-in: 1, project-local: 1)
+```
+
+JSON output (`--format json`) emits the same data in the
+`schema-migrate-recipes` oracle shape:
+
+```json
+{
+  "oracle": "schema-migrate-recipes",
+  "recipes": [
+    {
+      "name": "dev-to-aspice",
+      "source_preset": "dev",
+      "target_preset": "aspice",
+      "description": "...",
+      "origin": "built-in",
+      "path": null
+    }
+  ],
+  "warnings": [],
+  "total": 1
+}
+```
+
+`--list` is mutually exclusive with the action flags (`--apply`,
+`--abort`, `--status`, `--finish`, `--continue`, `--skip`, `--edit`).
 
 ## State machine
 
