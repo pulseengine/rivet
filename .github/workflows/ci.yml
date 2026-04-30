@@ -55,12 +55,14 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Run rivet docs check
         run: cargo run --release -p rivet-cli -- docs check
-      # Subcommand-coverage gate — warn-only initially so the existing
-      # inventory of uncovered subcommands (variant, baseline, snapshot,
-      # runs, pipelines, templates, close-gaps) doesn't break the build.
-      # Flip to `--strict` once those gaps are filled.
+      # Subcommand-coverage gate — `--warn-only` emits a
+      # `::warning::` GitHub Actions annotation per uncovered subcommand
+      # so they surface inline on the PR without failing the build. Flip
+      # to `--strict` once the existing inventory of uncovered
+      # subcommands (variant, baseline, snapshot, runs, pipelines,
+      # templates, close-gaps) is filled. See issue #248 for the design.
       - name: Subcommand-coverage gate (warn-only)
-        run: cargo run --release -p rivet-cli -- docs check --coverage
+        run: cargo run --release -p rivet-cli -- docs check --coverage --warn-only
 
   # ── Tests ─────────────────────────────────────────────────────────────
   test:

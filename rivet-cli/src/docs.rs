@@ -276,6 +276,15 @@ pub fn has_topic(slug: &str) -> bool {
     TOPICS.iter().any(|t| t.slug == slug)
 }
 
+/// Return the raw content body of a topic, or `None` if no topic with
+/// this slug is registered.
+///
+/// Used by the subcommand-coverage gate's umbrella rule to verify that a
+/// parent topic actually mentions the child subcommand by name.
+pub fn topic_content(slug: &str) -> Option<&'static str> {
+    TOPICS.iter().find(|t| t.slug == slug).map(|t| t.content)
+}
+
 // ── Embedded documentation ──────────────────────────────────────────────
 
 const ARTIFACT_FORMAT_DOC: &str = r#"# Artifact YAML Format
@@ -2798,14 +2807,24 @@ reverse direction: every subcommand that EXISTS should be DOCUMENTED.
 ## Quick start
 
 ```
-rivet docs check --coverage             # warn-only report
-rivet docs check --coverage --strict    # fail-on-uncovered (CI gate)
+rivet docs check --coverage              # local exploration: print, exit 0, no annotations
+rivet docs check --coverage --warn-only  # CI rollout: print + emit ::warning:: annotations, exit 0
+rivet docs check --coverage --strict     # enforcing CI: print, exit 1 on any uncovered
 rivet docs check --coverage --format json
 ```
 
-The default warn-only mode always exits 0 so the gate can land in CI as a
-visibility step before the obvious gaps are filled. Once the inventory is
-clean, flip `--strict` on to make uncovered subcommands fail the build.
+`--warn-only` and `--strict` are mutually exclusive. Pick one for CI
+based on rollout phase:
+
+| Mode | Exit code | GitHub Actions annotations | Use for |
+|------|-----------|----------------------------|---------|
+| `--coverage` (default) | 0 | none | local exploration |
+| `--coverage --warn-only` | 0 | `::warning::` per gap | CI rollout — surface gaps inline on PRs without failing the build |
+| `--coverage --strict` | 1 if any gap | none (use `--warn-only` for those) | enforcing CI once the inventory is clean |
+
+The `::warning file=…::…` lines emitted by `--warn-only` are GitHub
+Actions' workflow-command syntax — the runner picks them up from stdout
+and renders them as PR review comments without failing the job.
 
 ## Coverage rules
 
@@ -2815,14 +2834,22 @@ A subcommand path X (e.g. `schema/show`) is covered if any of:
    become dashes for slug lookup).
 2. The path itself is a top-level subcommand whose name has a topic
    (e.g. `mcp` is covered by the `mcp` topic).
-3. The parent subcommand has a topic (e.g. all `schema/*` paths are
-   covered by the `schema` parent — currently mapped to `cli`).
-4. The subcommand is in the explicit allow-list (built-in commands like
+3. The parent subcommand has a topic, found by walking up the path (e.g.
+   `schema/show` falls back to a `schema` topic when no `schema-show`
+   topic exists).
+4. The top-level subcommand has an entry in `COVERAGE_TOPIC_MAP` AND the
+   referenced topic body actually mentions the subcommand name as a
+   whole word (case-insensitive). This rule lets a single umbrella
+   topic (typically `cli`) cover a family of subcommands — but only if
+   the topic genuinely documents them. A catch-all entry pointing to a
+   topic that never references the family is no coverage at all (issue
+   #248 B5).
+5. The subcommand is in the explicit allow-list (built-in commands like
    `help` that are inherently undocumented).
 
-The mapping is intentionally generous: a single `cli` reference topic
-covers every nested action under `schema`, `baseline`, `snapshot`, etc.,
-provided the parent subcommand itself has a section in `rivet docs cli`.
+The body-mention check (rule 4) prevents the umbrella from quietly
+papering over real gaps: if `lsp` maps to `cli` but the `cli` topic
+body never says `lsp`, the path is reported as uncovered.
 
 ## Report format
 
@@ -2848,15 +2875,24 @@ provides coverage (when applicable).
 
 ## CI integration
 
+Initial rollout — surface gaps without failing the build:
+
 ```yaml
-- name: Subcommand-coverage gate
-  run: cargo run --release -p rivet-cli -- docs check --coverage
-  # add --strict once the obvious gaps are filled
+- name: Subcommand-coverage gate (warn-only)
+  run: cargo run --release -p rivet-cli -- docs check --coverage --warn-only
+```
+
+Once the inventory is clean, switch to enforcing:
+
+```yaml
+- name: Subcommand-coverage gate (strict)
+  run: cargo run --release -p rivet-cli -- docs check --coverage --strict
 ```
 
 The CI step is idempotent: it re-derives the subcommand tree from clap's
-runtime metadata, so adding a new subcommand without a doc topic will fail
-the gate immediately under `--strict`.
+runtime metadata, so adding a new subcommand without a doc topic will
+fail the gate immediately under `--strict`, or surface as a PR-review
+warning under `--warn-only`.
 
 ## Allow-list
 
