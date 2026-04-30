@@ -5,6 +5,104 @@
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-04-29
+
+Theme: schema migration Phase 2 + docs coverage gate + housekeeping.
+The migrate state machine is now the full git-rebase analogue —
+conflict markers, `--continue`, `--skip`, `--edit` — and the embedded
+docs corpus has a mechanical coverage check to prevent future drift.
+Plus four hygiene PRs that had been sitting in the backlog.
+
+### Added
+
+- **`rivet schema migrate` Phase 2** — git-rebase-style conflict
+  resolution UX (#242). When `--apply` hits a conflict, merge-conflict-
+  style markers (`<<<<<<<` / `=======` / `>>>>>>>`) are spliced into
+  the affected artifact YAML and the migration pauses. Three new
+  subcommands resolve from there:
+  - `--continue` — verify markers are gone, re-validate the touched
+    artifact, advance to the next conflict or COMPLETE.
+  - `--skip` — drop the current artifact from the migration; restore
+    its pre-migration form from the snapshot, advance.
+  - `--edit <id>` — re-stamp markers on a previously-resolved
+    conflict for re-editing.
+
+  New `MigrationState::Conflict` state, `current-conflict` pointer
+  file wired in, `manifest.yaml` extended with per-artifact
+  `resolutions: pending|resolved|skipped`. The diff engine now also
+  emits `FieldValueConflict` when a source value violates the target
+  field's `allowed-values` enum (the canonical conflict shape).
+
+- **`MigrationConflict` invariant in `rivet docs check`** — scans
+  `artifacts/**/*.yaml` for unresolved conflict markers. Catches
+  accidental commits with markers still in the YAML; the gate is
+  always-on so a half-resolved migration can't slip into git.
+
+- **`rivet docs check --coverage`** subcommand-coverage gate (#241).
+  Walks the live clap CLI tree, builds every subcommand path
+  (top-level + nested actions), and cross-references each against
+  the embedded `rivet docs` topic registry. Default is warn-only;
+  `--strict` makes uncovered paths fail the build. JSON output for
+  CI consumption. Wired into the `docs-check` CI job (warn-only
+  initially; flip to `--strict` once the documented gaps are filled).
+  Initial inventory: 48/81 paths covered (59%); 33 uncovered across
+  7 families (variant, baseline, snapshot, runs, pipelines,
+  templates, close-gaps).
+
+### Changed (housekeeping merges)
+
+- **`feat(validate)`: warn when prose names an artifact id without
+  a typed link** (#234, closes #207). `rivet validate` now scans
+  every artifact's `description` and string-typed fields for tokens
+  matching `\b[A-Z][A-Z0-9]*-[0-9]+\b`. When such a mention resolves
+  to an existing artifact and there's no typed link to it,
+  `prose-mention-without-typed-link` warns. Suppressed for self-refs
+  and unresolved IDs; deduplicated per artifact-pair.
+
+- **`feat(schemas)`: vv-coverage repo-status type for V&V technique
+  tracking** (#232, partial #188). New `vv-coverage` schema with the
+  `repo-status` artifact type, designed as the source-of-truth shape
+  for the planned `rivet coverage --matrix` rendering surface and
+  cross-repo aggregation.
+
+- **`feat(mutants)`: canonical cargo-mutants template + docs +
+  schema fields** (#229, closes #185). Reusable `mutants.toml` +
+  workflow YAML template under `templates/cargo-mutants/`, doc
+  topic, and schema fields for tracking surviving mutants per
+  test layer.
+
+- **`docs(pre-commit)`: canonical 21-hook template + tier docs**
+  (#222, closes #186). Copy-pasteable `templates/pre-commit/
+  .pre-commit-config.yaml` and `docs/pre-commit.md`.
+
+### Fixed
+
+- **Release workflow now idempotent on existing tag** (#244). The
+  `Create Release` step in `release.yml` previously failed with
+  "a release with the same tag name already exists" if the
+  maintainer ran `gh release create` manually right after pushing
+  the tag — which happened on every release in the v0.5.0 / v0.5.1
+  / v0.6.0 sequence. Net effect was that those release pages have
+  no binary / VSIX / SHA256 assets attached. The step now detects
+  an existing release and uploads assets via `gh release upload
+  --clobber`, otherwise creates the release with assets. v0.7.0
+  ships clean assets out of the box; older releases need manual
+  asset upload if desired.
+
+### Workspace
+
+- Workspace, vscode-rivet, and npm root package versions bumped to
+  0.7.0. Platform packages stay on the release-npm.yml override
+  path.
+
+### Known issues
+
+- **v0.5.0 / v0.5.1 / v0.6.0 release pages have no binary assets.**
+  The Release workflow doesn't have `workflow_dispatch`, so
+  re-running on those tags isn't possible without a manual
+  `gh release upload`. Tracked as a follow-up; v0.7.0 onward is
+  unaffected.
+
 ## [0.6.0] — 2026-04-29
 
 Theme: schema migration + cited-source faithfulness. Two marquee
