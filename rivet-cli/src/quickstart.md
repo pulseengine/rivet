@@ -44,8 +44,8 @@ npm install -g @pulseengine/rivet
 rivet --version
 ```
 
-Expected: a line of the form `rivet 0.5.0` (or higher). Non-zero exit
-means the binary is not on PATH.
+Expected: a line starting with `rivet ` followed by a version. Non-zero
+exit means the binary is not on PATH.
 
 ---
 

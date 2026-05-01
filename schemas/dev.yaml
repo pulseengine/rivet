@@ -134,7 +134,7 @@ artifact-types:
         description: >
           Structured acceptance criteria in given/when/then format.
           Each entry is a string like "Given X, When Y, Then Z".
-          Use `rivet export --gherkin` to generate .feature files.
+          Use `rivet export --format gherkin` to generate .feature files.
       - name: baseline
         type: string
         required: false
@@ -177,11 +177,10 @@ conditional-rules:
       required-fields: [description]
     severity: warning
 
-# Oracle-gated agent pipeline for `rivet close-gaps`. See
-# docs/agent-pipelines.md (TODO) for the full spec. This is the simplest
-# possible block — one oracle (rivet validate) composed into one
-# structural pipeline — so the machinery works end-to-end against the
-# dev schema before heavier schemas (ASPICE, ISO 26262, GSN) land.
+# Oracle-gated agent pipeline for `rivet close-gaps`. This is the
+# simplest possible block — one oracle (rivet validate) composed into
+# one structural pipeline — so the machinery works end-to-end against
+# the dev schema before heavier schemas (ASPICE, ISO 26262, GSN) land.
 agent-pipelines:
   oracles:
     - id: structural-trace

@@ -6127,7 +6127,7 @@ fn cmd_export_gherkin(
         // Build .feature file
         let mut feature = String::new();
         feature.push_str(&format!(
-            "# Generated from {} by rivet export --gherkin\n",
+            "# Generated from {} by rivet export --format gherkin\n",
             art.id
         ));
         feature.push_str(&format!("Feature: {} — {}\n", art.id, art.title));
@@ -7112,7 +7112,9 @@ fn cmd_docs(
 /// Run `rivet docs check` — assert documentation matches reality.
 fn cmd_docs_check(cli: &Cli, format: &str, fix: bool) -> Result<bool> {
     use clap::CommandFactory;
-    use rivet_core::doc_check::{DocCheckContext, apply_fixes, default_invariants, run_all};
+    use rivet_core::doc_check::{
+        DocCheckContext, EmbeddedTopic, apply_fixes, default_invariants, run_all,
+    };
     use std::collections::BTreeSet;
 
     validate_format(format, &["text", "json"])?;
@@ -7155,6 +7157,11 @@ fn cmd_docs_check(cli: &Cli, format: &str, fix: bool) -> Result<bool> {
                 .filter_map(|p| regex::Regex::new(p).ok())
                 .collect()
         })
+        .unwrap_or_default();
+    let allowed_version_literals: BTreeSet<String> = project_config
+        .as_ref()
+        .and_then(|c| c.docs_check.as_ref())
+        .map(|d| d.allowed_version_literals.iter().cloned().collect())
         .unwrap_or_default();
 
     // 1. Collect docs (honoring per-root `exclude:` allowlists).
@@ -7210,6 +7217,23 @@ fn cmd_docs_check(cli: &Cli, format: &str, fix: bool) -> Result<bool> {
     let ci_path = project_root.join(".github/workflows/ci.yml");
     let ci_yaml_owned = std::fs::read_to_string(&ci_path).ok();
 
+    // 7. Build the embedded-topic body list (drives the Embedded* invariants).
+    let embedded_topics: Vec<EmbeddedTopic> = docs::topic_bodies()
+        .into_iter()
+        .map(|(slug, body)| EmbeddedTopic {
+            slug: slug.to_string(),
+            body: body.to_string(),
+        })
+        .collect();
+
+    // 8. Build the subcommand → long-flag map by walking the live clap tree.
+    //    Keyed on the slash-separated path (e.g. `schema/show`) so the
+    //    EmbeddedFlagReferences invariant can resolve nested subcommand
+    //    invocations. Each entry includes the inherited globals from the
+    //    root command so docs that reference `--format` on a leaf still
+    //    pass.
+    let subcommand_flags = build_subcommand_flag_map(&Cli::command());
+
     let ctx = DocCheckContext {
         project_root: &project_root,
         docs: &docs,
@@ -7220,6 +7244,9 @@ fn cmd_docs_check(cli: &Cli, format: &str, fix: bool) -> Result<bool> {
         ci_yaml: ci_yaml_owned.as_deref(),
         external_namespaces: &external_namespaces,
         ignore_patterns: &ignore_patterns,
+        embedded_topics: &embedded_topics,
+        subcommand_flags: &subcommand_flags,
+        allowed_version_literals: &allowed_version_literals,
     };
 
     let invariants = default_invariants();
@@ -7437,6 +7464,55 @@ fn walk_subcommand(
     out.push((path.clone(), depth));
     for child in cmd.get_subcommands() {
         walk_subcommand(child, &path, depth + 1, out);
+    }
+}
+
+/// Walk every subcommand in the clap tree and collect the set of long
+/// flags declared on each path. The map is keyed on the slash-separated
+/// path (e.g. `schema/show` → {`--format`}). The entry for each
+/// subcommand also seeds the *root-level* globals (those declared on
+/// the top-level `Cli`) so docs that reference, say, `rivet validate
+/// --project ...` are not flagged.
+fn build_subcommand_flag_map(
+    root: &clap::Command,
+) -> std::collections::BTreeMap<String, std::collections::BTreeSet<String>> {
+    let mut out = std::collections::BTreeMap::new();
+    let global_flags: std::collections::BTreeSet<String> = root
+        .get_arguments()
+        .filter_map(|a| a.get_long().map(str::to_string))
+        .collect();
+    for sub in root.get_subcommands() {
+        walk_flag_subcommand(sub, "", &global_flags, &mut out);
+    }
+    out
+}
+
+fn walk_flag_subcommand(
+    cmd: &clap::Command,
+    parent_path: &str,
+    global_flags: &std::collections::BTreeSet<String>,
+    out: &mut std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
+) {
+    let name = cmd.get_name();
+    let path = if parent_path.is_empty() {
+        name.to_string()
+    } else {
+        format!("{parent_path}/{name}")
+    };
+    let mut flags: std::collections::BTreeSet<String> = cmd
+        .get_arguments()
+        .filter_map(|a| a.get_long().map(str::to_string))
+        .collect();
+    // `--help` and `--version` are clap built-ins and always accepted.
+    flags.insert("help".to_string());
+    flags.insert("version".to_string());
+    // Inherit the root-level globals (e.g. `--project`, `--verbose`).
+    for f in global_flags {
+        flags.insert(f.clone());
+    }
+    out.insert(path.clone(), flags);
+    for child in cmd.get_subcommands() {
+        walk_flag_subcommand(child, &path, global_flags, out);
     }
 }
 

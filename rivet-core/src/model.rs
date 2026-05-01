@@ -403,6 +403,20 @@ pub struct DocsCheckConfig {
     /// matched ID text and skip the violation when any one matches.
     #[serde(default, rename = "ignore-patterns")]
     pub ignore_patterns: Vec<String>,
+    /// Version literals that the `EmbeddedVersionLiterals` invariant
+    /// should accept even when they differ from the workspace version.
+    /// Use for legitimate references (third-party crate version pins,
+    /// MCP protocol revisions, historical CHANGELOG dates). Match is
+    /// on the literal as captured (with or without leading `v`):
+    ///
+    /// ```yaml
+    /// docs-check:
+    ///   allowed-version-literals:
+    ///     - "2024-11-05"   # MCP protocol revision
+    ///     - "1.3.0"        # rmcp crate pin
+    /// ```
+    #[serde(default, rename = "allowed-version-literals")]
+    pub allowed_version_literals: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

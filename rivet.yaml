@@ -21,6 +21,34 @@ docs:
   - docs
   - arch
 
+# `rivet docs check` configuration
+docs-check:
+  # Version literals shipped in `rivet docs <topic>` bodies that are NOT
+  # rivet's own version. Without this allowlist, every version field in
+  # an embedded schema YAML, every example artifact version, etc. would
+  # be flagged by the EmbeddedVersionLiterals invariant. Match is on the
+  # literal as captured (with or without leading `v`).
+  # Match is on the literal as captured. Entries without a `v` prefix
+  # also match the `v`-prefixed form (so `0.1.0` covers both `0.1.0`
+  # and `v0.1.0`).
+  allowed-version-literals:
+    # Shipped schema version pins (each schema's own `version: "0.1.0"`).
+    - "0.1.0"
+    # Example/historical schema versions referenced in topic bodies.
+    - "0.2.0"
+    # ASPICE process IDs that look like X.Y.Z (e.g. SYS.2.1.7) — false
+    # positives from the regex but stable upstream identifiers.
+    - "2.1.7"
+    - "2.2.4"
+    # Supply-chain shipped example artifacts (sample release / SBOM
+    # versions in supply-chain.yaml).
+    - "1.0.200"
+    - "1.2.3"
+    - "2.1.0"
+    # rmcp crate version referenced in `rivet docs docs-check` (the
+    # invariant explainer) — not rivet's own version.
+    - "1.3.0"
+
 results: results
 
 externals:
