@@ -161,6 +161,119 @@ impl MigrationRecipeFile {
     }
 }
 
+// ── Recipe registry (discovery) ─────────────────────────────────────────
+
+/// Where a registered migration recipe came from.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum RecipeOrigin {
+    /// Compiled into the binary via `include_str!`.
+    BuiltIn,
+    /// Loaded from `<schemas-dir>/migrations/*.yaml`.
+    ProjectLocal,
+}
+
+impl RecipeOrigin {
+    /// Human-readable label.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RecipeOrigin::BuiltIn => "built-in",
+            RecipeOrigin::ProjectLocal => "project-local",
+        }
+    }
+}
+
+/// A recipe entry surfaced by [`list_recipes`].
+///
+/// Designed for `rivet schema migrate --list` and any future programmatic
+/// consumer (dashboard, MCP). Carries only metadata — the full
+/// [`MigrationRecipe`] is loaded lazily via [`MigrationRecipeFile`].
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RecipeEntry {
+    pub name: String,
+    pub source_preset: String,
+    pub target_preset: String,
+    pub description: Option<String>,
+    pub origin: RecipeOrigin,
+    /// Absolute path on disk for project-local recipes; None for built-ins.
+    pub path: Option<PathBuf>,
+}
+
+/// Enumerate every available migration recipe — built-in and
+/// project-local. Project-local recipes (`<schemas_dir>/migrations/*.yaml`)
+/// shadow built-ins of the same name (the project-local copy is the one
+/// returned).
+///
+/// Errors loading individual on-disk recipes are returned as `Err` only
+/// when the migrations directory itself is unreadable; per-file parse
+/// failures are surfaced to the caller as warnings via the second tuple
+/// element of the result.
+pub fn list_recipes(schemas_dir: &Path) -> (Vec<RecipeEntry>, Vec<String>) {
+    use crate::embedded::MIGRATION_RECIPES;
+
+    let mut warnings: Vec<String> = Vec::new();
+    let mut by_name: BTreeMap<String, RecipeEntry> = BTreeMap::new();
+
+    // Built-in recipes first.
+    for (name, content) in MIGRATION_RECIPES.iter() {
+        match MigrationRecipeFile::parse(content) {
+            Ok(file) => {
+                let r = file.migration;
+                by_name.insert(
+                    (*name).to_string(),
+                    RecipeEntry {
+                        name: r.name.clone(),
+                        source_preset: r.source.preset.clone(),
+                        target_preset: r.target.preset.clone(),
+                        description: r.description.clone(),
+                        origin: RecipeOrigin::BuiltIn,
+                        path: None,
+                    },
+                );
+            }
+            Err(e) => warnings.push(format!("built-in recipe '{name}': {e}")),
+        }
+    }
+
+    // Then walk schemas/migrations/*.yaml. A project-local recipe with
+    // the same name as a built-in shadows the built-in.
+    let dir = schemas_dir.join("migrations");
+    if dir.exists() {
+        match std::fs::read_dir(&dir) {
+            Ok(rd) => {
+                for entry in rd.flatten() {
+                    let path = entry.path();
+                    if path.extension().and_then(|s| s.to_str()) != Some("yaml") {
+                        continue;
+                    }
+                    match MigrationRecipeFile::load(&path) {
+                        Ok(file) => {
+                            let r = file.migration;
+                            by_name.insert(
+                                r.name.clone(),
+                                RecipeEntry {
+                                    name: r.name.clone(),
+                                    source_preset: r.source.preset.clone(),
+                                    target_preset: r.target.preset.clone(),
+                                    description: r.description.clone(),
+                                    origin: RecipeOrigin::ProjectLocal,
+                                    path: Some(path.clone()),
+                                },
+                            );
+                        }
+                        Err(e) => warnings.push(format!("recipe {}: {e}", path.display())),
+                    }
+                }
+            }
+            Err(e) => warnings.push(format!("reading {}: {e}", dir.display())),
+        }
+    }
+
+    let mut entries: Vec<RecipeEntry> = by_name.into_values().collect();
+    entries.sort_by(|a, b| a.name.cmp(&b.name));
+    (entries, warnings)
+}
+
 // ── Diff engine ─────────────────────────────────────────────────────────
 
 /// Action class for a single per-artifact change. Mirrors the rebase
@@ -1652,5 +1765,67 @@ mod tests {
         let out = apply_to_file_partial(original, &refs, &recipe).expect("partial");
         assert!(out.contains("type: sw-req"));
         assert!(out.contains("priority: 5"), "conflict left for marker pass");
+    }
+
+    #[test]
+    fn list_recipes_includes_built_in_dev_to_aspice() {
+        let dir = tempfile::tempdir().unwrap();
+        let (entries, warnings) = list_recipes(dir.path());
+        assert!(
+            warnings.is_empty(),
+            "expected no warnings, got: {warnings:?}"
+        );
+        let dev = entries
+            .iter()
+            .find(|r| r.name == "dev-to-aspice")
+            .expect("dev-to-aspice in registry");
+        assert_eq!(dev.source_preset, "dev");
+        assert_eq!(dev.target_preset, "aspice");
+        assert_eq!(dev.origin, RecipeOrigin::BuiltIn);
+        assert!(dev.path.is_none());
+    }
+
+    #[test]
+    fn list_recipes_picks_up_project_local_yaml() {
+        let dir = tempfile::tempdir().unwrap();
+        let migrations = dir.path().join("migrations");
+        std::fs::create_dir_all(&migrations).unwrap();
+        std::fs::write(
+            migrations.join("dev-to-stpa.yaml"),
+            "migration:\n  name: dev-to-stpa\n  source: { preset: dev }\n  target: { preset: stpa }\n  description: 'local recipe'\n",
+        )
+        .unwrap();
+
+        let (entries, warnings) = list_recipes(dir.path());
+        assert!(warnings.is_empty(), "warnings: {warnings:?}");
+        let local = entries
+            .iter()
+            .find(|r| r.name == "dev-to-stpa")
+            .expect("project-local recipe");
+        assert_eq!(local.origin, RecipeOrigin::ProjectLocal);
+        assert!(local.path.is_some());
+        // built-in still present
+        assert!(entries.iter().any(|r| r.name == "dev-to-aspice"));
+    }
+
+    #[test]
+    fn list_recipes_project_local_shadows_built_in() {
+        let dir = tempfile::tempdir().unwrap();
+        let migrations = dir.path().join("migrations");
+        std::fs::create_dir_all(&migrations).unwrap();
+        // Same name as the built-in `dev-to-aspice`, different description.
+        std::fs::write(
+            migrations.join("dev-to-aspice.yaml"),
+            "migration:\n  name: dev-to-aspice\n  source: { preset: dev }\n  target: { preset: aspice }\n  description: 'project override'\n",
+        )
+        .unwrap();
+
+        let (entries, _warnings) = list_recipes(dir.path());
+        let r = entries
+            .iter()
+            .find(|r| r.name == "dev-to-aspice")
+            .expect("dev-to-aspice");
+        assert_eq!(r.origin, RecipeOrigin::ProjectLocal);
+        assert_eq!(r.description.as_deref(), Some("project override"));
     }
 }

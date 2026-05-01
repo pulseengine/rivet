@@ -41,7 +41,7 @@ use anyhow::{Context, Result};
 
 use rivet_core::migrate::{
     self, ActionClass, ChangeKind, MigrationLayout, MigrationManifest, MigrationRecipeFile,
-    MigrationState, PlannedChange, ResolutionStatus, RewriteMap,
+    MigrationState, PlannedChange, RecipeEntry, ResolutionStatus, RewriteMap, list_recipes,
 };
 
 /// Resolve a recipe by `target_preset` against (in order):
@@ -110,6 +110,82 @@ fn unix_to_ymdhm(secs: u64) -> (u32, u32, u32, u32, u32) {
     let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
     let y = if m <= 2 { y + 1 } else { y } as u32;
     (y, m, d, h, mi)
+}
+
+/// `rivet schema migrate --list` — enumerate every available migration
+/// recipe (built-in + project-local). Read-only; never touches the
+/// project tree. Always exits 0.
+pub fn cmd_list(schemas_dir: &Path, format: &str) -> Result<bool> {
+    let (entries, warnings) = list_recipes(schemas_dir);
+
+    if format == "json" {
+        // Use a wrapper struct so the shape stays stable if we ever add
+        // metadata at the report level (counts, version, etc.).
+        let payload = serde_json::json!({
+            "oracle": "schema-migrate-recipes",
+            "recipes": entries,
+            "warnings": warnings,
+            "total": entries.len(),
+        });
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+        return Ok(true);
+    }
+
+    // Text mode.
+    if entries.is_empty() {
+        println!("No migration recipes found.");
+    } else {
+        println!(
+            "{:<22} {:<10} {:<14} {:<14} DESCRIPTION",
+            "NAME", "ORIGIN", "SOURCE", "TARGET",
+        );
+        for r in &entries {
+            let desc = first_line(r.description.as_deref().unwrap_or(""));
+            println!(
+                "{:<22} {:<10} {:<14} {:<14} {}",
+                r.name,
+                r.origin.as_str(),
+                r.source_preset,
+                r.target_preset,
+                desc,
+            );
+            if let Some(p) = &r.path {
+                println!("    path: {}", p.display());
+            }
+        }
+        println!();
+        let by_origin = count_by_origin(&entries);
+        println!(
+            "Total: {} (built-in: {}, project-local: {})",
+            entries.len(),
+            by_origin.0,
+            by_origin.1,
+        );
+    }
+    if !warnings.is_empty() {
+        eprintln!();
+        for w in &warnings {
+            eprintln!("warning: {w}");
+        }
+    }
+    Ok(true)
+}
+
+fn first_line(s: &str) -> String {
+    s.lines().next().unwrap_or("").trim().to_string()
+}
+
+fn count_by_origin(entries: &[RecipeEntry]) -> (usize, usize) {
+    use rivet_core::migrate::RecipeOrigin;
+    let mut built_in = 0;
+    let mut project_local = 0;
+    for r in entries {
+        match r.origin {
+            RecipeOrigin::BuiltIn => built_in += 1,
+            RecipeOrigin::ProjectLocal => project_local += 1,
+        }
+    }
+    (built_in, project_local)
 }
 
 /// `rivet schema migrate <target>` (plan).

@@ -284,6 +284,114 @@ pub enum CheckOutcome {
     SkippedRemote,
 }
 
+/// Default staleness threshold (in days) for `last-checked`.
+///
+/// `cited-source-stale` Info diagnostics fire when `last-checked` is
+/// missing or older than this many days. Phase 1 ships a single global
+/// default; per-schema overrides are deferred to a follow-up feature.
+pub const STALE_DAYS_DEFAULT: i64 = 30;
+
+/// Parse an ISO-8601 UTC timestamp (`YYYY-MM-DDTHH:MM:SSZ`) into epoch
+/// seconds. Returns `None` if the string is malformed.
+///
+/// Hand-rolled to avoid pulling chrono into the core. Accepts the
+/// canonical `Z` form rivet emits via [`current_iso8601_utc`]; tolerates
+/// fractional seconds like `2026-04-27T12:00:00.123Z` by truncating.
+pub fn parse_iso8601_utc(s: &str) -> Option<i64> {
+    // Strip trailing Z (required) and any fractional seconds.
+    let s = s.strip_suffix('Z')?;
+    // Strip fractional seconds (e.g. `.123`).
+    let s = match s.find('.') {
+        Some(i) => &s[..i],
+        None => s,
+    };
+    // Expect "YYYY-MM-DDTHH:MM:SS"
+    let (date, time) = s.split_once('T')?;
+
+    let (year_s, rest) = date.split_once('-')?;
+    let (month_s, day_s) = rest.split_once('-')?;
+    let year: i64 = year_s.parse().ok()?;
+    let month: i64 = month_s.parse().ok()?;
+    let day: i64 = day_s.parse().ok()?;
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return None;
+    }
+
+    let (hour_s, rest) = time.split_once(':')?;
+    let (minute_s, second_s) = rest.split_once(':')?;
+    let hour: i64 = hour_s.parse().ok()?;
+    let minute: i64 = minute_s.parse().ok()?;
+    let second: i64 = second_s.parse().ok()?;
+    if !(0..24).contains(&hour) || !(0..60).contains(&minute) || !(0..=60).contains(&second) {
+        return None;
+    }
+
+    // Howard Hinnant's "days_from_civil" — inverse of the civil_from_days
+    // used to format these timestamps elsewhere in the codebase.
+    let y = if month <= 2 { year - 1 } else { year };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400; // [0, 399]
+    let m = month;
+    let d = day;
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1; // [0, 365]
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy; // [0, 146096]
+    let days = era * 146_097 + doe - 719_468;
+
+    Some(days * 86_400 + hour * 3600 + minute * 60 + second)
+}
+
+/// Best-effort current epoch seconds (UTC). Returns 0 on clock errors,
+/// which are practically impossible.
+fn now_epoch_seconds() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// Staleness verdict for a `last-checked` timestamp.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StaleStatus {
+    /// `last-checked` is present and within the freshness window.
+    Fresh,
+    /// `last-checked` is missing.
+    Missing,
+    /// `last-checked` is present but older than `threshold_days` (carries
+    /// the computed age in days).
+    Old { age_days: i64 },
+    /// `last-checked` is present but malformed; treated as stale so the
+    /// audit doesn't silently pass.
+    Unparseable,
+}
+
+/// Compute the staleness verdict for an optional `last-checked` value
+/// against a threshold (in days). `now_epoch` is exposed for testing.
+pub fn classify_staleness(
+    last_checked: Option<&str>,
+    threshold_days: i64,
+    now_epoch: i64,
+) -> StaleStatus {
+    let Some(s) = last_checked else {
+        return StaleStatus::Missing;
+    };
+    let Some(checked_epoch) = parse_iso8601_utc(s) else {
+        return StaleStatus::Unparseable;
+    };
+    let age_seconds = now_epoch - checked_epoch;
+    let age_days = age_seconds.div_euclid(86_400);
+    if age_days > threshold_days {
+        StaleStatus::Old { age_days }
+    } else {
+        StaleStatus::Fresh
+    }
+}
+
+/// Public wrapper that uses the system clock.
+pub fn classify_staleness_now(last_checked: Option<&str>, threshold_days: i64) -> StaleStatus {
+    classify_staleness(last_checked, threshold_days, now_epoch_seconds())
+}
+
 /// Check one `cited-source` field for drift.
 ///
 /// `project_root` is the directory used to resolve relative `kind: file`
@@ -323,11 +431,14 @@ pub fn check_cited_source(
 /// `project_root` is used to resolve relative `kind: file` URIs. The
 /// `strict` flag promotes drift / missing-hash diagnostics from
 /// `Severity::Warning` to `Severity::Error` (the
-/// `--strict-cited-sources` CLI flag).
+/// `--strict-cited-sources` CLI flag). `strict_stale` similarly
+/// promotes `cited-source-stale` from `Severity::Info` to
+/// `Severity::Error` (the `--strict-cited-source-stale` flag).
 pub fn validate_cited_sources(
     artifacts: impl IntoIterator<Item = Artifact>,
     project_root: &Path,
     strict: bool,
+    strict_stale: bool,
     check_remote: bool,
 ) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
@@ -336,6 +447,12 @@ pub fn validate_cited_sources(
     } else {
         Severity::Warning
     };
+    let stale_severity = if strict_stale {
+        Severity::Error
+    } else {
+        Severity::Info
+    };
+    let now = now_epoch_seconds();
 
     for artifact in artifacts {
         let Some(raw) = artifact.fields.get("cited-source") else {
@@ -411,16 +528,45 @@ pub fn validate_cited_sources(
             }
         }
 
-        if parsed.last_checked.is_none() && parsed.kind.is_local() {
-            diagnostics.push(Diagnostic::new(
-                Severity::Info,
-                Some(artifact.id.clone()),
-                "cited-source-stale",
-                format!(
-                    "cited-source '{}' has no 'last-checked' timestamp; consider running `rivet check sources --update`",
-                    parsed.uri,
-                ),
-            ));
+        if parsed.kind.is_local() {
+            let stale = classify_staleness(parsed.last_checked.as_deref(), STALE_DAYS_DEFAULT, now);
+            match stale {
+                StaleStatus::Fresh => {}
+                StaleStatus::Missing => {
+                    diagnostics.push(Diagnostic::new(
+                        stale_severity,
+                        Some(artifact.id.clone()),
+                        "cited-source-stale",
+                        format!(
+                            "cited-source '{}' has no 'last-checked' timestamp; consider running `rivet check sources --update`",
+                            parsed.uri,
+                        ),
+                    ));
+                }
+                StaleStatus::Old { age_days } => {
+                    diagnostics.push(Diagnostic::new(
+                        stale_severity,
+                        Some(artifact.id.clone()),
+                        "cited-source-stale",
+                        format!(
+                            "cited-source '{}' last-checked is {age_days} day(s) old (threshold: {STALE_DAYS_DEFAULT}); re-verify with `rivet check sources --update`",
+                            parsed.uri,
+                        ),
+                    ));
+                }
+                StaleStatus::Unparseable => {
+                    diagnostics.push(Diagnostic::new(
+                        stale_severity,
+                        Some(artifact.id.clone()),
+                        "cited-source-stale",
+                        format!(
+                            "cited-source '{}' has an unparseable 'last-checked' timestamp ({}); expected ISO-8601 UTC like 2026-04-27T12:00:00Z",
+                            parsed.uri,
+                            parsed.last_checked.as_deref().unwrap_or(""),
+                        ),
+                    ));
+                }
+            }
         }
     }
 
@@ -826,7 +972,7 @@ last-checked: 2026-04-28T14:30:00Z
             .fields
             .insert("cited-source".into(), serde_yaml::Value::Mapping(cs_map));
 
-        let diags = validate_cited_sources(vec![artifact], dir.path(), false, false);
+        let diags = validate_cited_sources(vec![artifact], dir.path(), false, false, false);
         assert!(diags.iter().any(|d| d.rule == "cited-source-drift"));
     }
 
@@ -858,7 +1004,7 @@ last-checked: 2026-04-28T14:30:00Z
             .fields
             .insert("cited-source".into(), serde_yaml::Value::Mapping(cs_map));
 
-        let diags = validate_cited_sources(vec![artifact], dir.path(), true, false);
+        let diags = validate_cited_sources(vec![artifact], dir.path(), true, false, false);
         let drift = diags
             .iter()
             .find(|d| d.rule == "cited-source-drift")
@@ -880,7 +1026,7 @@ last-checked: 2026-04-28T14:30:00Z
             provenance: None,
             source_file: None,
         };
-        let diags = validate_cited_sources(vec![artifact], Path::new("."), false, false);
+        let diags = validate_cited_sources(vec![artifact], Path::new("."), false, false, false);
         assert!(diags.is_empty());
     }
 
@@ -971,6 +1117,181 @@ artifacts:
         let updated = std::fs::read_to_string(&yaml_path).unwrap();
         assert!(updated.contains("sha256: deadbeef"));
         assert!(updated.contains("last-checked: 2026-04-27T12:00:00Z"));
+    }
+
+    #[test]
+    fn parse_iso8601_known_round_trip() {
+        // 1970-01-01T00:00:00Z is epoch 0.
+        assert_eq!(parse_iso8601_utc("1970-01-01T00:00:00Z"), Some(0));
+        // 2026-04-27T00:00:00Z — sanity: positive seconds.
+        assert!(parse_iso8601_utc("2026-04-27T00:00:00Z").unwrap() > 0);
+        // Fractional seconds tolerated.
+        assert_eq!(parse_iso8601_utc("1970-01-01T00:00:01.123Z"), Some(1));
+        // Non-UTC / no Z is rejected.
+        assert_eq!(parse_iso8601_utc("2026-04-27T00:00:00"), None);
+        // Garbage rejected.
+        assert_eq!(parse_iso8601_utc("not-a-date"), None);
+    }
+
+    #[test]
+    fn classify_staleness_fresh_missing_old() {
+        // now = 2026-04-27T00:00:00Z (epoch 1777_564_800)
+        let now = parse_iso8601_utc("2026-04-27T00:00:00Z").unwrap();
+        // 10 days ago — fresh under 30d threshold.
+        let recent = parse_iso8601_utc("2026-04-17T00:00:00Z").unwrap();
+        assert_eq!(now - recent, 10 * 86_400);
+        let s = "2026-04-17T00:00:00Z";
+        assert_eq!(classify_staleness(Some(s), 30, now), StaleStatus::Fresh);
+
+        // 60 days ago — stale under 30d threshold.
+        let s = "2026-02-26T00:00:00Z";
+        match classify_staleness(Some(s), 30, now) {
+            StaleStatus::Old { age_days } => assert!(age_days > 30),
+            other => panic!("expected Old, got {other:?}"),
+        }
+
+        // Missing.
+        assert_eq!(classify_staleness(None, 30, now), StaleStatus::Missing);
+
+        // Unparseable.
+        assert_eq!(
+            classify_staleness(Some("2026-13-99"), 30, now),
+            StaleStatus::Unparseable
+        );
+    }
+
+    #[test]
+    fn validate_cited_sources_stale_default_is_info() {
+        // A cited-source with no last-checked yields a stale Info diag.
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("doc.md");
+        std::fs::write(&p, "v1").unwrap();
+        let h = sha256_hex(b"v1");
+
+        let mut artifact = Artifact {
+            id: "REQ-1".into(),
+            artifact_type: "requirement".into(),
+            title: "t".into(),
+            description: None,
+            status: None,
+            tags: vec![],
+            links: vec![],
+            fields: BTreeMap::new(),
+            provenance: None,
+            source_file: None,
+        };
+        let mut cs_map = serde_yaml::Mapping::new();
+        cs_map.insert("uri".into(), "doc.md".into());
+        cs_map.insert("kind".into(), "file".into());
+        cs_map.insert("sha256".into(), h.into());
+        // Note: no last-checked
+        artifact
+            .fields
+            .insert("cited-source".into(), serde_yaml::Value::Mapping(cs_map));
+
+        let diags = validate_cited_sources(vec![artifact], dir.path(), false, false, false);
+        let stale = diags
+            .iter()
+            .find(|d| d.rule == "cited-source-stale")
+            .expect("stale diag");
+        assert_eq!(stale.severity, Severity::Info);
+    }
+
+    #[test]
+    fn validate_cited_sources_strict_stale_promotes_to_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("doc.md");
+        std::fs::write(&p, "v1").unwrap();
+        let h = sha256_hex(b"v1");
+
+        let mut artifact = Artifact {
+            id: "REQ-1".into(),
+            artifact_type: "requirement".into(),
+            title: "t".into(),
+            description: None,
+            status: None,
+            tags: vec![],
+            links: vec![],
+            fields: BTreeMap::new(),
+            provenance: None,
+            source_file: None,
+        };
+        let mut cs_map = serde_yaml::Mapping::new();
+        cs_map.insert("uri".into(), "doc.md".into());
+        cs_map.insert("kind".into(), "file".into());
+        cs_map.insert("sha256".into(), h.into());
+        // Old last-checked: 1970-01-01.
+        cs_map.insert("last-checked".into(), "1970-01-01T00:00:00Z".into());
+        artifact
+            .fields
+            .insert("cited-source".into(), serde_yaml::Value::Mapping(cs_map));
+
+        let diags = validate_cited_sources(vec![artifact], dir.path(), false, true, false);
+        let stale = diags
+            .iter()
+            .find(|d| d.rule == "cited-source-stale")
+            .expect("stale diag");
+        assert_eq!(stale.severity, Severity::Error);
+        assert!(stale.message.contains("day(s) old"));
+    }
+
+    #[test]
+    fn validate_cited_sources_fresh_last_checked_no_stale_diag() {
+        // A cited-source with a fresh last-checked produces no stale diag.
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("doc.md");
+        std::fs::write(&p, "v1").unwrap();
+        let h = sha256_hex(b"v1");
+
+        // Synthesize a "now-ish" timestamp by formatting the current epoch.
+        let fresh = {
+            let secs = now_epoch_seconds();
+            // Keep it simple: subtract 1 hour. The format is permitted as long as it parses.
+            // Use the helper from the sources module path indirectly: format inline.
+            let days = secs.div_euclid(86_400);
+            let secs_of_day = secs.rem_euclid(86_400);
+            let h = secs_of_day / 3600;
+            let m = (secs_of_day % 3600) / 60;
+            let s = secs_of_day % 60;
+            let z = days + 719_468;
+            let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+            let doe = (z - era * 146_097) as u64;
+            let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+            let y = (yoe as i64) + era * 400;
+            let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+            let mp = (5 * doy + 2) / 153;
+            let d = doy - (153 * mp + 2) / 5 + 1;
+            let m_civ = if mp < 10 { mp + 3 } else { mp - 9 };
+            let y = if m_civ <= 2 { y + 1 } else { y };
+            format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", y, m_civ, d, h, m, s)
+        };
+
+        let mut artifact = Artifact {
+            id: "REQ-1".into(),
+            artifact_type: "requirement".into(),
+            title: "t".into(),
+            description: None,
+            status: None,
+            tags: vec![],
+            links: vec![],
+            fields: BTreeMap::new(),
+            provenance: None,
+            source_file: None,
+        };
+        let mut cs_map = serde_yaml::Mapping::new();
+        cs_map.insert("uri".into(), "doc.md".into());
+        cs_map.insert("kind".into(), "file".into());
+        cs_map.insert("sha256".into(), h.into());
+        cs_map.insert("last-checked".into(), fresh.into());
+        artifact
+            .fields
+            .insert("cited-source".into(), serde_yaml::Value::Mapping(cs_map));
+
+        let diags = validate_cited_sources(vec![artifact], dir.path(), false, false, false);
+        assert!(
+            diags.iter().all(|d| d.rule != "cited-source-stale"),
+            "expected no stale diag, got: {diags:?}"
+        );
     }
 
     #[test]

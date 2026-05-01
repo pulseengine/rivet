@@ -311,6 +311,14 @@ enum Command {
         #[arg(long = "strict-cited-sources")]
         strict_cited_sources: bool,
 
+        /// Promote `cited-source-stale` Info diagnostics to errors. A
+        /// `cited-source` is stale when its `last-checked` timestamp is
+        /// missing, unparseable, or older than 30 days. Use this in CI
+        /// to enforce "every cited-source must be re-checked within N
+        /// days" mechanically. See `rivet docs schema-cited-sources`.
+        #[arg(long = "strict-cited-source-stale")]
+        strict_cited_source_stale: bool,
+
         /// Reserved for Phase 2 — flag is accepted but the remote
         /// backends (`url`, `github`, `oslc`, `reqif`, `polarion`) are
         /// not yet implemented. Phase 1 only verifies `kind: file`. When
@@ -1021,40 +1029,53 @@ enum SchemaAction {
     #[command(disable_help_flag = false)]
     Migrate {
         /// Target preset (e.g., "aspice"). Source is inferred from
-        /// the project's current `rivet.yaml`.
-        target: String,
+        /// the project's current `rivet.yaml`. Optional when `--list`
+        /// is given (recipe discovery is read-only and target-free).
+        target: Option<String>,
 
         /// Apply the migration; pause on first conflict (Phase 2).
-        #[arg(long, conflicts_with_all = ["abort", "status", "finish", "continue_", "skip", "edit"])]
+        #[arg(long, conflicts_with_all = ["abort", "status", "finish", "continue_", "skip", "edit", "list"])]
         apply: bool,
 
         /// Abort the in-flight migration and restore from snapshot.
-        #[arg(long, conflicts_with_all = ["apply", "status", "finish", "continue_", "skip", "edit"])]
+        #[arg(long, conflicts_with_all = ["apply", "status", "finish", "continue_", "skip", "edit", "list"])]
         abort: bool,
 
         /// Print the current migration state machine pointer.
-        #[arg(long, conflicts_with_all = ["apply", "abort", "finish", "continue_", "skip", "edit"])]
+        #[arg(long, conflicts_with_all = ["apply", "abort", "finish", "continue_", "skip", "edit", "list"])]
         status: bool,
 
         /// Validate and finalize a COMPLETE migration (deletes snapshot).
-        #[arg(long, conflicts_with_all = ["apply", "abort", "status", "continue_", "skip", "edit"])]
+        #[arg(long, conflicts_with_all = ["apply", "abort", "status", "continue_", "skip", "edit", "list"])]
         finish: bool,
 
         /// Resume after resolving the current conflict in-place
         /// (Phase 2). Verifies markers are gone and the file still
         /// parses, then advances.
-        #[arg(long = "continue", conflicts_with_all = ["apply", "abort", "status", "finish", "skip", "edit"])]
+        #[arg(long = "continue", conflicts_with_all = ["apply", "abort", "status", "finish", "skip", "edit", "list"])]
         continue_: bool,
 
         /// Drop the current conflicted artifact from the migration
         /// (restores it from the snapshot) and advance (Phase 2).
-        #[arg(long, conflicts_with_all = ["apply", "abort", "status", "finish", "continue_", "edit"])]
+        #[arg(long, conflicts_with_all = ["apply", "abort", "status", "finish", "continue_", "edit", "list"])]
         skip: bool,
 
         /// Re-open a previously-resolved or skipped conflict for
         /// re-editing (Phase 2). Takes the artifact id.
-        #[arg(long, value_name = "ARTIFACT_ID", conflicts_with_all = ["apply", "abort", "status", "finish", "continue_", "skip"])]
+        #[arg(long, value_name = "ARTIFACT_ID", conflicts_with_all = ["apply", "abort", "status", "finish", "continue_", "skip", "list"])]
         edit: Option<String>,
+
+        /// List every available migration recipe (built-in + on-disk
+        /// `<schemas-dir>/migrations/*.yaml`) and exit. Mutually
+        /// exclusive with the action flags. Pair with `--format json`
+        /// for machine-readable output.
+        #[arg(long, conflicts_with_all = ["apply", "abort", "status", "finish", "continue_", "skip", "edit"])]
+        list: bool,
+
+        /// Output format for `--list`: "text" (default) or "json".
+        /// Ignored otherwise.
+        #[arg(long, default_value = "text")]
+        format: String,
     },
 }
 
@@ -1493,20 +1514,29 @@ enum CheckAction {
     },
 
     /// List artifacts with `cited-source` and the current hash status
-    /// (match / drift / missing-hash / read-error / skipped-remote).
+    /// (match / drift / missing-hash / read-error / skipped-remote / stale).
     /// Phase 1 only handles `kind: file` — see
     /// `rivet docs schema-cited-sources`.
     Sources {
         /// Refresh sha256 + last-checked stamps. By default prompts
         /// per-artifact; pair with `--apply` for non-interactive batch
-        /// updates.
-        #[arg(long)]
+        /// updates. Mutually exclusive with `--strict`.
+        #[arg(long, conflicts_with = "strict")]
         update: bool,
 
         /// Skip the prompt and apply every refresh non-interactively.
         /// Requires `--update`.
         #[arg(long, requires = "update")]
         apply: bool,
+
+        /// Read-only audit gate: walk every cited-source, classify it,
+        /// and exit non-zero if anything has drifted, is missing a hash,
+        /// is stale (last-checked > 30 days or absent), or could not be
+        /// read. Does not modify any YAML — pair with `--update --apply`
+        /// in a separate invocation to fix. Mutually exclusive with
+        /// `--update`.
+        #[arg(long, conflicts_with = "update")]
+        strict: bool,
 
         /// Output format: "text" (default) or "json".
         #[arg(short, long, default_value = "text")]
@@ -1634,6 +1664,7 @@ fn run(cli: Cli) -> Result<bool> {
             binding,
             fail_on,
             strict_cited_sources,
+            strict_cited_source_stale,
             check_remote_sources,
         } => cmd_validate(
             &cli,
@@ -1647,6 +1678,7 @@ fn run(cli: Cli) -> Result<bool> {
             binding.as_deref(),
             fail_on,
             *strict_cited_sources,
+            *strict_cited_source_stale,
             *check_remote_sources,
         ),
         Command::List {
@@ -1934,8 +1966,9 @@ fn run(cli: Cli) -> Result<bool> {
             CheckAction::Sources {
                 update,
                 apply,
+                strict,
                 format,
-            } => cmd_check_sources(&cli, *update, *apply, format),
+            } => cmd_check_sources(&cli, *update, *apply, *strict, format),
         },
         #[cfg(feature = "wasm")]
         Command::Import {
@@ -4272,6 +4305,7 @@ fn cmd_validate(
     binding_path: Option<&std::path::Path>,
     fail_on: &str,
     strict_cited_sources: bool,
+    strict_cited_source_stale: bool,
     check_remote_sources: bool,
 ) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
@@ -4449,6 +4483,7 @@ fn cmd_validate(
         store.iter().cloned(),
         &cli.project,
         strict_cited_sources,
+        strict_cited_source_stale,
         check_remote_sources,
     );
     diagnostics.extend(cited_source_diags);
@@ -6466,6 +6501,7 @@ fn cmd_diff(
                         binding: None,
                         fail_on: "error".to_string(),
                         strict_cited_sources: false,
+                        strict_cited_source_stale: false,
                         check_remote_sources: false,
                     },
                 };
@@ -6484,6 +6520,7 @@ fn cmd_diff(
                         binding: None,
                         fail_on: "error".to_string(),
                         strict_cited_sources: false,
+                        strict_cited_source_stale: false,
                         check_remote_sources: false,
                     },
                 };
@@ -7691,9 +7728,27 @@ fn cmd_schema(cli: &Cli, action: &SchemaAction) -> Result<bool> {
             continue_,
             skip,
             edit,
+            list,
+            format,
         } => {
+            validate_format(format, &["text", "json"])?;
             let schemas_dir = resolve_schemas_dir(cli);
             let project_root = cli.project.clone();
+
+            // --list is recipe discovery — never touches the project tree.
+            // Handle it before resolving source preset (which would try
+            // to read rivet.yaml).
+            if *list {
+                return migrate_cmd::cmd_list(&schemas_dir, format);
+            }
+
+            // Every other Migrate path needs a target preset.
+            let target = target.as_deref().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "rivet schema migrate requires a <target> preset; pass `--list` to enumerate recipes"
+                )
+            })?;
+
             let config_path = cli.project.join("rivet.yaml");
             let source_preset = if config_path.exists() {
                 let config = rivet_core::load_project_config(&config_path)
@@ -10200,10 +10255,21 @@ fn cmd_check_gaps_json(cli: &Cli, baseline_name: Option<&str>, format: &str) -> 
     Ok(true)
 }
 
-/// `rivet check sources [--update [--apply]]` — list artifacts with
-/// `cited-source`, optionally refreshing their sha256 / last-checked
-/// stamps. Phase 1 only handles `kind: file`.
-fn cmd_check_sources(cli: &Cli, update: bool, apply: bool, format: &str) -> Result<bool> {
+/// `rivet check sources [--update [--apply]] [--strict]` — list
+/// artifacts with `cited-source`, optionally refreshing their sha256 /
+/// last-checked stamps. Phase 1 only handles `kind: file`.
+///
+/// `--strict` is a read-only audit gate: it never modifies any YAML and
+/// the exit code includes stale entries (last-checked > 30 days or
+/// missing) on top of the default drift / missing-hash / read-error /
+/// shape-error set. Mutually exclusive with `--update`.
+fn cmd_check_sources(
+    cli: &Cli,
+    update: bool,
+    apply: bool,
+    strict: bool,
+    format: &str,
+) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
     let ctx = ProjectContext::load(cli)?;
 
@@ -10224,15 +10290,22 @@ fn cmd_check_sources(cli: &Cli, update: bool, apply: bool, format: &str) -> Resu
         }
     }
 
-    // The oracle's exit-code semantics: pass when no drift / read-error /
+    // Default exit-code semantics: pass when no drift / read-error /
     // missing-hash / shape-error remains. After --apply, drift and
     // missing-hash will have been written back, but we report on the
     // pre-update state so that the caller can see what happened. For
     // pipelines that want post-update assurance, re-run validate.
-    let firing = report.by_status.drift
+    //
+    // `--strict` adds stale entries to the firing set — same idea as
+    // `validate --strict-cited-source-stale`, but in the read-only
+    // `check sources` shape so audit gates don't have to touch any YAML.
+    let mut firing = report.by_status.drift
         + report.by_status.missing_hash
         + report.by_status.read_error
         + report.by_status.shape_error;
+    if strict {
+        firing += report.by_status.stale;
+    }
     Ok(firing == 0)
 }
 
