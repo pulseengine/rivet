@@ -42,11 +42,11 @@ fn rivet_bin() -> std::path::PathBuf {
     workspace_root.join("target").join("debug").join("rivet")
 }
 
-/// `rivet docs check --coverage` succeeds (exit 0) by default — warn-only
-/// mode is the default contract so the gate can land in CI without
-/// breaking on the existing inventory of uncovered commands.
+/// `rivet docs check --coverage` (no flag) succeeds (exit 0) and emits
+/// the report — but no `::warning::` annotations (those are reserved for
+/// `--warn-only`). This is the local-exploration mode (#248 B6).
 #[test]
-fn coverage_warn_only_exits_zero() {
+fn coverage_default_exits_zero_no_annotations() {
     let output = Command::new(rivet_bin())
         .args(["docs", "check", "--coverage"])
         .output()
@@ -54,7 +54,7 @@ fn coverage_warn_only_exits_zero() {
 
     assert!(
         output.status.success(),
-        "warn-only mode must exit 0; stderr: {}",
+        "default mode must exit 0; stderr: {}",
         String::from_utf8_lossy(&output.stderr),
     );
 
@@ -79,15 +79,83 @@ fn coverage_warn_only_exits_zero() {
             "expected '{name}' in coverage output, got:\n{stdout}"
         );
     }
+
+    // Default mode does NOT emit GitHub Actions annotations — those are
+    // reserved for `--warn-only`.
+    assert!(
+        !stdout.contains("::warning"),
+        "default mode must NOT emit ::warning:: annotations; got:\n{stdout}"
+    );
+}
+
+/// `--warn-only` exits 0 AND emits one `::warning file=…::…` GitHub
+/// Actions annotation per uncovered subcommand. The annotations let CI
+/// surface the gaps inline on the PR without failing the build (#248 B6).
+#[test]
+fn coverage_warn_only_emits_github_annotations() {
+    let output = Command::new(rivet_bin())
+        .args(["docs", "check", "--coverage", "--warn-only"])
+        .output()
+        .expect("failed to execute rivet docs check --coverage --warn-only");
+
+    assert!(
+        output.status.success(),
+        "--warn-only must exit 0; stderr: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // The current rivet repo has known uncovered subcommands (variant,
+    // baseline, snapshot, runs, pipelines, templates, close-gaps, plus
+    // the children that fall out of the rule-3 tightening). At least
+    // one ::warning:: annotation must appear.
+    let warning_count = stdout.matches("::warning").count();
+    assert!(
+        warning_count >= 1,
+        "expected at least one ::warning:: annotation in --warn-only mode; got:\n{stdout}"
+    );
+
+    // Each annotation must have the documented shape.
+    for line in stdout.lines().filter(|l| l.contains("::warning")) {
+        assert!(
+            line.starts_with("::warning file="),
+            "annotation must use `file=` payload; got: {line}"
+        );
+        assert!(
+            line.contains("rivet docs check --coverage"),
+            "annotation must reference the gate; got: {line}"
+        );
+    }
+}
+
+/// `--warn-only` and `--strict` are mutually exclusive (clap-enforced):
+/// invoking both must fail with a clap error before any work runs.
+#[test]
+fn coverage_warn_only_and_strict_are_mutually_exclusive() {
+    let output = Command::new(rivet_bin())
+        .args(["docs", "check", "--coverage", "--warn-only", "--strict"])
+        .output()
+        .expect("failed to execute rivet with both flags");
+
+    assert!(
+        !output.status.success(),
+        "clap must reject --warn-only + --strict together"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("cannot be used with") || stderr.contains("conflicts"),
+        "expected clap conflict error; got stderr:\n{stderr}"
+    );
 }
 
 /// `--strict` exits non-zero whenever the inventory has any uncovered
-/// path. With the current TOPICS registry we know there are at least a
-/// few uncovered commands (variant, baseline, snapshot, runs, pipelines,
-/// templates, close-gaps), so strict mode must currently fail. Once
-/// those gaps are filled the test still holds: if NOTHING is uncovered,
-/// strict exits 0, but then `expected_uncovered_count >= 1` is the only
-/// place we assert non-zero — re-flip when the world catches up.
+/// path. With the current TOPICS registry we know there are uncovered
+/// commands (variant, baseline, snapshot, runs, pipelines, templates,
+/// close-gaps, plus the rule-3-tightening children), so strict mode
+/// must currently fail. The test still holds the day the inventory
+/// becomes complete: it asserts the (status,output) pair is internally
+/// consistent.
 #[test]
 fn coverage_strict_fails_when_uncovered_present() {
     let output = Command::new(rivet_bin())
@@ -112,6 +180,24 @@ fn coverage_strict_fails_when_uncovered_present() {
             "strict mode must exit 0 when no uncovered listed; got failure with stdout:\n{stdout}"
         );
     }
+}
+
+/// On the current main branch, the repo's TOPICS registry leaves
+/// several subcommands uncovered (with #248's tightened rule 3 the
+/// count is even larger than before). Pin that as a regression check —
+/// `--coverage --strict` must currently exit 1.
+#[test]
+fn coverage_strict_currently_fails_on_main() {
+    let output = Command::new(rivet_bin())
+        .args(["docs", "check", "--coverage", "--strict"])
+        .output()
+        .expect("failed to execute rivet docs check --coverage --strict");
+
+    assert!(
+        !output.status.success(),
+        "strict mode is expected to fail on current main (uncovered subcommands present); \
+         if this passes, the inventory is now clean and the test should be flipped."
+    );
 }
 
 /// JSON output is machine-readable and follows the standard envelope

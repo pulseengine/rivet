@@ -537,8 +537,15 @@ enum Command {
         #[arg(long)]
         coverage: bool,
 
+        /// (check --coverage only) print a report and exit 0; in addition
+        /// emit `::warning file=…::…` GitHub Actions annotations for each
+        /// uncovered subcommand so CI can surface them inline on PRs
+        /// without failing the build. Mutually exclusive with --strict.
+        #[arg(long = "warn-only", conflicts_with = "strict")]
+        warn_only: bool,
+
         /// (check --coverage only) exit non-zero if any subcommand is
-        /// uncovered. Default is warn-only.
+        /// uncovered. Default is print-and-exit-0 (no annotations).
         #[arg(long)]
         strict: bool,
     },
@@ -1569,19 +1576,20 @@ fn run(cli: Cli) -> Result<bool> {
         context,
         fix,
         coverage,
+        warn_only,
         strict,
     } = &cli.command
     {
         if matches!(topic.as_deref(), Some("check")) {
             if *coverage {
-                return cmd_docs_coverage(format, *strict);
+                return cmd_docs_coverage(format, *warn_only, *strict);
             }
             return cmd_docs_check(&cli, format, *fix);
         }
         // Allow `rivet docs --coverage` (no `check` topic) as a shorthand —
         // the coverage gate doesn't depend on any other doc-check state.
         if *coverage {
-            return cmd_docs_coverage(format, *strict);
+            return cmd_docs_coverage(format, *warn_only, *strict);
         }
         return cmd_docs(topic.as_deref(), *list, grep.as_deref(), format, *context);
     }
@@ -7275,9 +7283,13 @@ fn render_docs_check_json(report: &rivet_core::doc_check::CheckReport) -> String
 //
 // See `rivet docs docs-coverage` for the full design. Quick rules:
 //   * A subcommand is covered if its slug (or a parent slug) matches a
-//     registered topic, OR if the parent's name appears as a topic.
+//     registered topic, OR if `COVERAGE_TOPIC_MAP` maps it to an umbrella
+//     topic AND the umbrella topic body actually mentions the child name
+//     (whole-word, case-insensitive).
 //   * Built-ins like `help` are exempt via `COVERAGE_ALLOWLIST`.
-//   * Default is warn-only (exit 0); `--strict` makes uncovered fail.
+//   * Three modes: `--coverage` (print, exit 0), `--coverage --warn-only`
+//     (print + emit `::warning::` annotations, exit 0), `--coverage
+//     --strict` (print, exit 1 on any uncovered).
 
 /// Top-level subcommands whose docs are inherently unnecessary or are
 /// surfaced via a different channel. Keep this list short — adding an
@@ -7394,11 +7406,17 @@ fn walk_subcommand(
 /// Compute the coverage rows for a given clap tree and topic-slug set.
 /// Pulled into its own function so the unit tests can exercise it without
 /// shelling out to the full CLI.
+///
+/// `topic_body` is a lookup for topic bodies — used by the umbrella rule
+/// (rule 4) to verify the parent topic actually mentions the child name.
+/// In production this is `docs::topic_content`; tests pass a closure over
+/// a fake topic registry.
 fn compute_coverage_rows(
     root: &clap::Command,
     topic_slugs: &std::collections::BTreeSet<String>,
     allow_list: &[&str],
     topic_map: &[(&str, &str)],
+    topic_body: &dyn Fn(&str) -> Option<&str>,
 ) -> Vec<CoverageRow> {
     let paths = collect_subcommand_paths(root);
     let mut rows = Vec::with_capacity(paths.len());
@@ -7411,7 +7429,7 @@ fn compute_coverage_rows(
         let covered_by = if allow_listed {
             None
         } else {
-            resolve_coverage(&path, top, topic_slugs, topic_map)
+            resolve_coverage(&path, top, topic_slugs, topic_map, topic_body)
         };
 
         rows.push(CoverageRow {
@@ -7433,11 +7451,15 @@ fn compute_coverage_rows(
 /// 3. Parent-walk: drop the last segment and retry both separators.
 /// 4. Manual top-level mapping via `COVERAGE_TOPIC_MAP` — used when a
 ///    single umbrella topic (typically `cli`) documents a family.
+///    Tightened in #248: the umbrella topic body must mention the
+///    top-level subcommand name as a whole word (case-insensitive),
+///    otherwise the path stays uncovered.
 fn resolve_coverage(
     path: &str,
     top: &str,
     topic_slugs: &std::collections::BTreeSet<String>,
     topic_map: &[(&str, &str)],
+    topic_body: &dyn Fn(&str) -> Option<&str>,
 ) -> Option<String> {
     // 1. & 2. Exact slug match.
     if topic_slugs.contains(path) {
@@ -7461,18 +7483,54 @@ fn resolve_coverage(
         }
     }
 
-    // 4. Manual umbrella mapping on the top-level name.
+    // 4. Manual umbrella mapping on the top-level name. The umbrella
+    //    topic must actually MENTION the child subcommand name — a
+    //    catch-all `cli` mapping that doesn't reference the family is no
+    //    coverage at all (issue #248 B5).
     for (name, slug) in topic_map {
         if *name == top && topic_slugs.contains(*slug) {
-            return Some((*slug).to_string());
+            let Some(body) = topic_body(slug) else {
+                continue;
+            };
+            if topic_body_mentions(body, top) {
+                return Some((*slug).to_string());
+            }
         }
     }
     None
 }
 
+/// True iff `body` contains `name` as a whole-word, case-insensitive
+/// match. Used by the umbrella rule (#248 B5) to ensure a parent topic
+/// actually references the child subcommand it claims to cover.
+fn topic_body_mentions(body: &str, name: &str) -> bool {
+    use regex::RegexBuilder;
+    // Anchor with `\b` so e.g. `query` doesn't match `subquery`. Build
+    // case-insensitively. `regex::escape` keeps oddly-named subcommands
+    // (`commit-msg-check`) safe inside the pattern.
+    let pattern = format!(r"\b{}\b", regex::escape(name));
+    RegexBuilder::new(&pattern)
+        .case_insensitive(true)
+        .build()
+        .ok()
+        .is_some_and(|re| re.is_match(body))
+}
+
 /// Run `rivet docs check --coverage` — assert every subcommand path has
 /// an embedded doc topic.
-fn cmd_docs_coverage(format: &str, strict: bool) -> Result<bool> {
+///
+/// Three modes (issue #248 B6):
+/// * Default (`--coverage`): print the report and exit 0. No annotations.
+///   Intended for local exploration.
+/// * `--coverage --warn-only`: print + emit one `::warning::` GitHub
+///   Actions annotation per uncovered subcommand, exit 0. For staged CI
+///   rollout where gaps should surface inline on PRs without failing the
+///   build.
+/// * `--coverage --strict`: print, exit 1 if anything is uncovered. For
+///   enforcing CI once the inventory is clean.
+///
+/// `--warn-only` and `--strict` are mutually exclusive (clap-enforced).
+fn cmd_docs_coverage(format: &str, warn_only: bool, strict: bool) -> Result<bool> {
     use clap::CommandFactory;
     use std::collections::BTreeSet;
 
@@ -7480,7 +7538,13 @@ fn cmd_docs_coverage(format: &str, strict: bool) -> Result<bool> {
 
     let root = Cli::command();
     let topic_slugs: BTreeSet<String> = docs::topic_slugs().into_iter().map(String::from).collect();
-    let rows = compute_coverage_rows(&root, &topic_slugs, COVERAGE_ALLOWLIST, COVERAGE_TOPIC_MAP);
+    let rows = compute_coverage_rows(
+        &root,
+        &topic_slugs,
+        COVERAGE_ALLOWLIST,
+        COVERAGE_TOPIC_MAP,
+        &|slug| docs::topic_content(slug),
+    );
 
     let total = rows.iter().filter(|r| !r.allow_listed).count();
     // Covered = paths that resolve to a topic (and thus aren't allow-listed).
@@ -7495,11 +7559,32 @@ fn cmd_docs_coverage(format: &str, strict: bool) -> Result<bool> {
         _ => print!("{}", render_coverage_text(&rows, total, covered)),
     }
 
+    // Warn-only mode emits GitHub Actions workflow-command annotations so
+    // CI surfaces every uncovered subcommand inline on the PR. The
+    // annotations are printed to stdout (not stderr) — that's where the
+    // GitHub Actions runner scans for `::warning::` lines.
+    if warn_only && !uncovered.is_empty() {
+        for row in &uncovered {
+            // No file path is meaningful here (the gap is in
+            // docs::TOPICS, not on a YAML line), so attribute to the
+            // module that owns the registry.
+            println!(
+                "::warning file=rivet-cli/src/docs.rs::rivet docs check --coverage: subcommand `{}` is not covered by any topic in docs::TOPICS",
+                row.path
+            );
+        }
+    }
+
     let pass = uncovered.is_empty();
     if !pass && !strict {
         eprintln!(
-            "rivet docs check --coverage: {} subcommand(s) uncovered (warn-only; use --strict to fail)",
-            uncovered.len()
+            "rivet docs check --coverage: {} subcommand(s) uncovered{}",
+            uncovered.len(),
+            if warn_only {
+                " (warn-only; emitted ::warning:: annotations; use --strict to fail)"
+            } else {
+                " (default mode; use --warn-only for CI annotations or --strict to fail)"
+            },
         );
         return Ok(true);
     }
@@ -13445,6 +13530,14 @@ mod coverage_gate_tests {
         names.iter().map(|s| (*s).to_string()).collect()
     }
 
+    /// Default test body lookup — returns a body that mentions every
+    /// possible top-level subcommand name, so the umbrella rule (rule 4)
+    /// fires unconditionally for tests that aren't specifically
+    /// exercising the body-mention check (#248 B5).
+    fn permissive_body(_slug: &str) -> Option<&str> {
+        Some("fruit apple banana grape orange")
+    }
+
     /// A small fake clap tree: one parent (`fruit`) with two children
     /// (`apple`, `banana`) — exactly the kind of fixture the
     /// implementation sketch in the task asked for.
@@ -13475,7 +13568,7 @@ mod coverage_gate_tests {
     fn parent_topic_covers_all_leaves() {
         let cmd = fake_tree();
         let topics = slugs(&["fruit"]);
-        let rows = compute_coverage_rows(&cmd, &topics, &[], &[]);
+        let rows = compute_coverage_rows(&cmd, &topics, &[], &[], &permissive_body);
         // All three rows resolved via the `fruit` topic — the parent
         // walk is what catches the leaves.
         assert_eq!(rows.len(), 3);
@@ -13491,7 +13584,7 @@ mod coverage_gate_tests {
         // Both `fruit` AND `fruit-apple` exist — the leaf-specific
         // topic should win.
         let topics = slugs(&["fruit", "fruit-apple"]);
-        let rows = compute_coverage_rows(&cmd, &topics, &[], &[]);
+        let rows = compute_coverage_rows(&cmd, &topics, &[], &[], &permissive_body);
         let apple = rows.iter().find(|r| r.path == "fruit/apple").unwrap();
         assert_eq!(apple.covered_by.as_deref(), Some("fruit-apple"));
         let banana = rows.iter().find(|r| r.path == "fruit/banana").unwrap();
@@ -13502,7 +13595,7 @@ mod coverage_gate_tests {
     fn missing_topic_is_uncovered() {
         let cmd = fake_tree();
         let topics = slugs(&["something-else"]);
-        let rows = compute_coverage_rows(&cmd, &topics, &[], &[]);
+        let rows = compute_coverage_rows(&cmd, &topics, &[], &[], &permissive_body);
         for r in &rows {
             assert!(!r.is_covered(), "row {r:?} should be uncovered");
             assert!(r.covered_by.is_none());
@@ -13513,7 +13606,7 @@ mod coverage_gate_tests {
     fn allow_list_exempts_path() {
         let cmd = fake_tree();
         let topics = BTreeSet::new();
-        let rows = compute_coverage_rows(&cmd, &topics, &["fruit"], &[]);
+        let rows = compute_coverage_rows(&cmd, &topics, &["fruit"], &[], &permissive_body);
         for r in &rows {
             assert!(
                 r.allow_listed,
@@ -13524,16 +13617,120 @@ mod coverage_gate_tests {
         }
     }
 
+    fn body_cli_mentions_fruit(slug: &str) -> Option<&str> {
+        if slug == "cli" {
+            Some("This is the CLI reference. It documents fruit and other commands.")
+        } else {
+            None
+        }
+    }
+
+    fn body_cli_no_fruit(slug: &str) -> Option<&str> {
+        if slug == "cli" {
+            Some("This is the CLI reference. It documents validate, list, get.")
+        } else {
+            None
+        }
+    }
+
+    fn body_cli_fruit_capitalised(slug: &str) -> Option<&str> {
+        if slug == "cli" {
+            Some("Fruit reference.")
+        } else {
+            None
+        }
+    }
+
+    fn body_cli_subquery(slug: &str) -> Option<&str> {
+        if slug == "cli" {
+            Some("Run a subquery.")
+        } else {
+            None
+        }
+    }
+
     #[test]
-    fn topic_map_provides_umbrella_coverage() {
+    fn topic_map_provides_umbrella_coverage_when_body_mentions_child() {
         let cmd = fake_tree();
         let topics = slugs(&["cli"]);
-        // `fruit` -> `cli` umbrella mapping.
+        // `fruit` -> `cli` umbrella mapping; the `cli` topic body must
+        // mention `fruit` for the umbrella rule to fire (#248 B5).
         let map = &[("fruit", "cli")];
-        let rows = compute_coverage_rows(&cmd, &topics, &[], map);
+        let rows = compute_coverage_rows(&cmd, &topics, &[], map, &body_cli_mentions_fruit);
         for r in &rows {
             assert_eq!(r.covered_by.as_deref(), Some("cli"));
         }
+    }
+
+    /// #248 B5: the umbrella rule (rule 4) MUST require the parent topic
+    /// body to mention the child subcommand by name as a whole word.
+    /// Without this check, a single sloppy `cli` umbrella mapping would
+    /// claim coverage for every family it lists, even when the body
+    /// never references them.
+    #[test]
+    fn umbrella_rule_rejects_unmentioned_child() {
+        let cmd = fake_tree();
+        let topics = slugs(&["cli"]);
+        let map = &[("fruit", "cli")];
+        // Body talks about other things; `fruit` never appears.
+        let rows = compute_coverage_rows(&cmd, &topics, &[], map, &body_cli_no_fruit);
+        for r in &rows {
+            assert!(
+                !r.is_covered(),
+                "without a body mention, umbrella rule must not cover {r:?}",
+            );
+            assert!(r.covered_by.is_none());
+        }
+    }
+
+    /// #248 B5: matching is case-insensitive — a `Fruit`-cased mention
+    /// in prose still satisfies the rule for child name `fruit`.
+    #[test]
+    fn umbrella_body_mention_is_case_insensitive() {
+        let cmd = fake_tree();
+        let topics = slugs(&["cli"]);
+        let map = &[("fruit", "cli")];
+        let rows = compute_coverage_rows(&cmd, &topics, &[], map, &body_cli_fruit_capitalised);
+        for r in &rows {
+            assert_eq!(r.covered_by.as_deref(), Some("cli"));
+        }
+    }
+
+    /// #248 B5: matching is whole-word — a substring match like
+    /// `subquery` containing `query` must NOT satisfy the rule for child
+    /// name `query`.
+    #[test]
+    fn umbrella_body_mention_requires_whole_word() {
+        // Tree with `query` as the only child so we can use it as `top`.
+        let cmd = clap::Command::new("rivet").subcommand(clap::Command::new("query"));
+        let topics = slugs(&["cli"]);
+        let map = &[("query", "cli")];
+        let rows = compute_coverage_rows(&cmd, &topics, &[], map, &body_cli_subquery);
+        let row = rows.iter().find(|r| r.path == "query").unwrap();
+        assert!(
+            !row.is_covered(),
+            "substring match must not satisfy the umbrella rule",
+        );
+    }
+
+    #[test]
+    fn topic_body_mentions_word_boundary() {
+        // Whole-word match: positive cases.
+        assert!(topic_body_mentions("rivet query foo", "query"));
+        assert!(topic_body_mentions("Use the QUERY command.", "query"));
+        assert!(topic_body_mentions(
+            "commit-msg-check is a hook",
+            "commit-msg-check"
+        ));
+        assert!(topic_body_mentions(
+            "(query) parens count as boundaries",
+            "query"
+        ));
+        // Whole-word match: negative cases.
+        assert!(!topic_body_mentions("subquery", "query"));
+        assert!(!topic_body_mentions("queries are different", "query"));
+        assert!(!topic_body_mentions("noquery", "query"));
+        assert!(!topic_body_mentions("", "query"));
     }
 
     #[test]
