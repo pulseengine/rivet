@@ -1,5 +1,12 @@
 name: Release
 
+# Release variant: serialize per-tag, never cancel. A cancelled release
+# mid-publish leaves the GitHub Release page, registries, and per-target
+# binary archives in inconsistent state.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 on:
   push:
     tags:

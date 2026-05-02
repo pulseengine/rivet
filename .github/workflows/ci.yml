@@ -1,5 +1,11 @@
 name: CI
 
+# Cancel superseded PR runs; protect main + scheduled runs.
+# `head_ref || ref` keys per-PR-source-branch on PRs, falls back to ref on push.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 on:
   push:
     branches: [main]
