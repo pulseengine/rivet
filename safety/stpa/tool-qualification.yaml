@@ -11,9 +11,18 @@
 # s-expression evaluator, variant/PLE system, Zola export, needs-json
 # import, MCP write tools, and git hook integration.
 #
-# Tool Confidence Level (TCL): TCL 1 (highest) — rivet's output is
-# directly used as compliance evidence. A false PASS from rivet can
-# prevent detection of a safety-critical gap.
+# Tool Confidence Level (TCL): TCL1 (ISO 26262-8 §11.4.7) — rivet's
+# output is directly used as compliance evidence, but oracle-gated
+# validation raises Tool error Detection (TD) enough that the TI×TD
+# matrix lands at TCL1. A false PASS from rivet can prevent detection
+# of a safety-critical gap; the TI/TD analysis under Workstream A of
+# the tool-qualification dossier qualifies that claim.
+#
+# Cross-walk: ISO 26262 numbers TCL inversely to DO-330. 26262 TCL1
+# is the *lowest* confidence demand (TCL3 highest); DO-330 TQL-1 is
+# the *highest* rigor (TQL-5 lowest). The legacy "TCL 1 (highest)"
+# wording in this file mixed the two conventions; this file now
+# follows ISO 26262 numbering.
 #
 # Reference: STPA Handbook §2.3, ISO 26262-8 §11.4.7
 # =============================================================================
