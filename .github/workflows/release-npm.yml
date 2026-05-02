@@ -9,6 +9,13 @@ name: Release NPM
 # Platform packages MUST be published before the root package so npm can
 # resolve optionalDependencies on the first install after tag.
 
+# Release variant: serialize per-release, never cancel. A cancelled npm
+# publish run can leave platform packages published but root package
+# missing — first-install resolution would fail until manual cleanup.
+concurrency:
+  group: release-npm-${{ github.event.release.tag_name || github.event.inputs.version || github.ref }}
+  cancel-in-progress: false
+
 on:
   release:
     types: [published]

@@ -1,5 +1,12 @@
 name: Compliance Report
 
+# Compliance variant: produces compliance reports / signed artifacts. Group
+# for serialization but never cancel — partially-completed compliance runs
+# leave registries / attestations in inconsistent state.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 on:
   workflow_call:
     inputs:

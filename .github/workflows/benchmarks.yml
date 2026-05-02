@@ -1,5 +1,10 @@
 name: Benchmarks
 
+# Cancel superseded PR runs; protect main + scheduled runs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 on:
   push:
     branches: [main]
