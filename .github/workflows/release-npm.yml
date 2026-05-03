@@ -8,10 +8,26 @@ name: Release NPM
 #
 # Platform packages MUST be published before the root package so npm can
 # resolve optionalDependencies on the first install after tag.
+#
+# Trigger: workflow_run on the Release workflow, NOT release: published.
+# Reason: Release creates the GitHub Release page using the default
+# GITHUB_TOKEN, and GitHub deliberately suppresses downstream workflow
+# triggers from runs that authenticated with GITHUB_TOKEN (loop-prevention
+# guarantee). workflow_run is the documented escape hatch for chaining
+# workflows in this case. Note: workflow_run only fires when this file is
+# present on the default branch.
+
+# Release variant: serialize per-release, never cancel. A cancelled npm
+# publish run can leave platform packages published but root package
+# missing — first-install resolution would fail until manual cleanup.
+concurrency:
+  group: release-npm-${{ github.event.workflow_run.head_branch || github.event.inputs.version || github.ref }}
+  cancel-in-progress: false
 
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       version:
@@ -24,6 +40,9 @@ permissions:
 jobs:
   publish-platform-packages:
     name: Publish platform package (${{ matrix.platform }})
+    # Skip on failed/cancelled upstream Release runs. Always run for
+    # manual workflow_dispatch (used for backfills).
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -60,12 +79,23 @@ jobs:
       - name: Resolve version
         id: version
         env:
-          EVENT_TAG: ${{ github.event.release.tag_name }}
+          # workflow_run: head_branch is the tag name (e.g. v0.8.0) when
+          # the upstream Release workflow ran on a tag push.
+          # workflow_dispatch: the user-supplied tag input (used for
+          # backfills of releases whose initial workflow_run never fired).
+          RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
           INPUT_TAG: ${{ github.event.inputs.version }}
         run: |
-          TAG="${EVENT_TAG:-$INPUT_TAG}"
+          TAG="${INPUT_TAG:-$RUN_BRANCH}"
           if [ -z "$TAG" ]; then
             echo "No tag provided" >&2
+            exit 1
+          fi
+          # Guard: only publish for release tags. Release.yml is currently
+          # only triggered by tag push, but this guard makes the workflow
+          # safe against accidental manual runs of Release on a branch ref.
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "Tag '$TAG' is not a release tag (expected vX.Y.Z); skipping" >&2
             exit 1
           fi
           VERSION="${TAG#v}"
@@ -113,6 +143,7 @@ jobs:
   publish-root-package:
     name: Publish root package (@pulseengine/rivet)
     needs: publish-platform-packages
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -125,10 +156,10 @@ jobs:
       - name: Resolve version
         id: version
         env:
-          EVENT_TAG: ${{ github.event.release.tag_name }}
+          RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
           INPUT_TAG: ${{ github.event.inputs.version }}
         run: |
-          TAG="${EVENT_TAG:-$INPUT_TAG}"
+          TAG="${INPUT_TAG:-$RUN_BRANCH}"
           VERSION="${TAG#v}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
