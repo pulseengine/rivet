@@ -314,7 +314,13 @@ jobs:
         # s-expr parsing and hit the same cursor deallocation UB as
         # yaml_cst/feature_model (pulseengine/rowan#211).
         run: cargo miri test -p rivet-core --lib -- --skip bazel --skip db --skip externals --skip export --skip providers --skip test_scanner --skip yaml_edit --skip markdown --skip parse_actual_hazards --skip stpa_hazard --skip yaml_hir --skip feature_model --skip doc_check --skip sexpr_eval --skip query_embed --skip parse_query --skip execute_sexpr
-        timeout-minutes: 15
+        # Bumped 15→30 during smithy migration: first run timed out at
+        # 15 min with the last printed test at the 11-min mark (i.e.,
+        # the slow tests at the tail just ran past the budget on
+        # smithy's lean-mem class). Hosted may have been fine because
+        # of different tail-test perf characteristics. Revisit once
+        # we have a few green runs to set the budget closer to actual.
+        timeout-minutes: 30
         env:
           MIRIFLAGS: "-Zmiri-disable-isolation -Zmiri-tree-borrows"
 
