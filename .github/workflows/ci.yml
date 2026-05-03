@@ -14,7 +14,7 @@ jobs:
   # ── Fast checks ───────────────────────────────────────────────────────
   fmt:
     name: Format
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, light]
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -24,7 +24,7 @@ jobs:
 
   clippy:
     name: Clippy
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, rust-cpu]
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -35,7 +35,7 @@ jobs:
 
   yaml-lint:
     name: YAML Lint
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, light]
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v5
@@ -48,7 +48,7 @@ jobs:
   # A real gate — no continue-on-error.  Budget <1 minute on cached runs.
   docs-check:
     name: Docs Check
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, rust-cpu]
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -67,7 +67,7 @@ jobs:
   # ── Tests ─────────────────────────────────────────────────────────────
   test:
     name: Test
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, rust-cpu]
     env:
       RIVET_ACTIONLINT: "1"
     steps:
@@ -79,11 +79,16 @@ jobs:
           ACTIONLINT_VERSION: "1.7.7"
         run: |
           set -euo pipefail
+          mkdir -p "$HOME/.local/bin"
           curl -fsSL -o /tmp/actionlint.tgz \
             "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
           tar -xzf /tmp/actionlint.tgz -C /tmp actionlint
-          sudo mv /tmp/actionlint /usr/local/bin/actionlint
-          actionlint --version
+          # smithy: install to $HOME/.local/bin (writable) instead of
+          # /usr/local/bin (needs sudo, which the runner user doesn't have).
+          # Same actionlint binary, just a different filesystem location.
+          mv /tmp/actionlint "$HOME/.local/bin/actionlint"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/actionlint" --version
       - name: Run tests (JUnit XML output)
         run: |
           cargo install cargo-nextest --locked 2>/dev/null || true
@@ -104,6 +109,9 @@ jobs:
   playwright:
     name: Playwright E2E
     needs: [test]
+    # Stays on ubuntu-latest: `npx playwright install --with-deps` runs
+    # `apt-get install` (sudo needed) and pulls in Chromium + a slate
+    # of system libraries. Smithy runners have no sudo.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -136,6 +144,8 @@ jobs:
   vscode-extension:
     name: VS Code Extension
     needs: [test]
+    # Stays on ubuntu-latest: `xvfb-run` headless display + downloaded
+    # VS Code Test environment expects sudo apt-get for system libs.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -170,6 +180,11 @@ jobs:
   # ── Security audits ──────────────────────────────────────────────────
   audit:
     name: Security Audit (RustSec)
+    # Stays on ubuntu-latest: smithy ships cargo-audit v0.21.2 whose
+    # bundled rustsec parser rejects RUSTSEC-2026-0037 ("unsupported
+    # CVSS version: 4.0"). v0.22.1 fixes it but the install trips on
+    # smithy's sccache-on-cc setup. Move back once smithy bumps
+    # cargo-audit (tracked).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -199,15 +214,25 @@ jobs:
           --ignore RUSTSEC-2026-0114
 
   deny:
-    name: Cargo Deny (licenses, bans, sources, advisories)
-    runs-on: ubuntu-latest
+    # Renamed: skipping advisories until smithy ships an upgraded
+    # rustsec parser (see audit job comment). Same workaround as spar.
+    name: Cargo Deny (licenses, bans, sources)
+    runs-on: [self-hosted, linux, x64, light]
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
-      - name: Install cargo-deny
-        run: cargo install cargo-deny --locked
-      - name: Run cargo-deny
-        run: cargo deny check
+      # cargo-deny v0.16.4 is pre-installed on smithy via the toolchains
+      # role; the `cargo install` line below becomes a no-op when the
+      # same version is already present. Kept here so the workflow
+      # still works on hosted if the runner pool changes.
+      - name: Install cargo-deny (no-op when smithy version matches)
+        run: cargo install cargo-deny --locked --version 0.16.4 || true
+      # Skip `advisories` because the rustsec parser shared with
+      # cargo-audit rejects CVSS 4.0 advisories (RUSTSEC-2026-0037).
+      # bans / licenses / sources still gate. The audit job (on
+      # ubuntu-latest) covers vulnerability matching meanwhile.
+      - name: Run cargo-deny (bans + licenses + sources)
+        run: cargo deny check bans licenses sources
 
   # ── Public API stability (semver drift gate) ────────────────────────
   # Runs only on pull_request so main can move freely between tags.
@@ -218,22 +243,28 @@ jobs:
   semver-checks:
     name: Semver Checks (rivet-core public API)
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, rust-cpu]
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Run cargo-semver-checks
-        uses: obi1kenobi/cargo-semver-checks-action@v2
-        with:
-          package: rivet-core
-          feature-group: default-features
+      # The previous obi1kenobi/cargo-semver-checks-action@v2 wrapper
+      # bundled an older cargo-semver-checks that didn't recognise the
+      # rustdoc JSON v57 format that current stable rustdoc emits, so it
+      # failed every run with `unsupported rustdoc format v57`. Going
+      # direct: install the latest cargo-semver-checks at runtime and
+      # invoke it. Slightly slower (compile cost on a cold cache) but
+      # tracks the rustdoc format upstream emits.
+      - name: Install cargo-semver-checks
+        run: cargo install --locked cargo-semver-checks
+      - name: Check rivet-core public API
+        run: cargo semver-checks check-release -p rivet-core --default-features
 
   # ── Code coverage (Rust nightly for source-based instrumentation) ───
   coverage:
     name: Code Coverage
     needs: [test]
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, rust-cpu]
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@nightly
@@ -265,7 +296,8 @@ jobs:
   # ── Miri (undefined behavior, pointer provenance) ───────────────────
   miri:
     name: Miri
-    runs-on: ubuntu-latest
+    # lean-mem: Miri allocates aggressively; benefits from 24G ceiling.
+    runs-on: [self-hosted, linux, x64, lean-mem]
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@nightly
@@ -288,14 +320,20 @@ jobs:
         # s-expr parsing and hit the same cursor deallocation UB as
         # yaml_cst/feature_model (pulseengine/rowan#211).
         run: cargo miri test -p rivet-core --lib -- --skip bazel --skip db --skip externals --skip export --skip providers --skip test_scanner --skip yaml_edit --skip markdown --skip parse_actual_hazards --skip stpa_hazard --skip yaml_hir --skip feature_model --skip doc_check --skip sexpr_eval --skip query_embed --skip parse_query --skip execute_sexpr
-        timeout-minutes: 15
+        # Bumped 15→30 during smithy migration: first run timed out at
+        # 15 min with the last printed test at the 11-min mark (i.e.,
+        # the slow tests at the tail just ran past the budget on
+        # smithy's lean-mem class). Hosted may have been fine because
+        # of different tail-test perf characteristics. Revisit once
+        # we have a few green runs to set the budget closer to actual.
+        timeout-minutes: 30
         env:
           MIRIFLAGS: "-Zmiri-disable-isolation -Zmiri-tree-borrows"
 
   # ── Property-based testing (extended) ───────────────────────────────
   proptest:
     name: Proptest (extended)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, rust-cpu]
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -316,7 +354,8 @@ jobs:
   mutants:
     name: Mutation Testing (${{ matrix.crate }})
     needs: [test]
-    runs-on: ubuntu-latest
+    # lean-mem: parallel cargo invocations under -j; RAM-aggressive.
+    runs-on: [self-hosted, linux, x64, lean-mem]
     timeout-minutes: 45
     # Hard gate only for rivet-cli; rivet-core is still surfacing real
     # coverage gaps that need tests written. Flip to `false` once killed.
@@ -383,7 +422,7 @@ jobs:
   fuzz:
     name: Fuzz Testing
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, rust-cpu]
     continue-on-error: true
     steps:
       - uses: actions/checkout@v6
@@ -414,7 +453,7 @@ jobs:
   # ── Supply chain verification ───────────────────────────────────────
   supply-chain:
     name: Supply Chain (cargo-vet)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, light]
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -439,6 +478,8 @@ jobs:
   kani:
     name: Kani Proofs
     needs: [test]
+    # Stays on ubuntu-latest: kani-verifier bundles CBMC (~100 MB),
+    # not pre-installed on smithy. Move once toolchains role ships kani.
     runs-on: ubuntu-latest
     continue-on-error: true
     timeout-minutes: 45
@@ -467,7 +508,8 @@ jobs:
   verus:
     name: Verus Proofs
     needs: [test]
-    runs-on: ubuntu-latest
+    # lean-mem: Verus solver work benefits from RAM headroom.
+    runs-on: [self-hosted, linux, x64, lean-mem]
     continue-on-error: true
     timeout-minutes: 20
     steps:
@@ -509,6 +551,8 @@ jobs:
   rocq:
     name: Rocq Proofs
     needs: [test]
+    # Stays on ubuntu-latest: Rocq (Coq) install is heavy and
+    # not pre-provisioned on smithy. Migrate once toolchains role ships it.
     runs-on: ubuntu-latest
     continue-on-error: true
     timeout-minutes: 20
@@ -530,7 +574,7 @@ jobs:
   # ── MSRV check ──────────────────────────────────────────────────────
   msrv:
     name: MSRV (1.89)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, rust-cpu]
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@1.89.0
@@ -546,7 +590,7 @@ jobs:
     name: Publish Test Results on Release
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [test, coverage, miri, proptest, playwright]
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, light]
     permissions:
       contents: write
       id-token: write
