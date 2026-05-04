@@ -177,10 +177,7 @@ jobs:
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
       - name: Run cargo audit
-        # wasmtime 42.x advisories ignored — behind optional wasm feature gate.
-        # RUSTSEC-2026-0114 (2026-04-30): wasmtime panic on oversized table
-        # allocation. Rivet's usage doesn't allocate large wasmtime tables;
-        # follow-up issue tracks upgrading to wasmtime >=43.0.2.
+        # wasmtime advisories ignored — behind optional wasm feature gate.
         run: >-
           cargo audit
           --ignore RUSTSEC-2026-0085
@@ -196,7 +193,6 @@ jobs:
           --ignore RUSTSEC-2026-0096
           --ignore RUSTSEC-2026-0103
           --ignore RUSTSEC-2026-0104
-          --ignore RUSTSEC-2026-0114
 
   deny:
     name: Cargo Deny (licenses, bans, sources, advisories)
