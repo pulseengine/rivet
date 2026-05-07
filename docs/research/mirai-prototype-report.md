@@ -1,9 +1,22 @@
 # MIRAI prototype on rivet-core — feasibility report
 
-> **Status: feasibility spike in progress.** The install procedure is
-> validated; first-pass analysis output and the comparative verdict
-> against Kani are TODO placeholders to be filled by a follow-up run of
-> [`scripts/research/mirai-on-rivet-core.sh`](../../scripts/research/mirai-on-rivet-core.sh).
+> **Status: feasibility spike — verdict reached (negative).**
+>
+> MIRAI v1.1.12's pinned toolchain (`nightly-2025-01-10`, rustc 1.86.0-nightly)
+> cannot build today's rivet-core. Two independent blockers:
+>   1. `rivet-core` declares `rust-version = 1.89`; cargo refuses without
+>      `--ignore-rust-version`.
+>   2. With that flag, the rivet dependency graph (specifically
+>      `spar-annex` via the `spar` external) uses **`let_chains`**, which
+>      is stable on rust ≥ 1.88 (June 2025) but is still gated as
+>      `#![feature(let_chains)]` in the January-2025 nightly MIRAI pins.
+>
+> Concrete artefacts in [`results/mirai/`](../../results/mirai/) capture
+> the install log, the MSRV refusal, and the let-chains compile error.
+>
+> **Recommendation: hold the prototype** until MIRAI bumps its nightly
+> past `let_chains` stabilization (rustc ≥ 1.88, ≥ 2025-04 nightly). At
+> that point the runner script in this PR is a one-shot resumption.
 >
 > Tracking issue: [#191](https://github.com/pulseengine/rivet/issues/191).
 > Parent V&V coverage initiative: [#184](https://github.com/pulseengine/rivet/issues/184)
@@ -38,7 +51,9 @@ The script is idempotent and writes per-target diagnostics to
 
 ## Code paths analysed
 
-The targets named in the issue body, in priority order:
+**No analysis output was produced** — `cargo mirai --lib` aborts before
+emitting any MIR-level diagnostics (see "Verdict"). The intended targets,
+preserved for the resumption run, are:
 
 | File | Reason |
 |---|---|
@@ -47,30 +62,20 @@ The targets named in the issue body, in priority order:
 | `rivet-core/src/coverage.rs` | Link-graph reachability + coverage computation — natural fit for integer-overflow-on-counts. |
 | `rivet-core/src/yaml_hir/*` | Schema validation; YAML field access; required-field checks. Panic-freedom-under-malformed-input candidate. |
 
-> **TODO.** Replace this list with the actual cargo-mirai output after a
-> successful run. Each finding should record: file:line, MIRAI's
-> diagnostic, false-positive judgement, and whether Kani already covers
-> the same property.
-
 ## Properties MIRAI flagged
 
-> **TODO** — to be populated from `results/mirai/all.txt` after the
-> first analysis run lands.
-
-For each finding, record:
-
-```
-rivet-core/<path>:<line> — <diagnostic>
-  classification: real | false-positive | not-applicable
-  kani-coverage: yes (proof-name) | no
-  notes: <one line>
-```
+None. The compile abort is upstream of MIR generation, so MIRAI's
+abstract interpreter never runs.
 
 ## Side-by-side comparison with existing Kani proofs
 
+Not produced this run — the gating step (build under MIRAI's pinned
+nightly) did not succeed. The comparison plan stays valid for the
+resumption run:
+
 The Kani harness lives at `rivet-core/src/proofs.rs` (1102 LOC, 2000+
 proofs across `rivet-core` per the V&V hub). The questions to answer in
-this section:
+the resumption run:
 
 1. Does MIRAI flag any property Kani's harness does *not* cover?
 2. Does Kani cover any property MIRAI cannot reason about
@@ -78,43 +83,96 @@ this section:
    functions)?
 3. Where the two tools cover the same property, do they agree?
 
-> **TODO** — fill in once the first analysis run produces diagnostics.
-> Format: a small table indexed by property class (OOB, overflow,
-> panic-reachability, dead-code) with one row per file.
-
 ## Integration cost assessment
 
-Inputs to the cost calculation — to be validated against the run:
+What this run measured (committed under [`results/mirai/`](../../results/mirai/)):
 
-- Build time of MIRAI itself (one-time, can be cached): **measured at first
-  install — TODO from `install.log`**.
-- Per-PR analysis wall time on `rivet-core`: **TODO** from a timed
-  `cargo mirai --lib` run.
-- False-positive rate on rivet-style data-structure code: **TODO** —
-  needs at least the first run's diagnostics to estimate.
-- Maintenance cost: tracking the `endorlabs/MIRAI` toolchain pin (currently
-  `nightly-2025-01-10`) through nightly bumps. Endor Labs cuts releases
-  roughly quarterly so far; rebasing the pin is a tracked chore, not a
-  blocker.
+- **MIRAI checker compile time**: 17m 40s on a 4-core / 15 GiB-RAM
+  sandbox, release profile, cold cargo cache (see
+  `results/mirai/install-summary.txt`).
+- **`librustc_driver` linkage quirk**: the installed `mirai` /
+  `cargo-mirai` binaries fail with
+  `error while loading shared libraries: librustc_driver-….so` unless
+  `LD_LIBRARY_PATH` is set to MIRAI's pinned toolchain `lib/` directory.
+  The runner script handles this; ad-hoc invocations need the env var
+  too. Worth a one-line note in any future onboarding doc.
+- **Toolchain incompatibility**: see Verdict.
+
+What this run did *not* measure (gated on a successful build):
+
+- Per-PR analysis wall time on `rivet-core`.
+- False-positive rate on rivet-style data-structure code.
+- Maintenance cost beyond the toolchain-bump cadence.
 
 ## Verdict
 
-> **TODO** — populate after the first analysis run produces concrete
-> signal-vs-noise data. Three honest outcomes:
->
-> 1. MIRAI catches a property class Kani doesn't, with low FP rate →
->    **integrate** (CI-gate proposal as a follow-up issue).
-> 2. MIRAI signal is dominated by noise / FPs → **stop** (this report
->    is the verdict).
-> 3. MIRAI install is irreproducible against the rivet stable
->    toolchain → **skip** until upstream stabilises (this report is the
->    verdict).
+**Outcome 3 from the framing**: MIRAI's pinned toolchain is
+irreproducible against today's rivet stable toolchain. The prototype is
+**held** until the upstream pin moves past `let_chains` stabilization.
+
+Two independent blockers, captured in
+[`results/mirai/`](../../results/mirai/):
+
+### Blocker 1 — MSRV refusal
+
+`results/mirai/run-msrv.txt`:
+
+```
+error: rustc 1.86.0-nightly is not supported by the following packages:
+  rivet-core@0.8.0 requires rustc 1.89
+  smol_str@0.3.6 requires rustc 1.89
+```
+
+`cargo` refuses to build because `rivet-core/Cargo.toml` declares
+`rust-version = "1.89"` and the MIRAI-pinned nightly is rustc 1.86.0
+(2025-01-09). Bypassing this with `--ignore-rust-version` exposes
+Blocker 2.
+
+### Blocker 2 — `let_chains` not stable in the pinned nightly
+
+`results/mirai/run-let-chains.txt` (excerpt from a 918-line build log):
+
+```
+error[E0658]: `let` expressions in this position are unstable
+   --> /root/.cargo/git/checkouts/spar-…/crates/spar-annex/src/ba/grammar.rs:918:12
+    |
+918 |     ) && let Some(cm) = lhs
+    |          ^^^^^^^^^^^^^^^^^^
+    = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
+    = help: add `#![feature(let_chains)]` to the crate attributes to enable
+    = note: this compiler was built on 2025-01-09; consider upgrading it if it is out of date
+```
+
+`let_chains` (RFC 2497 / tracking issue #53667) was stabilized in stable
+Rust around mid-2025 (rust ≥ 1.88). The `spar-annex` crate (pulled in
+via the `spar` external; rivet's own source is also on rust 2024 edition
+with `let_chains` use) relies on the stable form. The MIRAI-pinned
+nightly predates the stabilization, so even with
+`--ignore-rust-version` the dependency graph fails to compile.
+
+### Why this blocks the spike, not just rivet-core
+
+This is **not** a problem unique to rivet — any sufficiently-modern
+crate depending on `let_chains` will hit the same wall. The fix lives
+upstream:
+
+- `endorlabs/MIRAI` would need to bump its `rust-toolchain.toml`
+  channel past `nightly-2025-04-XX` (whichever first carries the
+  stabilized `let_chains`).
+- A v1.1.13+ release on the new pin makes the rivet prototype
+  immediately resumable via the runner script in this PR.
+
+Tracking the upstream pin bump as a follow-up rather than vendoring an
+older spar-annex into rivet keeps the experiment honest — the goal is
+to evaluate MIRAI against rivet's actual code, not against a stripped
+fixture.
 
 ## Go / no-go for MIRAI as a CI gate on rivet
 
-**Pre-verdict.** The CI-gate question is downstream of the Verdict
-section. A no-go here is the default until the prototype demonstrates
-specific properties Kani doesn't cover.
+**No-go (current).** The blocker is upstream-toolchain-pin churn, not
+rivet code. A CI gate that pins MIRAI v1.1.12 + nightly-2025-01-10
+cannot run today; revisiting becomes worthwhile once Endor Labs ships
+a release on a `let_chains`-stable nightly.
 
 ## Cross-repo synthesis
 

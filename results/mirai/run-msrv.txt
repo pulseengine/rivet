@@ -1,0 +1,4 @@
+error: rustc 1.86.0-nightly is not supported by the following packages:
+  rivet-core@0.8.0 requires rustc 1.89
+  smol_str@0.3.6 requires rustc 1.89
+
