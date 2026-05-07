@@ -83,15 +83,101 @@ in a trailing comment so an adopter can grep-trim the file to their tier.
 
 ## Installing `rivet` for hooks
 
-Two tested install paths:
+Three tested install paths, in increasing order of reproducibility:
 
-- **Cargo:** `cargo install --git https://github.com/pulseengine/rivet
-  rivet-cli` (pin a tag/sha for reproducibility).
-- **Pre-commit `additional_dependencies`** (preferred for adopters): once a
-  binary release exists, the `rivet-validate` and `rivet-commit-msg`
-  entries can be wrapped in a pre-commit `local` repo with
-  `additional_dependencies: [rivet@<version>]`. Tracking issue:
-  [#187](https://github.com/pulseengine/rivet/issues/187).
+- **GitHub release binary** (recommended for CI and end-user machines):
+  download the prebuilt `rivet` binary attached to the `vX.Y.Z` release
+  from <https://github.com/pulseengine/rivet/releases> and place it on
+  `PATH`. Tags are immutable; pinning to a tag pins the toolchain.
+- **`cargo install --git`** (recommended when matching a specific
+  commit, e.g. an unreleased fix):
+  ```sh
+  cargo install --git https://github.com/pulseengine/rivet \
+                --tag v0.8.0 \
+                rivet-cli
+  ```
+  Always pass `--tag` or `--rev` — the bare command picks `HEAD` of the
+  default branch and silently drifts between developer setups.
+- **Workspace build** (rivet itself, monorepo developers):
+  `cargo run --release -p rivet-cli -- validate`. The
+  template's `entry:` for `rivet-validate` already does this so rivet's
+  own checkout works without an external install.
+
+### Version-pinning
+
+For adopter repositories, pin the rivet version your hooks use so the
+diff between developer machines and CI stays empty.
+
+Two equivalent patterns work today:
+
+```yaml
+# Option 1 — `cargo install` step in CI, then a system-language local hook.
+# Suited to CI/CD pipelines.
+- id: rivet-validate
+  name: rivet validate (dogfood)
+  entry: rivet validate
+  language: system          # rivet must already be on PATH
+  pass_filenames: false
+  files: '(artifacts/.*\.yaml|schemas/.*\.yaml|safety/.*\.yaml|rivet\.yaml)$'
+```
+
+```yaml
+# Option 2 — explicit additional_dependencies on the local hook.
+# Suited to developer pre-commit installs once a binary release wrapper
+# is published. (Tracking: pulseengine/rivet#187.)
+- id: rivet-validate
+  name: rivet validate (dogfood)
+  entry: rivet validate
+  language: system
+  additional_dependencies: ['rivet==0.8.0']  # pinned binary version
+  pass_filenames: false
+  files: '(artifacts/.*\.yaml|schemas/.*\.yaml|safety/.*\.yaml|rivet\.yaml)$'
+```
+
+Pin to the **same** version your CI uses. If you bump in CI, bump here in
+the same PR — drift between the two is the failure mode this hook
+exists to prevent.
+
+## Failure mode (what the developer sees)
+
+When `rivet validate` finds a problem, the pre-commit hook fails the
+commit and prints the validator's report verbatim. A typical failure
+looks like:
+
+```
+rivet validate (dogfood)..................................................Failed
+- hook id: rivet-validate
+- exit code: 1
+
+Loaded 142 artifacts from artifacts
+ERROR: [REQ-042] link 'verifies' requires at least 1 target, found 0
+ERROR: [REQ-091] broken cross-ref: missing artifact 'TST-007'
+WARN:  [DD-019] field 'status' has no declared value
+
+Result: FAIL (2 errors, 1 warnings, 1 broken cross-refs)
+```
+
+Each error line carries the artifact id, the specific link or field at
+fault, and the reason. Fix the underlying artifact YAML, re-stage, and
+re-commit.
+
+> **`--no-verify` is not a fix.** The hook gates *local* drift, not
+> upstream policy. CI runs the same `rivet validate` as a required
+> status check; bypassing the hook only delays the failure to the PR.
+
+## Adoption audit
+
+The repo ships an audit script that surveys a workspace of repository
+clones and reports which of them register the `rivet-validate` hook:
+
+```sh
+scripts/audit-rivet-validate-adoption.sh /path/to/workspace > docs/adoption-status.md
+```
+
+The script exits non-zero when a gap is present, so it can be wired
+into a periodic CI job that publishes the latest gap list. See
+[`docs/adoption-status.md`](adoption-status.md) for the most recent
+recorded run.
 
 ## Drift policy
 
@@ -109,6 +195,8 @@ adopter's `docs/pre-commit.md` as an explicit opt-out with rationale.
 ## See also
 
 - [`templates/pre-commit/.pre-commit-config.yaml`](../templates/pre-commit/.pre-commit-config.yaml) — the template itself
+- [`scripts/audit-rivet-validate-adoption.sh`](../scripts/audit-rivet-validate-adoption.sh) — workspace audit script
+- [`docs/adoption-status.md`](adoption-status.md) — most recent audit run
 - [Issue #186](https://github.com/pulseengine/rivet/issues/186) — canonical-template tracking issue
 - [Issue #187](https://github.com/pulseengine/rivet/issues/187) — `rivet-validate` enforcement across repos
 - [Issue #185](https://github.com/pulseengine/rivet/issues/185) — `cargo-mutants` adoption (T3)
