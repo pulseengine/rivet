@@ -338,6 +338,20 @@ enum Command {
         format: String,
     },
 
+    /// Bundle an artifact and its link-graph closure as a single pasteable document
+    Bundle {
+        /// Root artifact ID
+        id: String,
+
+        /// Number of link-graph hops to include (0 = root only)
+        #[arg(long, default_value_t = 1)]
+        depth: usize,
+
+        /// Output format: "yaml" (default) or "jsonl"
+        #[arg(long = "as", default_value = "yaml")]
+        format: String,
+    },
+
     /// List artifacts, optionally filtered by type
     List {
         /// Filter by artifact type
@@ -1696,6 +1710,7 @@ fn run(cli: Cli) -> Result<bool> {
             baseline.as_deref(),
         ),
         Command::Get { id, format } => cmd_get(&cli, id, format),
+        Command::Bundle { id, depth, format } => cmd_bundle(&cli, id, *depth, format),
         Command::Stats {
             filter,
             format,
@@ -5028,6 +5043,28 @@ fn cmd_get(cli: &Cli, id: &str, format: &str) -> Result<bool> {
     }
 
     Ok(true)
+}
+
+/// Bundle an artifact + its link-graph closure (issue #206).
+fn cmd_bundle(cli: &Cli, id: &str, depth: usize, format: &str) -> Result<bool> {
+    use rivet_core::bundle::{BundleFormat, bundle, render};
+
+    let Some(fmt) = BundleFormat::parse(format) else {
+        eprintln!("error: --as must be one of: yaml, jsonl");
+        return Ok(false);
+    };
+
+    let ctx = ProjectContext::load(cli)?;
+    match bundle(&ctx.store, id, depth) {
+        Ok(entries) => {
+            print!("{}", render(&entries, fmt));
+            Ok(true)
+        }
+        Err(e) => {
+            eprintln!("error: {e}");
+            Ok(false)
+        }
+    }
 }
 
 /// List artifacts.
