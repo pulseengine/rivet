@@ -531,6 +531,7 @@ fn classify_filter_error(source: &str, message: &str) -> Option<String> {
         "linked-by",
         "linked-from",
         "linked-to",
+        "linked-via",
         "links-count",
         "reachable-from",
         "reachable-to",
@@ -585,11 +586,18 @@ fn classify_filter_error(source: &str, message: &str) -> Option<String> {
     // Case 3: unknown function / head symbol. The lowerer emits a
     // message that typically mentions "unknown form" or "unexpected".
     if message.contains("unknown") || message.contains("unexpected form") {
-        return Some(
-            "unknown head symbol; see docs/getting-started.md for the supported forms \
-             (and/or/not/implies/excludes/=/!=/>/</has-tag/has-field/in/matches/contains/linked-*)"
-                .to_string(),
-        );
+        // Build the operator list from the same source of truth as the
+        // lowerer (`HEADS`) so adding a new operator never leaves this hint
+        // stale. Group the linked-* family explicitly — issue #190 documents
+        // a real user who could not discover `linked-via` from the previous
+        // `linked-*` wildcard.
+        let mut heads: Vec<&str> = HEADS.to_vec();
+        heads.sort_unstable();
+        return Some(format!(
+            "unknown head symbol; see docs/getting-started.md \
+             for the supported forms ({})",
+            heads.join("/")
+        ));
     }
 
     None
@@ -920,6 +928,24 @@ fn lower_list(node: &crate::sexpr::SyntaxNode, errors: &mut Vec<LowerError>) -> 
             }
             let val = extract_value(&args[0])?;
             Some(Expr::LinkedTo(val))
+        }
+        // `linked-via` is the explicit-direction alias for outbound link-type
+        // membership: `(linked-via "T")` is true iff the artifact has at least
+        // one outbound link of type T. Equivalent to `(linked-by "T" _)`; the
+        // separate name is offered because issue #190 documents that authors
+        // reach for `via`/`out-link`/`has-link` when they want this and
+        // misread `linked-by` as inbound. Lowers to the existing AST node so
+        // the evaluator and `links-count` complement remain a single code path.
+        "linked-via" => {
+            if args.len() != 1 {
+                errors.push(LowerError {
+                    offset,
+                    message: "'linked-via' requires exactly 1 argument (the link type)".into(),
+                });
+                return None;
+            }
+            let lt = extract_value(&args[0])?;
+            Some(Expr::LinkedBy(lt, Value::Wildcard))
         }
         "links-count" => {
             if args.len() != 3 {
@@ -1353,6 +1379,81 @@ mod tests {
         assert!(run(&expr, &test_artifact()));
     }
 
+    // Issue #190: `linked-via "T"` means "has at least one outbound link of
+    // type T". The motivating use case is gap-hunt: every attack-scenario
+    // missing an outbound `exploits` link. Three checks:
+    //   1) artifact with the link-type → present
+    //   2) artifact without the link-type → absent
+    //   3) `(not (linked-via "X"))` flips, so it actually finds gaps
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn filter_linked_via_outbound_present() {
+        let expr = parse_filter(r#"(linked-via "satisfies")"#).unwrap();
+        assert!(run(&expr, &test_artifact()));
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn filter_linked_via_outbound_absent() {
+        let expr = parse_filter(r#"(linked-via "exploits")"#).unwrap();
+        assert!(!run(&expr, &test_artifact()));
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn filter_not_linked_via_finds_gap() {
+        let expr = parse_filter(r#"(not (linked-via "exploits"))"#).unwrap();
+        assert!(run(&expr, &test_artifact()));
+        let expr = parse_filter(r#"(not (linked-via "satisfies"))"#).unwrap();
+        assert!(!run(&expr, &test_artifact()));
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn filter_linked_via_arity() {
+        // 0 args → error, 2 args → error, 1 arg → ok.
+        assert!(parse_filter(r#"(linked-via)"#).is_err());
+        assert!(parse_filter(r#"(linked-via "satisfies" "DD-001")"#).is_err());
+        assert!(parse_filter(r#"(linked-via "satisfies")"#).is_ok());
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn filter_linked_via_equivalent_to_linked_by_wildcard() {
+        // `(linked-via "T")` and `(linked-by "T" _)` lower differently in
+        // surface syntax but must produce identical match outcomes.
+        let via = parse_filter(r#"(linked-via "satisfies")"#).unwrap();
+        let by_wild = parse_filter(r#"(linked-by "satisfies" _)"#).unwrap();
+        let art = test_artifact();
+        assert_eq!(run(&via, &art), run(&by_wild, &art));
+        let via2 = parse_filter(r#"(linked-via "exploits")"#).unwrap();
+        let by_wild2 = parse_filter(r#"(linked-by "exploits" _)"#).unwrap();
+        assert_eq!(run(&via2, &art), run(&by_wild2, &art));
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn unknown_head_hint_lists_linked_via() {
+        // Regression: the parse-error hint must enumerate `linked-via` so a
+        // user who tried `(linked-vai "X")` (typo) discovers the right name.
+        let result = parse_filter(r#"(out-link "satisfies")"#);
+        assert!(result.is_err());
+        let errs = result.err().unwrap();
+        let hints: Vec<String> = errs.iter().filter_map(|e| e.note.clone()).collect();
+        let combined = hints.join(" | ");
+        assert!(
+            combined.contains("linked-via"),
+            "hint should enumerate linked-via; got: {combined}"
+        );
+        // And the rest of the linked-* family while we're at it.
+        for op in ["linked-by", "linked-from", "linked-to"] {
+            assert!(
+                combined.contains(op),
+                "hint should enumerate {op}; got: {combined}"
+            );
+        }
+    }
+
     #[test]
     #[cfg_attr(miri, ignore)]
     fn filter_links_count() {
@@ -1685,10 +1786,13 @@ mod tests {
             .note
             .as_ref()
             .expect("expected a note on unknown head symbol");
-        assert!(
-            note.contains("unknown head symbol") && note.contains("and/or/not"),
-            "note should list supported forms. got: {note}"
-        );
+        // The hint is now generated from the HEADS array (sorted) rather
+        // than a hand-maintained string, so check for the load-bearing
+        // anchor + a representative selection of operators.
+        assert!(note.contains("unknown head symbol"), "got: {note}");
+        for op in ["and", "or", "not", "has-tag", "linked-via"] {
+            assert!(note.contains(op), "note should list `{op}`; got: {note}");
+        }
     }
 
     /// Valid s-expression input must not carry a note — classification

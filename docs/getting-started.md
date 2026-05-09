@@ -769,13 +769,51 @@ rivet coverage --filter '(has-tag "safety")'
 ```
 
 Available predicates: `=`, `!=`, `>`, `<`, `>=`, `<=`, `in`, `has-tag`, `has-field`,
-`matches` (regex), `contains`, `linked-by`, `linked-from`, `linked-to`, `links-count`.
+`matches` (regex), `contains`, `linked-by`, `linked-from`, `linked-to`, `linked-via`,
+`links-count`.
 
 Logical: `and`, `or`, `not`, `implies`, `excludes`.
 
 Quantifiers: `forall`, `exists`, `count`.
 
 Graph: `reachable-from`, `reachable-to`.
+
+### Link predicates: which one do I want?
+
+The `linked-*` family looks at four different shapes of question. Pick by what
+you have on hand and what direction you care about:
+
+| Form                                 | Direction | Filter on                | True iff                                                                  |
+|--------------------------------------|-----------|--------------------------|---------------------------------------------------------------------------|
+| `(linked-via "T")`                   | outbound  | link-type                | the artifact has at least one outbound link of type `T`                   |
+| `(linked-by "T" _)`                  | outbound  | link-type                | same as `linked-via "T"` — kept for backwards compatibility               |
+| `(linked-by "T" "DD-001")`           | outbound  | link-type + target id    | the artifact has an outbound link of type `T` to `DD-001`                 |
+| `(linked-to "DD-001")`               | outbound  | target id only           | the artifact has any outbound link to `DD-001` (any link-type)            |
+| `(linked-from "T" _)`                | inbound   | link-type                | the artifact has at least one inbound link of type `T`                   |
+| `(linked-from "T" "REQ-004")`        | inbound   | link-type + source id    | `REQ-004` has an outbound link of type `T` pointing at this artifact     |
+| `(links-count "T" > 2)`              | outbound  | link-type cardinality    | the artifact has more than two outbound links of type `T`                |
+
+**Mnemonics.** `linked-via T` reads as "this artifact is linked **via** a `T`-link"
+— the artifact is the source. `linked-from S` reads as "linked **from** S" —
+the artifact is the target. `linked-to ID` reads as "linked **to** that id" —
+the artifact is the source.
+
+**Negation finds gaps.** The motivating case behind `linked-via` is gap-hunt:
+
+```bash
+# Attack-scenarios with no outbound `exploits` link
+rivet list --filter '(and (= type "attack-scenario") (not (linked-via "exploits")))'
+
+# Requirements with no inbound `verifies` link
+rivet list --filter '(and (= type "requirement") (not (linked-from "verifies" _)))'
+
+# Hazards with no inbound `prevents` link
+rivet list --filter '(and (= type "hazard") (not (linked-from "prevents" _)))'
+```
+
+Both spellings work for outbound link-type membership: `(linked-via "T")` and
+`(linked-by "T" _)` are equivalent. Reach for `linked-via` when you only care
+about the link-type and `linked-by` when you also want to pin the target.
 
 ### Count comparisons
 
@@ -813,7 +851,7 @@ Only single-name field accessors are supported today. Dotted forms like
 `links.satisfies.target` parse as a single symbol and currently resolve
 to the empty string — they do not navigate nested structure. To filter
 on links, use the purpose-built predicates (`linked-by`, `linked-from`,
-`linked-to`, `links-count`) rather than field-path navigation.
+`linked-to`, `linked-via`, `links-count`) rather than field-path navigation.
 
 ---
 
