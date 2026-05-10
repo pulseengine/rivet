@@ -5,6 +5,481 @@
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-05-01
+
+Theme: post-0.7.0 dogfood-driven follow-ups. The 12-persona dogfood
+against 0.7.0 surfaced docs-corpus drift, coverage-gate flaws, and
+CLI asymmetries on cited-source + schema-migrate. All three are
+fixed here.
+
+### Fixed
+
+- **Stale literals shipped in 0.7.0 docs** (#252, closes #247).
+  Tech-writer + DevOps personas independently flagged four embedded-
+  doc literals: quickstart Step 1's `rivet 0.5.0` example, `rivet
+  docs mcp`'s hardcoded `serverInfo.version: "0.5.0"`,
+  `rivet docs schema/eu-ai-act`'s wrong `rivet init --schema X`
+  flag, and a shipped `(TODO)` marker in `rivet docs schema/dev`.
+  Plus 2 bonus drift items the agent caught: `v0.5.0` example tag
+  in the `impact` topic, and `rivet export --gherkin` (the actual
+  flag is `--format gherkin`).
+
+  All six fixed. To prevent the class of drift from re-shipping,
+  `rivet docs check` learned three new invariants that scan the
+  embedded docs strings (the things `rivet docs <topic>` prints):
+  - **`EmbeddedVersionLiterals`** flags any `vX.Y.Z`/`X.Y.Z` token
+    that doesn't match the workspace version unless it's in
+    `rivet.yaml`'s new `docs-check.allowed-version-literals`
+    allowlist (used for legitimate non-rivet versions like ASPICE
+    process IDs and the rmcp crate pin).
+  - **`EmbeddedFlagReferences`** flags every `rivet <subcmd>
+    --<flag>` token in topic bodies whose flag isn't declared on
+    that subcommand in the live clap tree.
+  - **`EmbeddedTodoMarkers`** flags `TODO` / `FIXME` / `XXX`
+    markers in shipped doc bodies.
+
+  Also adds a new `rivet docs docs-check` topic explaining the
+  full invariant set (markdown-side + embedded-doc-side).
+
+### Added
+
+- **`rivet docs check --coverage --warn-only`** mode + tightened
+  rule (#250, closes #248). The 0.7.0 `--coverage` gate marked
+  `batch`, `query`, `stamp`, `lsp` as covered via parent-mapping
+  even though the parent topic body never mentioned them. Rule 4
+  (umbrella mapping) now requires the child subcommand's name to
+  appear in the parent topic's body (whole-word, case-insensitive).
+  Result: `lsp` and `batch` are now correctly reported as gaps.
+
+  The default `--coverage` (no flag) is now silent-print exit 0,
+  `--coverage --warn-only` prints + emits `::warning::` GitHub
+  annotations, `--coverage --strict` exits 1 on any uncovered.
+  `--warn-only` and `--strict` are mutually exclusive. CI uses
+  `--warn-only` explicitly so the contract is legible at the call
+  site.
+
+- **`rivet check sources --strict`** — read-only audit mode for
+  cited-source drift (#251, closes #249 part 1). Walks every
+  artifact, reports per-artifact verdict (match / drift /
+  missing-hash / stale), exits 1 on any non-match. Read-only —
+  does NOT modify any YAML, even on drift detection. Mutually
+  exclusive with `--update`. Replaces the "run `--update --apply`
+  then `git diff --exit-code`" mutation-and-audit pattern with a
+  clean read-only gate.
+
+- **`rivet validate --strict-cited-source-stale`** — promotes
+  `cited-source-stale` Info diagnostics to Error (#251, closes
+  #249 part 2). Defaults off; current behavior preserved. Enables
+  audit gates that enforce "every cited-source must be re-checked
+  within 30 days." `cited-source-stale` now fires for missing,
+  unparseable, OR older-than-30-days `last-checked` (was: only
+  missing).
+
+- **`rivet schema migrate --list`** — recipe discovery (#251,
+  closes #249 part 3). Without `<target>`, prints all available
+  recipes (built-in + project-local under `schemas/migrations/`)
+  as a text table, or JSON with `--format json`. Project-local
+  recipes shadow built-ins of the same name. Mutually exclusive
+  with `<target>` and the action flags.
+
+### Workspace
+
+- Workspace, vscode-rivet, and npm root package versions bumped to
+  0.8.0. Platform packages stay on the release-npm.yml override
+  path.
+
+### Verified
+
+- cargo check, cargo clippy --workspace -- -D warnings, cargo fmt
+  --all clean.
+- cargo test workspace passes (912 unit tests + integration tests).
+- `rivet docs check` clean against the rivet repo.
+- `rivet docs check --coverage` reports 46/81 covered (was 48/81;
+  rule 4 tightening correctly surfaces `lsp` + `batch` as gaps).
+- `rivet check sources --strict` round-trips: clean fixture exits
+  0; off-disk source edit exits 1 with no YAML mutation;
+  `--update --apply` restores 0.
+- `rivet schema migrate --list` enumerates the canned
+  `dev-to-aspice` recipe.
+
+## [0.7.0] — 2026-04-29
+
+Theme: schema migration Phase 2 + docs coverage gate + housekeeping.
+The migrate state machine is now the full git-rebase analogue —
+conflict markers, `--continue`, `--skip`, `--edit` — and the embedded
+docs corpus has a mechanical coverage check to prevent future drift.
+Plus four hygiene PRs that had been sitting in the backlog.
+
+### Added
+
+- **`rivet schema migrate` Phase 2** — git-rebase-style conflict
+  resolution UX (#242). When `--apply` hits a conflict, merge-conflict-
+  style markers (`<<<<<<<` / `=======` / `>>>>>>>`) are spliced into
+  the affected artifact YAML and the migration pauses. Three new
+  subcommands resolve from there:
+  - `--continue` — verify markers are gone, re-validate the touched
+    artifact, advance to the next conflict or COMPLETE.
+  - `--skip` — drop the current artifact from the migration; restore
+    its pre-migration form from the snapshot, advance.
+  - `--edit <id>` — re-stamp markers on a previously-resolved
+    conflict for re-editing.
+
+  New `MigrationState::Conflict` state, `current-conflict` pointer
+  file wired in, `manifest.yaml` extended with per-artifact
+  `resolutions: pending|resolved|skipped`. The diff engine now also
+  emits `FieldValueConflict` when a source value violates the target
+  field's `allowed-values` enum (the canonical conflict shape).
+
+- **`MigrationConflict` invariant in `rivet docs check`** — scans
+  `artifacts/**/*.yaml` for unresolved conflict markers. Catches
+  accidental commits with markers still in the YAML; the gate is
+  always-on so a half-resolved migration can't slip into git.
+
+- **`rivet docs check --coverage`** subcommand-coverage gate (#241).
+  Walks the live clap CLI tree, builds every subcommand path
+  (top-level + nested actions), and cross-references each against
+  the embedded `rivet docs` topic registry. Default is warn-only;
+  `--strict` makes uncovered paths fail the build. JSON output for
+  CI consumption. Wired into the `docs-check` CI job (warn-only
+  initially; flip to `--strict` once the documented gaps are filled).
+  Initial inventory: 48/81 paths covered (59%); 33 uncovered across
+  7 families (variant, baseline, snapshot, runs, pipelines,
+  templates, close-gaps).
+
+### Changed (housekeeping merges)
+
+- **`feat(validate)`: warn when prose names an artifact id without
+  a typed link** (#234, closes #207). `rivet validate` now scans
+  every artifact's `description` and string-typed fields for tokens
+  matching `\b[A-Z][A-Z0-9]*-[0-9]+\b`. When such a mention resolves
+  to an existing artifact and there's no typed link to it,
+  `prose-mention-without-typed-link` warns. Suppressed for self-refs
+  and unresolved IDs; deduplicated per artifact-pair.
+
+- **`feat(schemas)`: vv-coverage repo-status type for V&V technique
+  tracking** (#232, partial #188). New `vv-coverage` schema with the
+  `repo-status` artifact type, designed as the source-of-truth shape
+  for the planned `rivet coverage --matrix` rendering surface and
+  cross-repo aggregation.
+
+- **`feat(mutants)`: canonical cargo-mutants template + docs +
+  schema fields** (#229, closes #185). Reusable `mutants.toml` +
+  workflow YAML template under `templates/cargo-mutants/`, doc
+  topic, and schema fields for tracking surviving mutants per
+  test layer.
+
+- **`docs(pre-commit)`: canonical 21-hook template + tier docs**
+  (#222, closes #186). Copy-pasteable `templates/pre-commit/
+  .pre-commit-config.yaml` and `docs/pre-commit.md`.
+
+### Fixed
+
+- **Release workflow now idempotent on existing tag** (#244). The
+  `Create Release` step in `release.yml` previously failed with
+  "a release with the same tag name already exists" if the
+  maintainer ran `gh release create` manually right after pushing
+  the tag — which happened on every release in the v0.5.0 / v0.5.1
+  / v0.6.0 sequence. Net effect was that those release pages have
+  no binary / VSIX / SHA256 assets attached. The step now detects
+  an existing release and uploads assets via `gh release upload
+  --clobber`, otherwise creates the release with assets. v0.7.0
+  ships clean assets out of the box; older releases need manual
+  asset upload if desired.
+
+### Workspace
+
+- Workspace, vscode-rivet, and npm root package versions bumped to
+  0.7.0. Platform packages stay on the release-npm.yml override
+  path.
+
+### Known issues
+
+- **v0.5.0 / v0.5.1 / v0.6.0 release pages have no binary assets.**
+  The Release workflow doesn't have `workflow_dispatch`, so
+  re-running on those tags isn't possible without a manual
+  `gh release upload`. Tracked as a follow-up; v0.7.0 onward is
+  unaffected.
+
+## [0.6.0] — 2026-04-29
+
+Theme: schema migration + cited-source faithfulness. Two marquee
+features landing together — both surfaced during the post-0.5.0
+fresh-user dogfood (#236, #237).
+
+### Added
+
+- **`rivet schema migrate <target-preset>`** — git-rebase-style preset/
+  version migration with snapshot/abort. Phase 1 ships the diff engine
+  + plan/apply/abort/status/finish. Three change classes (mechanical,
+  decidable-with-policy, conflict). Mechanical-only auto-applied;
+  conflicts bail loudly (Phase 2 will add merge-conflict-style markers
+  + `--continue` / `--skip`). Storage layout under `.rivet/migrations/
+  <ts>-<src>-to-<tgt>/` with full pre-migration snapshot, manifest,
+  state file. One canned recipe ships:
+  `schemas/migrations/dev-to-aspice.yaml` covering type renames
+  (`requirement` -> `sw-req`, `feature` -> `sw-arch-component`),
+  link-type renames (`satisfies` -> `derives-from`), and policy
+  declarations (`unmapped-fields: keep-as-orphan`). 8 unit tests
+  + 5 integration tests covering apply, abort byte-symmetry, and
+  roundtrip. `rivet docs schema-migrate` documents the state machine
+  and recipe format. (#238 / issue #236)
+
+- **`cited-source` typed schema field** — first-class affordance for
+  artifacts citing external sources. Field shape:
+  `{ uri, kind: file|url|github|oslc|reqif|polarion, sha256, last-checked }`.
+  Phase 1 ships the `kind: file` backend: `rivet validate`
+  re-reads cited files, recomputes sha256, emits a new
+  `cited-source-drift` diagnostic on mismatch (severity Warning by
+  default, Error with `--strict-cited-sources`). URI scheme allowlist
+  enforced at validation time to mitigate exfiltration / SSRF surface.
+  New `rivet check sources` subcommand walks every cited-source and
+  surfaces drift; `--update` interactively refreshes hashes,
+  `--update --apply` batch-updates. The `dev` preset's `requirement`
+  type opts in first; other presets adopt incrementally via overlay.
+  `rivet docs schema-cited-sources` documents per-kind backend
+  behaviour, the `last-checked` semantics, and the security model.
+  (#239 / issue #237)
+
+  Phase 2 backends (`url`, `github`, `oslc`, `reqif`, `polarion`)
+  are deferred. Phase 3 LLM-judge layer documented as opt-in
+  `Severity::Info` future work; *not* shipped here. The cited paper
+  (arXiv 2604.19459) is explicitly *not* the motivation — it studies
+  formal-proof faithfulness, not prose-to-prose comparison;
+  RAG-grounding (FActScore, FaithEval) is the right literature for
+  the LLM-judge path if/when it materializes.
+
+### Workspace
+
+- Workspace, vscode-rivet, and npm root package versions bumped to
+  0.6.0. Platform packages stay on the release-npm.yml override path.
+
+### Verified
+
+- cargo check, cargo clippy --workspace -- -D warnings,
+  cargo test -p rivet-cli (passes including new migrate + cited-source
+  integration tests),
+- `rivet schema migrate aspice` (plan + apply on a fresh `dev`
+  project) returns PASS,
+- `rivet validate` on a `cited-source: { kind: file, ... }` fixture
+  catches drift after the underlying file changes,
+- `rivet check sources --update --apply` restores PASS state.
+
+## [0.5.1] — 2026-04-28
+
+Theme: post-0.5.0 first-contact polish. Three fresh-user dogfood passes
+(plus three parallel scenario-based ones — safety engineer / STPA,
+compliance lead / Polarion-import, AI integrator / MCP) surfaced two
+real bugs and one big doc gap. All three are fixed here.
+
+### Fixed
+
+- **`rivet init --preset aspice` seed now validates clean** (#233).
+  Two bugs in the shipped aspice preset: the `common` schema registers
+  `allocated-to` with `inverse: allocated-from` but never declares
+  `allocated-from` as a forward token, so the seed's
+  `sw-arch-component -> allocated-from -> sw-req` link was rejected.
+  And the seed's `system-req` had no `derives-from` target, so the
+  `sys2-derives-from-sys1` rule failed on the first
+  `rivet validate` post-init. Now: `aspice` declares `allocated-from`
+  as a forward link-type, and the seed grows a `stakeholder-req`
+  V-model root with the `system-req -> derives-from -> stakeholder-req`
+  link wired up. `rivet init --preset aspice && rivet validate`
+  now returns `Result: PASS (0 warnings)`.
+
+### Added
+
+- **`rivet mcp --list-tools` and `rivet mcp --probe`** (#231). Two
+  new flags for MCP discoverability — Scenario-C dogfood found that
+  AI integrators wiring rivet's MCP server into a custom client burned
+  ~30 minutes on JSON-RPC framing and writing throwaway requests just
+  to enumerate the tool catalog.
+  - `--list-tools` walks the registered tool router and prints the
+    catalog (15 tools today). Default output is a human table;
+    `--format json` emits the JSON-RPC `tools/list` payload exactly
+    as the wire server would. Does not start the server.
+  - `--probe` runs the in-process equivalent of
+    `tools/call rivet_list` (no args) against the current project and
+    prints the decoded `result.content[0].text` payload — same envelope
+    a real MCP client would observe — without spinning up stdio.
+  - Both reuse the same handlers the wire server dispatches to, so
+    output cannot drift from a real session.
+- **`rivet docs mcp` embedded topic** (#231). New ~1400-word doc
+  covering: line-delimited JSON-RPC framing (NOT LSP-style
+  Content-Length), the 3-message handshake (`initialize` ->
+  `notifications/initialized` -> `tools/list`/`tools/call`), the
+  full 15-tool catalog with input-schema summaries, the
+  `result.content[0].text` envelope gotcha (tool results arrive as a
+  stringified JSON document, not a structured object), the
+  `rivet_reload`-after-mutation convention, and copy-pasteable
+  smoke-test recipes.
+
+### Changed
+
+- **Quickstart rewrite for fresh-user clarity** (#230). Two clean-room
+  dogfood passes plus three parallel scenario-based passes (safety
+  engineer / STPA, compliance / Polarion-import / ASPICE overlay,
+  AI integrator / MCP) surfaced six concrete issues that confuse a
+  real first-contact user, all fixed here. Highlights:
+  - New "What is rivet?" preamble (typed YAML + schema + graph + four
+    interfaces; DOORS/Polarion/Jira analogy) so readers don't have to
+    assemble the mental model by osmosis.
+  - Step 2 now branches on preset choice: for `dev`, the seed is a
+    placeholder (write your own in step 3); for `stpa`/`aspice`/etc.,
+    the seed is a worked example in domain vocabulary — read it,
+    skip step 3, jump to step 4.
+  - Step 3's `rm artifacts/requirements.yaml` is gated to `dev` only
+    so non-`dev` seed files aren't accidentally nuked.
+  - Step 7's Python oracle uses the actual JSON key (`errors`, not
+    `error_count`); a real broken link now exits 1.
+  - Step 9 replaces the Mythos red-team scaffold reference (out of
+    scope for first contact) with "add a living document" using
+    markdown frontmatter + `{{stats}}` / `{{coverage}}` /
+    `[[REQ-001]]` embeds + an explicit `rivet serve` restart oracle.
+  - New "Existing-repo bring-up" appendix: explicit `rivet init`
+    non-destructiveness contract, complete copy-pasteable ASPICE
+    `sw-req` overlay (with `polarion_id` / `polarion_status` / `asil`
+    additions and the required `derived-from` link-field with
+    target-types verbatim from `rivet schema show`), and the
+    `sw-req -> system-req -> stakeholder-req` stub-parent chain
+    explained.
+  - New "Common gotchas" appendix G.1 - G.7: LSP overlay blindness,
+    overlay merge field-drop, forward/inverse link-type direction,
+    doc vs artifact refs, `imported-stub` honesty, lifecycle severity
+    scaling intent, `rivet schema show` preset locality.
+  - Wall-time wins (round 3 dogfood vs round 1): STPA bring-up went
+    from 13 min to 36 sec; Polarion -> ASPICE overlay went from 7 min
+    to 3.8 min.
+
+Workspace, vscode-rivet, and npm root package versions bumped to
+0.5.1. Platform packages stay on the release-npm.yml override path.
+
+Verified: cargo check, cargo clippy --workspace -- -D warnings,
+cargo test -p rivet-cli, `rivet init --preset aspice && rivet validate`
+returns PASS, `rivet docs mcp` prints the new topic,
+`rivet mcp --list-tools` produces a 15-tool catalog,
+`rivet mcp --probe` returns artifacts.
+
+## [0.5.0] — 2026-04-27
+
+Theme: oracle-gated agent pipelines + restored formal-method backstops +
+mutation testing as a hard signal. The agent-first pillar (CLI + MCP +
+LSP) now has a documented oracle-driven workflow (Mythos slop-hunt), an
+external-coverage consumer (witness coverage), and a 16-shard mutation
+matrix that surfaced and killed ~125 surviving mutants across the core
+crate. Verus and Rocq verification jobs are fully restored, the
+dashboard's variant scoping is coherent across all eight relevant
+handlers, and `rivet docs check` no longer silently passes on
+non-rivet markdown that drifted into a scanned directory.
+
+### Added
+
+- **README rewrite + `rivet quickstart`** — new oracle-gated 10-step
+  walk-through (`rivet docs quickstart` or the `rivet quickstart`
+  alias). Each step has a deterministic oracle command + expected
+  output so an AI agent can follow the doc autonomously. README now
+  leads with the three-pillar synthesis (typed atoms, oracle-gated
+  agents, agent-first form factor) instead of a feature list.
+- **Mythos slop-hunt agent pipeline** — `scripts/mythos/{rank,discover,validate,emit}.md`
+  + `HOWTO.md`. Four-prompt audit adapted from Anthropic's red-team
+  scaffold. Hunts dead code, duplicate parsers, and untraceable
+  modules. Excision-primary / trace-interpretive oracle. (#205)
+- **Agent-pipelines schema block** — `agent-pipelines:` per-schema
+  declaration of which oracles apply, how to rank gaps, and what
+  closure routing applies. Surfaced through `rivet pipelines list` /
+  `rivet pipelines show` / `rivet close-gaps`. (#205)
+- **CoverageStore** — typed witness-coverage consumer for external
+  coverage-evidence files. Lets `rivet validate` and `rivet coverage`
+  ingest tarpaulin/llvm-cov-style evidence as first-class artifacts
+  with module digests, run metadata, and per-module summaries. (#208)
+- **Variant scoping for 8 dashboard handlers** —
+  `?variant=<name>` query parameter is now honoured uniformly across
+  `/artifacts`, `/coverage`, `/stpa`, `/matrix`, `/stats`, `/graph`,
+  `/source`, and `/diagnostics`. Closes the incoherence flagged in the
+  PR #215 audit. (#223)
+- **Docs warn-or-allowlist** — `rivet docs check` now surfaces non-rivet
+  markdown files that drifted into a scanned directory under
+  `rivet.yaml: docs:`. Default is `warn`; `rivet.yaml:
+  docs-check.allowlist` flips specific paths back to silent. Resolves
+  Task #56 — files like vendor docs no longer break the gate but no
+  longer hide either. (#224)
+- **10 new Playwright rendering-invariant tests** — coverage of the
+  full route surface, with explicit `.svg-viewer` wrap pins, mermaid
+  inline-render assertions, and graph-route timeouts validated. (#215)
+
+### Changed
+
+- **Mutation testing — 16-shard `rivet-core` matrix, 30 s timeout** —
+  CI now shards the rivet-core mutation run across 16 jobs with a 30 s
+  per-mutant timeout (down from 90 s). The shard reduction surfaced
+  ~125 previously-untested mutants; PR #218 + #221 added ~64 new tests
+  to kill them across `embed`, `reqif`, `validate`, `commits`,
+  `coverage_evidence`, `compliance`, `convergence`, `links`, and
+  `store`. Net effect: mutation run is faster *and* the kill rate is
+  higher. (#218, #221)
+- **Verus verification fully restored** — corrected `vstd` lemma paths
+  after upstream rename, replaced `matches!` macros with `is`
+  operators, fixed `lemma_div_multiples_vanish` invocation, added
+  `#[trigger]` annotations to backlink-symmetry / reachable-in
+  quantifiers, eliminated mid-quantifier in multi-step reachable case,
+  cast nat→int in `lemma_div_is_ordered`. 15 specs proven. (#212)
+- **Rocq proofs fully restored** — restored `Validation.v` import,
+  replaced every `Admitted.` with a real proof. Schema and validation
+  semantics now machine-checked end-to-end. (#210)
+<!-- rivet-docs-check: ignore UNKNOWN-999 -->
+- **Serve middleware preserves response status** —
+  `wrap_full_page` was unconditionally rewriting downstream
+  4xx/5xx responses to 200. Status is now preserved through the
+  full-page wrapper so `/artifacts/UNKNOWN-999` correctly returns
+  HTTP 404, etc. (#213)
+- **Dashboard `/embed/*` route mounting** — moved under `Router::nest`
+  so the embed routes inherit the same middleware stack as the rest of
+  the dashboard (auth, layout-wrap exclusion, CSP). (#218)
+
+### Fixed
+
+- **Playwright suite green (384 passed)** — closed the remaining 8
+  dashboard test failures (description-mermaid wrap, graph-render
+  timeout, source-browser cross-reference, doc-linkage reverse index,
+  variant-banner persistence). (#211, #213, #215, #217, #220)
+- **Graph-route per-test timeout** — bumped 30 s → 60 s for slow CI
+  runners; the layout engine occasionally exceeded the old budget on
+  the larger test fixture. (#214)
+- **`cargo fmt` drift** in mutation-test additions cleaned up. (#219)
+- **CI**: Kani PR-smoke wiring, mutation shard config, Verus log
+  upload. (#209)
+
+### Tests
+
+- **+10 Playwright rendering-invariant tests** — pin the
+  `.svg-viewer` wrap, mermaid inline rendering, and graph-route
+  timeouts. (#215)
+- **+~64 rivet-core unit tests** killing surviving mutants across
+  `embed`, `reqif`, `validate`, `commits`, `coverage_evidence`,
+  `compliance`, `convergence`, `links`, `store`. (#218, #221)
+- **CoverageStore unit + integration tests** — round-trip + summary
+  invariants on witness coverage. (#208)
+
+### Distribution
+
+- **Workspace version bump** to `0.5.0` in `Cargo.toml`. The
+  `rivet-cli`, `rivet-core`, and `etch` crates inherit via
+  `version.workspace = true`.
+- **VS Code extension** `vscode-rivet/package.json` bumped to `0.5.0`.
+- **npm root package** `@pulseengine/rivet` bumped to `0.5.0`. Platform
+  package versions are filled in by the `release-npm.yml` workflow on
+  tag.
+
+### Status (v0.5.x in flight)
+
+- **Variant tooling** — six open product questions tracked in
+  `.rivet/mythos/variant-matrix-design.md` (matrix emission, t-wise
+  sampling, attribute-schema scope, audit cardinality, CLI
+  ergonomics, dashboard interplay).
+- **Formal-method gaps** — three documented gaps in Verus coverage
+  (variant solver completeness, salsa incremental fixpoint, ReqIF
+  round-trip). The larger gale-style differential-testing bar is
+  a follow-up release item.
+
 ## [0.4.3] — 2026-04-23
 
 ### `rivet variant` — build-system query surface and solve debugger

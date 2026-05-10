@@ -6,7 +6,7 @@
 # Applicable from August 2, 2026. Fines up to €35M or 7% global turnover.
 #
 # Usage:
-#   rivet init --schema eu-ai-act
+#   rivet init --preset eu-ai-act
 #   rivet init --schema eu-ai-act,stpa      # with STPA bridge
 #   rivet init --schema eu-ai-act,aspice    # with ASPICE bridge
 #

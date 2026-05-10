@@ -1106,3 +1106,234 @@ fn stats_page_shows_variant_banner_when_scoped() {
     child.kill().ok();
     child.wait().ok();
 }
+
+// ── /embed/* path rewriting (REQ-007 + tests/playwright/api.spec.ts:291) ──
+
+#[test]
+fn embed_artifact_returns_200_with_embed_layout() {
+    // Regression: the wrap_full_page middleware strips /embed and routes
+    // to /artifacts/{id} so the dashboard can iframe-embed an artifact
+    // without registering duplicate routes.  A previous URI-rewriting
+    // bug (round-tripping `Uri::into_parts` / `from_parts`) left the
+    // inner router with an empty matched path, returning a wrapped 404
+    // — exactly the symptom Playwright's api.spec.ts:291 catches.
+    let (mut child, port) = start_server();
+    let (status, body, _) = fetch(port, "/embed/artifacts/REQ-001", false);
+    assert_eq!(
+        status, 200,
+        "/embed/artifacts/REQ-001 must route through to artifact_detail"
+    );
+    // embed_layout (no nav, no .shell) — distinct from page_layout.
+    assert!(
+        !body.contains("class=\"shell\""),
+        "/embed/* must not render the sidebar shell"
+    );
+    assert!(
+        !body.contains("Main navigation"),
+        "/embed/* must not render the main nav"
+    );
+    // Artifact body still renders (REQ-001 always exists in the test fixture).
+    assert!(
+        body.contains("REQ-001"),
+        "embed body must contain the artifact ID, got body of length {}",
+        body.len()
+    );
+    // htmx is loaded so the embedded view stays interactive.
+    assert!(
+        body.contains("htmx"),
+        "embed body must include htmx (script tag)"
+    );
+    child.kill().ok();
+    child.wait().ok();
+}
+
+// ── Variant scoping: handlers closed in feat/variant-scoping-coherence ──
+//
+// Before the fix, eight dashboard handlers silently dropped `?variant=`
+// while the layout banner showed scoped — a coherence bug pinned by the
+// Playwright "is silently UNSCOPED" test in rendering-invariants.spec.ts.
+//
+// These integration tests verify that each handler now (a) still returns
+// 200 when given `?variant=minimal-ci`, (b) renders the variant banner
+// (proving the same param the layout reads is the param the handler
+// honors), and (c) returns 400 with the standard error fragment for an
+// unknown variant — the same contract artifacts_list / coverage_view
+// already implement.
+
+fn assert_scoped_ok(port: u16, route: &str) {
+    let (status, body, _) = fetch(port, &format!("{route}?variant=minimal-ci"), false);
+    assert_eq!(status, 200, "{route} should return 200 when scoped");
+    assert!(
+        body.contains("Filtered to variant"),
+        "{route} should render the variant banner when ?variant is set"
+    );
+    assert!(
+        body.contains("minimal-ci"),
+        "{route} banner should name the active variant"
+    );
+}
+
+fn assert_scoped_400_on_unknown(port: u16, route: &str) {
+    let (status, body, _) = fetch(port, &format!("{route}?variant=does-not-exist"), false);
+    assert_eq!(
+        status, 400,
+        "{route} should return 400 for an unknown variant name"
+    );
+    assert!(
+        body.contains("Invalid variant scope"),
+        "{route} 400 body should be the standard variant_error_response"
+    );
+}
+
+#[test]
+fn newly_scoped_handlers_render_variant_banner() {
+    // Pin the per-handler scoping contract for the eight handlers closed
+    // by feat/variant-scoping-coherence: each route must (a) accept
+    // `?variant=minimal-ci`, (b) render the layout banner, (c) reject
+    // unknown variant names with 400.
+    //
+    // /search is excluded here because the wrap_full_page middleware
+    // intentionally does NOT wrap /search responses (it is a fragment-only
+    // endpoint consumed by the Cmd+K JS via fetch). It still has the same
+    // variant-scoping contract, just no banner — see the dedicated test
+    // `search_handler_honors_variant_scope` below.
+    //
+    // /externals is intentionally excluded from the strict-scoping list
+    // (Choice C: explicit ignore + comment in views.rs) — externals are
+    // loaded from sibling repos and don't participate in this project's
+    // feature-model bindings, so a variant filter has no semantic meaning
+    // there. The asymmetry is documented inline in views::externals_list.
+    let (mut child, port) = start_server();
+
+    for route in [
+        "/graph",
+        "/verification",
+        "/eu-ai-act",
+        "/traceability",
+        "/doc-linkage",
+        "/documents",
+        "/results",
+    ] {
+        assert_scoped_ok(port, route);
+        assert_scoped_400_on_unknown(port, route);
+    }
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+#[test]
+fn search_handler_honors_variant_scope() {
+    // /search is a fragment endpoint excluded from the layout middleware,
+    // so it does NOT carry the variant banner. But the scoping contract
+    // is otherwise the same as the seven banner-routes:
+    //   * unknown variant → 400 with the "Invalid variant scope" body
+    //   * valid variant   → 200 and the search results are filtered
+    //     against the scoped store.
+    let (mut child, port) = start_server();
+
+    let (status_ok, body_ok, _) = fetch(port, "/search?q=REQ&variant=minimal-ci", false);
+    assert_eq!(status_ok, 200, "/search should return 200 when scoped");
+    // Non-empty body — the fragment shouldn't be a server error.
+    assert!(
+        !body_ok.contains("thread 'main' panicked"),
+        "/search should not panic when scoped"
+    );
+
+    let (status_bad, body_bad, _) = fetch(port, "/search?q=REQ&variant=does-not-exist", false);
+    assert_eq!(
+        status_bad, 400,
+        "/search should reject unknown variant names"
+    );
+    assert!(
+        body_bad.contains("Invalid variant scope"),
+        "/search 400 body should be the standard variant_error_response"
+    );
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+#[test]
+fn externals_view_accepts_variant_param_without_400() {
+    // /externals deliberately ignores `variant` (per the Choice C comment
+    // in views::externals_list). The handler must still accept the param
+    // gracefully so bookmarked URLs like /externals?variant=minimal-ci
+    // don't error — the layout banner picks up the param via middleware.
+    let (mut child, port) = start_server();
+    let (status, _body, _) = fetch(port, "/externals?variant=minimal-ci", false);
+    assert_eq!(
+        status, 200,
+        "/externals must accept ?variant gracefully even when it has no semantic effect"
+    );
+    let (status_unknown, _, _) = fetch(port, "/externals?variant=does-not-exist", false);
+    // Choice C means the handler doesn't validate the variant — the layout
+    // still renders the page and the banner shows the error inline.
+    assert_eq!(
+        status_unknown, 200,
+        "/externals must not reject unknown variants — Choice C (explicit ignore)"
+    );
+    child.kill().ok();
+    child.wait().ok();
+}
+
+#[test]
+fn eu_ai_act_dashboard_renders_real_content() {
+    // Verifies that with the rivet self-audit artifacts in place + the
+    // eu-ai-act schema loaded via rivet.yaml, the /eu-ai-act dashboard
+    // renders the populated Annex IV view rather than the empty
+    // placeholder ("schema is not loaded for this project").
+    //
+    // Oracle for the eu-ai-act self-audit dogfood task: confirms the
+    // is_eu_ai_act_loaded() check returns true for rivet's own store and
+    // the dashboard surfaces real compliance content.
+    let (mut child, port) = start_server();
+    let (status, body, _headers) = fetch(port, "/eu-ai-act", false);
+
+    assert_eq!(status, 200, "GET /eu-ai-act must return 200");
+
+    // Must NOT be the empty-placeholder card.
+    assert!(
+        !body.contains("schema is not loaded for this project"),
+        "/eu-ai-act must render the populated dashboard, not the placeholder.\n\
+         Check that rivet.yaml lists `eu-ai-act` under schemas and that\n\
+         artifacts/eu-ai-act.yaml provides ai-system-description and\n\
+         conformity-declaration entries (is_eu_ai_act_loaded gate).\n\
+         Body excerpt: {}",
+        body.chars().take(400).collect::<String>()
+    );
+
+    // Must render the real Annex IV section table.
+    assert!(
+        body.contains("Compliance by Annex IV Section"),
+        "/eu-ai-act must include the populated Annex IV section table"
+    );
+    assert!(
+        body.contains("Overall Compliance"),
+        "/eu-ai-act must include the overall compliance stat box"
+    );
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+#[test]
+fn embed_unknown_artifact_returns_200_with_not_found_body() {
+    // Unknown artifact under /embed should still go through the embed
+    // layout — render_artifact_detail returns a 200 with a "Not Found"
+    // body, which the embed wrap preserves. Exercises the same
+    // middleware-strip path as the happy case.
+    let (mut child, port) = start_server();
+    let (status, body, _) = fetch(port, "/embed/artifacts/DOES-NOT-EXIST", false);
+    assert_eq!(status, 200);
+    assert!(
+        body.contains("Not Found"),
+        "embed body for unknown artifact should include 'Not Found'"
+    );
+    assert!(
+        !body.contains("Main navigation"),
+        "/embed/* must not render the main nav even for not-found"
+    );
+    child.kill().ok();
+    child.wait().ok();
+}

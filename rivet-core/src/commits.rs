@@ -1010,6 +1010,77 @@ mod tests {
         assert!(is_artifact_id("UCA-C-1"));
     }
 
+    // ── Mutation-pinning tests for is_artifact_id ─────────────────────
+    //
+    // The function chains four `&&` clauses; each surviving mutant
+    // replaces one of them with `||`. The cases below force each
+    // clause to be the deciding factor.
+
+    // rivet: verifies REQ-017
+    // Kills:
+    //   commits.rs:261 replace && with || (between !prefix.is_empty() and the
+    //                                       prefix.split-all check)
+    //   commits.rs:264 replace && with || (between the prefix-check and
+    //                                       !suffix.is_empty())
+    //   commits.rs:263:44 replace && with || (inside the per-segment
+    //                                          closure)
+    #[test]
+    fn artifact_id_rejects_double_hyphen_prefix() {
+        // "A--1": rfind('-')=2 → prefix="A-", suffix="1".
+        //   A: !prefix.is_empty() = true
+        //   B: prefix.split('-') = ["A", ""] → second segment is empty,
+        //      so .all(...) = false (closure: !""".is_empty() && all_upper
+        //      = false && true = false; outer .all() = false).
+        //   C: !suffix.is_empty() = true
+        //   D: suffix.chars().all(digit) = true
+        // Original: T && F && T && T = false → not an artifact id.
+        // Mutant 261 (A || B): T || F && T && T = T → would say true.
+        // Mutant 264 (B || C): T && F || T && T = T → would say true.
+        // Mutant 263:44 (inside closure: || between !seg.is_empty() and
+        //   all_upper): for seg="", false || true = true → B becomes
+        //   true; outer: T && T && T && T = T → would say true.
+        assert!(
+            !is_artifact_id("A--1"),
+            "double-hyphen prefix must not be a valid artifact ID",
+        );
+    }
+
+    // rivet: verifies REQ-017
+    // Kills: commits.rs:265 replace && with || (between !suffix.is_empty()
+    //   and suffix.chars().all(digit))
+    #[test]
+    fn artifact_id_rejects_non_digit_suffix() {
+        // "REQ-1A": rfind('-')=3 → prefix="REQ", suffix="1A".
+        //   A: true. B: ["REQ"] → all upper, true. C: true.
+        //   D: "1A".chars().all(digit) = false.
+        // Original: T && T && T && F = false.
+        // Mutant 265: T && T && T || F = (T && T && T) || F = T || F = T
+        // → would say true.
+        assert!(
+            !is_artifact_id("REQ-1A"),
+            "suffix with a non-digit character must not be a valid id",
+        );
+        // Companion positive case to confirm the function still accepts
+        // pure-digit suffixes — guards against constant-true mutants
+        // anywhere on this code path.
+        assert!(is_artifact_id("REQ-001"));
+    }
+
+    // rivet: verifies REQ-017
+    // Kills: commits.rs:261 replace && with || (alternative pin via
+    //   pure-empty prefix path).
+    #[test]
+    fn artifact_id_rejects_leading_hyphen() {
+        // "-1": rfind('-')=0 → prefix="", suffix="1".
+        //   A: !prefix.is_empty() = false. B: split → [""] → all returns
+        //   false. C: true. D: true.
+        // Original: F && F && T && T = false.
+        // Mutant 261: F || F && T && T = false. Equivalent here, so this
+        // input alone does NOT distinguish — but combined with the
+        // double-hyphen test above, mutant 261 is killed.
+        assert!(!is_artifact_id("-1"));
+    }
+
     // -- integration: extract_artifact_ids with ranges --
 
     // rivet: verifies REQ-017

@@ -209,11 +209,83 @@ pub fn parse_document(content: &str, source: Option<&Path>) -> Result<Document, 
     })
 }
 
-/// Load all `.md` files from a directory as documents.
-pub fn load_documents(dir: &Path) -> Result<Vec<Document>, Error> {
-    if !dir.is_dir() {
-        return Ok(Vec::new());
+/// Summary of what the docs scanner did for a single directory entry.
+///
+/// Returned alongside the loaded documents so callers (notably `rivet
+/// validate` and `rivet docs check`) can surface a per-directory tally
+/// of files that were silently allowlisted vs. files that triggered a
+/// warning. See [`load_documents_with_report`] for the streaming form.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ScanReport {
+    /// Number of files that parsed successfully into a [`Document`].
+    pub loaded: usize,
+    /// Number of files declined by the scanner (no front-matter or a
+    /// front-matter parse error). One stderr warning per declined file.
+    pub warned: usize,
+    /// Number of files matched by an `exclude:` glob and skipped silently.
+    pub excluded: usize,
+}
+
+impl ScanReport {
+    /// Merge another report into this one (additive across multiple dirs).
+    pub fn merge(&mut self, other: &Self) {
+        self.loaded += other.loaded;
+        self.warned += other.warned;
+        self.excluded += other.excluded;
     }
+}
+
+/// Load all `.md` files from a directory as documents.
+///
+/// Convenience wrapper that prints warnings to stderr and discards the
+/// per-directory [`ScanReport`]. Use [`load_documents_with_report`] when
+/// you need the count of warned/excluded files (e.g. for `rivet
+/// validate`'s summary line).
+pub fn load_documents(dir: &Path) -> Result<Vec<Document>, Error> {
+    let (docs, _) = load_documents_with_report(dir, &[])?;
+    Ok(docs)
+}
+
+/// Load `.md` files from `dir`, honoring an `exclude` allowlist of glob
+/// patterns and surfacing a stderr warning for every file the scanner
+/// declines.
+///
+/// Behavior:
+/// - `exclude` patterns are matched against the path **relative to `dir`**
+///   using the glob dialect documented on [`crate::model::DocsEntry`]
+///   (`*`, `**`, `?`; bare patterns with no `/` match against the file
+///   name only). Excluded files are skipped silently.
+/// - Files that fail the front-matter check (no leading `---` or a
+///   serde error during parse) emit a single warning to stderr in the
+///   form:
+///   ```text
+///   warning: rivet doc scanner skipping <path>: <reason>
+///     hint: if this is intentional, add the path to docs[].exclude in rivet.yaml
+///   ```
+/// - Returns the loaded documents plus a [`ScanReport`] tallying loaded /
+///   warned / excluded files.
+pub fn load_documents_with_report(
+    dir: &Path,
+    exclude: &[String],
+) -> Result<(Vec<Document>, ScanReport), Error> {
+    let mut report = ScanReport::default();
+    if !dir.is_dir() {
+        return Ok((Vec::new(), report));
+    }
+
+    // Pre-compile each exclude pattern into a regex once. An invalid
+    // pattern emits a one-shot stderr warning and is then ignored — we
+    // don't fail the whole scan over a malformed allowlist entry.
+    let compiled: Vec<(String, regex::Regex)> = exclude
+        .iter()
+        .filter_map(|pat| match glob_to_regex(pat) {
+            Ok(re) => Some((pat.clone(), re)),
+            Err(e) => {
+                eprintln!("warning: invalid docs exclude pattern {pat:?}: {e}");
+                None
+            }
+        })
+        .collect();
 
     let mut docs = Vec::new();
     let mut entries: Vec<_> = std::fs::read_dir(dir)
@@ -231,28 +303,99 @@ pub fn load_documents(dir: &Path) -> Result<Vec<Document>, Error> {
 
     for entry in entries {
         let path = entry.path();
+        // Compute the path relative to the docs root for glob matching.
+        // Falls back to the file name (which still satisfies bare-name
+        // patterns like `*.draft.md`).
+        let rel = path.strip_prefix(dir).unwrap_or(&path);
+        let rel_str = rel.to_string_lossy();
+        if compiled.iter().any(|(_, re)| re.is_match(&rel_str)) {
+            report.excluded += 1;
+            continue;
+        }
+
         let content = std::fs::read_to_string(&path)
             .map_err(|e| Error::Io(format!("{}: {e}", path.display())))?;
 
         // Skip files without YAML frontmatter (e.g. plain README.md).
-        // Warn so users know these aren't being tracked.
+        // Warn loudly so users know these aren't being tracked — the
+        // user can add the file to `docs[].exclude` in rivet.yaml to
+        // opt out and silence the warning.
         if !content.starts_with("---") {
-            log::info!(
-                "skipping {} (no YAML frontmatter — add --- header to include as rivet document)",
+            eprintln!(
+                "warning: rivet doc scanner skipping {}: no YAML frontmatter\n  \
+                 hint: if this is intentional, add the path to docs[].exclude in rivet.yaml",
                 path.display()
             );
+            report.warned += 1;
             continue;
         }
 
         match parse_document(&content, Some(&path)) {
-            Ok(doc) => docs.push(doc),
+            Ok(doc) => {
+                report.loaded += 1;
+                docs.push(doc);
+            }
             Err(e) => {
-                log::warn!("skipping {}: {e}", path.display());
+                eprintln!(
+                    "warning: rivet doc scanner skipping {}: {e}\n  \
+                     hint: if this is intentional, add the path to docs[].exclude in rivet.yaml",
+                    path.display()
+                );
+                report.warned += 1;
             }
         }
     }
 
-    Ok(docs)
+    Ok((docs, report))
+}
+
+/// Translate a docs `exclude` glob into a regex anchored to the full
+/// relative path. Supports `*`, `**`, `?` and literal characters; any
+/// other regex metacharacter is escaped. A pattern containing no `/` is
+/// matched against the file name only, so `*.draft.md` excludes drafts at
+/// every depth.
+pub(crate) fn glob_to_regex(glob: &str) -> Result<regex::Regex, regex::Error> {
+    let bare_name = !glob.contains('/');
+    let mut re = String::with_capacity(glob.len() * 2 + 8);
+    if bare_name {
+        // Match the basename anywhere in the relative path: optional
+        // leading directory, then the basename, then end of string.
+        re.push_str(r"(?:^|/)");
+    } else {
+        re.push('^');
+    }
+    let bytes = glob.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let c = bytes[i];
+        match c {
+            b'*' => {
+                // Greedy: `**` consumes any chars including `/`; `*`
+                // consumes any chars except `/`.
+                if i + 1 < bytes.len() && bytes[i + 1] == b'*' {
+                    re.push_str(".*");
+                    i += 2;
+                    // Eat a trailing `/` after `**` so `generated/**`
+                    // matches `generated/anything` and `generated`.
+                    if i < bytes.len() && bytes[i] == b'/' {
+                        re.push_str("/?");
+                        i += 1;
+                    }
+                    continue;
+                }
+                re.push_str("[^/]*");
+            }
+            b'?' => re.push_str("[^/]"),
+            b'.' | b'+' | b'(' | b')' | b'|' | b'^' | b'$' | b'{' | b'}' | b'[' | b']' | b'\\' => {
+                re.push('\\');
+                re.push(c as char);
+            }
+            _ => re.push(c as char),
+        }
+        i += 1;
+    }
+    re.push('$');
+    regex::Regex::new(&re)
 }
 
 // ---------------------------------------------------------------------------
@@ -2207,6 +2350,163 @@ See frontmatter.
         assert!(
             html.contains("bogus_embed"),
             "error must show the unknown name"
+        );
+    }
+
+    // ── glob_to_regex ───────────────────────────────────────────────────
+
+    // rivet: verifies REQ-010
+    #[test]
+    fn glob_star_matches_filename_at_any_depth() {
+        let re = glob_to_regex("*.draft.md").unwrap();
+        assert!(re.is_match("foo.draft.md"));
+        assert!(re.is_match("nested/dir/foo.draft.md"));
+        assert!(!re.is_match("foo.md"));
+    }
+
+    // rivet: verifies REQ-010
+    #[test]
+    fn glob_double_star_matches_subtree() {
+        let re = glob_to_regex("generated/**").unwrap();
+        assert!(re.is_match("generated/anything"));
+        assert!(re.is_match("generated/sub/dir/file.md"));
+        // `generated/**` is gitignore-style: files *inside* generated/.
+        // The bare `generated` directory itself is not a match (and the
+        // scanner only yields .md files anyway, so this is moot in
+        // practice).
+        assert!(!re.is_match("other/file.md"));
+    }
+
+    // rivet: verifies REQ-010
+    #[test]
+    fn glob_single_star_does_not_cross_slash() {
+        let re = glob_to_regex("docs/*.md").unwrap();
+        assert!(re.is_match("docs/foo.md"));
+        assert!(!re.is_match("docs/sub/foo.md"));
+    }
+
+    // ── load_documents_with_report ──────────────────────────────────────
+
+    // rivet: verifies REQ-004
+    #[test]
+    fn warns_on_missing_frontmatter_and_skips() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("good.md"),
+            "---\nid: D-1\ntitle: T\n---\nbody",
+        )
+        .unwrap();
+        std::fs::write(tmp.path().join("bad.md"), "no frontmatter here").unwrap();
+
+        let (docs, report) = load_documents_with_report(tmp.path(), &[]).unwrap();
+        assert_eq!(docs.len(), 1);
+        assert_eq!(docs[0].id, "D-1");
+        assert_eq!(report.loaded, 1);
+        assert_eq!(report.warned, 1);
+        assert_eq!(report.excluded, 0);
+    }
+
+    // rivet: verifies REQ-004
+    #[test]
+    fn warns_on_malformed_frontmatter_and_skips() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Has --- but no closing fence and missing required fields.
+        std::fs::write(tmp.path().join("broken.md"), "---\nnot: yaml-able\n").unwrap();
+
+        let (docs, report) = load_documents_with_report(tmp.path(), &[]).unwrap();
+        assert!(docs.is_empty());
+        assert_eq!(report.loaded, 0);
+        assert_eq!(report.warned, 1);
+        assert_eq!(report.excluded, 0);
+    }
+
+    // rivet: verifies REQ-010
+    #[test]
+    fn exclude_glob_skips_silently() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("good.md"),
+            "---\nid: D-1\ntitle: T\n---\nbody",
+        )
+        .unwrap();
+        // Generated drafts should not warn, just be excluded.
+        std::fs::write(tmp.path().join("foo.draft.md"), "no frontmatter").unwrap();
+
+        let exclude = vec!["*.draft.md".to_string()];
+        let (docs, report) = load_documents_with_report(tmp.path(), &exclude).unwrap();
+        assert_eq!(docs.len(), 1);
+        assert_eq!(report.loaded, 1);
+        assert_eq!(report.warned, 0, "excluded files must not warn");
+        assert_eq!(report.excluded, 1);
+    }
+
+    // rivet: verifies REQ-010
+    #[test]
+    fn exclude_glob_with_double_star_skips_subtree_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let gen_dir = tmp.path().join("generated");
+        std::fs::create_dir_all(&gen_dir).unwrap();
+        // load_documents_with_report only walks one level (matches the
+        // legacy `read_dir` contract). Even so, a top-level file under
+        // generated/ should be excluded by `generated/**`.
+        std::fs::write(gen_dir.join("a.md"), "no frontmatter").unwrap();
+        std::fs::write(tmp.path().join("kept.md"), "---\nid: D-1\ntitle: T\n---\n").unwrap();
+
+        // Drop the dir-level entry so we re-test at the top level — we
+        // create a sibling file that matches generated/** to confirm
+        // the **/ semantics.
+        let exclude = vec!["generated/**".to_string(), "skip-me.md".to_string()];
+        std::fs::write(tmp.path().join("skip-me.md"), "no frontmatter").unwrap();
+
+        let (docs, report) = load_documents_with_report(tmp.path(), &exclude).unwrap();
+        assert_eq!(docs.len(), 1);
+        assert_eq!(report.loaded, 1);
+        assert_eq!(report.warned, 0);
+        assert_eq!(report.excluded, 1, "skip-me.md should be excluded");
+    }
+
+    // rivet: verifies REQ-010
+    #[test]
+    fn invalid_exclude_pattern_is_ignored_not_fatal() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("good.md"), "---\nid: D-1\ntitle: T\n---\n").unwrap();
+        // A pattern that produces a regex error after escaping should
+        // not cause the scan to fail — the file still loads.
+        let exclude = vec!["[invalid-bracket".to_string()];
+        let (docs, _) = load_documents_with_report(tmp.path(), &exclude).unwrap();
+        assert_eq!(docs.len(), 1);
+    }
+
+    // ── DocsEntry serde round-trip ──────────────────────────────────────
+
+    // rivet: verifies REQ-010
+    #[test]
+    fn docs_entry_legacy_path_form() {
+        let yaml = "- docs\n- arch\n";
+        let parsed: Vec<crate::model::DocsEntry> = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].path(), "docs");
+        assert!(parsed[0].exclude().is_empty());
+        assert_eq!(parsed[1].path(), "arch");
+    }
+
+    // rivet: verifies REQ-010
+    #[test]
+    fn docs_entry_detailed_form_with_excludes() {
+        let yaml = r#"
+- docs
+- path: arch
+  exclude:
+    - "generated/**"
+    - "*.draft.md"
+"#;
+        let parsed: Vec<crate::model::DocsEntry> = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].path(), "docs");
+        assert_eq!(parsed[1].path(), "arch");
+        assert_eq!(
+            parsed[1].exclude(),
+            &["generated/**".to_string(), "*.draft.md".to_string()]
         );
     }
 }

@@ -53,6 +53,13 @@ struct DocTopic {
 }
 
 const TOPICS: &[DocTopic] = &[
+    // ── Getting started ────────────────────────────────────────────────
+    DocTopic {
+        slug: "quickstart",
+        title: "10-step oracle-gated quickstart",
+        category: "Getting started",
+        content: QUICKSTART_DOC,
+    },
     // ── Reference topics ───────────────────────────────────────────────
     DocTopic {
         slug: "artifact-format",
@@ -115,6 +122,12 @@ const TOPICS: &[DocTopic] = &[
         content: CONDITIONAL_RULES_DOC,
     },
     DocTopic {
+        slug: "schema-cited-sources",
+        title: "Cited-source typed field — sha256-stamped external references",
+        category: "Reference",
+        content: SCHEMA_CITED_SOURCES_DOC,
+    },
+    DocTopic {
         slug: "impact",
         title: "Change impact analysis",
         category: "Reference",
@@ -143,6 +156,12 @@ const TOPICS: &[DocTopic] = &[
         title: "HTML export deployment and customization",
         category: "Reference",
         content: HTML_EXPORT_DOC,
+    },
+    DocTopic {
+        slug: "mcp",
+        title: "MCP server — wire format, tool catalog, and smoke tests",
+        category: "Reference",
+        content: MCP_DOC,
     },
     // ── Schema topics ──────────────────────────────────────────────────
     DocTopic {
@@ -229,7 +248,58 @@ const TOPICS: &[DocTopic] = &[
         category: "Schemas",
         content: SUPPLY_CHAIN_DOC,
     },
+    DocTopic {
+        slug: "schema-migrate",
+        title: "rivet schema migrate — preset migration with snapshot/abort",
+        category: "Reference",
+        content: SCHEMA_MIGRATE_DOC,
+    },
+    DocTopic {
+        slug: "docs-coverage",
+        title: "rivet docs check --coverage — subcommand-coverage gate",
+        category: "Reference",
+        content: DOCS_COVERAGE_DOC,
+    },
+    DocTopic {
+        slug: "docs-check",
+        title: "rivet docs check — invariant engine and embedded-doc checks",
+        category: "Reference",
+        content: DOCS_CHECK_DOC,
+    },
 ];
+
+/// Return all registered topic slugs in declaration order.
+///
+/// Used by the subcommand-coverage gate to cross-reference clap subcommand
+/// paths against documented topics.
+pub fn topic_slugs() -> Vec<&'static str> {
+    TOPICS.iter().map(|t| t.slug).collect()
+}
+
+/// Return every registered topic as `(slug, body)` pairs.
+///
+/// Used by the embedded-doc invariants in `rivet docs check`
+/// (`EmbeddedVersionLiterals`, `EmbeddedFlagReferences`,
+/// `EmbeddedTodoMarkers`) to scan the strings shipped in the binary
+/// — the markdown scanner only sees files on disk.
+pub fn topic_bodies() -> Vec<(&'static str, &'static str)> {
+    TOPICS.iter().map(|t| (t.slug, t.content)).collect()
+}
+
+/// True iff a topic with this slug is registered.
+#[allow(dead_code)]
+pub fn has_topic(slug: &str) -> bool {
+    TOPICS.iter().any(|t| t.slug == slug)
+}
+
+/// Return the raw content body of a topic, or `None` if no topic with
+/// this slug is registered.
+///
+/// Used by the subcommand-coverage gate's umbrella rule to verify that a
+/// parent topic actually mentions the child subcommand by name.
+pub fn topic_content(slug: &str) -> Option<&'static str> {
+    TOPICS.iter().find(|t| t.slug == slug).map(|t| t.content)
+}
 
 // ── Embedded documentation ──────────────────────────────────────────────
 
@@ -325,10 +395,24 @@ sources:                    # Artifact sources
     #   key: value
 
 docs:                       # Documentation directories (for [[ID]] scanning)
-  - docs
+  - docs                    # legacy: just a path
+  - path: arch              # detailed: path + opt-out allowlist
+    exclude:                # silently skip these (still scanned otherwise)
+      - "generated/**"      # `**` matches any subtree
+      - "*.draft.md"        # bare patterns match the file name only
 
 results: results            # Test results directory (JUnit XML, LCOV)
 ```
+
+### Loud-by-default doc scanning
+
+The doc scanner emits a stderr warning for every `.md` file it declines
+(no YAML front-matter, malformed front-matter). This is by design:
+silently-skipped files don't participate in the link graph, so artifact
+IDs in their prose go invisible. The warning includes a hint to add the
+file to `docs[].exclude` if the silence was intentional. A summary line
+at the end of the scan reports `<loaded> loaded, <warned> skipped,
+<excluded> excluded by allowlist`.
 
 ## Available Schemas
 
@@ -392,11 +476,32 @@ rivet snapshot list         List all captured snapshots
 ## MCP Server
 
 ```
-rivet mcp                   Start the MCP server (stdio transport)
+rivet mcp                          Start the MCP server (stdio transport)
+rivet mcp --list-tools             Print the registered tool catalog and exit
+rivet mcp --list-tools -f json     Emit the JSON-RPC tools/list payload
+rivet mcp --probe                  Run an in-process tools/call rivet_list smoke test
 ```
 
 Exposes rivet tools to AI agents via the Model Context Protocol.
 The server uses stdio transport and only binds to the local process.
+See `rivet docs mcp` for the wire format, the 15-tool catalog, and the
+3-message handshake.
+
+## Oracle Subcommands (`rivet check`)
+
+```
+rivet check bidirectional           Verify every link with an inverse has it on the target
+rivet check review-signoff ID       Verify a released artifact has a reviewer
+rivet check gaps-json               Validation gaps as canonical JSON
+rivet check sources                 List artifacts with cited-source + hash status
+rivet check sources --update        Interactive y/N stamp refresh per drift
+rivet check sources --update --apply  Batch refresh, non-interactive
+```
+
+`rivet check sources` and `rivet validate --strict-cited-sources` together
+implement the deterministic external-source faithfulness check (issue
+#237). Phase 1 only handles `kind: file`; remote backends ship in
+Phase 2. See `rivet docs schema-cited-sources`.
 
 ## Schema Commands
 
@@ -405,15 +510,24 @@ rivet schema list           List all artifact types
 rivet schema show TYPE      Show type details with example YAML
 rivet schema links          List all link types with inverses
 rivet schema rules          List all traceability rules
+rivet schema migrate TGT    Plan + apply preset migration with snapshot
+                            (see rivet docs schema-migrate)
 ```
 
 ## Documentation Commands
 
 ```
-rivet docs                  List available documentation topics
-rivet docs TOPIC            Show a specific topic
-rivet docs --grep PATTERN   Search across all documentation
+rivet docs                          List available documentation topics
+rivet docs TOPIC                    Show a specific topic
+rivet docs --grep PATTERN           Search across all documentation
+rivet docs check                    Run doc-vs-reality invariants
+rivet docs check --coverage         Subcommand-coverage gate (warn)
+rivet docs check --coverage --strict  Fail-on-uncovered (CI gate)
 ```
+
+`rivet docs check --coverage` walks the live clap CLI tree and asserts
+every subcommand has an embedded `rivet docs <topic>` entry. See
+`rivet docs docs-coverage` for the matching rules and the allow-list.
 
 ## Scaffolding
 
@@ -1442,6 +1556,274 @@ When `--single-page` is used, all reports are combined into a single
 single-page mode (everything is inline).
 "#;
 
+// ── MCP server documentation ────────────────────────────────────────────
+
+const MCP_DOC: &str = r#"# MCP Server — Wire Format, Tool Catalog, and Smoke Tests
+
+## Overview
+
+`rivet mcp` exposes the typed-graph (artifacts, links, schemas, validation,
+coverage, snapshots) to MCP-speaking clients — Claude Code, Cursor, custom
+agents — via the [Model Context Protocol](https://modelcontextprotocol.io/).
+The server runs in-process: it loads the project once, caches the store /
+schema / link graph, and serves all subsequent tool calls from that cache.
+
+The server has no network surface. Transport is stdio: the client launches
+`rivet mcp` as a child process and exchanges JSON-RPC messages over the
+child's stdin / stdout. Mutations land in the project's YAML files on disk;
+the cache is refreshed on demand via the `rivet_reload` tool.
+
+For a list of every tool the server advertises with one-line summaries, run
+`rivet mcp --list-tools`. For a quick "is the server reachable from my
+project?" smoke test, run `rivet mcp --probe`. Both are described below.
+
+## Wire Format
+
+The wire format is **line-delimited JSON-RPC 2.0** over stdio. Each message
+is one line of JSON terminated by `\n`. There is **no** Content-Length
+framing of the kind LSP uses — clients that wrap the transport with LSP
+framing will see no responses and time out.
+
+A message is either a request (has `id`), a response (has `id` and either
+`result` or `error`), or a notification (no `id`, no response expected).
+
+```
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{...}}\n
+{"jsonrpc":"2.0","id":1,"result":{...}}\n
+{"jsonrpc":"2.0","method":"notifications/initialized"}\n
+{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}\n
+```
+
+Anything emitted on stderr is diagnostic / log output; clients should
+forward it to their own logs but never parse it as JSON-RPC.
+
+## The 3-Message Handshake
+
+Every session starts with the same handshake. The middle message is a
+**notification** — no `id`, no response — and is easy to forget. Servers
+that follow the spec strictly will reject `tools/list` until they see it.
+
+1. **Client → server**: `initialize` request. The client declares its
+   protocol version and capabilities.
+
+   ```json
+   {
+     "jsonrpc": "2.0",
+     "id": 1,
+     "method": "initialize",
+     "params": {
+       "protocolVersion": "2024-11-05",
+       "capabilities": {},
+       "clientInfo": {"name": "my-client", "version": "0.1.0"}
+     }
+   }
+   ```
+
+2. **Server → client**: `initialize` response. Lists the server's
+   capabilities (rivet advertises `tools` and `resources`).
+
+   ```json
+   {
+     "jsonrpc": "2.0",
+     "id": 1,
+     "result": {
+       "protocolVersion": "2024-11-05",
+       "capabilities": {"tools": {...}, "resources": {...}},
+       "serverInfo": {"name": "rivet", "version": "<rmcp-version>"}
+     }
+   }
+   ```
+
+   The `version` field reflects the underlying [rmcp](https://crates.io/crates/rmcp)
+   crate version — not rivet's. It changes with `rmcp` upgrades and is not
+   tied to the rivet release line.
+
+3. **Client → server**: `notifications/initialized` notification. **No
+   id, no response.** This is the gate — the server treats it as the
+   client's signal that it is ready to receive tool calls.
+
+   ```json
+   {"jsonrpc": "2.0", "method": "notifications/initialized"}
+   ```
+
+After the notification, the client may freely send `tools/list`,
+`tools/call`, `resources/list`, and `resources/read` requests.
+
+## The 15-Tool Catalog
+
+The server registers fifteen tools. The authoritative listing — including
+the full input schema for each — is `rivet mcp --list-tools` (text) or
+`rivet mcp --list-tools --format json` (the JSON-RPC `tools/list` payload).
+
+| Tool                    | Purpose                                                  | Inputs (required first)                |
+|-------------------------|----------------------------------------------------------|----------------------------------------|
+| `rivet_validate`        | Run validators, return PASS / FAIL with diagnostics      | (none)                                 |
+| `rivet_list`            | List artifacts, optional type / status filters           | `type_filter?`, `status_filter?`       |
+| `rivet_get`             | Fetch one artifact (fields, links, metadata)             | `id`                                   |
+| `rivet_stats`           | Counts by type, orphans, broken-link totals              | (none)                                 |
+| `rivet_coverage`        | Per-rule traceability coverage                           | `rule?`                                |
+| `rivet_schema`          | Artifact types, link types, traceability rules           | `type?`                                |
+| `rivet_query`           | S-expression filter; matches with full bodies            | `filter`, `limit?`                     |
+| `rivet_embed`           | Resolve a `{{...}}` embed (e.g. `coverage:matrix`)       | `query`                                |
+| `rivet_snapshot_capture`| Persist a validation snapshot for delta tracking         | `name?`                                |
+| `rivet_add`             | Insert a new artifact via CST mutation                   | `type`, `title`, `status?`, ...        |
+| `rivet_modify`          | Mutate fields / status / tags on an existing artifact    | `id`, then any of the setters          |
+| `rivet_link`            | Add a typed link between two artifacts                   | `source`, `link_type`, `target`        |
+| `rivet_unlink`          | Remove a typed link                                      | `source`, `link_type`, `target`        |
+| `rivet_remove`          | Delete an artifact (refuses if backlinked unless force)  | `id`, `force?`                         |
+| `rivet_reload`          | Reload the cache from disk after external file changes   | (none)                                 |
+
+The first nine tools are read-only and run against the cache. The next
+five mutate YAML on disk and require a `rivet_reload` afterwards (see
+"Mutation Convention" below). `rivet_reload` itself is the cache primitive.
+
+In addition to tools, the server publishes two **resources**:
+
+- `rivet://diagnostics` — the JSON of the latest validation run.
+- `rivet://coverage` — the JSON of the latest coverage report.
+- `rivet://artifacts/{id}` — the JSON of a single artifact (computed on read).
+
+## Response Envelope Gotcha
+
+`tools/call` replies look like:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 17,
+  "result": {
+    "content": [
+      {"type": "text", "text": "{\"count\": 759, \"artifacts\": [...]}"}
+    ],
+    "isError": false
+  }
+}
+```
+
+The structured payload — the actual artifact list, diagnostic dump, etc. —
+arrives as a **stringified JSON document inside `result.content[0].text`**.
+Clients must parse that string a second time to get a usable object. This
+is intentional on the MCP side (the `text` content type is reserved for
+LLM-readable strings), but it surprises everyone the first time. A
+typed-content variant is on the MCP roadmap; until then, every client
+that wants structured output writes:
+
+```python
+result = call_tool("rivet_list", {})
+payload = json.loads(result["content"][0]["text"])
+```
+
+`rivet mcp --probe` does this parse for you and prints the inner JSON
+directly, which is one of the reasons it exists.
+
+## Smoke-Test Recipes
+
+Three ways to verify a server is reachable, in order of effort.
+
+### 1. `rivet mcp --list-tools`
+
+The fastest sanity check — does not start the server, does not need a
+project. Just enumerates the tool catalog the server would advertise.
+
+```
+$ rivet mcp --list-tools
+rivet MCP server — 15 registered tools
+
+  rivet_add
+    Add a new artifact to the project via CST mutation. Call rivet_reload after.
+    params: description?, fields?, links?, status?, tags?, title, type
+  ...
+```
+
+For the JSON-RPC `tools/list` payload exactly as the wire server would
+return it (useful for unit-testing client code without a subprocess):
+
+```
+$ rivet mcp --list-tools --format json | jq '.result.tools[].name'
+"rivet_add"
+"rivet_coverage"
+...
+```
+
+### 2. `rivet mcp --probe`
+
+Runs the in-process equivalent of `tools/call rivet_list` (no arguments)
+against the current project and prints the decoded payload. Confirms the
+project loads, the schema parses, and the cache populates — i.e. that
+the same code path a real MCP client would hit actually returns artifacts.
+
+```
+$ rivet mcp --probe
+{
+  "count": 759,
+  "artifacts": [
+    {"id": "REQ-001", "type": "requirement", ...},
+    ...
+  ]
+}
+```
+
+Exits non-zero if the project fails to load. Pair with `--project <path>`
+to probe a project other than the current directory.
+
+### 3. Bash-Only Wire Test
+
+For clients that want to verify the wire shape directly, pipe JSON-RPC
+into `rivet mcp` and read the responses back out. This is the only
+recipe that exercises the actual stdio transport:
+
+```bash
+{
+  printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"sh","version":"0"}}}'
+  printf '%s\n' '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+  printf '%s\n' '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
+  sleep 0.5
+} | rivet mcp 2>/dev/null | head -3
+```
+
+You should see three JSON lines: an `initialize` response, no body for
+the notification (the server emits nothing for notifications), then a
+`tools/list` response with the fifteen tools embedded in
+`result.tools`. The `sleep` is needed because the server reads stdin
+until EOF and would otherwise block waiting for the next request.
+
+## Mutation Convention
+
+The five mutation tools — `rivet_add`, `rivet_modify`, `rivet_link`,
+`rivet_unlink`, `rivet_remove` — write directly to the project's YAML
+files via the same CST-preserving mutator the CLI uses. They do **not**
+update the in-memory cache that the read tools serve from.
+
+Right after a successful mutation, the client must call `rivet_reload`
+to refresh the cache. Otherwise subsequent `rivet_list`, `rivet_get`,
+`rivet_validate`, etc. will return stale data — they will not see the
+artifact that was just added, or will still see the link that was just
+removed.
+
+```
+rivet_add { ... }       → file changes on disk, cache stale
+rivet_reload            → cache repopulates from disk
+rivet_validate          → fresh diagnostics, includes the new artifact
+```
+
+This split exists by design: the mutator runs in milliseconds, while
+`rivet_reload` walks the full project (parser, schema check, link graph
+rebuild). Batching N mutations + 1 reload at the end is much cheaper
+than reloading after each one. Audit log entries (under
+`.rivet/mcp-audit.jsonl`) are written immediately by the mutators
+regardless — reload state does not affect the audit trail.
+
+## Pointers
+
+- MCP specification: <https://modelcontextprotocol.io/>
+- Crate used by rivet: `rmcp` — <https://crates.io/crates/rmcp>
+- Integration tests: `rivet-cli/tests/mcp_integration.rs`
+- CLI reference: `rivet docs cli`
+- Mutation semantics: `rivet docs mutation`
+
+Related: [[FEAT-010]], [[REQ-007]], [[REQ-047]]
+"#;
+
 // ── Phase 3 documentation topics ────────────────────────────────────────
 
 const MUTATION_DOC: &str = r#"# CLI Mutation Commands
@@ -1554,6 +1936,153 @@ requirements, the schema is rejected with a diagnostic.
 Related: [[REQ-023]], [[DD-018]], [[FEAT-040]]
 "#;
 
+const SCHEMA_CITED_SOURCES_DOC: &str = r#"# Cited-source typed field
+
+The `cited-source` field is a first-class typed schema construct that
+stamps an artifact with a hash-verifiable reference to an external
+source. Run `rivet validate` to detect drift; run `rivet check sources
+--update` to refresh the stamps.
+
+Phase 1 (current) implements the `kind: file` backend only. Remote kinds
+(`url`, `github`, `oslc`, `reqif`, `polarion`) are recognised by the
+schema and round-trip cleanly, but their backends ship in Phase 2.
+
+## Field shape
+
+```yaml
+- id: REQ-001
+  type: requirement
+  fields:
+    cited-source:
+      uri: ./testdata/source.txt           # required
+      kind: file                           # required: file | url | github | oslc | reqif | polarion
+      sha256: ba78…                        # optional but warned-on if missing
+      last-checked: 2026-04-27T00:00:00Z   # optional ISO-8601 UTC
+```
+
+## Per-kind backend behaviour
+
+| kind     | Phase 1 behaviour                                        | Phase 2 (planned)                       |
+|----------|----------------------------------------------------------|-----------------------------------------|
+| file     | re-read file on disk, recompute sha256, compare          | unchanged                               |
+| url      | accepted by schema, skipped at validate                  | HTTP fetch with `--check-remote-sources`|
+| github   | accepted by schema, skipped at validate                  | GitHub API with `GITHUB_TOKEN`          |
+| oslc     | accepted by schema, skipped at validate                  | gated by `oslc` feature flag            |
+| reqif    | accepted by schema, skipped at validate                  | gated by `reqif` feature flag           |
+| polarion | accepted by schema, skipped at validate                  | gated by `polarion` feature flag        |
+
+## URI resolution (kind: file)
+
+- Bare relative paths (`./doc.md`, `testdata/x.txt`) are resolved
+  against the project root (the directory containing `rivet.yaml`).
+- Absolute paths (`/etc/hosts`) are used as-is.
+- The `file://` scheme is honoured: `file:///abs/path` is absolute,
+  `file://relative/path` is joined to the project root.
+
+## Diagnostics
+
+Rule names emitted by `rivet validate`:
+
+- `cited-source-shape` (Error) — the field is malformed (missing uri /
+  kind, unknown kind, scheme outside the allowlist).
+- `cited-source-drift` (Warning by default; Error with
+  `--strict-cited-sources`) — sha256 stamp does not match the file on
+  disk, or the stamp is missing entirely.
+- `cited-source-stale` (Info by default; Error with
+  `--strict-cited-source-stale`) — `last-checked` is missing,
+  unparseable, or older than 30 days. The 30-day threshold is a global
+  default; per-schema overrides are deferred to a follow-up feature.
+- `cited-source-skipped` (Info, only with `--check-remote-sources`) —
+  remote kind acknowledged but not yet verified (Phase 1).
+
+## Security model — URI scheme allowlist
+
+The cited-source field rejects any URI scheme outside this allowlist at
+validate time:
+
+    file, http, https, github, oslc, reqif, polarion
+
+Bare relative paths (no scheme) are accepted only for `kind: file`.
+Arbitrary schemes (`javascript:`, `ftp:`, custom protocols) are blocked
+before any backend touches them — defence against exfiltration / SSRF
+from untrusted YAML.
+
+Network-touching backends (`url`, `github`, `oslc`, `reqif`, `polarion`)
+remain opt-in via `--check-remote-sources` (Phase 2 work).
+
+## CLI surface
+
+```bash
+# Default validate — checks kind: file only, no network.
+rivet validate
+
+# Treat cited-source-drift as a hard failure (CI gate).
+rivet validate --strict-cited-sources
+
+# Treat cited-source-stale (last-checked > 30d, missing, or unparseable)
+# as a hard failure. Pair with --strict-cited-sources for a full audit
+# gate.
+rivet validate --strict-cited-source-stale
+
+# Phase 2 — flag accepted by Phase 1, no-op for now.
+rivet validate --check-remote-sources
+
+# Audit & refresh workflow.
+rivet check sources                       # list every cited-source + status
+rivet check sources --update              # interactive y/N per drift
+rivet check sources --update --apply      # batch refresh
+
+# Read-only audit gate. Exit 1 on any drift / missing-hash / read-error
+# / shape-error / stale (last-checked > 30d). Never modifies any YAML.
+# Mutually exclusive with --update — audit and fix are separate
+# invocations so CI never sees a "ran-then-fixed" mutation pattern.
+rivet check sources --strict
+```
+
+## Audit gate pattern (issue #249)
+
+For platform engineers who want a clean read-only audit gate in CI:
+
+```bash
+# In CI: read-only check. Fails if any cited-source has drifted, is
+# missing a hash, has a read error, or has a stale last-checked.
+rivet check sources --strict
+
+# Equivalent gate via `rivet validate`:
+rivet validate --strict-cited-sources --strict-cited-source-stale
+```
+
+The `check sources --strict` form emits a richer per-artifact table
+(useful for debugging which file drifted); the `validate` form is
+preferred when you want a single command to gate the whole project.
+
+## last-checked semantics
+
+`last-checked` is a stamp **and** a freshness signal. The
+`cited-source-stale` Info diagnostic fires when `last-checked` is
+missing, unparseable, or older than the threshold (30 days by default
+in v0.7.x). Per-schema thresholds are deferred to a follow-up feature.
+
+The `rivet check sources --update --apply` flow always rewrites
+`last-checked` to the current UTC time when it touches an artifact.
+
+## Migration note (Phase 1 caveat)
+
+Existing schemas declaring `upstream-ref: string` (currently `dev`'s
+`requirement` plus references in `aadl` and `supply-chain`) are NOT
+migrated by Phase 1. The migration recipe needs the `rivet schema
+migrate` machinery from issue #236. Phase 1 simply adds `cited-source`
+as an additional optional field next to `upstream-ref` — projects can
+opt in incrementally.
+
+## Related
+
+- Issue #237 — feature design and rollout phases.
+- Issue #236 — `rivet schema migrate` (required for the upstream-ref
+  migration recipe).
+- `rivet docs cli` for the full flag reference.
+"#;
+
 const IMPACT_DOC: &str = r#"# Change Impact Analysis
 
 Detect which artifacts changed and compute the transitive set of affected
@@ -1562,7 +2091,7 @@ artifacts via the link graph.
 ## Usage
 
     rivet impact --since main           # Compare against main branch
-    rivet impact --since v0.5.0         # Compare against a tag
+    rivet impact --since vX.Y.Z         # Compare against a release tag
     rivet impact --baseline ./old/      # Compare against a directory
     rivet impact --since HEAD~5 --depth 2  # Limit traversal depth
     rivet impact --since main --format json
@@ -2121,3 +2650,440 @@ With the `supply-chain-dev` bridge:
   https://in-toto.io/
 "#
 );
+
+const QUICKSTART_DOC: &str = include_str!("quickstart.md");
+
+const SCHEMA_MIGRATE_DOC: &str = r#"# rivet schema migrate
+
+`rivet schema migrate` rewrites artifact YAML when you switch presets or
+upgrade a preset version. Phase 1 (issue #236) shipped the mechanical
+diff + snapshot/abort. Phase 2 added the git-rebase-style conflict
+resolution flow: when `--apply` hits a value-mapping conflict it writes
+markers into the affected artifact YAML, sets state to CONFLICT, and
+exits non-zero so CI catches an unfinished migration. The user resolves
+the conflict in-place and runs `--continue`, or drops the artifact with
+`--skip`.
+
+## Quick start
+
+```
+rivet schema migrate --list                  # enumerate available recipes
+rivet schema migrate --list --format json    # same, machine-readable
+rivet schema migrate aspice                  # plan only (dry-run)
+rivet schema migrate aspice --apply          # apply; pause on first conflict
+rivet schema migrate aspice --continue       # resume after editing markers
+rivet schema migrate aspice --skip           # drop the current conflicted artifact
+rivet schema migrate aspice --edit ID        # re-open a previously-resolved conflict
+rivet schema migrate aspice --status         # show state machine pointer
+rivet schema migrate aspice --finish         # validate + delete snapshot
+rivet schema migrate aspice --abort          # restore everything from snapshot
+```
+
+The default invocation is plan-only and never modifies the project tree.
+
+## Discovering recipes (`--list`)
+
+`rivet schema migrate --list` walks the recipe registry and prints one
+row per available recipe (built-in + every YAML under
+`<schemas-dir>/migrations/`). Project-local recipes shadow built-ins
+of the same name. The flag is target-free and read-only — always exits
+0.
+
+```
+NAME                   ORIGIN     SOURCE         TARGET         DESCRIPTION
+dev-to-aspice          built-in   dev            aspice         Mechanical mapping for the most common dev -> aspice transition.
+dev-to-stpa            project-local  dev        stpa           Custom recipe for our STPA workflow.
+    path: schemas/migrations/dev-to-stpa.yaml
+
+Total: 2 (built-in: 1, project-local: 1)
+```
+
+JSON output (`--format json`) emits the same data in the
+`schema-migrate-recipes` oracle shape:
+
+```json
+{
+  "oracle": "schema-migrate-recipes",
+  "recipes": [
+    {
+      "name": "dev-to-aspice",
+      "source_preset": "dev",
+      "target_preset": "aspice",
+      "description": "...",
+      "origin": "built-in",
+      "path": null
+    }
+  ],
+  "warnings": [],
+  "total": 1
+}
+```
+
+`--list` is mutually exclusive with the action flags (`--apply`,
+`--abort`, `--status`, `--finish`, `--continue`, `--skip`, `--edit`).
+
+## State machine
+
+```
+            (no migration)
+                  │
+                  ▼  rivet schema migrate <target>
+              [PLANNED]
+                  │
+                  ▼  --apply
+            [IN_PROGRESS]
+                  │           ┌── conflict?
+                  ▼           ▼
+              [COMPLETE]   [CONFLICT]──┬── --continue ──▶ next conflict / [COMPLETE]
+                  │                    ├── --skip     ──▶ next conflict / [COMPLETE]
+                  │  --finish          ├── --edit     ──▶ stay [CONFLICT] on chosen artifact
+                  ▼                    └── --abort    ──▶ snapshot restore (any state)
+              (deleted)
+```
+
+`--abort` from any state restores the project tree from the snapshot
+captured before `--apply` and deletes the migration directory.
+
+## Conflict resolution flow (Phase 2)
+
+When `--apply` encounters a value-mapping conflict (e.g. `priority: 5`
+on a target type whose `priority` field is enum `[must|should|could|wont]`),
+it:
+
+1. Applies all mechanical / decidable-with-policy changes for that file.
+2. Splices rebase-style markers into the conflicted artifact's
+   field, like:
+
+   ```yaml
+   - id: REQ-001
+     type: sw-req       # was: requirement (auto-renamed)
+     fields:
+       priority: <<<<<<< source: dev (priority: 5)
+         5
+         ======= target: aspice (sw-req.priority: [must|should|could|wont])
+         <choose one>
+         >>>>>>>
+   ```
+3. Sets state to `CONFLICT`, writes the artifact ID to
+   `.rivet/migrations/<id>/current-conflict`, and exits non-zero.
+
+You then:
+
+* Open the file. Replace the marker block with a single value.
+  (Anything that lands inside `<<<<<<<` … `>>>>>>>` is fine; the
+  important part is removing all three marker lines.)
+* Run `rivet schema migrate <target> --continue`. The CLI verifies no
+  markers remain in the file, re-parses it as YAML, marks the artifact
+  resolved in `manifest.yaml`, and moves to the next conflict (or
+  `COMPLETE`).
+
+If you'd rather drop the conflicted artifact from the migration entirely
+(restoring its pre-migration form), run `--skip` instead. The artifact
+is replaced by its snapshot copy; the rest of the migration carries on.
+
+To revisit a previously-resolved conflict (e.g. you picked the wrong
+value), run `rivet schema migrate <target> --edit <ID>`. The state
+returns to `CONFLICT` with markers re-stamped on that artifact, ready
+for another `--continue` / `--skip`.
+
+A `MigrationConflict` invariant in `rivet docs check` flags any artifact
+YAML that still contains marker lines, so you can't accidentally commit
+an unresolved conflict.
+
+## Storage layout
+
+A migration is stored under `.rivet/migrations/<YYYYMMDD-HHMM>-<source>-to-<target>/`:
+
+| File                  | Purpose                                                              |
+|-----------------------|----------------------------------------------------------------------|
+| `plan.yaml`           | Full diff: per-artifact, per-field action class.                     |
+| `manifest.yaml`       | Recipe + state + change counts + per-artifact resolution status.     |
+| `state`               | Single-line: `PLANNED | IN_PROGRESS | CONFLICT | COMPLETE`.          |
+| `current-conflict`    | (Phase 2) Artifact ID `--apply` paused on. Absent when not in CONFLICT. |
+| `snapshot/`           | Full pre-migration `artifacts/` + `rivet.yaml`.                      |
+
+Only one migration may be in flight per project. The directory survives
+across sessions — multi-day migrations are fine.
+
+## Recipe format
+
+Recipes live in `schemas/migrations/<source>-to-<target>.yaml` (or are
+embedded in the binary). Phase 1 ships exactly one recipe:
+`dev-to-aspice`. Adding more is just YAML.
+
+```yaml
+migration:
+  name: dev-to-aspice
+  source: { preset: dev }
+  target: { preset: aspice }
+  description: |
+    Mechanical mapping for the most common dev -> aspice transition.
+
+  type-rewrites:
+    - from: requirement
+      to: sw-req
+    - from: feature
+      to: sw-arch-component
+    - from: design-decision
+      to: design-decision     # identity rewrite
+
+  link-rewrites:
+    - from: satisfies
+      to: derives-from
+
+  policies:
+    unmapped-fields: keep-as-orphan   # drop | keep-as-orphan | strict
+    unmapped-link-types: drop         # keep | drop | strict
+```
+
+### Action classes
+
+The diff engine assigns each per-artifact change to one of three
+classes (mirrors `git rebase --interactive`'s pick / edit / drop):
+
+| Class                   | Examples                                    | Auto-applied? |
+|-------------------------|---------------------------------------------|---------------|
+| `mechanical`            | `requirement` -> `sw-req`; `satisfies` -> `derives-from` | yes (always) |
+| `decidable-with-policy` | Source field with no target mapping; resolved by `policies.unmapped-fields` | yes |
+| `conflict`              | Field needs value-mapping (`priority: 5` -> enum); link target type changed | NO in Phase 1 |
+
+### Policy: `unmapped-fields`
+
+| Value             | Behaviour                                                         |
+|-------------------|-------------------------------------------------------------------|
+| `drop` (default)  | Silently drop the field. Loses data — use only for known throwaway fields. |
+| `keep-as-orphan`  | Stash under `fields.legacy.<original-name>`. Recommended for production. |
+| `strict`          | Treat as a conflict. `--apply` will bail.                        |
+
+### Policy: `unmapped-link-types`
+
+| Value          | Behaviour                                                              |
+|----------------|------------------------------------------------------------------------|
+| `keep` (default) | Keep the link as-is; `rivet validate` may flag it later if the type isn't declared in the new schema. |
+| `drop`         | Drop the link.                                                         |
+| `strict`       | Treat as a conflict. `--apply` will bail.                             |
+
+## What is still deferred
+
+- No dashboard `/migrations/<id>` surface (Phase 3)
+- No `rivet recipes` subcommand / recipe distribution (Phase 3)
+- No interactive TUI wizard
+- No automatic rivet.yaml update — after the migration completes you
+  still need to swap your loaded schemas (e.g. dev -> aspice). Migration
+  touches artifacts, not config.
+- No provenance entries auto-stamped on migrated artifacts (post-MVP)
+- No automatic recipe registration beyond the shipped `dev-to-aspice`
+  recipe; add new recipes under `<schemas-dir>/migrations/`.
+
+## Tips
+
+- Always run plan-only first and read `plan.yaml` before `--apply`.
+- The snapshot is byte-faithful for `artifacts/` and `rivet.yaml`.
+  `--abort` produces a byte-identical restore. (`docs/`, `.rivet/`,
+  test results, etc. are not snapshotted because the migration doesn't
+  touch them.)
+- `--finish` is destructive (it deletes the snapshot). Run `rivet
+  validate` first to convince yourself the migrated tree is healthy.
+- If you need to redo a migration: `--abort` and start over.
+- `rivet docs check` runs the `MigrationConflict` invariant — committing
+  artifact YAML with `<<<<<<<` / `=======` / `>>>>>>>` lines fails the
+  gate, so don't worry about pushing a half-resolved migration.
+"#;
+
+const DOCS_COVERAGE_DOC: &str = r#"# rivet docs check --coverage
+
+The subcommand-coverage gate walks the live clap CLI tree and asserts that
+every subcommand path has a documented topic in the embedded `rivet docs`
+registry. It complements the existing `SubcommandReferences` invariant —
+which catches docs referencing non-existent subcommands — by checking the
+reverse direction: every subcommand that EXISTS should be DOCUMENTED.
+
+## Quick start
+
+```
+rivet docs check --coverage              # local exploration: print, exit 0, no annotations
+rivet docs check --coverage --warn-only  # CI rollout: print + emit ::warning:: annotations, exit 0
+rivet docs check --coverage --strict     # enforcing CI: print, exit 1 on any uncovered
+rivet docs check --coverage --format json
+```
+
+`--warn-only` and `--strict` are mutually exclusive. Pick one for CI
+based on rollout phase:
+
+| Mode | Exit code | GitHub Actions annotations | Use for |
+|------|-----------|----------------------------|---------|
+| `--coverage` (default) | 0 | none | local exploration |
+| `--coverage --warn-only` | 0 | `::warning::` per gap | CI rollout — surface gaps inline on PRs without failing the build |
+| `--coverage --strict` | 1 if any gap | none (use `--warn-only` for those) | enforcing CI once the inventory is clean |
+
+The `::warning file=…::…` lines emitted by `--warn-only` are GitHub
+Actions' workflow-command syntax — the runner picks them up from stdout
+and renders them as PR review comments without failing the job.
+
+## Coverage rules
+
+A subcommand path X (e.g. `schema/show`) is covered if any of:
+
+1. A topic with the same slug exists (`rivet docs schema-show` — slashes
+   become dashes for slug lookup).
+2. The path itself is a top-level subcommand whose name has a topic
+   (e.g. `mcp` is covered by the `mcp` topic).
+3. The parent subcommand has a topic, found by walking up the path (e.g.
+   `schema/show` falls back to a `schema` topic when no `schema-show`
+   topic exists).
+4. The top-level subcommand has an entry in `COVERAGE_TOPIC_MAP` AND the
+   referenced topic body actually mentions the subcommand name as a
+   whole word (case-insensitive). This rule lets a single umbrella
+   topic (typically `cli`) cover a family of subcommands — but only if
+   the topic genuinely documents them. A catch-all entry pointing to a
+   topic that never references the family is no coverage at all (issue
+   #248 B5).
+5. The subcommand is in the explicit allow-list (built-in commands like
+   `help` that are inherently undocumented).
+
+The body-mention check (rule 4) prevents the umbrella from quietly
+papering over real gaps: if `lsp` maps to `cli` but the `cli` topic
+body never says `lsp`, the path is reported as uncovered.
+
+## Report format
+
+Plain text:
+
+```
+rivet docs check --coverage
+
+  Top-level subcommands:
+    ✓ init               (doc: quickstart)
+    ✓ validate           (doc: cli)
+    ✗ variant            MISSING DOC
+    ...
+
+  Coverage: 42/55 (76%)
+  Uncovered: variant, baseline, snapshot, runs, pipelines, templates,
+             close-gaps, mcp
+```
+
+JSON output (`--format json`) matches the `docs check` envelope and lists
+each subcommand path with `covered: bool` plus the topic slug that
+provides coverage (when applicable).
+
+## CI integration
+
+Initial rollout — surface gaps without failing the build:
+
+```yaml
+- name: Subcommand-coverage gate (warn-only)
+  run: cargo run --release -p rivet-cli -- docs check --coverage --warn-only
+```
+
+Once the inventory is clean, switch to enforcing:
+
+```yaml
+- name: Subcommand-coverage gate (strict)
+  run: cargo run --release -p rivet-cli -- docs check --coverage --strict
+```
+
+The CI step is idempotent: it re-derives the subcommand tree from clap's
+runtime metadata, so adding a new subcommand without a doc topic will
+fail the gate immediately under `--strict`, or surface as a PR-review
+warning under `--warn-only`.
+
+## Allow-list
+
+The following clap subcommands are exempt from the gate because they
+ship no user-facing documentation surface:
+
+| Subcommand          | Reason                                                       |
+|---------------------|--------------------------------------------------------------|
+| `help`              | clap-builtin help renderer                                    |
+| `commit-msg-check`  | Internal pre-commit hook — usage is documented by the hook    |
+
+Add new exemptions only when there's a real reason — the goal of the gate
+is to surface gaps, not paper over them.
+"#;
+
+const DOCS_CHECK_DOC: &str = r#"# rivet docs check — invariant engine
+
+`rivet docs check` runs a set of doc-vs-reality invariants over the
+project's markdown docs and the binary's embedded `rivet docs <topic>`
+bodies. Each invariant emits a typed violation describing the claim
+(what the doc says) and reality (what the code or store says). Used as
+a CI gate, it catches drift before users do.
+
+## Quick start
+
+```
+rivet docs check                   # text report
+rivet docs check --format json     # JSON report
+rivet docs check --fix             # apply auto-fixes (currently
+                                   # only ancillary package.json
+                                   # version bumps)
+```
+
+## Markdown invariants
+
+These invariants scan files on disk under `docs/`, plus README.md,
+CHANGELOG.md, AGENTS.md, and CLAUDE.md (and any roots configured via
+`rivet.yaml` `docs:`).
+
+| Invariant                | Catches                                                    |
+|--------------------------|------------------------------------------------------------|
+| `SubcommandReferences`   | `rivet <word>` prose mentions for non-existent subcommands |
+| `EmbedTokenReferences`   | `{{name:...}}` for unknown embed kinds                     |
+| `VersionConsistency`     | Future versions mentioned in prose; package.json drift     |
+| `ArtifactCounts`         | "N requirements" claims with no `{{stats}}` or AUDIT marker |
+| `SchemaReferences`       | `schemas/foo.yaml` references that resolve nowhere          |
+| `SoftGateHonesty`        | "X enforced in CI" prose for `continue-on-error: true` jobs |
+| `ConfigExampleFreshness` | ```yaml fenced blocks that fail to parse                    |
+| `ArtifactIdValidity`     | `REQ-NNN`-shaped IDs not in the artifact store              |
+| `MigrationConflict`      | rebase-style markers in artifact YAML (`<<<<<<<` etc.)      |
+
+## Embedded-doc invariants
+
+Three invariants scan the strings shipped in the `rivet docs <topic>`
+registry — the bodies the binary prints, not files on disk. The
+markdown scanner does not see those strings, so without these checks
+stale literals shipped in a release are invisible until a user
+complains.
+
+### `EmbeddedVersionLiterals`
+
+Every `vX.Y.Z` / `X.Y.Z` token in a topic body must equal the workspace
+version or appear in `rivet.yaml` `docs-check.allowed-version-literals`.
+Use the allowlist for legitimate references:
+
+```yaml
+docs-check:
+  allowed-version-literals:
+    - "1.3.0"        # rmcp crate pin
+    - "0.1.0"        # shipped schema header version
+```
+
+Entries without a leading `v` also match the `v`-prefixed form, so a
+single `0.1.0` covers both shapes.
+
+### `EmbeddedFlagReferences`
+
+Every `rivet <subcmd> --<flag>` token in a topic body must reference a
+flag declared on that subcommand in the live clap tree. Walks
+parent-up so a flag declared on the root or on an intermediate
+subcommand resolves correctly. When the *subcommand* itself is
+unknown, the violation is left to `SubcommandReferences` to report —
+not double-counted here.
+
+### `EmbeddedTodoMarkers`
+
+Embedded topic bodies must not contain `TODO`, `FIXME`, or `XXX`
+markers. Author notes belong in commits or issue trackers, not in
+user-facing doc strings shipped in release binaries.
+
+## CI integration
+
+```yaml
+- name: Doc-check
+  run: cargo run --release -p rivet-cli -- docs check
+```
+
+The gate exits non-zero on any violation. Run with `--format json` for
+machine-readable output (the same envelope the dashboard ingests).
+"#;

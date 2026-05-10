@@ -200,13 +200,18 @@ pub(crate) fn page_layout_with_variant(
         s
     };
     // Variant selector: only rendered when the project has a feature model.
+    //
+    // The change handler is wired up in the variant-sync script (below)
+    // via `addEventListener('change', …)` instead of an inline `onchange`
+    // attribute. Inline handlers are blocked by some headless Chromium
+    // configs (e.g. Playwright's default page CSP) and can be silently
+    // skipped when the selectOption action mutates the DOM via the
+    // accessibility tree. The addEventListener route runs in every
+    // env we care about.
     let variant_selector_html = if state.variants.has_model() {
         let mut s = String::from(
             "<span class=\"ctx-sep\">/</span>\
              <select id=\"variant-selector\" name=\"variant\" \
-             onchange=\"(function(sel){var u=new URL(window.location.href);\
-             if(sel.value){u.searchParams.set('variant',sel.value)}else{u.searchParams.delete('variant')}\
-             window.location.href=u.toString()})(this)\" \
              style=\"padding:.2rem .5rem;font-size:.72rem;font-family:var(--mono);\
              background:var(--surface);color:var(--text);border:1px solid var(--border);\
              border-radius:4px;max-width:220px\" \
@@ -323,6 +328,23 @@ document.addEventListener('DOMContentLoaded',renderMermaid);
   }}
   document.addEventListener('htmx:afterSettle',sync);
   document.addEventListener('htmx:pushedIntoHistory',sync);
+
+  // Variant dropdown navigation: setting `?variant=...` (or clearing it)
+  // and reloading. Implemented via `change` event listener instead of an
+  // inline onchange so that:
+  //   1. CSP profiles that block inline event handlers still work.
+  //   2. Playwright's selectOption() reliably triggers the navigation
+  //      (Chromium fires `change` after selectOption; an inline onchange
+  //      attribute was occasionally skipped, leaving `tests/playwright/
+  //      serve-variant.spec.ts:25` stuck on the original URL).
+  document.addEventListener('change', function(e){{
+    var sel = e.target;
+    if(!sel || sel.id !== 'variant-selector') return;
+    var u = new URL(window.location.href);
+    if(sel.value){{ u.searchParams.set('variant', sel.value); }}
+    else {{ u.searchParams.delete('variant'); }}
+    window.location.href = u.toString();
+  }});
 }})();
 </script>
 </head>

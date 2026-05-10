@@ -350,4 +350,27 @@ mod tests {
             );
         }
     }
+
+    // ── Mutation-pinning tests ─────────────────────────────────────────
+
+    // Verifies: REQ-010
+    // Kills:
+    //   store.rs:137:9 replace Store::is_empty -> bool with true
+    //   store.rs:137:9 replace Store::is_empty -> bool with false
+    #[test]
+    fn store_is_empty_distinguishes_empty_and_populated() {
+        // Mutant `false` for the empty case → would say populated.
+        let empty = Store::new();
+        assert!(empty.is_empty(), "fresh Store must report empty");
+
+        // Mutant `true` for the populated case → would say empty.
+        let mut populated = Store::new();
+        populated
+            .insert(minimal_artifact("REQ-001", "requirement"))
+            .unwrap();
+        assert!(
+            !populated.is_empty(),
+            "Store with one inserted artifact must report non-empty",
+        );
+    }
 }

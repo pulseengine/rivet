@@ -19,8 +19,11 @@ const VIEWER_PAGES = [
   { name: "graph", url: "/graph?limit=2000" },
   // Doc linkage view.
   { name: "doc-linkage", url: "/doc-linkage" },
-  // Help / schema page renders the schema-linkage mermaid diagram.
-  { name: "schema-linkage", url: "/help/schema" },
+  // /help renders the schema-linkage mermaid diagram (a Schema Linkage
+  // card showing artifact-type relationships in the dashboard's design
+  // language). The diagram lives on the help index, not /help/schema —
+  // /help/schema is the type-list table.
+  { name: "schema-linkage", url: "/help" },
 ];
 
 for (const page of VIEWER_PAGES) {

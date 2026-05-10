@@ -146,6 +146,19 @@ impl DocFile {
     }
 }
 
+/// One embedded `rivet docs <topic>` body, presented to the invariants
+/// that scan the embedded set (as opposed to markdown files in the
+/// workspace). The `slug` is reported as the violation `file` so the
+/// user sees `quickstart:47 [EmbeddedVersionLiterals] ...` rather than
+/// a synthetic path.
+#[derive(Debug, Clone)]
+pub struct EmbeddedTopic {
+    /// Topic slug (e.g. `quickstart`, `mcp`, `schema/dev`).
+    pub slug: String,
+    /// Full topic body as printed by `rivet docs <slug>`.
+    pub body: String,
+}
+
 /// Context passed to every invariant.
 pub struct DocCheckContext<'a> {
     /// Project root (absolute).
@@ -171,6 +184,19 @@ pub struct DocCheckContext<'a> {
     /// Pre-compiled regex patterns from `docs-check.ignore-patterns`.
     /// Any ID match that satisfies one of these is skipped.
     pub ignore_patterns: &'a [regex::Regex],
+    /// Embedded `rivet docs <topic>` bodies — drives the
+    /// `Embedded*` invariant family. Empty when the caller does not
+    /// provide them (e.g. external embedders of the engine).
+    pub embedded_topics: &'a [EmbeddedTopic],
+    /// Map from subcommand path (slash-separated, e.g. `schema/show`)
+    /// to the long-flag set declared for it in clap (e.g. `--format`,
+    /// `--type`). Drives [`EmbeddedFlagReferences`]; empty disables it.
+    pub subcommand_flags: &'a BTreeMap<String, BTreeSet<String>>,
+    /// Versions in [`EmbeddedVersionLiterals`] that are intentionally
+    /// pinned (e.g. CHANGELOG sections, third-party crate version
+    /// pins, MCP protocol revisions). Matches against the literal as
+    /// captured (with or without leading `v`).
+    pub allowed_version_literals: &'a BTreeSet<String>,
 }
 
 /// One invariant.
@@ -183,6 +209,55 @@ pub trait DocInvariant {
 // Scanning
 // ────────────────────────────────────────────────────────────────────────
 
+/// One docs-root entry to scan, plus an optional allowlist of glob
+/// patterns whose matching files are silently skipped (no warning, no
+/// link-graph participation).
+///
+/// Constructed from the project's `rivet.yaml` `docs:` list — see
+/// [`crate::model::DocsEntry`] for the surface forms and the glob dialect.
+#[derive(Debug, Clone, Default)]
+pub struct DocScanRoot {
+    /// Filesystem path of the docs root (absolute or relative to the
+    /// project root).
+    pub path: PathBuf,
+    /// Glob patterns matched against the path *relative to `path`*.
+    pub exclude: Vec<String>,
+}
+
+impl DocScanRoot {
+    pub fn new(path: impl Into<PathBuf>) -> Self {
+        Self {
+            path: path.into(),
+            exclude: Vec::new(),
+        }
+    }
+
+    pub fn with_exclude(path: impl Into<PathBuf>, exclude: Vec<String>) -> Self {
+        Self {
+            path: path.into(),
+            exclude,
+        }
+    }
+}
+
+/// Aggregate counts of files that the doc-check scanner declined or
+/// silently allowlisted, broken out per docs root. Surfaced by `rivet
+/// docs check` and `rivet validate` so the user can see what's hidden.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ScanSummary {
+    pub roots: Vec<RootSummary>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RootSummary {
+    /// The docs root that was walked (path component of the entry).
+    pub path: PathBuf,
+    /// Files included in the scan (had no exclude match).
+    pub included: usize,
+    /// Files matched by an `exclude:` glob — silent allowlist hits.
+    pub excluded: usize,
+}
+
 /// Collect candidate doc files: `README.md`, `CHANGELOG.md`, `AGENTS.md`,
 /// `CLAUDE.md` at the project root, every `*.md` under `docs/`, and every
 /// `*.md` under the `extra_dirs` passed by the caller (typically the
@@ -190,8 +265,29 @@ pub trait DocInvariant {
 /// Paths in `extra_dirs` may be absolute or relative to `project_root`.
 ///
 /// De-dupes by relative path so overlapping roots don't add a doc twice.
+///
+/// Convenience wrapper around [`collect_docs_with_summary`] for callers
+/// that don't care about the per-root counts.
 pub fn collect_docs(project_root: &Path, extra_dirs: &[PathBuf]) -> std::io::Result<Vec<DocFile>> {
+    let roots: Vec<DocScanRoot> = extra_dirs.iter().cloned().map(DocScanRoot::new).collect();
+    let (docs, _) = collect_docs_with_summary(project_root, &roots)?;
+    Ok(docs)
+}
+
+/// Collect candidate doc files honouring per-root allowlists, returning
+/// the `DocFile`s plus a per-root [`ScanSummary`].
+///
+/// Each [`DocScanRoot`] supplies an `exclude` list of glob patterns that
+/// are matched against the file path *relative to the root* using the
+/// dialect documented on [`crate::model::DocsEntry`]. Excluded files are
+/// dropped silently (no warning); included files are returned for the
+/// invariant engine to evaluate.
+pub fn collect_docs_with_summary(
+    project_root: &Path,
+    roots: &[DocScanRoot],
+) -> std::io::Result<(Vec<DocFile>, ScanSummary)> {
     let mut out = Vec::new();
+    let mut summary = ScanSummary::default();
 
     for top in ["README.md", "CHANGELOG.md", "AGENTS.md", "CLAUDE.md"] {
         let p = project_root.join(top);
@@ -202,25 +298,57 @@ pub fn collect_docs(project_root: &Path, extra_dirs: &[PathBuf]) -> std::io::Res
     }
 
     let mut walked: std::collections::BTreeSet<PathBuf> = std::collections::BTreeSet::new();
-    let mut walk_once = |dir: PathBuf, out: &mut Vec<DocFile>| -> std::io::Result<()> {
+
+    let walk_root = |root: &DocScanRoot,
+                     walked: &mut std::collections::BTreeSet<PathBuf>,
+                     out: &mut Vec<DocFile>|
+     -> std::io::Result<RootSummary> {
+        let dir = if root.path.is_absolute() {
+            root.path.clone()
+        } else {
+            project_root.join(&root.path)
+        };
+        let mut rs = RootSummary {
+            path: root.path.clone(),
+            ..Default::default()
+        };
         if !dir.is_dir() {
-            return Ok(());
+            return Ok(rs);
         }
         let canonical = dir.canonicalize().unwrap_or_else(|_| dir.clone());
         if !walked.insert(canonical) {
-            return Ok(());
+            return Ok(rs);
         }
-        walk_md(&dir, project_root, out)
+        let compiled: Vec<regex::Regex> = root
+            .exclude
+            .iter()
+            .filter_map(|pat| match crate::document::glob_to_regex(pat) {
+                Ok(re) => Some(re),
+                Err(e) => {
+                    eprintln!(
+                        "warning: invalid docs exclude pattern {pat:?} on {}: {e}",
+                        root.path.display(),
+                    );
+                    None
+                }
+            })
+            .collect();
+        walk_md(&dir, project_root, &dir, &compiled, out, &mut rs)?;
+        Ok(rs)
     };
 
-    walk_once(project_root.join("docs"), &mut out)?;
-    for extra in extra_dirs {
-        let resolved = if extra.is_absolute() {
-            extra.clone()
-        } else {
-            project_root.join(extra)
-        };
-        walk_once(resolved, &mut out)?;
+    // Implicit `docs/` root (with no exclude list).
+    let default_root = DocScanRoot::new("docs");
+    let rs = walk_root(&default_root, &mut walked, &mut out)?;
+    if rs.included + rs.excluded > 0 {
+        summary.roots.push(rs);
+    }
+
+    for root in roots {
+        let rs = walk_root(root, &mut walked, &mut out)?;
+        if rs.included + rs.excluded > 0 {
+            summary.roots.push(rs);
+        }
     }
 
     // Final de-dupe by rel_path in case a doc was reachable via both the
@@ -228,22 +356,42 @@ pub fn collect_docs(project_root: &Path, extra_dirs: &[PathBuf]) -> std::io::Res
     out.sort_by(|a, b| a.rel_path.cmp(&b.rel_path));
     out.dedup_by(|a, b| a.rel_path == b.rel_path);
 
-    Ok(out)
+    Ok((out, summary))
 }
 
-fn walk_md(dir: &Path, project_root: &Path, out: &mut Vec<DocFile>) -> std::io::Result<()> {
+fn walk_md(
+    dir: &Path,
+    project_root: &Path,
+    root_base: &Path,
+    exclude: &[regex::Regex],
+    out: &mut Vec<DocFile>,
+    rs: &mut RootSummary,
+) -> std::io::Result<()> {
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
         if path.is_dir() {
-            walk_md(&path, project_root, out)?;
+            walk_md(&path, project_root, root_base, exclude, out, rs)?;
         } else if path.extension().is_some_and(|e| e == "md") {
+            // Match the path *relative to the root* against the
+            // exclude globs — that's the contract the user wires up
+            // in rivet.yaml.
+            let rel_to_root = path
+                .strip_prefix(root_base)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .to_string();
+            if exclude.iter().any(|re| re.is_match(&rel_to_root)) {
+                rs.excluded += 1;
+                continue;
+            }
             let content = std::fs::read_to_string(&path)?;
             let rel = path
                 .strip_prefix(project_root)
                 .unwrap_or(&path)
                 .to_path_buf();
             out.push(DocFile::new(rel, content));
+            rs.included += 1;
         }
     }
     Ok(())
@@ -278,6 +426,10 @@ pub fn default_invariants() -> Vec<Box<dyn DocInvariant>> {
         Box::new(SoftGateHonesty),
         Box::new(ConfigExampleFreshness),
         Box::new(ArtifactIdValidity),
+        Box::new(MigrationConflict),
+        Box::new(EmbeddedVersionLiterals),
+        Box::new(EmbeddedFlagReferences),
+        Box::new(EmbeddedTodoMarkers),
     ]
 }
 
@@ -1056,6 +1208,284 @@ fn collect_frontmatter_ids(content: &str) -> BTreeSet<String> {
 }
 
 // ────────────────────────────────────────────────────────────────────────
+// Invariant: MigrationConflict
+// ────────────────────────────────────────────────────────────────────────
+
+/// Phase 2 (#236) acceptance criterion: prevents accidentally committing
+/// artifact YAML with unresolved migration conflict markers.
+///
+/// Walks every `*.yaml` / `*.yml` under `<project>/artifacts/` and emits
+/// a violation for each line that begins with the rebase-style markers
+/// `<<<<<<<`, `=======`, or `>>>>>>>` produced by `rivet schema migrate
+/// --apply`. The user resolves the conflict via `rivet schema migrate
+/// --continue` (which also checks for residual markers) or `--skip`.
+pub struct MigrationConflict;
+
+impl DocInvariant for MigrationConflict {
+    fn name(&self) -> &'static str {
+        "MigrationConflict"
+    }
+
+    fn check(&self, ctx: &DocCheckContext<'_>) -> Vec<Violation> {
+        let mut out = Vec::new();
+        let root = ctx.project_root.join("artifacts");
+        if !root.is_dir() {
+            return out;
+        }
+        let mut files = Vec::new();
+        collect_artifact_yaml_files(&root, &mut files);
+        for path in files {
+            let Ok(content) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let rel = path
+                .strip_prefix(ctx.project_root)
+                .unwrap_or(&path)
+                .to_path_buf();
+            for (idx, line) in content.lines().enumerate() {
+                let trimmed = line.trim_start();
+                let kind = if trimmed.starts_with("<<<<<<<") {
+                    Some("open")
+                } else if trimmed.starts_with("=======") {
+                    Some("separator")
+                } else if trimmed.starts_with(">>>>>>>") {
+                    Some("close")
+                } else {
+                    None
+                };
+                if let Some(k) = kind {
+                    out.push(Violation {
+                        file: rel.clone(),
+                        line: idx + 1,
+                        invariant: "MigrationConflict".to_string(),
+                        claim: format!("artifact YAML contains migration conflict marker ({k})"),
+                        reality: "run `rivet schema migrate --status` for context, then \
+                                  `rivet schema migrate <target> --continue` after resolving"
+                            .to_string(),
+                        auto_fixable: false,
+                    });
+                }
+            }
+        }
+        out
+    }
+}
+
+fn collect_artifact_yaml_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.is_dir() {
+            collect_artifact_yaml_files(&p, out);
+        } else if p
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| e == "yaml" || e == "yml")
+        {
+            out.push(p);
+        }
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Invariant: EmbeddedVersionLiterals
+// ────────────────────────────────────────────────────────────────────────
+
+/// Scan every `rivet docs <topic>` body for hard-coded `vX.Y.Z` /
+/// `X.Y.Z` literals and assert each one is either the workspace version
+/// or in the explicit allowlist (CHANGELOG sections, third-party crate
+/// pins, MCP protocol revisions, etc.).
+///
+/// This is the dual of [`VersionConsistency`], which scans markdown
+/// files in the workspace. The embedded topics are not on disk so the
+/// markdown scanner skips them; without this invariant, stale literals
+/// shipped in `rivet docs <topic>` are invisible until a user complains.
+pub struct EmbeddedVersionLiterals;
+
+impl DocInvariant for EmbeddedVersionLiterals {
+    fn name(&self) -> &'static str {
+        "EmbeddedVersionLiterals"
+    }
+
+    fn check(&self, ctx: &DocCheckContext<'_>) -> Vec<Violation> {
+        let mut out = Vec::new();
+        if ctx.embedded_topics.is_empty() {
+            return out;
+        }
+        // Match versions surrounded by whitespace, quotes, backticks,
+        // commas, parens, slashes, colons, or end-of-string. Capture the
+        // optional leading 'v' so the allowlist works for both `0.5.0`
+        // and `v0.5.0`.
+        let re = regex::Regex::new(
+            "(?:^|[\\s\\[\\(\\{`'\"/,:>])((v?)(\\d+)\\.(\\d+)\\.(\\d+))(?:$|[\\s\\]\\)\\}`'\"/,:.;])",
+        )
+        .unwrap();
+        let expected = ctx.workspace_version;
+        let expected_v = format!("v{expected}");
+        for topic in ctx.embedded_topics {
+            for cap in re.captures_iter(&topic.body) {
+                let m = cap.get(1).unwrap();
+                let raw = m.as_str();
+                if raw == expected || raw == expected_v {
+                    continue;
+                }
+                // Accept the literal as captured (with or without the
+                // leading `v`) so users only have to allowlist one form.
+                let stripped = raw.strip_prefix('v').unwrap_or(raw);
+                if ctx.allowed_version_literals.contains(raw)
+                    || ctx.allowed_version_literals.contains(stripped)
+                {
+                    continue;
+                }
+                let line = line_for_offset(&topic.body, m.start());
+                out.push(Violation {
+                    file: PathBuf::from(format!("rivet docs {}", topic.slug)),
+                    line,
+                    invariant: self.name().to_string(),
+                    claim: format!("embedded literal {raw}"),
+                    reality: format!(
+                        "workspace version is {expected}; allowlist via \
+                         rivet.yaml docs-check.allowed-version-literals"
+                    ),
+                    auto_fixable: false,
+                });
+            }
+        }
+        out
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Invariant: EmbeddedFlagReferences
+// ────────────────────────────────────────────────────────────────────────
+
+/// For every `rivet <subcmd> --<flag>` token in an embedded topic
+/// body, assert the flag exists on that subcommand in the clap tree.
+///
+/// Drives off [`DocCheckContext::subcommand_flags`], which the CLI
+/// populates from `clap::Command`'s long-flag metadata. The map is
+/// keyed on the slash-separated subcommand path (e.g. `schema/show`)
+/// so nested commands resolve correctly.
+pub struct EmbeddedFlagReferences;
+
+impl DocInvariant for EmbeddedFlagReferences {
+    fn name(&self) -> &'static str {
+        "EmbeddedFlagReferences"
+    }
+
+    fn check(&self, ctx: &DocCheckContext<'_>) -> Vec<Violation> {
+        let mut out = Vec::new();
+        if ctx.embedded_topics.is_empty() || ctx.subcommand_flags.is_empty() {
+            return out;
+        }
+        // Match `rivet sub [sub2 ...] --flag` where each subcommand
+        // segment is lowercase letters/digits/dashes and the flag
+        // captures everything before whitespace, `=`, comma, or backtick.
+        let re =
+            regex::Regex::new(r"\brivet((?:[ \t]+[a-z][a-z0-9\-]*)+)[ \t]+--([a-z][a-z0-9\-]*)")
+                .unwrap();
+        for topic in ctx.embedded_topics {
+            for cap in re.captures_iter(&topic.body) {
+                let segs_str = cap.get(1).unwrap().as_str();
+                let flag = cap.get(2).unwrap().as_str();
+                let segs: Vec<&str> = segs_str.split_whitespace().collect();
+                if segs.is_empty() {
+                    continue;
+                }
+                // Walk from the deepest path up; a flag declared on a
+                // parent (e.g. global `--format`) is acceptable on a
+                // child invocation.
+                let mut found = false;
+                let mut top_known = false;
+                for cut in (1..=segs.len()).rev() {
+                    let path = segs[..cut].join("/");
+                    if let Some(flags) = ctx.subcommand_flags.get(&path) {
+                        top_known = true;
+                        if flags.contains(flag) {
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+                // If we could not find the subcommand at all, defer to
+                // SubcommandReferences (or the coverage gate). Only
+                // flag a real "flag missing on known subcommand" case
+                // so we don't double-report.
+                if !top_known || found {
+                    continue;
+                }
+                let m = cap.get(0).unwrap();
+                let line = line_for_offset(&topic.body, m.start());
+                let path = segs.join("/");
+                out.push(Violation {
+                    file: PathBuf::from(format!("rivet docs {}", topic.slug)),
+                    line,
+                    invariant: self.name().to_string(),
+                    claim: format!("rivet {} --{flag}", segs.join(" ")),
+                    reality: format!(
+                        "--{flag} is not declared on `rivet {}`",
+                        path.replace('/', " ")
+                    ),
+                    auto_fixable: false,
+                });
+            }
+        }
+        out
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Invariant: EmbeddedTodoMarkers
+// ────────────────────────────────────────────────────────────────────────
+
+/// Embedded `rivet docs <topic>` bodies must not ship `TODO`, `FIXME`,
+/// or `XXX` markers — those are author notes that should be resolved
+/// before landing, not user-facing prose.
+pub struct EmbeddedTodoMarkers;
+
+impl DocInvariant for EmbeddedTodoMarkers {
+    fn name(&self) -> &'static str {
+        "EmbeddedTodoMarkers"
+    }
+
+    fn check(&self, ctx: &DocCheckContext<'_>) -> Vec<Violation> {
+        let mut out = Vec::new();
+        if ctx.embedded_topics.is_empty() {
+            return out;
+        }
+        let re =
+            regex::Regex::new("(?:^|[\\s\\(`'\"])(TODO|FIXME|XXX)(?:[\\s:\\)`'\"\\.,]|$)").unwrap();
+        for topic in ctx.embedded_topics {
+            let body = topic.body.as_bytes();
+            for cap in re.captures_iter(&topic.body) {
+                let m = cap.get(1).unwrap();
+                // Skip when the marker is wrapped in inline backticks
+                // (e.g. ``TODO``) — those are meta-references in prose
+                // describing the marker, not author notes.
+                let prev = m.start().checked_sub(1).and_then(|i| body.get(i)).copied();
+                let next = body.get(m.end()).copied();
+                if prev == Some(b'`') && next == Some(b'`') {
+                    continue;
+                }
+                let line = line_for_offset(&topic.body, m.start());
+                out.push(Violation {
+                    file: PathBuf::from(format!("rivet docs {}", topic.slug)),
+                    line,
+                    invariant: self.name().to_string(),
+                    claim: format!("contains {}", m.as_str()),
+                    reality: "embedded topic ships an author marker; resolve or drop the line"
+                        .to_string(),
+                    auto_fixable: false,
+                });
+            }
+        }
+        out
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────────
 // Auto-fix
 // ────────────────────────────────────────────────────────────────────────
 
@@ -1124,8 +1554,16 @@ mod tests {
             ci_yaml: None,
             external_namespaces: &[],
             ignore_patterns: &[],
+            embedded_topics: &[],
+            subcommand_flags: TEST_EMPTY_FLAG_MAP.get_or_init(BTreeMap::new),
+            allowed_version_literals: TEST_EMPTY_VERSION_SET.get_or_init(BTreeSet::new),
         }
     }
+
+    static TEST_EMPTY_FLAG_MAP: std::sync::OnceLock<BTreeMap<String, BTreeSet<String>>> =
+        std::sync::OnceLock::new();
+    static TEST_EMPTY_VERSION_SET: std::sync::OnceLock<BTreeSet<String>> =
+        std::sync::OnceLock::new();
 
     fn known_cmds(names: &[&str]) -> BTreeSet<String> {
         names.iter().map(|s| s.to_string()).collect()
@@ -1340,6 +1778,9 @@ jobs:
             ci_yaml: Some(ci),
             external_namespaces: &[],
             ignore_patterns: &[],
+            embedded_topics: &[],
+            subcommand_flags: TEST_EMPTY_FLAG_MAP.get_or_init(BTreeMap::new),
+            allowed_version_literals: TEST_EMPTY_VERSION_SET.get_or_init(BTreeSet::new),
         };
         let v = SoftGateHonesty.check(&ctx);
         assert_eq!(v.len(), 1);
@@ -1370,6 +1811,9 @@ jobs:
             ci_yaml: Some(ci),
             external_namespaces: &[],
             ignore_patterns: &[],
+            embedded_topics: &[],
+            subcommand_flags: TEST_EMPTY_FLAG_MAP.get_or_init(BTreeMap::new),
+            allowed_version_literals: TEST_EMPTY_VERSION_SET.get_or_init(BTreeSet::new),
         };
         let v = SoftGateHonesty.check(&ctx);
         assert!(v.is_empty(), "got: {v:?}");
@@ -1421,6 +1865,9 @@ jobs:
             ci_yaml: None,
             external_namespaces: &[],
             ignore_patterns: &[],
+            embedded_topics: &[],
+            subcommand_flags: TEST_EMPTY_FLAG_MAP.get_or_init(BTreeMap::new),
+            allowed_version_literals: TEST_EMPTY_VERSION_SET.get_or_init(BTreeSet::new),
         };
         let v = ArtifactIdValidity.check(&ctx);
         assert_eq!(v.len(), 1);
@@ -1454,6 +1901,9 @@ jobs:
             ci_yaml: None,
             external_namespaces: &exempted,
             ignore_patterns: &[],
+            embedded_topics: &[],
+            subcommand_flags: TEST_EMPTY_FLAG_MAP.get_or_init(BTreeMap::new),
+            allowed_version_literals: TEST_EMPTY_VERSION_SET.get_or_init(BTreeSet::new),
         };
         let v = ArtifactIdValidity.check(&ctx);
         assert!(v.is_empty(), "external IDs should be exempted: {v:?}");
@@ -1483,6 +1933,9 @@ jobs:
             ci_yaml: None,
             external_namespaces: &[],
             ignore_patterns: &[],
+            embedded_topics: &[],
+            subcommand_flags: TEST_EMPTY_FLAG_MAP.get_or_init(BTreeMap::new),
+            allowed_version_literals: TEST_EMPTY_VERSION_SET.get_or_init(BTreeSet::new),
         };
         let v = ArtifactIdValidity.check(&ctx);
         let claims: Vec<&str> = v.iter().map(|x| x.claim.as_str()).collect();
@@ -1512,6 +1965,9 @@ jobs:
             ci_yaml: None,
             external_namespaces: &[],
             ignore_patterns: &[],
+            embedded_topics: &[],
+            subcommand_flags: TEST_EMPTY_FLAG_MAP.get_or_init(BTreeMap::new),
+            allowed_version_literals: TEST_EMPTY_VERSION_SET.get_or_init(BTreeSet::new),
         };
         let v = ArtifactIdValidity.check(&ctx);
         assert!(v.is_empty(), "got: {v:?}");
@@ -1539,6 +1995,9 @@ jobs:
             ci_yaml: None,
             external_namespaces: &[],
             ignore_patterns: &[],
+            embedded_topics: &[],
+            subcommand_flags: TEST_EMPTY_FLAG_MAP.get_or_init(BTreeMap::new),
+            allowed_version_literals: TEST_EMPTY_VERSION_SET.get_or_init(BTreeSet::new),
         };
         let v = ArtifactIdValidity.check(&ctx);
         assert_eq!(v.len(), 1);
@@ -1564,9 +2023,226 @@ jobs:
             ci_yaml: None,
             external_namespaces: &[],
             ignore_patterns: &[],
+            embedded_topics: &[],
+            subcommand_flags: TEST_EMPTY_FLAG_MAP.get_or_init(BTreeMap::new),
+            allowed_version_literals: TEST_EMPTY_VERSION_SET.get_or_init(BTreeSet::new),
         };
         let v = ArtifactIdValidity.check(&ctx);
         assert!(v.is_empty(), "got: {v:?}");
+    }
+
+    // ── EmbeddedVersionLiterals ────────────────────────────────────────
+
+    fn embedded_topic(slug: &str, body: &str) -> EmbeddedTopic {
+        EmbeddedTopic {
+            slug: slug.to_string(),
+            body: body.to_string(),
+        }
+    }
+
+    fn embedded_ctx<'a>(
+        topics: &'a [EmbeddedTopic],
+        version: &'a str,
+        flags: &'a BTreeMap<String, BTreeSet<String>>,
+        allowed_versions: &'a BTreeSet<String>,
+        empty_docs: &'a [DocFile],
+        empty_subs: &'a BTreeSet<String>,
+        empty_embeds: &'a BTreeSet<String>,
+    ) -> DocCheckContext<'a> {
+        DocCheckContext {
+            project_root: Path::new("."),
+            docs: empty_docs,
+            known_subcommands: empty_subs,
+            known_embeds: empty_embeds,
+            workspace_version: version,
+            store: None,
+            ci_yaml: None,
+            external_namespaces: &[],
+            ignore_patterns: &[],
+            embedded_topics: topics,
+            subcommand_flags: flags,
+            allowed_version_literals: allowed_versions,
+        }
+    }
+
+    #[test]
+    fn embedded_version_literals_flags_stale_v_prefixed() {
+        let topics = vec![embedded_topic(
+            "quickstart",
+            "Expected: a line of the form `rivet 0.5.0` (or higher).",
+        )];
+        let docs: Vec<DocFile> = Vec::new();
+        let subs = BTreeSet::new();
+        let embeds = BTreeSet::new();
+        let flags = BTreeMap::new();
+        let allow = BTreeSet::new();
+        let ctx = embedded_ctx(&topics, "0.7.0", &flags, &allow, &docs, &subs, &embeds);
+        let v = EmbeddedVersionLiterals.check(&ctx);
+        assert_eq!(v.len(), 1, "got: {v:?}");
+        assert!(v[0].claim.contains("0.5.0"));
+        assert_eq!(v[0].file, PathBuf::from("rivet docs quickstart"));
+    }
+
+    #[test]
+    fn embedded_version_literals_accepts_workspace_version() {
+        let topics = vec![embedded_topic("topic", "rivet 0.7.0 is current.")];
+        let docs: Vec<DocFile> = Vec::new();
+        let subs = BTreeSet::new();
+        let embeds = BTreeSet::new();
+        let flags = BTreeMap::new();
+        let allow = BTreeSet::new();
+        let ctx = embedded_ctx(&topics, "0.7.0", &flags, &allow, &docs, &subs, &embeds);
+        let v = EmbeddedVersionLiterals.check(&ctx);
+        assert!(v.is_empty(), "got: {v:?}");
+    }
+
+    #[test]
+    fn embedded_version_literals_accepts_allowlisted_literals() {
+        // The MCP doc references protocol revision "2024-11-05" and the
+        // rmcp crate version "1.3.0" — both are pinned to upstream, not
+        // rivet's own release line.
+        let topics = vec![embedded_topic(
+            "mcp",
+            "protocolVersion: 2024-11-05; rmcp 1.3.0 transport.",
+        )];
+        let docs: Vec<DocFile> = Vec::new();
+        let subs = BTreeSet::new();
+        let embeds = BTreeSet::new();
+        let flags = BTreeMap::new();
+        let mut allow = BTreeSet::new();
+        allow.insert("1.3.0".to_string());
+        // 2024-11-05 is a date, not an X.Y.Z, so the regex won't match
+        // it — the allowlist only needs the rmcp pin.
+        let ctx = embedded_ctx(&topics, "0.7.0", &flags, &allow, &docs, &subs, &embeds);
+        let v = EmbeddedVersionLiterals.check(&ctx);
+        assert!(v.is_empty(), "got: {v:?}");
+    }
+
+    // ── EmbeddedFlagReferences ─────────────────────────────────────────
+
+    #[test]
+    fn embedded_flag_references_flags_missing_flag() {
+        // `rivet validate --bogus` references a flag that does not exist
+        // on the validate subcommand.
+        let topics = vec![embedded_topic("cli", "Run `rivet validate --bogus` to ...")];
+        let docs: Vec<DocFile> = Vec::new();
+        let subs = BTreeSet::new();
+        let embeds = BTreeSet::new();
+        let mut flags = BTreeMap::new();
+        let mut validate_flags = BTreeSet::new();
+        validate_flags.insert("format".to_string());
+        flags.insert("validate".to_string(), validate_flags);
+        let allow = BTreeSet::new();
+        let ctx = embedded_ctx(&topics, "0.7.0", &flags, &allow, &docs, &subs, &embeds);
+        let v = EmbeddedFlagReferences.check(&ctx);
+        assert_eq!(v.len(), 1, "got: {v:?}");
+        assert!(v[0].claim.contains("--bogus"));
+    }
+
+    #[test]
+    fn embedded_flag_references_accepts_known_flag() {
+        let topics = vec![embedded_topic("cli", "Run `rivet validate --format json`.")];
+        let docs: Vec<DocFile> = Vec::new();
+        let subs = BTreeSet::new();
+        let embeds = BTreeSet::new();
+        let mut flags = BTreeMap::new();
+        let mut validate_flags = BTreeSet::new();
+        validate_flags.insert("format".to_string());
+        flags.insert("validate".to_string(), validate_flags);
+        let allow = BTreeSet::new();
+        let ctx = embedded_ctx(&topics, "0.7.0", &flags, &allow, &docs, &subs, &embeds);
+        let v = EmbeddedFlagReferences.check(&ctx);
+        assert!(v.is_empty(), "got: {v:?}");
+    }
+
+    #[test]
+    fn embedded_flag_references_resolves_nested_subcommand() {
+        // `rivet schema show --format json` — the flag lives on the
+        // nested `schema/show` path. The walker should resolve.
+        let topics = vec![embedded_topic(
+            "cli",
+            "Run `rivet schema show sw-req --format json`.",
+        )];
+        let docs: Vec<DocFile> = Vec::new();
+        let subs = BTreeSet::new();
+        let embeds = BTreeSet::new();
+        let mut flags = BTreeMap::new();
+        let mut show_flags = BTreeSet::new();
+        show_flags.insert("format".to_string());
+        flags.insert("schema/show".to_string(), show_flags);
+        flags.insert("schema".to_string(), BTreeSet::new());
+        let allow = BTreeSet::new();
+        let ctx = embedded_ctx(&topics, "0.7.0", &flags, &allow, &docs, &subs, &embeds);
+        let v = EmbeddedFlagReferences.check(&ctx);
+        assert!(v.is_empty(), "got: {v:?}");
+    }
+
+    #[test]
+    fn embedded_flag_references_skips_unknown_subcommand() {
+        // `rivet bogus --foo` — subcommand is unknown, so this is the
+        // SubcommandReferences invariant's job, not ours.
+        let topics = vec![embedded_topic("cli", "Run `rivet bogus --foo`.")];
+        let docs: Vec<DocFile> = Vec::new();
+        let subs = BTreeSet::new();
+        let embeds = BTreeSet::new();
+        let flags = BTreeMap::new();
+        let allow = BTreeSet::new();
+        let ctx = embedded_ctx(&topics, "0.7.0", &flags, &allow, &docs, &subs, &embeds);
+        let v = EmbeddedFlagReferences.check(&ctx);
+        assert!(v.is_empty(), "got: {v:?}");
+    }
+
+    // ── EmbeddedTodoMarkers ────────────────────────────────────────────
+
+    #[test]
+    fn embedded_todo_markers_flag_each_marker() {
+        let topics = vec![embedded_topic(
+            "schema/dev",
+            "See docs/agent-pipelines.md (TODO) for the full spec.\n\
+             FIXME: rewrite this section.\n\
+             XXX hack: replace with a real example.",
+        )];
+        let docs: Vec<DocFile> = Vec::new();
+        let subs = BTreeSet::new();
+        let embeds = BTreeSet::new();
+        let flags = BTreeMap::new();
+        let allow = BTreeSet::new();
+        let ctx = embedded_ctx(&topics, "0.7.0", &flags, &allow, &docs, &subs, &embeds);
+        let v = EmbeddedTodoMarkers.check(&ctx);
+        assert_eq!(v.len(), 3, "got: {v:?}");
+        let claims: Vec<&str> = v.iter().map(|x| x.claim.as_str()).collect();
+        assert!(claims.iter().any(|c| c.contains("TODO")));
+        assert!(claims.iter().any(|c| c.contains("FIXME")));
+        assert!(claims.iter().any(|c| c.contains("XXX")));
+    }
+
+    #[test]
+    fn embedded_todo_markers_pass_clean_topic() {
+        let topics = vec![embedded_topic("clean", "All of this is fine. No markers.")];
+        let docs: Vec<DocFile> = Vec::new();
+        let subs = BTreeSet::new();
+        let embeds = BTreeSet::new();
+        let flags = BTreeMap::new();
+        let allow = BTreeSet::new();
+        let ctx = embedded_ctx(&topics, "0.7.0", &flags, &allow, &docs, &subs, &embeds);
+        let v = EmbeddedTodoMarkers.check(&ctx);
+        assert!(v.is_empty(), "got: {v:?}");
+    }
+
+    #[test]
+    fn embedded_invariants_disabled_without_topics() {
+        // No topics provided — every embedded invariant is a no-op so
+        // existing callers that don't populate the field still pass.
+        let topics: Vec<EmbeddedTopic> = Vec::new();
+        let docs: Vec<DocFile> = Vec::new();
+        let subs = BTreeSet::new();
+        let embeds = BTreeSet::new();
+        let flags = BTreeMap::new();
+        let allow = BTreeSet::new();
+        let ctx = embedded_ctx(&topics, "0.7.0", &flags, &allow, &docs, &subs, &embeds);
+        assert!(EmbeddedVersionLiterals.check(&ctx).is_empty());
+        assert!(EmbeddedFlagReferences.check(&ctx).is_empty());
+        assert!(EmbeddedTodoMarkers.check(&ctx).is_empty());
     }
 
     // ── Engine smoke ────────────────────────────────────────────────────

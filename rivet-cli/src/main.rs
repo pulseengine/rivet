@@ -66,6 +66,7 @@ mod check;
 mod close_gaps;
 mod docs;
 mod mcp;
+mod migrate_cmd;
 mod pipelines_cmd;
 mod render;
 mod runs_cmd;
@@ -304,6 +305,27 @@ enum Command {
         /// warning (or error) fails the run.
         #[arg(long, default_value = "error")]
         fail_on: String,
+
+        /// Promote `cited-source-drift` warnings to errors. See
+        /// `rivet docs schema-cited-sources` for the field shape.
+        #[arg(long = "strict-cited-sources")]
+        strict_cited_sources: bool,
+
+        /// Promote `cited-source-stale` Info diagnostics to errors. A
+        /// `cited-source` is stale when its `last-checked` timestamp is
+        /// missing, unparseable, or older than 30 days. Use this in CI
+        /// to enforce "every cited-source must be re-checked within N
+        /// days" mechanically. See `rivet docs schema-cited-sources`.
+        #[arg(long = "strict-cited-source-stale")]
+        strict_cited_source_stale: bool,
+
+        /// Reserved for Phase 2 — flag is accepted but the remote
+        /// backends (`url`, `github`, `oslc`, `reqif`, `polarion`) are
+        /// not yet implemented. Phase 1 only verifies `kind: file`. When
+        /// set, remote-kind sources emit an Info diagnostic noting they
+        /// were skipped.
+        #[arg(long = "check-remote-sources")]
+        check_remote_sources: bool,
     },
 
     /// Show a single artifact by ID
@@ -516,6 +538,31 @@ enum Command {
         /// (check only) apply auto-fixes for fixable violations in place
         #[arg(long)]
         fix: bool,
+
+        /// (check only) walk the clap subcommand tree and report which
+        /// subcommands have a documented topic in the embedded docs
+        /// registry.
+        #[arg(long)]
+        coverage: bool,
+
+        /// (check --coverage only) print a report and exit 0; in addition
+        /// emit `::warning file=…::…` GitHub Actions annotations for each
+        /// uncovered subcommand so CI can surface them inline on PRs
+        /// without failing the build. Mutually exclusive with --strict.
+        #[arg(long = "warn-only", conflicts_with = "strict")]
+        warn_only: bool,
+
+        /// (check --coverage only) exit non-zero if any subcommand is
+        /// uncovered. Default is print-and-exit-0 (no annotations).
+        #[arg(long)]
+        strict: bool,
+    },
+
+    /// Print the 10-step oracle-gated quickstart (alias for `rivet docs quickstart`).
+    Quickstart {
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
     },
 
     /// Generate .rivet/agent-context.md from current project state
@@ -884,7 +931,28 @@ enum Command {
     Lsp,
 
     /// Start the MCP server (stdio transport)
-    Mcp,
+    ///
+    /// With no flags, runs the server on stdio. Use `--list-tools` to
+    /// dump the registered tool catalog without starting the server, or
+    /// `--probe` to run an in-process `tools/call rivet_list` smoke test.
+    Mcp {
+        /// Print the registered tool catalog (name, description, input
+        /// schema summary) and exit. Does NOT start the server.
+        #[arg(long, conflicts_with = "probe")]
+        list_tools: bool,
+
+        /// Run an in-process `tools/call rivet_list` (no args) against the
+        /// current project and print the decoded result. Does NOT start a
+        /// long-running stdio server.
+        #[arg(long, conflicts_with = "list_tools")]
+        probe: bool,
+
+        /// Output format for `--list-tools`: "text" (default, human-readable
+        /// table) or "json" (the JSON-RPC `tools/list` payload exactly as
+        /// the wire server would return it).
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -945,6 +1013,69 @@ enum SchemaAction {
         /// Print the schema content instead of just its path
         #[arg(long)]
         content: bool,
+    },
+    /// Migrate artifacts from one preset/version to another.
+    ///
+    /// Phase 1 of issue #236 shipped the diff engine + mechanical
+    /// apply. Phase 2 adds rebase-style conflict resolution
+    /// (`--continue`, `--skip`, `--edit`).
+    ///
+    /// Default is plan-only (dry-run). Use `--apply` to rewrite
+    /// artifact YAML in place; the CLI pauses at the first conflict
+    /// (writing markers into the file) and you resolve them
+    /// interactively. `--abort` restores from snapshot.
+    ///
+    /// See `rivet docs schema-migrate` for the full guide.
+    #[command(disable_help_flag = false)]
+    Migrate {
+        /// Target preset (e.g., "aspice"). Source is inferred from
+        /// the project's current `rivet.yaml`. Optional when `--list`
+        /// is given (recipe discovery is read-only and target-free).
+        target: Option<String>,
+
+        /// Apply the migration; pause on first conflict (Phase 2).
+        #[arg(long, conflicts_with_all = ["abort", "status", "finish", "continue_", "skip", "edit", "list"])]
+        apply: bool,
+
+        /// Abort the in-flight migration and restore from snapshot.
+        #[arg(long, conflicts_with_all = ["apply", "status", "finish", "continue_", "skip", "edit", "list"])]
+        abort: bool,
+
+        /// Print the current migration state machine pointer.
+        #[arg(long, conflicts_with_all = ["apply", "abort", "finish", "continue_", "skip", "edit", "list"])]
+        status: bool,
+
+        /// Validate and finalize a COMPLETE migration (deletes snapshot).
+        #[arg(long, conflicts_with_all = ["apply", "abort", "status", "continue_", "skip", "edit", "list"])]
+        finish: bool,
+
+        /// Resume after resolving the current conflict in-place
+        /// (Phase 2). Verifies markers are gone and the file still
+        /// parses, then advances.
+        #[arg(long = "continue", conflicts_with_all = ["apply", "abort", "status", "finish", "skip", "edit", "list"])]
+        continue_: bool,
+
+        /// Drop the current conflicted artifact from the migration
+        /// (restores it from the snapshot) and advance (Phase 2).
+        #[arg(long, conflicts_with_all = ["apply", "abort", "status", "finish", "continue_", "edit", "list"])]
+        skip: bool,
+
+        /// Re-open a previously-resolved or skipped conflict for
+        /// re-editing (Phase 2). Takes the artifact id.
+        #[arg(long, value_name = "ARTIFACT_ID", conflicts_with_all = ["apply", "abort", "status", "finish", "continue_", "skip", "list"])]
+        edit: Option<String>,
+
+        /// List every available migration recipe (built-in + on-disk
+        /// `<schemas-dir>/migrations/*.yaml`) and exit. Mutually
+        /// exclusive with the action flags. Pair with `--format json`
+        /// for machine-readable output.
+        #[arg(long, conflicts_with_all = ["apply", "abort", "status", "finish", "continue_", "skip", "edit"])]
+        list: bool,
+
+        /// Output format for `--list`: "text" (default) or "json".
+        /// Ignored otherwise.
+        #[arg(long, default_value = "text")]
+        format: String,
     },
 }
 
@@ -1381,6 +1512,36 @@ enum CheckAction {
         #[arg(short, long, default_value = "json")]
         format: String,
     },
+
+    /// List artifacts with `cited-source` and the current hash status
+    /// (match / drift / missing-hash / read-error / skipped-remote / stale).
+    /// Phase 1 only handles `kind: file` — see
+    /// `rivet docs schema-cited-sources`.
+    Sources {
+        /// Refresh sha256 + last-checked stamps. By default prompts
+        /// per-artifact; pair with `--apply` for non-interactive batch
+        /// updates. Mutually exclusive with `--strict`.
+        #[arg(long, conflicts_with = "strict")]
+        update: bool,
+
+        /// Skip the prompt and apply every refresh non-interactively.
+        /// Requires `--update`.
+        #[arg(long, requires = "update")]
+        apply: bool,
+
+        /// Read-only audit gate: walk every cited-source, classify it,
+        /// and exit non-zero if anything has drifted, is missing a hash,
+        /// is stale (last-checked > 30 days or absent), or could not be
+        /// read. Does not modify any YAML — pair with `--update --apply`
+        /// in a separate invocation to fix. Mutually exclusive with
+        /// `--update`.
+        #[arg(long, conflicts_with = "update")]
+        strict: bool,
+
+        /// Output format: "text" (default) or "json".
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
 }
 
 fn main() -> ExitCode {
@@ -1444,12 +1605,26 @@ fn run(cli: Cli) -> Result<bool> {
         format,
         context,
         fix,
+        coverage,
+        warn_only,
+        strict,
     } = &cli.command
     {
         if matches!(topic.as_deref(), Some("check")) {
+            if *coverage {
+                return cmd_docs_coverage(format, *warn_only, *strict);
+            }
             return cmd_docs_check(&cli, format, *fix);
         }
+        // Allow `rivet docs --coverage` (no `check` topic) as a shorthand —
+        // the coverage gate doesn't depend on any other doc-check state.
+        if *coverage {
+            return cmd_docs_coverage(format, *warn_only, *strict);
+        }
         return cmd_docs(topic.as_deref(), *list, grep.as_deref(), format, *context);
+    }
+    if let Command::Quickstart { format } = &cli.command {
+        return cmd_docs(Some("quickstart"), false, None, format, 2);
     }
     if let Command::Context = &cli.command {
         return cmd_context(&cli);
@@ -1460,17 +1635,23 @@ fn run(cli: Cli) -> Result<bool> {
     if let Command::Lsp = &cli.command {
         return cmd_lsp(&cli);
     }
-    if let Command::Mcp = &cli.command {
-        return cmd_mcp(&cli);
+    if let Command::Mcp {
+        list_tools,
+        probe,
+        format,
+    } = &cli.command
+    {
+        return cmd_mcp(&cli, *list_tools, *probe, format);
     }
 
     match &cli.command {
         Command::Init { .. }
         | Command::Docs { .. }
+        | Command::Quickstart { .. }
         | Command::Context
         | Command::CommitMsgCheck { .. }
         | Command::Lsp
-        | Command::Mcp => unreachable!(),
+        | Command::Mcp { .. } => unreachable!(),
         Command::Stpa { path, schema } => cmd_stpa(path, schema.as_deref(), &cli),
         Command::Validate {
             format,
@@ -1482,6 +1663,9 @@ fn run(cli: Cli) -> Result<bool> {
             variant,
             binding,
             fail_on,
+            strict_cited_sources,
+            strict_cited_source_stale,
+            check_remote_sources,
         } => cmd_validate(
             &cli,
             format,
@@ -1493,6 +1677,9 @@ fn run(cli: Cli) -> Result<bool> {
             variant.as_deref(),
             binding.as_deref(),
             fail_on,
+            *strict_cited_sources,
+            *strict_cited_source_stale,
+            *check_remote_sources,
         ),
         Command::List {
             r#type,
@@ -1776,6 +1963,12 @@ fn run(cli: Cli) -> Result<bool> {
             CheckAction::GapsJson { baseline, format } => {
                 cmd_check_gaps_json(&cli, baseline.as_deref(), format)
             }
+            CheckAction::Sources {
+                update,
+                apply,
+                strict,
+                format,
+            } => cmd_check_sources(&cli, *update, *apply, *strict, format),
         },
         #[cfg(feature = "wasm")]
         Command::Import {
@@ -1969,6 +2162,18 @@ artifacts:
 
 const ASPICE_SAMPLE: &str = "\
 artifacts:
+  - id: STKHR-001
+    type: stakeholder-req
+    title: Operators need full sensor history for fleet diagnostics
+    status: draft
+    description: >
+      Fleet operators need access to a complete time-series record of
+      every sensor reading so anomalies discovered post-trip can be
+      diagnosed against ground-truth data.
+    fields:
+      priority: must
+      source: fleet-operations-stakeholder-doc-v1
+
   - id: SYSREQ-001
     type: system-req
     title: System shall provide data logging
@@ -1980,6 +2185,9 @@ artifacts:
       priority: must
       verification-criteria: >
         Verify that sensor data is recorded at 100Hz under nominal load.
+    links:
+      - type: derives-from
+        target: STKHR-001
 
   - id: SWREQ-001
     type: sw-req
@@ -3653,7 +3861,7 @@ fn cmd_init_agents(cli: &Cli, migrate: bool, force_regen: bool) -> Result<bool> 
         config
             .docs
             .iter()
-            .map(|d| format!("`{}`", d))
+            .map(|d| format!("`{}`", d.path()))
             .collect::<Vec<_>>()
             .join(", ")
     };
@@ -4096,6 +4304,9 @@ fn cmd_validate(
     variant_path: Option<&std::path::Path>,
     binding_path: Option<&std::path::Path>,
     fail_on: &str,
+    strict_cited_sources: bool,
+    strict_cited_source_stale: bool,
+    check_remote_sources: bool,
 ) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
     let fail_on_threshold = parse_fail_on(fail_on)?;
@@ -4107,6 +4318,7 @@ fn cmd_validate(
         store,
         schema,
         graph,
+        external_schemas,
         doc_store,
         ..
     } = ctx;
@@ -4240,12 +4452,20 @@ fn cmd_validate(
     // Core validation: use salsa incremental by default, --direct for legacy path.
     // When baseline or variant scoping is active, salsa validates ALL files and
     // we filter the resulting diagnostics to only include artifacts in the scoped store.
+    //
+    // Externals (issue #245):
+    // - --direct path uses `validate_with_externals` so externally-prefixed
+    //   artifacts type-check against their external's schemas.
+    // - --salsa path runs externals-unaware (the salsa db doesn't yet take
+    //   per-external schemas as a tracked input) and we apply
+    //   `reclassify_externals_diagnostics` as a post-pass to converge on the
+    //   same diagnostic set.
     let is_scoped = baseline_name.is_some() || variant_scope_name.is_some();
     let mut diagnostics = if direct {
-        validate::validate(&store, &schema, &graph)
+        validate::validate_with_externals(&store, &schema, &graph, &external_schemas)
     } else {
         let all_diags = run_salsa_validation(cli, &config)?;
-        if is_scoped {
+        let scoped_diags = if is_scoped {
             // Filter diagnostics to only those relevant to the scoped store.
             all_diags
                 .into_iter()
@@ -4258,9 +4478,25 @@ fn cmd_validate(
                 .collect()
         } else {
             all_diags
-        }
+        };
+        validate::reclassify_externals_diagnostics(scoped_diags, &store, &external_schemas)
     };
     diagnostics.extend(validate::validate_documents(&doc_store, &store));
+
+    // Cited-source validation (Phase 1: kind: file backend).
+    //
+    // The store iterator yields references; clone artifacts to feed the
+    // owning `IntoIterator<Item = Artifact>` validator. Drift / missing-hash
+    // diagnostics default to Severity::Warning; `--strict-cited-sources`
+    // promotes them to Error.
+    let cited_source_diags = rivet_core::cited_source::validate_cited_sources(
+        store.iter().cloned(),
+        &cli.project,
+        strict_cited_sources,
+        strict_cited_source_stale,
+        check_remote_sources,
+    );
+    diagnostics.extend(cited_source_diags);
 
     // Cross-repo link validation (skipped with --skip-external-validation)
     let mut cross_repo_broken: Vec<rivet_core::externals::BrokenRef> = Vec::new();
@@ -4912,8 +5148,10 @@ fn cmd_stats(
     //
     // We use the direct validator on the (already scoped) store so the
     // counts line up with the visible artifact set when --filter or
-    // --baseline is in effect.
-    let diagnostics = validate::validate(&store, &ctx.schema, &graph);
+    // --baseline is in effect. Externals-aware so the numbers match the
+    // post-#245 `rivet validate` output.
+    let diagnostics =
+        validate::validate_with_externals(&store, &ctx.schema, &graph, &ctx.external_schemas);
     let errors = diagnostics
         .iter()
         .filter(|d| d.severity == Severity::Error)
@@ -5684,7 +5922,12 @@ links_count = {links_count}
         serde_json::to_string_pretty(&stats_output)?,
     )?;
     // REQ-049: embed validation result so consumers can verify export freshness.
-    let diagnostics = rivet_core::validate::validate(&store, &ctx.schema, &graph);
+    let diagnostics = rivet_core::validate::validate_with_externals(
+        &store,
+        &ctx.schema,
+        &graph,
+        &ctx.external_schemas,
+    );
     let errors = diagnostics
         .iter()
         .filter(|d| d.severity == rivet_core::schema::Severity::Error)
@@ -5901,7 +6144,7 @@ fn cmd_export_gherkin(
         // Build .feature file
         let mut feature = String::new();
         feature.push_str(&format!(
-            "# Generated from {} by rivet export --gherkin\n",
+            "# Generated from {} by rivet export --format gherkin\n",
             art.id
         ));
         feature.push_str(&format!("Feature: {} — {}\n", art.id, art.title));
@@ -6255,63 +6498,97 @@ fn cmd_diff(
     format: &str,
 ) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
-    let (base_store, base_schema, base_graph, head_store, head_schema, head_graph) =
-        match (base_path, head_path) {
-            (Some(bp), Some(hp)) => {
-                // Explicit --base and --head directories: load each as a
-                // standalone project.
-                let base_cli = Cli {
-                    project: bp.to_path_buf(),
-                    schemas: cli.schemas.clone(),
-                    verbose: cli.verbose,
-                    command: Command::Validate {
-                        format: "text".to_string(),
-                        direct: false,
-                        skip_external_validation: false,
-                        baseline: None,
-                        track_convergence: false,
-                        model: None,
-                        variant: None,
-                        binding: None,
-                        fail_on: "error".to_string(),
-                    },
-                };
-                let head_cli = Cli {
-                    project: hp.to_path_buf(),
-                    schemas: cli.schemas.clone(),
-                    verbose: cli.verbose,
-                    command: Command::Validate {
-                        format: "text".to_string(),
-                        direct: false,
-                        skip_external_validation: false,
-                        baseline: None,
-                        track_convergence: false,
-                        model: None,
-                        variant: None,
-                        binding: None,
-                        fail_on: "error".to_string(),
-                    },
-                };
-                let bc = ProjectContext::load(&base_cli)?;
-                let hc = ProjectContext::load(&head_cli)?;
-                (bc.store, bc.schema, bc.graph, hc.store, hc.schema, hc.graph)
-            }
-            _ => {
-                // Default: load the project twice (same working tree). This
-                // is a placeholder — a future version will compare against
-                // the last clean git state.
-                let c1 = ProjectContext::load(cli)?;
-                let c2 = ProjectContext::load(cli)?;
-                (c1.store, c1.schema, c1.graph, c2.store, c2.schema, c2.graph)
-            }
-        };
+    let (
+        base_store,
+        base_schema,
+        base_graph,
+        base_externals,
+        head_store,
+        head_schema,
+        head_graph,
+        head_externals,
+    ) = match (base_path, head_path) {
+        (Some(bp), Some(hp)) => {
+            // Explicit --base and --head directories: load each as a
+            // standalone project.
+            let base_cli = Cli {
+                project: bp.to_path_buf(),
+                schemas: cli.schemas.clone(),
+                verbose: cli.verbose,
+                command: Command::Validate {
+                    format: "text".to_string(),
+                    direct: false,
+                    skip_external_validation: false,
+                    baseline: None,
+                    track_convergence: false,
+                    model: None,
+                    variant: None,
+                    binding: None,
+                    fail_on: "error".to_string(),
+                    strict_cited_sources: false,
+                    strict_cited_source_stale: false,
+                    check_remote_sources: false,
+                },
+            };
+            let head_cli = Cli {
+                project: hp.to_path_buf(),
+                schemas: cli.schemas.clone(),
+                verbose: cli.verbose,
+                command: Command::Validate {
+                    format: "text".to_string(),
+                    direct: false,
+                    skip_external_validation: false,
+                    baseline: None,
+                    track_convergence: false,
+                    model: None,
+                    variant: None,
+                    binding: None,
+                    fail_on: "error".to_string(),
+                    strict_cited_sources: false,
+                    strict_cited_source_stale: false,
+                    check_remote_sources: false,
+                },
+            };
+            let bc = ProjectContext::load(&base_cli)?;
+            let hc = ProjectContext::load(&head_cli)?;
+            (
+                bc.store,
+                bc.schema,
+                bc.graph,
+                bc.external_schemas,
+                hc.store,
+                hc.schema,
+                hc.graph,
+                hc.external_schemas,
+            )
+        }
+        _ => {
+            // Default: load the project twice (same working tree). This
+            // is a placeholder — a future version will compare against
+            // the last clean git state.
+            let c1 = ProjectContext::load(cli)?;
+            let c2 = ProjectContext::load(cli)?;
+            (
+                c1.store,
+                c1.schema,
+                c1.graph,
+                c1.external_schemas,
+                c2.store,
+                c2.schema,
+                c2.graph,
+                c2.external_schemas,
+            )
+        }
+    };
 
     // Compute artifact diff
     let diff = ArtifactDiff::compute(&base_store, &head_store);
 
-    // Compute diagnostic diff
-    let base_diags = validate::validate(&base_store, &base_schema, &base_graph);
-    let head_diags = validate::validate(&head_store, &head_schema, &head_graph);
+    // Compute diagnostic diff (externals-aware on both sides — issue #245)
+    let base_diags =
+        validate::validate_with_externals(&base_store, &base_schema, &base_graph, &base_externals);
+    let head_diags =
+        validate::validate_with_externals(&head_store, &head_schema, &head_graph, &head_externals);
     let diag_diff = DiagnosticDiff::compute(&base_diags, &head_diags);
 
     if format == "json" {
@@ -6881,7 +7158,7 @@ fn cmd_docs(
 fn cmd_docs_check(cli: &Cli, format: &str, fix: bool) -> Result<bool> {
     use clap::CommandFactory;
     use rivet_core::doc_check::{
-        DocCheckContext, apply_fixes, collect_docs, default_invariants, run_all,
+        DocCheckContext, EmbeddedTopic, apply_fixes, default_invariants, run_all,
     };
     use std::collections::BTreeSet;
 
@@ -6897,9 +7174,19 @@ fn cmd_docs_check(cli: &Cli, format: &str, fix: bool) -> Result<bool> {
     // silently misses every markdown file outside the top-level `docs/`.
     // Missing or unreadable config degrades to the default `docs/` scan.
     let project_config = rivet_core::load_project_config(&project_root.join("rivet.yaml")).ok();
-    let extra_doc_dirs: Vec<std::path::PathBuf> = project_config
+    let scan_roots: Vec<rivet_core::doc_check::DocScanRoot> = project_config
         .as_ref()
-        .map(|c| c.docs.iter().map(std::path::PathBuf::from).collect())
+        .map(|c| {
+            c.docs
+                .iter()
+                .map(|e| {
+                    rivet_core::doc_check::DocScanRoot::with_exclude(
+                        std::path::PathBuf::from(e.path()),
+                        e.exclude().to_vec(),
+                    )
+                })
+                .collect()
+        })
         .unwrap_or_default();
     let external_namespaces: Vec<String> = project_config
         .as_ref()
@@ -6916,10 +7203,28 @@ fn cmd_docs_check(cli: &Cli, format: &str, fix: bool) -> Result<bool> {
                 .collect()
         })
         .unwrap_or_default();
+    let allowed_version_literals: BTreeSet<String> = project_config
+        .as_ref()
+        .and_then(|c| c.docs_check.as_ref())
+        .map(|d| d.allowed_version_literals.iter().cloned().collect())
+        .unwrap_or_default();
 
-    // 1. Collect docs.
-    let docs = collect_docs(&project_root, &extra_doc_dirs)
-        .with_context(|| format!("scanning docs under {}", project_root.display()))?;
+    // 1. Collect docs (honoring per-root `exclude:` allowlists).
+    let (docs, scan_summary) =
+        rivet_core::doc_check::collect_docs_with_summary(&project_root, &scan_roots)
+            .with_context(|| format!("scanning docs under {}", project_root.display()))?;
+    // Print the per-root scan summary so the user sees how many files
+    // were silently allowlisted under each docs entry.
+    for rs in &scan_summary.roots {
+        if rs.excluded > 0 {
+            eprintln!(
+                "rivet docs check: {} included, {} excluded by allowlist under {}",
+                rs.included,
+                rs.excluded,
+                rs.path.display(),
+            );
+        }
+    }
 
     // 2. Build known-subcommand set from clap metadata (keeps check in sync
     //    with the actual CLI at compile time).
@@ -6957,6 +7262,23 @@ fn cmd_docs_check(cli: &Cli, format: &str, fix: bool) -> Result<bool> {
     let ci_path = project_root.join(".github/workflows/ci.yml");
     let ci_yaml_owned = std::fs::read_to_string(&ci_path).ok();
 
+    // 7. Build the embedded-topic body list (drives the Embedded* invariants).
+    let embedded_topics: Vec<EmbeddedTopic> = docs::topic_bodies()
+        .into_iter()
+        .map(|(slug, body)| EmbeddedTopic {
+            slug: slug.to_string(),
+            body: body.to_string(),
+        })
+        .collect();
+
+    // 8. Build the subcommand → long-flag map by walking the live clap tree.
+    //    Keyed on the slash-separated path (e.g. `schema/show`) so the
+    //    EmbeddedFlagReferences invariant can resolve nested subcommand
+    //    invocations. Each entry includes the inherited globals from the
+    //    root command so docs that reference `--format` on a leaf still
+    //    pass.
+    let subcommand_flags = build_subcommand_flag_map(&Cli::command());
+
     let ctx = DocCheckContext {
         project_root: &project_root,
         docs: &docs,
@@ -6967,6 +7289,9 @@ fn cmd_docs_check(cli: &Cli, format: &str, fix: bool) -> Result<bool> {
         ci_yaml: ci_yaml_owned.as_deref(),
         external_namespaces: &external_namespaces,
         ignore_patterns: &ignore_patterns,
+        embedded_topics: &embedded_topics,
+        subcommand_flags: &subcommand_flags,
+        allowed_version_literals: &allowed_version_literals,
     };
 
     let invariants = default_invariants();
@@ -7057,6 +7382,451 @@ fn render_docs_check_json(report: &rivet_core::doc_check::CheckReport) -> String
     out
 }
 
+// ── Subcommand-coverage gate ────────────────────────────────────────────
+//
+// `rivet docs check --coverage` walks the live clap CLI tree and asserts
+// every subcommand path has a topic in the embedded docs registry. This
+// is the inverse of the existing `SubcommandReferences` invariant, which
+// flags markdown referencing non-existent subcommands — here we flag
+// existing subcommands without documentation.
+//
+// See `rivet docs docs-coverage` for the full design. Quick rules:
+//   * A subcommand is covered if its slug (or a parent slug) matches a
+//     registered topic, OR if `COVERAGE_TOPIC_MAP` maps it to an umbrella
+//     topic AND the umbrella topic body actually mentions the child name
+//     (whole-word, case-insensitive).
+//   * Built-ins like `help` are exempt via `COVERAGE_ALLOWLIST`.
+//   * Three modes: `--coverage` (print, exit 0), `--coverage --warn-only`
+//     (print + emit `::warning::` annotations, exit 0), `--coverage
+//     --strict` (print, exit 1 on any uncovered).
+
+/// Top-level subcommands whose docs are inherently unnecessary or are
+/// surfaced via a different channel. Keep this list short — adding an
+/// entry must be justified.
+const COVERAGE_ALLOWLIST: &[&str] = &[
+    // clap-builtin help renderer; user help is the topic itself.
+    "help",
+    // Pre-commit hook helper — usage is documented by the hook, not as a
+    // standalone topic.
+    "commit-msg-check",
+];
+
+/// Manual subcommand-to-topic map. Used when a single umbrella topic
+/// (typically `cli`) documents a family of subcommands that don't each
+/// have their own dedicated topic.
+///
+/// Keys are top-level clap subcommand names; values are the topic slug
+/// that documents them. Entries here must correspond to a real topic in
+/// `docs::TOPICS` — if the topic disappears, the gate will surface every
+/// affected subcommand as uncovered.
+const COVERAGE_TOPIC_MAP: &[(&str, &str)] = &[
+    // The `cli` topic is the canonical CLI reference and documents most
+    // top-level commands that don't have a dedicated topic.
+    ("init", "cli"),
+    ("validate", "cli"),
+    ("get", "cli"),
+    ("list", "cli"),
+    ("stats", "cli"),
+    ("coverage", "cli"),
+    ("matrix", "cli"),
+    ("stpa", "cli"),
+    ("diff", "cli"),
+    ("export", "cli"),
+    ("schema", "cli"),
+    ("docs", "cli"),
+    ("quickstart", "quickstart"),
+    ("context", "cli"),
+    ("commits", "commit-traceability"),
+    ("serve", "cli"),
+    ("sync", "cross-repo"),
+    ("lock", "cross-repo"),
+    ("externals", "cross-repo"),
+    ("impact", "impact"),
+    ("import-results", "cli"),
+    ("next-id", "mutation"),
+    ("add", "mutation"),
+    ("link", "mutation"),
+    ("unlink", "mutation"),
+    ("modify", "mutation"),
+    ("remove", "mutation"),
+    ("batch", "mutation"),
+    ("embed", "embed-syntax"),
+    ("query", "cli"),
+    ("stamp", "cli"),
+    ("lsp", "cli"),
+    ("mcp", "mcp"),
+    ("check", "cli"),
+    ("import", "needs-json"),
+];
+
+/// One row in the coverage report: a single subcommand path.
+#[derive(Debug, Clone)]
+struct CoverageRow {
+    /// Subcommand path joined by `/` — e.g. `"schema/show"`.
+    path: String,
+    /// Depth in the tree (0 = top-level).
+    depth: usize,
+    /// Topic slug that provides coverage, or `None` when uncovered.
+    covered_by: Option<String>,
+    /// True when the path is exempt via `COVERAGE_ALLOWLIST`.
+    allow_listed: bool,
+}
+
+impl CoverageRow {
+    fn is_covered(&self) -> bool {
+        self.covered_by.is_some() || self.allow_listed
+    }
+}
+
+/// Slugify a subcommand path for topic lookup. `schema/show` -> `schema-show`.
+fn coverage_slug(path: &str) -> String {
+    path.replace('/', "-")
+}
+
+/// Walk a clap `Command` and collect every subcommand path. Internal
+/// `help` synthetic command is included so the allow-list can decide
+/// whether to drop it.
+fn collect_subcommand_paths(root: &clap::Command) -> Vec<(String, usize)> {
+    let mut out = Vec::new();
+    for sub in root.get_subcommands() {
+        walk_subcommand(sub, "", 0, &mut out);
+    }
+    out
+}
+
+fn walk_subcommand(
+    cmd: &clap::Command,
+    parent_path: &str,
+    depth: usize,
+    out: &mut Vec<(String, usize)>,
+) {
+    let name = cmd.get_name();
+    let path = if parent_path.is_empty() {
+        name.to_string()
+    } else {
+        format!("{parent_path}/{name}")
+    };
+    out.push((path.clone(), depth));
+    for child in cmd.get_subcommands() {
+        walk_subcommand(child, &path, depth + 1, out);
+    }
+}
+
+/// Walk every subcommand in the clap tree and collect the set of long
+/// flags declared on each path. The map is keyed on the slash-separated
+/// path (e.g. `schema/show` → {`--format`}). The entry for each
+/// subcommand also seeds the *root-level* globals (those declared on
+/// the top-level `Cli`) so docs that reference, say, `rivet validate
+/// --project ...` are not flagged.
+fn build_subcommand_flag_map(
+    root: &clap::Command,
+) -> std::collections::BTreeMap<String, std::collections::BTreeSet<String>> {
+    let mut out = std::collections::BTreeMap::new();
+    let global_flags: std::collections::BTreeSet<String> = root
+        .get_arguments()
+        .filter_map(|a| a.get_long().map(str::to_string))
+        .collect();
+    for sub in root.get_subcommands() {
+        walk_flag_subcommand(sub, "", &global_flags, &mut out);
+    }
+    out
+}
+
+fn walk_flag_subcommand(
+    cmd: &clap::Command,
+    parent_path: &str,
+    global_flags: &std::collections::BTreeSet<String>,
+    out: &mut std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
+) {
+    let name = cmd.get_name();
+    let path = if parent_path.is_empty() {
+        name.to_string()
+    } else {
+        format!("{parent_path}/{name}")
+    };
+    let mut flags: std::collections::BTreeSet<String> = cmd
+        .get_arguments()
+        .filter_map(|a| a.get_long().map(str::to_string))
+        .collect();
+    // `--help` and `--version` are clap built-ins and always accepted.
+    flags.insert("help".to_string());
+    flags.insert("version".to_string());
+    // Inherit the root-level globals (e.g. `--project`, `--verbose`).
+    for f in global_flags {
+        flags.insert(f.clone());
+    }
+    out.insert(path.clone(), flags);
+    for child in cmd.get_subcommands() {
+        walk_flag_subcommand(child, &path, global_flags, out);
+    }
+}
+
+/// Compute the coverage rows for a given clap tree and topic-slug set.
+/// Pulled into its own function so the unit tests can exercise it without
+/// shelling out to the full CLI.
+///
+/// `topic_body` is a lookup for topic bodies — used by the umbrella rule
+/// (rule 4) to verify the parent topic actually mentions the child name.
+/// In production this is `docs::topic_content`; tests pass a closure over
+/// a fake topic registry.
+fn compute_coverage_rows(
+    root: &clap::Command,
+    topic_slugs: &std::collections::BTreeSet<String>,
+    allow_list: &[&str],
+    topic_map: &[(&str, &str)],
+    topic_body: &dyn Fn(&str) -> Option<&str>,
+) -> Vec<CoverageRow> {
+    let paths = collect_subcommand_paths(root);
+    let mut rows = Vec::with_capacity(paths.len());
+    for (path, depth) in paths {
+        // Exempt clap-builtin synthetic subcommands first so `help` etc.
+        // never show up as gaps.
+        let top = path.split('/').next().unwrap_or(&path);
+        let allow_listed = allow_list.contains(&top) || allow_list.contains(&path.as_str());
+
+        let covered_by = if allow_listed {
+            None
+        } else {
+            resolve_coverage(&path, top, topic_slugs, topic_map, topic_body)
+        };
+
+        rows.push(CoverageRow {
+            path,
+            depth,
+            covered_by,
+            allow_listed,
+        });
+    }
+    rows
+}
+
+/// Resolve the covering topic slug for a single subcommand path, applying
+/// the matching rules in priority order:
+///
+/// 1. Exact slug match using `/` as the separator (e.g. `schema/show` →
+///    a `schema/show` topic; matches the natural docs::TOPICS slug shape).
+/// 2. Exact slug match using `-` as the separator (e.g. `schema-show`).
+/// 3. Parent-walk: drop the last segment and retry both separators.
+/// 4. Manual top-level mapping via `COVERAGE_TOPIC_MAP` — used when a
+///    single umbrella topic (typically `cli`) documents a family.
+///    Tightened in #248: the umbrella topic body must mention the
+///    top-level subcommand name as a whole word (case-insensitive),
+///    otherwise the path stays uncovered.
+fn resolve_coverage(
+    path: &str,
+    top: &str,
+    topic_slugs: &std::collections::BTreeSet<String>,
+    topic_map: &[(&str, &str)],
+    topic_body: &dyn Fn(&str) -> Option<&str>,
+) -> Option<String> {
+    // 1. & 2. Exact slug match.
+    if topic_slugs.contains(path) {
+        return Some(path.to_string());
+    }
+    let dashed = coverage_slug(path);
+    if topic_slugs.contains(&dashed) {
+        return Some(dashed);
+    }
+
+    // 3. Parent walk.
+    let mut cur = path;
+    while let Some(idx) = cur.rfind('/') {
+        cur = &cur[..idx];
+        if topic_slugs.contains(cur) {
+            return Some(cur.to_string());
+        }
+        let slug = coverage_slug(cur);
+        if topic_slugs.contains(&slug) {
+            return Some(slug);
+        }
+    }
+
+    // 4. Manual umbrella mapping on the top-level name. The umbrella
+    //    topic must actually MENTION the child subcommand name — a
+    //    catch-all `cli` mapping that doesn't reference the family is no
+    //    coverage at all (issue #248 B5).
+    for (name, slug) in topic_map {
+        if *name == top && topic_slugs.contains(*slug) {
+            let Some(body) = topic_body(slug) else {
+                continue;
+            };
+            if topic_body_mentions(body, top) {
+                return Some((*slug).to_string());
+            }
+        }
+    }
+    None
+}
+
+/// True iff `body` contains `name` as a whole-word, case-insensitive
+/// match. Used by the umbrella rule (#248 B5) to ensure a parent topic
+/// actually references the child subcommand it claims to cover.
+fn topic_body_mentions(body: &str, name: &str) -> bool {
+    use regex::RegexBuilder;
+    // Anchor with `\b` so e.g. `query` doesn't match `subquery`. Build
+    // case-insensitively. `regex::escape` keeps oddly-named subcommands
+    // (`commit-msg-check`) safe inside the pattern.
+    let pattern = format!(r"\b{}\b", regex::escape(name));
+    RegexBuilder::new(&pattern)
+        .case_insensitive(true)
+        .build()
+        .ok()
+        .is_some_and(|re| re.is_match(body))
+}
+
+/// Run `rivet docs check --coverage` — assert every subcommand path has
+/// an embedded doc topic.
+///
+/// Three modes (issue #248 B6):
+/// * Default (`--coverage`): print the report and exit 0. No annotations.
+///   Intended for local exploration.
+/// * `--coverage --warn-only`: print + emit one `::warning::` GitHub
+///   Actions annotation per uncovered subcommand, exit 0. For staged CI
+///   rollout where gaps should surface inline on PRs without failing the
+///   build.
+/// * `--coverage --strict`: print, exit 1 if anything is uncovered. For
+///   enforcing CI once the inventory is clean.
+///
+/// `--warn-only` and `--strict` are mutually exclusive (clap-enforced).
+fn cmd_docs_coverage(format: &str, warn_only: bool, strict: bool) -> Result<bool> {
+    use clap::CommandFactory;
+    use std::collections::BTreeSet;
+
+    validate_format(format, &["text", "json"])?;
+
+    let root = Cli::command();
+    let topic_slugs: BTreeSet<String> = docs::topic_slugs().into_iter().map(String::from).collect();
+    let rows = compute_coverage_rows(
+        &root,
+        &topic_slugs,
+        COVERAGE_ALLOWLIST,
+        COVERAGE_TOPIC_MAP,
+        &|slug| docs::topic_content(slug),
+    );
+
+    let total = rows.iter().filter(|r| !r.allow_listed).count();
+    // Covered = paths that resolve to a topic (and thus aren't allow-listed).
+    let covered = rows
+        .iter()
+        .filter(|r| r.covered_by.is_some() && !r.allow_listed)
+        .count();
+    let uncovered: Vec<&CoverageRow> = rows.iter().filter(|r| !r.is_covered()).collect();
+
+    match format {
+        "json" => print!("{}", render_coverage_json(&rows, total, covered)),
+        _ => print!("{}", render_coverage_text(&rows, total, covered)),
+    }
+
+    // Warn-only mode emits GitHub Actions workflow-command annotations so
+    // CI surfaces every uncovered subcommand inline on the PR. The
+    // annotations are printed to stdout (not stderr) — that's where the
+    // GitHub Actions runner scans for `::warning::` lines.
+    if warn_only && !uncovered.is_empty() {
+        for row in &uncovered {
+            // No file path is meaningful here (the gap is in
+            // docs::TOPICS, not on a YAML line), so attribute to the
+            // module that owns the registry.
+            println!(
+                "::warning file=rivet-cli/src/docs.rs::rivet docs check --coverage: subcommand `{}` is not covered by any topic in docs::TOPICS",
+                row.path
+            );
+        }
+    }
+
+    let pass = uncovered.is_empty();
+    if !pass && !strict {
+        eprintln!(
+            "rivet docs check --coverage: {} subcommand(s) uncovered{}",
+            uncovered.len(),
+            if warn_only {
+                " (warn-only; emitted ::warning:: annotations; use --strict to fail)"
+            } else {
+                " (default mode; use --warn-only for CI annotations or --strict to fail)"
+            },
+        );
+        return Ok(true);
+    }
+    Ok(pass)
+}
+
+fn render_coverage_text(rows: &[CoverageRow], total: usize, covered: usize) -> String {
+    use std::fmt::Write as _;
+    let mut s = String::new();
+    let _ = writeln!(s, "rivet docs check --coverage\n");
+
+    // Group by top-level so the report reads top-down.
+    let mut last_top = "";
+    for row in rows {
+        let top = row.path.split('/').next().unwrap_or(&row.path);
+        if top != last_top {
+            if !last_top.is_empty() {
+                let _ = writeln!(s);
+            }
+            last_top = top;
+        }
+        let indent = "  ".repeat(row.depth + 1);
+        let mark = if row.allow_listed {
+            "·"
+        } else if row.is_covered() {
+            "✓"
+        } else {
+            "✗"
+        };
+        let detail = if row.allow_listed {
+            "(allow-listed)".to_string()
+        } else if let Some(slug) = &row.covered_by {
+            format!("(doc: {slug})")
+        } else {
+            "MISSING DOC".to_string()
+        };
+        let _ = writeln!(s, "{indent}{mark} {} {}", row.path, detail);
+    }
+
+    let pct = covered
+        .saturating_mul(100)
+        .checked_div(total)
+        .unwrap_or(100);
+    let _ = writeln!(s, "\nCoverage: {covered}/{total} ({pct}%)");
+
+    let uncovered: Vec<&CoverageRow> = rows.iter().filter(|r| !r.is_covered()).collect();
+    if !uncovered.is_empty() {
+        let names: Vec<String> = uncovered.iter().map(|r| r.path.clone()).collect();
+        let _ = writeln!(s, "Uncovered: {}", names.join(", "));
+    }
+    s
+}
+
+fn render_coverage_json(rows: &[CoverageRow], total: usize, covered: usize) -> String {
+    let items: Vec<serde_json::Value> = rows
+        .iter()
+        .map(|r| {
+            serde_json::json!({
+                "path": r.path,
+                "depth": r.depth,
+                "covered": r.is_covered(),
+                "covered_by": r.covered_by,
+                "allow_listed": r.allow_listed,
+            })
+        })
+        .collect();
+    let uncovered: Vec<&str> = rows
+        .iter()
+        .filter(|r| !r.is_covered())
+        .map(|r| r.path.as_str())
+        .collect();
+    let payload = serde_json::json!({
+        "command": "docs-coverage",
+        "status": if uncovered.is_empty() { "pass" } else { "fail" },
+        "total": total,
+        "covered": covered,
+        "uncovered": uncovered,
+        "subcommands": items,
+    });
+    let mut out = serde_json::to_string_pretty(&payload).unwrap_or_default();
+    out.push('\n');
+    out
+}
+
 /// Introspect loaded schemas.
 fn cmd_schema(cli: &Cli, action: &SchemaAction) -> Result<bool> {
     // `list-json` / `get-json` don't need the project schema graph —
@@ -7069,6 +7839,62 @@ fn cmd_schema(cli: &Cli, action: &SchemaAction) -> Result<bool> {
         }
         SchemaAction::GetJson { name, content } => {
             return cmd_schema_get_json(cli, name, *content);
+        }
+        SchemaAction::Migrate {
+            target,
+            apply,
+            abort,
+            status,
+            finish,
+            continue_,
+            skip,
+            edit,
+            list,
+            format,
+        } => {
+            validate_format(format, &["text", "json"])?;
+            let schemas_dir = resolve_schemas_dir(cli);
+            let project_root = cli.project.clone();
+
+            // --list is recipe discovery — never touches the project tree.
+            // Handle it before resolving source preset (which would try
+            // to read rivet.yaml).
+            if *list {
+                return migrate_cmd::cmd_list(&schemas_dir, format);
+            }
+
+            // Every other Migrate path needs a target preset.
+            let target = target.as_deref().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "rivet schema migrate requires a <target> preset; pass `--list` to enumerate recipes"
+                )
+            })?;
+
+            let config_path = cli.project.join("rivet.yaml");
+            let source_preset = if config_path.exists() {
+                let config = rivet_core::load_project_config(&config_path)
+                    .with_context(|| format!("loading {}", config_path.display()))?;
+                infer_source_preset(&config.project.schemas)
+            } else {
+                "dev".to_string()
+            };
+            return if *abort {
+                migrate_cmd::cmd_abort(&project_root)
+            } else if *status {
+                migrate_cmd::cmd_status(&project_root)
+            } else if *finish {
+                migrate_cmd::cmd_finish(&project_root)
+            } else if *continue_ {
+                migrate_cmd::cmd_continue(&project_root, &schemas_dir)
+            } else if *skip {
+                migrate_cmd::cmd_skip(&project_root, &schemas_dir)
+            } else if let Some(id) = edit {
+                migrate_cmd::cmd_edit(&project_root, id)
+            } else if *apply {
+                migrate_cmd::cmd_apply(&project_root, &schemas_dir, &source_preset, target)
+            } else {
+                migrate_cmd::cmd_plan(&project_root, &schemas_dir, &source_preset, target)
+            };
         }
         _ => {}
     }
@@ -7114,10 +7940,27 @@ fn cmd_schema(cli: &Cli, action: &SchemaAction) -> Result<bool> {
             };
             schema_cmd::cmd_info(&schema_file, format)
         }
-        SchemaAction::ListJson { .. } | SchemaAction::GetJson { .. } => unreachable!(),
+        SchemaAction::ListJson { .. }
+        | SchemaAction::GetJson { .. }
+        | SchemaAction::Migrate { .. } => unreachable!(),
     };
     print!("{output}");
     Ok(true)
+}
+
+/// Infer the project's source preset from its loaded schema list.
+///
+/// Heuristic: pick the first non-`common` entry. The set of presets
+/// rivet ships with maps 1:1 to a marquee schema (`dev`, `aspice`,
+/// `stpa`, …); projects that load multiple non-common schemas get
+/// the first one and are expected to specify the source preset
+/// explicitly in a future Phase. For Phase 1 this is enough.
+fn infer_source_preset(schemas: &[String]) -> String {
+    schemas
+        .iter()
+        .find(|s| s.as_str() != "common")
+        .cloned()
+        .unwrap_or_else(|| "dev".to_string())
 }
 
 /// The four CLI subcommands that emit machine-readable JSON along with the
@@ -7238,8 +8081,9 @@ fn cmd_context(cli: &Cli) -> Result<bool> {
     let store = ctx.store;
     let schema = ctx.schema;
     let graph = ctx.graph;
+    let external_schemas = ctx.external_schemas;
     let doc_store = ctx.doc_store.unwrap_or_default();
-    let diagnostics = validate::validate(&store, &schema, &graph);
+    let diagnostics = validate::validate_with_externals(&store, &schema, &graph, &external_schemas);
     let coverage_report = coverage::compute_coverage(&store, &schema, &graph);
 
     let rivet_dir = cli.project.join(".rivet");
@@ -7270,7 +8114,8 @@ fn cmd_context(cli: &Cli) -> Result<bool> {
             .join(", ")
     ));
     if !config.docs.is_empty() {
-        out.push_str(&format!("- **Docs:** {}\n", config.docs.join(", ")));
+        let names: Vec<&str> = config.docs.iter().map(|e| e.path()).collect();
+        out.push_str(&format!("- **Docs:** {}\n", names.join(", ")));
     }
     if let Some(ref r) = config.results {
         out.push_str(&format!("- **Results:** {r}\n"));
@@ -9532,11 +10377,70 @@ fn cmd_check_gaps_json(cli: &Cli, baseline_name: Option<&str>, format: &str) -> 
     Ok(true)
 }
 
+/// `rivet check sources [--update [--apply]] [--strict]` — list
+/// artifacts with `cited-source`, optionally refreshing their sha256 /
+/// last-checked stamps. Phase 1 only handles `kind: file`.
+///
+/// `--strict` is a read-only audit gate: it never modifies any YAML and
+/// the exit code includes stale entries (last-checked > 30 days or
+/// missing) on top of the default drift / missing-hash / read-error /
+/// shape-error set. Mutually exclusive with `--update`.
+fn cmd_check_sources(
+    cli: &Cli,
+    update: bool,
+    apply: bool,
+    strict: bool,
+    format: &str,
+) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
+    let ctx = ProjectContext::load(cli)?;
+
+    let report = check::sources::compute(ctx.store.iter(), &cli.project);
+
+    if format == "json" {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        print!("{}", check::sources::render_text(&report));
+    }
+
+    if update {
+        let interactive = !apply;
+        let applied = check::sources::apply_updates(&report, interactive)?;
+        if format != "json" {
+            println!();
+            println!("Updated {applied} artifact(s).");
+        }
+    }
+
+    // Default exit-code semantics: pass when no drift / read-error /
+    // missing-hash / shape-error remains. After --apply, drift and
+    // missing-hash will have been written back, but we report on the
+    // pre-update state so that the caller can see what happened. For
+    // pipelines that want post-update assurance, re-run validate.
+    //
+    // `--strict` adds stale entries to the firing set — same idea as
+    // `validate --strict-cited-source-stale`, but in the read-only
+    // `check sources` shape so audit gates don't have to touch any YAML.
+    let mut firing = report.by_status.drift
+        + report.by_status.missing_hash
+        + report.by_status.read_error
+        + report.by_status.shape_error;
+    if strict {
+        firing += report.by_status.stale;
+    }
+    Ok(firing == 0)
+}
+
 struct ProjectContext {
     config: ProjectConfig,
     store: Store,
     schema: rivet_core::schema::Schema,
     graph: LinkGraph,
+    /// Per-prefix schemas for declared externals (issue #245). `Some(schema)`
+    /// = type-check the external's prefixed artifacts against this schema;
+    /// `None` = external didn't declare schemas, demote unknown-type to INFO.
+    /// Empty when the project has no externals.
+    external_schemas: rivet_core::validate::ExternalSchemas,
     doc_store: Option<DocumentStore>,
     result_store: Option<ResultStore>,
 }
@@ -9569,7 +10473,11 @@ impl ProjectContext {
             }
         }
 
-        // Load external project artifacts so cross-repo references resolve
+        // Load external project artifacts so cross-repo references resolve.
+        // We also collect each external's own schemas so the validator can
+        // type-check externally-prefixed artifacts against the schemas they
+        // were authored under, not the downstream's (issue #245).
+        let mut external_schemas: rivet_core::validate::ExternalSchemas = Default::default();
         if let Some(ref externals) = config.externals {
             if !externals.is_empty() {
                 match rivet_core::externals::load_all_externals(externals, &cli.project) {
@@ -9579,6 +10487,7 @@ impl ProjectContext {
                             // internal link targets consistently.
                             let ext_ids: std::collections::HashSet<String> =
                                 ext.artifacts.iter().map(|a| a.id.clone()).collect();
+                            external_schemas.insert(ext.prefix.clone(), ext.schema);
                             for mut artifact in ext.artifacts {
                                 // Prefix external artifact IDs so they don't collide
                                 artifact.id = format!("{}:{}", ext.prefix, artifact.id);
@@ -9606,23 +10515,38 @@ impl ProjectContext {
             store,
             schema,
             graph,
+            external_schemas,
             doc_store: None,
             result_store: None,
         })
     }
 
     /// Load project with artifacts, schema, link graph, and documents.
+    ///
+    /// The docs scanner emits one stderr warning per file declined for
+    /// missing or malformed YAML front-matter (see
+    /// [`document::load_documents_with_report`]). Files matching an
+    /// `exclude:` glob in the corresponding `docs:` entry are silently
+    /// allowlisted so generated content can stay in-tree without spam.
     fn load_with_docs(cli: &Cli) -> Result<Self> {
         let mut ctx = Self::load(cli)?;
 
         let mut doc_store = DocumentStore::new();
-        for docs_path in &ctx.config.docs {
-            let dir = cli.project.join(docs_path);
-            let docs = document::load_documents(&dir)
-                .with_context(|| format!("loading docs from '{docs_path}'"))?;
+        let mut total = rivet_core::document::ScanReport::default();
+        for entry in &ctx.config.docs {
+            let dir = cli.project.join(entry.path());
+            let (docs, report) = document::load_documents_with_report(&dir, entry.exclude())
+                .with_context(|| format!("loading docs from '{}'", entry.path()))?;
             for doc in docs {
                 doc_store.insert(doc);
             }
+            total.merge(&report);
+        }
+        if total.warned > 0 || total.excluded > 0 {
+            eprintln!(
+                "rivet docs: {} loaded, {} skipped (warnings above), {} excluded by allowlist",
+                total.loaded, total.warned, total.excluded,
+            );
         }
         ctx.doc_store = Some(doc_store);
         Ok(ctx)
@@ -10709,7 +11633,20 @@ fn strip_html_tags(html: &str) -> String {
         .replace("&quot;", "\"")
 }
 
-fn cmd_mcp(cli: &Cli) -> Result<bool> {
+fn cmd_mcp(cli: &Cli, list_tools: bool, probe: bool, format: &str) -> Result<bool> {
+    if list_tools {
+        validate_format(format, &["text", "json"])?;
+        let out = mcp::render_tool_catalog(format)?;
+        print!("{out}");
+        return Ok(true);
+    }
+
+    if probe {
+        let out = mcp::probe_rivet_list(&cli.project)?;
+        println!("{out}");
+        return Ok(true);
+    }
+
     let rt = tokio::runtime::Runtime::new().context("creating tokio runtime")?;
     rt.block_on(mcp::run(cli.project.clone()))?;
     Ok(true)
@@ -10923,9 +11860,11 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
     // Load documents and results from config
     if config_path.exists() {
         if let Ok(config) = rivet_core::load_project_config(&config_path) {
-            for docs_path in &config.docs {
-                let dir = project_dir.join(docs_path);
-                if let Ok(docs) = rivet_core::document::load_documents(&dir) {
+            for entry in &config.docs {
+                let dir = project_dir.join(entry.path());
+                if let Ok((docs, _report)) =
+                    rivet_core::document::load_documents_with_report(&dir, entry.exclude())
+                {
                     for doc in docs {
                         doc_store.insert(doc);
                     }
@@ -12779,6 +13718,245 @@ mod stats_tests {
             assert!(
                 *count > 0,
                 "type '{name}' has 0 count but still appears in stats"
+            );
+        }
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Subcommand-coverage gate tests
+// ────────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod coverage_gate_tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    fn slugs(names: &[&str]) -> BTreeSet<String> {
+        names.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    /// Default test body lookup — returns a body that mentions every
+    /// possible top-level subcommand name, so the umbrella rule (rule 4)
+    /// fires unconditionally for tests that aren't specifically
+    /// exercising the body-mention check (#248 B5).
+    fn permissive_body(_slug: &str) -> Option<&str> {
+        Some("fruit apple banana grape orange")
+    }
+
+    /// A small fake clap tree: one parent (`fruit`) with two children
+    /// (`apple`, `banana`) — exactly the kind of fixture the
+    /// implementation sketch in the task asked for.
+    fn fake_tree() -> clap::Command {
+        clap::Command::new("rivet").subcommand(
+            clap::Command::new("fruit")
+                .subcommand(clap::Command::new("apple"))
+                .subcommand(clap::Command::new("banana")),
+        )
+    }
+
+    #[test]
+    fn collect_paths_walks_tree() {
+        let cmd = fake_tree();
+        let mut paths = collect_subcommand_paths(&cmd);
+        paths.sort();
+        assert_eq!(
+            paths,
+            vec![
+                ("fruit".to_string(), 0),
+                ("fruit/apple".to_string(), 1),
+                ("fruit/banana".to_string(), 1),
+            ]
+        );
+    }
+
+    #[test]
+    fn parent_topic_covers_all_leaves() {
+        let cmd = fake_tree();
+        let topics = slugs(&["fruit"]);
+        let rows = compute_coverage_rows(&cmd, &topics, &[], &[], &permissive_body);
+        // All three rows resolved via the `fruit` topic — the parent
+        // walk is what catches the leaves.
+        assert_eq!(rows.len(), 3);
+        for r in &rows {
+            assert!(r.is_covered(), "row {r:?} should be covered by fruit");
+            assert_eq!(r.covered_by.as_deref(), Some("fruit"));
+        }
+    }
+
+    #[test]
+    fn exact_leaf_topic_wins_over_parent() {
+        let cmd = fake_tree();
+        // Both `fruit` AND `fruit-apple` exist — the leaf-specific
+        // topic should win.
+        let topics = slugs(&["fruit", "fruit-apple"]);
+        let rows = compute_coverage_rows(&cmd, &topics, &[], &[], &permissive_body);
+        let apple = rows.iter().find(|r| r.path == "fruit/apple").unwrap();
+        assert_eq!(apple.covered_by.as_deref(), Some("fruit-apple"));
+        let banana = rows.iter().find(|r| r.path == "fruit/banana").unwrap();
+        assert_eq!(banana.covered_by.as_deref(), Some("fruit"));
+    }
+
+    #[test]
+    fn missing_topic_is_uncovered() {
+        let cmd = fake_tree();
+        let topics = slugs(&["something-else"]);
+        let rows = compute_coverage_rows(&cmd, &topics, &[], &[], &permissive_body);
+        for r in &rows {
+            assert!(!r.is_covered(), "row {r:?} should be uncovered");
+            assert!(r.covered_by.is_none());
+        }
+    }
+
+    #[test]
+    fn allow_list_exempts_path() {
+        let cmd = fake_tree();
+        let topics = BTreeSet::new();
+        let rows = compute_coverage_rows(&cmd, &topics, &["fruit"], &[], &permissive_body);
+        for r in &rows {
+            assert!(
+                r.allow_listed,
+                "fruit subtree must be allow-listed; got {r:?}"
+            );
+            assert!(r.is_covered(), "allow-listed must read as covered");
+            assert!(r.covered_by.is_none(), "no covering topic for allow-listed");
+        }
+    }
+
+    fn body_cli_mentions_fruit(slug: &str) -> Option<&str> {
+        if slug == "cli" {
+            Some("This is the CLI reference. It documents fruit and other commands.")
+        } else {
+            None
+        }
+    }
+
+    fn body_cli_no_fruit(slug: &str) -> Option<&str> {
+        if slug == "cli" {
+            Some("This is the CLI reference. It documents validate, list, get.")
+        } else {
+            None
+        }
+    }
+
+    fn body_cli_fruit_capitalised(slug: &str) -> Option<&str> {
+        if slug == "cli" {
+            Some("Fruit reference.")
+        } else {
+            None
+        }
+    }
+
+    fn body_cli_subquery(slug: &str) -> Option<&str> {
+        if slug == "cli" {
+            Some("Run a subquery.")
+        } else {
+            None
+        }
+    }
+
+    #[test]
+    fn topic_map_provides_umbrella_coverage_when_body_mentions_child() {
+        let cmd = fake_tree();
+        let topics = slugs(&["cli"]);
+        // `fruit` -> `cli` umbrella mapping; the `cli` topic body must
+        // mention `fruit` for the umbrella rule to fire (#248 B5).
+        let map = &[("fruit", "cli")];
+        let rows = compute_coverage_rows(&cmd, &topics, &[], map, &body_cli_mentions_fruit);
+        for r in &rows {
+            assert_eq!(r.covered_by.as_deref(), Some("cli"));
+        }
+    }
+
+    /// #248 B5: the umbrella rule (rule 4) MUST require the parent topic
+    /// body to mention the child subcommand by name as a whole word.
+    /// Without this check, a single sloppy `cli` umbrella mapping would
+    /// claim coverage for every family it lists, even when the body
+    /// never references them.
+    #[test]
+    fn umbrella_rule_rejects_unmentioned_child() {
+        let cmd = fake_tree();
+        let topics = slugs(&["cli"]);
+        let map = &[("fruit", "cli")];
+        // Body talks about other things; `fruit` never appears.
+        let rows = compute_coverage_rows(&cmd, &topics, &[], map, &body_cli_no_fruit);
+        for r in &rows {
+            assert!(
+                !r.is_covered(),
+                "without a body mention, umbrella rule must not cover {r:?}",
+            );
+            assert!(r.covered_by.is_none());
+        }
+    }
+
+    /// #248 B5: matching is case-insensitive — a `Fruit`-cased mention
+    /// in prose still satisfies the rule for child name `fruit`.
+    #[test]
+    fn umbrella_body_mention_is_case_insensitive() {
+        let cmd = fake_tree();
+        let topics = slugs(&["cli"]);
+        let map = &[("fruit", "cli")];
+        let rows = compute_coverage_rows(&cmd, &topics, &[], map, &body_cli_fruit_capitalised);
+        for r in &rows {
+            assert_eq!(r.covered_by.as_deref(), Some("cli"));
+        }
+    }
+
+    /// #248 B5: matching is whole-word — a substring match like
+    /// `subquery` containing `query` must NOT satisfy the rule for child
+    /// name `query`.
+    #[test]
+    fn umbrella_body_mention_requires_whole_word() {
+        // Tree with `query` as the only child so we can use it as `top`.
+        let cmd = clap::Command::new("rivet").subcommand(clap::Command::new("query"));
+        let topics = slugs(&["cli"]);
+        let map = &[("query", "cli")];
+        let rows = compute_coverage_rows(&cmd, &topics, &[], map, &body_cli_subquery);
+        let row = rows.iter().find(|r| r.path == "query").unwrap();
+        assert!(
+            !row.is_covered(),
+            "substring match must not satisfy the umbrella rule",
+        );
+    }
+
+    #[test]
+    fn topic_body_mentions_word_boundary() {
+        // Whole-word match: positive cases.
+        assert!(topic_body_mentions("rivet query foo", "query"));
+        assert!(topic_body_mentions("Use the QUERY command.", "query"));
+        assert!(topic_body_mentions(
+            "commit-msg-check is a hook",
+            "commit-msg-check"
+        ));
+        assert!(topic_body_mentions(
+            "(query) parens count as boundaries",
+            "query"
+        ));
+        // Whole-word match: negative cases.
+        assert!(!topic_body_mentions("subquery", "query"));
+        assert!(!topic_body_mentions("queries are different", "query"));
+        assert!(!topic_body_mentions("noquery", "query"));
+        assert!(!topic_body_mentions("", "query"));
+    }
+
+    #[test]
+    fn coverage_slug_replaces_slashes() {
+        assert_eq!(coverage_slug("schema/show"), "schema-show");
+        assert_eq!(coverage_slug("variant"), "variant");
+        assert_eq!(coverage_slug("a/b/c"), "a-b-c");
+    }
+
+    /// Sanity-check the real CLI tree: every `(top, slug)` pair in the
+    /// production map must point at a topic that actually exists. If
+    /// somebody removes a topic, the gate would silently regress every
+    /// command in that family back to "uncovered" — catch it here.
+    #[test]
+    fn production_topic_map_references_real_topics() {
+        let topics: BTreeSet<String> = docs::topic_slugs().into_iter().map(String::from).collect();
+        for (name, slug) in COVERAGE_TOPIC_MAP {
+            assert!(
+                topics.contains(*slug),
+                "COVERAGE_TOPIC_MAP entry ({name}, {slug}) points at a non-existent topic"
             );
         }
     }

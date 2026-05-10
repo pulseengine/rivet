@@ -1,0 +1,48 @@
+# Migration recipe: dev preset -> aspice preset.
+#
+# Mechanical-only mapping shipped with rivet for the common
+# "outgrew the dev preset" path described in issue #236.
+# Phase 1: rivet schema migrate aspice --apply consumes this.
+#
+# See `rivet docs schema-migrate` for the recipe format and policy
+# semantics.
+
+migration:
+  name: dev-to-aspice
+  source: { preset: dev }
+  target: { preset: aspice }
+
+  description: |
+    Mechanical mapping for the most common dev -> aspice transition.
+    Renames the three dev artifact types to their ASPICE 4.0 equivalents
+    and rewrites `satisfies` links to `derives-from` (ASPICE convention).
+
+    Judgment calls (these are deliberate; review on a per-project basis):
+      * `feature` -> `sw-arch-component`. Could equally be
+        `sys-arch-component` for hardware-bound features. Migrate, then
+        sweep manually. The recipe assumes "software-first" because the
+        dev preset has no system-level distinction.
+      * `design-decision` is identity-mapped — both schemas use the same
+        type name, but the field shape may differ slightly. Phase 1
+        keeps unmapped fields under `fields.legacy.*` so nothing is
+        lost; review and reshape after the migration.
+
+    Unmapped fields default to `keep-as-orphan` (stashed under
+    `fields.legacy.*`) rather than `drop`, because the user is
+    typically migrating real artifacts and silent data loss is bad.
+
+  type-rewrites:
+    - from: requirement
+      to: sw-req
+    - from: feature
+      to: sw-arch-component
+    - from: design-decision
+      to: design-decision
+
+  link-rewrites:
+    - from: satisfies
+      to: derives-from
+
+  policies:
+    unmapped-fields: keep-as-orphan
+    unmapped-link-types: drop
