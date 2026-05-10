@@ -4318,6 +4318,7 @@ fn cmd_validate(
         store,
         schema,
         graph,
+        external_schemas,
         doc_store,
         ..
     } = ctx;
@@ -4451,12 +4452,20 @@ fn cmd_validate(
     // Core validation: use salsa incremental by default, --direct for legacy path.
     // When baseline or variant scoping is active, salsa validates ALL files and
     // we filter the resulting diagnostics to only include artifacts in the scoped store.
+    //
+    // Externals (issue #245):
+    // - --direct path uses `validate_with_externals` so externally-prefixed
+    //   artifacts type-check against their external's schemas.
+    // - --salsa path runs externals-unaware (the salsa db doesn't yet take
+    //   per-external schemas as a tracked input) and we apply
+    //   `reclassify_externals_diagnostics` as a post-pass to converge on the
+    //   same diagnostic set.
     let is_scoped = baseline_name.is_some() || variant_scope_name.is_some();
     let mut diagnostics = if direct {
-        validate::validate(&store, &schema, &graph)
+        validate::validate_with_externals(&store, &schema, &graph, &external_schemas)
     } else {
         let all_diags = run_salsa_validation(cli, &config)?;
-        if is_scoped {
+        let scoped_diags = if is_scoped {
             // Filter diagnostics to only those relevant to the scoped store.
             all_diags
                 .into_iter()
@@ -4469,7 +4478,8 @@ fn cmd_validate(
                 .collect()
         } else {
             all_diags
-        }
+        };
+        validate::reclassify_externals_diagnostics(scoped_diags, &store, &external_schemas)
     };
     diagnostics.extend(validate::validate_documents(&doc_store, &store));
 
@@ -5138,8 +5148,10 @@ fn cmd_stats(
     //
     // We use the direct validator on the (already scoped) store so the
     // counts line up with the visible artifact set when --filter or
-    // --baseline is in effect.
-    let diagnostics = validate::validate(&store, &ctx.schema, &graph);
+    // --baseline is in effect. Externals-aware so the numbers match the
+    // post-#245 `rivet validate` output.
+    let diagnostics =
+        validate::validate_with_externals(&store, &ctx.schema, &graph, &ctx.external_schemas);
     let errors = diagnostics
         .iter()
         .filter(|d| d.severity == Severity::Error)
@@ -5910,7 +5922,12 @@ links_count = {links_count}
         serde_json::to_string_pretty(&stats_output)?,
     )?;
     // REQ-049: embed validation result so consumers can verify export freshness.
-    let diagnostics = rivet_core::validate::validate(&store, &ctx.schema, &graph);
+    let diagnostics = rivet_core::validate::validate_with_externals(
+        &store,
+        &ctx.schema,
+        &graph,
+        &ctx.external_schemas,
+    );
     let errors = diagnostics
         .iter()
         .filter(|d| d.severity == rivet_core::schema::Severity::Error)
@@ -6481,69 +6498,97 @@ fn cmd_diff(
     format: &str,
 ) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
-    let (base_store, base_schema, base_graph, head_store, head_schema, head_graph) =
-        match (base_path, head_path) {
-            (Some(bp), Some(hp)) => {
-                // Explicit --base and --head directories: load each as a
-                // standalone project.
-                let base_cli = Cli {
-                    project: bp.to_path_buf(),
-                    schemas: cli.schemas.clone(),
-                    verbose: cli.verbose,
-                    command: Command::Validate {
-                        format: "text".to_string(),
-                        direct: false,
-                        skip_external_validation: false,
-                        baseline: None,
-                        track_convergence: false,
-                        model: None,
-                        variant: None,
-                        binding: None,
-                        fail_on: "error".to_string(),
-                        strict_cited_sources: false,
-                        strict_cited_source_stale: false,
-                        check_remote_sources: false,
-                    },
-                };
-                let head_cli = Cli {
-                    project: hp.to_path_buf(),
-                    schemas: cli.schemas.clone(),
-                    verbose: cli.verbose,
-                    command: Command::Validate {
-                        format: "text".to_string(),
-                        direct: false,
-                        skip_external_validation: false,
-                        baseline: None,
-                        track_convergence: false,
-                        model: None,
-                        variant: None,
-                        binding: None,
-                        fail_on: "error".to_string(),
-                        strict_cited_sources: false,
-                        strict_cited_source_stale: false,
-                        check_remote_sources: false,
-                    },
-                };
-                let bc = ProjectContext::load(&base_cli)?;
-                let hc = ProjectContext::load(&head_cli)?;
-                (bc.store, bc.schema, bc.graph, hc.store, hc.schema, hc.graph)
-            }
-            _ => {
-                // Default: load the project twice (same working tree). This
-                // is a placeholder — a future version will compare against
-                // the last clean git state.
-                let c1 = ProjectContext::load(cli)?;
-                let c2 = ProjectContext::load(cli)?;
-                (c1.store, c1.schema, c1.graph, c2.store, c2.schema, c2.graph)
-            }
-        };
+    let (
+        base_store,
+        base_schema,
+        base_graph,
+        base_externals,
+        head_store,
+        head_schema,
+        head_graph,
+        head_externals,
+    ) = match (base_path, head_path) {
+        (Some(bp), Some(hp)) => {
+            // Explicit --base and --head directories: load each as a
+            // standalone project.
+            let base_cli = Cli {
+                project: bp.to_path_buf(),
+                schemas: cli.schemas.clone(),
+                verbose: cli.verbose,
+                command: Command::Validate {
+                    format: "text".to_string(),
+                    direct: false,
+                    skip_external_validation: false,
+                    baseline: None,
+                    track_convergence: false,
+                    model: None,
+                    variant: None,
+                    binding: None,
+                    fail_on: "error".to_string(),
+                    strict_cited_sources: false,
+                    strict_cited_source_stale: false,
+                    check_remote_sources: false,
+                },
+            };
+            let head_cli = Cli {
+                project: hp.to_path_buf(),
+                schemas: cli.schemas.clone(),
+                verbose: cli.verbose,
+                command: Command::Validate {
+                    format: "text".to_string(),
+                    direct: false,
+                    skip_external_validation: false,
+                    baseline: None,
+                    track_convergence: false,
+                    model: None,
+                    variant: None,
+                    binding: None,
+                    fail_on: "error".to_string(),
+                    strict_cited_sources: false,
+                    strict_cited_source_stale: false,
+                    check_remote_sources: false,
+                },
+            };
+            let bc = ProjectContext::load(&base_cli)?;
+            let hc = ProjectContext::load(&head_cli)?;
+            (
+                bc.store,
+                bc.schema,
+                bc.graph,
+                bc.external_schemas,
+                hc.store,
+                hc.schema,
+                hc.graph,
+                hc.external_schemas,
+            )
+        }
+        _ => {
+            // Default: load the project twice (same working tree). This
+            // is a placeholder — a future version will compare against
+            // the last clean git state.
+            let c1 = ProjectContext::load(cli)?;
+            let c2 = ProjectContext::load(cli)?;
+            (
+                c1.store,
+                c1.schema,
+                c1.graph,
+                c1.external_schemas,
+                c2.store,
+                c2.schema,
+                c2.graph,
+                c2.external_schemas,
+            )
+        }
+    };
 
     // Compute artifact diff
     let diff = ArtifactDiff::compute(&base_store, &head_store);
 
-    // Compute diagnostic diff
-    let base_diags = validate::validate(&base_store, &base_schema, &base_graph);
-    let head_diags = validate::validate(&head_store, &head_schema, &head_graph);
+    // Compute diagnostic diff (externals-aware on both sides — issue #245)
+    let base_diags =
+        validate::validate_with_externals(&base_store, &base_schema, &base_graph, &base_externals);
+    let head_diags =
+        validate::validate_with_externals(&head_store, &head_schema, &head_graph, &head_externals);
     let diag_diff = DiagnosticDiff::compute(&base_diags, &head_diags);
 
     if format == "json" {
@@ -8036,8 +8081,9 @@ fn cmd_context(cli: &Cli) -> Result<bool> {
     let store = ctx.store;
     let schema = ctx.schema;
     let graph = ctx.graph;
+    let external_schemas = ctx.external_schemas;
     let doc_store = ctx.doc_store.unwrap_or_default();
-    let diagnostics = validate::validate(&store, &schema, &graph);
+    let diagnostics = validate::validate_with_externals(&store, &schema, &graph, &external_schemas);
     let coverage_report = coverage::compute_coverage(&store, &schema, &graph);
 
     let rivet_dir = cli.project.join(".rivet");
@@ -10390,6 +10436,11 @@ struct ProjectContext {
     store: Store,
     schema: rivet_core::schema::Schema,
     graph: LinkGraph,
+    /// Per-prefix schemas for declared externals (issue #245). `Some(schema)`
+    /// = type-check the external's prefixed artifacts against this schema;
+    /// `None` = external didn't declare schemas, demote unknown-type to INFO.
+    /// Empty when the project has no externals.
+    external_schemas: rivet_core::validate::ExternalSchemas,
     doc_store: Option<DocumentStore>,
     result_store: Option<ResultStore>,
 }
@@ -10422,7 +10473,11 @@ impl ProjectContext {
             }
         }
 
-        // Load external project artifacts so cross-repo references resolve
+        // Load external project artifacts so cross-repo references resolve.
+        // We also collect each external's own schemas so the validator can
+        // type-check externally-prefixed artifacts against the schemas they
+        // were authored under, not the downstream's (issue #245).
+        let mut external_schemas: rivet_core::validate::ExternalSchemas = Default::default();
         if let Some(ref externals) = config.externals {
             if !externals.is_empty() {
                 match rivet_core::externals::load_all_externals(externals, &cli.project) {
@@ -10432,6 +10487,7 @@ impl ProjectContext {
                             // internal link targets consistently.
                             let ext_ids: std::collections::HashSet<String> =
                                 ext.artifacts.iter().map(|a| a.id.clone()).collect();
+                            external_schemas.insert(ext.prefix.clone(), ext.schema);
                             for mut artifact in ext.artifacts {
                                 // Prefix external artifact IDs so they don't collide
                                 artifact.id = format!("{}:{}", ext.prefix, artifact.id);
@@ -10459,6 +10515,7 @@ impl ProjectContext {
             store,
             schema,
             graph,
+            external_schemas,
             doc_store: None,
             result_store: None,
         })
