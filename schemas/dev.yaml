@@ -191,6 +191,7 @@ agent-pipelines:
         Traceability and structural gaps surfaced by `rivet validate`.
         Auto-close rules handle mechanical link-wiring; content gaps
         route to humans with a draft stub.
+      template-kind: structural
       uses-oracles: [structural-trace]
       rank-by:
         - when: { oracle: structural-trace, severity: error }

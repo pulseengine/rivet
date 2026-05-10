@@ -70,6 +70,44 @@ pub struct GapProposal {
     pub proposed_action: ProposedAction,
     pub validated: Option<bool>,
     pub emitted: Option<EmittedRecord>,
+    /// Which prompt-template kind drives this gap's discover/validate/
+    /// emit sub-agents, plus the resolved paths an orchestrator can read.
+    pub template_pair: TemplatePairRef,
+}
+
+/// References to the three (optionally four) prompt files that together
+/// implement one pipeline kind. Each path is either a project-relative
+/// override path (`.rivet/templates/pipelines/<kind>/<file>.md`) or the
+/// `embedded:<kind>/<file>.md` marker the orchestrator interprets as
+/// "ask `rivet templates show` for the body".
+#[derive(Debug, Clone, Serialize)]
+pub struct TemplatePairRef {
+    pub kind: String,
+    pub discover: String,
+    pub validate: String,
+    pub emit: String,
+}
+
+impl TemplatePairRef {
+    /// Build a ref by resolving each file: project override path if it
+    /// exists, otherwise the `embedded:` marker.
+    pub fn for_kind(project_root: &Path, kind: &str) -> Self {
+        use rivet_core::templates::{embedded_marker, override_path, TemplateFile};
+        let one = |f: TemplateFile| -> String {
+            let abs = project_root.join(override_path(kind, f));
+            if abs.exists() {
+                override_path(kind, f).display().to_string()
+            } else {
+                embedded_marker(kind, f)
+            }
+        };
+        Self {
+            kind: kind.to_string(),
+            discover: one(TemplateFile::Discover),
+            validate: one(TemplateFile::Validate),
+            emit: one(TemplateFile::Emit),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -173,7 +211,7 @@ pub fn run(opts: CloseGapsOptions) -> Result<bool> {
     // 4. Rank + route. MVP: each firing becomes one gap, routed by the
     //    first matching auto-close rule or human-review rule in the
     //    first pipeline whose uses-oracles references the oracle.
-    let mut proposals = build_proposals(&pipelines, &firings);
+    let mut proposals = build_proposals(opts.project_root, &pipelines, &firings);
 
     // 5. Deterministic order + top-N
     proposals.sort_by(|a, b| b.rank_weight.cmp(&a.rank_weight).then(a.id.cmp(&b.id)));
@@ -307,21 +345,24 @@ fn run_structural_oracle(
 // ── Proposal construction ──────────────────────────────────────────────
 
 fn build_proposals(
+    project_root: &Path,
     pipelines: &[(String, rivet_core::agent_pipelines::AgentPipelines)],
     firings: &[OracleFiring],
 ) -> Vec<GapProposal> {
     let mut out = Vec::new();
     for (i, f) in firings.iter().filter(|f| f.fired).enumerate() {
         // Find the owning schema's routing config
-        let (owning_schema, routing, reviewers, draft_template) =
+        let (owning_schema, routing, reviewers, draft_template, template_kind) =
             route_firing(pipelines, f).unwrap_or_else(|| {
                 (
                     f.schema.clone(),
                     Routing::SkippedManualOnly,
                     Vec::new(),
                     None,
+                    "structural".to_string(),
                 )
             });
+        let template_pair = TemplatePairRef::for_kind(project_root, &template_kind);
         out.push(GapProposal {
             id: format!("gap-{i}"),
             artifact_id: f.artifact_id.clone(),
@@ -340,15 +381,17 @@ fn build_proposals(
             proposed_action: ProposedAction::None,
             validated: None,
             emitted: None,
+            template_pair,
         });
     }
     out
 }
 
+/// Returns `(owning_schema, routing, reviewers, draft_template, template_kind)`.
 fn route_firing(
     pipelines: &[(String, rivet_core::agent_pipelines::AgentPipelines)],
     firing: &OracleFiring,
-) -> Option<(String, Routing, Vec<String>, Option<String>)> {
+) -> Option<(String, Routing, Vec<String>, Option<String>, String)> {
     for (schema, ap) in pipelines {
         if schema != &firing.schema {
             continue;
@@ -357,6 +400,7 @@ fn route_firing(
             if !pipeline.uses_oracles.iter().any(|u| u == &firing.oracle_id) {
                 continue;
             }
+            let kind = pipeline.template_kind.clone();
             // Route: auto-close if any auto-close rule's when.oracle matches
             for rule in &pipeline.auto_close {
                 if rule_matches_oracle(&rule.when, &firing.oracle_id) {
@@ -365,6 +409,7 @@ fn route_firing(
                         Routing::AutoClose,
                         rule.reviewers.clone(),
                         rule.draft_template.clone(),
+                        kind,
                     ));
                 }
             }
@@ -375,11 +420,18 @@ fn route_firing(
                         Routing::HumanReviewRequired,
                         rule.reviewers.clone(),
                         rule.draft_template.clone(),
+                        kind,
                     ));
                 }
             }
             // Fallback: human-review default if uses-oracles matches but no rule does
-            return Some((schema.clone(), Routing::HumanReviewRequired, Vec::new(), None));
+            return Some((
+                schema.clone(),
+                Routing::HumanReviewRequired,
+                Vec::new(),
+                None,
+                kind,
+            ));
         }
     }
     None
