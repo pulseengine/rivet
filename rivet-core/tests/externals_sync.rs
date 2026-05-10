@@ -77,7 +77,7 @@ fn sync_spar_external_via_local_path() {
 #[serial]
 fn load_spar_external_artifacts() {
     let fixture = spar_fixture_dir();
-    let artifacts = load_external_project(&fixture).unwrap();
+    let (artifacts, _schema) = load_external_project(&fixture).unwrap();
 
     // The fixture has 4 artifacts: 3 aadl-component + 1 requirement
     assert!(
@@ -105,7 +105,7 @@ fn load_spar_external_artifacts() {
 #[serial]
 fn cross_repo_link_resolution_with_spar() {
     let fixture = spar_fixture_dir();
-    let spar_artifacts = load_external_project(&fixture).unwrap();
+    let (spar_artifacts, _schema) = load_external_project(&fixture).unwrap();
 
     // Build external ID sets
     let spar_ids: HashSet<String> = spar_artifacts.iter().map(|a| a.id.clone()).collect();
@@ -205,6 +205,7 @@ fn backlinks_from_spar_to_local() {
         prefix: "spar".into(),
         project_dir: spar_fixture_dir(),
         artifacts: vec![spar_artifact],
+        schema: None,
     }];
 
     let mut local_ids = HashSet::new();
