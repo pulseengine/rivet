@@ -5,6 +5,103 @@
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-05-01
+
+Theme: post-0.7.0 dogfood-driven follow-ups. The 12-persona dogfood
+against 0.7.0 surfaced docs-corpus drift, coverage-gate flaws, and
+CLI asymmetries on cited-source + schema-migrate. All three are
+fixed here.
+
+### Fixed
+
+- **Stale literals shipped in 0.7.0 docs** (#252, closes #247).
+  Tech-writer + DevOps personas independently flagged four embedded-
+  doc literals: quickstart Step 1's `rivet 0.5.0` example, `rivet
+  docs mcp`'s hardcoded `serverInfo.version: "0.5.0"`,
+  `rivet docs schema/eu-ai-act`'s wrong `rivet init --schema X`
+  flag, and a shipped `(TODO)` marker in `rivet docs schema/dev`.
+  Plus 2 bonus drift items the agent caught: `v0.5.0` example tag
+  in the `impact` topic, and `rivet export --gherkin` (the actual
+  flag is `--format gherkin`).
+
+  All six fixed. To prevent the class of drift from re-shipping,
+  `rivet docs check` learned three new invariants that scan the
+  embedded docs strings (the things `rivet docs <topic>` prints):
+  - **`EmbeddedVersionLiterals`** flags any `vX.Y.Z`/`X.Y.Z` token
+    that doesn't match the workspace version unless it's in
+    `rivet.yaml`'s new `docs-check.allowed-version-literals`
+    allowlist (used for legitimate non-rivet versions like ASPICE
+    process IDs and the rmcp crate pin).
+  - **`EmbeddedFlagReferences`** flags every `rivet <subcmd>
+    --<flag>` token in topic bodies whose flag isn't declared on
+    that subcommand in the live clap tree.
+  - **`EmbeddedTodoMarkers`** flags `TODO` / `FIXME` / `XXX`
+    markers in shipped doc bodies.
+
+  Also adds a new `rivet docs docs-check` topic explaining the
+  full invariant set (markdown-side + embedded-doc-side).
+
+### Added
+
+- **`rivet docs check --coverage --warn-only`** mode + tightened
+  rule (#250, closes #248). The 0.7.0 `--coverage` gate marked
+  `batch`, `query`, `stamp`, `lsp` as covered via parent-mapping
+  even though the parent topic body never mentioned them. Rule 4
+  (umbrella mapping) now requires the child subcommand's name to
+  appear in the parent topic's body (whole-word, case-insensitive).
+  Result: `lsp` and `batch` are now correctly reported as gaps.
+
+  The default `--coverage` (no flag) is now silent-print exit 0,
+  `--coverage --warn-only` prints + emits `::warning::` GitHub
+  annotations, `--coverage --strict` exits 1 on any uncovered.
+  `--warn-only` and `--strict` are mutually exclusive. CI uses
+  `--warn-only` explicitly so the contract is legible at the call
+  site.
+
+- **`rivet check sources --strict`** — read-only audit mode for
+  cited-source drift (#251, closes #249 part 1). Walks every
+  artifact, reports per-artifact verdict (match / drift /
+  missing-hash / stale), exits 1 on any non-match. Read-only —
+  does NOT modify any YAML, even on drift detection. Mutually
+  exclusive with `--update`. Replaces the "run `--update --apply`
+  then `git diff --exit-code`" mutation-and-audit pattern with a
+  clean read-only gate.
+
+- **`rivet validate --strict-cited-source-stale`** — promotes
+  `cited-source-stale` Info diagnostics to Error (#251, closes
+  #249 part 2). Defaults off; current behavior preserved. Enables
+  audit gates that enforce "every cited-source must be re-checked
+  within 30 days." `cited-source-stale` now fires for missing,
+  unparseable, OR older-than-30-days `last-checked` (was: only
+  missing).
+
+- **`rivet schema migrate --list`** — recipe discovery (#251,
+  closes #249 part 3). Without `<target>`, prints all available
+  recipes (built-in + project-local under `schemas/migrations/`)
+  as a text table, or JSON with `--format json`. Project-local
+  recipes shadow built-ins of the same name. Mutually exclusive
+  with `<target>` and the action flags.
+
+### Workspace
+
+- Workspace, vscode-rivet, and npm root package versions bumped to
+  0.8.0. Platform packages stay on the release-npm.yml override
+  path.
+
+### Verified
+
+- cargo check, cargo clippy --workspace -- -D warnings, cargo fmt
+  --all clean.
+- cargo test workspace passes (912 unit tests + integration tests).
+- `rivet docs check` clean against the rivet repo.
+- `rivet docs check --coverage` reports 46/81 covered (was 48/81;
+  rule 4 tightening correctly surfaces `lsp` + `batch` as gaps).
+- `rivet check sources --strict` round-trips: clean fixture exits
+  0; off-disk source edit exits 1 with no YAML mutation;
+  `--update --apply` restores 0.
+- `rivet schema migrate --list` enumerates the canned
+  `dev-to-aspice` recipe.
+
 ## [0.7.0] — 2026-04-29
 
 Theme: schema migration Phase 2 + docs coverage gate + housekeeping.

@@ -359,14 +359,21 @@ pub fn ensure_gitignore(project_dir: &Path) -> Result<bool, crate::error::Error>
     Ok(true) // added
 }
 
-/// Load artifacts from an external project directory.
+/// Load artifacts and schema from an external project directory.
 ///
 /// Reads the external project's `rivet.yaml`, discovers its sources,
-/// and loads all artifacts. Does NOT validate against schema (the
-/// external project validates itself).
+/// loads all artifacts, and also loads the external's own schema set
+/// (so the downstream caller can type-check `<prefix>:`-scoped artifacts
+/// against the schemas the external itself was validated under — REQ-007,
+/// issue #245).
+///
+/// The returned schema is `None` when the external's `rivet.yaml`
+/// declares no schemas, or its declared schemas fail to load. In that
+/// permissive-fallback case the caller is expected to demote any
+/// `unknown artifact type` for this external's prefix from ERROR to INFO.
 pub fn load_external_project(
     project_dir: &Path,
-) -> Result<Vec<crate::model::Artifact>, crate::error::Error> {
+) -> Result<(Vec<crate::model::Artifact>, Option<crate::schema::Schema>), crate::error::Error> {
     let config_path = project_dir.join("rivet.yaml");
     if !config_path.exists() {
         return Err(crate::error::Error::Io(format!(
@@ -385,6 +392,30 @@ pub fn load_external_project(
         );
     }
 
+    // Load the external's own schemas so cross-prefix artifacts can be
+    // type-checked against the schemas they were authored under.
+    // `schemas-path` is implicit: rivet always falls back to
+    // <project>/schemas/, then the binary location, then embedded.
+    // `None` here means "permissive-fallback mode" — see doc comment.
+    let schema = if config.project.schemas.is_empty() {
+        None
+    } else {
+        let schemas_dir = project_dir.join("schemas");
+        match crate::load_schemas(&config.project.schemas, &schemas_dir) {
+            Ok(s) => Some(s),
+            Err(e) => {
+                log::warn!(
+                    "external project at {} declares schemas {:?} but they failed to load \
+                     ({e}) — type-check errors for prefix '<this external>' will be \
+                     demoted to INFO",
+                    project_dir.display(),
+                    config.project.schemas,
+                );
+                None
+            }
+        }
+    };
+
     let mut artifacts = Vec::new();
     for source in &config.sources {
         let source_path = project_dir.join(&source.path);
@@ -397,8 +428,13 @@ pub fn load_external_project(
             );
             continue;
         }
-        let loaded =
-            crate::load_artifacts(source, project_dir, &crate::schema::Schema::merge(&[]))?;
+        // For source-format extraction we still need a schema (e.g. stpa-yaml
+        // shorthand expansion keys off it). Use the external's own schema if
+        // we have one, else fall through to the empty schema as before.
+        let extraction_schema = schema
+            .clone()
+            .unwrap_or_else(|| crate::schema::Schema::merge(&[]));
+        let loaded = crate::load_artifacts(source, project_dir, &extraction_schema)?;
         artifacts.extend(loaded);
     }
 
@@ -416,18 +452,25 @@ pub fn load_external_project(
         );
     }
 
-    Ok(artifacts)
+    Ok((artifacts, schema))
 }
 
-/// A resolved external with its loaded artifacts.
+/// A resolved external with its loaded artifacts and (optionally) its own schema.
+///
+/// `schema` is `Some` when the external's `rivet.yaml` declared schemas and
+/// they loaded successfully. It is `None` when the external declared no
+/// schemas or its schemas failed to load — callers in that case treat the
+/// external as opaque and demote unknown-artifact-type ERRORs to INFO for
+/// the external's prefix (issue #245).
 #[derive(Debug)]
 pub struct ResolvedExternal {
     pub prefix: String,
     pub project_dir: PathBuf,
     pub artifacts: Vec<crate::model::Artifact>,
+    pub schema: Option<crate::schema::Schema>,
 }
 
-/// Load all external projects from cache and return their artifacts.
+/// Load all external projects from cache and return their artifacts + schemas.
 pub fn load_all_externals(
     externals: &BTreeMap<String, ExternalProject>,
     project_dir: &Path,
@@ -436,11 +479,12 @@ pub fn load_all_externals(
     let mut resolved = Vec::new();
     for ext in externals.values() {
         let ext_dir = resolve_external_dir(ext, &cache_dir, project_dir);
-        let artifacts = load_external_project(&ext_dir)?;
+        let (artifacts, schema) = load_external_project(&ext_dir)?;
         resolved.push(ResolvedExternal {
             prefix: ext.prefix.clone(),
             project_dir: ext_dir,
             artifacts,
+            schema,
         });
     }
     Ok(resolved)
@@ -1197,10 +1241,21 @@ mod tests {
             "artifacts:\n  - id: EXT-001\n    type: requirement\n    title: External req\n  - id: EXT-002\n    type: feature\n    title: External feat\n",
         ).unwrap();
 
-        let artifacts = load_external_project(&ext_dir).unwrap();
+        let (artifacts, schema) = load_external_project(&ext_dir).unwrap();
         assert_eq!(artifacts.len(), 2);
         assert!(artifacts.iter().any(|a| a.id == "EXT-001"));
         assert!(artifacts.iter().any(|a| a.id == "EXT-002"));
+        // External declares schemas: [common, dev]; both are embedded so
+        // load_external_project must surface a Schema (issue #245).
+        let schema = schema.expect("external declared schemas; loader should surface them");
+        assert!(
+            schema.artifact_type("requirement").is_some(),
+            "common.yaml's 'requirement' should be in the external schema"
+        );
+        assert!(
+            schema.artifact_type("feature").is_some(),
+            "common.yaml's 'feature' should be in the external schema"
+        );
     }
 
     // rivet: verifies REQ-020
@@ -1238,6 +1293,7 @@ mod tests {
             prefix: "meld".to_string(),
             project_dir: std::path::PathBuf::from("/tmp/meld"),
             artifacts: vec![ext_artifact],
+            schema: None,
         }];
 
         let backlinks = compute_backlinks(&resolved, &local_ids);
@@ -1274,6 +1330,7 @@ mod tests {
             prefix: "meld".to_string(),
             project_dir: std::path::PathBuf::from("/tmp/meld"),
             artifacts: vec![ext_artifact],
+            schema: None,
         }];
 
         let backlinks = compute_backlinks(&resolved, &local_ids);
@@ -1307,6 +1364,7 @@ mod tests {
             prefix: "meld".to_string(),
             project_dir: std::path::PathBuf::from("/tmp/meld"),
             artifacts: vec![ext_artifact],
+            schema: None,
         }];
 
         let backlinks = compute_backlinks(&resolved, &local_ids);

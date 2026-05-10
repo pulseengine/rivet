@@ -38,10 +38,76 @@
 
 use crate::document::DocumentStore;
 use crate::links::LinkGraph;
-use crate::schema::{Cardinality, Schema, Severity};
+use crate::schema::{ArtifactTypeDef, Cardinality, Schema, Severity};
 use crate::store::Store;
 use regex::Regex;
+use std::collections::BTreeMap;
 use std::sync::LazyLock;
+
+/// Per-prefix external schemas. Keyed by the external's `prefix` (e.g. `"synth"`).
+///
+/// `Some(schema)` — the external declared schemas and they loaded; type-check
+/// any `<prefix>:<id>` artifact against this schema.
+///
+/// `None` — the external declared no schemas, or its schemas failed to load;
+/// type-check errors for `<prefix>:<id>` artifacts are demoted from ERROR to
+/// INFO so the downstream isn't spammed by an external it cannot type-check
+/// (issue #245).
+pub type ExternalSchemas = BTreeMap<String, Option<Schema>>;
+
+/// Outcome of looking up an artifact's declared type across the main schema
+/// and any registered externals.
+enum TypeLookup<'a> {
+    /// Type resolved — proceed with downstream-style validation.
+    Found(&'a ArtifactTypeDef),
+    /// Type not declared anywhere we know to look. Emit ERROR.
+    Unknown,
+    /// Artifact comes from an external whose own schemas we couldn't load.
+    /// Emit INFO (permissive fallback).
+    UnknownExternalNoSchema {
+        /// External prefix that registered without a schema.
+        prefix: String,
+    },
+}
+
+/// Resolve the type definition for an artifact, consulting the external's own
+/// schema first when the artifact id is `<prefix>:<…>`.
+fn lookup_type<'a>(
+    artifact: &crate::model::Artifact,
+    schema: &'a Schema,
+    externals: &'a ExternalSchemas,
+) -> TypeLookup<'a> {
+    if let Some((prefix, _)) = artifact.id.split_once(':') {
+        if let Some(maybe_ext) = externals.get(prefix) {
+            match maybe_ext {
+                Some(ext_schema) => {
+                    if let Some(td) = ext_schema.artifact_type(&artifact.artifact_type) {
+                        return TypeLookup::Found(td);
+                    }
+                    // External declared schemas but this type isn't in them.
+                    // Last-chance: maybe the downstream knows the type.
+                    return match schema.artifact_type(&artifact.artifact_type) {
+                        Some(td) => TypeLookup::Found(td),
+                        None => TypeLookup::Unknown,
+                    };
+                }
+                None => {
+                    // External in permissive-fallback mode.
+                    return match schema.artifact_type(&artifact.artifact_type) {
+                        Some(td) => TypeLookup::Found(td),
+                        None => TypeLookup::UnknownExternalNoSchema {
+                            prefix: prefix.to_string(),
+                        },
+                    };
+                }
+            }
+        }
+    }
+    match schema.artifact_type(&artifact.artifact_type) {
+        Some(td) => TypeLookup::Found(td),
+        None => TypeLookup::Unknown,
+    }
+}
 
 /// Regex matching an artifact-id-shaped token in prose: leading
 /// uppercase letter, optional uppercase / digit chars, a `-`, and a
@@ -110,6 +176,123 @@ impl std::fmt::Display for Diagnostic {
     }
 }
 
+/// Reclassify `known-type` and `unknown-link-type` diagnostics emitted by an
+/// externals-unaware validator (typically the salsa pipeline) using a
+/// per-prefix `ExternalSchemas` map.
+///
+/// For diagnostics whose `artifact_id` has the form `<prefix>:<id>` and whose
+/// prefix is registered in `externals`:
+///
+/// - **`known-type` ERROR + external has a schema with that type** → diagnostic
+///   is dropped (it was a false positive — the type exists in the external's
+///   schema set).
+/// - **`known-type` ERROR + external has no schema (permissive fallback)** →
+///   demoted to INFO with a message explaining type-check was skipped.
+/// - **`unknown-link-type` ERROR + external schema declares the link type**
+///   → dropped.
+/// - **`unknown-link-type` ERROR + external has no schema** → demoted to INFO.
+///
+/// All other diagnostics pass through unchanged.
+///
+/// This is the post-pass used by the CLI's salsa validation path
+/// (`run_salsa_validation` does not yet thread per-external schemas through
+/// the salsa graph; the direct path uses
+/// [`validate_with_externals`] instead). The two paths converge on the same
+/// final diagnostic set (issue #245).
+pub fn reclassify_externals_diagnostics(
+    diagnostics: Vec<Diagnostic>,
+    store: &Store,
+    externals: &ExternalSchemas,
+) -> Vec<Diagnostic> {
+    if externals.is_empty() {
+        return diagnostics;
+    }
+    diagnostics
+        .into_iter()
+        .filter_map(|d| reclassify_one(d, store, externals))
+        .collect()
+}
+
+fn reclassify_one(
+    mut d: Diagnostic,
+    store: &Store,
+    externals: &ExternalSchemas,
+) -> Option<Diagnostic> {
+    // Only `known-type` and `unknown-link-type` are subject to externals-aware
+    // reclassification; everything else passes through unchanged.
+    if d.rule != "known-type" && d.rule != "unknown-link-type" {
+        return Some(d);
+    }
+    let Some(id) = d.artifact_id.as_ref() else {
+        return Some(d);
+    };
+    let Some((prefix, _)) = id.split_once(':') else {
+        return Some(d);
+    };
+    let Some(maybe_schema) = externals.get(prefix) else {
+        return Some(d);
+    };
+    match d.rule.as_str() {
+        "known-type" => {
+            // We need the artifact's type to consult the external schema.
+            let Some(art) = store.get(id) else {
+                return Some(d);
+            };
+            match maybe_schema {
+                Some(ext_schema) => {
+                    if ext_schema.artifact_type(&art.artifact_type).is_some() {
+                        // External does declare this type — drop the
+                        // false-positive ERROR.
+                        None
+                    } else {
+                        // External has schemas, type still unknown — keep ERROR.
+                        Some(d)
+                    }
+                }
+                None => {
+                    d.severity = Severity::Info;
+                    d.message = format!(
+                        "artifact type '{}' not declared in any loaded schema; \
+                         external '{}' declares no schemas (or its schemas failed to load), \
+                         so type-check is skipped for this prefix",
+                        art.artifact_type, prefix
+                    );
+                    Some(d)
+                }
+            }
+        }
+        "unknown-link-type" => {
+            // Parse the link-type out of the message; format is
+            //   "link type 'foo' is not defined in the schema …"
+            let lt = d
+                .message
+                .split('\'')
+                .nth(1)
+                .map(str::to_string)
+                .unwrap_or_default();
+            match maybe_schema {
+                Some(ext_schema) => {
+                    if !lt.is_empty() && ext_schema.link_types.contains_key(&lt) {
+                        None
+                    } else {
+                        Some(d)
+                    }
+                }
+                None => {
+                    d.severity = Severity::Info;
+                    d.message = format!(
+                        "link type '{}' is not defined in the downstream schema; \
+                         external '{}' declares no schemas, so this can't be checked",
+                        lt, prefix,
+                    );
+                    Some(d)
+                }
+            }
+        }
+        _ => Some(d),
+    }
+}
+
 /// Validate a store against a schema and link graph.
 ///
 /// Returns a list of diagnostics (errors, warnings, info).
@@ -120,7 +303,21 @@ impl std::fmt::Display for Diagnostic {
 /// 1-7 and [`evaluate_conditional_rules`](crate::db::evaluate_conditional_rules)
 /// for phase 8 as a separate tracked query.
 pub fn validate(store: &Store, schema: &Schema, graph: &LinkGraph) -> Vec<Diagnostic> {
-    let mut diagnostics = validate_structural(store, schema, graph);
+    validate_with_externals(store, schema, graph, &BTreeMap::new())
+}
+
+/// Validate a store against a schema, link graph, and per-prefix external
+/// schemas. Externally-prefixed artifacts (id like `<prefix>:<id>`) are
+/// type-checked against `externals[prefix]` when present, so cross-repo
+/// projects don't drown in `unknown artifact type` errors for types only
+/// defined in their externals' schemas (issue #245).
+pub fn validate_with_externals(
+    store: &Store,
+    schema: &Schema,
+    graph: &LinkGraph,
+    externals: &ExternalSchemas,
+) -> Vec<Diagnostic> {
+    let mut diagnostics = validate_structural_with_externals(store, schema, graph, externals);
 
     // 0. Check conditional rule consistency (schema-level)
     diagnostics.extend(crate::schema::check_conditional_consistency(
@@ -157,21 +354,59 @@ pub fn validate(store: &Store, schema: &Schema, graph: &LinkGraph) -> Vec<Diagno
 /// Conditional rules (phase 8) are NOT included — the salsa layer runs
 /// those as a separate tracked query for finer-grained invalidation.
 pub fn validate_structural(store: &Store, schema: &Schema, graph: &LinkGraph) -> Vec<Diagnostic> {
+    validate_structural_with_externals(store, schema, graph, &BTreeMap::new())
+}
+
+/// Structural validation aware of per-prefix external schemas.
+///
+/// Behaves like [`validate_structural`] but consults `externals[prefix]` when
+/// the artifact's id has the form `<prefix>:<id>`, so an external's own types
+/// resolve cleanly under its prefix without polluting the downstream's type
+/// namespace. When `externals[prefix]` is `None` (the external declared no
+/// schemas or its schemas failed to load), unknown-type and unknown-link-type
+/// findings for that prefix are demoted from ERROR to INFO — the permissive
+/// fallback specified in issue #245.
+pub fn validate_structural_with_externals(
+    store: &Store,
+    schema: &Schema,
+    graph: &LinkGraph,
+    externals: &ExternalSchemas,
+) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
     // 1. Check that every artifact has a known type
     for artifact in store.iter() {
-        let Some(type_def) = schema.artifact_type(&artifact.artifact_type) else {
-            diagnostics.push(Diagnostic {
-                source_file: None,
-                line: None,
-                column: None,
-                severity: Severity::Error,
-                artifact_id: Some(artifact.id.clone()),
-                rule: "known-type".to_string(),
-                message: format!("unknown artifact type '{}'", artifact.artifact_type),
-            });
-            continue;
+        let type_def = match lookup_type(artifact, schema, externals) {
+            TypeLookup::Found(td) => td,
+            TypeLookup::Unknown => {
+                diagnostics.push(Diagnostic {
+                    source_file: None,
+                    line: None,
+                    column: None,
+                    severity: Severity::Error,
+                    artifact_id: Some(artifact.id.clone()),
+                    rule: "known-type".to_string(),
+                    message: format!("unknown artifact type '{}'", artifact.artifact_type),
+                });
+                continue;
+            }
+            TypeLookup::UnknownExternalNoSchema { prefix } => {
+                diagnostics.push(Diagnostic {
+                    source_file: None,
+                    line: None,
+                    column: None,
+                    severity: Severity::Info,
+                    artifact_id: Some(artifact.id.clone()),
+                    rule: "known-type".to_string(),
+                    message: format!(
+                        "artifact type '{}' not declared in any loaded schema; \
+                         external '{}' declares no schemas (or its schemas failed to load), \
+                         so type-check is skipped for this prefix",
+                        artifact.artifact_type, prefix
+                    ),
+                });
+                continue;
+            }
         };
 
         // 2. Check required fields
@@ -473,28 +708,69 @@ pub fn validate_structural(store: &Store, schema: &Schema, graph: &LinkGraph) ->
     // to those links — the same severity as a broken required-link link,
     // not a soft advisory. Pin to one diagnostic per (artifact, link-type)
     // pair so a typo doesn't drown the report.
+    //
+    // For externally-prefixed artifacts, also accept link types declared
+    // in their external's schema. If the external declared no schemas
+    // (permissive-fallback), demote unknown-link-type to INFO for that
+    // prefix — same rationale as the unknown-artifact-type fallback above
+    // (issue #245).
     use std::collections::BTreeSet;
     let known_link_types: BTreeSet<&str> = schema.link_types.keys().map(String::as_str).collect();
     for artifact in store.iter() {
+        let (ext_prefix, ext_known): (Option<&str>, BTreeSet<&str>) =
+            match artifact.id.split_once(':') {
+                Some((prefix, _)) => match externals.get(prefix) {
+                    Some(Some(ext_schema)) => (
+                        Some(prefix),
+                        ext_schema.link_types.keys().map(String::as_str).collect(),
+                    ),
+                    Some(None) => (Some(prefix), BTreeSet::new()),
+                    None => (None, BTreeSet::new()),
+                },
+                None => (None, BTreeSet::new()),
+            };
         let mut seen: BTreeSet<&str> = BTreeSet::new();
         for link in &artifact.links {
-            if !known_link_types.contains(link.link_type.as_str())
-                && seen.insert(link.link_type.as_str())
-            {
-                diagnostics.push(Diagnostic {
-                    source_file: None,
-                    line: None,
-                    column: None,
-                    severity: Severity::Error,
-                    artifact_id: Some(artifact.id.clone()),
-                    rule: "unknown-link-type".to_string(),
-                    message: format!(
-                        "link type '{}' is not defined in the schema \
-                         — declare it in link-types: or remove the link",
-                        link.link_type
-                    ),
-                });
+            let lt = link.link_type.as_str();
+            if known_link_types.contains(lt) || ext_known.contains(lt) {
+                continue;
             }
+            if !seen.insert(lt) {
+                continue;
+            }
+            // External-prefixed artifact whose external has no schema:
+            // demote to INFO instead of suppressing entirely so the user
+            // still sees what's happening.
+            let no_schema_external =
+                matches!(ext_prefix.and_then(|p| externals.get(p)), Some(None));
+            let severity = if no_schema_external {
+                Severity::Info
+            } else {
+                Severity::Error
+            };
+            let message = if no_schema_external {
+                format!(
+                    "link type '{}' is not defined in the downstream schema; \
+                     external '{}' declares no schemas, so this can't be checked",
+                    lt,
+                    ext_prefix.unwrap_or("?"),
+                )
+            } else {
+                format!(
+                    "link type '{}' is not defined in the schema \
+                     — declare it in link-types: or remove the link",
+                    lt
+                )
+            };
+            diagnostics.push(Diagnostic {
+                source_file: None,
+                line: None,
+                column: None,
+                severity,
+                artifact_id: Some(artifact.id.clone()),
+                rule: "unknown-link-type".to_string(),
+                message,
+            });
         }
     }
 
