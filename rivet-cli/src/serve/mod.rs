@@ -417,7 +417,9 @@ fn load_externals(config: &ProjectConfig, project_path: &std::path::Path) -> Vec
             let synced = ext_dir.join("rivet.yaml").exists();
             let mut ext_store = Store::new();
             if synced {
-                if let Ok(artifacts) = rivet_core::externals::load_external_project(&ext_dir) {
+                if let Ok((artifacts, _schema)) =
+                    rivet_core::externals::load_external_project(&ext_dir)
+                {
                     for a in artifacts {
                         ext_store.upsert(a);
                     }

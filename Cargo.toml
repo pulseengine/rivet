@@ -96,8 +96,8 @@ urlencoding = "2"
 quick-xml = { version = "0.37", features = ["serialize", "overlapped-lists"] }
 
 # WASM component model
-wasmtime = { version = "42", features = ["component-model"] }
-wasmtime-wasi = "42"
+wasmtime = { version = "43", features = ["component-model"] }
+wasmtime-wasi = "43"
 
 # Lossless syntax trees — using fork with Miri UB fixes until upstream merges.
 # Upstream issues: rust-analyzer/rowan#192, #163, #108
