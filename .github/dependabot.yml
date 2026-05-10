@@ -1,0 +1,58 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    labels: &ref_0
+      - dependencies
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    labels: *ref_0
+  - package-ecosystem: cargo
+    directory: /etch
+    schedule:
+      interval: weekly
+    labels: *ref_0
+  - package-ecosystem: cargo
+    directory: /fuzz
+    schedule:
+      interval: weekly
+    labels: *ref_0
+  - package-ecosystem: cargo
+    directory: /rivet-cli
+    schedule:
+      interval: weekly
+    labels: *ref_0
+  - package-ecosystem: cargo
+    directory: /rivet-core
+    schedule:
+      interval: weekly
+    labels: *ref_0
+  - package-ecosystem: npm
+    directory: /npm
+    schedule:
+      interval: weekly
+    labels: *ref_0
+  - package-ecosystem: npm
+    directory: /vscode-rivet
+    schedule:
+      interval: weekly
+    labels: *ref_0
+  - package-ecosystem: npm
+    directory: /platform-packages/darwin-arm64
+    schedule:
+      interval: weekly
+    labels: *ref_0
+  - package-ecosystem: npm
+    directory: /platform-packages/darwin-x64
+    schedule:
+      interval: weekly
+    labels: *ref_0
+  - package-ecosystem: npm
+    directory: /platform-packages/linux-arm64
+    schedule:
+      interval: weekly
+    labels: *ref_0
