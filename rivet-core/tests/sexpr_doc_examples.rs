@@ -151,6 +151,37 @@ fn docs_example_linked_by_wildcard() {
     );
 }
 
+// docs/getting-started.md gap-hunt example added with `linked-via`:
+// `rivet list --filter '(and (= type "attack-scenario") (not (linked-via "exploits")))'`
+//
+// This fixture has no attack-scenarios, so adapt: in the requirement
+// world, "find requirements that don't satisfy anything" is the same
+// shape, exercised below.
+#[test]
+fn docs_example_linked_via_outbound_membership() {
+    // `(linked-via "T")` is the explicit-direction sibling of
+    // `(linked-by "T" _)` and selects the same set of artifacts.
+    let (store, graph) = fixture();
+    let via = count_matches(r#"(linked-via "satisfies")"#, &store, &graph);
+    let by_wild = count_matches(r#"(linked-by "satisfies" _)"#, &store, &graph);
+    assert_eq!(via, by_wild, "linked-via and linked-by _ must agree");
+    assert_eq!(via, 3); // REQ-001, REQ-002, REQ-003
+}
+
+#[test]
+fn docs_example_not_linked_via_finds_gap() {
+    // The motivating use-case from issue #190: find artifacts of a given
+    // type with NO outbound link of the named type. Here: requirements
+    // that satisfy nothing — REQ-004 is the only such requirement.
+    let (store, graph) = fixture();
+    let n = count_matches(
+        r#"(and (= type "requirement") (not (linked-via "satisfies")))"#,
+        &store,
+        &graph,
+    );
+    assert_eq!(n, 1); // REQ-004
+}
+
 #[test]
 fn docs_example_links_count_gt_two() {
     // `rivet list --filter '(links-count "satisfies" > 2)'`
@@ -221,6 +252,7 @@ fn docs_listed_predicates_all_parse_as_forms() {
         r#"(linked-by "satisfies")"#,
         r#"(linked-from "satisfies")"#,
         r#"(linked-to "REQ-001")"#,
+        r#"(linked-via "satisfies")"#,
         r#"(links-count "satisfies" > 1)"#,
         r#"(and true false)"#,
         r#"(or true false)"#,
