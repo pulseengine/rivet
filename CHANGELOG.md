@@ -5,6 +5,79 @@
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-05-11
+
+Theme: backlog drain. Ships the rivet-bundle command, the s-expr
+`linked-via` operator, and the V&V coverage matrix CLI — three feature
+requests that had been queued since v0.5. Plus infrastructure: CI
+concurrency control across all workflows, migration to self-hosted
+smithy runners for the long-tail jobs, and the release-npm trigger fix
+that closes the v0.7.0/v0.8.0 npm-publication gap. Also retires the
+RUSTSEC-2026-0114 wasmtime suppression introduced in v0.8.0.
+
+### Added
+
+- **`rivet bundle <ID> --depth N --as {yaml,jsonl}`** (#266, closes #206).
+  Context-window-friendly artifact bundle: walk N hops from a root
+  artifact and emit the closure as either YAML or JSONL. Output is
+  paste-ready into chat/IDE contexts where the full repo doesn't fit.
+
+- **`rivet coverage --matrix`** (#243, closes #188). Renders a V&V
+  coverage matrix from `repo-status` artifacts — per-commit, per-repo,
+  per-technique. Closes the dashboard gap for cross-repo V&V tracking.
+
+- **s-expr `linked-via` operator + `linked-*` family docs** (#265,
+  closes #190). Adds the missing predicate for "artifact links via
+  *this specific link type*" queries; previously there was no clean way
+  to express "missing outbound link of type X". Documents the full
+  `linked-*` semantic family.
+
+- **Externals: per-repo schema loading** (#267, closes #245). Each
+  external repository now loads its own schemas alongside its
+  artifacts. Prefixed artifacts (`other-repo:REQ-001`) are now
+  type-checked against the external's schemas, not just the local
+  schema set.
+
+### Fixed
+
+- **STPA: TCL numbering corrected to ISO 26262-8 (TCL1)** (#257,
+  closes #254 part A1). Tool Confidence Level dossier now uses the
+  ISO 26262-8 numbering scheme (TCL1/TCL2/TCL3) and includes a
+  DO-330 cross-walk for aviation tooling. Pure data fix; no schema
+  change.
+
+- **wasmtime 42 → 43 (closes RUSTSEC-2026-0114)** (#260, closes #259).
+  Retires the `cargo audit --ignore RUSTSEC-2026-0114` suppression
+  added in v0.8.0. wasmtime is behind the optional wasm feature gate
+  and rivet's usage doesn't allocate large wasmtime tables, but
+  upstream is the correct fix.
+
+- **`release-npm.yml` trigger switched to `workflow_run`** (#261).
+  v0.7.0 and v0.8.0 npm publication had silently failed because the
+  upstream Release workflow authenticated with `GITHUB_TOKEN`, which
+  GitHub deliberately blocks from firing downstream `release:
+  published` events. The `workflow_run` trigger is the documented
+  escape hatch. Both v0.7.0 and v0.8.0 were retroactively published
+  to npm via `workflow_dispatch`.
+
+### Changed
+
+- **CI concurrency control across all workflows** (#258). Adds
+  per-workflow concurrency groups: `Benchmarks` and `CI` cancel
+  superseded PR runs; `Compliance Report`, `Release`, and `Release
+  NPM` serialize without cancellation (partial publication of signed
+  artifacts / npm packages leaves state inconsistent).
+
+- **CI migrated to self-hosted smithy runners** (#262). 16 of 21
+  `ci.yml` jobs now run on the `smithy` runner pool instead of
+  GitHub-hosted runners. Cuts queue time on the long-tail jobs
+  (mutation testing, Verus, MSRV) at the cost of taking on disk-space
+  hygiene as a self-hosted-runner concern.
+
+- **Dependabot configuration added** (#216). Weekly dependency
+  updates across github-actions, cargo (workspace + per-crate), and
+  npm ecosystems.
+
 ## [0.8.0] — 2026-05-01
 
 Theme: post-0.7.0 dogfood-driven follow-ups. The 12-persona dogfood
