@@ -175,7 +175,7 @@ fn parse_result(result: &CallToolResult) -> Value {
 // ── Tests ───────────────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn test_tools_list_returns_all_15_tools() {
+async fn test_tools_list_returns_all_16_tools() {
     let tmp = tempfile::tempdir().unwrap();
     create_test_project(tmp.path());
 
@@ -189,6 +189,7 @@ async fn test_tools_list_returns_all_15_tools() {
         "rivet_validate",
         "rivet_list",
         "rivet_get",
+        "rivet_bundle",
         "rivet_stats",
         "rivet_coverage",
         "rivet_schema",
@@ -345,6 +346,62 @@ async fn test_rivet_get_invalid_id() {
         result.is_err(),
         "expected error for nonexistent artifact, got: {result:?}"
     );
+
+    client.cancel().await.expect("cancel");
+}
+
+#[tokio::test]
+async fn test_rivet_bundle_yaml_depth_one() {
+    let tmp = tempfile::tempdir().unwrap();
+    create_test_project(tmp.path());
+
+    let client = spawn_mcp_client(tmp.path()).await;
+
+    // DD-001 satisfies REQ-001 in the fixture; depth=1 should pull both in.
+    let mut args = serde_json::Map::new();
+    args.insert("id".to_string(), Value::String("DD-001".to_string()));
+    args.insert("depth".to_string(), Value::Number(1u64.into()));
+    args.insert("format".to_string(), Value::String("yaml".to_string()));
+
+    let result = client
+        .call_tool(CallToolRequestParams::new("rivet_bundle").with_arguments(args))
+        .await
+        .expect("call_tool rivet_bundle");
+
+    let text = first_text(&result);
+    assert!(text.contains("- id: DD-001"), "root absent: {text}");
+    assert!(text.contains("- id: REQ-001"), "neighbour absent: {text}");
+    assert!(
+        text.contains("# satisfies -> REQ-001"),
+        "inline annotation absent: {text}"
+    );
+
+    client.cancel().await.expect("cancel");
+}
+
+#[tokio::test]
+async fn test_rivet_bundle_jsonl() {
+    let tmp = tempfile::tempdir().unwrap();
+    create_test_project(tmp.path());
+
+    let client = spawn_mcp_client(tmp.path()).await;
+
+    let mut args = serde_json::Map::new();
+    args.insert("id".to_string(), Value::String("DD-001".to_string()));
+    args.insert("depth".to_string(), Value::Number(1u64.into()));
+    args.insert("format".to_string(), Value::String("jsonl".to_string()));
+
+    let result = client
+        .call_tool(CallToolRequestParams::new("rivet_bundle").with_arguments(args))
+        .await
+        .expect("call_tool rivet_bundle");
+
+    let text = first_text(&result);
+    let lines: Vec<&str> = text.lines().filter(|l| !l.is_empty()).collect();
+    assert_eq!(lines.len(), 2, "DD-001 + REQ-001 expected, got: {text}");
+    for line in &lines {
+        let _: Value = serde_json::from_str(line).expect("each line must parse as JSON");
+    }
 
     client.cancel().await.expect("cancel");
 }

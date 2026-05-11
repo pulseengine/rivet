@@ -110,6 +110,27 @@ pub struct GetParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct BundleParams {
+    #[schemars(description = "Root artifact ID")]
+    pub id: String,
+    #[schemars(
+        description = "Number of link-graph hops to include (0 = root only). Defaults to 1."
+    )]
+    #[serde(default = "default_bundle_depth")]
+    pub depth: usize,
+    #[schemars(description = "Output format: 'yaml' (default) or 'jsonl'")]
+    #[serde(default = "default_bundle_format")]
+    pub format: String,
+}
+
+fn default_bundle_depth() -> usize {
+    1
+}
+fn default_bundle_format() -> String {
+    "yaml".to_string()
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct CoverageParams {
     #[schemars(description = "Filter by traceability rule name")]
     pub rule: Option<String>,
@@ -344,6 +365,20 @@ impl RivetServer {
         Ok(CallToolResult::success(vec![Content::text(
             serde_json::to_string_pretty(&result).unwrap_or_default(),
         )]))
+    }
+
+    #[tool(
+        description = "Bundle an artifact and its link-graph closure into a single pasteable document. \
+                       Pass `id` (root), optional `depth` (default 1), and optional `format` ('yaml' or 'jsonl'). \
+                       Saves N round-trips of `rivet_get` when reasoning about a root and its neighbours."
+    )]
+    fn rivet_bundle(
+        &self,
+        Parameters(p): Parameters<BundleParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let text =
+            self.with_project(|proj| tool_bundle_rendered(proj, &p.id, p.depth, &p.format))?;
+        Ok(CallToolResult::success(vec![Content::text(text)]))
     }
 
     #[tool(description = "Compute traceability coverage per rule")]
@@ -620,6 +655,14 @@ fn tool_stats_cached(proj: &McpProject) -> Value {
     }
 
     json!({"total": proj.store.len(), "types": types, "orphans": orphans, "broken_links": proj.graph.broken.len()})
+}
+
+fn tool_bundle_rendered(proj: &McpProject, id: &str, depth: usize, format: &str) -> Result<String> {
+    use rivet_core::bundle::{BundleFormat, bundle, render};
+    let fmt = BundleFormat::parse(format)
+        .ok_or_else(|| anyhow::anyhow!("format must be 'yaml' or 'jsonl', got {format:?}"))?;
+    let entries = bundle(&proj.store, id, depth)?;
+    Ok(render(&entries, fmt))
 }
 
 fn tool_get_cached(proj: &McpProject, id: &str) -> Result<Value> {

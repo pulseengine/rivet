@@ -2781,3 +2781,168 @@ fn variant_matrix_loads_variants_dir() {
     assert!(stdout.contains("- variant: tiny-ci"));
     assert!(stdout.contains("- variant: full-ci"));
 }
+
+// ── rivet bundle (issue #206) ───────────────────────────────────────────
+
+/// `rivet bundle <ID> --depth 0` returns just the root.
+#[test]
+fn bundle_depth_zero_root_only() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "bundle",
+            "FEAT-001",
+            "--depth",
+            "0",
+        ])
+        .output()
+        .expect("run rivet bundle");
+
+    assert!(
+        output.status.success(),
+        "rivet bundle must exit 0. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("# rivet bundle (count=1, depth-max=0)"));
+    assert!(stdout.contains("- id: FEAT-001"));
+    // depth-0 must NOT pull in neighbours
+    assert!(!stdout.contains("- id: REQ-001"));
+    assert!(!stdout.contains("- id: REQ-002"));
+    assert!(!stdout.contains("- id: DD-031"));
+}
+
+/// `rivet bundle <ID> --depth 1 --as yaml` emits inline `# linktype -> target`
+/// annotations and the depth-1 closure.
+#[test]
+fn bundle_depth_one_yaml_with_annotations() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "bundle",
+            "FEAT-001",
+            "--depth",
+            "1",
+            "--as",
+            "yaml",
+        ])
+        .output()
+        .expect("run rivet bundle");
+
+    assert!(
+        output.status.success(),
+        "rivet bundle must exit 0. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("- id: FEAT-001"), "root absent: {stdout}");
+    assert!(stdout.contains("- id: REQ-001"), "neighbour REQ-001 absent");
+    assert!(stdout.contains("- id: REQ-002"), "neighbour REQ-002 absent");
+    assert!(
+        stdout.contains("# satisfies -> REQ-002"),
+        "inline link annotation missing"
+    );
+    assert!(
+        stdout.contains("# implements -> DD-031"),
+        "inline link annotation missing"
+    );
+}
+
+/// `rivet bundle <ID> --as jsonl` emits one JSON record per line, each
+/// independently parseable.
+#[test]
+fn bundle_jsonl_format() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "bundle",
+            "FEAT-001",
+            "--depth",
+            "1",
+            "--as",
+            "jsonl",
+        ])
+        .output()
+        .expect("run rivet bundle");
+
+    assert!(
+        output.status.success(),
+        "rivet bundle --as jsonl must exit 0. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let lines: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
+    assert!(
+        lines.len() >= 2,
+        "jsonl needs root + neighbours, got {}",
+        lines.len()
+    );
+    for line in &lines {
+        let parsed: serde_json::Value =
+            serde_json::from_str(line).expect("each jsonl line must be valid JSON");
+        assert!(
+            parsed.get("id").is_some(),
+            "each entry must have an `id` field"
+        );
+        assert!(
+            parsed.get("depth").is_some(),
+            "each entry must have a `depth` field"
+        );
+    }
+}
+
+/// Missing artifact root → non-zero exit and a clear error message.
+#[test]
+fn bundle_missing_root_fails() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "bundle",
+            "DOES-NOT-EXIST-9999",
+        ])
+        .output()
+        .expect("run rivet bundle");
+
+    assert!(
+        !output.status.success(),
+        "rivet bundle on missing root must exit non-zero"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("DOES-NOT-EXIST-9999") || stderr.contains("not found"),
+        "stderr must explain the missing root, got: {stderr}"
+    );
+}
+
+/// Invalid `--as` value is rejected with a clear error.
+#[test]
+fn bundle_invalid_format_fails() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "bundle",
+            "FEAT-001",
+            "--as",
+            "xml",
+        ])
+        .output()
+        .expect("run rivet bundle");
+
+    assert!(
+        !output.status.success(),
+        "rivet bundle --as xml must exit non-zero"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("yaml") && stderr.contains("jsonl"),
+        "stderr must list valid formats, got: {stderr}"
+    );
+}
