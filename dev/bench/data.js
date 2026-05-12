@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1778602087265,
+  "lastUpdate": 1778612480051,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "63625fd9f3ab3b5b2b9463096c884a7878742ca8",
-          "message": "docs(quickstart): rewrite for fresh-user clarity (#230)\n\n* docs(quickstart): rewrite for fresh-user clarity, drop self-references\n\nTwo clean-room dogfood passes (round 1 + round 2 fresh-user agents,\nboth ignoring CLAUDE.md / memory / rivet source) surfaced six concrete\nissues in the embedded quickstart:\n\n1. No \"What is rivet?\" preamble — readers assembled the mental model\n   by osmosis from example commands.\n2. Step 9 referenced Mythos red-team scaffold (\"if you cloned the\n   rivet repo\") — out of scope for first-contact, confused readers.\n3. Step 1 install said `cargo install --path rivet-cli` without\n   noting that requires a clone of the rivet repo.\n4. Step 2's goal claimed `init` scaffolds `schemas/` (it doesn't)\n   and didn't mention the seed `artifacts/requirements.yaml` that\n   collides with step 3's REQ-001.\n5. Step 7's Python oracle used `error_count` key (vacuously true);\n   actual JSON key is `errors` — a real broken link wasn't caught.\n6. Existing-repo overlay snippet elided \"all other base fields\" with\n   a placeholder, setting up the very G.2 trap it warned about.\n\nChanges:\n\n- Add 6-line \"What is rivet?\" preamble (typed YAML + schema +\n  graph + four interfaces; DOORS/Polarion/Jira analogy).\n- Step 1: explicit \"from a clone of the rivet repo\" caveat on\n  `cargo install --path`; npm + binary-release alternatives.\n- Step 2: drop schemas/ from goal sentence; add preset glossary\n  (dev, aspice, stpa, eu-ai-act, safety-case); mention the seed.\n- Step 3: prepend `rm artifacts/requirements.yaml` to clear seed.\n- Step 7: fix Python oracle key (`error_count` → `errors`).\n- Step 9: replace Mythos with \"Add a living document\" walking\n  markdown frontmatter + `{{stats}}` / `{{coverage}}` / `[[ID]]`\n  embeds; explicit `rivet serve` restart since step 8 killed it.\n- Step 10: drop deep-audience acronyms (Kani/Verus/Rocq) from the\n  docs list; gloss MCP and LSP one-liner each.\n- New Existing-repo bring-up appendix: pick preset, curate ~5\n  artifacts per layer, dump base type with `rivet schema show`,\n  write a complete copy-pasteable overlay (extends `requirement`\n  from dev preset with `polarion_id`, all base fields and\n  link-fields explicitly listed — no \"...\" placeholders).\n- New Common gotchas appendix G.1–G.7: LSP overlay blindness,\n  overlay merge field-drop, forward/inverse link types, doc vs\n  artifact refs, imported-stub honesty, lifecycle severity intent,\n  schema-show preset locality.\n\nNet: 251 → 535 lines. The oracle-gated 10-step rhythm is preserved;\nnew material is in two appendices that readers opt into.\n\nVerified: round-2 fresh-user dogfood ran all 10 oracles green and\nconfirmed the broken-link demo (changing target REQ-001 → REQ-999\nmakes the step-7 oracle exit 1 with a real error).\n\nImplements: REQ-007\nRefs: FEAT-001\n\n* docs(quickstart): preset-branch step 2/3, ASPICE overlay example, init contract\n\nThree parallel scenario-based fresh-user dogfood agents (STPA safety,\nPolarion-import compliance, MCP integrator) all reached their goals\nbut surfaced four cross-cutting issues:\n\n1. Step 2 oracle didn't tell non-`dev` users their seed file IS a\n   worked example (e.g. `artifacts/safety.yaml` for `stpa` ships a\n   complete loss/hazard/uca chain). Non-`dev` users either deleted it\n   following step 3's `rm`, or didn't realize they could skip steps\n   3+6 entirely.\n\n2. Step 3's `rm artifacts/requirements.yaml` is correct for `dev`\n   but actively wrong for non-`dev` presets — it nukes their\n   pre-built domain example.\n\n3. Existing-repo appendix's overlay example is `dev`-flavored. ASPICE\n   `sw-req` has a *required* `derives-from` link to system-req/arch —\n   a category difference, not just a quantity difference. Hand-waving\n   \"the same pattern applies, lists are longer\" sets up the very G.2\n   trap the appendix warns against. Compliance leads importing from\n   Polarion are the primary audience for this section.\n\n4. No written promise of `rivet init` non-destructiveness on a\n   non-empty repo. A real Polarion-import lead won't run a foreign\n   CLI on 10k files without that contract in writing.\n\nChanges:\n\n- Step 2: add a callout distinguishing `dev` (seed is placeholder,\n  follow steps 3+6 to write your own) from non-`dev` presets (seed\n  is a worked example in domain vocabulary, read it and skip to\n  step 4). Pointer to `rivet docs schema/<your-preset>` for the\n  type catalogue. Tip about `rivet schema show <bad-type>` errors\n  as a free schema dump.\n- Step 3: gate the seed `rm` with \"`dev` preset only\" callout;\n  point non-`dev` readers to step 4.\n- Existing-repo appendix: add \"What `rivet init` touches in a\n  non-empty repo\" section stating the non-destructiveness contract\n  explicitly (rivet.yaml + artifacts/ + docs/ + one seed file;\n  nothing else).\n- Existing-repo appendix: add a complete copy-pasteable ASPICE\n  overlay (sw-req extended with polarion_id / polarion_status /\n  asil, listing all base fields and the required `derived-from`\n  link-field with target-types and cardinality verbatim from\n  `rivet schema show sw-req`).\n- Existing-repo appendix: document the stub-parent tradeoff —\n  curating one `sw-req` from a Polarion export forces a parent\n  stub on `system-req`. Pattern: `status: imported-stub` (WARN\n  via G.5) rather than faking content.\n\nVerified:\n- Scenario A (STPA) reached PASS in 13min on prior version; the\n  step-2 callout would have collapsed the scenario's \"I didn't know\n  the seed was the tutorial\" wall-clock.\n- Scenario B (Polarion → ASPICE) reached PASS in 7min with an\n  ASPICE overlay matching the new appendix snippet (modulo\n  formatting); the worked example replaces the hand-wave.\n- `rivet schema show sw-req` from a fresh `aspice` project on\n  rivet 0.4.3 confirms the field/link-field shape used in the\n  overlay matches the binary 1:1.\n\nImplements: REQ-007\nRefs: FEAT-001\n\n* docs(quickstart): document the sw-req → system-req → stakeholder-req stub chain\n\nRound-3 fresh-user dogfood (sandbox /tmp/legacy-repo-3) verified the\n4-of-5 round-2 fixes landed cleanly, but caught one partial-impact\ngap: the existing-repo appendix's stub-parent tradeoff section\ndocuments the sw-req → system-req hop but not the transitive\nsystem-req → stakeholder-req requirement.\n\nResult: when a compliance lead curates one sw-req from a Polarion\nexport, they add a system-req stub (per the appendix), validate, and\nhit a *second* error: `[SYSREQ-PRODUCER] link 'derives-from' requires\nat least 1 target` because system-req's own ASPICE rule requires a\nderives-from to a stakeholder-req. They have to add a second stub\nthey didn't expect.\n\nChanges:\n\n- Stub-parent tradeoff section now spells the full two-hop chain\n  (stakeholder-req → system-req → sw-req) with both stubs in YAML,\n  showing the system-req stub's `derives-from: STKHR-*` link\n  explicitly.\n- Pointer to `rivet schema show <type>` to discover further required\n  derives-from chains for any other base type.\n- Cross-reference to gotcha G.3 (forward vs inverse link-type\n  direction) inline next to the overlay, since the same `aspice`\n  schema's `allocated-from` is registered only as an inverse and\n  the seed itself trips this — readers writing similar links into\n  their own arch components will hit the same error.\n\nVerified: round-3 dogfood reached PASS in 3.8min (vs 7min round 1,\n5min round 2). All 5 step-2/3 + appendix fixes verified in place via\nexplicit grep checks before the dogfood walked the doc.\n\nSeparate finding (NOT fixed in this PR — needs a binary patch):\n`rivet init --preset aspice && rivet validate` ships a seed that\nfails validation with 2 errors (SYSREQ-001 missing derives-from\ntarget; SWARCH-001 uses undeclared `allocated-from` link). Filed\nseparately.\n\nImplements: REQ-007\nRefs: FEAT-001",
-          "timestamp": "2026-04-28T11:33:42-05:00",
-          "tree_id": "33ea28a739300a2f1e045ef75ea98df7f55bb055",
-          "url": "https://github.com/pulseengine/rivet/commit/63625fd9f3ab3b5b2b9463096c884a7878742ca8"
-        },
-        "date": 1777394474496,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 79699,
-            "range": "± 2160",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 866358,
-            "range": "± 8723",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 13104274,
-            "range": "± 1032251",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1984,
-            "range": "± 8",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 24655,
-            "range": "± 319",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 363123,
-            "range": "± 1854",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1166607,
-            "range": "± 17025",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 158704,
-            "range": "± 721",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1843277,
-            "range": "± 17305",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 26122495,
-            "range": "± 788715",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 119915,
-            "range": "± 375",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 1071135,
-            "range": "± 9627",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 11651111,
-            "range": "± 136308",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4168,
-            "range": "± 7",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 44519,
-            "range": "± 162",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 736446,
-            "range": "± 2685",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 62696,
-            "range": "± 185",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 714627,
-            "range": "± 1764",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7838413,
-            "range": "± 73120",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 746,
-            "range": "± 5",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 6662,
-            "range": "± 49",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 90532,
-            "range": "± 806",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 21869,
-            "range": "± 45",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 150839,
-            "range": "± 342",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1369493,
-            "range": "± 22730",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1394805,
             "range": "± 10135",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ff89f989948bf222e4c5d84b8905bbe7f5ae7e10",
+          "message": "fix(serve): mermaid fenced blocks broken by HTML-entity escaping (#273)\n\n* fix(serve): emit fenced ```mermaid bodies verbatim, not HTML-escaped\n\n`render_markdown` injected synthetic `<pre class=\"mermaid\">` wrappers but\nstill let the fenced body flow through pulldown-cmark's `html::push_html`,\nwhich HTML-entity-escapes Event::Text — so mermaid's core `-->` arrow\nrendered as `--&gt;` (and class-diagram `<|--` as `&lt;|--`), and\nmermaid.js rejected the diagram with \"Syntax error in text\". Reported by\na user against v0.6.0 and v0.8.0.\n\nRe-tag the in-mermaid Text segments as Event::Html so they pass through\nunescaped. Mermaid diagram source contains no HTML tags; a `</pre>`\nsmuggled into a ```mermaid block would at worst close the block early,\nand `<script>` etc. are still stripped by the `sanitize_html` pass.\n(`document.rs`'s separate document renderer already emits the body\nverbatim via `join(\"\\n\")` — only `render_markdown` had the bug.)\n\nCoverage:\n- two markdown.rs unit tests: stateDiagram `[*] -->` arrows survive\n  verbatim with no `--&gt;`; classDiagram `<|--` survives with no `&lt;|--`.\n- new tests/playwright/mermaid.spec.ts: ARCH-CORE-001's embedded\n  ```mermaid flowchart serves with `Config --> Store` verbatim, and\n  mermaid.js renders it to an SVG with no \"Syntax error\" box.\n\nFixes REQ-032.\n\nImplements: REQ-032\nVerifies: REQ-032\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n* style: cargo fmt the new mermaid regression test\n\nWraps an over-long assert!() the formatter flagged. No behaviour change.\n\nTrace: skip\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.7 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-05-12T13:54:46-05:00",
+          "tree_id": "08588a62f8826dd1da7026559f70bf05f763abd7",
+          "url": "https://github.com/pulseengine/rivet/commit/ff89f989948bf222e4c5d84b8905bbe7f5ae7e10"
+        },
+        "date": 1778612478776,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 81540,
+            "range": "± 767",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 853988,
+            "range": "± 3929",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 11199692,
+            "range": "± 431145",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2168,
+            "range": "± 8",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25835,
+            "range": "± 229",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 352717,
+            "range": "± 11320",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 95,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1195609,
+            "range": "± 22767",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 165480,
+            "range": "± 983",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1905338,
+            "range": "± 19234",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 24827464,
+            "range": "± 1138121",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 141631,
+            "range": "± 3648",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1243665,
+            "range": "± 31845",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 13654168,
+            "range": "± 757781",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4302,
+            "range": "± 8",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 59292,
+            "range": "± 195",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 768803,
+            "range": "± 2142",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 60337,
+            "range": "± 197",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 687995,
+            "range": "± 3610",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7496030,
+            "range": "± 79344",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 776,
+            "range": "± 10",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7176,
+            "range": "± 46",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 110066,
+            "range": "± 860",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 24045,
+            "range": "± 131",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 167988,
+            "range": "± 1670",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1550374,
+            "range": "± 18652",
             "unit": "ns/iter"
           }
         ]
