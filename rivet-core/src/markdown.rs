@@ -128,9 +128,15 @@ pub fn render_markdown(input: &str) -> String {
             in_mermaid = false;
             Some(Event::Html(MERMAID_CLOSE.into()))
         }
-        // Inside a mermaid block, pass text through as-is (pulldown-cmark
-        // emits the fenced body as Event::Text segments).
-        Event::Text(_) if in_mermaid => Some(event),
+        // Inside a mermaid block, emit the fenced body verbatim. pulldown-cmark
+        // delivers it as Event::Text segments, but `html::push_html` HTML-entity-
+        // escapes Text events — turning mermaid's core `-->` arrow into `--&gt;`
+        // and `<|--` into `&lt;|--`, which mermaid.js then rejects with "Syntax
+        // error in text". Re-tag the segments as Event::Html so they pass through
+        // unescaped (mermaid diagram source contains no HTML tags; a `</pre>`
+        // smuggled inside a ```mermaid block would at worst end the block early,
+        // and `<script>` etc. are still stripped by sanitize_html below).
+        Event::Text(t) if in_mermaid => Some(Event::Html(t)),
         // Drop all other raw HTML events for XSS defence.
         Event::Html(_) | Event::InlineHtml(_) => None,
         other => Some(other),
@@ -443,5 +449,43 @@ mod tests {
             !html.contains("rivet-mermaid-open"),
             "sentinel label must not leak, got: {html}"
         );
+    }
+
+    // Regression: mermaid body must NOT be HTML-entity-escaped. `-->` is core
+    // mermaid syntax (flowchart/stateDiagram arrows); if it renders as `--&gt;`
+    // mermaid.js fails with "Syntax error in text". Reported against v0.6.0/v0.8.0.
+    // rivet: verifies REQ-032
+    #[test]
+    fn mermaid_body_not_html_escaped() {
+        let input = "```mermaid\nstateDiagram-v2\n  [*] --> init_mode\n  init_mode --> run_mode : wake\n```";
+        let html = render_markdown(input);
+        assert!(
+            html.contains("[*] --> init_mode"),
+            "arrow must survive verbatim, not as --&gt;, got: {html}"
+        );
+        assert!(
+            html.contains("init_mode --> run_mode : wake"),
+            "arrow must survive verbatim, got: {html}"
+        );
+        assert!(
+            !html.contains("--&gt;"),
+            "mermaid body must not be HTML-entity-escaped, got: {html}"
+        );
+        // The whole diagram is one logical block inside <pre class="mermaid">,
+        // newlines preserved, no paragraph splitting.
+        assert!(
+            html.contains("<pre class=\"mermaid\">stateDiagram-v2"),
+            "got: {html}"
+        );
+    }
+
+    // Class-diagram arrows use `<` and `>` too (`<|--`, `*--`, `o--`); those
+    // must survive verbatim as well.
+    // rivet: verifies REQ-032
+    #[test]
+    fn mermaid_class_diagram_arrows_not_escaped() {
+        let html = render_markdown("```mermaid\nclassDiagram\n  Animal <|-- Dog\n```");
+        assert!(html.contains("Animal <|-- Dog"), "got: {html}");
+        assert!(!html.contains("&lt;|--"), "got: {html}");
     }
 }
