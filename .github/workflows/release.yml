@@ -168,6 +168,15 @@ jobs:
   build-test-evidence:
     name: Build test evidence
     runs-on: ubuntu-latest
+    # Non-blocking: the test-evidence bundle is a compliance artifact, not
+    # something users install. Building the spar wasm32-wasip2 assets needs
+    # a full WASI C/C++ SDK (sysroot + libc/libc++ + clang_rt builtins),
+    # which the runner image no longer ships — wasm-ld can't find crt1.o /
+    # -lc / libclang_rt.builtins-wasm32.a even with lld + wasm-component-ld
+    # installed (#269, #271). Until wasi-sdk is wired in (tracked separately),
+    # let this job fail without blocking Create GitHub Release — the release
+    # then ships 8/9 assets (everything except rivet-vX.Y.Z-test-evidence.tar.gz).
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v6
 
