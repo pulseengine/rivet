@@ -183,6 +183,13 @@ jobs:
         with:
           tool: cargo-nextest,cargo-llvm-cov
 
+      # wasm32-wasip2 component builds link via wasm-component-ld. Recent
+      # nightlies have stopped bundling it with the target's tools, so the
+      # spar WASM build fails with `Executable "wasm-component-ld" doesn't
+      # exist!`. Install it explicitly.
+      - name: Install wasm-component-ld
+        run: cargo install --locked wasm-component-ld
+
       - name: Build spar WASM assets
         run: |
           git clone --depth 1 https://github.com/pulseengine/spar.git ../spar
