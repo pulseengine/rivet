@@ -473,7 +473,10 @@ mod tests {
         );
         // The whole diagram is one logical block inside <pre class="mermaid">,
         // newlines preserved, no paragraph splitting.
-        assert!(html.contains("<pre class=\"mermaid\">stateDiagram-v2"), "got: {html}");
+        assert!(
+            html.contains("<pre class=\"mermaid\">stateDiagram-v2"),
+            "got: {html}"
+        );
     }
 
     // Class-diagram arrows use `<` and `>` too (`<|--`, `*--`, `o--`); those
