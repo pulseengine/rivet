@@ -183,12 +183,18 @@ jobs:
         with:
           tool: cargo-nextest,cargo-llvm-cov
 
-      # wasm32-wasip2 component builds link via wasm-component-ld. Recent
-      # nightlies have stopped bundling it with the target's tools, so the
-      # spar WASM build fails with `Executable "wasm-component-ld" doesn't
-      # exist!`. Install it explicitly.
-      - name: Install wasm-component-ld
-        run: cargo install --locked wasm-component-ld
+      # wasm32-wasip2 builds need two linkers that recent toolchains/runner
+      # images no longer provide out of the box:
+      #   - wasm-component-ld: the WASI Preview 2 component linker (nightly
+      #     stopped bundling it with the target's tools).
+      #   - wasm-ld: the LLVM wasm linker, invoked by clang++ when a C/C++
+      #     dependency (e.g. highs-sys, pulled in transitively by spar)
+      #     does a CMake CXX-ABI probe targeting wasm. Provided by `lld`.
+      - name: Install wasm linkers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lld
+          cargo install --locked wasm-component-ld
 
       - name: Build spar WASM assets
         run: |
