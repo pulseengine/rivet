@@ -423,6 +423,15 @@ enum Command {
         /// markdown, or html output. Mutually exclusive with `--tests`.
         #[arg(long, conflicts_with = "tests")]
         matrix: bool,
+
+        /// Aggregate one or more JSON matrices produced by
+        /// `rivet coverage --matrix --format json` (rivet#188 sub-issue 3,
+        /// the file-based cross-repo aggregator). Each CI job emits its
+        /// repo's JSON; a top-level job merges them with this flag. Implies
+        /// `--matrix`; the local project is not read. Repeat the flag or
+        /// pass several paths.
+        #[arg(long = "aggregate", value_name = "FILE", num_args = 1.., conflicts_with = "tests")]
+        aggregate: Vec<PathBuf>,
     },
 
     /// Generate a traceability matrix
@@ -1732,8 +1741,11 @@ fn run(cli: Cli) -> Result<bool> {
             scan_paths,
             baseline,
             matrix,
+            aggregate,
         } => {
-            if *matrix {
+            if !aggregate.is_empty() {
+                cmd_coverage_matrix_aggregate(format, aggregate)
+            } else if *matrix {
                 cmd_coverage_matrix(&cli, format, baseline.as_deref())
             } else if *tests {
                 cmd_coverage_tests(&cli, format, scan_paths)
@@ -5815,6 +5827,104 @@ fn cmd_coverage_matrix(cli: &Cli, format: &str, baseline_name: Option<&str>) -> 
     let store = apply_baseline_scope(ctx.store, baseline_name, &ctx.config);
 
     let rows = collect_repo_status_rows(&store);
+    let cols = matrix_columns(&rows);
+
+    match format {
+        "json" => render_matrix_json(&rows, &cols),
+        "markdown" => render_matrix_markdown(&rows, &cols),
+        "html" => render_matrix_html(&rows, &cols),
+        _ => render_matrix_text(&rows, &cols),
+    }
+
+    Ok(true)
+}
+
+// ── V&V coverage matrix — cross-repo aggregator (rivet#188 sub-issue 3) ─
+//
+// The file-based aggregator: each repo's CI runs
+// `rivet coverage --matrix --format json` and uploads the result; a
+// top-level job collects those JSON files and merges them with
+// `rivet coverage --aggregate a.json b.json ... --format {text,markdown,html,json}`.
+// No GitHub API access is needed — the inputs are plain files.
+
+fn json_string_list(value: Option<&serde_json::Value>) -> Vec<String> {
+    value
+        .and_then(serde_json::Value::as_array)
+        .map(|seq| {
+            seq.iter()
+                .filter_map(|v| v.as_str())
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Parse one JSON matrix file (the envelope emitted by `render_matrix_json`)
+/// into `RepoStatusRow`s.
+fn parse_matrix_json_file(path: &std::path::Path) -> Result<Vec<RepoStatusRow>> {
+    let text = std::fs::read_to_string(path)
+        .with_context(|| format!("reading matrix JSON {}", path.display()))?;
+    let value: serde_json::Value = serde_json::from_str(&text)
+        .with_context(|| format!("parsing matrix JSON {}", path.display()))?;
+    let repos = value
+        .get("repos")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "{}: not a `rivet coverage --matrix --format json` document \
+                 (missing `repos` array)",
+                path.display()
+            )
+        })?;
+    let mut rows = Vec::with_capacity(repos.len());
+    for repo in repos {
+        let repo_name = repo.get("repo").and_then(serde_json::Value::as_str);
+        let id = repo.get("id").and_then(serde_json::Value::as_str);
+        let (id, repo_name) = match (id, repo_name) {
+            (Some(i), Some(r)) => (i.to_owned(), r.to_owned()),
+            (Some(i), None) => (i.to_owned(), i.to_owned()),
+            (None, Some(r)) => (r.to_owned(), r.to_owned()),
+            (None, None) => {
+                anyhow::bail!(
+                    "{}: a `repos` entry has neither `id` nor `repo`",
+                    path.display()
+                )
+            }
+        };
+        let notes = repo
+            .get("notes")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned);
+        rows.push(RepoStatusRow {
+            id,
+            repo: repo_name,
+            applied: json_string_list(repo.get("techniques_applied")),
+            gated: json_string_list(repo.get("techniques_gated_in_ci")),
+            notes,
+        });
+    }
+    Ok(rows)
+}
+
+/// Merge several JSON matrices into one and render it.
+fn cmd_coverage_matrix_aggregate(format: &str, paths: &[PathBuf]) -> Result<bool> {
+    validate_format(format, &["text", "json", "markdown", "html"])?;
+
+    let mut rows: Vec<RepoStatusRow> = Vec::new();
+    let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+    for path in paths {
+        for row in parse_matrix_json_file(path)? {
+            // First occurrence of a (repo, id) pair wins; later files that
+            // re-state the same row are ignored so re-running the aggregator
+            // over overlapping inputs is idempotent.
+            if seen.insert((row.repo.clone(), row.id.clone())) {
+                rows.push(row);
+            }
+        }
+    }
+    rows.sort_by(|a, b| a.repo.cmp(&b.repo).then_with(|| a.id.cmp(&b.id)));
     let cols = matrix_columns(&rows);
 
     match format {

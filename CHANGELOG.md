@@ -5,6 +5,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`rivet coverage --aggregate <FILE>...`** (#188 sub-issue 3). File-based
+  cross-repo V&V matrix aggregator: each repo's CI emits its
+  `rivet coverage --matrix --format json`, a top-level job merges them
+  into one matrix (text / markdown / html / json). Needs no GitHub API
+  access — inputs are plain files; duplicate `(repo, id)` rows are
+  coalesced so re-runs are idempotent, and the merged JSON re-feeds the
+  aggregator unchanged.
+
 ## [0.9.0] — 2026-05-11
 
 Theme: backlog drain. Ships the rivet-bundle command, the s-expr

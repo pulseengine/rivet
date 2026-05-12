@@ -1948,6 +1948,180 @@ fn coverage_matrix_empty_project() {
     );
 }
 
+// ── rivet coverage --aggregate (rivet#188 sub-issue 3) ─────────────────
+
+/// Write two single-repo matrix JSON files (the shape
+/// `rivet coverage --matrix --format json` emits) into a fresh tmpdir and
+/// return `(tmpdir, path_a, path_b)`.
+fn aggregate_inputs() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let a = tmp.path().join("rivet.json");
+    let b = tmp.path().join("loom.json");
+    std::fs::write(
+        &a,
+        r#"{"command":"coverage-matrix","columns":["kani","proptest"],
+            "repos":[{"id":"RS-RIVET","repo":"pulseengine/rivet",
+            "techniques_applied":["kani","proptest"],
+            "techniques_gated_in_ci":["proptest"],"notes":"ref",
+            "cells":[{"technique":"kani","status":"applied"},
+            {"technique":"proptest","status":"gated"}]}]}"#,
+    )
+    .expect("write a.json");
+    std::fs::write(
+        &b,
+        r#"{"command":"coverage-matrix","columns":["miri"],
+            "repos":[{"id":"RS-LOOM","repo":"pulseengine/loom",
+            "techniques_applied":["miri","kani"],"techniques_gated_in_ci":[],
+            "notes":null,"cells":[{"technique":"miri","status":"applied"}]}]}"#,
+    )
+    .expect("write b.json");
+    (tmp, a, b)
+}
+
+/// `--aggregate a.json b.json --format markdown` merges both repos into one
+/// table whose columns are the union of every input's techniques.
+#[test]
+fn coverage_aggregate_markdown_merges_repos() {
+    let (tmp, a, b) = aggregate_inputs();
+    let out = Command::new(rivet_bin())
+        .args([
+            "coverage",
+            "--aggregate",
+            a.to_str().unwrap(),
+            b.to_str().unwrap(),
+            "--format",
+            "markdown",
+        ])
+        .output()
+        .expect("coverage --aggregate --format markdown");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "must exit 0. stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stdout.contains("# V&V coverage matrix"),
+        "heading. {stdout}"
+    );
+    for repo in ["pulseengine/rivet", "pulseengine/loom"] {
+        assert!(
+            stdout.contains(&format!("| {} |", repo)),
+            "row for {repo}. {stdout}"
+        );
+    }
+    // Union of columns across both files, sorted.
+    let header = stdout
+        .lines()
+        .find(|l| l.starts_with("| repo |"))
+        .expect("header row");
+    assert_eq!(
+        header, "| repo | kani | miri | proptest |",
+        "merged columns"
+    );
+    // rivet has proptest CI-gated.
+    assert!(stdout.contains('●'), "gated glyph somewhere. {stdout}");
+    drop(tmp);
+}
+
+/// The aggregate JSON output uses the same envelope as the per-repo
+/// command, so it can be fed straight back into `--aggregate`; duplicate
+/// (repo, id) rows are coalesced so re-runs are idempotent.
+#[test]
+fn coverage_aggregate_json_roundtrips_and_dedups() {
+    let (tmp, a, b) = aggregate_inputs();
+    // Pass `a` twice plus `b`; the duplicate must not produce a second row.
+    let out = Command::new(rivet_bin())
+        .args([
+            "coverage",
+            "--aggregate",
+            a.to_str().unwrap(),
+            a.to_str().unwrap(),
+            b.to_str().unwrap(),
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("coverage --aggregate --format json");
+    assert!(
+        out.status.success(),
+        "exit 0: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("aggregate JSON parses");
+    assert_eq!(
+        parsed.get("command").and_then(|v| v.as_str()),
+        Some("coverage-matrix")
+    );
+    let repos = parsed
+        .get("repos")
+        .and_then(|v| v.as_array())
+        .expect("repos array");
+    assert_eq!(repos.len(), 2, "duplicate row coalesced. {stdout}");
+    assert_eq!(
+        parsed
+            .get("columns")
+            .and_then(|v| v.as_array())
+            .map(Vec::len),
+        Some(3),
+        "merged column count. {stdout}"
+    );
+
+    // Re-feed the merged output back into the aggregator: same result.
+    let merged = tmp.path().join("merged.json");
+    std::fs::write(&merged, stdout.as_bytes()).expect("write merged.json");
+    let out2 = Command::new(rivet_bin())
+        .args([
+            "coverage",
+            "--aggregate",
+            merged.to_str().unwrap(),
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("re-aggregate");
+    assert!(out2.status.success(), "re-aggregate exit 0");
+    let reparsed: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&out2.stdout)).expect("re-parse");
+    assert_eq!(
+        reparsed
+            .get("repos")
+            .and_then(|v| v.as_array())
+            .map(Vec::len),
+        Some(2),
+        "round-trip preserves rows"
+    );
+}
+
+/// A non-JSON or wrong-shaped input fails with a diagnostic naming the file.
+#[test]
+fn coverage_aggregate_bad_input_fails() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let bad = tmp.path().join("nope.json");
+    std::fs::write(&bad, "this is not json").expect("write");
+    let out = Command::new(rivet_bin())
+        .args(["coverage", "--aggregate", bad.to_str().unwrap()])
+        .output()
+        .expect("coverage --aggregate bad");
+    assert!(!out.status.success(), "must fail on bad input");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("nope.json"), "names the file. {stderr}");
+
+    let wrong = tmp.path().join("wrong.json");
+    std::fs::write(&wrong, r#"{"hello":"world"}"#).expect("write");
+    let out = Command::new(rivet_bin())
+        .args(["coverage", "--aggregate", wrong.to_str().unwrap()])
+        .output()
+        .expect("coverage --aggregate wrong");
+    assert!(!out.status.success(), "must fail on wrong shape");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("wrong.json") && stderr.contains("repos"),
+        "explains missing repos. {stderr}"
+    );
+}
+
 /// `rivet stats --format json` exposes diagnostic counts so consumers
 /// don't need a second `rivet validate --format json` call just to
 /// get the severity breakdown.
