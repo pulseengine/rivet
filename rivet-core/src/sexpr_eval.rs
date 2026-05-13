@@ -119,6 +119,31 @@ pub enum Expr {
     /// `(> (count (and (= type "test") (= status "passed"))) 10)`.
     CountCompare(Box<Expr>, CompOp, i64),
 
+    // ── Link-traversing quantifiers (status-gate predicates) ────────
+    //
+    // These shift the evaluation context: the body predicate is checked
+    // against each target/source artifact, not against the current one.
+    // Empty-link-set semantics is **audit-strict (false)** — a verifier
+    // with nothing to verify cannot satisfy a `forall-linked` gate.
+    // Differs from classical mathematical forall; the link-suffixed name
+    // signals this. Unresolved targets are governed by
+    // `EvalContext::missing_target_policy`.
+    //
+    /// `(forall-linked "verifies" body)` — body holds for every artifact
+    /// reached via an outbound link of the given type. False over zero
+    /// such links.
+    ForallLinked(Value, Box<Expr>),
+    /// `(exists-linked "verifies" body)` — body holds for at least one
+    /// outbound link target. False over zero such links.
+    ExistsLinked(Value, Box<Expr>),
+    /// `(forall-linked-from "implements" body)` — body holds for every
+    /// artifact that links to the current one via the given link type
+    /// (inbound). False over zero such backlinks.
+    ForallLinkedFrom(Value, Box<Expr>),
+    /// `(exists-linked-from "implements" body)` — body holds for at
+    /// least one inbound source. False over zero such backlinks.
+    ExistsLinkedFrom(Value, Box<Expr>),
+
     // ── Graph traversal ─────────────────────────────────────────────
     /// `(reachable-from "REQ-001" "satisfies")` — true if current artifact is
     /// reachable from the given start via the given link type.
@@ -162,6 +187,25 @@ pub enum CompOp {
     Ne,
 }
 
+/// What link-traversing quantifiers (`forall-linked`, `exists-linked`,
+/// and their `-from` siblings) should do when a target ID doesn't
+/// resolve to an artifact in the store.
+///
+/// - `Skip` (default): treat the target as not-in-scope. The unresolved
+///   link contributes vacuous-true to a `forall` and contributes nothing
+///   to an `exists`. Composes cleanly with external-anchor boundaries
+///   and unsynced cross-repo references; the separate broken-links
+///   validation phase catches truly-missing targets.
+/// - `Fail`: count the unresolved target as a body-predicate failure.
+///   Strictest interpretation — if we can't verify the target's state,
+///   the gate fails.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MissingTargetPolicy {
+    #[default]
+    Skip,
+    Fail,
+}
+
 // ── Evaluation context ──────────────────────────────────────────────────
 
 /// Context needed to check a predicate against one artifact.
@@ -173,6 +217,9 @@ pub struct EvalContext<'a> {
     pub graph: &'a LinkGraph,
     /// Required for quantifier expressions. None = quantifiers return false.
     pub store: Option<&'a Store>,
+    /// How to treat unresolved link targets in `forall-linked` / `exists-linked`
+    /// and their `-from` variants. Default: Skip.
+    pub missing_target_policy: MissingTargetPolicy,
 }
 
 // ── Predicate checker ───────────────────────────────────────────────────
@@ -277,6 +324,7 @@ pub fn check(expr: &Expr, ctx: &EvalContext) -> bool {
                     artifact: a,
                     graph: ctx.graph,
                     store: ctx.store,
+                    missing_target_policy: ctx.missing_target_policy,
                 };
                 // If artifact doesn't match scope, it's vacuously true
                 if !check(scope, &scope_ctx) {
@@ -294,6 +342,7 @@ pub fn check(expr: &Expr, ctx: &EvalContext) -> bool {
                     artifact: a,
                     graph: ctx.graph,
                     store: ctx.store,
+                    missing_target_policy: ctx.missing_target_policy,
                 };
                 check(scope, &scope_ctx) && check(predicate, &scope_ctx)
             })
@@ -309,6 +358,7 @@ pub fn check(expr: &Expr, ctx: &EvalContext) -> bool {
                     artifact: a,
                     graph: ctx.graph,
                     store: ctx.store,
+                    missing_target_policy: ctx.missing_target_policy,
                 };
                 check(_scope, &scope_ctx)
             })
@@ -328,6 +378,7 @@ pub fn check(expr: &Expr, ctx: &EvalContext) -> bool {
                         artifact: a,
                         graph: ctx.graph,
                         store: ctx.store,
+                        missing_target_policy: ctx.missing_target_policy,
                     };
                     check(scope, &scope_ctx)
                 })
@@ -340,6 +391,120 @@ pub fn check(expr: &Expr, ctx: &EvalContext) -> bool {
                 CompOp::Eq => count == *threshold,
                 CompOp::Ne => count != *threshold,
             }
+        }
+
+        // Link-traversing quantifiers (status-gate predicates)
+        //
+        // Empty-link-set semantics: false (audit-strict). A verifier with
+        // nothing to verify cannot satisfy a `forall-linked` gate; an
+        // `exists-linked` over no candidates trivially fails too. This
+        // differs from classical forall — the link-suffixed name signals
+        // the deviation.
+        Expr::ForallLinked(link_type, body) => {
+            let Some(store) = ctx.store else {
+                return false;
+            };
+            let lt = value_to_str(link_type);
+            let links_of_type: Vec<&crate::model::Link> = ctx
+                .artifact
+                .links
+                .iter()
+                .filter(|l| l.link_type == lt)
+                .collect();
+            if links_of_type.is_empty() {
+                return false; // audit-strict empty
+            }
+            links_of_type.iter().all(|l| match store.get(&l.target) {
+                Some(target) => {
+                    let sub_ctx = EvalContext {
+                        artifact: target,
+                        graph: ctx.graph,
+                        store: ctx.store,
+                        missing_target_policy: ctx.missing_target_policy,
+                    };
+                    check(body, &sub_ctx)
+                }
+                None => match ctx.missing_target_policy {
+                    MissingTargetPolicy::Skip => true,
+                    MissingTargetPolicy::Fail => false,
+                },
+            })
+        }
+        Expr::ExistsLinked(link_type, body) => {
+            let Some(store) = ctx.store else {
+                return false;
+            };
+            let lt = value_to_str(link_type);
+            ctx.artifact
+                .links
+                .iter()
+                .filter(|l| l.link_type == lt)
+                .any(|l| match store.get(&l.target) {
+                    Some(target) => {
+                        let sub_ctx = EvalContext {
+                            artifact: target,
+                            graph: ctx.graph,
+                            store: ctx.store,
+                            missing_target_policy: ctx.missing_target_policy,
+                        };
+                        check(body, &sub_ctx)
+                    }
+                    None => match ctx.missing_target_policy {
+                        MissingTargetPolicy::Skip => false,
+                        MissingTargetPolicy::Fail => false,
+                    },
+                })
+        }
+        Expr::ForallLinkedFrom(link_type, body) => {
+            let Some(store) = ctx.store else {
+                return false;
+            };
+            let lt = value_to_str(link_type);
+            let backlinks = ctx.graph.backlinks_to(&ctx.artifact.id);
+            let inbound: Vec<_> = backlinks.iter().filter(|bl| bl.link_type == lt).collect();
+            if inbound.is_empty() {
+                return false; // audit-strict empty
+            }
+            inbound.iter().all(|bl| match store.get(&bl.source) {
+                Some(source) => {
+                    let sub_ctx = EvalContext {
+                        artifact: source,
+                        graph: ctx.graph,
+                        store: ctx.store,
+                        missing_target_policy: ctx.missing_target_policy,
+                    };
+                    check(body, &sub_ctx)
+                }
+                None => match ctx.missing_target_policy {
+                    MissingTargetPolicy::Skip => true,
+                    MissingTargetPolicy::Fail => false,
+                },
+            })
+        }
+        Expr::ExistsLinkedFrom(link_type, body) => {
+            let Some(store) = ctx.store else {
+                return false;
+            };
+            let lt = value_to_str(link_type);
+            let backlinks = ctx.graph.backlinks_to(&ctx.artifact.id);
+            backlinks
+                .iter()
+                .filter(|bl| bl.link_type == lt)
+                .any(|bl| match store.get(&bl.source) {
+                    Some(source) => {
+                        let sub_ctx = EvalContext {
+                            artifact: source,
+                            graph: ctx.graph,
+                            store: ctx.store,
+                            missing_target_policy: ctx.missing_target_policy,
+                        };
+                        check(body, &sub_ctx)
+                    }
+                    None => match ctx.missing_target_policy {
+                        MissingTargetPolicy::Skip => false,
+                        MissingTargetPolicy::Fail => false,
+                    },
+                })
         }
 
         // Graph traversal
@@ -538,6 +703,10 @@ fn classify_filter_error(source: &str, message: &str) -> Option<String> {
         "forall",
         "exists",
         "count",
+        "forall-linked",
+        "exists-linked",
+        "forall-linked-from",
+        "exists-linked-from",
     ];
     const INFIX: &[&str] = &[
         "and", "or", "not", "==", "!=", "&&", "||", ">", "<", ">=", "<=", "implies",
@@ -639,6 +808,7 @@ pub fn matches_filter(expr: &Expr, artifact: &Artifact, graph: &LinkGraph) -> bo
         artifact,
         graph,
         store: None,
+        missing_target_policy: MissingTargetPolicy::default(),
     };
     check(expr, &ctx)
 }
@@ -654,6 +824,26 @@ pub fn matches_filter_with_store(
         artifact,
         graph,
         store: Some(store),
+        missing_target_policy: MissingTargetPolicy::default(),
+    };
+    check(expr, &ctx)
+}
+
+/// Check a filter against a single artifact with full store access and a
+/// caller-chosen missing-target policy. Used by status-gate validation
+/// rules where the rule declares its own `on-unresolved:` setting.
+pub fn matches_filter_with_policy(
+    expr: &Expr,
+    artifact: &Artifact,
+    graph: &LinkGraph,
+    store: &Store,
+    missing_target_policy: MissingTargetPolicy,
+) -> bool {
+    let ctx = EvalContext {
+        artifact,
+        graph,
+        store: Some(store),
+        missing_target_policy,
     };
     check(expr, &ctx)
 }
@@ -1037,6 +1227,71 @@ fn lower_list(node: &crate::sexpr::SyntaxNode, errors: &mut Vec<LowerError>) -> 
             Some(Expr::Count(Box::new(scope)))
         }
 
+        // Link-traversing quantifiers (status-gate predicates).
+        // Empty-link-set returns false (audit-strict) — a `forall-linked`
+        // over zero links fails the gate; the link-suffixed name signals
+        // the deviation from classical forall semantics.
+        "forall-linked" => {
+            if args.len() != 2 {
+                errors.push(LowerError {
+                    offset,
+                    message: "'forall-linked' requires exactly 2 arguments \
+                              (link-type body); body is checked against each \
+                              outbound target"
+                        .into(),
+                });
+                return None;
+            }
+            let lt = extract_value(&args[0])?;
+            let body = lower_child(&args[1], errors)?;
+            Some(Expr::ForallLinked(lt, Box::new(body)))
+        }
+        "exists-linked" => {
+            if args.len() != 2 {
+                errors.push(LowerError {
+                    offset,
+                    message: "'exists-linked' requires exactly 2 arguments \
+                              (link-type body); body is checked against each \
+                              outbound target"
+                        .into(),
+                });
+                return None;
+            }
+            let lt = extract_value(&args[0])?;
+            let body = lower_child(&args[1], errors)?;
+            Some(Expr::ExistsLinked(lt, Box::new(body)))
+        }
+        "forall-linked-from" => {
+            if args.len() != 2 {
+                errors.push(LowerError {
+                    offset,
+                    message: "'forall-linked-from' requires exactly 2 arguments \
+                              (link-type body); body is checked against each \
+                              inbound source"
+                        .into(),
+                });
+                return None;
+            }
+            let lt = extract_value(&args[0])?;
+            let body = lower_child(&args[1], errors)?;
+            Some(Expr::ForallLinkedFrom(lt, Box::new(body)))
+        }
+        "exists-linked-from" => {
+            if args.len() != 2 {
+                errors.push(LowerError {
+                    offset,
+                    message: "'exists-linked-from' requires exactly 2 arguments \
+                              (link-type body); body is checked against each \
+                              inbound source"
+                        .into(),
+                });
+                return None;
+            }
+            let lt = extract_value(&args[0])?;
+            let body = lower_child(&args[1], errors)?;
+            Some(Expr::ExistsLinkedFrom(lt, Box::new(body)))
+        }
+
         // Graph traversal
         "reachable-from" => {
             if args.len() != 2 {
@@ -1263,6 +1518,7 @@ mod tests {
             artifact,
             graph: &graph,
             store: None,
+            missing_target_policy: MissingTargetPolicy::default(),
         };
         check(expr, &ctx)
     }
@@ -1664,6 +1920,7 @@ mod tests {
             artifact: &a,
             graph: &graph,
             store: Some(&store_all),
+            missing_target_policy: MissingTargetPolicy::default(),
         };
         assert!(!check(&expr, &ctx_all));
 
@@ -1674,6 +1931,7 @@ mod tests {
             artifact: &a,
             graph: &graph_scoped,
             store: Some(&store_scoped),
+            missing_target_policy: MissingTargetPolicy::default(),
         };
         assert!(check(&expr, &ctx_scoped));
     }
@@ -1700,6 +1958,7 @@ mod tests {
             artifact: &b,
             graph: &graph,
             store: Some(&store_with_req),
+            missing_target_policy: MissingTargetPolicy::default(),
         };
         assert!(check(&expr, &ctx));
 
@@ -1710,6 +1969,7 @@ mod tests {
             artifact: &b,
             graph: &graph2,
             store: Some(&store_no_req),
+            missing_target_policy: MissingTargetPolicy::default(),
         };
         assert!(!check(&expr, &ctx2));
     }
@@ -1726,6 +1986,7 @@ mod tests {
             artifact: &a,
             graph: &graph,
             store: None,
+            missing_target_policy: MissingTargetPolicy::default(),
         };
         assert!(!check(&expr, &ctx));
     }
@@ -1801,5 +2062,395 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn parse_success_has_no_note() {
         parse_filter("(and (= type \"requirement\") (has-tag \"stpa\"))").unwrap();
+    }
+
+    // ── Link-traversing quantifiers (forall-linked / exists-linked) ─────
+    //
+    // Status-gate rules are the motivating use case. Each test pins one
+    // axis: empty-link audit-strictness, body-pass / body-fail under
+    // resolved targets, and missing-target policy under both Skip and
+    // Fail. Inbound variants (-from) share the evaluator shape so we
+    // cover them with a representative pair rather than the full matrix.
+
+    fn artifact_with_links(
+        id: &str,
+        art_type: &str,
+        status: &str,
+        links: Vec<(&str, &str)>,
+    ) -> Artifact {
+        Artifact {
+            id: id.into(),
+            artifact_type: art_type.into(),
+            title: format!("Title of {id}"),
+            description: None,
+            status: Some(status.into()),
+            tags: vec![],
+            links: links
+                .into_iter()
+                .map(|(lt, tgt)| Link {
+                    link_type: lt.into(),
+                    target: tgt.into(),
+                })
+                .collect(),
+            fields: BTreeMap::new(),
+            provenance: None,
+            source_file: None,
+        }
+    }
+
+    /// A `forall-linked` over zero outbound links of the named type must
+    /// return false — a verifier with nothing to verify cannot satisfy
+    /// the gate (audit-strict empty semantics, deliberate deviation from
+    /// classical forall).
+    #[test]
+    fn forall_linked_empty_is_audit_strict_false() {
+        let verifier = artifact_with_links("V-001", "sys-verification", "approved", vec![]);
+        let store = store_with(vec![verifier.clone()]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+
+        let expr = Expr::ForallLinked(
+            Value::Str("verifies".into()),
+            Box::new(Expr::Eq(
+                Accessor::Field("status".into()),
+                Value::Str("approved".into()),
+            )),
+        );
+
+        assert!(!matches_filter_with_store(&expr, &verifier, &graph, &store));
+    }
+
+    /// All resolvable targets satisfy body → forall-linked is true.
+    #[test]
+    fn forall_linked_all_targets_pass() {
+        let r1 = make_artifact("REQ-001", "requirement", &[]); // status approved by default
+        let r2 = make_artifact("REQ-002", "requirement", &[]);
+        let verifier = artifact_with_links(
+            "V-001",
+            "sys-verification",
+            "approved",
+            vec![("verifies", "REQ-001"), ("verifies", "REQ-002")],
+        );
+        let store = store_with(vec![r1, r2, verifier.clone()]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+
+        let expr = Expr::ForallLinked(
+            Value::Str("verifies".into()),
+            Box::new(Expr::Eq(
+                Accessor::Field("status".into()),
+                Value::Str("approved".into()),
+            )),
+        );
+
+        assert!(matches_filter_with_store(&expr, &verifier, &graph, &store));
+    }
+
+    /// One target violates body → forall-linked is false.
+    #[test]
+    fn forall_linked_one_target_fails() {
+        let mut r1 = make_artifact("REQ-001", "requirement", &[]); // approved
+        let mut r2 = make_artifact("REQ-002", "requirement", &[]);
+        r2.status = Some("draft".into()); // not approved
+        // The mut on r1 is just to keep code symmetric; the actual draft
+        // is on r2.
+        r1.status = Some("approved".into());
+
+        let verifier = artifact_with_links(
+            "V-001",
+            "sys-verification",
+            "approved",
+            vec![("verifies", "REQ-001"), ("verifies", "REQ-002")],
+        );
+        let store = store_with(vec![r1, r2, verifier.clone()]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+
+        let expr = Expr::ForallLinked(
+            Value::Str("verifies".into()),
+            Box::new(Expr::Eq(
+                Accessor::Field("status".into()),
+                Value::Str("approved".into()),
+            )),
+        );
+
+        assert!(!matches_filter_with_store(&expr, &verifier, &graph, &store));
+    }
+
+    /// Unresolved target with Skip policy → vacuous-true for that link.
+    /// If all resolvable targets pass, the rule passes overall.
+    #[test]
+    fn forall_linked_unresolved_target_skip_is_vacuous_true() {
+        let r1 = make_artifact("REQ-001", "requirement", &[]); // approved
+        let verifier = artifact_with_links(
+            "V-001",
+            "sys-verification",
+            "approved",
+            vec![
+                ("verifies", "REQ-001"),
+                ("verifies", "REQ-EXTERNAL"), // unresolved
+            ],
+        );
+        let store = store_with(vec![r1, verifier.clone()]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+
+        let expr = Expr::ForallLinked(
+            Value::Str("verifies".into()),
+            Box::new(Expr::Eq(
+                Accessor::Field("status".into()),
+                Value::Str("approved".into()),
+            )),
+        );
+
+        assert!(matches_filter_with_policy(
+            &expr,
+            &verifier,
+            &graph,
+            &store,
+            MissingTargetPolicy::Skip
+        ));
+    }
+
+    /// Unresolved target with Fail policy → rule fails.
+    #[test]
+    fn forall_linked_unresolved_target_fail_is_violation() {
+        let r1 = make_artifact("REQ-001", "requirement", &[]); // approved
+        let verifier = artifact_with_links(
+            "V-001",
+            "sys-verification",
+            "approved",
+            vec![
+                ("verifies", "REQ-001"),
+                ("verifies", "REQ-EXTERNAL"), // unresolved
+            ],
+        );
+        let store = store_with(vec![r1, verifier.clone()]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+
+        let expr = Expr::ForallLinked(
+            Value::Str("verifies".into()),
+            Box::new(Expr::Eq(
+                Accessor::Field("status".into()),
+                Value::Str("approved".into()),
+            )),
+        );
+
+        assert!(!matches_filter_with_policy(
+            &expr,
+            &verifier,
+            &graph,
+            &store,
+            MissingTargetPolicy::Fail
+        ));
+    }
+
+    /// `exists-linked` over zero links must be false — no candidate to
+    /// witness the body. Same audit-strict shape, different polarity.
+    #[test]
+    fn exists_linked_empty_is_false() {
+        let verifier = artifact_with_links("V-001", "sys-verification", "approved", vec![]);
+        let store = store_with(vec![verifier.clone()]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+
+        let expr = Expr::ExistsLinked(
+            Value::Str("verifies".into()),
+            Box::new(Expr::Eq(
+                Accessor::Field("status".into()),
+                Value::Str("approved".into()),
+            )),
+        );
+
+        assert!(!matches_filter_with_store(&expr, &verifier, &graph, &store));
+    }
+
+    /// `exists-linked` is true when at least one target satisfies body.
+    #[test]
+    fn exists_linked_one_target_matches() {
+        let r1 = make_artifact("REQ-001", "requirement", &[]); // approved
+        let mut r2 = make_artifact("REQ-002", "requirement", &[]);
+        r2.status = Some("draft".into());
+
+        let verifier = artifact_with_links(
+            "V-001",
+            "sys-verification",
+            "approved",
+            vec![("verifies", "REQ-001"), ("verifies", "REQ-002")],
+        );
+        let store = store_with(vec![r1, r2, verifier.clone()]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+
+        let expr = Expr::ExistsLinked(
+            Value::Str("verifies".into()),
+            Box::new(Expr::Eq(
+                Accessor::Field("status".into()),
+                Value::Str("approved".into()),
+            )),
+        );
+
+        assert!(matches_filter_with_store(&expr, &verifier, &graph, &store));
+    }
+
+    /// Inbound variant: `forall-linked-from` operates on backlinks.
+    /// REQ-001 receives `verifies` from V-001 and V-002; both should be
+    /// approved for the gate to pass.
+    #[test]
+    fn forall_linked_from_inbound_audit_strict() {
+        let req = make_artifact("REQ-001", "requirement", &[]);
+        let v1 = artifact_with_links(
+            "V-001",
+            "sys-verification",
+            "approved",
+            vec![("verifies", "REQ-001")],
+        );
+        let mut v2 = artifact_with_links(
+            "V-002",
+            "sys-verification",
+            "draft", // not approved
+            vec![("verifies", "REQ-001")],
+        );
+        v2.status = Some("draft".into());
+
+        let store = store_with(vec![req.clone(), v1, v2]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+
+        // For REQ-001, every inbound `verifies` source must be approved.
+        // V-002 is draft → rule fails.
+        let expr = Expr::ForallLinkedFrom(
+            Value::Str("verifies".into()),
+            Box::new(Expr::Eq(
+                Accessor::Field("status".into()),
+                Value::Str("approved".into()),
+            )),
+        );
+        assert!(!matches_filter_with_store(&expr, &req, &graph, &store));
+
+        // Empty inbound set → audit-strict false.
+        let lonely = make_artifact("REQ-LONELY", "requirement", &[]);
+        let store2 = store_with(vec![lonely.clone()]);
+        let graph2 = LinkGraph::build(&store2, &schema);
+        assert!(!matches_filter_with_store(&expr, &lonely, &graph2, &store2));
+    }
+
+    /// `exists-linked-from`: at least one inbound source matches body.
+    #[test]
+    fn exists_linked_from_inbound_matches() {
+        let req = make_artifact("REQ-001", "requirement", &[]);
+        let v1 = artifact_with_links(
+            "V-001",
+            "sys-verification",
+            "approved",
+            vec![("verifies", "REQ-001")],
+        );
+        let store = store_with(vec![req.clone(), v1]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+
+        let expr = Expr::ExistsLinkedFrom(
+            Value::Str("verifies".into()),
+            Box::new(Expr::Eq(
+                Accessor::Field("status".into()),
+                Value::Str("approved".into()),
+            )),
+        );
+        assert!(matches_filter_with_store(&expr, &req, &graph, &store));
+    }
+
+    /// All four new keywords must parse end-to-end through `parse_filter`.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn lower_link_quantifiers_round_trip() {
+        for src in [
+            r#"(forall-linked "verifies" (= status "approved"))"#,
+            r#"(exists-linked "verifies" (has-tag "safety"))"#,
+            r#"(forall-linked-from "verifies" (= status "approved"))"#,
+            r#"(exists-linked-from "verifies" (has-tag "safety"))"#,
+        ] {
+            parse_filter(src).unwrap_or_else(|errs| panic!("failed to parse {src:?}: {errs:?}"));
+        }
+    }
+
+    /// Wrong arity must surface a clear lowering error mentioning the
+    /// link-type and body positions.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn lower_link_quantifier_arity_errors() {
+        let result = parse_filter(r#"(forall-linked "verifies")"#);
+        let errs = result.expect_err("missing body arg must fail");
+        assert!(
+            errs.iter().any(|e| e.message.contains("2 arguments")),
+            "expected arity error, got: {errs:?}"
+        );
+    }
+
+    /// The status-gate idiom — `(implies premise consequence)` with a
+    /// `forall-linked` consequence — is the canonical shape rules will
+    /// take. Sanity-check the whole-rule shape end-to-end:
+    /// - sys-verification with all-approved verifies targets → rule
+    ///   passes (consequent true).
+    /// - sys-verification with a draft verifies target → rule fails
+    ///   (consequent false, premise true).
+    /// - non-verification artifact → rule passes vacuously (premise
+    ///   false).
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn status_gate_idiom_end_to_end() {
+        let mut req_ok = make_artifact("REQ-001", "requirement", &[]);
+        req_ok.status = Some("approved".into());
+        let mut req_draft = make_artifact("REQ-002", "requirement", &[]);
+        req_draft.status = Some("draft".into());
+
+        let verifier_clean = artifact_with_links(
+            "V-001",
+            "sys-verification",
+            "approved",
+            vec![("verifies", "REQ-001")],
+        );
+        let verifier_bad = artifact_with_links(
+            "V-002",
+            "sys-verification",
+            "approved",
+            vec![("verifies", "REQ-002")],
+        );
+        let unrelated = artifact_with_links("FEAT-001", "feature", "approved", vec![]);
+
+        let store = store_with(vec![
+            req_ok,
+            req_draft,
+            verifier_clean.clone(),
+            verifier_bad.clone(),
+            unrelated.clone(),
+        ]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+
+        let rule_src = r#"
+            (implies
+              (and (= type "sys-verification")
+                   (= status "approved"))
+              (forall-linked "verifies" (= status "approved")))
+        "#;
+        let expr = parse_filter(rule_src).expect("rule should parse");
+
+        // Clean verifier: rule passes.
+        assert!(matches_filter_with_store(
+            &expr,
+            &verifier_clean,
+            &graph,
+            &store
+        ));
+        // Verifier with draft target: rule fails (this is the gate firing).
+        assert!(!matches_filter_with_store(
+            &expr,
+            &verifier_bad,
+            &graph,
+            &store
+        ));
+        // Unrelated artifact: premise false → rule passes vacuously.
+        assert!(matches_filter_with_store(&expr, &unrelated, &graph, &store));
     }
 }

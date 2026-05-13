@@ -175,6 +175,7 @@ fn run_check(expr: &Expr, artifact: &Artifact) -> bool {
         artifact,
         graph: &graph,
         store: None,
+        missing_target_policy: sexpr_eval::MissingTargetPolicy::default(),
     };
     sexpr_eval::check(expr, &ctx)
 }

@@ -551,7 +551,7 @@ mod proofs {
 
     // ── S-expression evaluator proofs ──────────────────────────────────
 
-    use crate::sexpr_eval::{self, Accessor, EvalContext, Expr, Value};
+    use crate::sexpr_eval::{self, Accessor, EvalContext, Expr, MissingTargetPolicy, Value};
 
     /// Build a concrete test artifact for evaluator proofs.
     ///
@@ -676,6 +676,7 @@ mod proofs {
             artifact: &artifact,
             graph: &graph,
             store: None,
+            missing_target_policy: MissingTargetPolicy::default(),
         };
 
         let expr = arb_expr(2);
@@ -696,6 +697,7 @@ mod proofs {
             artifact: &artifact,
             graph: &graph,
             store: None,
+            missing_target_policy: MissingTargetPolicy::default(),
         };
 
         let a = arb_expr(2);
@@ -723,6 +725,7 @@ mod proofs {
             artifact: &artifact,
             graph: &graph,
             store: None,
+            missing_target_policy: MissingTargetPolicy::default(),
         };
 
         let a = arb_expr(2);
@@ -748,6 +751,7 @@ mod proofs {
             artifact: &artifact,
             graph: &graph,
             store: None,
+            missing_target_policy: MissingTargetPolicy::default(),
         };
 
         let a = arb_expr(2);
@@ -775,6 +779,7 @@ mod proofs {
             artifact: &artifact,
             graph: &graph,
             store: None,
+            missing_target_policy: MissingTargetPolicy::default(),
         };
 
         let a = arb_expr(2);

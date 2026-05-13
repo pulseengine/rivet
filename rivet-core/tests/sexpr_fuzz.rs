@@ -272,6 +272,26 @@ fn expr_to_sexpr(e: &Expr) -> String {
             value_to_sexpr(tgt),
             value_to_sexpr(lt)
         ),
+        Expr::ForallLinked(lt, body) => format!(
+            "(forall-linked {} {})",
+            value_to_sexpr(lt),
+            expr_to_sexpr(body)
+        ),
+        Expr::ExistsLinked(lt, body) => format!(
+            "(exists-linked {} {})",
+            value_to_sexpr(lt),
+            expr_to_sexpr(body)
+        ),
+        Expr::ForallLinkedFrom(lt, body) => format!(
+            "(forall-linked-from {} {})",
+            value_to_sexpr(lt),
+            expr_to_sexpr(body)
+        ),
+        Expr::ExistsLinkedFrom(lt, body) => format!(
+            "(exists-linked-from {} {})",
+            value_to_sexpr(lt),
+            expr_to_sexpr(body)
+        ),
     }
 }
 
@@ -311,6 +331,7 @@ proptest! {
                 artifact: a,
                 graph: &graph,
                 store: Some(&store),
+                missing_target_policy: sexpr_eval::MissingTargetPolicy::default(),
             };
             let _ = sexpr_eval::check(&expr, &ctx);
         }
@@ -332,6 +353,7 @@ proptest! {
                 artifact: a,
                 graph: &graph,
                 store: Some(&store),
+                missing_target_policy: sexpr_eval::MissingTargetPolicy::default(),
             };
             let lhs = sexpr_eval::check(&e, &ctx);
             let rhs = sexpr_eval::check(&reparsed, &ctx);

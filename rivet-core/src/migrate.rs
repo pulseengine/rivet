@@ -1385,6 +1385,7 @@ mod tests {
             inverse_map: std::collections::HashMap::new(),
             traceability_rules: vec![],
             conditional_rules: vec![],
+            validation_rules: vec![],
         };
         let sw_req = crate::schema::ArtifactTypeDef {
             name: "sw-req".into(),
@@ -1578,6 +1579,7 @@ mod tests {
             inverse_map: std::collections::HashMap::new(),
             traceability_rules: vec![],
             conditional_rules: vec![],
+            validation_rules: vec![],
         };
         let sw_req = crate::schema::ArtifactTypeDef {
             name: "sw-req".into(),
