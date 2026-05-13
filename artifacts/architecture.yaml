@@ -53,11 +53,23 @@ artifacts:
       schema merging, artifact storage, adapter dispatch, graph building,
       validation, matrix computation, diff, documents, and query.
 
+      Internal data flow:
+
       ```mermaid
       flowchart LR
           Config --> Store
           Store --> Graph
           Graph --> Validate
+      ```
+
+      Process lifecycle:
+
+      ```mermaid
+      stateDiagram-v2
+          [*] --> Loading
+          Loading --> Validating : config + artifacts read
+          Validating --> Serving : graph built
+          Serving --> [*] : shutdown
       ```
     status: implemented
     tags: [aadl, architecture, core]

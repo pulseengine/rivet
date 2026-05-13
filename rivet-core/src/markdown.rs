@@ -488,4 +488,48 @@ mod tests {
         assert!(html.contains("Animal <|-- Dog"), "got: {html}");
         assert!(!html.contains("&lt;|--"), "got: {html}");
     }
+
+    // Belt-and-braces: a kitchen-sink of escaping-sensitive mermaid tokens
+    // across diagram families (sequence `->>` / `-->>`, ER `||--o{`, class
+    // stereotypes `<<interface>>`, flowchart `&` chains) must all pass through
+    // verbatim — the fix stops escaping the body wholesale, so this is
+    // type-agnostic, but cover the families so a future regression is loud.
+    // rivet: verifies REQ-032
+    #[test]
+    fn mermaid_escaping_sensitive_tokens_all_verbatim() {
+        let input = "```mermaid\n\
+            sequenceDiagram\n\
+            \x20 Alice ->> Bob: hi\n\
+            \x20 Bob -->> Alice: ok\n\
+            \x20 note over Alice,Bob: <<async>>\n\
+            ```\n\n\
+            ```mermaid\n\
+            erDiagram\n\
+            \x20 CUSTOMER ||--o{ ORDER : places\n\
+            ```\n\n\
+            ```mermaid\n\
+            flowchart LR\n\
+            \x20 A & B --> C\n\
+            ```";
+        let html = render_markdown(input);
+        for token in [
+            "Alice ->> Bob: hi",
+            "Bob -->> Alice: ok",
+            "<<async>>",
+            "CUSTOMER ||--o{ ORDER : places",
+            "A & B --> C",
+        ] {
+            assert!(
+                html.contains(token),
+                "token {token:?} must survive verbatim, got: {html}"
+            );
+        }
+        // No entity escaping of <, >, & anywhere.
+        for ent in ["&gt;", "&lt;", "&amp;"] {
+            assert!(
+                !html.contains(ent),
+                "entity {ent:?} must not appear, got: {html}"
+            );
+        }
+    }
 }
