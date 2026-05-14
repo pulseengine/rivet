@@ -328,7 +328,9 @@ selects: [automotive, asil-c]
 attributes:
   max-temp-c: 80
   min-temp-c: -40
+```
 
+```yaml
 # artifacts/requirements.yaml
 - id: REQ-THERMAL-01
   fields:
