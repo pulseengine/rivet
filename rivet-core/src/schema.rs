@@ -64,6 +64,14 @@ pub struct SchemaFile {
     pub traceability_rules: Vec<TraceabilityRule>,
     #[serde(default, rename = "conditional-rules")]
     pub conditional_rules: Vec<ConditionalRule>,
+    /// Status-gate / cross-artifact validation rules. Each entry is a
+    /// single s-expression evaluated against every artifact in the store
+    /// — fires (emits a diagnostic) when the expression returns false.
+    /// Typical shape: `(implies <premise> <consequence>)` where the
+    /// consequence uses `forall-linked` / `exists-linked` to gate on
+    /// the state of linked artifacts.
+    #[serde(default, rename = "validation-rules")]
+    pub validation_rules: Vec<ValidationRule>,
     /// Optional agent-pipelines block: declares oracles + pipelines for
     /// `rivet close-gaps`. See `rivet_core::agent_pipelines`. Schemas
     /// without this block are invisible to the pipeline runner.
@@ -245,6 +253,100 @@ pub enum Severity {
     #[default]
     Warning,
     Error,
+}
+
+// ── Validation rules (status gates, cross-artifact predicates) ──────────
+
+/// What a `forall-linked` / `exists-linked` quantifier inside a rule's
+/// s-expression should do when a link target ID doesn't resolve to an
+/// artifact in the local store. YAML-facing name; converts into the
+/// engine-side [`crate::sexpr_eval::MissingTargetPolicy`].
+///
+/// - `skip` (default): treat the unresolved link as vacuous (true for
+///   forall, no-contribution for exists). Composes with the existing
+///   `broken-links` validation phase — true link breakage is reported
+///   there, not by every rule that walks the graph.
+/// - `fail`: count an unresolved target as a body-predicate failure.
+///   Strictest interpretation; use for safety-critical gates where the
+///   absence of evidence is evidence of absence.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum MissingTargetPolicyName {
+    #[default]
+    Skip,
+    Fail,
+}
+
+impl From<MissingTargetPolicyName> for crate::sexpr_eval::MissingTargetPolicy {
+    fn from(name: MissingTargetPolicyName) -> Self {
+        match name {
+            MissingTargetPolicyName::Skip => Self::Skip,
+            MissingTargetPolicyName::Fail => Self::Fail,
+        }
+    }
+}
+
+/// A status-gate / cross-artifact validation rule.
+///
+/// Each rule is a single s-expression evaluated against every artifact
+/// in the store — fires (emits a diagnostic) when the expression
+/// returns false. The canonical shape is
+/// `(implies <premise> <consequence>)`, where the consequence uses
+/// `forall-linked` / `exists-linked` to gate on the state of linked
+/// artifacts.
+///
+/// Example:
+///
+/// ```yaml
+/// validation-rules:
+///   - id: V-verif-needs-approved-req
+///     description: |
+///       A sys/sw/unit-verification can only be approved or released
+///       when every requirement it verifies is approved.
+///     rule: |
+///       (implies
+///         (and (or (= type "sys-verification") (= type "sw-verification"))
+///              (or (= status "approved") (= status "released")))
+///         (forall-linked "verifies" (= status "approved")))
+///     on-unresolved: fail
+///     severity: error
+///     message: |
+///       {id} ({type}) is {status} but verifies one or more requirements
+///       that are not approved.
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ValidationRule {
+    /// Rule identifier — surfaced in diagnostics and the `{rule}`
+    /// message-template placeholder. Convention: short kebab-case like
+    /// `V-verif-needs-approved-req`.
+    pub id: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    /// The single s-expression body. Parsed once at validation time and
+    /// applied per artifact. The artifact under test is the implicit
+    /// `ctx.artifact` for the outer scope; link-traversing quantifiers
+    /// shift context to targets/sources.
+    pub rule: String,
+    /// Missing-target handling for `forall-linked` / `exists-linked`
+    /// inside `rule`. Default: skip.
+    #[serde(default, rename = "on-unresolved")]
+    pub on_unresolved: MissingTargetPolicyName,
+    /// If true, violations on `status: draft` artifacts are downgraded
+    /// to `Severity::Info` (matches the existing traceability-rule
+    /// behaviour). Default: false — status-gate rules typically gate
+    /// *by* status, so the rule's `when` clause already filters drafts.
+    #[serde(default, rename = "draft-downgrade")]
+    pub draft_downgrade: bool,
+    /// Diagnostic severity when the rule fires. Default: error.
+    #[serde(default = "default_severity")]
+    pub severity: Severity,
+    /// Optional message template. Placeholders `{id}`, `{type}`,
+    /// `{status}`, `{title}`, `{rule}` are substituted from the artifact
+    /// under test (and the rule itself for `{rule}`). If absent, a
+    /// default message names the rule and the artifact.
+    #[serde(default)]
+    pub message: Option<String>,
 }
 
 // ── Conditional rules ───────────────────────────────────────────────────
@@ -689,6 +791,7 @@ pub struct Schema {
     pub inverse_map: HashMap<String, String>,
     pub traceability_rules: Vec<TraceabilityRule>,
     pub conditional_rules: Vec<ConditionalRule>,
+    pub validation_rules: Vec<ValidationRule>,
 }
 
 impl Schema {
@@ -710,6 +813,7 @@ impl Schema {
         let mut inverse_map = HashMap::new();
         let mut traceability_rules = Vec::new();
         let mut conditional_rules = Vec::new();
+        let mut validation_rules = Vec::new();
 
         for file in files {
             for at in &file.artifact_types {
@@ -737,6 +841,7 @@ impl Schema {
             }
             traceability_rules.extend(file.traceability_rules.iter().cloned());
             conditional_rules.extend(file.conditional_rules.iter().cloned());
+            validation_rules.extend(file.validation_rules.iter().cloned());
         }
 
         Schema {
@@ -745,6 +850,7 @@ impl Schema {
             inverse_map,
             traceability_rules,
             conditional_rules,
+            validation_rules,
         }
     }
 

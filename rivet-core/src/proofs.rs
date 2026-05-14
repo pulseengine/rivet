@@ -56,6 +56,7 @@ mod proofs {
             link_types: vec![],
             traceability_rules: vec![],
             conditional_rules: vec![],
+            validation_rules: vec![],
             agent_pipelines: None,
         }])
     }
@@ -105,6 +106,7 @@ mod proofs {
                 alternate_backlinks: vec![],
             }],
             conditional_rules: vec![],
+            validation_rules: vec![],
             agent_pipelines: None,
         }])
     }
@@ -317,6 +319,7 @@ mod proofs {
             link_types: vec![],
             traceability_rules: vec![],
             conditional_rules: vec![],
+            validation_rules: vec![],
             agent_pipelines: None,
         }]);
 
@@ -439,6 +442,7 @@ mod proofs {
             }],
             traceability_rules: vec![],
             conditional_rules: vec![],
+            validation_rules: vec![],
             agent_pipelines: None,
         };
 
@@ -551,7 +555,7 @@ mod proofs {
 
     // ── S-expression evaluator proofs ──────────────────────────────────
 
-    use crate::sexpr_eval::{self, Accessor, EvalContext, Expr, Value};
+    use crate::sexpr_eval::{self, Accessor, EvalContext, Expr, MissingTargetPolicy, Value};
 
     /// Build a concrete test artifact for evaluator proofs.
     ///
@@ -676,6 +680,7 @@ mod proofs {
             artifact: &artifact,
             graph: &graph,
             store: None,
+            missing_target_policy: MissingTargetPolicy::default(),
         };
 
         let expr = arb_expr(2);
@@ -696,6 +701,7 @@ mod proofs {
             artifact: &artifact,
             graph: &graph,
             store: None,
+            missing_target_policy: MissingTargetPolicy::default(),
         };
 
         let a = arb_expr(2);
@@ -723,6 +729,7 @@ mod proofs {
             artifact: &artifact,
             graph: &graph,
             store: None,
+            missing_target_policy: MissingTargetPolicy::default(),
         };
 
         let a = arb_expr(2);
@@ -748,6 +755,7 @@ mod proofs {
             artifact: &artifact,
             graph: &graph,
             store: None,
+            missing_target_policy: MissingTargetPolicy::default(),
         };
 
         let a = arb_expr(2);
@@ -775,6 +783,7 @@ mod proofs {
             artifact: &artifact,
             graph: &graph,
             store: None,
+            missing_target_policy: MissingTargetPolicy::default(),
         };
 
         let a = arb_expr(2);

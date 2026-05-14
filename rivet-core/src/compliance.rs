@@ -261,6 +261,7 @@ mod tests {
             inverse_map: std::collections::HashMap::new(),
             traceability_rules: Vec::new(),
             conditional_rules: Vec::new(),
+            validation_rules: Vec::new(),
         }
     }
 

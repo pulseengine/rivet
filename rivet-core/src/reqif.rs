@@ -1982,6 +1982,7 @@ mod tests {
             link_types: HashMap::new(),
             inverse_map: HashMap::new(),
             traceability_rules: vec![],
+            validation_rules: vec![],
             conditional_rules: vec![],
         };
 

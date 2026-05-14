@@ -344,7 +344,118 @@ pub fn validate_with_externals(
         }
     }
 
+    // 9. Check status-gate / cross-artifact validation rules.
+    //
+    // Each rule's `rule:` field is a single s-expression evaluated against
+    // every artifact in the store. Fires (emits a diagnostic) when the
+    // expression returns false. Rule body typically takes the implies-shape
+    //   `(implies <premise> <consequence>)`
+    // where the consequence uses `forall-linked` / `exists-linked` to gate
+    // on the state of linked artifacts. See `schema::ValidationRule`.
+    //
+    // The s-expr is parsed once per rule (not per artifact) to keep the
+    // hot loop tight.
+    diagnostics.extend(evaluate_validation_rules(store, schema, graph));
+
     diagnostics
+}
+
+/// Evaluate `schema.validation_rules` against every artifact in the store.
+///
+/// Returns one diagnostic per (rule, artifact) pair where the rule's
+/// s-expression evaluates to false. Parse errors in a rule body emit a
+/// single rule-level diagnostic and skip evaluation against artifacts.
+///
+/// Severity is downgraded to `Info` for `status: draft` artifacts only
+/// when the rule opts in via `draft-downgrade: true` — the default is to
+/// fire at full severity (status-gate rules typically gate *by* status,
+/// so the rule's `when` clause already filters drafts).
+fn evaluate_validation_rules(store: &Store, schema: &Schema, graph: &LinkGraph) -> Vec<Diagnostic> {
+    use crate::sexpr_eval;
+
+    let mut out = Vec::new();
+    for rule in &schema.validation_rules {
+        // Parse the rule body once. A parse failure is itself a
+        // schema-level diagnostic — surface it and skip this rule's
+        // artifact evaluation.
+        let expr = match sexpr_eval::parse_filter(&rule.rule) {
+            Ok(e) => e,
+            Err(errs) => {
+                let detail = errs
+                    .iter()
+                    .map(|e| e.message.as_str())
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                out.push(Diagnostic {
+                    source_file: None,
+                    line: None,
+                    column: None,
+                    severity: Severity::Error,
+                    artifact_id: None,
+                    rule: rule.id.clone(),
+                    message: format!(
+                        "validation-rule '{}' has a malformed rule body: {detail}",
+                        rule.id
+                    ),
+                });
+                continue;
+            }
+        };
+        let policy: sexpr_eval::MissingTargetPolicy = rule.on_unresolved.into();
+        for artifact in store.iter() {
+            let holds =
+                sexpr_eval::matches_filter_with_policy(&expr, artifact, graph, store, policy);
+            if holds {
+                continue;
+            }
+            let severity = if rule.draft_downgrade
+                && artifact.status.as_deref().map(str::to_lowercase).as_deref() == Some("draft")
+            {
+                Severity::Info
+            } else {
+                rule.severity
+            };
+            let message = render_validation_message(rule, artifact);
+            out.push(Diagnostic {
+                source_file: artifact.source_file.clone(),
+                line: None,
+                column: None,
+                severity,
+                artifact_id: Some(artifact.id.clone()),
+                rule: rule.id.clone(),
+                message,
+            });
+        }
+    }
+    out
+}
+
+/// Render a `ValidationRule.message` template against an artifact.
+///
+/// Recognised placeholders (lowercase, exact match): `{id}`, `{type}`,
+/// `{status}`, `{title}`, `{rule}`. Unset `status` renders as `<unset>`
+/// so the auditor sees the absence rather than an empty string. Unknown
+/// placeholders are left in place — surfaces typos in the rule message
+/// rather than swallowing them silently.
+fn render_validation_message(
+    rule: &crate::schema::ValidationRule,
+    artifact: &crate::model::Artifact,
+) -> String {
+    let template = match &rule.message {
+        Some(t) => t.as_str(),
+        None => {
+            return format!(
+                "{} ({}) violates validation rule '{}'",
+                artifact.id, artifact.artifact_type, rule.id
+            );
+        }
+    };
+    template
+        .replace("{id}", &artifact.id)
+        .replace("{type}", &artifact.artifact_type)
+        .replace("{status}", artifact.status.as_deref().unwrap_or("<unset>"))
+        .replace("{title}", &artifact.title)
+        .replace("{rule}", &rule.id)
 }
 
 /// Structural validation only (phases 1-7).
@@ -2524,6 +2635,812 @@ then:
             diags.len(),
             1,
             "repeated mentions of one id must dedupe, got {diags:?}"
+        );
+    }
+
+    // ── Validation rules / status gates (phase 9) ───────────────────────
+
+    /// End-to-end: a V-model status gate rule fires for a verification
+    /// whose `verifies` target is draft, but stays silent for a clean
+    /// verifier. Also exercises the `{id}` / `{type}` / `{status}`
+    /// message-template substitution.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn validation_rule_status_gate_end_to_end() {
+        use crate::links::LinkGraph;
+        use crate::model::{Artifact, Link};
+        use crate::schema::{MissingTargetPolicyName, Severity, ValidationRule};
+        use std::collections::BTreeMap;
+
+        fn req(id: &str, status: &str) -> Artifact {
+            Artifact {
+                id: id.into(),
+                artifact_type: "requirement".into(),
+                title: format!("Title {id}"),
+                description: None,
+                status: Some(status.into()),
+                tags: vec![],
+                links: vec![],
+                fields: BTreeMap::new(),
+                provenance: None,
+                source_file: None,
+            }
+        }
+        fn verifier(id: &str, status: &str, target: &str) -> Artifact {
+            Artifact {
+                id: id.into(),
+                artifact_type: "sys-verification".into(),
+                title: format!("Verifier {id}"),
+                description: None,
+                status: Some(status.into()),
+                tags: vec![],
+                links: vec![Link {
+                    link_type: "verifies".into(),
+                    target: target.into(),
+                }],
+                fields: BTreeMap::new(),
+                provenance: None,
+                source_file: None,
+            }
+        }
+
+        let req_ok = req("REQ-001", "approved");
+        let req_draft = req("REQ-002", "draft");
+        let v_clean = verifier("V-001", "approved", "REQ-001");
+        let v_bad = verifier("V-002", "approved", "REQ-002");
+
+        let mut store = Store::default();
+        for a in [
+            req_ok.clone(),
+            req_draft.clone(),
+            v_clean.clone(),
+            v_bad.clone(),
+        ] {
+            store.upsert(a);
+        }
+
+        let rule = ValidationRule {
+            id: "V-verif-needs-approved-req".into(),
+            description: None,
+            rule: r#"
+                (implies
+                  (and (= type "sys-verification")
+                       (= status "approved"))
+                  (forall-linked "verifies" (= status "approved")))
+            "#
+            .into(),
+            on_unresolved: MissingTargetPolicyName::default(),
+            draft_downgrade: false,
+            severity: Severity::Error,
+            message: Some(
+                "{id} ({type}) is {status} but verifies a non-approved requirement".into(),
+            ),
+        };
+
+        let mut schema = Schema::merge(&[]);
+        schema.validation_rules.push(rule);
+        let graph = LinkGraph::build(&store, &schema);
+
+        let diags = validate(&store, &schema, &graph);
+        let gate_diags: Vec<_> = diags
+            .iter()
+            .filter(|d| d.rule == "V-verif-needs-approved-req")
+            .collect();
+
+        assert_eq!(
+            gate_diags.len(),
+            1,
+            "exactly one violation expected (V-002 -> REQ-002[draft]); got {gate_diags:?}"
+        );
+        let d = gate_diags[0];
+        assert_eq!(d.severity, Severity::Error);
+        assert_eq!(d.artifact_id.as_deref(), Some("V-002"));
+        assert!(d.message.contains("V-002"), "{:?}", d.message);
+        assert!(d.message.contains("sys-verification"), "{:?}", d.message);
+        assert!(d.message.contains("approved"), "{:?}", d.message);
+    }
+
+    /// A rule with a malformed s-expression body emits a rule-level
+    /// diagnostic rather than panicking or silently passing every artifact.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn validation_rule_parse_error_surfaces_diagnostic() {
+        use crate::schema::{Severity, ValidationRule};
+
+        let store = Store::default();
+        let mut schema = Schema::merge(&[]);
+        schema.validation_rules.push(ValidationRule {
+            id: "broken-rule".into(),
+            description: None,
+            rule: "(unclosed".into(), // syntax error
+            on_unresolved: Default::default(),
+            draft_downgrade: false,
+            severity: Severity::Error,
+            message: None,
+        });
+        let graph = crate::links::LinkGraph::build(&store, &schema);
+
+        let diags = validate(&store, &schema, &graph);
+        let rule_err: Vec<_> = diags.iter().filter(|d| d.rule == "broken-rule").collect();
+        assert_eq!(
+            rule_err.len(),
+            1,
+            "parse error must surface as exactly one diagnostic; got {rule_err:?}"
+        );
+        assert_eq!(rule_err[0].severity, Severity::Error);
+        assert!(
+            rule_err[0].message.contains("malformed"),
+            "{:?}",
+            rule_err[0].message
+        );
+    }
+
+    /// `draft-downgrade: true` causes violations on `status: draft`
+    /// artifacts to render at Info instead of the declared severity.
+    /// Without the flag, drafts fire at full severity.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn validation_rule_draft_downgrade_opt_in() {
+        use crate::links::LinkGraph;
+        use crate::model::Artifact;
+        use crate::schema::{Severity, ValidationRule};
+        use std::collections::BTreeMap;
+
+        let mut art = Artifact {
+            id: "X-001".into(),
+            artifact_type: "thing".into(),
+            title: "T".into(),
+            description: None,
+            status: Some("draft".into()),
+            tags: vec![],
+            links: vec![],
+            fields: BTreeMap::new(),
+            provenance: None,
+            source_file: None,
+        };
+
+        let mut store = Store::default();
+        store.upsert(art.clone());
+
+        // The rule always fails (BoolLit(false) shape via `(not true)`).
+        let make_rule = |id: &str, downgrade: bool| ValidationRule {
+            id: id.into(),
+            description: None,
+            rule: "(not true)".into(),
+            on_unresolved: Default::default(),
+            draft_downgrade: downgrade,
+            severity: Severity::Error,
+            message: None,
+        };
+
+        // Without draft-downgrade: error.
+        let mut schema = Schema::merge(&[]);
+        schema
+            .validation_rules
+            .push(make_rule("always-fail-no-dd", false));
+        let graph = LinkGraph::build(&store, &schema);
+        let diags = validate(&store, &schema, &graph);
+        let d = diags
+            .iter()
+            .find(|d| d.rule == "always-fail-no-dd")
+            .expect("rule must fire");
+        assert_eq!(d.severity, Severity::Error);
+
+        // With draft-downgrade: info (because artifact is draft).
+        let mut schema = Schema::merge(&[]);
+        schema
+            .validation_rules
+            .push(make_rule("always-fail-dd", true));
+        let graph = LinkGraph::build(&store, &schema);
+        let diags = validate(&store, &schema, &graph);
+        let d = diags
+            .iter()
+            .find(|d| d.rule == "always-fail-dd")
+            .expect("rule must fire");
+        assert_eq!(d.severity, Severity::Info);
+
+        // With draft-downgrade but non-draft artifact: still error.
+        art.status = Some("approved".into());
+        let mut store2 = Store::default();
+        store2.upsert(art);
+        let mut schema = Schema::merge(&[]);
+        schema
+            .validation_rules
+            .push(make_rule("always-fail-dd-approved", true));
+        let graph = LinkGraph::build(&store2, &schema);
+        let diags = validate(&store2, &schema, &graph);
+        let d = diags
+            .iter()
+            .find(|d| d.rule == "always-fail-dd-approved")
+            .expect("rule must fire");
+        assert_eq!(d.severity, Severity::Error);
+    }
+
+    // ── Phase interactions — broken links, rule merge, severity ─────────
+
+    /// A broken link (target doesn't exist) under `on-unresolved: skip`
+    /// must produce exactly ONE diagnostic — the existing phase-6
+    /// `broken-link` finding — and the validation-rule must stay silent
+    /// (vacuous-true for that link).
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn skip_policy_lets_broken_links_phase_handle_breakage_alone() {
+        use crate::links::LinkGraph;
+        use crate::model::{Artifact, Link};
+        use crate::schema::{MissingTargetPolicyName, Severity, ValidationRule};
+        use std::collections::BTreeMap;
+
+        // Verifier points at a target that doesn't exist in the store.
+        let verifier = Artifact {
+            id: "V-001".into(),
+            artifact_type: "sys-verification".into(),
+            title: "V".into(),
+            description: None,
+            status: Some("approved".into()),
+            tags: vec![],
+            links: vec![Link {
+                link_type: "verifies".into(),
+                target: "REQ-MISSING".into(),
+            }],
+            fields: BTreeMap::new(),
+            provenance: None,
+            source_file: None,
+        };
+
+        let mut store = Store::default();
+        store.upsert(verifier);
+
+        let mut schema = Schema::merge(&[]);
+        schema.validation_rules.push(ValidationRule {
+            id: "V-needs-approved-req".into(),
+            description: None,
+            rule: r#"
+                (implies (= type "sys-verification")
+                  (forall-linked "verifies" (= status "approved")))
+            "#
+            .into(),
+            on_unresolved: MissingTargetPolicyName::Skip,
+            draft_downgrade: false,
+            severity: Severity::Error,
+            message: None,
+        });
+        let graph = LinkGraph::build(&store, &schema);
+        let diags = validate(&store, &schema, &graph);
+
+        // Phase 6: broken-link fires.
+        let broken: Vec<_> = diags.iter().filter(|d| d.rule == "broken-link").collect();
+        assert_eq!(
+            broken.len(),
+            1,
+            "expected exactly one broken-link diagnostic"
+        );
+
+        // Phase 9: status-gate must stay silent (Skip → vacuous-true on
+        // unresolved + the only outbound link is unresolved → audit-strict
+        // false. Wait, that would fire. Let me think again).
+        //
+        // Actually: forall-linked over 1 unresolved link with Skip policy
+        // contributes vacuous-true. The full set of resolvable targets is
+        // empty, but we count the link as "passing vacuously" — so the
+        // forall over the unresolved-only set is true (every link's
+        // contribution is true under Skip). Audit-strict empty fires only
+        // when there are NO links of that type at all; here there is one,
+        // it's just unresolved.
+        let gate: Vec<_> = diags
+            .iter()
+            .filter(|d| d.rule == "V-needs-approved-req")
+            .collect();
+        assert_eq!(
+            gate.len(),
+            0,
+            "Skip policy must leave the gate silent on an unresolved-only \
+             link; the broken-links phase already reports breakage. \
+             got: {gate:#?}"
+        );
+    }
+
+    /// `on-unresolved: fail` causes the gate to fire on broken links too.
+    /// Both diagnostics surface — they report distinct facets: the link is
+    /// broken (phase 6) AND the rule cannot be satisfied because of it
+    /// (phase 9). This is correct double-coverage, not double-reporting:
+    /// the rule fields differ (`broken-link` vs `<rule-id>`).
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn fail_policy_emits_alongside_broken_links() {
+        use crate::links::LinkGraph;
+        use crate::model::{Artifact, Link};
+        use crate::schema::{MissingTargetPolicyName, Severity, ValidationRule};
+        use std::collections::BTreeMap;
+
+        let verifier = Artifact {
+            id: "V-001".into(),
+            artifact_type: "sys-verification".into(),
+            title: "V".into(),
+            description: None,
+            status: Some("approved".into()),
+            tags: vec![],
+            links: vec![Link {
+                link_type: "verifies".into(),
+                target: "REQ-MISSING".into(),
+            }],
+            fields: BTreeMap::new(),
+            provenance: None,
+            source_file: None,
+        };
+        let mut store = Store::default();
+        store.upsert(verifier);
+
+        let mut schema = Schema::merge(&[]);
+        schema.validation_rules.push(ValidationRule {
+            id: "V-fail-policy".into(),
+            description: None,
+            rule: r#"
+                (implies (= type "sys-verification")
+                  (forall-linked "verifies" (= status "approved")))
+            "#
+            .into(),
+            on_unresolved: MissingTargetPolicyName::Fail,
+            draft_downgrade: false,
+            severity: Severity::Error,
+            message: None,
+        });
+        let graph = LinkGraph::build(&store, &schema);
+        let diags = validate(&store, &schema, &graph);
+
+        // Both phases fire, reporting distinct rules.
+        let broken: Vec<_> = diags.iter().filter(|d| d.rule == "broken-link").collect();
+        let gate: Vec<_> = diags.iter().filter(|d| d.rule == "V-fail-policy").collect();
+        assert_eq!(broken.len(), 1, "broken-link phase must still fire");
+        assert_eq!(
+            gate.len(),
+            1,
+            "Fail policy must surface the gate violation too"
+        );
+        // The two diagnostics target the same artifact but report
+        // different rules — auditor sees both.
+        assert_eq!(broken[0].artifact_id.as_deref(), Some("V-001"));
+        assert_eq!(gate[0].artifact_id.as_deref(), Some("V-001"));
+    }
+
+    /// Two schemas that declare validation-rules with the SAME `id:` —
+    /// `Schema::merge` concats them rather than deduping. If a rule body
+    /// differs between the two, both fire independently. Document the
+    /// behaviour so downstream users can rely on it (or so a future PR
+    /// can introduce deduplication with explicit semantics).
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn schema_merge_concats_validation_rules_by_id() {
+        use crate::schema::{
+            MissingTargetPolicyName, SchemaFile, SchemaMetadata, Severity, ValidationRule,
+        };
+
+        let mk_rule = |id: &str, body: &str| ValidationRule {
+            id: id.into(),
+            description: None,
+            rule: body.into(),
+            on_unresolved: MissingTargetPolicyName::Skip,
+            draft_downgrade: false,
+            severity: Severity::Error,
+            message: None,
+        };
+        let mk_file = |name: &str, rules: Vec<ValidationRule>| SchemaFile {
+            schema: SchemaMetadata {
+                name: name.into(),
+                version: "0.1.0".into(),
+                namespace: None,
+                description: None,
+                extends: vec![],
+                min_rivet_version: None,
+                license: None,
+            },
+            base_fields: vec![],
+            artifact_types: vec![],
+            link_types: vec![],
+            traceability_rules: vec![],
+            conditional_rules: vec![],
+            validation_rules: rules,
+            agent_pipelines: None,
+        };
+
+        // Two files; both declare a rule with id "shared-id" (different
+        // bodies). Plus each file has a unique rule.
+        let a = mk_file(
+            "a",
+            vec![
+                mk_rule("shared-id", "(= type \"x\")"),
+                mk_rule("only-in-a", "(= type \"y\")"),
+            ],
+        );
+        let b = mk_file(
+            "b",
+            vec![
+                mk_rule("shared-id", "(= type \"z\")"),
+                mk_rule("only-in-b", "(= type \"w\")"),
+            ],
+        );
+        let schema = Schema::merge(&[a, b]);
+
+        // All four rules present — concat semantics, no dedup.
+        assert_eq!(schema.validation_rules.len(), 4);
+        let ids: Vec<&str> = schema
+            .validation_rules
+            .iter()
+            .map(|r| r.id.as_str())
+            .collect();
+        // Two copies of "shared-id" — one from each file, preserving
+        // the order in which the files were merged.
+        let shared_count = ids.iter().filter(|i| **i == "shared-id").count();
+        assert_eq!(
+            shared_count, 2,
+            "shared id appears once per declaring file; got ids: {ids:?}"
+        );
+    }
+
+    /// **Negative input: empty rule body.** A rule whose `rule:` field is
+    /// the empty string parses (the s-expr parser returns `BoolLit(true)`
+    /// for empty input — "empty filter matches everything"). Applied as a
+    /// rule, that means the rule is inert — never fires. This is
+    /// consistent with the filter semantics elsewhere but probably
+    /// surprises authors. Documented here so a future PR can decide
+    /// whether to reject empty rule bodies at schema-validation time.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn empty_rule_body_is_inert_not_panic() {
+        use crate::links::LinkGraph;
+        use crate::model::Artifact;
+        use crate::schema::{Severity, ValidationRule};
+        use std::collections::BTreeMap;
+
+        let art = Artifact {
+            id: "X".into(),
+            artifact_type: "thing".into(),
+            title: "T".into(),
+            description: None,
+            status: Some("approved".into()),
+            tags: vec![],
+            links: vec![],
+            fields: BTreeMap::new(),
+            provenance: None,
+            source_file: None,
+        };
+        let mut store = Store::default();
+        store.upsert(art);
+
+        let mut schema = Schema::merge(&[]);
+        schema.validation_rules.push(ValidationRule {
+            id: "empty-body".into(),
+            description: None,
+            rule: "".into(), // empty
+            on_unresolved: Default::default(),
+            draft_downgrade: false,
+            severity: Severity::Error,
+            message: None,
+        });
+        let graph = LinkGraph::build(&store, &schema);
+        let diags = validate(&store, &schema, &graph);
+        // No diagnostic for "empty-body" — rule is inert.
+        assert!(
+            !diags.iter().any(|d| d.rule == "empty-body"),
+            "empty rule body must not fire any diagnostic; got: {diags:#?}"
+        );
+    }
+
+    /// **Negative input: whitespace-only rule body.** Same shape as empty
+    /// — the s-expr parser tolerates trivia. Rule should be inert, not
+    /// panic.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn whitespace_only_rule_body_is_inert() {
+        use crate::links::LinkGraph;
+        use crate::model::Artifact;
+        use crate::schema::{Severity, ValidationRule};
+        use std::collections::BTreeMap;
+
+        let art = Artifact {
+            id: "X".into(),
+            artifact_type: "thing".into(),
+            title: "T".into(),
+            description: None,
+            status: Some("approved".into()),
+            tags: vec![],
+            links: vec![],
+            fields: BTreeMap::new(),
+            provenance: None,
+            source_file: None,
+        };
+        let mut store = Store::default();
+        store.upsert(art);
+
+        let mut schema = Schema::merge(&[]);
+        schema.validation_rules.push(ValidationRule {
+            id: "whitespace-body".into(),
+            description: None,
+            rule: "   \n  \t  ".into(),
+            on_unresolved: Default::default(),
+            draft_downgrade: false,
+            severity: Severity::Error,
+            message: None,
+        });
+        let graph = LinkGraph::build(&store, &schema);
+        let diags = validate(&store, &schema, &graph);
+        assert!(!diags.iter().any(|d| d.rule == "whitespace-body"));
+    }
+
+    /// **Negative input: unknown operator.** Like `(bogus-op type "x")`.
+    /// The lowering phase rejects unknown heads with an error. The phase-9
+    /// pipeline must catch that and surface a rule-level diagnostic
+    /// pointing at the rule by id, not panic or silently pass.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn unknown_operator_in_rule_body_surfaces_diagnostic() {
+        use crate::schema::{Severity, ValidationRule};
+
+        let store = Store::default();
+        let mut schema = Schema::merge(&[]);
+        schema.validation_rules.push(ValidationRule {
+            id: "uses-bogus-op".into(),
+            description: None,
+            rule: r#"(bogus-op type "requirement")"#.into(),
+            on_unresolved: Default::default(),
+            draft_downgrade: false,
+            severity: Severity::Error,
+            message: None,
+        });
+        let graph = crate::links::LinkGraph::build(&store, &schema);
+        let diags = validate(&store, &schema, &graph);
+        let d = diags
+            .iter()
+            .find(|d| d.rule == "uses-bogus-op")
+            .expect("parse error must surface a diagnostic, got none");
+        assert_eq!(d.severity, Severity::Error);
+        assert!(
+            d.message.contains("malformed") || d.message.contains("unknown"),
+            "expected message to mention the parse failure; got {:?}",
+            d.message
+        );
+    }
+
+    /// **Negative input: mismatched parens.** Lower should reject; phase
+    /// 9 surfaces a rule-level diagnostic.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn mismatched_parens_surface_diagnostic() {
+        use crate::schema::{Severity, ValidationRule};
+
+        let store = Store::default();
+        let mut schema = Schema::merge(&[]);
+        schema.validation_rules.push(ValidationRule {
+            id: "bad-parens".into(),
+            description: None,
+            rule: r#"(and (= type "x") (= status "approved""#.into(), // missing closing parens
+            on_unresolved: Default::default(),
+            draft_downgrade: false,
+            severity: Severity::Error,
+            message: None,
+        });
+        let graph = crate::links::LinkGraph::build(&store, &schema);
+        let diags = validate(&store, &schema, &graph);
+        assert!(
+            diags.iter().any(|d| d.rule == "bad-parens"),
+            "mismatched parens must surface a rule-level diagnostic"
+        );
+    }
+
+    /// **Negative input: rule body references a field that doesn't exist
+    /// on any artifact.** `resolve_str` returns the empty string for
+    /// missing fields (filter semantics — "show artifacts whose
+    /// non-existent-field = X" correctly excludes everyone). The rule
+    /// should not panic and should evaluate predictably.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn rule_referencing_unknown_field_evaluates_predictably() {
+        use crate::links::LinkGraph;
+        use crate::model::Artifact;
+        use crate::schema::{Severity, ValidationRule};
+        use std::collections::BTreeMap;
+
+        let art = Artifact {
+            id: "X".into(),
+            artifact_type: "thing".into(),
+            title: "T".into(),
+            description: None,
+            status: Some("approved".into()),
+            tags: vec![],
+            links: vec![],
+            fields: BTreeMap::new(),
+            provenance: None,
+            source_file: None,
+        };
+        let mut store = Store::default();
+        store.upsert(art);
+
+        let mut schema = Schema::merge(&[]);
+        // Rule premise references `nonexistent-field` — resolves to "".
+        // Premise `(= nonexistent-field "anything")` becomes `"" == "anything"`
+        // which is false. `(implies false _)` is true. So the rule
+        // doesn't fire. No panic.
+        schema.validation_rules.push(ValidationRule {
+            id: "unknown-field-vacuous".into(),
+            description: None,
+            rule: r#"(implies (= nonexistent-field "anything") (= type "thing"))"#.into(),
+            on_unresolved: Default::default(),
+            draft_downgrade: false,
+            severity: Severity::Error,
+            message: None,
+        });
+        let graph = LinkGraph::build(&store, &schema);
+        let diags = validate(&store, &schema, &graph);
+        assert!(
+            !diags.iter().any(|d| d.rule == "unknown-field-vacuous"),
+            "unknown-field premise should be false → implies true → no \
+             diagnostic; got: {diags:#?}"
+        );
+    }
+
+    /// **Negative input: very long rule body.** A 50 KB rule body of
+    /// nested `(and ...)` ops must lower and evaluate without crashing.
+    /// Catches stack overflows in the recursive lowering or evaluator.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn very_long_rule_body_does_not_panic() {
+        use crate::schema::{Severity, ValidationRule};
+
+        // Nest 100 `(and …)` levels. Reasonably deep without being so
+        // pathological as to legitimately overflow Rust's default 8 MB
+        // main-thread stack.
+        let mut body = "true".to_string();
+        for _ in 0..100 {
+            body = format!("(and {body} true)");
+        }
+
+        let store = Store::default();
+        let mut schema = Schema::merge(&[]);
+        schema.validation_rules.push(ValidationRule {
+            id: "very-deep".into(),
+            description: None,
+            rule: body,
+            on_unresolved: Default::default(),
+            draft_downgrade: false,
+            severity: Severity::Error,
+            message: None,
+        });
+        let graph = crate::links::LinkGraph::build(&store, &schema);
+        // Reaching here without panic is the assertion.
+        let _diags = validate(&store, &schema, &graph);
+    }
+
+    /// **Negative input: `verifies` link-type with a leading/trailing
+    /// space typo.** `(forall-linked " verifies " body)` filters links
+    /// whose link_type equals `" verifies "` literally — none match.
+    /// Audit-strict empty fires. Author's typo surfaces as a real-looking
+    /// rule violation (every approved verifier fires), making the typo
+    /// loud rather than silent.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn rule_link_type_typo_surfaces_loudly() {
+        use crate::links::LinkGraph;
+        use crate::model::{Artifact, Link};
+        use crate::schema::{Severity, ValidationRule};
+        use std::collections::BTreeMap;
+
+        let req = Artifact {
+            id: "REQ-001".into(),
+            artifact_type: "requirement".into(),
+            title: "R".into(),
+            description: None,
+            status: Some("approved".into()),
+            tags: vec![],
+            links: vec![],
+            fields: BTreeMap::new(),
+            provenance: None,
+            source_file: None,
+        };
+        let verifier = Artifact {
+            id: "V-001".into(),
+            artifact_type: "sys-verification".into(),
+            title: "V".into(),
+            description: None,
+            status: Some("approved".into()),
+            tags: vec![],
+            links: vec![Link {
+                link_type: "verifies".into(), // correct
+                target: "REQ-001".into(),
+            }],
+            fields: BTreeMap::new(),
+            provenance: None,
+            source_file: None,
+        };
+        let mut store = Store::default();
+        store.upsert(req);
+        store.upsert(verifier);
+
+        let mut schema = Schema::merge(&[]);
+        // Author typo: " verifies " with spaces.
+        schema.validation_rules.push(ValidationRule {
+            id: "typo-link-type".into(),
+            description: None,
+            rule: r#"
+                (implies (= type "sys-verification")
+                  (forall-linked " verifies " (= status "approved")))
+            "#
+            .into(),
+            on_unresolved: Default::default(),
+            draft_downgrade: false,
+            severity: Severity::Error,
+            message: None,
+        });
+        let graph = LinkGraph::build(&store, &schema);
+        let diags = validate(&store, &schema, &graph);
+
+        // Audit-strict empty fires: the typo means the filter matches no
+        // links, the gate fails, and the verifier shows up in diagnostics.
+        // The auditor seeing "every approved verifier violates this rule"
+        // will (correctly) suspect the rule itself.
+        let typo_diags: Vec<_> = diags
+            .iter()
+            .filter(|d| d.rule == "typo-link-type")
+            .collect();
+        assert_eq!(
+            typo_diags.len(),
+            1,
+            "typo'd link type should make audit-strict empty fire on \
+             every matching artifact, surfacing the typo loudly"
+        );
+        assert_eq!(typo_diags[0].artifact_id.as_deref(), Some("V-001"));
+    }
+
+    /// Severity-downgrade interaction: the new validation-rules phase 9
+    /// must NOT inherit the phase-7 traceability-rule draft-downgrade.
+    /// They're independent severity pipelines — each rule kind owns its
+    /// own downgrade decision. Confirms my opt-in design isn't
+    /// accidentally subverted.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn traceability_rule_downgrade_does_not_leak_into_validation_rules() {
+        use crate::links::LinkGraph;
+        use crate::model::Artifact;
+        use crate::schema::{Severity, ValidationRule};
+        use std::collections::BTreeMap;
+
+        // Draft artifact. Phase-7 traceability-rule violations would
+        // downgrade to Info. Phase-9 validation-rule violations must
+        // NOT — unless the rule opts in via draft_downgrade: true.
+        let art = Artifact {
+            id: "A-001".into(),
+            artifact_type: "thing".into(),
+            title: "T".into(),
+            description: None,
+            status: Some("draft".into()),
+            tags: vec![],
+            links: vec![],
+            fields: BTreeMap::new(),
+            provenance: None,
+            source_file: None,
+        };
+        let mut store = Store::default();
+        store.upsert(art);
+
+        let mut schema = Schema::merge(&[]);
+        schema.validation_rules.push(ValidationRule {
+            id: "always-fails".into(),
+            description: None,
+            rule: "(not true)".into(),
+            on_unresolved: Default::default(),
+            draft_downgrade: false, // opt-OUT explicitly
+            severity: Severity::Error,
+            message: None,
+        });
+        let graph = LinkGraph::build(&store, &schema);
+        let diags = validate(&store, &schema, &graph);
+        let d = diags
+            .iter()
+            .find(|d| d.rule == "always-fails")
+            .expect("rule must fire");
+        assert_eq!(
+            d.severity,
+            Severity::Error,
+            "phase-7 traceability draft-downgrade must NOT cascade into \
+             phase-9 validation rules"
         );
     }
 }

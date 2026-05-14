@@ -542,6 +542,64 @@ traceability-rules:
 # Today only `bidirectional-trace` (rivet check bidirectional) and
 # `peer-review-signed` (rivet check review-signoff) are wired to real
 # CLI subcommands.
+
+# ── Status-gate validation rules (V-model promotion gates) ───────────────
+#
+# Each rule is a single s-expression; fires (emits diagnostic) when the
+# expression returns false. The (implies premise consequence) shape pairs
+# a `when` premise with a forall-linked consequence. Empty-link sets are
+# audit-strict (false): a verifier with no `verifies` link cannot satisfy
+# the gate. `on-unresolved: skip` (default) is set explicitly here so the
+# rules compose with cross-org / external-anchor boundaries — see
+# docs/design/status-gate-rules.md.
+validation-rules:
+  - id: V-sys-verification-needs-approved-req
+    description: >
+      A sys-verification (SYS.5) may only be approved/released once every
+      system-req it verifies is approved. Operationalises the rule that
+      verification cannot be signed off ahead of its requirement.
+    rule: |
+      (implies
+        (and (= type "sys-verification")
+             (or (= status "approved") (= status "released")))
+        (forall-linked "verifies" (= status "approved")))
+    on-unresolved: skip
+    severity: error
+    message: |
+      {id} (sys-verification) is {status} but verifies one or more
+      system-reqs that are not approved.
+
+  - id: V-sw-verification-needs-approved-req
+    description: >
+      A sw-verification (SWE.6) may only be approved/released once every
+      sw-req it verifies is approved.
+    rule: |
+      (implies
+        (and (= type "sw-verification")
+             (or (= status "approved") (= status "released")))
+        (forall-linked "verifies" (= status "approved")))
+    on-unresolved: skip
+    severity: error
+    message: |
+      {id} (sw-verification) is {status} but verifies one or more
+      sw-reqs that are not approved.
+
+  - id: V-unit-verification-needs-approved-design
+    description: >
+      A unit-verification (SWE.4) may only be approved/released once the
+      sw-detail-design it verifies is approved. Same V-model promotion
+      gate, applied at the unit-test level.
+    rule: |
+      (implies
+        (and (= type "unit-verification")
+             (or (= status "approved") (= status "released")))
+        (forall-linked "verifies" (= status "approved")))
+    on-unresolved: skip
+    severity: error
+    message: |
+      {id} (unit-verification) is {status} but verifies a
+      sw-detail-design that is not approved.
+
 agent-pipelines:
   oracles:
     - id: bidirectional-trace
