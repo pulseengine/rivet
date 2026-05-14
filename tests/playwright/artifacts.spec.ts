@@ -42,10 +42,12 @@ test.describe("Artifacts", () => {
 
   // Regression: mermaid diagrams embedded in an artifact description must
   // render as SVG — not as raw markdown source.  The fixture artifact
-  // ARCH-CORE-001 (artifacts/architecture.yaml) has a fenced ```mermaid
-  // block in its description.  If render_markdown ever regresses to emitting
+  // ARCH-CORE-001 (artifacts/architecture.yaml) has fenced ```mermaid
+  // blocks in its description (currently two: a flowchart for the
+  // internal data flow and a stateDiagram for the process lifecycle).
+  // If render_markdown ever regresses to emitting
   // `<pre><code class="language-mermaid">` the .mermaid selector will miss
-  // the block, mermaid.js will not run, and no SVG will appear.
+  // them, mermaid.js will not run, and no SVG will appear.
   test("mermaid diagrams in artifact descriptions render as SVG", async ({
     page,
   }) => {
@@ -54,13 +56,19 @@ test.describe("Artifacts", () => {
 
     // The markdown renderer must emit a `<pre class="mermaid">` wrapper
     // (not the pulldown-cmark default `<pre><code class="language-mermaid">`).
+    // ARCH-CORE-001 carries at least one ```mermaid block; assert lower
+    // bound rather than exact count so adding diagrams to the artifact
+    // doesn't break this regression test.
     const mermaidPre = page.locator("pre.mermaid");
-    await expect(mermaidPre).toHaveCount(1);
+    const preCount = await mermaidPre.count();
+    expect(preCount).toBeGreaterThanOrEqual(1);
 
-    // mermaid.js replaces the block's contents with an <svg> on success.
+    // mermaid.js replaces each block's contents with an <svg> on success.
     // Give it a moment to run — it's triggered by DOMContentLoaded and
-    // htmx:afterSwap.  If rendering fails the pre block keeps its source.
-    await expect(mermaidPre.locator("svg")).toBeVisible({ timeout: 5_000 });
+    // htmx:afterSwap.  If rendering fails the pre keeps its source.
+    await expect(mermaidPre.first().locator("svg")).toBeVisible({
+      timeout: 5_000,
+    });
   });
 
   // Regression: artifact diagrams (mermaid + AADL) must wrap in the same
