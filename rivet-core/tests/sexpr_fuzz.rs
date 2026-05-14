@@ -141,6 +141,21 @@ fn arb_leaf_expr() -> impl Strategy<Value = Expr> {
     ]
 }
 
+/// Generate a link-type literal that round-trips cleanly through the
+/// s-expr lexer. The lexer treats string-literal contents verbatim, but
+/// the lowering uses `extract_value` which only accepts `SK::StringLit`
+/// (a quoted symbol). Limiting to a small set of legitimate link-type
+/// names keeps the property tests focused on semantic correctness
+/// rather than re-testing the parser.
+fn arb_link_type() -> impl Strategy<Value = Value> {
+    prop_oneof![
+        Just(Value::Str("verifies".into())),
+        Just(Value::Str("derives-from".into())),
+        Just(Value::Str("implements".into())),
+        Just(Value::Str("satisfies".into())),
+    ]
+}
+
 fn arb_expr(depth: u32) -> BoxedStrategy<Expr> {
     if depth == 0 {
         arb_leaf_expr().boxed()
@@ -151,7 +166,17 @@ fn arb_expr(depth: u32) -> BoxedStrategy<Expr> {
             1 => inner.clone().prop_map(|e| Expr::Not(Box::new(e))),
             1 => (inner.clone(), inner.clone()).prop_map(|(a, b)| Expr::And(vec![a, b])),
             1 => (inner.clone(), inner.clone()).prop_map(|(a, b)| Expr::Or(vec![a, b])),
-            1 => (inner.clone(), inner).prop_map(|(a, b)| Expr::Implies(Box::new(a), Box::new(b))),
+            1 => (inner.clone(), inner.clone()).prop_map(|(a, b)| Expr::Implies(Box::new(a), Box::new(b))),
+            // Link-traversing quantifiers — kept at lower weight because
+            // they require a store with at least some link structure to
+            // exercise the body predicate against non-trivial targets.
+            // Roundtrip equivalence still holds even when the fixture
+            // store has zero links (audit-strict empty fires; both sides
+            // evaluate to false).
+            1 => (arb_link_type(), inner.clone()).prop_map(|(lt, b)| Expr::ForallLinked(lt, Box::new(b))),
+            1 => (arb_link_type(), inner.clone()).prop_map(|(lt, b)| Expr::ExistsLinked(lt, Box::new(b))),
+            1 => (arb_link_type(), inner.clone()).prop_map(|(lt, b)| Expr::ForallLinkedFrom(lt, Box::new(b))),
+            1 => (arb_link_type(), inner).prop_map(|(lt, b)| Expr::ExistsLinkedFrom(lt, Box::new(b))),
         ]
         .boxed()
     }
@@ -363,6 +388,165 @@ proptest! {
                 "round-trip mismatch for {:?} printed as {}",
                 e,
                 printed
+            );
+        }
+    }
+
+    /// **Audit-strict empty** invariant for `forall-linked`: an artifact
+    /// with zero outbound links of the given type makes the quantifier
+    /// return false regardless of body. Probes the deliberate deviation
+    /// from classical forall.
+    #[test]
+    fn forall_linked_empty_is_false_for_any_body(body in arb_expr(1)) {
+        use rivet_core::links::LinkGraph;
+        use rivet_core::model::Artifact;
+        use rivet_core::store::Store;
+        use std::collections::BTreeMap;
+
+        let art = Artifact {
+            id: "A".into(),
+            artifact_type: "x".into(),
+            title: "T".into(),
+            description: None,
+            status: Some("approved".into()),
+            tags: vec![],
+            links: vec![], // no outbound links — empty set
+            fields: BTreeMap::new(),
+            provenance: None,
+            source_file: None,
+        };
+        let mut store = Store::default();
+        store.upsert(art.clone());
+        let schema = rivet_core::schema::Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+
+        let expr = Expr::ForallLinked(Value::Str("verifies".into()), Box::new(body));
+
+        let ctx = EvalContext {
+            artifact: &art,
+            graph: &graph,
+            store: Some(&store),
+            missing_target_policy: sexpr_eval::MissingTargetPolicy::default(),
+        };
+        prop_assert!(
+            !sexpr_eval::check(&expr, &ctx),
+            "forall-linked over zero links must be false for any body"
+        );
+    }
+
+    /// **Empty `exists-linked` is also false.** Mirror of the above for
+    /// the existential — no candidates means no witness.
+    #[test]
+    fn exists_linked_empty_is_false_for_any_body(body in arb_expr(1)) {
+        use rivet_core::links::LinkGraph;
+        use rivet_core::model::Artifact;
+        use rivet_core::store::Store;
+        use std::collections::BTreeMap;
+
+        let art = Artifact {
+            id: "A".into(),
+            artifact_type: "x".into(),
+            title: "T".into(),
+            description: None,
+            status: Some("approved".into()),
+            tags: vec![],
+            links: vec![],
+            fields: BTreeMap::new(),
+            provenance: None,
+            source_file: None,
+        };
+        let mut store = Store::default();
+        store.upsert(art.clone());
+        let schema = rivet_core::schema::Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+
+        let expr = Expr::ExistsLinked(Value::Str("verifies".into()), Box::new(body));
+        let ctx = EvalContext {
+            artifact: &art,
+            graph: &graph,
+            store: Some(&store),
+            missing_target_policy: sexpr_eval::MissingTargetPolicy::default(),
+        };
+        prop_assert!(!sexpr_eval::check(&expr, &ctx));
+    }
+
+    /// **Policy monotonicity for `forall-linked`**: if the quantifier
+    /// returns true under `Fail` policy, it must also return true under
+    /// `Skip` policy. `Skip` is strictly more permissive than `Fail`
+    /// because it lets unresolved targets vacuously pass; `Fail` forces
+    /// them to fail. The reverse direction (`Skip` true ⇒ `Fail` true)
+    /// does NOT hold — that's the whole point of the policy choice.
+    #[test]
+    fn forall_linked_fail_implies_skip(body in arb_expr(1)) {
+        use rivet_core::links::LinkGraph;
+        use rivet_core::model::{Artifact, Link};
+        use rivet_core::sexpr_eval::MissingTargetPolicy;
+        use rivet_core::store::Store;
+        use std::collections::BTreeMap;
+
+        // Verifier with mixed resolved + unresolved targets.
+        let req = Artifact {
+            id: "REQ-001".into(),
+            artifact_type: "requirement".into(),
+            title: "R".into(),
+            description: None,
+            status: Some("approved".into()),
+            tags: vec![],
+            links: vec![],
+            fields: BTreeMap::new(),
+            provenance: None,
+            source_file: None,
+        };
+        let verifier = Artifact {
+            id: "V-001".into(),
+            artifact_type: "sys-verification".into(),
+            title: "V".into(),
+            description: None,
+            status: Some("approved".into()),
+            tags: vec![],
+            links: vec![
+                Link {
+                    link_type: "verifies".into(),
+                    target: "REQ-001".into(),
+                },
+                Link {
+                    link_type: "verifies".into(),
+                    target: "REQ-UNRESOLVED".into(),
+                },
+            ],
+            fields: BTreeMap::new(),
+            provenance: None,
+            source_file: None,
+        };
+        let mut store = Store::default();
+        store.upsert(req);
+        store.upsert(verifier.clone());
+        let schema = rivet_core::schema::Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+
+        let expr = Expr::ForallLinked(Value::Str("verifies".into()), Box::new(body));
+
+        let fail_ctx = EvalContext {
+            artifact: &verifier,
+            graph: &graph,
+            store: Some(&store),
+            missing_target_policy: MissingTargetPolicy::Fail,
+        };
+        let skip_ctx = EvalContext {
+            artifact: &verifier,
+            graph: &graph,
+            store: Some(&store),
+            missing_target_policy: MissingTargetPolicy::Skip,
+        };
+
+        let fail_result = sexpr_eval::check(&expr, &fail_ctx);
+        let skip_result = sexpr_eval::check(&expr, &skip_ctx);
+
+        // Monotonicity: Fail true ⇒ Skip true.
+        if fail_result {
+            prop_assert!(
+                skip_result,
+                "policy monotonicity broken: Fail returned true but Skip returned false"
             );
         }
     }
