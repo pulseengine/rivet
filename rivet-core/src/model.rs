@@ -164,6 +164,44 @@ impl Artifact {
     pub fn baseline(&self) -> Option<&str> {
         self.fields.get("baseline").and_then(|v| v.as_str())
     }
+
+    /// Case-insensitive comparison of the artifact's status to the
+    /// given lifecycle marker. Returns `false` when `status` is `None`.
+    ///
+    /// Replaces the long-form
+    /// `artifact.status.as_deref().map(str::to_lowercase).as_deref() == Some("draft")`
+    /// pattern that appeared at every status-aware site. Status remains
+    /// `Option<String>` at the schema level (projects use custom
+    /// lifecycle markers); this method only encapsulates the casing /
+    /// nul-safety dance.
+    #[inline]
+    pub fn status_is(&self, lifecycle: &str) -> bool {
+        self.status
+            .as_deref()
+            .is_some_and(|s| s.eq_ignore_ascii_case(lifecycle))
+    }
+
+    /// Convenience: `true` iff the artifact's status is `draft`
+    /// (case-insensitive). The most common status check in the codebase
+    /// (every traceability rule's draft-downgrade goes through this).
+    #[inline]
+    pub fn is_draft(&self) -> bool {
+        self.status_is("draft")
+    }
+
+    /// Convenience: `true` iff the artifact's status is `approved`
+    /// (case-insensitive).
+    #[inline]
+    pub fn is_approved(&self) -> bool {
+        self.status_is("approved")
+    }
+
+    /// Convenience: `true` iff the artifact's status is `released`
+    /// (case-insensitive).
+    #[inline]
+    pub fn is_released(&self) -> bool {
+        self.status_is("released")
+    }
 }
 
 #[cfg(test)]
@@ -193,6 +231,51 @@ mod tests {
         a.fields
             .insert("baseline".into(), serde_yaml::Value::Bool(true));
         assert_eq!(a.baseline(), None);
+    }
+
+    #[test]
+    fn status_is_case_insensitive() {
+        let mut a = minimal_artifact("A-1", "req");
+        a.status = Some("Draft".into());
+        assert!(a.status_is("draft"), "case-insensitive match");
+        assert!(a.status_is("DRAFT"));
+        assert!(a.status_is("Draft"));
+        assert!(!a.status_is("approved"));
+    }
+
+    #[test]
+    fn status_is_returns_false_for_none() {
+        let mut a = minimal_artifact("A-1", "req");
+        a.status = None;
+        assert!(!a.is_draft());
+        assert!(!a.is_approved());
+        assert!(!a.is_released());
+        assert!(!a.status_is("anything"));
+    }
+
+    #[test]
+    fn is_draft_and_is_approved_and_is_released_match_known_values() {
+        let mut a = minimal_artifact("A-1", "req");
+        a.status = Some("draft".into());
+        assert!(a.is_draft());
+        assert!(!a.is_approved());
+
+        a.status = Some("APPROVED".into());
+        assert!(a.is_approved());
+        assert!(!a.is_draft());
+
+        a.status = Some("released".into());
+        assert!(a.is_released());
+    }
+
+    #[test]
+    fn status_is_handles_custom_lifecycle_markers() {
+        let mut a = minimal_artifact("A-1", "req");
+        a.status = Some("needs-review".into());
+        assert!(a.status_is("needs-review"));
+        assert!(a.status_is("Needs-Review"));
+        assert!(!a.is_draft());
+        assert!(!a.is_approved());
     }
 
     #[test]
