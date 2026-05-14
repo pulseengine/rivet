@@ -1450,23 +1450,35 @@ fn unescape_double_quoted(s: &str) -> String {
 /// stripping the common indent prefix.
 fn block_scalar_text(value_node: &SyntaxNode) -> Option<String> {
     let block = child_of_kind(value_node, SyntaxKind::BlockScalar)?;
-    let mut lines: Vec<String> = Vec::new();
 
-    for token in block.descendants_with_tokens() {
-        if let rowan::NodeOrToken::Token(t) = token {
-            let k = t.kind();
-            if k == SyntaxKind::BlockScalarLine {
-                lines.push(t.text().to_string());
-            }
-        }
-    }
-
-    if lines.is_empty() {
+    // Recover the raw source text. The token-stream approach
+    // (iterating `BlockScalarLine` tokens) is broken for any block
+    // scalar whose content contains YAML flow-syntax characters (`,`,
+    // `]`, `}`, `:` followed by space) — `lex_plain_scalar` at
+    // `yaml_cst.rs:401` breaks scalars at those characters, producing
+    // many sub-line tokens per source line. Reconstructing from the
+    // token stream then splits "config loading, schema merging," into
+    // separate "lines" because each comma-terminated clause is its own
+    // token, and the whitespace-only tokens between them become `\n`s.
+    //
+    // The raw node text covers `|\n      <line1>\n      <line2>...`
+    // exactly as written. We strip the header (`|`, optional chomp
+    // indicator, optional comment, trailing newline) and dedent by the
+    // common leading-whitespace prefix.
+    let raw = block.text().to_string();
+    let mut iter = raw.lines();
+    let header = iter.next()?; // `|` or `>` line, plus any chomp / comment
+    if !header.trim_start().starts_with(['|', '>']) {
         return None;
     }
 
-    // Find common indent prefix (minimum non-empty leading spaces)
-    let min_indent = lines
+    let body_lines: Vec<&str> = iter.collect();
+    if body_lines.is_empty() {
+        return Some(String::new());
+    }
+
+    // Find common indent prefix of non-empty lines.
+    let min_indent = body_lines
         .iter()
         .filter(|l| !l.trim().is_empty())
         .map(|l| l.len() - l.trim_start().len())
@@ -1474,7 +1486,7 @@ fn block_scalar_text(value_node: &SyntaxNode) -> Option<String> {
         .unwrap_or(0);
 
     let mut result = String::new();
-    for line in &lines {
+    for line in &body_lines {
         if line.trim().is_empty() {
             result.push('\n');
         } else if line.len() > min_indent {
@@ -1483,15 +1495,19 @@ fn block_scalar_text(value_node: &SyntaxNode) -> Option<String> {
             // check is a defensive fallback for malformed input.
             if line.is_char_boundary(min_indent) {
                 result.push_str(&line[min_indent..]);
+                result.push('\n');
             } else {
                 result.push_str(line); // fallback: don't strip
+                result.push('\n');
             }
         } else {
             result.push_str(line);
+            result.push('\n');
         }
     }
 
-    // Trim trailing newlines and add a single trailing newline
+    // Trim trailing newlines and add a single trailing newline (matches
+    // YAML 1.2 default clip-chomping for `|`).
     let trimmed = result.trim_end_matches('\n');
     Some(trimmed.to_string() + "\n")
 }
@@ -2168,5 +2184,58 @@ hazards:
             "empty-string shorthand must not yield a phantom link; got links={:?}",
             art.links
         );
+    }
+
+    /// Regression: block-scalar descriptions whose content includes YAML
+    /// flow-syntax characters (`,`, `]`, `}`, `:` followed by space) used
+    /// to be mangled by the token-iterating `block_scalar_text` — the
+    /// lexer breaks plain scalars at those chars (`yaml_cst.rs:401`),
+    /// producing many sub-line `BlockScalarLine` tokens per source line.
+    /// The fix uses the raw `BlockScalar` node text instead.
+    ///
+    /// Surfaced via PR #275 mermaid Playwright test: a `stateDiagram-v2`
+    /// with `[*] --> Loading` and `Loading --> Validating : config + …`
+    /// was rendering as `[*]\n--> Loading` and `Loading --> Validating\n
+    /// :\nconfig + …` — every comma / colon / `]` became a line break.
+    #[test]
+    fn block_scalar_with_flow_syntax_chars_preserves_lines() {
+        let source = "\
+artifacts:
+  - id: ARCH-001
+    type: requirement
+    title: Mermaid test
+    description: |
+      First line: with, commas, and colons.
+      Second line — has [*] brackets too.
+
+      ```mermaid
+      stateDiagram-v2
+          [*] --> Loading
+          Loading --> Validating : config + artifacts read
+      ```
+";
+        let schema = crate::schema::Schema::merge(&[]);
+        let parsed = extract_schema_driven(source, &schema, None);
+        assert_eq!(parsed.artifacts.len(), 1, "expected exactly one artifact");
+        let desc = parsed.artifacts[0]
+            .artifact
+            .description
+            .as_ref()
+            .expect("description must be present");
+
+        // Each of these substrings was previously split across multiple
+        // "lines" because the lexer broke at `,`, `:` (space), and `]`.
+        for needle in [
+            "First line: with, commas, and colons.",
+            "Second line — has [*] brackets too.",
+            "[*] --> Loading",
+            "Loading --> Validating : config + artifacts read",
+        ] {
+            assert!(
+                desc.contains(needle),
+                "description must contain the literal substring {needle:?}\n\
+                 got:\n{desc}"
+            );
+        }
     }
 }
