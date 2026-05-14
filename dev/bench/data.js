@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1778612480051,
+  "lastUpdate": 1778800707257,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "5c8d0d7430679e50df21d6ebffef1c57488c4591",
-          "message": "fix(aspice): seed validates clean after init — declare allocated-from + add stakeholder-req parent (#233)\n\nRound-3 fresh-user dogfood (sandbox /tmp/aspice-seed-only) confirmed\nthat `rivet init --preset aspice && rivet validate` ships a seed\nthat fails validation with 2 errors out of the box:\n\n  ERROR: [SYSREQ-001] link 'derives-from' requires at least 1 target,\n                       found 0\n  ERROR: [SWARCH-001] link type 'allocated-from' is not defined in\n                       the schema — declare it in link-types: or\n                       remove the link\n  Result: FAIL (2 errors)\n\nTwo real bugs in the shipped aspice preset:\n\n1. The `common` schema declares `allocated-to` with `inverse:\n   allocated-from`, registering only the forward token `allocated-to`.\n   ASPICE's SWE.2 traceability rule (`swe2-allocated-from-swe1`)\n   uses `allocated-from` as the *forward* direction (sw-arch-component\n   allocates from sw-req), and the seed's SWARCH-001 uses it the\n   same way. The validator correctly rejects the use because no\n   schema registers `allocated-from` as a forward link-type. This\n   is exactly the gotcha-G.3 footgun the quickstart documents.\n\n2. `system-req` requires `derives-from -> [stakeholder-req]` per the\n   ASPICE `sys2-derives-from-sys1` rule. The seed had SYSREQ-001\n   with no `derives-from`, so the rule fails on the first\n   `rivet validate` post-init.\n\nChanges:\n\n- `schemas/aspice.yaml`: declare `allocated-from` as a forward\n  link-type in ASPICE's `link-types:` block, with `inverse:\n  allocated-to`, restricted to `source-types: [sw-arch-component]`\n  / `target-types: [sw-req, system-arch-component]`. This matches\n  what the existing `swe2-allocated-from-swe1` traceability rule\n  already requires and what artifact-types' link-fields already\n  reference (lines 97-98, 142-143). Schema is now internally\n  consistent.\n\n- `rivet-cli/src/main.rs` (`ASPICE_SAMPLE` const): add a\n  STKHR-001 stakeholder-req as the V-model root, wire SYSREQ-001's\n  `derives-from` to it. The chain\n    STKHR-001 (stakeholder-req)\n      ← derives-from\n    SYSREQ-001 (system-req)\n      ← derives-from\n    SWREQ-001 (sw-req)\n      ← allocated-from\n    SWARCH-001 (sw-arch-component)\n  satisfies all three left-V ASPICE rules\n  (sys2-derives-from-sys1, swe1-derives-from-sys,\n  swe2-allocated-from-swe1).\n\nVerified locally:\n\n  $ rivet init --preset aspice && rivet validate\n  INFO: [SWREQ-001] Every SW requirement should be verified by at\n                     least one verification measure\n  INFO: [SYSREQ-001] Every system requirement should be verified by\n                     at least one verification measure\n  Result: PASS (0 warnings)\n\nResult PASS with 0 errors and 0 warnings. The two remaining INFOs\nare lifecycle-coverage hints — they suggest the natural next step\n(authoring sw-verification / sys-verification artifacts) and do\nnot block the validate gate.\n\nImplements: REQ-007, REQ-010\nRefs: FEAT-001",
-          "timestamp": "2026-04-28T11:34:29-05:00",
-          "tree_id": "ccec8c3bcf2ab63147f83114260e62ac23a5623a",
-          "url": "https://github.com/pulseengine/rivet/commit/5c8d0d7430679e50df21d6ebffef1c57488c4591"
-        },
-        "date": 1777394501160,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 80679,
-            "range": "± 775",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 861766,
-            "range": "± 5645",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 12862086,
-            "range": "± 671786",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1935,
-            "range": "± 7",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 24807,
-            "range": "± 51",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 365101,
-            "range": "± 1458",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 97,
-            "range": "± 4",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1172137,
-            "range": "± 55243",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 158814,
-            "range": "± 1738",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1827003,
-            "range": "± 32436",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 27008585,
-            "range": "± 1258304",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 121023,
-            "range": "± 548",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 1049867,
-            "range": "± 23174",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 12010921,
-            "range": "± 647419",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4109,
-            "range": "± 72",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 45155,
-            "range": "± 258",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 745164,
-            "range": "± 3783",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 56823,
-            "range": "± 251",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 689300,
-            "range": "± 6265",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7714413,
-            "range": "± 105346",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 766,
-            "range": "± 3",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 6675,
-            "range": "± 24",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 90893,
-            "range": "± 1359",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 22240,
-            "range": "± 156",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 149764,
-            "range": "± 1158",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1367476,
-            "range": "± 17937",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1550374,
             "range": "± 18652",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2754ae12dc59d0b27c707bf44e443f46d7ca1828",
+          "message": "docs(design): three roadmap design tracks for v0.10 (variant, cross-org, TCL) (#277)\n\n* docs(design): variant-aware properties — per-variant field values on one artifact\n\nDesign note for issue #255: how to express that the same logical\nrequirement (e.g. `REQ-THERMAL-01: Operating temperature envelope`) has\ndifferent field values across product variants — `max-temp-c: 80` for the\nautomotive variant, `100` for industrial, `70` for consumer — without\nsplitting the artifact and breaking derives-from / verifies / satisfies\nlink semantics.\n\nSurveys the design space across five options (per-variant overrides,\nvariation expressions, multiple bound artifacts, references into\nvariant attributes, sphinx-needs-style filters) and scores each on\nvalidator complexity, dashboard rendering, traceability preservation,\nAI-tool friendliness, and audit friendliness.\n\nSurveys what competitors do (Polarion variant management, DOORS Next +\npure::variants, sphinx-needs, pure::variants variation points,\nFeatureIDE / Clafer / TVL) and what the academic literature says\n(Czarnecki & Eisenecker staged configuration, COVAMOF, Attributed\nFeature Models, TypeChef variability-aware analysis).\n\n**Recommendation:** option A — `fields-per-variant:` keyed by variant\nconfig or feature name, first-match-wins, zero new evaluator\nrequired. Forward-compatible to option B (variation expressions) once\nthe scalar value space stabilises.\n\nMVP scope (v1) deliberately excludes compositional merge, multi-axis\ncomposition, t-wise sampling, attribute-restriction values, and\nexhaustiveness checking — those are deferred to a future release and\nthe deferral list is named explicitly. This frames the next 12 months\nof grant-funded variant work realistically: ship the readable single-\nmaster overlay first; resist the SAT/SMT compositional generalisation\nuntil users push for it.\n\nRefs: #255\n\n* docs(design): cross-org / supplier traceability — external-anchor + boundary coverage\n\nDesign note for issue #253: how rivet should represent the case where\nthe top of a project sits in one organisation, parts of the chain are\nin-house variants, and other parts are owned by an external supplier\nwhose model, field names, and even toolchain are not under our\ncontrol.\n\nToday's `externals:` model in `rivet.yaml` assumes the dependency\nrepo is a rivet repo with reachable schemas — that breaks the moment\na downstream party runs Polarion, DOORS, or just a different field\nconvention. The proposal:\n\n1. Typed `external-anchor` artifact (in `schemas/common.yaml`) — an\n   explicit leaf representing the point at which an in-house chain\n   hands off to an external party. Carries `source-of-truth`,\n   `expected-derived-types`, `received-status`, optional\n   `contract-reference` and `cited-source` (reusing the shipped\n   sha256-stamped typed field).\n\n2. Cross-org link semantics — `derives-from-external` link type with\n   structured target (`org`, `contract`, `doc-id`, `last-synced`,\n   `sha256`, optional `anchor`). The link's `target` field becomes a\n   mapping for this one link type, staying a string for all others.\n\n3. Three-state coverage (`SATISFIED` / `EXTERNAL_BOUNDARY` /\n   `UNCOVERED`) — replaces the binary covered/uncovered model so\n   audits can distinguish \"we forgot to satisfy this\" from \"this is\n   delegated to a supplier\". An artifact terminating at an\n   `external-anchor` whose `expected-derived-types` covers the\n   missing type counts as EXTERNAL_BOUNDARY.\n\n4. Field-mapping recipe — reuse `schemas/migrations/` shape at the\n   import boundary (not just for in-store schema-version bumps).\n\n5. Provenance — new `FederationProvenance` block on the `Provenance`\n   struct: `source_org`, `source_tool`, `source_id`, `anchor`,\n   `fetched_at`, `source_hash`, optional `mapping_recipe`.\n\nSurveys competitors (Polarion ALM Connector / OSLC, IBM DOORS Next /\nGCM, sphinx-needs `needs_external_needs`, OSLC Core/RM/QM/CM,\nReqIF + ProSTEP iViP guide, AUTOSAR ARXML, ISO 26262-8 §5 DIA, ASPICE\nSUP.10 / SUP.8) and identifies the gap rivet fills: a file-based,\ngit-coordinated alternative that copies OSLC's link semantics\nwithout inheriting its live-HTTP protocol assumption.\n\n**MVP scope (~3 weeks)** — declarative only: `external-anchor` artifact\ntype + 3-state coverage + read-only `rivet supplier list` / `check`.\n**Phase 2** — `derives-from-external` structured link, ReqIF pull-mode\nfetch, `FederationProvenance`. **Phase 3** — field-mapping recipes,\n`rivet supplier publish`, OSLC / Polarion / GitHub-issues backends,\nvariant-aware anchors, `rivet supplier promote`.\n\nThis is the \"executable specification across the OEM-supplier\nboundary\" story for the grant Workstream 3-A.\n\nRefs: #253\n\n* docs(design): tool confidence level — TCL/TQL cross-walk + dossier outline\n\nResearch and design note covering tool-qualification levels across\nfive regimes (ISO 26262 Part 8 §11, IEC 61508-3, DO-178C / DO-330,\nEN 50128, ISO/SAE 21434, ISO/PAS 8800), what claim rivet should make,\nhow the shipped formal-method backstops (Verus, Kani, Rocq, mutation\ntesting) and oracle-gated agent pipelines map to TI / TD parameters,\nand what's missing to support a credible dossier.\n\nKey findings:\n\n1. **Numbering-convention warning.** ISO 26262 / EN 50128 / IEC 61508\n   number `lower = lower bar` (TCL1 = weakest claim). DO-330 and\n   ISO/PAS 8800 number `lower = higher bar` (TQL-1 = strongest). The\n   existing `safety/stpa/tool-qualification.yaml` mixes the\n   conventions (\"TCL 1 (highest)\" using the DO-330 convention with\n   an ISO 26262 acronym) — that's an audit-review flag in itself.\n   First fix is to use standard-native numbering and never abbreviate\n   \"TCL N\" without the regime in front.\n\n2. **Polarion's TCL1 claim is conditionally honest for human-authored\n   content and increasingly threadbare for AI-authored content.** The\n   TI2/TD1 → TCL1 argument relies on human review as the TD layer.\n   When AI authors at agent-speed, that review degrades. Rivet's\n   opportunity is to be the tool that lets a customer KEEP a TCL1\n   claim by contributing TD-raising machinery to the toolchain — not\n   to claim TCL1 as a passive-ALM peer.\n\n3. **Honest peer group for rivet is medini / BTC, not Polarion.** The\n   practical target is TCL2 with a TCL3 path — supported by 19\n   shipped safeguards (typed schema, link oracle, validation engine,\n   Verus specs, Kani BMC, Rocq proofs, mutation testing, property\n   tests, differential testing, provenance auto-stamp, cited-source\n   hashing, schema-migrate snapshot/abort, oracle-gated agent\n   pipelines, `rivet docs check`, `rivet check review-signoff`,\n   commit-trailer enforcement, validate-determinism property,\n   SCRC restriction-lint set, STPA self-analysis).\n\n4. **`ai-found-defect` artifact type is the missing piece.** When an\n   AI agent flags a contradiction, that finding is itself a tool\n   output that should be traceable. Today there is nowhere to put\n   it. Proposed: a typed artifact carrying severity,\n   detection-method, oracle-id, agent identifier, reproducer,\n   triage-status, and a `defect-against` link target — first-class\n   evidence, not chat history.\n\n5. **`tool-confidence` typed artifact** (already gap-flagged in\n   docs/design/iso26262-artifact-mapping.md §C row 32). Small,\n   tractable schema sketch included.\n\n6. **Three-layer dossier outline** for `rivet docs tool-qualification`:\n   TOR, use cases, verification plan, configuration baseline, known\n   limitations, error-detection-and-reporting process, TCL/TQL\n   position statement per regime.\n\n7. **Five-step rollout** (1h–1d each) to move from \"TCL1 in our own\n   dogfood STPA\" to \"TCL2 dossier draft published, reviewable.\"\n\nThis is the source design for the grant Workstream 3-B dossier work.\n\nRefs: REQ-051 (hook security model context),\n      docs/design/iso26262-artifact-mapping.md §C row 32,\n      docs/design/ai-safety-cyber-hitl.md\n\n* fix(docs): split multi-document yaml example in variant-aware-properties\n\n`rivet docs check` ConfigExampleFreshness invariant requires each\n```yaml block to parse as one valid YAML document. The example at\nline 326 mixed a top-level mapping (variant config) and a sequence\n(artifact list entry) in a single fence, which fails YAML parse at\nthe mapping→sequence transition.\n\nSplit into two adjacent ```yaml blocks — one per file — so each\nparses cleanly and the syntax highlighter still renders both.\n\nRefs: #255",
+          "timestamp": "2026-05-14T12:35:54-05:00",
+          "tree_id": "f81c913a2b73de825213ead2bfa1978f4cb88410",
+          "url": "https://github.com/pulseengine/rivet/commit/2754ae12dc59d0b27c707bf44e443f46d7ca1828"
+        },
+        "date": 1778800706751,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 83840,
+            "range": "± 2185",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 883377,
+            "range": "± 22973",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 12571152,
+            "range": "± 678868",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1949,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 24235,
+            "range": "± 33",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 357019,
+            "range": "± 7483",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1178111,
+            "range": "± 22881",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 167918,
+            "range": "± 827",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1954698,
+            "range": "± 26664",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 37009435,
+            "range": "± 3548111",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 136696,
+            "range": "± 2318",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1262782,
+            "range": "± 27719",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 18503941,
+            "range": "± 823182",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4173,
+            "range": "± 8",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 43296,
+            "range": "± 107",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 723840,
+            "range": "± 2978",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 63880,
+            "range": "± 3348",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 715024,
+            "range": "± 5671",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8034868,
+            "range": "± 309000",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 779,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 6558,
+            "range": "± 12",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 89985,
+            "range": "± 362",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 21849,
+            "range": "± 79",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 150209,
+            "range": "± 2700",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1399707,
+            "range": "± 9255",
             "unit": "ns/iter"
           }
         ]
