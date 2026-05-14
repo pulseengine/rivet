@@ -6573,9 +6573,9 @@ fn cmd_export_gherkin(
 fn cmd_export_html(
     cli: &Cli,
     output: Option<&std::path::Path>,
-    _single_page: bool,
-    _theme: &str,
-    _offline: bool,
+    single_page: bool,
+    theme: &str,
+    offline: bool,
     _homepage: Option<&str>,
     _version_label: Option<&str>,
     _versions_json: Option<&str>,
@@ -6592,6 +6592,51 @@ fn cmd_export_html(
     // Load project state using the same pipeline as `rivet serve`.
     let state = serve::reload_state(&project_path, &schemas_dir, 0)
         .context("loading project for export")?;
+
+    // ── Single-page mode (audit-bundle shape) ────────────────────────
+    //
+    // The multi-page export below mirrors the `rivet serve` dashboard
+    // (~800 pages, ~800 MB) which is useful for browsing but not for an
+    // audit bundle. `--single-page` short-circuits to the dedicated
+    // single-page renderer in `rivet_core::export::render_single_page`:
+    // one self-contained `index.html` with the index / requirements /
+    // documents / STPA / EU-AI-Act / coverage / matrix / validation /
+    // graph sections inline, ~3-5 MB total. This is the path the
+    // `.github/actions/compliance` action calls; the CLI previously
+    // ignored the flag (the parameters were `_`-prefixed).
+    if single_page {
+        let config = rivet_core::export::ExportConfig {
+            theme: match theme {
+                "light" => rivet_core::export::ExportTheme::Light,
+                _ => rivet_core::export::ExportTheme::Dark,
+            },
+            offline,
+        };
+        let project_name = state.context.project_name.clone();
+        let version = env!("CARGO_PKG_VERSION").to_string();
+        let html = rivet_core::export::render_single_page(
+            &state.store,
+            &state.schema,
+            &state.graph,
+            &state.cached_diagnostics,
+            &project_name,
+            &version,
+            &config,
+            &state.doc_store,
+        );
+        let out_dir = output.unwrap_or(std::path::Path::new("dist"));
+        std::fs::create_dir_all(out_dir)
+            .with_context(|| format!("creating {}", out_dir.display()))?;
+        let out_file = out_dir.join("index.html");
+        std::fs::write(&out_file, &html)
+            .with_context(|| format!("writing {}", out_file.display()))?;
+        println!(
+            "Exported single-page HTML ({} bytes) to {}",
+            html.len(),
+            out_file.display(),
+        );
+        return Ok(true);
+    }
 
     // Auto-detect baseline snapshot for delta rendering.
     let snap_dir = project_path.join("snapshots");

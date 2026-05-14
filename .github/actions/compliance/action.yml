@@ -40,9 +40,23 @@ inputs:
     default: 'dark'
 
   offline:
-    description: 'When true, uses system fonts instead of loading Google Fonts. For air-gapped environments.'
+    description: 'When true, uses system fonts instead of loading Google Fonts. For air-gapped environments. Defaults to true for compliance reports — auditors typically open the bundle disconnected.'
     required: false
-    default: 'false'
+    default: 'true'
+
+  single-page:
+    description: >
+      When true, emits a single self-contained `index.html` (typically
+      1-5 MB) with all sections inline — index / requirements / documents
+      / STPA / EU AI Act / coverage / matrix / validation / graph. This
+      is the audit-bundle shape: one file, no per-page navigation, no
+      external resources, browser-openable offline.
+
+      When false, emits the full multi-page dashboard mirror (hundreds
+      of pages, ~100s of MB). Useful for browseable hosted docs but
+      oversized for an audit deliverable.
+    required: false
+    default: 'true'
 
   # ── Rivet tool ─────────────────────────────────────────────────────
   rivet-version:
@@ -170,6 +184,7 @@ runs:
         REPORT_HOMEPAGE: ${{ inputs.homepage }}
         REPORT_VERSIONS: ${{ inputs.other-versions }}
         REPORT_OFFLINE: ${{ inputs.offline }}
+        REPORT_SINGLE_PAGE: ${{ inputs.single-page }}
       run: |
         ARGS="--format html --output ${REPORT_OUTPUT}"
         ARGS="$ARGS --theme ${REPORT_THEME}"
@@ -185,6 +200,10 @@ runs:
 
         if [ "$REPORT_OFFLINE" = "true" ]; then
           ARGS="$ARGS --offline"
+        fi
+
+        if [ "$REPORT_SINGLE_PAGE" = "true" ]; then
+          ARGS="$ARGS --single-page"
         fi
 
         eval rivet export $ARGS
