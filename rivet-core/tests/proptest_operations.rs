@@ -105,27 +105,14 @@ fn test_schema() -> Schema {
         schema: SchemaMetadata {
             name: "opseq-test".into(),
             version: "0.1.0".into(),
-            namespace: None,
-            description: None,
-            extends: vec![],
-            min_rivet_version: None,
-            license: None,
+            ..Default::default()
         },
-        base_fields: vec![],
         artifact_types: TYPES
             .iter()
             .map(|t| ArtifactTypeDef {
                 name: t.to_string(),
                 description: format!("Test type {t}"),
-                fields: vec![],
-                link_fields: vec![],
-                aspice_process: None,
-                common_mistakes: vec![],
-                example: None,
-                yaml_section: None,
-                yaml_sections: vec![],
-                yaml_section_suffix: None,
-                shorthand_links: BTreeMap::new(),
+                ..Default::default()
             })
             .collect(),
         link_types: LINK_TYPES
@@ -134,24 +121,19 @@ fn test_schema() -> Schema {
                 name: lt.to_string(),
                 inverse: Some(format!("{lt}-inverse")),
                 description: format!("Test link type {lt}"),
-                source_types: vec![],
-                target_types: vec![],
+                ..Default::default()
             })
             .collect(),
         traceability_rules: vec![TraceabilityRule {
             name: "req-satisfied".into(),
             description: "Requirements must be satisfied".into(),
             source_type: "requirement".into(),
-            required_link: None,
             required_backlink: Some("satisfies".into()),
-            target_types: vec![],
             from_types: vec!["feature".into()],
             severity: Severity::Warning,
-            alternate_backlinks: vec![],
+            ..Default::default()
         }],
-        conditional_rules: vec![],
-        validation_rules: vec![],
-        agent_pipelines: None,
+        ..Default::default()
     }])
 }
 

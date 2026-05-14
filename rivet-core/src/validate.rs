@@ -3027,19 +3027,10 @@ then:
             schema: SchemaMetadata {
                 name: name.into(),
                 version: "0.1.0".into(),
-                namespace: None,
-                description: None,
-                extends: vec![],
-                min_rivet_version: None,
-                license: None,
+                ..Default::default()
             },
-            base_fields: vec![],
-            artifact_types: vec![],
-            link_types: vec![],
-            traceability_rules: vec![],
-            conditional_rules: vec![],
             validation_rules: rules,
-            agent_pipelines: None,
+            ..Default::default()
         };
 
         // Two files; both declare a rule with id "shared-id" (different

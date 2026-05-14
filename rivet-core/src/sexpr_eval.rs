@@ -222,6 +222,37 @@ pub struct EvalContext<'a> {
     pub missing_target_policy: MissingTargetPolicy,
 }
 
+impl<'a> EvalContext<'a> {
+    /// Construct a minimal `EvalContext` from artifact + graph. `store`
+    /// defaults to `None` (quantifier expressions will return false);
+    /// `missing_target_policy` defaults to `Skip`. Use the builders
+    /// `.with_store(...)` and `.with_policy(...)` to override.
+    ///
+    /// This is the recommended constructor — keeps callers immune to
+    /// new fields being added to the struct, which previously required
+    /// updating ~17 construction sites across the crate.
+    pub fn for_artifact(artifact: &'a Artifact, graph: &'a LinkGraph) -> Self {
+        Self {
+            artifact,
+            graph,
+            store: None,
+            missing_target_policy: MissingTargetPolicy::default(),
+        }
+    }
+
+    /// Attach a `Store` so quantifier expressions can iterate it.
+    pub fn with_store(mut self, store: &'a Store) -> Self {
+        self.store = Some(store);
+        self
+    }
+
+    /// Override the missing-target policy (default is `Skip`).
+    pub fn with_policy(mut self, policy: MissingTargetPolicy) -> Self {
+        self.missing_target_policy = policy;
+        self
+    }
+}
+
 // ── Predicate checker ───────────────────────────────────────────────────
 
 /// Check whether an expression holds for a single artifact.

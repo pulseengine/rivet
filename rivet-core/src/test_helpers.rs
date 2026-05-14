@@ -51,28 +51,19 @@ use crate::store::Store;
 
 /// Create a minimal `SchemaFile` with sensible defaults.
 ///
-/// All `Vec` fields default to empty; all `Option` fields default to `None`.
-/// Callers can mutate the returned value to set specific fields before
-/// passing it to `Schema::merge`.
+/// Uses `SchemaFile::default()` (which `SchemaMetadata::default()`
+/// fans out to empty strings) and sets only `schema.name` /
+/// `schema.version`. Future fields added to `SchemaFile` get their
+/// default values automatically — callers using `minimal_schema(...)`
+/// don't need source changes when new fields land.
 pub fn minimal_schema(name: &str) -> SchemaFile {
     SchemaFile {
         schema: SchemaMetadata {
             name: name.into(),
             version: "0.1.0".into(),
-            namespace: None,
-            description: None,
-            extends: vec![],
-            min_rivet_version: None,
-            license: None,
+            ..Default::default()
         },
-        base_fields: vec![],
-        artifact_types: vec![],
-        link_types: vec![],
-        traceability_rules: vec![],
-        conditional_rules: vec![],
-        validation_rules: vec![],
-        agent_pipelines: None,
-        // Future fields get default values here -- ONE place to update.
+        ..Default::default()
     }
 }
 
