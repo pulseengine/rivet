@@ -2645,6 +2645,7 @@ then:
     /// verifier. Also exercises the `{id}` / `{type}` / `{status}`
     /// message-template substitution.
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn validation_rule_status_gate_end_to_end() {
         use crate::links::LinkGraph;
         use crate::model::{Artifact, Link};
@@ -2742,6 +2743,7 @@ then:
     /// A rule with a malformed s-expression body emits a rule-level
     /// diagnostic rather than panicking or silently passing every artifact.
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn validation_rule_parse_error_surfaces_diagnostic() {
         use crate::schema::{Severity, ValidationRule};
 
@@ -2777,6 +2779,7 @@ then:
     /// artifacts to render at Info instead of the declared severity.
     /// Without the flag, drafts fire at full severity.
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn validation_rule_draft_downgrade_opt_in() {
         use crate::links::LinkGraph;
         use crate::model::Artifact;
@@ -2860,6 +2863,7 @@ then:
     /// `broken-link` finding — and the validation-rule must stay silent
     /// (vacuous-true for that link).
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn skip_policy_lets_broken_links_phase_handle_breakage_alone() {
         use crate::links::LinkGraph;
         use crate::model::{Artifact, Link};
@@ -2905,7 +2909,11 @@ then:
 
         // Phase 6: broken-link fires.
         let broken: Vec<_> = diags.iter().filter(|d| d.rule == "broken-link").collect();
-        assert_eq!(broken.len(), 1, "expected exactly one broken-link diagnostic");
+        assert_eq!(
+            broken.len(),
+            1,
+            "expected exactly one broken-link diagnostic"
+        );
 
         // Phase 9: status-gate must stay silent (Skip → vacuous-true on
         // unresolved + the only outbound link is unresolved → audit-strict
@@ -2937,6 +2945,7 @@ then:
     /// (phase 9). This is correct double-coverage, not double-reporting:
     /// the rule fields differ (`broken-link` vs `<rule-id>`).
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn fail_policy_emits_alongside_broken_links() {
         use crate::links::LinkGraph;
         use crate::model::{Artifact, Link};
@@ -2980,10 +2989,7 @@ then:
 
         // Both phases fire, reporting distinct rules.
         let broken: Vec<_> = diags.iter().filter(|d| d.rule == "broken-link").collect();
-        let gate: Vec<_> = diags
-            .iter()
-            .filter(|d| d.rule == "V-fail-policy")
-            .collect();
+        let gate: Vec<_> = diags.iter().filter(|d| d.rule == "V-fail-policy").collect();
         assert_eq!(broken.len(), 1, "broken-link phase must still fire");
         assert_eq!(
             gate.len(),
@@ -3002,6 +3008,7 @@ then:
     /// behaviour so downstream users can rely on it (or so a future PR
     /// can introduce deduplication with explicit semantics).
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn schema_merge_concats_validation_rules_by_id() {
         use crate::schema::{
             MissingTargetPolicyName, SchemaFile, SchemaMetadata, Severity, ValidationRule,
@@ -3077,6 +3084,7 @@ then:
     /// surprises authors. Documented here so a future PR can decide
     /// whether to reject empty rule bodies at schema-validation time.
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn empty_rule_body_is_inert_not_panic() {
         use crate::links::LinkGraph;
         use crate::model::Artifact;
@@ -3121,6 +3129,7 @@ then:
     /// — the s-expr parser tolerates trivia. Rule should be inert, not
     /// panic.
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn whitespace_only_rule_body_is_inert() {
         use crate::links::LinkGraph;
         use crate::model::Artifact;
@@ -3162,6 +3171,7 @@ then:
     /// pipeline must catch that and surface a rule-level diagnostic
     /// pointing at the rule by id, not panic or silently pass.
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn unknown_operator_in_rule_body_surfaces_diagnostic() {
         use crate::schema::{Severity, ValidationRule};
 
@@ -3193,6 +3203,7 @@ then:
     /// **Negative input: mismatched parens.** Lower should reject; phase
     /// 9 surfaces a rule-level diagnostic.
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn mismatched_parens_surface_diagnostic() {
         use crate::schema::{Severity, ValidationRule};
 
@@ -3221,6 +3232,7 @@ then:
     /// non-existent-field = X" correctly excludes everyone). The rule
     /// should not panic and should evaluate predictably.
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn rule_referencing_unknown_field_evaluates_predictably() {
         use crate::links::LinkGraph;
         use crate::model::Artifact;
@@ -3304,6 +3316,7 @@ then:
     /// rule violation (every approved verifier fires), making the typo
     /// loud rather than silent.
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn rule_link_type_typo_surfaces_loudly() {
         use crate::links::LinkGraph;
         use crate::model::{Artifact, Link};
@@ -3382,6 +3395,7 @@ then:
     /// own downgrade decision. Confirms my opt-in design isn't
     /// accidentally subverted.
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn traceability_rule_downgrade_does_not_leak_into_validation_rules() {
         use crate::links::LinkGraph;
         use crate::model::Artifact;

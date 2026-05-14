@@ -2466,12 +2466,7 @@ mod tests {
     /// without re-traversing.
     #[test]
     fn forall_linked_self_loop_evaluates_body_against_self() {
-        let a = artifact_with_links(
-            "A",
-            "sys-verification",
-            "approved",
-            vec![("verifies", "A")],
-        );
+        let a = artifact_with_links("A", "sys-verification", "approved", vec![("verifies", "A")]);
         let store = store_with(vec![a.clone()]);
         let schema = Schema::merge(&[]);
         let graph = LinkGraph::build(&store, &schema);
@@ -2716,10 +2711,7 @@ mod tests {
             "V-001",
             "sys-verification",
             "approved",
-            vec![
-                ("verifies", "REQ-OK"),
-                ("derives-from", "REQ-DRAFT"),
-            ],
+            vec![("verifies", "REQ-OK"), ("derives-from", "REQ-DRAFT")],
         );
         let store = store_with(vec![req_ok, req_draft, v.clone()]);
         let schema = Schema::merge(&[]);

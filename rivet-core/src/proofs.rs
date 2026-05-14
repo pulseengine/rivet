@@ -56,6 +56,7 @@ mod proofs {
             link_types: vec![],
             traceability_rules: vec![],
             conditional_rules: vec![],
+            validation_rules: vec![],
             agent_pipelines: None,
         }])
     }
@@ -105,6 +106,7 @@ mod proofs {
                 alternate_backlinks: vec![],
             }],
             conditional_rules: vec![],
+            validation_rules: vec![],
             agent_pipelines: None,
         }])
     }
@@ -317,6 +319,7 @@ mod proofs {
             link_types: vec![],
             traceability_rules: vec![],
             conditional_rules: vec![],
+            validation_rules: vec![],
             agent_pipelines: None,
         }]);
 
@@ -439,6 +442,7 @@ mod proofs {
             }],
             traceability_rules: vec![],
             conditional_rules: vec![],
+            validation_rules: vec![],
             agent_pipelines: None,
         };
 
