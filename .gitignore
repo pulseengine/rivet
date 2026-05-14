@@ -23,3 +23,19 @@ platform-packages/*/rivet.exe
 npm/bin/
 npm/node_modules/
 platform-packages/*/node_modules/
+
+# Mutation-testing output. cargo-mutants writes per-run reports to
+# `mutants.out/` (and rotates the previous run to `mutants.out.old/`).
+# Large, transient, and per-developer.
+mutants.out*/
+
+# Mythos slop-hunt agent pipeline workproducts. Drafts, ranking JSON,
+# comparison reports. Per-run artefacts; the pipeline source lives under
+# scripts/mythos/, but its transient outputs do not belong in version
+# control.
+.rivet/mythos/
+
+# Cross-repo external clones. `rivet sync` populates this from each
+# external declared in rivet.yaml. Per-developer working tree, never
+# committed. (Tracked .rivet/ files like agent-context.md stay tracked.)
+.rivet/repos/
