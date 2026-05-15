@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1778852907767,
+  "lastUpdate": 1778854863947,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "4b425598f6205a2f995bc4f3096a886156141805",
-          "message": "docs(pre-commit): publish canonical 21-hook template + tier docs (#222)\n\nAdds `templates/pre-commit/.pre-commit-config.yaml` as the\nversioned, copy-pasteable source of truth for PulseEngine Rust\nrepositories, and `docs/pre-commit.md` documenting the rationale\nper hook plus an advisory T1 / T2 / T3 tier system.\n\nEach hook in the template carries an inline tier annotation so\nadopters can grep-trim to their assurance level. `CUSTOMIZE`\nmarkers flag the per-project knobs (rust-toolchain pinning,\nartifact-path globs, mutation crate selection).\n\nRefs: #186\n\nCo-authored-by: Claude <noreply@anthropic.com>",
-          "timestamp": "2026-04-28T23:42:16-05:00",
-          "tree_id": "77ef1167d761a9cddaf58bc56d64305046338922",
-          "url": "https://github.com/pulseengine/rivet/commit/4b425598f6205a2f995bc4f3096a886156141805"
-        },
-        "date": 1777439020374,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 81316,
-            "range": "± 555",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 880381,
-            "range": "± 66159",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 14693688,
-            "range": "± 1800220",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1942,
-            "range": "± 33",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 24657,
-            "range": "± 46",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 367317,
-            "range": "± 8827",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 97,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1182777,
-            "range": "± 16946",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 166292,
-            "range": "± 726",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1907226,
-            "range": "± 7829",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 29814384,
-            "range": "± 3121335",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 120355,
-            "range": "± 2455",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 1045349,
-            "range": "± 10014",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 15908404,
-            "range": "± 1551868",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4133,
-            "range": "± 7",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 45331,
-            "range": "± 109",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 734069,
-            "range": "± 15525",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 63621,
-            "range": "± 395",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 714834,
-            "range": "± 7196",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 8291535,
-            "range": "± 799534",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 755,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 6555,
-            "range": "± 85",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 91326,
-            "range": "± 709",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 23142,
-            "range": "± 111",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 159930,
-            "range": "± 1507",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1497315,
-            "range": "± 15917",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1627477,
             "range": "± 20357",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "06f6fbe0b4b33ccbe080e45694bd1ae8e34ea05c",
+          "message": "spike(research): MIRAI feasibility scaffold for rivet-core (#191) (#264)\n\n* spike(research): MIRAI feasibility scaffold for rivet-core (#191)\n\nPicks up the feasibility-spike sub-AC proposed in the\n[2026-04-26 triage comment](https://github.com/pulseengine/rivet/issues/191#issuecomment-4322900490).\nLands the procedural deliverables now; first-pass diagnostics from a\nlive `cargo mirai` run will follow as a separate commit on this branch.\n\nHeadline finding: the issue body references `facebookexperimental/MIRAI`,\nwhich was archived 2024-08-22 and is read-only. Active maintenance lives\nat `endorlabs/MIRAI` (latest v1.1.12, 2025-03-04, nightly-2025-01-10\ntoolchain pin). The runner script and the report target the fork and\nflag the substitution explicitly so the issue can be retargeted.\n\nChanges:\n\n- scripts/research/mirai-on-rivet-core.sh\n  - Idempotent install + analysis runner. Pins MIRAI tag, nightly\n    toolchain (with rustc-dev / rust-src / llvm-tools-preview), and\n    output paths in one place.\n  - --install-only short-circuit for setup-without-analysis.\n  - --target {store|proofs|all} for selective re-runs.\n  - Writes diagnostics to results/mirai/<target>.txt for committed\n    artefact-driven reporting.\n\n- docs/research/mirai-prototype-report.md\n  - Validated install procedure (the part the script automates) +\n    explicit Endor-Labs-fork substitution callout for #191.\n  - Section stubs for \"Code paths analysed\", \"Properties MIRAI flagged\",\n    \"Side-by-side comparison with existing Kani proofs\", \"Integration\n    cost assessment\", \"Verdict\", \"Go/no-go for CI gate\".\n  - Report frames the three possible outcomes upfront so the run's\n    output drops directly into one of them.\n\nOut of scope for this commit:\n- First-pass diagnostics (`results/mirai/<target>.txt`) — a live run\n  is required; the install pipeline takes 10-15 min to compile the\n  checker on a 4-core box, then minutes per analysis target.\n- Findings summary on the V&V hub (#184 Phase 5) — gated on the\n  diagnostics + verdict landing first.\n\nRefs: FEAT-001\n\n* spike(research): MIRAI verdict — toolchain pin blocks build (#191)\n\nLive spike completed; verdict is outcome 3 of the three framed in the\nprior commit (\"install irreproducible against rivet stable toolchain\").\n\nWhat ran:\n\n- rustup toolchain install nightly-2025-01-10 (with rustc-dev / rust-src\n  / llvm-tools-preview): clean.\n- git clone --branch v1.1.12 endorlabs/MIRAI: clean.\n- cargo install --locked --path ./checker: 17m 40s, clean. Installed\n  /root/.cargo/bin/{mirai, cargo-mirai}.\n- mirai --version: needs LD_LIBRARY_PATH pointing at the nightly's lib/\n  dir (librustc_driver linkage quirk). Documented in the report.\n- cargo mirai --lib on rivet-core: TWO independent blockers, both\n  upstream-pin-related, both captured under results/mirai/:\n    1. results/mirai/run-msrv.txt — rivet-core's rust-version=1.89\n       refused; the pinned nightly is rustc 1.86.0-nightly (2025-01-09).\n    2. results/mirai/run-let-chains.txt — even with\n       --ignore-rust-version, spar-annex (pulled via the spar external)\n       uses stabilized let_chains, gated as #![feature(let_chains)] on\n       any pre-mid-2025 nightly.\n\nVerdict: hold the prototype until endorlabs/MIRAI bumps its\nrust-toolchain.toml past let_chains stabilization (rustc ≥ 1.88,\nnightly ≥ ~2025-04). At that point scripts/research/mirai-on-rivet-core.sh\nis a one-shot resumption.\n\nThis is the intended exit per the prior triage's spike scope:\n\"if install fails, the spike output is itself the verdict.\" The\nrunner script is preserved in scripts/research/ so the experiment\nresumes in minutes rather than hours when the upstream pin moves.\n\nRefs: FEAT-001\n\n* docs(mirai): wrap external version refs in backticks to silence VersionConsistency\n\nThe MIRAI spike report cites external tool versions (MIRAI v1.1.12 /\nv1.1.13) that are unrelated to rivet's workspace version. The\n`VersionConsistency` doc-check invariant matched the bare `vN.N.N`\npattern and flagged them as drift.\n\nWrap the four references in backticks. The invariant explicitly\nskips matches inside inline code (`is_code_context` check at\ndoc_check.rs:727), so this clears the violation without weakening\nthe guard for genuine rivet-version drift in prose.\n\nRefs: #191 (MIRAI spike)\n\n---------\n\nCo-authored-by: Claude <noreply@anthropic.com>",
+          "timestamp": "2026-05-15T09:14:07-05:00",
+          "tree_id": "cd19b870ffc957452b29e37f53e3896eed2889f3",
+          "url": "https://github.com/pulseengine/rivet/commit/06f6fbe0b4b33ccbe080e45694bd1ae8e34ea05c"
+        },
+        "date": 1778854862672,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 81472,
+            "range": "± 1664",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 886916,
+            "range": "± 4526",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 12774417,
+            "range": "± 672459",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1924,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 24796,
+            "range": "± 98",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 355687,
+            "range": "± 4165",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1212791,
+            "range": "± 27393",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 165199,
+            "range": "± 672",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1897953,
+            "range": "± 53317",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 25681811,
+            "range": "± 491041",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 134767,
+            "range": "± 1903",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1219649,
+            "range": "± 10846",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 13884868,
+            "range": "± 902854",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4148,
+            "range": "± 8",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 44090,
+            "range": "± 101",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 732095,
+            "range": "± 4124",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 64759,
+            "range": "± 167",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 714278,
+            "range": "± 6898",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7861072,
+            "range": "± 49436",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 811,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7312,
+            "range": "± 35",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 91984,
+            "range": "± 323",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 22414,
+            "range": "± 256",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 157000,
+            "range": "± 1593",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1488413,
+            "range": "± 12636",
             "unit": "ns/iter"
           }
         ]
