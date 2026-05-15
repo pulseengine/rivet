@@ -168,15 +168,6 @@ jobs:
   build-test-evidence:
     name: Build test evidence
     runs-on: ubuntu-latest
-    # Non-blocking: the test-evidence bundle is a compliance artifact, not
-    # something users install. Building the spar wasm32-wasip2 assets needs
-    # a full WASI C/C++ SDK (sysroot + libc/libc++ + clang_rt builtins),
-    # which the runner image no longer ships — wasm-ld can't find crt1.o /
-    # -lc / libclang_rt.builtins-wasm32.a even with lld + wasm-component-ld
-    # installed (#269, #271). Until wasi-sdk is wired in (tracked separately),
-    # let this job fail without blocking Create GitHub Release — the release
-    # then ships 8/9 assets (everything except rivet-vX.Y.Z-test-evidence.tar.gz).
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v6
 
@@ -192,18 +183,48 @@ jobs:
         with:
           tool: cargo-nextest,cargo-llvm-cov
 
-      # wasm32-wasip2 builds need two linkers that recent toolchains/runner
-      # images no longer provide out of the box:
-      #   - wasm-component-ld: the WASI Preview 2 component linker (nightly
-      #     stopped bundling it with the target's tools).
-      #   - wasm-ld: the LLVM wasm linker, invoked by clang++ when a C/C++
-      #     dependency (e.g. highs-sys, pulled in transitively by spar)
-      #     does a CMake CXX-ABI probe targeting wasm. Provided by `lld`.
-      - name: Install wasm linkers
+      # The spar wasm32-wasip2 build pulls in highs-sys (a C++ solver), and
+      # building C/C++ for that target needs a full WASI toolchain:
+      #   - wasm-component-ld: the WASI Preview 2 component linker that cargo
+      #     uses as the wasm32-wasip2 linker (recent nightlies stopped bundling
+      #     it with the target's tools — #269);
+      #   - wasm-ld: the LLVM wasm linker wasm-component-ld and clang++ shell
+      #     out to (`lld` package — #271; also in wasi-sdk's bin/);
+      #   - a WASI sysroot + libc/libc++/libc++abi + libclang_rt.builtins-wasm32.a
+      #     (the runner image no longer ships these, so wasm-ld errored on
+      #     crt1.o / -lc / -lc++).
+      # wasi-sdk supplies the sysroot + clang/clang++/llvm-ar/wasm-ld. Put its
+      # bin/ on PATH (so wasm-component-ld can find wasm-ld and the `cc`/`cmake`
+      # build scripts pick up the right clang), and pin CC_/CXX_/AR_<target> +
+      # the wasip2 sysroot so the CMake CXX-ABI probe and the highs-sys compile
+      # both resolve their headers/libs. `lld` stays as a belt-and-braces
+      # wasm-ld source.
+      - name: Install wasm-component-ld + lld
         run: |
           sudo apt-get update
           sudo apt-get install -y lld
           cargo install --locked wasm-component-ld
+
+      - name: Install WASI SDK
+        env:
+          WASI_SDK_VERSION: "25.0"
+        run: |
+          set -euo pipefail
+          major="${WASI_SDK_VERSION%%.*}"
+          url="https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-${major}/wasi-sdk-${WASI_SDK_VERSION}-x86_64-linux.tar.gz"
+          curl -fsSL "$url" -o /tmp/wasi-sdk.tar.gz
+          sudo mkdir -p /opt/wasi-sdk
+          sudo tar -xzf /tmp/wasi-sdk.tar.gz -C /opt/wasi-sdk --strip-components=1
+          sysroot="/opt/wasi-sdk/share/wasi-sysroot"
+          echo "/opt/wasi-sdk/bin" >> "$GITHUB_PATH"
+          {
+            echo "WASI_SDK_PATH=/opt/wasi-sdk"
+            echo "CC_wasm32_wasip2=/opt/wasi-sdk/bin/clang"
+            echo "CXX_wasm32_wasip2=/opt/wasi-sdk/bin/clang++"
+            echo "AR_wasm32_wasip2=/opt/wasi-sdk/bin/llvm-ar"
+            echo "CFLAGS_wasm32_wasip2=--target=wasm32-wasip2 --sysroot=${sysroot}"
+            echo "CXXFLAGS_wasm32_wasip2=--target=wasm32-wasip2 --sysroot=${sysroot}"
+          } >> "$GITHUB_ENV"
 
       - name: Build spar WASM assets
         run: |
