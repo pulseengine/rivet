@@ -203,9 +203,7 @@ impl ArtifactTypeDef {
             self.yaml_section_suffix = other.yaml_section_suffix;
         }
         merge_named_vec(&mut self.fields, other.fields, |f| f.name.clone());
-        merge_named_vec(&mut self.link_fields, other.link_fields, |f| {
-            f.name.clone()
-        });
+        merge_named_vec(&mut self.link_fields, other.link_fields, |f| f.name.clone());
         for s in other.yaml_sections {
             if !self.yaml_sections.contains(&s) {
                 self.yaml_sections.push(s);
@@ -1698,7 +1696,10 @@ mod tests {
     /// After the fix, the two field-sets must union by name.
     #[test]
     fn merge_same_name_artifact_type_unions_fields() {
-        let base = mk_schema_file("base", vec![mk_type("feature", vec!["phase", "baseline"], vec![])]);
+        let base = mk_schema_file(
+            "base",
+            vec![mk_type("feature", vec!["phase", "baseline"], vec![])],
+        );
         let overlay = mk_schema_file("overlay", vec![mk_type("feature", vec!["method"], vec![])]);
         let schema = Schema::merge(&[base, overlay]);
 
@@ -1731,7 +1732,11 @@ mod tests {
         );
         let overlay = mk_schema_file(
             "overlay",
-            vec![mk_type("feature", vec![], vec![("derives-from", "derives-from")])],
+            vec![mk_type(
+                "feature",
+                vec![],
+                vec![("derives-from", "derives-from")],
+            )],
         );
         let schema = Schema::merge(&[base, overlay]);
 
@@ -1754,10 +1759,7 @@ mod tests {
             "base",
             vec![mk_type("uca", vec![], vec![("controller", "issued-by")])],
         );
-        let overlay = mk_schema_file(
-            "overlay",
-            vec![mk_type("uca", vec!["criticality"], vec![])],
-        );
+        let overlay = mk_schema_file("overlay", vec![mk_type("uca", vec!["criticality"], vec![])]);
         let schema = Schema::merge(&[base, overlay]);
 
         let uca = schema.artifact_types.get("uca").unwrap();
@@ -1798,10 +1800,22 @@ mod tests {
         let ab = Schema::merge(&[base.clone(), overlay_a.clone(), overlay_b.clone()]);
         let ba = Schema::merge(&[base, overlay_b, overlay_a]);
 
-        let mut ab_fields: Vec<String> =
-            ab.artifact_types.get("feature").unwrap().fields.iter().map(|f| f.name.clone()).collect();
-        let mut ba_fields: Vec<String> =
-            ba.artifact_types.get("feature").unwrap().fields.iter().map(|f| f.name.clone()).collect();
+        let mut ab_fields: Vec<String> = ab
+            .artifact_types
+            .get("feature")
+            .unwrap()
+            .fields
+            .iter()
+            .map(|f| f.name.clone())
+            .collect();
+        let mut ba_fields: Vec<String> = ba
+            .artifact_types
+            .get("feature")
+            .unwrap()
+            .fields
+            .iter()
+            .map(|f| f.name.clone())
+            .collect();
         ab_fields.sort();
         ba_fields.sort();
         assert_eq!(ab_fields, ba_fields, "field set must be order-independent");
