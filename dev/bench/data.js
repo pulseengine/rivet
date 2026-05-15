@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1778825675589,
+  "lastUpdate": 1778826075982,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "4ef103cb09618632bde0589c070aaceb68012531",
-          "message": "feat(schema): rivet schema migrate Phase 1 — diff engine + plan/apply/abort + dev-to-aspice recipe (#238)\n\n* feat(schemas): canned dev-to-aspice migration recipe\n\nPhase 1 of issue #236. Ships exactly one mechanical migration recipe:\nthe most common \"outgrew the dev preset\" path. Renames `requirement`,\n`feature`, and `design-decision` to their ASPICE 4.0 equivalents and\nrewrites `satisfies` links to `derives-from`. Default\n`unmapped-fields: keep-as-orphan` policy stashes unmapped fields\nunder `fields.legacy.*` so nothing is lost on migration.\n\nImplements: REQ-010\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n* feat(schema): diff engine for schema migrations\n\nPhase 1 of issue #236. New `rivet_core::migrate` module provides:\n\n* MigrationRecipe / MigrationRecipeFile — YAML recipe shape with\n  type-rewrites, link-rewrites, and policies (unmapped-fields:\n  drop|keep-as-orphan|strict; unmapped-link-types: keep|drop|strict).\n* diff_artifacts() — given source artifacts + recipe + optional\n  target schema, computes a RewriteMap of PlannedChange entries\n  classified as mechanical / decidable-with-policy / conflict.\n* apply_to_file() — mechanical-only YAML rewrite at the\n  serde_yaml::Value level. Bails loudly on conflict-class changes.\n* MigrationLayout / MigrationState — directory-layout helpers for\n  `.rivet/migrations/<ts>/` with plan.yaml, manifest.yaml, state, and\n  snapshot/.\n* copy_tree / remove_tree — recursive fs helpers used by the\n  CLI's snapshot + abort path.\n\nEmbeds the shipped dev-to-aspice recipe via include_str! and exposes\nembedded_migration_recipe() for CLI lookup.\n\nEight unit tests cover: type-rename emission, link-rename\ndeduplication, unmapped-field detection with policy, apply rewrites\ntype+link, keep-as-orphan stash, conflict bail, recipe parse, state\nroundtrip.\n\nImplements: REQ-010\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n* feat(cli): rivet schema migrate — plan/apply/abort/status/finish\n\nPhase 1 of issue #236. New `rivet schema migrate <target>` subcommand:\n\n* default (no flag): plan-only — writes\n  `.rivet/migrations/<YYYYMMDD-HHMM>-<src>-to-<tgt>/plan.yaml` plus\n  manifest and a `state` file with PLANNED. Prints a summary of\n  mechanical / decidable / conflict counts.\n* `--apply`: rewrites artifact YAML in place. Bails loudly with\n  exit 1 if the plan has any conflict-class changes (Phase 1 is\n  mechanical-only). Captures a byte-faithful snapshot of `artifacts/`\n  and `rivet.yaml` before rewriting.\n* `--abort`: restores from snapshot and deletes the migration\n  directory. Byte-identical rollback for the snapshotted subtree.\n* `--status`: prints the current state machine pointer +\n  recipe/changeset summary from manifest.yaml.\n* `--finish`: deletes the snapshot after confirming COMPLETE state.\n\nRecipe resolution: tries `<schemas-dir>/migrations/<src>-to-<tgt>.yaml`\nfirst, then falls back to the embedded recipe set. Phase 1 ships\none recipe; future phases will gain a registry. Source preset is\ninferred from `rivet.yaml` (first non-`common` schema entry).\n\nImplements: REQ-007\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n* docs(schema): embedded rivet docs schema-migrate topic\n\nNew `rivet docs schema-migrate` topic covering the Phase 1 CLI\nsurface (plan / apply / abort / status / finish), the state\nmachine, the storage layout under `.rivet/migrations/<ts>/`, the\nrecipe format with action classes, and the policy semantics for\nunmapped fields and link types. Also lists what Phase 1 deliberately\ndefers (conflict markers, --continue/--skip/--edit, dashboard,\nprovenance entries).\n\nAdds a one-line entry under the existing `rivet docs cli` schema\ncommands section pointing users at the new topic.\n\nTrace: skip\n\n* test(schema): integration tests for migrate apply + abort + roundtrip\n\nFive end-to-end tests covering the Phase 1 surface area of issue #236:\n\n* plan_dev_to_aspice_writes_plan_and_manifest — fresh dev project,\n  default plan invocation creates a single migration directory\n  with plan.yaml, manifest.yaml, and `state == PLANNED`.\n* apply_rewrites_dev_to_aspice_and_validate_passes — `--apply` on\n  a clean dev project rewrites types and links, the migrated tree\n  has no `requirement` / `feature` left, and after patching\n  `rivet.yaml` to load aspice schemas, `rivet validate` exits 0.\n* abort_restores_byte_identical_artifacts — pre-migration snapshot\n  is captured, `apply` mutates files, `abort` restores them\n  byte-identically (compared via a recursive directory walk).\n* finish_deletes_snapshot_and_keeps_manifest — `--finish` on a\n  COMPLETE migration removes `snapshot/` but keeps `manifest.yaml`\n  for audit.\n* roundtrip_dev_to_aspice_keeps_artifact_count_constant — the\n  half-roundtrip we have without an aspice-to-dev recipe; asserts\n  no spurious additions/deletions through the rewrite. Full A->B->A\n  test deferred until a reverse recipe ships.\n\nVerifies: REQ-007, REQ-010\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.7 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-04-28T22:55:37-05:00",
-          "tree_id": "93b9719576c4dcf18075cd56991da31ee7486541",
-          "url": "https://github.com/pulseengine/rivet/commit/4ef103cb09618632bde0589c070aaceb68012531"
-        },
-        "date": 1777435317679,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 63236,
-            "range": "± 221",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 675001,
-            "range": "± 3297",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 9845732,
-            "range": "± 751316",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1487,
-            "range": "± 5",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 18426,
-            "range": "± 598",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 270162,
-            "range": "± 1051",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 84,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 84,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 84,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 909961,
-            "range": "± 4640",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 129084,
-            "range": "± 1045",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1493483,
-            "range": "± 9162",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 24968896,
-            "range": "± 2479202",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 92258,
-            "range": "± 698",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 776805,
-            "range": "± 34669",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 9564225,
-            "range": "± 1081859",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 3201,
-            "range": "± 5",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 33739,
-            "range": "± 113",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 565708,
-            "range": "± 4774",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 47839,
-            "range": "± 631",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 537162,
-            "range": "± 2437",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 6201714,
-            "range": "± 236584",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 606,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 5379,
-            "range": "± 10",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 70013,
-            "range": "± 196",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 18981,
-            "range": "± 64",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 133143,
-            "range": "± 335",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1253318,
-            "range": "± 6367",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1623316,
             "range": "± 22322",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "fd4cf192eb6dd6a8a13be0d2b55928c62db44952",
+          "message": "ci: stop the Verus/Mutation/cargo-vet self-hosted runner flakes (#281)\n\nThree flake classes hitting every PR today, all on self-hosted runners:\n\n1. Verus + Rocq Proofs: \"sudo: 'no new privileges' flag is set\"\n2. Mutation Testing (rivet-cli): \"No space left on device\"\n3. Supply Chain (cargo-vet): \"runner has received a shutdown signal\"\n\nAll three block green CI on PRs that have nothing to do with the\nunderlying subsystem. Each fix is workflow-level so it lands without\nrunner-host changes.\n\n**1) Verus + Rocq: switch Nix installer.**\nThe self-hosted runners run with systemd `NoNewPrivileges=true`, which\nbreaks `cachix/install-nix-action@v31` because it shells out to sudo\nmid-install. Switch to `DeterminateSystems/nix-installer-action@main`\nwith `init: none` (daemonless single-user mode). Add a follow-up step\nto put `~/.nix-profile/bin` on PATH explicitly. Cost: ~30s install,\ncomparable speed once cached. Keeps the lean-mem requirement intact —\nthe Verus solver still wants the RAM.\n\n**2) Mutation Testing: prune + restrict upload.**\ncargo-mutants writes a per-mutant target directory under `mutants-out/`.\nSeventeen shards landing on the same pool, with the Swatinem cache hot,\nleave 5-15 GB behind each. The next shard's `Upload mutants report`\nstep dies with ENOSPC during the upload itself — after cargo-mutants\nhas finished cleanly. Two changes:\n  - Add a `Prune stale mutants artefacts` step before the run (rm\n    mutants-out, find + rm matching target subdirs older than a day).\n  - Restrict `upload-artifact` path to the text/JSON reports only —\n    skip the per-mutant target directories that drive the bloat. The\n    text reports are what matter for triage.\n\n**3) cargo-vet: wrap in retry.**\nGitHub Actions doesn't expose \"runner restarted under me\" to `if:`\nconditions, but `nick-fields/retry@v3` with `retry_on: error` handles\nit correctly — if the runner agent dies mid-step the step exits\nnon-zero, the action retries on a different runner. Two attempts is\nenough; a third shutdown in ten minutes would point at runner-pool\nsizing, not at this job. Same pattern fits other light jobs (`fmt`,\n`yaml-lint`, `msrv`, `docs-check`) but those aren't currently flaking,\nso leave them alone — speculative retry on stable jobs hides real\nbugs.\n\nCross-cutting note for runner-ops: the underlying fixes for these are\nhost-level too — drop `NoNewPrivileges` from the runner systemd unit\n(fixes #1), lower the `post-job.sh` disk threshold from 70% to ~50%\n(helps #2), grow the lean-mem pool size (helps #3). The workflow-level\nchanges here unblock CI today; the host-level work is the durable fix\nand worth a separate Ansible PR.",
+          "timestamp": "2026-05-15T01:11:29-05:00",
+          "tree_id": "8ba6b39c639dcc9c29d0148fb9c2b0a2d16e9a60",
+          "url": "https://github.com/pulseengine/rivet/commit/fd4cf192eb6dd6a8a13be0d2b55928c62db44952"
+        },
+        "date": 1778826075278,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 80661,
+            "range": "± 703",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 859068,
+            "range": "± 36041",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 12861743,
+            "range": "± 776517",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2214,
+            "range": "± 11",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 26502,
+            "range": "± 786",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 349644,
+            "range": "± 7534",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1240487,
+            "range": "± 17811",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 158909,
+            "range": "± 4226",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1876383,
+            "range": "± 22209",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 30575891,
+            "range": "± 2813963",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 139423,
+            "range": "± 2502",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1242623,
+            "range": "± 15371",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 22090176,
+            "range": "± 1764655",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4270,
+            "range": "± 22",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 60744,
+            "range": "± 981",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 753117,
+            "range": "± 5235",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 60341,
+            "range": "± 1514",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 678217,
+            "range": "± 2907",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8031501,
+            "range": "± 642688",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 772,
+            "range": "± 9",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7379,
+            "range": "± 55",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 110844,
+            "range": "± 721",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 23702,
+            "range": "± 332",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 171213,
+            "range": "± 2893",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1583479,
+            "range": "± 21374",
             "unit": "ns/iter"
           }
         ]
