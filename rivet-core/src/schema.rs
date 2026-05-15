@@ -170,6 +170,89 @@ pub struct MistakeGuide {
     pub fix_command: Option<String>,
 }
 
+impl ArtifactTypeDef {
+    /// Merge `other` (a later-declared form of the same-named type) into
+    /// `self` (the earlier-declared form). Fixes issue #154: previously
+    /// `Schema::merge` did a plain `HashMap::insert` and silently
+    /// dropped the base schema's fields when a bridge/overlay schema
+    /// re-declared the type.
+    ///
+    /// Merge semantics, per field:
+    /// - Scalar `Option`s (`aspice_process`, `example`, `yaml_section`,
+    ///   `yaml_section_suffix`): later-`Some` wins, else keep earlier.
+    /// - `description`: later wins when non-empty, else keep earlier.
+    /// - `fields`, `link_fields`: union by `name`; later wins on
+    ///   same-name conflicts. (Order: earlier-declared first, then
+    ///   later additions in declaration order.)
+    /// - `shorthand_links`, `common_mistakes`, `yaml_sections`: union
+    ///   (later additions appended; map keys merged, later wins).
+    pub fn merge_in_place(&mut self, other: ArtifactTypeDef) {
+        if !other.description.trim().is_empty() {
+            self.description = other.description;
+        }
+        if other.aspice_process.is_some() {
+            self.aspice_process = other.aspice_process;
+        }
+        if other.example.is_some() {
+            self.example = other.example;
+        }
+        if other.yaml_section.is_some() {
+            self.yaml_section = other.yaml_section;
+        }
+        if other.yaml_section_suffix.is_some() {
+            self.yaml_section_suffix = other.yaml_section_suffix;
+        }
+        merge_named_vec(&mut self.fields, other.fields, |f| f.name.clone());
+        merge_named_vec(&mut self.link_fields, other.link_fields, |f| f.name.clone());
+        for s in other.yaml_sections {
+            if !self.yaml_sections.contains(&s) {
+                self.yaml_sections.push(s);
+            }
+        }
+        self.shorthand_links.extend(other.shorthand_links);
+        self.common_mistakes.extend(other.common_mistakes);
+    }
+}
+
+impl LinkTypeDef {
+    /// Merge `other` into `self`. Mirrors `ArtifactTypeDef::merge_in_place`:
+    /// scalar fields take the later value when non-empty, list fields
+    /// union (dedup), inverse from later wins if set.
+    pub fn merge_in_place(&mut self, other: LinkTypeDef) {
+        if !other.description.trim().is_empty() {
+            self.description = other.description;
+        }
+        if other.inverse.is_some() {
+            self.inverse = other.inverse;
+        }
+        for t in other.source_types {
+            if !self.source_types.contains(&t) {
+                self.source_types.push(t);
+            }
+        }
+        for t in other.target_types {
+            if !self.target_types.contains(&t) {
+                self.target_types.push(t);
+            }
+        }
+    }
+}
+
+/// Union two named vectors: items in `incoming` either replace existing
+/// items with the same name (later wins) or are appended in declaration
+/// order. Preserves the original order of `dst` for items that were
+/// already present.
+fn merge_named_vec<T, F: Fn(&T) -> String>(dst: &mut Vec<T>, incoming: Vec<T>, name_of: F) {
+    for item in incoming {
+        let name = name_of(&item);
+        if let Some(slot) = dst.iter_mut().find(|d| name_of(*d) == name) {
+            *slot = item;
+        } else {
+            dst.push(item);
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FieldDef {
@@ -825,8 +908,8 @@ impl Schema {
     ///
     /// Later files override earlier ones for types/links with the same name.
     pub fn merge(files: &[SchemaFile]) -> Self {
-        let mut artifact_types = HashMap::new();
-        let mut link_types = HashMap::new();
+        let mut artifact_types: HashMap<String, ArtifactTypeDef> = HashMap::new();
+        let mut link_types: HashMap<String, LinkTypeDef> = HashMap::new();
         let mut inverse_map = HashMap::new();
         let mut traceability_rules = Vec::new();
         let mut conditional_rules = Vec::new();
@@ -847,14 +930,38 @@ impl Schema {
                             .or_insert_with(|| lf.link_type.clone());
                     }
                 }
-                artifact_types.insert(at.name.clone(), at);
+                // Issue #154: when an overlay/bridge schema declares a
+                // type that already exists in a base schema, MERGE
+                // (union fields, scalar Options later-wins) instead of
+                // REPLACE. The old `insert` silently dropped the base
+                // schema's fields whenever the same name reappeared,
+                // which broke every bridge schema that re-declared a
+                // type to add a single ASIL field or a single `method`
+                // field.
+                match artifact_types.entry(at.name.clone()) {
+                    std::collections::hash_map::Entry::Occupied(mut e) => {
+                        e.get_mut().merge_in_place(at);
+                    }
+                    std::collections::hash_map::Entry::Vacant(e) => {
+                        e.insert(at);
+                    }
+                }
             }
             for lt in &file.link_types {
                 if let Some(inv) = &lt.inverse {
                     inverse_map.insert(lt.name.clone(), inv.clone());
                     inverse_map.insert(inv.clone(), lt.name.clone());
                 }
-                link_types.insert(lt.name.clone(), lt.clone());
+                // Same merge semantics for link types (#154): union
+                // source-types / target-types, later wins for scalars.
+                match link_types.entry(lt.name.clone()) {
+                    std::collections::hash_map::Entry::Occupied(mut e) => {
+                        e.get_mut().merge_in_place(lt.clone());
+                    }
+                    std::collections::hash_map::Entry::Vacant(e) => {
+                        e.insert(lt.clone());
+                    }
+                }
             }
             traceability_rules.extend(file.traceability_rules.iter().cloned());
             conditional_rules.extend(file.conditional_rules.iter().cloned());
@@ -1523,6 +1630,234 @@ mod tests {
             rule_diags.len(),
             0,
             "draft AI artifact should not trigger review rule"
+        );
+    }
+
+    // ── Issue #154: schema merge should UNION, not REPLACE ──────────────
+
+    fn mk_schema_file(name: &str, types: Vec<ArtifactTypeDef>) -> SchemaFile {
+        SchemaFile {
+            schema: SchemaMetadata {
+                name: name.into(),
+                version: "0.1.0".into(),
+                namespace: None,
+                description: None,
+                extends: vec![],
+                min_rivet_version: None,
+                license: None,
+            },
+            base_fields: vec![],
+            artifact_types: types,
+            link_types: vec![],
+            traceability_rules: vec![],
+            conditional_rules: vec![],
+            validation_rules: vec![],
+            agent_pipelines: None,
+        }
+    }
+
+    fn mk_type(name: &str, fields: Vec<&str>, link_fields: Vec<(&str, &str)>) -> ArtifactTypeDef {
+        ArtifactTypeDef {
+            name: name.into(),
+            description: format!("{name} type"),
+            fields: fields
+                .into_iter()
+                .map(|f| FieldDef {
+                    name: f.into(),
+                    field_type: "string".into(),
+                    required: false,
+                    description: None,
+                    allowed_values: None,
+                })
+                .collect(),
+            link_fields: link_fields
+                .into_iter()
+                .map(|(name, link_type)| LinkFieldDef {
+                    name: name.into(),
+                    link_type: link_type.into(),
+                    target_types: vec![],
+                    required: false,
+                    cardinality: Cardinality::ZeroOrMany,
+                    description: None,
+                })
+                .collect(),
+            aspice_process: None,
+            common_mistakes: vec![],
+            example: None,
+            yaml_section: None,
+            yaml_sections: vec![],
+            yaml_section_suffix: None,
+            shorthand_links: std::collections::BTreeMap::new(),
+        }
+    }
+
+    /// Issue #154: when a bridge / overlay schema declares the same-name
+    /// type as a base schema, the base's `fields` were silently dropped.
+    /// After the fix, the two field-sets must union by name.
+    #[test]
+    fn merge_same_name_artifact_type_unions_fields() {
+        let base = mk_schema_file(
+            "base",
+            vec![mk_type("feature", vec!["phase", "baseline"], vec![])],
+        );
+        let overlay = mk_schema_file("overlay", vec![mk_type("feature", vec!["method"], vec![])]);
+        let schema = Schema::merge(&[base, overlay]);
+
+        let feat = schema
+            .artifact_types
+            .get("feature")
+            .expect("feature type must survive merge");
+        let field_names: Vec<&str> = feat.fields.iter().map(|f| f.name.as_str()).collect();
+        assert!(
+            field_names.contains(&"phase"),
+            "base 'phase' must survive overlay merge — issue #154"
+        );
+        assert!(
+            field_names.contains(&"baseline"),
+            "base 'baseline' must survive overlay merge"
+        );
+        assert!(
+            field_names.contains(&"method"),
+            "overlay 'method' must be added"
+        );
+    }
+
+    /// `link_fields` get the same treatment — overlay must not drop the
+    /// base's link-fields.
+    #[test]
+    fn merge_same_name_artifact_type_unions_link_fields() {
+        let base = mk_schema_file(
+            "base",
+            vec![mk_type("feature", vec![], vec![("satisfies", "satisfies")])],
+        );
+        let overlay = mk_schema_file(
+            "overlay",
+            vec![mk_type(
+                "feature",
+                vec![],
+                vec![("derives-from", "derives-from")],
+            )],
+        );
+        let schema = Schema::merge(&[base, overlay]);
+
+        let feat = schema.artifact_types.get("feature").unwrap();
+        let lf_names: Vec<&str> = feat.link_fields.iter().map(|f| f.name.as_str()).collect();
+        assert!(lf_names.contains(&"satisfies"), "base link-field survives");
+        assert!(
+            lf_names.contains(&"derives-from"),
+            "overlay link-field is added"
+        );
+    }
+
+    /// After merging, `shorthand_links` must contain entries for all
+    /// link-fields from BOTH schemas — guards the secondary issue (the
+    /// stpa-yaml shorthand expansion silently stops working when a
+    /// bridge schema redeclares a type without its parent link-fields).
+    #[test]
+    fn merge_preserves_shorthand_links_from_parent() {
+        let base = mk_schema_file(
+            "base",
+            vec![mk_type("uca", vec![], vec![("controller", "issued-by")])],
+        );
+        let overlay = mk_schema_file("overlay", vec![mk_type("uca", vec!["criticality"], vec![])]);
+        let schema = Schema::merge(&[base, overlay]);
+
+        let uca = schema.artifact_types.get("uca").unwrap();
+        assert!(
+            uca.shorthand_links.contains_key("controller"),
+            "base shorthand-link must survive bridge re-declaration"
+        );
+    }
+
+    /// Merging the same file twice must be a no-op (idempotence).
+    #[test]
+    fn merge_idempotent_with_same_file_twice() {
+        let file = mk_schema_file(
+            "self",
+            vec![mk_type("feature", vec!["phase", "baseline"], vec![])],
+        );
+        let once = Schema::merge(&[file.clone()]);
+        let twice = Schema::merge(&[file.clone(), file]);
+
+        let f1 = once.artifact_types.get("feature").unwrap();
+        let f2 = twice.artifact_types.get("feature").unwrap();
+        assert_eq!(
+            f1.fields.len(),
+            f2.fields.len(),
+            "merging a file with itself must not duplicate fields"
+        );
+        assert_eq!(f1.link_fields.len(), f2.link_fields.len());
+    }
+
+    /// Two non-conflicting overlays should produce the same merged shape
+    /// regardless of declaration order.
+    #[test]
+    fn merge_order_independent_for_disjoint_additions() {
+        let base = mk_schema_file("base", vec![mk_type("feature", vec!["phase"], vec![])]);
+        let overlay_a = mk_schema_file("a", vec![mk_type("feature", vec!["method"], vec![])]);
+        let overlay_b = mk_schema_file("b", vec![mk_type("feature", vec!["criticality"], vec![])]);
+
+        let ab = Schema::merge(&[base.clone(), overlay_a.clone(), overlay_b.clone()]);
+        let ba = Schema::merge(&[base, overlay_b, overlay_a]);
+
+        let mut ab_fields: Vec<String> = ab
+            .artifact_types
+            .get("feature")
+            .unwrap()
+            .fields
+            .iter()
+            .map(|f| f.name.clone())
+            .collect();
+        let mut ba_fields: Vec<String> = ba
+            .artifact_types
+            .get("feature")
+            .unwrap()
+            .fields
+            .iter()
+            .map(|f| f.name.clone())
+            .collect();
+        ab_fields.sort();
+        ba_fields.sort();
+        assert_eq!(ab_fields, ba_fields, "field set must be order-independent");
+    }
+
+    /// Link-type union: `source-types` and `target-types` accumulate
+    /// across schemas that redeclare the same link type.
+    #[test]
+    fn merge_same_name_link_type_unions_target_types() {
+        let base = mk_schema_file("base", vec![]);
+        let mut base = base;
+        base.link_types.push(LinkTypeDef {
+            name: "derives-from".into(),
+            inverse: Some("derived-into".into()),
+            description: "base".into(),
+            source_types: vec!["requirement".into()],
+            target_types: vec!["stakeholder-req".into()],
+        });
+        let overlay = mk_schema_file("overlay", vec![]);
+        let mut overlay = overlay;
+        overlay.link_types.push(LinkTypeDef {
+            name: "derives-from".into(),
+            inverse: None,
+            description: "overlay extension".into(),
+            source_types: vec![],
+            target_types: vec!["sys-req".into()],
+        });
+        let schema = Schema::merge(&[base, overlay]);
+
+        let lt = schema.link_types.get("derives-from").unwrap();
+        assert!(
+            lt.target_types.contains(&"stakeholder-req".into()),
+            "base target-type survives"
+        );
+        assert!(
+            lt.target_types.contains(&"sys-req".into()),
+            "overlay target-type is added"
+        );
+        assert_eq!(
+            lt.inverse,
+            Some("derived-into".into()),
+            "base inverse survives when overlay doesn't redeclare it"
         );
     }
 }
