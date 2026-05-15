@@ -408,9 +408,7 @@ fn evaluate_validation_rules(store: &Store, schema: &Schema, graph: &LinkGraph) 
             if holds {
                 continue;
             }
-            let severity = if rule.draft_downgrade
-                && artifact.status.as_deref().map(str::to_lowercase).as_deref() == Some("draft")
-            {
+            let severity = if rule.draft_downgrade && artifact.is_draft() {
                 Severity::Info
             } else {
                 rule.severity
@@ -749,12 +747,11 @@ pub fn validate_structural_with_externals(
 
             // Draft artifacts get downgraded to Info for traceability rule violations.
             // Active and approved artifacts receive full error-level enforcement.
-            let effective_severity =
-                if artifact.status.as_deref().map(str::to_lowercase).as_deref() == Some("draft") {
-                    Severity::Info
-                } else {
-                    rule.severity
-                };
+            let effective_severity = if artifact.is_draft() {
+                Severity::Info
+            } else {
+                rule.severity
+            };
 
             // Forward link check.
             //
