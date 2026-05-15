@@ -2,7 +2,7 @@
 
 > **Status: feasibility spike — verdict reached (negative).**
 >
-> MIRAI v1.1.12's pinned toolchain (`nightly-2025-01-10`, rustc 1.86.0-nightly)
+> MIRAI `v1.1.12`'s pinned toolchain (`nightly-2025-01-10`, rustc 1.86.0-nightly)
 > cannot build today's rivet-core. Two independent blockers:
 >   1. `rivet-core` declares `rust-version = 1.89`; cargo refuses without
 >      `--ignore-rust-version`.
@@ -28,7 +28,7 @@ The original issue references [`facebookexperimental/MIRAI`](https://github.com/
 That repository was **archived on 2024-08-22** and is no longer
 maintained. Active maintenance lives at
 [`endorlabs/MIRAI`](https://github.com/endorlabs/MIRAI), whose latest
-tagged release is **v1.1.12 (2025-03-04)**.
+tagged release is `v1.1.12` (2025-03-04).
 
 This prototype targets the Endor Labs fork. The acceptance bullets in
 issue #191 should be read with that substitution.
@@ -159,7 +159,7 @@ upstream:
 - `endorlabs/MIRAI` would need to bump its `rust-toolchain.toml`
   channel past `nightly-2025-04-XX` (whichever first carries the
   stabilized `let_chains`).
-- A v1.1.13+ release on the new pin makes the rivet prototype
+- A `v1.1.13`+ release on the new pin makes the rivet prototype
   immediately resumable via the runner script in this PR.
 
 Tracking the upstream pin bump as a follow-up rather than vendoring an
@@ -170,7 +170,7 @@ fixture.
 ## Go / no-go for MIRAI as a CI gate on rivet
 
 **No-go (current).** The blocker is upstream-toolchain-pin churn, not
-rivet code. A CI gate that pins MIRAI v1.1.12 + nightly-2025-01-10
+rivet code. A CI gate that pins MIRAI `v1.1.12` + `nightly-2025-01-10`
 cannot run today; revisiting becomes worthwhile once Endor Labs ships
 a release on a `let_chains`-stable nightly.
 
