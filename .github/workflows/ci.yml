@@ -393,6 +393,16 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-mutants
+      # Prevent ENOSPC during artifact upload — cargo-mutants writes a
+      # per-mutant target directory under `mutants-out/`. With 17 shards
+      # landing on the same lean-mem runner pool and Swatinem cache keeping
+      # `~/.cargo` + `target/` hot, each shard previously left ~5-15 GB
+      # behind. The next shard's `Upload mutants report` step then died
+      # with "No space left on device". Prune before we start.
+      - name: Prune stale mutants artefacts
+        run: |
+          rm -rf mutants-out
+          find target -maxdepth 2 -name 'mutants.out*' -mtime +1 -exec rm -rf {} + 2>/dev/null || true
       - name: Run cargo-mutants
         # Per-mutant timeout 30s (was 90): the dogfood corpus's long-tail
         # mutants were eating most of each shard's 45-min budget. 30s
@@ -418,7 +428,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mutants-report-${{ matrix.crate }}-${{ matrix.shard_id }}
-          path: mutants-out/
+          # Only human-readable reports; skip per-mutant target dirs that
+          # bloat the artifact to GB-scale and trigger ENOSPC on upload.
+          path: |
+            mutants-out/*.txt
+            mutants-out/*.json
+            mutants-out/outcomes.json
+          if-no-files-found: warn
 
   # ── Fuzz testing (main only — too slow for PRs) ───────────────────
   fuzz:
@@ -456,6 +472,7 @@ jobs:
   supply-chain:
     name: Supply Chain (cargo-vet)
     runs-on: [self-hosted, linux, x64, light]
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -463,14 +480,26 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-vet
-      - name: Initialize cargo-vet if needed
-        run: |
-          if [ ! -d supply-chain ]; then
-            cargo vet init
-            echo "::notice::cargo-vet initialized — run 'cargo vet' locally to audit dependencies"
-          fi
-      - name: Check supply chain
-        run: cargo vet --locked
+      # Self-hosted runners on the `light` pool get cycled by ops
+      # automation (kernel patches, systemd restarts, Ansible
+      # convergence). When that happens mid-job we see "The runner
+      # has received a shutdown signal". Wrap the actual work in a
+      # retry — re-attempting a fast cargo-vet against a different
+      # runner is cheaper than waiting for a human to click "Re-run
+      # failed jobs". Two attempts is enough; a third shutdown in
+      # ten minutes points at runner-pool sizing, not this job.
+      - name: Vet
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 5
+          max_attempts: 2
+          retry_on: error
+          command: |
+            if [ ! -d supply-chain ]; then
+              cargo vet init
+              echo "::notice::cargo-vet initialized — run 'cargo vet' locally to audit dependencies"
+            fi
+            cargo vet --locked
 
   # ── Kani bounded model checking ────────────────────────────────────
   # Not yet a hard gate: the 27-harness suite exceeds the 30-minute budget.
@@ -527,10 +556,20 @@ jobs:
       # resolves all registered toolchains at analysis time regardless
       # of which target is being built, so Nix must be on PATH even for
       # Verus-only invocations.
+      #
+      # The self-hosted runners run with `NoNewPrivileges=true` (systemd
+      # hardening), which makes `sudo` inside `cachix/install-nix-action`
+      # fail with "sudo: 'no new privileges' flag is set". Use the
+      # DeterminateSystems installer which supports a daemonless
+      # single-user mode that does not need sudo.
       - name: Install Nix
-        uses: cachix/install-nix-action@v31
+        uses: DeterminateSystems/nix-installer-action@main
         with:
-          nix_path: nixpkgs=channel:nixos-unstable
+          init: none
+          extra-conf: |
+            experimental-features = nix-command flakes
+      - name: Add Nix to PATH
+        run: echo "$HOME/.nix-profile/bin" >> "$GITHUB_PATH"
       - name: Verify Verus specs
         run: bazel test //verus:rivet_specs_verify
       - name: Upload Verus test log
@@ -566,10 +605,16 @@ jobs:
           bazelisk-cache: true
           disk-cache: ${{ github.workflow }}
           repository-cache: true
+      # Same NoNewPrivileges constraint as the verus job above — use the
+      # DeterminateSystems installer which works without sudo.
       - name: Install Nix
-        uses: cachix/install-nix-action@v31
+        uses: DeterminateSystems/nix-installer-action@main
         with:
-          nix_path: nixpkgs=channel:nixos-unstable
+          init: none
+          extra-conf: |
+            experimental-features = nix-command flakes
+      - name: Add Nix to PATH
+        run: echo "$HOME/.nix-profile/bin" >> "$GITHUB_PATH"
       - name: Verify Rocq proofs
         run: bazel test //proofs/rocq:rivet_metamodel_test
 
