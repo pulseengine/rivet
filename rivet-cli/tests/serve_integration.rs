@@ -102,9 +102,29 @@ fn start_server() -> (Child, u16) {
     panic!("server did not become healthy within 30 seconds on port {port}");
 }
 
-/// Fetch a page via HTTP. If `htmx` is true, sends the HX-Request header
-/// to get partial (HTMX) responses; otherwise gets the full page.
+/// Fetch a page via HTTP with a default 5-second read timeout. Use
+/// `fetch_with_timeout` for endpoints (like `/graph?focus=...&depth=N`)
+/// that legitimately need longer.
 fn fetch(port: u16, path: &str, htmx: bool) -> (u16, String, Vec<(String, String)>) {
+    fetch_with_timeout(port, path, htmx, Duration::from_secs(5))
+}
+
+/// Fetch a page via HTTP with a caller-chosen read timeout.
+///
+/// The graph view with a `focus` parameter does a BFS + layout pass that
+/// can take ~5s on the dogfood corpus (742 nodes, 1477 edges) on CI
+/// runners under load — which sits exactly on the default 5s timeout
+/// edge and produced a chronic flake on every PR that touched any
+/// rust file. Slow endpoints should call this with a generous budget
+/// (e.g. 15s); they're still timing the actual work via
+/// `Instant::elapsed()` and asserting separately if a hard upper
+/// bound matters.
+fn fetch_with_timeout(
+    port: u16,
+    path: &str,
+    htmx: bool,
+    timeout: Duration,
+) -> (u16, String, Vec<(String, String)>) {
     let _url = format!("http://127.0.0.1:{port}{path}");
 
     // Use a minimal HTTP/1.1 request via TcpStream.
@@ -123,7 +143,7 @@ fn fetch(port: u16, path: &str, htmx: bool) -> (u16, String, Vec<(String, String
     }
     let mut stream = stream
         .unwrap_or_else(|| std::net::TcpStream::connect(&addr).expect("connect after retries"));
-    stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
+    stream.set_read_timeout(Some(timeout)).ok();
 
     let hx_header = if htmx { "HX-Request: true\r\n" } else { "" };
     let request = format!(
@@ -912,12 +932,24 @@ fn api_artifacts_variant_scope_reduces_total() {
 
 /// A focused view (`?focus=REQ-001&depth=2`) stays under the budget and
 /// must render SVG normally.
+///
+/// **Timeout**: use a 15s read timeout instead of the default 5s. The
+/// focused /graph endpoint walks the BFS frontier plus the etch layout
+/// pass for the dogfood corpus (742 nodes, 1477 edges); on CI runners
+/// under load it sits right on the 5s edge and intermittently times
+/// out. The 15s bound is well past the genuine wall-clock for this
+/// endpoint and keeps the test deterministic.
 #[test]
 fn graph_focused_view_renders_svg() {
     let (mut child, port) = start_server();
 
     let start = std::time::Instant::now();
-    let (status, body, _) = fetch(port, "/graph?focus=REQ-001&depth=2", true);
+    let (status, body, _) = fetch_with_timeout(
+        port,
+        "/graph?focus=REQ-001&depth=2",
+        true,
+        std::time::Duration::from_secs(15),
+    );
     let elapsed = start.elapsed();
     eprintln!(
         "graph_focused_view_renders_svg: GET /graph?focus=REQ-001&depth=2 -> {} bytes in {elapsed:?}",
