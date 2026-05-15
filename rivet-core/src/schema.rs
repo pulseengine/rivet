@@ -50,7 +50,15 @@ use crate::error::Error;
 // ── YAML file structure ──────────────────────────────────────────────────
 
 /// Top-level structure of a schema YAML file.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// **`Default` impl note:** all collection fields are empty, the
+/// agent-pipelines block is `None`, and `schema` falls through to
+/// `SchemaMetadata::default()` (empty `name`/`version`). The intent is
+/// to let test sites construct minimal SchemaFiles with
+/// `..SchemaFile::default()` without enumerating every collection
+/// field — production code always loads from YAML and never relies on
+/// the default values being meaningful.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SchemaFile {
     pub schema: SchemaMetadata,
@@ -79,7 +87,12 @@ pub struct SchemaFile {
     pub agent_pipelines: Option<crate::agent_pipelines::AgentPipelines>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// **`Default` impl note:** `name` and `version` default to empty
+/// strings. YAML deserialisation still requires both to be present
+/// (serde's `deny_unknown_fields` + required-by-type semantics); the
+/// `Default` is only useful for in-memory test construction via
+/// `SchemaMetadata { name: "x".into(), ..Default::default() }`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SchemaMetadata {
     pub name: String,
@@ -98,7 +111,11 @@ pub struct SchemaMetadata {
 
 // ── Artifact type definition ─────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// `Default` impl: empty `name` and `description`, every collection
+/// empty, every `Option` field `None`. Useful for test construction
+/// via `ArtifactTypeDef { name: "foo".into(), ..Default::default() }`
+/// — keeps new fields additive without breaking call sites.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ArtifactTypeDef {
     pub name: String,
@@ -145,7 +162,7 @@ pub struct ArtifactTypeDef {
 }
 
 /// A common mistake entry with problem description and fix command.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MistakeGuide {
     pub problem: String,
@@ -153,7 +170,7 @@ pub struct MistakeGuide {
     pub fix_command: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FieldDef {
     pub name: String,
@@ -167,7 +184,7 @@ pub struct FieldDef {
     pub allowed_values: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LinkFieldDef {
     pub name: String,
@@ -196,7 +213,7 @@ pub enum Cardinality {
 
 // ── Link type definition ─────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LinkTypeDef {
     pub name: String,
@@ -211,7 +228,7 @@ pub struct LinkTypeDef {
 
 // ── Traceability rule ────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TraceabilityRule {
     pub name: String,
@@ -237,7 +254,7 @@ pub struct TraceabilityRule {
 }
 
 /// One alternative backlink shape inside a TraceabilityRule.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AlternateBacklink {
     #[serde(rename = "link-type")]

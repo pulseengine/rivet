@@ -45,19 +45,9 @@ mod proofs {
             schema: SchemaMetadata {
                 name: "kani-test".into(),
                 version: "0.1.0".into(),
-                namespace: None,
-                description: None,
-                extends: vec![],
-                min_rivet_version: None,
-                license: None,
+                ..Default::default()
             },
-            base_fields: vec![],
-            artifact_types: vec![],
-            link_types: vec![],
-            traceability_rules: vec![],
-            conditional_rules: vec![],
-            validation_rules: vec![],
-            agent_pipelines: None,
+            ..Default::default()
         }])
     }
 
@@ -67,47 +57,28 @@ mod proofs {
             schema: SchemaMetadata {
                 name: "kani-rule".into(),
                 version: "0.1.0".into(),
-                namespace: None,
-                description: None,
-                extends: vec![],
-                min_rivet_version: None,
-                license: None,
+                ..Default::default()
             },
-            base_fields: vec![],
             artifact_types: vec![ArtifactTypeDef {
                 name: "requirement".into(),
                 description: "A requirement".into(),
-                fields: vec![],
-                link_fields: vec![],
-                aspice_process: None,
-                common_mistakes: vec![],
-                example: None,
-                yaml_section: None,
-                yaml_sections: vec![],
-                yaml_section_suffix: None,
-                shorthand_links: std::collections::BTreeMap::new(),
+                ..Default::default()
             }],
             link_types: vec![LinkTypeDef {
                 name: "satisfies".into(),
                 inverse: Some("satisfied-by".into()),
                 description: "satisfies link".into(),
-                source_types: vec![],
-                target_types: vec![],
+                ..Default::default()
             }],
             traceability_rules: vec![TraceabilityRule {
                 name: "req-traced".into(),
                 description: "Requirements must be satisfied".into(),
                 source_type: "requirement".into(),
-                required_link: None,
                 required_backlink: Some("satisfies".into()),
-                target_types: vec![],
-                from_types: vec![],
                 severity: Severity::Warning,
-                alternate_backlinks: vec![],
+                ..Default::default()
             }],
-            conditional_rules: vec![],
-            validation_rules: vec![],
-            agent_pipelines: None,
+            ..Default::default()
         }])
     }
 
@@ -289,38 +260,21 @@ mod proofs {
             schema: SchemaMetadata {
                 name: "kani-card".into(),
                 version: "0.1.0".into(),
-                namespace: None,
-                description: None,
-                extends: vec![],
-                min_rivet_version: None,
-                license: None,
+                ..Default::default()
             },
-            base_fields: vec![],
             artifact_types: vec![ArtifactTypeDef {
                 name: "test-type".into(),
                 description: "test".into(),
-                fields: vec![],
                 link_fields: vec![LinkFieldDef {
                     name: "test-link".into(),
                     link_type: "depends-on".into(),
-                    target_types: vec![],
                     required: true,
                     cardinality,
-                    description: None,
+                    ..Default::default()
                 }],
-                aspice_process: None,
-                common_mistakes: vec![],
-                example: None,
-                yaml_section: None,
-                yaml_sections: vec![],
-                yaml_section_suffix: None,
-                shorthand_links: std::collections::BTreeMap::new(),
+                ..Default::default()
             }],
-            link_types: vec![],
-            traceability_rules: vec![],
-            conditional_rules: vec![],
-            validation_rules: vec![],
-            agent_pipelines: None,
+            ..Default::default()
         }]);
 
         // Build a store with an artifact of that type, with a symbolic
@@ -413,37 +367,20 @@ mod proofs {
             schema: SchemaMetadata {
                 name: "kani-idem".into(),
                 version: "0.1.0".into(),
-                namespace: None,
-                description: None,
-                extends: vec![],
-                min_rivet_version: None,
-                license: None,
+                ..Default::default()
             },
-            base_fields: vec![],
             artifact_types: vec![ArtifactTypeDef {
                 name: "req".into(),
                 description: "requirement".into(),
-                fields: vec![],
-                link_fields: vec![],
-                aspice_process: None,
-                common_mistakes: vec![],
-                example: None,
-                yaml_section: None,
-                yaml_sections: vec![],
-                yaml_section_suffix: None,
-                shorthand_links: std::collections::BTreeMap::new(),
+                ..Default::default()
             }],
             link_types: vec![LinkTypeDef {
                 name: "satisfies".into(),
                 inverse: Some("satisfied-by".into()),
                 description: "satisfies link".into(),
-                source_types: vec![],
-                target_types: vec![],
+                ..Default::default()
             }],
-            traceability_rules: vec![],
-            conditional_rules: vec![],
-            validation_rules: vec![],
-            agent_pipelines: None,
+            ..Default::default()
         };
 
         let single = Schema::merge(&[file.clone()]);
