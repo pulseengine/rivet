@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1778800707257,
+  "lastUpdate": 1778812137474,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "3e61633aad50d81b51b57f5459066f3b26de3812",
-          "message": "feat(mcp): discoverability — --list-tools, --probe, rivet docs mcp (#231)\n\n* feat(mcp): add --list-tools and --probe flags for discoverability\n\n`rivet mcp --list-tools` walks the registered tool router and prints\nthe catalog (15 tools today) as either a human-readable table or — with\n`--format json` — the JSON-RPC `tools/list` payload exactly as the\nstdio server would emit it. Does not start the server and does not\nneed a project to be present, so it works as a fast capability probe\neven before any artifact files exist.\n\n`rivet mcp --probe` runs the in-process equivalent of\n`tools/call rivet_list` (no args) against the current project and\nprints the decoded `result.content[0].text` payload — the same envelope\nan MCP client would observe — without standing up a stdio server. Used\nas a smoke test for AI integrators verifying their project is\nreachable through MCP.\n\nBoth flags reuse the same handlers the wire server dispatches to, so\ntheir output cannot drift from what a real client would see.\n\nImplements: REQ-007\nRefs: FEAT-010\n\n* docs(mcp): embed `rivet docs mcp` topic — JSON-RPC framing, tool catalog, gotchas\n\nAdds an embedded documentation topic for the MCP server, registered in\nthe docs registry so `rivet docs mcp` and the `rivet docs` listing both\nsurface it. Companion to the new `rivet mcp --list-tools` and\n`rivet mcp --probe` flags.\n\nCovers: what the server exposes; the line-delimited JSON-RPC over stdio\nwire format (and the LSP Content-Length pitfall it is NOT); the\n3-message handshake including the easily-forgotten\n`notifications/initialized` notification; the 15-tool catalog with\ninputs; the `result.content[0].text` double-parse envelope gotcha; three\nsmoke-test recipes (`--list-tools`, `--probe`, raw bash JSON-RPC); the\nmutate-then-`rivet_reload` convention; and a pointer to the upstream\nMCP spec for clients building from scratch.\n\nAlso amends `rivet docs cli` to mention the new `mcp` subflags and\ncross-link to `rivet docs mcp`.\n\nTrace: skip",
-          "timestamp": "2026-04-28T11:35:28-05:00",
-          "tree_id": "287d91262cde241c97f712ab28e94162239a7621",
-          "url": "https://github.com/pulseengine/rivet/commit/3e61633aad50d81b51b57f5459066f3b26de3812"
-        },
-        "date": 1777394510386,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 79260,
-            "range": "± 542",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 840126,
-            "range": "± 13297",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 14182540,
-            "range": "± 709060",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2159,
-            "range": "± 12",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 24999,
-            "range": "± 272",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 380157,
-            "range": "± 5408",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 93,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 93,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 93,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1192209,
-            "range": "± 10436",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 152716,
-            "range": "± 637",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1778237,
-            "range": "± 17903",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 30317874,
-            "range": "± 2408926",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 124320,
-            "range": "± 1299",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 1036834,
-            "range": "± 16631",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 15515942,
-            "range": "± 1396823",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4295,
-            "range": "± 22",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 60122,
-            "range": "± 455",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 782189,
-            "range": "± 19922",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 59943,
-            "range": "± 210",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 673755,
-            "range": "± 15804",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 9582164,
-            "range": "± 750345",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 797,
-            "range": "± 5",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 7768,
-            "range": "± 49",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 119964,
-            "range": "± 2121",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 22902,
-            "range": "± 117",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 161352,
-            "range": "± 2813",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1501674,
-            "range": "± 26224",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1399707,
             "range": "± 9255",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "dde04b418a9d1676360a9fad5bd4a5b205bae31c",
+          "message": "feat(validate): status-gate rules — cross-artifact status preconditions via s-expr (#276)\n\n* feat(validate): status-gate rules — cross-artifact status preconditions via s-expr\n\nIntroduces a third schema rule kind, `validation-rules:`, that declares\nstatus preconditions on traceability links. The motivating shape is the\nV-model promotion gate: a sys-verification can only be approved/released\nwhen every requirement it verifies is already approved. Today's two rule\nkinds (traceability-rules, conditional-rules) couldn't express this —\nthey check link shape or single-artifact predicates, not the state of\nlinked artifacts.\n\nThe implementation is deliberately thin (~470 LOC + 15 tests) because\nthe primitives already existed: a link graph, a store, an s-expression\nevaluator with Forall/Exists nodes, and a 9-phase diagnostic pipeline.\n\nEngine (rivet-core/src/sexpr_eval.rs):\n\n- 4 new Expr variants implementing implicit-context-shift link\n  traversal: ForallLinked, ExistsLinked, ForallLinkedFrom (inbound),\n  ExistsLinkedFrom (inbound). Each shifts ctx.artifact to each\n  target/source rather than introducing variable binders — same trick\n  the existing store-wide Forall uses.\n- New MissingTargetPolicy enum + missing_target_policy field on\n  EvalContext, threaded through every recursive construction site.\n  Skip (default) treats unresolved targets as vacuous-true for forall;\n  Fail treats them as body-predicate failure. Composes cleanly with\n  cross-org / external-anchor boundaries and broken-links detection.\n- Audit-strict empty-set semantics: `(forall-linked \"verifies\" pred)`\n  over zero outbound `verifies` links returns false, not true. A\n  verifier with nothing to verify cannot satisfy the gate. The\n  link-suffixed name signals the deviation from classical forall.\n- Lowering for forall-linked / exists-linked / forall-linked-from /\n  exists-linked-from added to lower_list, plus the HEADS array used\n  for unknown-head error hints.\n- matches_filter_with_policy helper for callers that need to pass a\n  caller-chosen policy (the validate phase uses this).\n\nSchema (rivet-core/src/schema.rs):\n\n- ValidationRule struct: id, description?, rule (the single s-expr\n  body), on_unresolved (Skip|Fail, default Skip), draft_downgrade\n  (opt-in, default false), severity (default Error), message\n  (template). Wired into SchemaFile and the merged Schema.\n- MissingTargetPolicyName YAML-facing enum + From impl converting to\n  the engine-side MissingTargetPolicy.\n\nValidate (rivet-core/src/validate.rs):\n\n- evaluate_validation_rules runs as a new phase after conditional\n  rules. Per rule: parse the body once, apply the rule's policy,\n  evaluate against each artifact, emit a Diagnostic on false. Parse\n  errors in a rule body surface as a rule-level diagnostic rather\n  than panicking or silently passing every artifact.\n- render_validation_message substitutes {id}, {type}, {status},\n  {title}, {rule} placeholders from the artifact under test. Unset\n  status renders as `<unset>` so the auditor sees the absence\n  rather than an empty string. Unknown placeholders are left in\n  place — surfaces typos in rule messages instead of swallowing.\n- draft-downgrade is opt-in per rule. Status-gate rules typically\n  gate by status (the `when` premise filters by status: approved),\n  so the existing draft-downgrade behaviour would be dead code; rules\n  that need it set draft-downgrade: true explicitly.\n\nDogfood (schemas/aspice.yaml):\n\n- Three V-model status-gate rules: V-sys-verification-needs-approved-req\n  (SYS.5), V-sw-verification-needs-approved-req (SWE.6),\n  V-unit-verification-needs-approved-design (SWE.4). Each follows\n  the (implies <premise> <consequence>) idiom with a forall-linked\n  consequence. The all_preset_validation_rules_parse_cleanly test\n  pins the rule count >= 3 so a future removal trips CI.\n\nTests (15 new):\n\n- sexpr_eval.rs: 12 unit tests covering empty-set audit-strict,\n  body-pass/body-fail, missing-target × Skip/Fail policy, inbound\n  variants, end-to-end parse_filter for all 4 keywords, and the\n  status-gate idiom shape across pass/fail/vacuous-premise cases.\n- validate.rs: 3 integration tests for phase 9 — end-to-end status\n  gate firing, malformed-rule parse-error surface, draft-downgrade\n  opt-in flipping Error → Info on drafts.\n- schema_validation_rules.rs (new file): ASPICE preset rules\n  deserialise, the SYS.5 rule fires on bad shape and stays silent on\n  clean shape, every preset's rule body parses cleanly.\n\nDesign semantics resolved during review (full rationale in\ndocs/design/status-gate-rules.md):\n\n- Empty-set forall: audit-strict false (deviation from classical forall;\n  link-suffixed name signals it). A verifier with no verifies link\n  cannot satisfy the gate.\n- Missing target: per-rule policy, default skip. Cross-org boundaries\n  compose; safety-critical gates can opt into fail.\n- Rule shape: single s-expr per rule with the (implies premise\n  consequence) idiom as the convention.\n- Draft cascade: opt-in via draft-downgrade: true. Default off.\n\nImplements: REQ-004\nRefs: REQ-010\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n* test(validate): deep-test pass — edge cases, mutants, proptest, V-model graphs\n\nUser pushback: \"you need to test this new stuff really deep out before we go\nwith it.\" This commit adds the depth.\n\nCoverage added across 7 dimensions (~1300 LOC of new tests):\n\n1. Edge cases (sexpr_eval.rs, 9 new tests):\n   - Self-loops (A verifies A) terminate, evaluate body against self.\n   - Cycles (A verifies B verifies A) are one-hop — no infinite recursion;\n     bounded by static rule nesting, not by graph depth.\n   - Duplicate edges are functionally idempotent.\n   - Wildcard link-type returns audit-strict false (documented).\n   - Missing status field on target → \"not approved\" (audit intent).\n   - Deeply nested rule bodies (3-deep forall-linked chain) terminate.\n   - Mixed forall+exists in one rule body composes cleanly.\n   - Inbound/outbound link-type filters distinguish matching types\n     (mutation-survivor regression fix — see point 4).\n\n2. Phase interactions (validate.rs, 4 new tests):\n   - on-unresolved: skip + broken link → only broken-links phase fires.\n     Validation-rule stays silent (vacuous-true on the unresolved link;\n     broken-links phase 6 covers breakage).\n   - on-unresolved: fail + broken link → BOTH phases fire. Distinct rule\n     fields (`broken-link` vs `<rule-id>`) — correct double-coverage, not\n     duplication.\n   - Schema merge concats validation_rules without deduping by id —\n     documented behaviour.\n   - Phase-7 traceability draft-downgrade does NOT cascade into phase-9\n     validation rules. Each phase owns its own severity policy.\n\n3. Negative / malformed input (validate.rs, 7 new tests):\n   - Empty rule body → inert (parses to BoolLit(true); never fires).\n     Documented as future polish.\n   - Whitespace-only body → same shape, inert.\n   - Unknown operator → rule-level diagnostic with \"malformed\" message.\n   - Mismatched parens → rule-level diagnostic.\n   - Unknown field reference → resolves to empty string, evaluates\n     predictably, no panic.\n   - 100-deep nested rule body → no stack overflow.\n   - Link-type typo (\" verifies \" with spaces) → audit-strict empty fires\n     on every matching artifact, surfacing the typo loudly.\n\n4. Mutation testing (cargo-mutants --in-diff against the PR's diff):\n   - First pass: 1 missed mutant at ForallLinkedFrom's link-type filter\n     (`bl.link_type == lt` → `!=` was not caught by existing inbound\n     tests, which had only one inbound link type).\n   - Added two targeted tests with two link types and distinguishing\n     bodies. Re-ran: 26 caught, 3 unviable, 0 missed.\n\n5. Proptest extensions (sexpr_fuzz.rs, 3 new properties):\n   - Extended arb_expr to generate the four new link-traversing\n     quantifiers (ForallLinked, ExistsLinked, ForallLinkedFrom,\n     ExistsLinkedFrom). The existing roundtrip-equivalence property now\n     exercises them: print → reparse → same eval, holding for all\n     generated bodies.\n   - forall-linked over zero links is false for any body (audit-strict).\n   - exists-linked over zero links is false for any body.\n   - Policy monotonicity: forall-linked under Fail policy true ⇒ true\n     under Skip policy. (The reverse direction does NOT hold — Skip is\n     strictly more permissive; that asymmetry is the whole point.)\n\n6. Rich V-model graph (schema_validation_rules.rs, 2 new tests):\n   - 17-artifact V-model (stakeholder-req → system-req → sw-req →\n     sw-detail-design → unit/sw/sys-verification) with mixed approval\n     state. Validates against the full aspice preset.\n   - Each rule fires EXACTLY on its expected violation (SYV-002, SWV-002,\n     UV-002) and stays silent on every clean artifact (the other 14).\n   - Catches the \"rule accidentally hits unrelated artifacts\" regression\n     class that unit tests miss.\n\n7. Performance + scale smoke (schema_validation_rules.rs):\n   - 200-artifact synthetic store (100 verifiers, half with draft\n     targets). Full validate completes in well under 1 second.\n   - 50 expected violations, 50 observed. Pin against O(N²) regressions.\n\nNet additions:\n- 22 new tests (lib + integration).\n- 974 lib + 83 integration tests pass (up from 954 + 81 in the original\n  feature commit).\n- 0 mutation survivors on the diff.\n\nImplements: REQ-004\nVerifies: REQ-004\nRefs: REQ-010\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n* fix(validate): CI follow-ups — cargo fmt, Kani SchemaFile, Miri-ignore\n\nThree small fixes for CI failures observed on PR #276:\n\n1. **cargo fmt** auto-rewrites in sexpr_eval.rs and validate.rs — vec!\n   literals and slice initializers normalised to single-line form.\n\n2. **Kani build error** — proofs.rs had four `SchemaFile { ... }` literal\n   constructions that needed `validation_rules: vec![],` for the new\n   schema field. These are gated behind `#[cfg(kani)]` so the normal\n   `cargo check` and `cargo test` don't reach them — only the Kani CI\n   job exercised the cfg cone and surfaced the build error.\n\n3. **Miri test runtime** — 13 of the new validate::tests::* call\n   `validate()` which parses each rule body via `parse_filter`. Building\n   rowan CSTs under Miri hits the known tree-borrows deallocation UB\n   (pulseengine/rowan#211; documented in sexpr_eval.rs:1457). Following\n   the project's existing pattern, each new test now carries\n   `#[cfg_attr(miri, ignore)]`. The pure-evaluator tests in sexpr_eval\n   (which exercise `check()` on hand-built AST nodes without going\n   through `parse_filter`) stay enabled under Miri.\n\nTwo PR #276 CI failures are infrastructure flake, not addressed here:\n- Supply Chain (cargo-vet): runner received shutdown signal mid-job.\n- Verus Proofs: Nix installer fails with \"sudo: 'no new privileges'\n  flag is set\" on the self-hosted runner. Same shape as cargo-vet —\n  runner-config issue, not source-code issue. Both will retry on push.\n\nRefs: REQ-004\n\n---------\n\nCo-authored-by: Claude Opus 4.7 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-05-14T13:08:31-05:00",
+          "tree_id": "644ffe65749d611f1639b9bf5fbce099d22eac18",
+          "url": "https://github.com/pulseengine/rivet/commit/dde04b418a9d1676360a9fad5bd4a5b205bae31c"
+        },
+        "date": 1778812136964,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 79271,
+            "range": "± 572",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 863773,
+            "range": "± 4996",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 11944756,
+            "range": "± 754473",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2200,
+            "range": "± 14",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25238,
+            "range": "± 285",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 375162,
+            "range": "± 2631",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1210780,
+            "range": "± 31614",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 159222,
+            "range": "± 991",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1892318,
+            "range": "± 37200",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 24313309,
+            "range": "± 1414191",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 141952,
+            "range": "± 610",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1256001,
+            "range": "± 19000",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 13538015,
+            "range": "± 732176",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4289,
+            "range": "± 54",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 58400,
+            "range": "± 653",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 825543,
+            "range": "± 4104",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 63394,
+            "range": "± 799",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 704114,
+            "range": "± 6137",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8003798,
+            "range": "± 364770",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 833,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7758,
+            "range": "± 76",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 119454,
+            "range": "± 918",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 24957,
+            "range": "± 220",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 184140,
+            "range": "± 910",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1747302,
+            "range": "± 34536",
             "unit": "ns/iter"
           }
         ]
