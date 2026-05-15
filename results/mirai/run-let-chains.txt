@@ -1,0 +1,40 @@
+918 |     ) && let Some(cm) = lhs
+    |          ^^^^^^^^^^^^^^^^^^
+    |
+    = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
+    = help: add `#![feature(let_chains)]` to the crate attributes to enable
+    = note: this compiler was built on 2025-01-09; consider upgrading it if it is out of date
+
+error[E0658]: `let` expressions in this position are unstable
+   --> /root/.cargo/git/checkouts/spar-47583786cdc3acd5/84a7363/crates/spar-annex/src/ba/grammar.rs:973:12
+    |
+973 |         && let Some(cm) = lhs
+    |            ^^^^^^^^^^^^^^^^^^
+    |
+    = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
+    = help: add `#![feature(let_chains)]` to the crate attributes to enable
+    = note: this compiler was built on 2025-01-09; consider upgrading it if it is out of date
+
+error[E0658]: `let` expressions in this position are unstable
+  --> /root/.cargo/git/checkouts/spar-47583786cdc3acd5/84a7363/crates/spar-annex/src/registry.rs:97:16
+   |
+97 |             && let Some((name, text)) = crate::extract_annex_content(node)
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
+   = help: add `#![feature(let_chains)]` to the crate attributes to enable
+   = note: this compiler was built on 2025-01-09; consider upgrading it if it is out of date
+
+error[E0658]: `let` expressions in this position are unstable
+  --> /root/.cargo/git/checkouts/spar-47583786cdc3acd5/84a7363/crates/spar-annex/src/registry.rs:98:16
+   |
+98 |             && let Some(result) = self.parse(&name, &text)
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: see issue #53667 <https://github.com/rust-lang/rust/issues/53667> for more information
+   = help: add `#![feature(let_chains)]` to the crate attributes to enable
+   = note: this compiler was built on 2025-01-09; consider upgrading it if it is out of date
+
+For more information about this error, try `rustc --explain E0658`.
+error: could not compile `spar-annex` (lib) due to 4 previous errors
+warning: build failed, waiting for other jobs to finish...
