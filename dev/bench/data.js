@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1778826075982,
+  "lastUpdate": 1778826474280,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "8d8554c6bfcf567b172fa9ca1b104a1ea3942dcb",
-          "message": "feat(validate): cited-source typed field + sha256 stamp Phase 1 — kind: file backend (#239)\n\n* feat(schema): cited-source as first-class typed field with URI scheme allowlist\n\nAdds `cited-source` as a typed schema construct with shape\n`{ uri, kind, sha256, last-checked }`. Defines `CitedSourceKind`\n(file | url | github | oslc | reqif | polarion), parses the YAML\nmapping into a typed struct, and rejects URI schemes outside the\nallowlist (file/http/https/github/oslc/reqif/polarion) — defence\nagainst arbitrary schemes from untrusted YAML.\n\nPhase 1 only implements `kind: file`; remote kinds round-trip\nunchanged. Declares the field on `dev.yaml`'s `requirement` type so\nprojects can opt in incrementally.\n\nImplements: REQ-010\nRefs: #237\n\n* feat(cli): rivet validate --strict-cited-sources + rivet check sources\n\nWires the Phase 1 cited-source backend into the existing CLI:\n\n- `rivet validate` now emits `cited-source-drift` (Severity::Warning),\n  `cited-source-shape` (Error), and `cited-source-stale` (Info)\n  diagnostics for `kind: file` sources. Default behaviour is advisory;\n  `--strict-cited-sources` promotes drift / missing-hash to Error.\n- `--check-remote-sources` flag accepted but no-op for Phase 1 — emits\n  an Info noting the remote backend ships in Phase 2.\n- `rivet check sources` lists every artifact with a `cited-source`\n  field and its current hash status (MATCH / DRIFT / MISSING-HASH /\n  READ-ERROR / SKIPPED-REMOTE / SHAPE-ERROR). `--update` prompts y/N\n  per drift; `--update --apply` rewrites the artifact YAML in batch.\n- JSON output via `--format json` for machine consumers.\n\nImplements: REQ-007, REQ-004\nRefs: #237\n\n* docs(schema): rivet docs schema-cited-sources topic + CLI doc updates\n\nAdds `rivet docs schema-cited-sources` covering the field shape, the\nper-kind backend behaviour table (with Phase 2 backends marked), URI\nscheme allowlist (security model), `last-checked` semantics, and CLI\nsurface examples. Mentions the upstream-ref migration caveat (Phase 1\nadds the field alongside, full migration after #236 lands).\n\nUpdates `rivet docs cli` to list the `rivet check sources` group and\nthe `--strict-cited-sources` flag.\n\nRefs: #237\n\n* test(validate): cited-source drift fixture round-trip\n\nSix integration tests exercising the Phase 1 acceptance criteria from\nissue #237:\n\n- validate PASSes when the stamped sha256 matches the file\n- editing the file emits a `cited-source-drift` diagnostic\n- `validate --strict-cited-sources` exits 1 on drift\n- `rivet check sources --update --apply` rewrites the artifact YAML\n  and the next validate run passes cleanly\n- `rivet check sources` lists entries (MATCH status) in text mode\n- arbitrary URI schemes (e.g. `ftp://`) are rejected with a\n  cited-source-shape error — SSRF / exfiltration mitigation\n\nVerifies: REQ-004\nRefs: #237",
-          "timestamp": "2026-04-28T23:00:46-05:00",
-          "tree_id": "34076140c6bd10827f0acf6150f60f869b031d0c",
-          "url": "https://github.com/pulseengine/rivet/commit/8d8554c6bfcf567b172fa9ca1b104a1ea3942dcb"
-        },
-        "date": 1777436032511,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 80468,
-            "range": "± 1223",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 861553,
-            "range": "± 14857",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 12638622,
-            "range": "± 1399758",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2176,
-            "range": "± 60",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 24808,
-            "range": "± 609",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 362497,
-            "range": "± 16746",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 94,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1181210,
-            "range": "± 22456",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 161435,
-            "range": "± 1554",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1940618,
-            "range": "± 22714",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 28431689,
-            "range": "± 1353121",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 124565,
-            "range": "± 2567",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 1049911,
-            "range": "± 25724",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 12073090,
-            "range": "± 497967",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4407,
-            "range": "± 16",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 61222,
-            "range": "± 232",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 752934,
-            "range": "± 62477",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 60561,
-            "range": "± 508",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 705988,
-            "range": "± 2653",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 8066975,
-            "range": "± 334991",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 757,
-            "range": "± 36",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 7516,
-            "range": "± 150",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 105771,
-            "range": "± 1001",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 23916,
-            "range": "± 228",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 169277,
-            "range": "± 1579",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1600937,
-            "range": "± 25127",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1583479,
             "range": "± 21374",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8f71efeb8dff31c4786fd329a8f066d6eb9f06fc",
+          "message": "fix(schema): merge same-name types by union, not replace (#154) (#280)\n\n* fix(schema): merge same-name types by union, not replace (#154)\n\nBridge and overlay schemas that declared an artifact-type or link-type\nwith the same name as a base schema's silently lost the base's fields.\nThe merge was a plain HashMap::insert — later wins, parent fields gone.\n\nThis is the silent-correctness bug behind every bridge schema that\nre-declares a type to add a single safety attribute. A real reproducer\nin this repo: schemas/safety-case.yaml declares `safety-goal` with\nfields [claim, goal-type, asil, undeveloped] and link-field\nsub-goal-of; schemas/iso-26262.yaml re-declares `safety-goal` with\nfields [asil]. Loading [common, safety-case, iso-26262] previously\ngave a `safety-goal` with only [asil] — the GSN claim, goal-type, and\nsub-goal-of link-field were silently dropped. Every safety-case\nartifact in such a project then tripped \"field not defined\" diagnostics\nand zero declared link-fields broke cardinality enforcement.\n\nThe fix:\n\n- Add `ArtifactTypeDef::merge_in_place(&mut self, other: ArtifactTypeDef)`\n  with per-field union semantics:\n  * `description`: later wins when non-empty\n  * `fields`, `link_fields`: union by name; later wins on same-name\n    conflicts (so an overlay can change a field's `required` or\n    `field_type` deliberately, but cannot accidentally drop unrelated\n    fields)\n  * `shorthand_links`, `common_mistakes`: append/extend\n  * `yaml_sections`: union with dedup\n  * `aspice_process`, `example`, `yaml_section`, `yaml_section_suffix`:\n    later-Some wins\n- Add `LinkTypeDef::merge_in_place` with the same shape: scalar fields\n  take later-non-empty; `source_types` and `target_types` union with\n  dedup.\n- Free helper `merge_named_vec` does the union-by-name on Vec<T>\n  (used for both `fields` and `link_fields`).\n- `Schema::merge` switches from `insert` to `entry().{merge_in_place\n  | insert}` for both artifact_types and link_types.\n\nSix regression tests in `schema::tests`:\n\n  merge_same_name_artifact_type_unions_fields\n  merge_same_name_artifact_type_unions_link_fields\n  merge_preserves_shorthand_links_from_parent\n  merge_idempotent_with_same_file_twice\n  merge_order_independent_for_disjoint_additions\n  merge_same_name_link_type_unions_target_types\n\nThe shorthand-link preservation test guards the secondary symptom from\nparent's `controller: …` shorthand silently stopped expanding into a\n`links:` entry — because `Schema::merge` only populates\n`shorthand_links` from the type that survived the insert. With this\nfix, the parent's link-fields stay in place and the shorthand\nexpansion in `yaml_hir::extract_section_item` keeps working.\n\nBackward-compat: projects that relied on the replace behaviour were\nalready re-declaring every parent field (per the G.2 warning in\nrivet-cli/src/quickstart.md), so for them the union is a no-op —\nsame-name fields just stay identical. The new failure mode is\n\"deliberately removing a parent field\", which has no syntax today\n(no `remove-fields:` or `override: true` marker), so removing that\ncapability isn't a regression.\n\nFixes: #154\nImplements: REQ-010\nRefs: REQ-004\n\n* style: cargo fmt the new merge_in_place tests\n\nCI Format job flagged whitespace drift in the new #154 regression\ntests (long argument lists wrapping differently than rustfmt expects).\nPure formatting; no semantic change.",
+          "timestamp": "2026-05-15T01:21:24-05:00",
+          "tree_id": "8405d7eb35fe76a3359d9bbbf410a0362e2ef3aa",
+          "url": "https://github.com/pulseengine/rivet/commit/8f71efeb8dff31c4786fd329a8f066d6eb9f06fc"
+        },
+        "date": 1778826473060,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 79362,
+            "range": "± 812",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 848572,
+            "range": "± 15919",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 12292927,
+            "range": "± 6244463",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2157,
+            "range": "± 5",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 27018,
+            "range": "± 163",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 362191,
+            "range": "± 1143",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1247482,
+            "range": "± 18430",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 160250,
+            "range": "± 627",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1882355,
+            "range": "± 24985",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 23760230,
+            "range": "± 1314349",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 137509,
+            "range": "± 1531",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1222693,
+            "range": "± 17439",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 12940359,
+            "range": "± 380595",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4349,
+            "range": "± 21",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 59569,
+            "range": "± 239",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 754703,
+            "range": "± 3655",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 60636,
+            "range": "± 507",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 686447,
+            "range": "± 8484",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7656457,
+            "range": "± 88146",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 847,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7513,
+            "range": "± 23",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 116283,
+            "range": "± 3109",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 24622,
+            "range": "± 377",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 189241,
+            "range": "± 989",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1644842,
+            "range": "± 18389",
             "unit": "ns/iter"
           }
         ]
