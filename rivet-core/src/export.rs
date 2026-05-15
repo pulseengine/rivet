@@ -1871,8 +1871,12 @@ fn render_section_graph(store: &Store, link_graph: &LinkGraph) -> String {
                 .get(n.as_str())
                 .map(|a| a.title.clone())
                 .unwrap_or_default();
-            let sublabel = if title.len() > 28 {
-                Some(format!("{}...", &title[..26]))
+            let sublabel = if title.chars().count() > 28 {
+                // Truncate by chars, not bytes — `&title[..26]` panics when
+                // byte 26 falls inside a multi-byte UTF-8 character (e.g.
+                // the em-dash `—`, 3 bytes). Take 26 chars and append `…`.
+                let truncated: String = title.chars().take(26).collect();
+                Some(format!("{truncated}…"))
             } else if title.is_empty() {
                 None
             } else {
