@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1778920690754,
+  "lastUpdate": 1778923425289,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "67f0e081684f63ad1c1db4606934a75616106696",
-          "message": "fix(ci): make Release workflow idempotent on existing tag (#244)\n\nThe \"Create Release\" step in release.yml runs `gh release create\n$VERSION ...` unconditionally. This fails with \"a release with the\nsame tag name already exists\" if a maintainer ran `gh release create`\nmanually right after pushing the tag — which is exactly what\nhappened on every release in the v0.5.0 / v0.5.1 / v0.6.0 sequence.\nNet effect: the release page exists with the changelog notes but\nhas no binary / VSIX / SHA256 assets attached.\n\nFix: make the step idempotent. If `gh release view $VERSION`\nsucceeds (release already exists), `gh release upload --clobber` the\nbuilt assets to the existing release. Otherwise create it the\nnormal way.\n\n`--clobber` lets a re-run overwrite assets that a previous failed\nattempt partially uploaded — also useful when re-running the\nworkflow via workflow_dispatch to backfill assets on an old release.\n\nBackfill plan: after this lands, re-run the Release workflow on\nv0.5.0, v0.5.1, v0.6.0 via workflow_dispatch (or push a no-op tag\nupdate). Each run will detect the existing release and upload the\nbinaries that were built but never published.\n\nTrace: skip",
-          "timestamp": "2026-04-29T15:44:31-05:00",
-          "tree_id": "ebc5f0b640e0a52bd3881e1a2d48ff6526b1e01b",
-          "url": "https://github.com/pulseengine/rivet/commit/67f0e081684f63ad1c1db4606934a75616106696"
-        },
-        "date": 1777496580819,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 80058,
-            "range": "± 805",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 839657,
-            "range": "± 3298",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 12000720,
-            "range": "± 633278",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2134,
-            "range": "± 417",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 25475,
-            "range": "± 71",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 358953,
-            "range": "± 11703",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1176414,
-            "range": "± 12391",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 159625,
-            "range": "± 1750",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1879574,
-            "range": "± 7378",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 24549162,
-            "range": "± 1191576",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 137581,
-            "range": "± 1207",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 1204175,
-            "range": "± 10078",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 13168099,
-            "range": "± 540558",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4553,
-            "range": "± 25",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 59560,
-            "range": "± 605",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 744927,
-            "range": "± 2186",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 62053,
-            "range": "± 377",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 697794,
-            "range": "± 2386",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7710440,
-            "range": "± 77647",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 840,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 7760,
-            "range": "± 39",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 113041,
-            "range": "± 892",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 23483,
-            "range": "± 142",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 168427,
-            "range": "± 1717",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1569764,
-            "range": "± 14130",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1166651,
             "range": "± 16300",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7c8b4ac777a995e0495d90b011cfb38f4eba9873",
+          "message": "feat(supplier): cross-org boundary MVP — external-anchor + 3-state coverage (#253) (#286)\n\nMVP for the cross-organizational / supplier-management traceability track\n(docs/design/cross-org-supplier-traceability.md §6).\n\n- **`external-anchor` artifact type** in `schemas/common.yaml`: a typed\n  leaf marking the point at which the in-house chain hands off to a\n  supplier. Fields: `source-of-truth` (mapping), `expected-derived-types`\n  (list of artifact types the supplier is contracted to produce),\n  `received-status` (enum: not-received / received-as-reqif|pdf|oslc|\n  polarion-export|arxml|other), `contract-reference` (optional, points at\n  the DIA / PO).\n\n- **3-state coverage** in `rivet-core/src/coverage.rs`:\n  `CoverageEntry` gains `external_boundary: usize` +\n  `external_boundary_ids: Vec<String>`. Sum invariant: `covered +\n  external_boundary + uncovered_ids.len() == total`. Classification\n  rule: when an unsatisfied source artifact has a forward link to an\n  `external-anchor` whose `expected-derived-types` overlaps the rule's\n  target types (or the rule is unrestricted), it counts as\n  `external_boundary` instead of `uncovered`. Off-contract anchors do\n  NOT silently absorb gaps.\n\n- **`rivet supplier list`** + **`rivet supplier check`** CLI commands —\n  read-only surface for the auditor. `list` enumerates declared\n  anchors with their received-status and expected derivatives; `check`\n  prints the 3-state breakdown filtered to rules with boundary or\n  uncovered findings.\n\n- **`rivet coverage`** text and JSON output extended with the new\n  fields. Text output adds a Boundary column and breakdown summary\n  only when at least one boundary exists, keeping the common case\n  uncluttered. JSON adds `external_boundary`, `external_boundary_ids`,\n  `accounted_percentage` to each rule and an `external_boundary` total\n  to the overall block (additive, no schema break).\n\nTests:\n- Unit tests for the classification rule: boundary terminates chain,\n  off-contract anchor still uncovered, 3-state sum invariant.\n- 3 integration tests: `supplier list` text output, `supplier list`\n  JSON shape, `supplier check` classifies a delegated DD as\n  external_boundary.\n\nOut of MVP scope (deferred to Phase 2 per the design doc): structured\nexternal link target, federation handshake / `rivet supplier pull`,\nfield-mapping recipes, FederationProvenance. The MVP describes the\nboundary without federating across it — the audit-critical step.\n\nImplements: REQ-010, REQ-004, REQ-007\nRefs: FEAT-001\n\nCo-authored-by: Claude Opus 4.7 <noreply@anthropic.com>",
+          "timestamp": "2026-05-16T04:17:05-05:00",
+          "tree_id": "897278a1e064a2ee5c3964f0d15d5f2955209647",
+          "url": "https://github.com/pulseengine/rivet/commit/7c8b4ac777a995e0495d90b011cfb38f4eba9873"
+        },
+        "date": 1778923424801,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 82359,
+            "range": "± 1256",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 882812,
+            "range": "± 76952",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 12895431,
+            "range": "± 784758",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1982,
+            "range": "± 7",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25137,
+            "range": "± 38",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 354769,
+            "range": "± 1721",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 98,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 98,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 99,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1255742,
+            "range": "± 11263",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 167180,
+            "range": "± 2661",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1920369,
+            "range": "± 26300",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 27971959,
+            "range": "± 3343120",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 137712,
+            "range": "± 439",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1266612,
+            "range": "± 29293",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 14574258,
+            "range": "± 480280",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4170,
+            "range": "± 10",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 44275,
+            "range": "± 547",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 730271,
+            "range": "± 7191",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 60836,
+            "range": "± 180",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 723386,
+            "range": "± 3053",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8117521,
+            "range": "± 390702",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 762,
+            "range": "± 13",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7017,
+            "range": "± 41",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 89702,
+            "range": "± 325",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 23775,
+            "range": "± 87",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 170373,
+            "range": "± 2037",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1606326,
+            "range": "± 23927",
             "unit": "ns/iter"
           }
         ]
