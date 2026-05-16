@@ -1169,6 +1169,35 @@ artifacts:
         assert_eq!(artifacts[0].artifact_type, "requirement");
     }
 
+    // ── Test 10a: build_store is salsa-tracked (cache hit on no-op) ─────
+
+    /// Mobile/Scale lens (v0.10.0 review) found `build_store` was a plain
+    /// `fn` rather than `#[salsa::tracked]`, so every downstream query
+    /// rebuilt the whole `Store` HashMap on every revision. After making
+    /// it tracked, repeated calls with the same `source_set`/`schema_set`
+    /// must return *bitwise-identical* `Store` values — proving salsa
+    /// served the cache rather than re-running the function.
+    ///
+    /// rivet: verifies REQ-029
+    #[test]
+    fn build_store_cache_returns_equal_on_noop_revision() {
+        let db = RivetDatabase::new();
+        let sources = db.load_sources(&[
+            ("reqs.yaml", SOURCE_REQ),
+            ("design.yaml", SOURCE_DD_LINKED),
+        ]);
+        let schemas = db.load_schemas(&[("test", TEST_SCHEMA)]);
+
+        let store_1 = build_store(&db, sources, schemas);
+        let store_2 = build_store(&db, sources, schemas);
+        assert_eq!(
+            store_1, store_2,
+            "build_store must produce equal Stores across repeated calls \
+             with the same inputs (PartialEq) — necessary condition for \
+             salsa cache hit"
+        );
+    }
+
     // ── Test 10: merged schema via build_schema ─────────────────────────
 
     // rivet: verifies REQ-029
