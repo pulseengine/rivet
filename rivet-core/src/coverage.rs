@@ -49,6 +49,12 @@ use crate::schema::Schema;
 use crate::store::Store;
 
 /// Coverage result for a single traceability rule.
+///
+/// 3-state coverage (issue #253): `covered + external_boundary +
+/// uncovered_ids.len() == total`. `external_boundary` counts source
+/// artifacts whose chain terminates at an `external-anchor` whose
+/// `expected-derived-types` covers the rule's target type — i.e. the
+/// derivative is delegated to a supplier, not missing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CoverageEntry {
     /// Rule name from the schema.
@@ -63,12 +69,25 @@ pub struct CoverageEntry {
     pub direction: CoverageDirection,
     /// Target / from types for the required link.
     pub target_types: Vec<String>,
-    /// Number of source artifacts that satisfy the rule.
+    /// Number of source artifacts that satisfy the rule in-house.
     pub covered: usize,
+    /// Number of source artifacts whose derivative is delegated to a
+    /// supplier (terminates at an `external-anchor`). Issue #253 MVP.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub external_boundary: usize,
+    /// IDs of source artifacts counted as `external_boundary`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub external_boundary_ids: Vec<String>,
     /// Total source artifacts of the given type.
     pub total: usize,
-    /// IDs of artifacts that are NOT covered.
+    /// IDs of artifacts that are NOT covered (strictly missing, NOT
+    /// counting `external_boundary_ids`).
     pub uncovered_ids: Vec<String>,
+}
+
+#[inline]
+fn is_zero(n: &usize) -> bool {
+    *n == 0
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -79,12 +98,25 @@ pub enum CoverageDirection {
 }
 
 impl CoverageEntry {
-    /// Coverage percentage (0..100).  Returns 100 when total is 0.
+    /// In-house coverage percentage (0..100). Counts only `covered`,
+    /// excluding `external_boundary`. Returns 100 when total is 0.
     pub fn percentage(&self) -> f64 {
         if self.total == 0 {
             100.0
         } else {
             (self.covered as f64 / self.total as f64) * 100.0
+        }
+    }
+
+    /// Combined accounted percentage: `(covered + external_boundary) /
+    /// total`. Issue #253: an auditor sees this as "what's not strictly
+    /// missing from the trace — either we satisfy it, or a supplier
+    /// owes it on a recorded boundary." Returns 100 when total is 0.
+    pub fn accounted_percentage(&self) -> f64 {
+        if self.total == 0 {
+            100.0
+        } else {
+            ((self.covered + self.external_boundary) as f64 / self.total as f64) * 100.0
         }
     }
 }
@@ -120,6 +152,8 @@ pub fn compute_coverage(store: &Store, schema: &Schema, graph: &LinkGraph) -> Co
         let source_ids = store.by_type(&rule.source_type);
         let total = source_ids.len();
         let mut covered = 0usize;
+        let mut external_boundary = 0usize;
+        let mut external_boundary_ids = Vec::new();
         let mut uncovered_ids = Vec::new();
 
         let (link_type, direction, target_types) = if let Some(ref req_link) = rule.required_link {
@@ -177,6 +211,9 @@ pub fn compute_coverage(store: &Store, schema: &Schema, graph: &LinkGraph) -> Co
 
             if has_match {
                 covered += 1;
+            } else if terminates_at_external_anchor(store, graph, id, &target_types) {
+                external_boundary += 1;
+                external_boundary_ids.push(id.clone());
             } else {
                 uncovered_ids.push(id.clone());
             }
@@ -190,12 +227,65 @@ pub fn compute_coverage(store: &Store, schema: &Schema, graph: &LinkGraph) -> Co
             direction,
             target_types,
             covered,
+            external_boundary,
+            external_boundary_ids,
             total,
             uncovered_ids,
         });
     }
 
     CoverageReport { entries }
+}
+
+/// Issue #253: does any forward link from `id` reach an `external-anchor`
+/// artifact whose `expected-derived-types` field declares at least one
+/// of `target_types`? If so, the unsatisfied rule should count as
+/// `external_boundary` rather than `uncovered`.
+///
+/// Walks only the *outgoing* links (any link type — supplier delegation
+/// is a property of the artifact's existence at the chain end, not of
+/// a specific link predicate). Self-links are ignored to match the
+/// forward-coverage rule above.
+fn terminates_at_external_anchor(
+    store: &Store,
+    graph: &LinkGraph,
+    id: &str,
+    rule_target_types: &[String],
+) -> bool {
+    for link in graph.links_from(id) {
+        if link.target == id {
+            continue;
+        }
+        let Some(target_art) = store.get(&link.target) else {
+            continue;
+        };
+        if target_art.artifact_type != "external-anchor" {
+            continue;
+        }
+        // The anchor's `expected-derived-types` field is a YAML list of
+        // strings. Accept the boundary only when the rule's required
+        // target type set overlaps the anchor's expected derivatives
+        // (or when the rule has no target-type restriction at all).
+        if rule_target_types.is_empty() {
+            return true;
+        }
+        let Some(expected) = target_art.fields.get("expected-derived-types") else {
+            // Anchor without an explicit contract: be conservative —
+            // only honour the boundary when the rule is unrestricted.
+            continue;
+        };
+        let serde_yaml::Value::Sequence(items) = expected else {
+            continue;
+        };
+        let anchor_provides: Vec<&str> = items.iter().filter_map(|v| v.as_str()).collect();
+        if anchor_provides
+            .iter()
+            .any(|t| rule_target_types.iter().any(|rt| rt == t))
+        {
+            return true;
+        }
+    }
+    false
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────
@@ -378,6 +468,137 @@ mod tests {
         );
         assert_eq!(entry.total, 1);
         assert_eq!(entry.uncovered_ids, vec!["DD-001"]);
+    }
+
+    /// Issue #253: an artifact whose chain ends at an `external-anchor`
+    /// counts as `external_boundary`, not `uncovered`. The boundary
+    /// signal is honoured only when the anchor's
+    /// `expected-derived-types` includes the rule's target type — so
+    /// the auditor sees "delegated to supplier" only for the *kind* of
+    /// derivative the supplier was actually contracted to deliver.
+    ///
+    /// rivet: verifies REQ-004
+    #[test]
+    fn external_anchor_terminates_chain_as_boundary_not_uncovered() {
+        // Rule: every DD must `satisfies` a `requirement` upstream.
+        let mut file = minimal_schema("test");
+        file.traceability_rules = vec![TraceabilityRule {
+            name: "dd-justification".into(),
+            description: "Every DD must satisfy a req".into(),
+            source_type: "design-decision".into(),
+            required_link: Some("satisfies".into()),
+            required_backlink: None,
+            target_types: vec!["requirement".into()],
+            from_types: vec![],
+            severity: Severity::Error,
+            alternate_backlinks: vec![],
+        }];
+        let schema = Schema::merge(&[file]);
+
+        let mut store = Store::new();
+        store
+            .insert(minimal_artifact("REQ-001", "requirement"))
+            .unwrap();
+        // DD-A satisfies REQ-001 in-house → covered.
+        store
+            .insert(artifact_with_links(
+                "DD-A",
+                "design-decision",
+                &[("satisfies", "REQ-001")],
+            ))
+            .unwrap();
+        // DD-B has no satisfies link and no anchor → uncovered.
+        store
+            .insert(minimal_artifact("DD-B", "design-decision"))
+            .unwrap();
+        // DD-C terminates at an external-anchor that declares it covers
+        // requirements → external_boundary.
+        let mut anchor = minimal_artifact("ANCHOR-ACME-001", "external-anchor");
+        anchor.fields.insert(
+            "expected-derived-types".into(),
+            serde_yaml::Value::Sequence(vec![serde_yaml::Value::String("requirement".into())]),
+        );
+        store.insert(anchor).unwrap();
+        store
+            .insert(artifact_with_links(
+                "DD-C",
+                "design-decision",
+                &[("derives-from", "ANCHOR-ACME-001")],
+            ))
+            .unwrap();
+
+        let graph = LinkGraph::build(&store, &schema);
+        let report = compute_coverage(&store, &schema, &graph);
+        let entry = &report.entries[0];
+
+        assert_eq!(entry.covered, 1, "DD-A satisfies in-house");
+        assert_eq!(entry.external_boundary, 1, "DD-C delegated to anchor");
+        assert_eq!(entry.external_boundary_ids, vec!["DD-C"]);
+        assert_eq!(entry.uncovered_ids, vec!["DD-B"], "DD-B genuinely missing");
+        assert_eq!(entry.total, 3);
+
+        // 3-state sum invariant: every source artifact lands in exactly
+        // one bucket.
+        assert_eq!(
+            entry.covered + entry.external_boundary + entry.uncovered_ids.len(),
+            entry.total
+        );
+
+        // Percentages: covered alone is 1/3 ≈ 33.3%, but the accounted
+        // figure (covered + boundary) is 2/3 ≈ 66.7%.
+        assert!((entry.percentage() - 33.333).abs() < 0.1);
+        assert!((entry.accounted_percentage() - 66.666).abs() < 0.1);
+    }
+
+    /// An external-anchor whose `expected-derived-types` does NOT include
+    /// the rule's target type must NOT trigger the boundary classification —
+    /// otherwise an unrelated anchor would silently absorb every coverage
+    /// gap that happens to link to it.
+    ///
+    /// rivet: verifies REQ-004
+    #[test]
+    fn external_anchor_only_counts_when_expected_types_match() {
+        let mut file = minimal_schema("test");
+        file.traceability_rules = vec![TraceabilityRule {
+            name: "dd-justification".into(),
+            description: "Every DD must satisfy a req".into(),
+            source_type: "design-decision".into(),
+            required_link: Some("satisfies".into()),
+            required_backlink: None,
+            target_types: vec!["requirement".into()],
+            from_types: vec![],
+            severity: Severity::Error,
+            alternate_backlinks: vec![],
+        }];
+        let schema = Schema::merge(&[file]);
+
+        let mut store = Store::new();
+        // Anchor delivers *verifications*, not requirements → off-contract
+        // for this rule.
+        let mut anchor = minimal_artifact("ANCHOR-X", "external-anchor");
+        anchor.fields.insert(
+            "expected-derived-types".into(),
+            serde_yaml::Value::Sequence(vec![serde_yaml::Value::String("verification".into())]),
+        );
+        store.insert(anchor).unwrap();
+        store
+            .insert(artifact_with_links(
+                "DD-1",
+                "design-decision",
+                &[("derives-from", "ANCHOR-X")],
+            ))
+            .unwrap();
+
+        let graph = LinkGraph::build(&store, &schema);
+        let report = compute_coverage(&store, &schema, &graph);
+        let entry = &report.entries[0];
+
+        assert_eq!(entry.external_boundary, 0, "anchor off-contract");
+        assert_eq!(
+            entry.uncovered_ids,
+            vec!["DD-1"],
+            "must remain uncovered, not silently absorbed"
+        );
     }
 
     /// Backlink direction of the same bug: a DD that claims its own

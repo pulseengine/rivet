@@ -102,6 +102,60 @@ link-types:
     description: Source is constrained by the target
 
 # ──────────────────────────────────────────────────────────────────────────
+# Cross-organizational / supplier-boundary artifact types.
+# See docs/design/cross-org-supplier-traceability.md for the rationale.
+# ──────────────────────────────────────────────────────────────────────────
+artifact-types:
+
+  - name: external-anchor
+    description: >
+      A typed leaf marking the point at which an in-house traceability
+      chain hands off to an external supplier or organization. The chain
+      is intentionally not followed further — the supplier owns what's
+      downstream. Used to keep coverage honest at the organizational
+      boundary (3-state coverage: satisfied / external-boundary /
+      uncovered) instead of conflating "missing in our store" with
+      "delegated to a supplier".
+    fields:
+      - name: source-of-truth
+        type: mapping
+        required: true
+        description: >
+          Who owns it: supplier name, contract reference, doc ID. Free-form
+          mapping at the MVP stage; expected keys are `org`, `contract`,
+          `doc-id`.
+      - name: expected-derived-types
+        type: list<string>
+        required: true
+        description: >
+          What we expect the supplier to produce (e.g. ["sw-req",
+          "verification"]). This is the *contract*: it tells coverage
+          which downstream types count as "the supplier has delivered."
+      - name: received-status
+        type: string
+        required: true
+        allowed-values:
+          - not-received
+          - received-as-reqif
+          - received-as-pdf
+          - received-as-oslc
+          - received-as-polarion-export
+          - received-as-arxml
+          - received-other
+        description: >
+          Lifecycle state of the supplier delivery. `not-received` flags
+          an open delivery (counted as boundary in coverage but visible
+          as outstanding); the `received-as-*` variants stamp what the
+          auditor saw.
+      - name: contract-reference
+        type: string
+        required: false
+        description: >
+          Optional contract / PO / DIA reference for traceability into
+          the legal artefact (ISO 26262-8 §5 DIA, ASPICE SUP.10).
+    link-fields: []
+
+# ──────────────────────────────────────────────────────────────────────────
 # Conditional rules — cross-field validation rules that fire when a
 # condition is met and check for additional requirements.
 # ──────────────────────────────────────────────────────────────────────────
