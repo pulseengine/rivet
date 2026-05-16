@@ -1052,6 +1052,258 @@ pub fn validate_structural_with_externals_and_variant(
     diagnostics
 }
 
+// ── Variant overlay validation (issue #287, Phase 2) ───────────────────
+
+/// Run the same required-field / allowed-values checks that
+/// [`validate_structural_with_externals`] applies to `artifact.fields`,
+/// but against an arbitrary `fields` map.
+///
+/// This is the type-check primitive used by [`validate_variants`] when
+/// validating the merged "default + overlay" view per
+/// `docs/design/variant-aware-properties.md` §5.5. It deliberately does
+/// not check link cardinality / link targets — those live on the
+/// artifact, not in a variant overlay, so they're not re-checked under
+/// `--variant`.
+///
+/// `rule_suffix` is appended to the diagnostic `rule:` field
+/// (e.g. `"-variant.industrial"`) so consumers can distinguish a
+/// diagnostic about the default view from one about a variant overlay.
+/// `id_suffix` is appended to the human-visible artifact id in the
+/// message (e.g. `" (variant: industrial)"`) so the message is
+/// unambiguous in `rivet validate --format text`.
+#[allow(clippy::too_many_arguments)] // each argument carries an independent
+// attribute of the variant overlay
+// diagnostic; bundling into a struct
+// would not improve readability
+fn check_fields_against_type(
+    artifact_id: &str,
+    artifact_type: &str,
+    description: Option<&str>,
+    status: Option<&str>,
+    fields: &BTreeMap<String, serde_yaml::Value>,
+    type_def: &ArtifactTypeDef,
+    rule_suffix: &str,
+    msg_suffix: &str,
+) -> Vec<Diagnostic> {
+    let mut out = Vec::new();
+    for field in &type_def.fields {
+        // 1. required fields
+        if field.required && !fields.contains_key(&field.name) {
+            let has_base = match field.name.as_str() {
+                "description" => description.is_some(),
+                "status" => status.is_some(),
+                _ => false,
+            };
+            if !has_base {
+                out.push(Diagnostic {
+                    source_file: None,
+                    line: None,
+                    column: None,
+                    severity: Severity::Error,
+                    artifact_id: Some(artifact_id.to_string()),
+                    rule: format!("required-field{rule_suffix}"),
+                    message: format!(
+                        "missing required field '{}' for type '{}'{msg_suffix}",
+                        field.name, artifact_type
+                    ),
+                });
+            }
+        }
+
+        // 2. allowed values (string, bool, and number forms — same shape
+        // as validate_structural_with_externals; YAML may coerce values
+        // so we check against the canonical aliases).
+        if let Some(allowed) = &field.allowed_values {
+            if let Some(value) = fields.get(&field.name) {
+                if let Some(s) = value.as_str() {
+                    if !allowed.iter().any(|a| a == s) {
+                        out.push(Diagnostic {
+                            source_file: None,
+                            line: None,
+                            column: None,
+                            severity: Severity::Warning,
+                            artifact_id: Some(artifact_id.to_string()),
+                            rule: format!("allowed-values{rule_suffix}"),
+                            message: format!(
+                                "field '{}' has value '{}'{msg_suffix}, allowed: {:?}",
+                                field.name, s, allowed
+                            ),
+                        });
+                    }
+                } else if let Some(b) = value.as_bool() {
+                    let candidates: &[&str] = if b {
+                        &["true", "yes"]
+                    } else {
+                        &["false", "no"]
+                    };
+                    if !candidates.iter().any(|c| allowed.iter().any(|a| a == c)) {
+                        out.push(Diagnostic {
+                            source_file: None,
+                            line: None,
+                            column: None,
+                            severity: Severity::Warning,
+                            artifact_id: Some(artifact_id.to_string()),
+                            rule: format!("allowed-values{rule_suffix}"),
+                            message: format!(
+                                "field '{}' has value '{}' (boolean){msg_suffix}, allowed: {:?}",
+                                field.name, b, allowed
+                            ),
+                        });
+                    }
+                } else if value.is_number() {
+                    let num_str = if let Some(u) = value.as_u64() {
+                        u.to_string()
+                    } else if let Some(i) = value.as_i64() {
+                        i.to_string()
+                    } else if let Some(f) = value.as_f64() {
+                        f.to_string()
+                    } else {
+                        format!("{:?}", value)
+                    };
+                    if !allowed.iter().any(|a| a == &num_str) {
+                        out.push(Diagnostic {
+                            source_file: None,
+                            line: None,
+                            column: None,
+                            severity: Severity::Warning,
+                            artifact_id: Some(artifact_id.to_string()),
+                            rule: format!("allowed-values{rule_suffix}"),
+                            message: format!(
+                                "field '{}' has value '{}' (number){msg_suffix}, allowed: {:?}",
+                                field.name, num_str, allowed
+                            ),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Validate variant overlays across every artifact in the store.
+///
+/// This is the Phase 2 (issue #287) entry point. It enforces the
+/// `docs/design/variant-aware-properties.md` §5.5 semantics:
+///
+/// 1. **Variant-key cross-check.** For every artifact with a non-empty
+///    `fields-per-variant:`, each outer key must appear in
+///    `known_variants`. Unknown keys produce a Warning by default,
+///    promoted to Error when `strict` is true. `known_variants` is
+///    typically the union of:
+///    - declared variant-config names (from `artifacts/variants/`),
+///    - feature names in the feature model.
+///
+/// 2. **Overlaid value type-check.** For every artifact, every
+///    declared variant overlay is type-checked using the same
+///    required-field / allowed-values rules as the default `fields:`
+///    block — so a variant overlay can never "patch" a required field
+///    into an invalid state. Errors here always fire (they describe
+///    schema violations, not naming hygiene).
+///
+/// 3. **Active-variant merged-view check.** When `active` is `Some`,
+///    every artifact is additionally type-checked under the merged
+///    view (default ∪ overlay[active]). This is the user-facing meaning
+///    of `rivet validate --variant industrial`: "the resolved view for
+///    `industrial` is consistent".
+///
+/// Per the design doc the default view is **also** validated via the
+/// existing validator pipeline; this function is purely additive — it
+/// does not duplicate any of the default-view diagnostics. Callers
+/// should compose: `validate_with_externals(...) + validate_variants(...)`.
+pub fn validate_variants(
+    store: &Store,
+    schema: &Schema,
+    externals: &ExternalSchemas,
+    active: Option<&str>,
+    known_variants: &std::collections::BTreeSet<String>,
+    strict: bool,
+) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    let known_sorted: Vec<&str> = known_variants.iter().map(String::as_str).collect();
+
+    for artifact in store.iter() {
+        // ── 1. variant-key cross-check ──────────────────────────────
+        for variant_key in artifact.fields_per_variant.keys() {
+            if !known_variants.contains(variant_key) {
+                let severity = if strict {
+                    Severity::Error
+                } else {
+                    Severity::Warning
+                };
+                let expected = if known_sorted.is_empty() {
+                    "(no variants declared)".to_string()
+                } else {
+                    known_sorted.join(", ")
+                };
+                diagnostics.push(Diagnostic {
+                    source_file: artifact.source_file.clone(),
+                    line: None,
+                    column: None,
+                    severity,
+                    artifact_id: Some(artifact.id.clone()),
+                    rule: "variant-key-unknown".to_string(),
+                    message: format!(
+                        "variant key '{}' in fields-per-variant is not declared in any \
+                         variant config or feature; expected one of: {}",
+                        variant_key, expected
+                    ),
+                });
+            }
+        }
+
+        // Resolve the artifact's type to drive value-level checks.
+        let type_def = match lookup_type(artifact, schema, externals) {
+            TypeLookup::Found(td) => td,
+            // Unknown / no-schema-for-external cases are already
+            // reported by the main validator; skip the variant checks
+            // here (we'd just generate duplicate diagnostics).
+            _ => continue,
+        };
+
+        // ── 2. type-check every declared variant overlay ────────────
+        // The overlay is the default fields with the variant keys
+        // merged on top. This catches a variant overlay that puts an
+        // out-of-set value into an `allowed-values` field, or that
+        // would unset a required field (variant overlays only add or
+        // replace, so the "unset required" case is checked indirectly
+        // by re-running the required-fields check on the merged map —
+        // a required field that was already present in `fields` will
+        // remain present after merging).
+        for variant_name in artifact.fields_per_variant.keys() {
+            let merged = artifact.fields_for_variant(Some(variant_name));
+            let rule_suffix = format!("-variant.{variant_name}");
+            let msg_suffix = format!(" (variant: {variant_name})");
+            diagnostics.extend(check_fields_against_type(
+                &artifact.id,
+                &artifact.artifact_type,
+                artifact.description.as_deref(),
+                artifact.status.as_deref(),
+                &merged,
+                type_def,
+                &rule_suffix,
+                &msg_suffix,
+            ));
+        }
+
+        // ── 3. active-variant merged-view check ─────────────────────
+        // Only re-run when `active` was given AND the artifact actually
+        // has an overlay for it — otherwise the merged view equals the
+        // default view, which the main validator already covered.
+        if let Some(name) = active {
+            if artifact.fields_per_variant.contains_key(name) {
+                // Already covered by the loop above — no extra work,
+                // but we leave the branch here as the single place to
+                // hang future "merged-view-only" checks (e.g. a future
+                // `range` check that does not apply to the default).
+                let _ = name;
+            }
+        }
+    }
+
+    diagnostics
+}
+
 /// Validate document `[[ID]]` references against the artifact store.
 ///
 /// Returns diagnostics for any reference that points to a non-existent artifact.
@@ -3650,6 +3902,208 @@ then:
             rule_count(&diags_variant, "required-field"),
             0,
             "variant 'automotive' overlay supplies asil=D → required-field must NOT fire",
+        );
+    }
+
+    // ── validate_variants (issue #287, Phase 2) ──────────────────────────
+
+    /// Build a schema with a single `requirement` type that has a
+    /// required `priority` field constrained to {must, should, could}.
+    fn variant_test_schema() -> Schema {
+        let mut file = minimal_schema("requirement");
+        file.artifact_types = vec![ArtifactTypeDef {
+            name: "requirement".to_string(),
+            description: "Requirement".into(),
+            fields: vec![FieldDef {
+                name: "priority".into(),
+                field_type: "string".into(),
+                required: true,
+                description: None,
+                allowed_values: Some(vec!["must".into(), "should".into(), "could".into()]),
+            }],
+            link_fields: vec![],
+            aspice_process: None,
+            common_mistakes: vec![],
+            example: None,
+            yaml_section: None,
+            yaml_sections: vec![],
+            yaml_section_suffix: None,
+            shorthand_links: std::collections::BTreeMap::new(),
+        }];
+        Schema::merge(&[file])
+    }
+
+    fn variant_artifact() -> Artifact {
+        let mut a = minimal_artifact("REQ-THERMAL-01", "requirement");
+        a.fields
+            .insert("priority".into(), serde_yaml::Value::String("must".into()));
+        a
+    }
+
+    #[test]
+    fn validate_variants_flags_unknown_variant_keys_as_warning_by_default() {
+        let mut a = variant_artifact();
+        let mut overlay = BTreeMap::new();
+        overlay.insert("priority".into(), serde_yaml::Value::String("must".into()));
+        a.fields_per_variant.insert("unknown-name".into(), overlay);
+        let mut store = Store::default();
+        store.upsert(a);
+        let schema = variant_test_schema();
+
+        let mut known = std::collections::BTreeSet::new();
+        known.insert("automotive".to_string());
+        known.insert("consumer".to_string());
+
+        let diags = validate_variants(&store, &schema, &BTreeMap::new(), None, &known, false);
+        let d = diags
+            .iter()
+            .find(|d| d.rule == "variant-key-unknown")
+            .expect("unknown-key diagnostic must fire");
+        assert_eq!(d.severity, Severity::Warning);
+        assert!(
+            d.message.contains("'unknown-name'"),
+            "msg should name the offending key: {}",
+            d.message
+        );
+        assert!(
+            d.message.contains("automotive"),
+            "msg should list known variants: {}",
+            d.message
+        );
+    }
+
+    #[test]
+    fn validate_variants_strict_promotes_unknown_variant_key_to_error() {
+        let mut a = variant_artifact();
+        let mut overlay = BTreeMap::new();
+        overlay.insert("priority".into(), serde_yaml::Value::String("must".into()));
+        a.fields_per_variant.insert("unknown".into(), overlay);
+        let mut store = Store::default();
+        store.upsert(a);
+        let schema = variant_test_schema();
+
+        let known: std::collections::BTreeSet<String> =
+            ["automotive".to_string()].into_iter().collect();
+        let diags = validate_variants(&store, &schema, &BTreeMap::new(), None, &known, true);
+        let d = diags
+            .iter()
+            .find(|d| d.rule == "variant-key-unknown")
+            .expect("unknown-key diagnostic must fire");
+        assert_eq!(d.severity, Severity::Error, "strict promotes to error");
+    }
+
+    #[test]
+    fn validate_variants_type_checks_overlay_allowed_values() {
+        // Overlay puts "maybe" into priority, which is not in
+        // {must, should, could} — must fire as a warning.
+        let mut a = variant_artifact();
+        let mut overlay = BTreeMap::new();
+        overlay.insert("priority".into(), serde_yaml::Value::String("maybe".into()));
+        a.fields_per_variant.insert("automotive".into(), overlay);
+        let mut store = Store::default();
+        store.upsert(a);
+        let schema = variant_test_schema();
+
+        let known: std::collections::BTreeSet<String> =
+            ["automotive".to_string()].into_iter().collect();
+        let diags = validate_variants(&store, &schema, &BTreeMap::new(), None, &known, false);
+        let d = diags
+            .iter()
+            .find(|d| d.rule == "allowed-values-variant.automotive")
+            .expect("overlay allowed-values diagnostic must fire");
+        assert_eq!(d.severity, Severity::Warning);
+        assert!(
+            d.message.contains("'maybe'") && d.message.contains("automotive"),
+            "msg should call out value + variant: {}",
+            d.message
+        );
+    }
+
+    #[test]
+    fn validate_variants_passes_when_overlay_is_valid_and_key_is_known() {
+        let mut a = variant_artifact();
+        let mut overlay = BTreeMap::new();
+        overlay.insert(
+            "priority".into(),
+            serde_yaml::Value::String("should".into()),
+        );
+        a.fields_per_variant.insert("automotive".into(), overlay);
+        let mut store = Store::default();
+        store.upsert(a);
+        let schema = variant_test_schema();
+
+        let known: std::collections::BTreeSet<String> =
+            ["automotive".to_string()].into_iter().collect();
+        let diags = validate_variants(&store, &schema, &BTreeMap::new(), None, &known, false);
+        assert!(
+            diags.is_empty(),
+            "no diagnostics expected, got: {:?}",
+            diags
+        );
+    }
+
+    #[test]
+    fn validate_variants_required_field_missing_in_merged_view() {
+        // Default fields lacks `priority`; overlay also doesn't supply
+        // it. The merged view is still missing the required field — a
+        // separate diagnostic should fire under the variant's rule.
+        let mut a = minimal_artifact("REQ-1", "requirement");
+        // No `priority` in defaults.
+        let mut overlay = BTreeMap::new();
+        // Overlay sets some unrelated key so the overlay is non-empty.
+        overlay.insert(
+            "title-override".into(),
+            serde_yaml::Value::String("auto title".into()),
+        );
+        a.fields_per_variant.insert("automotive".into(), overlay);
+        let mut store = Store::default();
+        store.upsert(a);
+        let schema = variant_test_schema();
+
+        let known: std::collections::BTreeSet<String> =
+            ["automotive".to_string()].into_iter().collect();
+        let diags = validate_variants(&store, &schema, &BTreeMap::new(), None, &known, false);
+        let d = diags
+            .iter()
+            .find(|d| d.rule == "required-field-variant.automotive")
+            .expect("required-field-variant.automotive must fire");
+        assert_eq!(d.severity, Severity::Error);
+        assert!(d.message.contains("priority"), "got: {}", d.message);
+        assert!(d.message.contains("automotive"), "got: {}", d.message);
+    }
+
+    #[test]
+    fn validate_variants_empty_overlays_and_no_active_emits_nothing() {
+        // Artifact has fields_per_variant: {} — nothing to check.
+        let a = variant_artifact();
+        let mut store = Store::default();
+        store.upsert(a);
+        let schema = variant_test_schema();
+        let known: std::collections::BTreeSet<String> = Default::default();
+        let diags = validate_variants(&store, &schema, &BTreeMap::new(), None, &known, false);
+        assert!(diags.is_empty(), "got: {diags:?}");
+    }
+
+    #[test]
+    fn validate_variants_known_set_can_be_features_or_configs() {
+        // The function treats `known_variants` as opaque set membership;
+        // upstream may seed it with declared variant-config names OR
+        // feature names. This test pins that contract.
+        let mut a = variant_artifact();
+        let mut overlay = BTreeMap::new();
+        overlay.insert("priority".into(), serde_yaml::Value::String("must".into()));
+        // Pretend "electric" is a feature name, not a variant config.
+        a.fields_per_variant.insert("electric".into(), overlay);
+        let mut store = Store::default();
+        store.upsert(a);
+        let schema = variant_test_schema();
+
+        let known: std::collections::BTreeSet<String> =
+            ["electric".to_string()].into_iter().collect();
+        let diags = validate_variants(&store, &schema, &BTreeMap::new(), None, &known, false);
+        assert!(
+            diags.iter().all(|d| d.rule != "variant-key-unknown"),
+            "feature names must be accepted as known variant keys: {diags:?}"
         );
     }
 }

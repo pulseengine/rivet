@@ -304,13 +304,28 @@ enum Command {
         #[arg(long)]
         model: Option<PathBuf>,
 
-        /// Path to variant configuration YAML file
-        #[arg(long)]
-        variant: Option<PathBuf>,
+        /// Variant to apply: either a name resolved against
+        /// `artifacts/variants/<NAME>.yaml`, or a direct path to a
+        /// variant configuration YAML file. When passed alone (no
+        /// `--model`/`--binding`) the variant is applied as a
+        /// `fields-per-variant:` overlay per issue #287 §5.5 — the
+        /// merged view is validated **in addition** to the default
+        /// view. With `--model` + `--binding` the legacy variant-scoped
+        /// mode runs (only artifacts bound to the variant are kept in
+        /// scope).
+        #[arg(long, value_name = "NAME_OR_PATH")]
+        variant: Option<String>,
 
         /// Path to feature-to-artifact binding YAML file
         #[arg(long)]
         binding: Option<PathBuf>,
+
+        /// Promote `variant-key-unknown` warnings (a `fields-per-variant`
+        /// key that is not in the project's variant-config list or
+        /// feature-model feature list) to errors. Useful in CI to lock
+        /// the variant-key namespace.
+        #[arg(long = "strict-variants")]
+        strict_variants: bool,
 
         /// Minimum severity that causes exit code 1. Values: "error" (default),
         /// "warning", "info". E.g. --fail-on warning tightens the gate so any
@@ -385,6 +400,13 @@ enum Command {
         /// Scope listing to a named baseline (cumulative)
         #[arg(long)]
         baseline: Option<String>,
+
+        /// Apply per-variant field overlays (issue #287) — name from
+        /// `artifacts/variants/<NAME>.yaml`, or a path to a variant
+        /// config YAML file. When set, JSON output also emits each
+        /// artifact's merged `fields:` view for the variant.
+        #[arg(long, value_name = "NAME_OR_PATH")]
+        variant: Option<String>,
     },
 
     /// Show artifact summary statistics
@@ -439,6 +461,13 @@ enum Command {
         /// Scope coverage to a named baseline (cumulative)
         #[arg(long)]
         baseline: Option<String>,
+
+        /// Stamp the active variant into the coverage output (issue
+        /// #287). Today this surfaces the variant name in the report
+        /// header for traceability; variant-aware delegated-chain
+        /// scoping is tracked as a follow-up.
+        #[arg(long, value_name = "NAME_OR_PATH")]
+        variant: Option<String>,
 
         /// Render the V&V coverage matrix from `repo-status` artifacts
         /// (rivet#188). Combine with `--format` to choose text, json,
@@ -980,6 +1009,14 @@ enum Command {
         /// Output format: "text" (default), "json", "ids"
         #[arg(short, long, default_value = "text")]
         format: String,
+
+        /// Apply per-variant field overlays before matching (issue
+        /// #287). The s-expression sees the merged view, so a filter
+        /// like `(= (field "max-temp-c") "100")` resolves under the
+        /// active variant's overlay. Accepts a name from
+        /// `artifacts/variants/<NAME>.yaml` or a direct path.
+        #[arg(long, value_name = "NAME_OR_PATH")]
+        variant: Option<String>,
     },
 
     /// Stamp artifact(s) with AI provenance metadata
@@ -1798,6 +1835,7 @@ fn run(cli: Cli) -> Result<bool> {
             model,
             variant,
             binding,
+            strict_variants,
             fail_on,
             strict_cited_sources,
             strict_cited_source_stale,
@@ -1812,6 +1850,7 @@ fn run(cli: Cli) -> Result<bool> {
             model.as_deref(),
             variant.as_deref(),
             binding.as_deref(),
+            *strict_variants,
             fail_on,
             *strict_cited_sources,
             *strict_cited_source_stale,
@@ -1823,6 +1862,7 @@ fn run(cli: Cli) -> Result<bool> {
             filter,
             format,
             baseline,
+            variant,
         } => cmd_list(
             &cli,
             r#type.as_deref(),
@@ -1830,6 +1870,7 @@ fn run(cli: Cli) -> Result<bool> {
             filter.as_deref(),
             format,
             baseline.as_deref(),
+            variant.as_deref(),
         ),
         Command::Get { id, format } => cmd_get(&cli, id, format),
         Command::Bundle { id, depth, format } => cmd_bundle(&cli, id, *depth, format),
@@ -1852,6 +1893,7 @@ fn run(cli: Cli) -> Result<bool> {
             tests,
             scan_paths,
             baseline,
+            variant,
             matrix,
             aggregate,
         } => {
@@ -1868,6 +1910,7 @@ fn run(cli: Cli) -> Result<bool> {
                     format,
                     fail_under.as_ref(),
                     baseline.as_deref(),
+                    variant.as_deref(),
                 )
             }
         }
@@ -2200,7 +2243,8 @@ fn run(cli: Cli) -> Result<bool> {
             sexpr,
             limit,
             format,
-        } => cmd_query(&cli, sexpr, *limit, format),
+            variant,
+        } => cmd_query(&cli, sexpr, *limit, format, variant.as_deref()),
         Command::Stamp {
             id,
             created_by,
@@ -4462,8 +4506,9 @@ fn cmd_validate(
     baseline_name: Option<&str>,
     track_convergence: bool,
     model_path: Option<&std::path::Path>,
-    variant_path: Option<&std::path::Path>,
+    variant_arg: Option<&str>,
     binding_path: Option<&std::path::Path>,
+    strict_variants: bool,
     fail_on: &str,
     strict_cited_sources: bool,
     strict_cited_source_stale: bool,
@@ -4499,17 +4544,29 @@ fn cmd_validate(
         (store, graph)
     };
 
+    // Resolve `--variant <NAME_OR_PATH>` into a PathBuf for the legacy
+    // model/binding mode, plus a "display name" the overlay validator
+    // uses as the lookup key into `fields_per_variant`. If neither file
+    // path nor `artifacts/variants/<name>.yaml` resolves we error.
+    let resolved_variant: Option<(std::path::PathBuf, String)> = match variant_arg {
+        Some(arg) => Some(resolve_variant_arg(&cli.project, arg)?),
+        None => None,
+    };
+    let variant_path = resolved_variant.as_ref().map(|(p, _)| p.as_path());
+
     // Apply variant scoping.
     //
-    // Three modes:
-    //   --model + --variant + --binding : validate the subset bound to the
-    //     variant's effective feature set (variant-scoped).
-    //   --model + --binding (no variant) : validate the feature model +
-    //     binding file pair (parse model, parse binding, check every
-    //     feature name in the binding exists in the model). Does not
-    //     scope the store.
-    //   --variant alone: legacy error — --variant requires --model and
-    //     a binding to resolve against.
+    // Four modes:
+    //   --model + --variant + --binding : variant-scoped — filter the
+    //     store to artifacts bound by the variant's effective feature
+    //     set, then validate (legacy behaviour).
+    //   --model + --binding (no variant) : validate model/binding
+    //     consistency without resolving a specific variant.
+    //   --variant alone (no model/binding) : Phase 2 overlay mode
+    //     (issue #287). The store is not scoped; instead the variant's
+    //     name becomes the active overlay key applied via
+    //     `validate_variants` on top of the default-view validation.
+    //   nothing : ordinary project validation.
     let (store, graph, variant_scope_name) = match (model_path, variant_path, binding_path) {
         (Some(mp), Some(vp), Some(bp)) => {
             let model_yaml = std::fs::read_to_string(mp)
@@ -4590,9 +4647,16 @@ fn cmd_validate(
             }
             (store, graph, None)
         }
+        (None, Some(_), None) => {
+            // Variant overlay mode (issue #287, Phase 2). No store scoping;
+            // the variant only adjusts the per-artifact field overlays at
+            // the validate_variants step below.
+            (store, graph, None)
+        }
         (None, None, None) => (store, graph, None),
         _ => anyhow::bail!(
-            "variant-scoped validation requires --model and --binding; --variant is optional"
+            "variant-scoped validation requires --model and --binding; \
+             pass --variant alone for overlay-only validation"
         ),
     };
 
@@ -4657,6 +4721,50 @@ fn cmd_validate(
         validate::reclassify_externals_diagnostics(scoped_diags, &store, &external_schemas)
     };
     diagnostics.extend(validate::validate_documents(&doc_store, &store));
+
+    // Variant overlay validation (issue #287, Phase 2). Always run — the
+    // variant-key-unknown check applies whether or not a `--variant` was
+    // passed (it catches typos in any artifact's `fields-per-variant:`).
+    // When `--variant <NAME>` is in effect AND model/binding are absent
+    // (i.e. overlay mode), the active overlay is the resolved variant's
+    // `name:` field.
+    {
+        // Build the "known variants" set: declared configs from
+        // `artifacts/variants/`, plus any inline variants from a binding
+        // file if --binding was supplied, plus the variant explicitly
+        // referenced by --variant if it isn't already there (so
+        // `--variant ./tmp.yaml` outside the project tree still passes
+        // the variant-key check). Missing/empty dir is fine — yields
+        // an empty known set, so every fields-per-variant key warns.
+        let variants_dir = cli.project.join("artifacts").join("variants");
+        let mut known: std::collections::BTreeSet<String> =
+            match rivet_core::feature_model::load_variant_configs_from_dir(&variants_dir) {
+                Ok(cfgs) => cfgs.into_iter().map(|c| c.name).collect(),
+                Err(e) => {
+                    eprintln!(
+                        "warning: failed to load variant configs from {}: {e}",
+                        variants_dir.display()
+                    );
+                    std::collections::BTreeSet::new()
+                }
+            };
+        // Variant-overlay mode: the variant config the user pointed at
+        // might live outside `artifacts/variants/`. Add its `name:` so
+        // the artifact's overlay key for that name doesn't warn.
+        if let Some((_, ref name)) = resolved_variant {
+            known.insert(name.clone());
+        }
+        let active: Option<&str> = resolved_variant.as_ref().map(|(_, n)| n.as_str());
+        let variant_diags = validate::validate_variants(
+            &store,
+            &schema,
+            &external_schemas,
+            active,
+            &known,
+            strict_variants,
+        );
+        diagnostics.extend(variant_diags);
+    }
 
     // Cited-source validation (Phase 1: kind: file backend).
     //
@@ -4998,6 +5106,65 @@ fn parse_fail_on(value: &str) -> Result<Severity> {
     }
 }
 
+/// Resolve a `--variant <NAME_OR_PATH>` CLI argument (issue #287).
+///
+/// Returns `(path, name)` where:
+/// - `path` is the variant config YAML file on disk, and
+/// - `name` is the `name:` key inside that file (used by callers as
+///   the overlay lookup key into `Artifact::fields_per_variant`).
+///
+/// Resolution order:
+/// 1. If `arg` is an existing file path, parse it directly.
+/// 2. Otherwise treat `arg` as a bare name and look up
+///    `<project>/artifacts/variants/<arg>.yaml`.
+/// 3. Otherwise error with the list of available names so the user
+///    sees what they should have typed.
+fn resolve_variant_arg(
+    project: &std::path::Path,
+    arg: &str,
+) -> Result<(std::path::PathBuf, String)> {
+    // 1. Direct file path?
+    let direct = std::path::PathBuf::from(arg);
+    if direct.is_file() {
+        let yaml = std::fs::read_to_string(&direct)
+            .with_context(|| format!("reading {}", direct.display()))?;
+        let vc: rivet_core::feature_model::VariantConfig = serde_yaml::from_str(&yaml)
+            .with_context(|| format!("parsing variant config {}", direct.display()))?;
+        return Ok((direct, vc.name));
+    }
+
+    // 2. Bare name → artifacts/variants/<name>.yaml
+    let variants_dir = project.join("artifacts").join("variants");
+    let candidate = variants_dir.join(format!("{arg}.yaml"));
+    if candidate.is_file() {
+        let yaml = std::fs::read_to_string(&candidate)
+            .with_context(|| format!("reading {}", candidate.display()))?;
+        let vc: rivet_core::feature_model::VariantConfig = serde_yaml::from_str(&yaml)
+            .with_context(|| format!("parsing variant config {}", candidate.display()))?;
+        // Sanity check: the file's `name:` should equal the lookup
+        // name. If it doesn't, prefer the on-disk name (it's the
+        // identity authors agreed on in `artifacts/variants/`).
+        return Ok((candidate, vc.name));
+    }
+
+    // 3. Build a helpful error listing what *is* available.
+    let known =
+        rivet_core::feature_model::load_variant_configs_from_dir(&variants_dir).unwrap_or_default();
+    let names: Vec<String> = known.into_iter().map(|v| v.name).collect();
+    anyhow::bail!(
+        "variant '{arg}' not found.\n  Tried: {} (not a file) and {} (does not exist).\n  \
+         Available variants in {}: {}",
+        direct.display(),
+        candidate.display(),
+        variants_dir.display(),
+        if names.is_empty() {
+            "(none — directory missing or empty)".to_string()
+        } else {
+            names.join(", ")
+        }
+    )
+}
+
 /// Run core validation via the salsa incremental database.
 ///
 /// This reads all source files and schemas into salsa inputs, then calls the
@@ -5245,10 +5412,17 @@ fn cmd_list(
     sexpr_filter: Option<&str>,
     format: &str,
     baseline_name: Option<&str>,
+    variant_arg: Option<&str>,
 ) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
     let ctx = ProjectContext::load(cli)?;
     let store = apply_baseline_scope(ctx.store, baseline_name, &ctx.config);
+
+    // Resolve `--variant` once for display + per-artifact field merge.
+    let variant_name: Option<String> = match variant_arg {
+        Some(arg) => Some(resolve_variant_arg(&cli.project, arg)?.1),
+        None => None,
+    };
 
     let query = rivet_core::query::Query {
         artifact_type: type_filter.map(|s| s.to_string()),
@@ -5274,22 +5448,43 @@ fn cmd_list(
         let artifacts_json: Vec<serde_json::Value> = results
             .iter()
             .map(|a| {
-                serde_json::json!({
+                let mut entry = serde_json::json!({
                     "id": a.id,
                     "type": a.artifact_type,
                     "title": a.title,
                     "status": a.status.as_deref().unwrap_or("-"),
                     "links": a.links.len(),
-                })
+                });
+                if let Some(ref name) = variant_name {
+                    // Emit the merged fields view so downstream tooling
+                    // can see the variant-resolved values without a
+                    // second call (issue #287 §5.5).
+                    let merged = a.fields_for_variant(Some(name));
+                    if let Ok(v) = serde_json::to_value(&*merged) {
+                        if let serde_json::Value::Object(ref mut map) = entry {
+                            map.insert("variant".into(), serde_json::Value::String(name.clone()));
+                            map.insert("fields".into(), v);
+                        }
+                    }
+                }
+                entry
             })
             .collect();
-        let output = serde_json::json!({
+        let mut output = serde_json::json!({
             "command": "list",
             "count": results.len(),
             "artifacts": artifacts_json,
         });
+        if let Some(ref name) = variant_name {
+            if let serde_json::Value::Object(ref mut map) = output {
+                map.insert("variant".into(), serde_json::Value::String(name.clone()));
+            }
+        }
         println!("{}", serde_json::to_string_pretty(&output).unwrap());
     } else {
+        if let Some(ref name) = variant_name {
+            println!("Variant: {name}\n");
+        }
         for artifact in &results {
             let status = artifact.status.as_deref().unwrap_or("-");
             let links = artifact.links.len();
@@ -5535,6 +5730,7 @@ fn cmd_coverage(
     format: &str,
     fail_under: Option<&f64>,
     baseline_name: Option<&str>,
+    variant_arg: Option<&str>,
 ) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
     let ctx = ProjectContext::load(cli)?;
@@ -5544,6 +5740,16 @@ fn cmd_coverage(
         LinkGraph::build(&store, &schema)
     } else {
         ctx.graph
+    };
+
+    // Resolve `--variant` once so we can stamp the report header (and,
+    // in a later phase, scope delegated chains). Today the variant
+    // does not yet alter coverage counts — the chain-rewriting work is
+    // a follow-up — but we surface the active variant in both text and
+    // JSON output for traceability per issue #287 acceptance criterion 4.
+    let variant_name: Option<String> = match variant_arg {
+        Some(arg) => Some(resolve_variant_arg(&cli.project, arg)?.1),
+        None => None,
     };
 
     // Apply s-expression filter if provided.
@@ -5599,6 +5805,9 @@ fn cmd_coverage(
                 "percentage": overall_pct,
             },
         });
+        if let Some(ref name) = variant_name {
+            output["variant"] = serde_json::Value::String(name.clone());
+        }
         // Echo the threshold + pass/fail result when --fail-under is in
         // effect so CI consumers can programmatically distinguish a
         // clean run from a gated failure without parsing stderr.
@@ -5613,6 +5822,9 @@ fn cmd_coverage(
     } else {
         let any_boundary = report.entries.iter().any(|e| e.external_boundary > 0);
         println!("Traceability Coverage Report\n");
+        if let Some(ref name) = variant_name {
+            println!("Variant: {name}\n");
+        }
         if any_boundary {
             println!(
                 "  {:<30} {:<20} {:>8} {:>9} {:>8} {:>8}",
@@ -7481,6 +7693,7 @@ fn cmd_diff(
                     model: None,
                     variant: None,
                     binding: None,
+                    strict_variants: false,
                     fail_on: "error".to_string(),
                     strict_cited_sources: false,
                     strict_cited_source_stale: false,
@@ -7501,6 +7714,7 @@ fn cmd_diff(
                     model: None,
                     variant: None,
                     binding: None,
+                    strict_variants: false,
                     fail_on: "error".to_string(),
                     strict_cited_sources: false,
                     strict_cited_source_stale: false,
@@ -13141,11 +13355,40 @@ fn cmd_mcp(cli: &Cli, list_tools: bool, probe: bool, format: &str) -> Result<boo
 /// Three output formats: `text` (one line per match, id + title + status),
 /// `json` (MCP-shape: `{filter, count, total, truncated, artifacts[]}`),
 /// or `ids` (newline-separated IDs — handy for shell pipelines).
-fn cmd_query(cli: &Cli, sexpr: &str, limit: usize, format: &str) -> Result<bool> {
+fn cmd_query(
+    cli: &Cli,
+    sexpr: &str,
+    limit: usize,
+    format: &str,
+    variant_arg: Option<&str>,
+) -> Result<bool> {
     validate_format(format, &["text", "json", "ids"])?;
 
-    let project = rivet_core::load_project_full(&cli.project)
+    let mut project = rivet_core::load_project_full(&cli.project)
         .with_context(|| format!("loading project from {}", cli.project.display()))?;
+
+    // Resolve `--variant` and, if active, rewrite each artifact's
+    // `fields:` to its merged view before the s-expression filter runs.
+    // The filter language accesses fields via the artifact's `fields:`
+    // slot — so swapping the map in place is the minimal change that
+    // makes a filter like `(= (field "max-temp-c") "100")` resolve
+    // under the active variant's overlay (issue #287 §5.5).
+    let variant_name: Option<String> = match variant_arg {
+        Some(arg) => Some(resolve_variant_arg(&cli.project, arg)?.1),
+        None => None,
+    };
+    if let Some(ref name) = variant_name {
+        let ids: Vec<String> = project.store.iter().map(|a| a.id.clone()).collect();
+        for id in ids {
+            if let Some(mut art) = project.store.get(&id).cloned() {
+                if art.fields_per_variant.contains_key(name) {
+                    let merged = art.fields_for_variant(Some(name)).into_owned();
+                    art.fields = merged;
+                    project.store.upsert(art);
+                }
+            }
+        }
+    }
 
     let result =
         rivet_core::query::execute_sexpr(&project.store, &project.graph, sexpr, Some(limit))
@@ -13173,13 +13416,16 @@ fn cmd_query(cli: &Cli, sexpr: &str, limit: usize, format: &str) -> Result<bool>
                     })
                 })
                 .collect();
-            let out = serde_json::json!({
+            let mut out = serde_json::json!({
                 "filter": sexpr,
                 "count": artifacts.len(),
                 "total": result.total,
                 "truncated": result.truncated,
                 "artifacts": artifacts,
             });
+            if let Some(ref name) = variant_name {
+                out["variant"] = serde_json::Value::String(name.clone());
+            }
             println!("{}", serde_json::to_string_pretty(&out)?);
         }
         "ids" => {
@@ -13189,6 +13435,9 @@ fn cmd_query(cli: &Cli, sexpr: &str, limit: usize, format: &str) -> Result<bool>
         }
         _ => {
             // text
+            if let Some(ref name) = variant_name {
+                println!("Variant: {name}\n");
+            }
             if result.matches.is_empty() {
                 println!("No artifacts match: {sexpr}");
             } else {
