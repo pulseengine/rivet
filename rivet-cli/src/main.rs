@@ -1626,6 +1626,22 @@ enum CheckAction {
         #[arg(short, long, default_value = "text")]
         format: String,
     },
+
+    /// Block release if any `ai-found-defect` with `triage-status: open`
+    /// links to an artifact whose `status` is `released` or `approved`,
+    /// OR if a defect's `triaged-by` equals the originating session's
+    /// `invoker` (DPO segregation-of-duties violation).
+    ///
+    /// TCL workstream B operational primitive. The dossier
+    /// (`rivet docs tool-qualification` §3) claims this loop as the TD1
+    /// detection layer that compensates for eroded human review when
+    /// the upstream author is an AI assistant. Without this gate, the
+    /// TD1 claim is vapor.
+    AiDefectsOpen {
+        /// Output format: "text" (default) or "json".
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
 }
 
 fn main() -> ExitCode {
@@ -2086,6 +2102,9 @@ fn run(cli: Cli) -> Result<bool> {
                 strict,
                 format,
             } => cmd_check_sources(&cli, *update, *apply, *strict, format),
+            CheckAction::AiDefectsOpen { format } => {
+                cmd_check_ai_defects_open(&cli, format)
+            }
         },
         #[cfg(feature = "wasm")]
         Command::Import {
@@ -11471,6 +11490,148 @@ impl ProjectContext {
         ctx.result_store = Some(result_store);
         Ok(ctx)
     }
+}
+
+/// `rivet check ai-defects-open` — TCL workstream B operational primitive.
+///
+/// Two gates, each producing a non-zero exit on violation:
+///
+/// 1. **Open-defect gate:** an `ai-found-defect` with `triage-status:
+///    open` must not have a `defect-against` link to an artifact whose
+///    `status` is `released` or `approved`.
+///
+/// 2. **Segregation-of-duties gate (DPO-lens finding):** a defect's
+///    `triaged-by` must not equal the originating session's `invoker`
+///    (resolved via the defect's `produced-by` link). The same AI /
+///    operator that authored the offending artifact must not be the
+///    one to mark its defect "accepted." This is the ISO 26262-2
+///    §6.4.7 confirmation-reviewer independence requirement at the
+///    AI-loop level.
+fn cmd_check_ai_defects_open(cli: &Cli, format: &str) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
+    let ctx = ProjectContext::load(cli)?;
+
+    let mut open_against_released: Vec<serde_json::Value> = Vec::new();
+    let mut self_triaged: Vec<serde_json::Value> = Vec::new();
+
+    for defect in ctx
+        .store
+        .iter()
+        .filter(|a| a.artifact_type == "ai-found-defect")
+    {
+        let triage = defect
+            .fields
+            .get("triage-status")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let triaged_by = defect
+            .fields
+            .get("triaged-by")
+            .and_then(|v| v.as_str());
+
+        // Gate 1 — open defects against released/approved artifacts.
+        if triage == "open" {
+            for link in &defect.links {
+                if link.link_type != "defect-against" {
+                    continue;
+                }
+                let Some(target) = ctx.store.get(&link.target) else {
+                    continue;
+                };
+                let target_status = target.status.as_deref().unwrap_or("");
+                if target_status.eq_ignore_ascii_case("released")
+                    || target_status.eq_ignore_ascii_case("approved")
+                {
+                    open_against_released.push(serde_json::json!({
+                        "defect": defect.id,
+                        "target": link.target,
+                        "target_status": target_status,
+                        "rule": "ai-found-defect.open.against-released",
+                    }));
+                }
+            }
+        }
+
+        // Gate 2 — segregation of duties.
+        if let Some(tb) = triaged_by {
+            if let Some(session_link) = defect
+                .links
+                .iter()
+                .find(|l| l.link_type == "produced-by")
+            {
+                if let Some(session) = ctx.store.get(&session_link.target) {
+                    if session.artifact_type == "ai-session" {
+                        let invoker = session
+                            .fields
+                            .get("invoker")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        if !invoker.is_empty() && invoker == tb {
+                            self_triaged.push(serde_json::json!({
+                                "defect": defect.id,
+                                "session": session_link.target,
+                                "invoker": invoker,
+                                "triaged_by": tb,
+                                "rule": "ai-found-defect.self-triage",
+                            }));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let violations = open_against_released.len() + self_triaged.len();
+    let pass = violations == 0;
+
+    if format == "json" {
+        let out = serde_json::json!({
+            "command": "check ai-defects-open",
+            "passed": pass,
+            "open_against_released": open_against_released,
+            "self_triaged": self_triaged,
+            "summary": {
+                "total_violations": violations,
+                "open_against_released_count": open_against_released.len(),
+                "self_triaged_count": self_triaged.len(),
+            },
+        });
+        println!("{}", serde_json::to_string_pretty(&out)?);
+    } else if pass {
+        println!("ai-defects-open: PASS (no open AI defects against released artifacts; no self-triaged findings)");
+    } else {
+        println!("ai-defects-open: FAIL — {violations} violation(s)\n");
+        if !open_against_released.is_empty() {
+            println!("Open defects against released/approved artifacts:");
+            for v in &open_against_released {
+                println!(
+                    "  {} -> {} (status: {})",
+                    v["defect"].as_str().unwrap_or("?"),
+                    v["target"].as_str().unwrap_or("?"),
+                    v["target_status"].as_str().unwrap_or("?")
+                );
+            }
+            println!();
+        }
+        if !self_triaged.is_empty() {
+            println!("Self-triaged defects (DPO segregation-of-duties violation):");
+            for v in &self_triaged {
+                println!(
+                    "  {} triaged by '{}' (same as session invoker)",
+                    v["defect"].as_str().unwrap_or("?"),
+                    v["triaged_by"].as_str().unwrap_or("?")
+                );
+            }
+            println!();
+        }
+        println!(
+            "These violations would let an AI-introduced defect persist into a \
+             released artifact, or let the originating AI accept its own defect. \
+             See `rivet docs tool-qualification` §3 (TD1 detection layer)."
+        );
+    }
+
+    Ok(pass)
 }
 
 fn print_stats(store: &Store) {

@@ -3178,6 +3178,130 @@ fn qualification_mode_blocks_sync() {
     );
 }
 
+// ── rivet check ai-defects-open (TCL workstream B) ──────────────────────
+
+/// Build a project with an `ai-found-defect` linked to a status-X
+/// requirement, with triage-status Y, optionally with same operator
+/// as session invoker (self-triage scenario).
+fn ai_defects_project(triage: &str, target_status: &str, self_triage: bool) -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let dir = tmp.path();
+
+    let init = Command::new(rivet_bin())
+        .args(["init", "--preset", "dev", "--dir", dir.to_str().unwrap()])
+        .output()
+        .expect("rivet init");
+    assert!(init.status.success(), "init failed: {init:?}");
+
+    let invoker = "alice@example.com";
+    let triaged_by = if self_triage { invoker } else { "bob@example.com" };
+    let req_path = dir.join("artifacts").join("requirements.yaml");
+    let existing = std::fs::read_to_string(&req_path).expect("read");
+    let extra = format!(
+        r#"
+  - id: REQ-RELEASED
+    type: requirement
+    title: Released requirement
+    status: {target_status}
+  - id: AI-SESS-001
+    type: ai-session
+    title: Test session
+    status: approved
+    fields:
+      session-id: test-session-abc
+      model-id: claude-opus-4-7
+      invoker: {invoker}
+  - id: AID-001
+    type: ai-found-defect
+    title: Defect against released
+    status: approved
+    fields:
+      severity: major
+      triage-status: {triage}
+      detected-by: validate
+      triaged-by: {triaged_by}
+    links:
+      - type: defect-against
+        target: REQ-RELEASED
+      - type: produced-by
+        target: AI-SESS-001
+"#
+    );
+    std::fs::write(&req_path, format!("{existing}{extra}")).expect("write");
+    tmp
+}
+
+#[test]
+fn ai_defects_open_passes_when_triaged_and_no_self_triage() {
+    let tmp = ai_defects_project("accepted", "released", false);
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            tmp.path().to_str().unwrap(),
+            "check",
+            "ai-defects-open",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run check ai-defects-open");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let value: serde_json::Value = serde_json::from_str(&stdout).expect("valid json");
+    assert_eq!(value["passed"], true, "must pass when triage != open. got: {value}");
+}
+
+#[test]
+fn ai_defects_open_fails_on_open_defect_against_released() {
+    let tmp = ai_defects_project("open", "released", false);
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            tmp.path().to_str().unwrap(),
+            "check",
+            "ai-defects-open",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run check ai-defects-open");
+    assert!(
+        !output.status.success(),
+        "must exit non-zero when open defect links to released artifact"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let value: serde_json::Value = serde_json::from_str(&stdout).expect("valid json");
+    assert_eq!(value["passed"], false);
+    assert_eq!(value["summary"]["open_against_released_count"], 1);
+    assert_eq!(value["open_against_released"][0]["defect"], "AID-001");
+}
+
+#[test]
+fn ai_defects_open_fails_on_self_triage_segregation_violation() {
+    // Defect triage-status is accepted (Gate 1 passes), but triaged-by ==
+    // session invoker — Gate 2 (DPO segregation) must fire.
+    let tmp = ai_defects_project("accepted", "draft", true);
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            tmp.path().to_str().unwrap(),
+            "check",
+            "ai-defects-open",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run check ai-defects-open");
+    assert!(
+        !output.status.success(),
+        "must exit non-zero when triaged-by == session invoker"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let value: serde_json::Value = serde_json::from_str(&stdout).expect("valid json");
+    assert_eq!(value["passed"], false);
+    assert_eq!(value["summary"]["self_triaged_count"], 1);
+    assert_eq!(value["self_triaged"][0]["triaged_by"], "alice@example.com");
+}
+
 // ── rivet supplier (#253 MVP) ───────────────────────────────────────────
 
 /// Build a minimal project with one `external-anchor` artifact and a
