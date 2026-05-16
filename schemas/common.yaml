@@ -170,7 +170,84 @@ artifact-types:
       - name: invoker
         type: string
         required: false
-        description: Human operator who ran the session (login or email).
+        description: >
+          Human operator who ran the session (login or email). When set,
+          this field is PERSONAL DATA under DSGVO Art. 4 — the artifact
+          should link to a `dpia` artifact (use `derives-from` link
+          type) or be classified `lawful-basis: anonymised`. v0.10.0
+          ships the schema but does not yet enforce the link at
+          validate time (tracked).
+      - name: lawful-basis
+        type: string
+        required: false
+        allowed-values:
+          - art-6-1-a-consent
+          - art-6-1-b-contract
+          - art-6-1-c-legal-obligation
+          - art-6-1-f-legitimate-interest
+          - art-9-2-research
+          - anonymised
+        description: >
+          DSGVO Art. 6(1) (or Art. 9(2) for special categories) lawful
+          basis for processing `invoker`. Required when `invoker` is
+          set and not classified `anonymised`.
+      - name: retention-period
+        type: string
+        required: false
+        description: >
+          ISO 8601 duration after which `invoker` must be erased (e.g.
+          "P2Y" for 2 years). DSGVO Art. 5(1)(e) — storage limitation.
+      - name: erasure-mechanism
+        type: string
+        required: false
+        description: >
+          Machine-readable mechanism that performs the erasure when the
+          retention period elapses (e.g. `git-replace-author-rewrite`,
+          `tombstone-only`, `none`). DSGVO Art. 17.
+    link-fields: []
+
+  # ── Data Protection Impact Assessment (DSGVO Art. 35) ───────────────
+  - name: dpia
+    description: >
+      Data Protection Impact Assessment per DSGVO Art. 35. Required
+      when a project's AI-provenance workflow systematically processes
+      personal data (e.g. `ai-session.invoker`). The artifact captures
+      the assessment outcome, the responsible Data Protection Officer
+      sign-off, and the categories of personal data processed. Link
+      `ai-session` artifacts to one or more `dpia` records via
+      `derives-from`.
+    fields:
+      - name: dpo-sign-off
+        type: string
+        required: true
+        description: >
+          DPO sign-off identifier (e.g. internal ticket ID or signed
+          document hash). Free-form at the schema level; project
+          policy may narrow.
+      - name: personal-data-categories
+        type: list<string>
+        required: true
+        description: >
+          Categories of personal data processed (e.g. ["login",
+          "email", "session-content"]). DSGVO Art. 35(7)(b).
+      - name: risk-assessment
+        type: string
+        required: true
+        allowed-values: [low, medium, high]
+        description: >
+          DSGVO Art. 35(7)(c) — assessment of necessity and
+          proportionality.
+      - name: mitigation-measures
+        type: text
+        required: false
+        description: DSGVO Art. 35(7)(d) — measures to address risks.
+      - name: consultation-date
+        type: string
+        required: false
+        description: >
+          ISO-8601 date when the DPO/supervisory authority was
+          consulted (DSGVO Art. 35(2), Art. 36 for prior consultation
+          when residual risk is high).
     link-fields: []
 
   # ── AI-found defect (TCL design §6.2, A3) ───────────────────────────
