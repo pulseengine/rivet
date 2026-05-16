@@ -1193,6 +1193,65 @@ fn eval_constraint(expr: &Expr, selected: &BTreeSet<String>) -> bool {
     }
 }
 
+// ── Variant config directory loader (issue #287) ───────────────────────
+
+/// Load every `*.yaml` / `*.yml` file in `dir` as a [`VariantConfig`].
+///
+/// Returns the list sorted by file name for deterministic order. Errors
+/// out on the first malformed file. Used by `rivet validate`,
+/// `rivet coverage`, `rivet list`, and `rivet query` to resolve their
+/// `--variant <name>` flag against the project's `artifacts/variants/`
+/// directory (or any other directory the caller picks).
+///
+/// Empty / missing dirs return `Ok(vec![])` so callers can use this
+/// unconditionally without first checking `dir.exists()`.
+///
+/// Name collisions across files (two `*.yaml` files declaring the same
+/// `name:`) are returned as an error — a project that ships duplicate
+/// variant names has an ambiguity bug the user must fix before any
+/// downstream consumer can pick the "right" one.
+pub fn load_variant_configs_from_dir(
+    dir: &std::path::Path,
+) -> Result<Vec<VariantConfig>, Error> {
+    if !dir.exists() {
+        return Ok(Vec::new());
+    }
+    let entries = std::fs::read_dir(dir)
+        .map_err(|e| Error::Io(format!("reading variants dir {}: {e}", dir.display())))?;
+    let mut paths: Vec<std::path::PathBuf> = entries
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| {
+            p.extension()
+                .and_then(|s| s.to_str())
+                .is_some_and(|ext| ext == "yaml" || ext == "yml")
+        })
+        .collect();
+    paths.sort();
+
+    let mut configs: Vec<VariantConfig> = Vec::new();
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    for path in &paths {
+        let yaml = std::fs::read_to_string(path)
+            .map_err(|e| Error::Io(format!("reading {}: {e}", path.display())))?;
+        let vc: VariantConfig = serde_yaml::from_str(&yaml).map_err(|e| {
+            Error::Schema(format!(
+                "parsing variant config {}: {e}",
+                path.display()
+            ))
+        })?;
+        if !seen.insert(vc.name.clone()) {
+            return Err(Error::Schema(format!(
+                "duplicate variant name '{}' in {}",
+                vc.name,
+                path.display()
+            )));
+        }
+        configs.push(vc);
+    }
+    Ok(configs)
+}
+
 // ── Tests ──────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1946,5 +2005,72 @@ bindings:
             !pd_paths.contains(&PathBuf::from("src/pd/petrol/**")),
             "petrol when-clause must drop the glob from the manifest"
         );
+    }
+
+    // ── load_variant_configs_from_dir (issue #287, Phase 2) ──────────────
+
+    #[test]
+    fn load_variant_configs_from_dir_missing_dir_returns_empty() {
+        let tmp = tempfile::tempdir().unwrap();
+        let missing = tmp.path().join("does-not-exist");
+        let got = load_variant_configs_from_dir(&missing).unwrap();
+        assert!(
+            got.is_empty(),
+            "missing directory must return empty list, not an error"
+        );
+    }
+
+    #[test]
+    fn load_variant_configs_from_dir_loads_every_yaml_sorted() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        std::fs::write(
+            dir.join("zeta.yaml"),
+            "name: zeta\nselects: [a, b]\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("alpha.yaml"),
+            "name: alpha\nselects: [x]\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("notes.txt"),
+            "ignored because the extension is wrong\n",
+        )
+        .unwrap();
+        let got = load_variant_configs_from_dir(dir).unwrap();
+        let names: Vec<&str> = got.iter().map(|v| v.name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec!["alpha", "zeta"],
+            "results must be sorted by filename for reproducibility"
+        );
+        assert_eq!(got[0].selects, vec!["x"]);
+        assert_eq!(got[1].selects, vec!["a", "b"]);
+    }
+
+    #[test]
+    fn load_variant_configs_from_dir_rejects_duplicate_names() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        std::fs::write(dir.join("a.yaml"), "name: dupe\nselects: [x]\n").unwrap();
+        std::fs::write(dir.join("b.yaml"), "name: dupe\nselects: [y]\n").unwrap();
+        let err = load_variant_configs_from_dir(dir).unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("duplicate variant name 'dupe'"),
+            "got: {msg}"
+        );
+    }
+
+    #[test]
+    fn load_variant_configs_from_dir_surfaces_parse_errors() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        std::fs::write(dir.join("bad.yaml"), "name: 12345\nselects: not-a-list\n").unwrap();
+        let err = load_variant_configs_from_dir(dir).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("parsing variant config"), "got: {msg}");
     }
 }
