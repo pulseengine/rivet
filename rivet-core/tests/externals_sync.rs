@@ -197,6 +197,7 @@ fn backlinks_from_spar_to_local() {
             target: "REQ-001".into(),
         }],
         fields: BTreeMap::new(),
+        fields_per_variant: Default::default(),
         provenance: None,
         source_file: None,
     };

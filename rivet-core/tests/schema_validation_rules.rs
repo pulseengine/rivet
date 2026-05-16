@@ -52,6 +52,7 @@ fn artifact(id: &str, art_type: &str, status: &str, links: &[(&str, &str)]) -> A
             })
             .collect(),
         fields: BTreeMap::new(),
+        fields_per_variant: Default::default(),
         provenance: None,
         source_file: None,
     }

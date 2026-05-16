@@ -468,6 +468,7 @@ fn test_validate_documents_checks_wiki_links() {
             tags: vec![],
             links: vec![],
             fields: BTreeMap::new(),
+            fields_per_variant: Default::default(),
             provenance: None,
             source_file: None,
         })

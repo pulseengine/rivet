@@ -65,6 +65,7 @@ fn fixture_store() -> (Store, LinkGraph) {
             })
             .collect(),
         fields: BTreeMap::new(),
+        fields_per_variant: Default::default(),
         provenance: None,
         source_file: None,
     };
@@ -412,8 +413,8 @@ proptest! {
             tags: vec![],
             links: vec![], // no outbound links — empty set
             fields: BTreeMap::new(),
-            provenance: None,
-            source_file: None,
+            fields_per_variant: Default::default(),
+            provenance: None,            source_file: None,
         };
         let mut store = Store::default();
         store.upsert(art.clone());
@@ -452,8 +453,8 @@ proptest! {
             tags: vec![],
             links: vec![],
             fields: BTreeMap::new(),
-            provenance: None,
-            source_file: None,
+            fields_per_variant: Default::default(),
+            provenance: None,            source_file: None,
         };
         let mut store = Store::default();
         store.upsert(art.clone());
@@ -494,8 +495,8 @@ proptest! {
             tags: vec![],
             links: vec![],
             fields: BTreeMap::new(),
-            provenance: None,
-            source_file: None,
+            fields_per_variant: Default::default(),
+            provenance: None,            source_file: None,
         };
         let verifier = Artifact {
             id: "V-001".into(),
@@ -515,8 +516,8 @@ proptest! {
                 },
             ],
             fields: BTreeMap::new(),
-            provenance: None,
-            source_file: None,
+            fields_per_variant: Default::default(),
+            provenance: None,            source_file: None,
         };
         let mut store = Store::default();
         store.upsert(req);

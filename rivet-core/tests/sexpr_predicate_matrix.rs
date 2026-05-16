@@ -76,6 +76,7 @@ fn base_artifact() -> Artifact {
             );
             m
         },
+        fields_per_variant: Default::default(),
         provenance: None,
         source_file: None,
     }
@@ -443,6 +444,7 @@ fn linked_from_matches_incoming_link_type() {
         tags: vec![],
         links: vec![],
         fields: BTreeMap::new(),
+        fields_per_variant: Default::default(),
         provenance: None,
         source_file: None,
     };
@@ -467,6 +469,7 @@ fn linked_from_no_match_when_no_incoming_link() {
         tags: vec![],
         links: vec![],
         fields: BTreeMap::new(),
+        fields_per_variant: Default::default(),
         provenance: None,
         source_file: None,
     };
@@ -492,6 +495,7 @@ fn linked_from_no_match_wrong_link_type() {
         tags: vec![],
         links: vec![],
         fields: BTreeMap::new(),
+        fields_per_variant: Default::default(),
         provenance: None,
         source_file: None,
     };
@@ -528,6 +532,7 @@ fn linked_from_source_filter_is_honoured() {
             target: "SC-1".into(),
         }],
         fields: BTreeMap::new(),
+        fields_per_variant: Default::default(),
         provenance: None,
         source_file: None,
     };
@@ -543,6 +548,7 @@ fn linked_from_source_filter_is_honoured() {
             target: "SC-1".into(),
         }],
         fields: BTreeMap::new(),
+        fields_per_variant: Default::default(),
         provenance: None,
         source_file: None,
     };
@@ -555,6 +561,7 @@ fn linked_from_source_filter_is_honoured() {
         tags: vec![],
         links: vec![],
         fields: BTreeMap::new(),
+        fields_per_variant: Default::default(),
         provenance: None,
         source_file: None,
     };
@@ -720,6 +727,7 @@ fn make_req(id: &str, tags: &[&str]) -> Artifact {
         tags: tags.iter().map(|s| s.to_string()).collect(),
         links: vec![],
         fields: BTreeMap::new(),
+        fields_per_variant: Default::default(),
         provenance: None,
         source_file: None,
     }
@@ -840,6 +848,7 @@ fn chain_store() -> (Store, LinkGraph) {
             })
             .unwrap_or_default(),
         fields: BTreeMap::new(),
+        fields_per_variant: Default::default(),
         provenance: None,
         source_file: None,
     };

@@ -1530,6 +1530,7 @@ mod tests {
                 );
                 m
             },
+            fields_per_variant: Default::default(),
             provenance: None,
             source_file: Some(PathBuf::from("artifacts/requirements.yaml")),
         }
@@ -1914,6 +1915,7 @@ mod tests {
             tags: tags.iter().map(|t| t.to_string()).collect(),
             links: vec![],
             fields: BTreeMap::new(),
+            fields_per_variant: Default::default(),
             provenance: None,
             source_file: None,
         }
@@ -2124,6 +2126,7 @@ mod tests {
                 })
                 .collect(),
             fields: BTreeMap::new(),
+            fields_per_variant: Default::default(),
             provenance: None,
             source_file: None,
         }

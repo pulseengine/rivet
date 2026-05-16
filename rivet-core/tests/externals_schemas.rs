@@ -187,6 +187,7 @@ fn external_without_schema_demotes_unknown_type_to_info() {
         tags: vec![],
         links: vec![],
         fields: BTreeMap::new(),
+        fields_per_variant: Default::default(),
         provenance: None,
         source_file: None,
     });
@@ -256,6 +257,7 @@ fn external_link_types_are_not_flagged_unknown() {
             target: "spar:OTHER".to_string(),
         }],
         fields: BTreeMap::new(),
+        fields_per_variant: Default::default(),
         provenance: None,
         source_file: None,
     });

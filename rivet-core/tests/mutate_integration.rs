@@ -68,6 +68,7 @@ fn make_artifact(
         tags: vec![],
         links,
         fields,
+        fields_per_variant: Default::default(),
         provenance: None,
         source_file: None,
     }
@@ -619,6 +620,7 @@ fn test_append_artifact_to_file() {
         tags: vec![],
         links: vec![],
         fields: BTreeMap::new(),
+        fields_per_variant: Default::default(),
         provenance: None,
         source_file: None,
     };

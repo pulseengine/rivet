@@ -557,6 +557,7 @@ fn convert_wit_artifact_to_host(
         tags: wit.tags,
         links,
         fields,
+        fields_per_variant: Default::default(),
         provenance: None,
         source_file: None,
     }
@@ -876,6 +877,7 @@ mod tests {
             tags: vec![],
             links: vec![],
             fields: std::collections::BTreeMap::new(),
+            fields_per_variant: Default::default(),
             provenance: None,
             source_file: None,
         }];
@@ -899,6 +901,7 @@ mod tests {
             tags: vec![],
             links: vec![],
             fields: std::collections::BTreeMap::new(),
+            fields_per_variant: Default::default(),
             provenance: None,
             source_file: None,
         }];
@@ -922,6 +925,7 @@ mod tests {
             tags: vec![],
             links: vec![],
             fields: std::collections::BTreeMap::new(),
+            fields_per_variant: Default::default(),
             provenance: None,
             source_file: None,
         }];
