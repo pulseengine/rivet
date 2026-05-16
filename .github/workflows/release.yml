@@ -165,9 +165,18 @@ jobs:
           path: ${{ steps.report.outputs.archive-path }}
 
   # ── Test evidence bundle ──────────────────────────────────────────────
+  # Non-blocking: this job pulls in the spar wasm32-wasip2 build, which
+  # transitively requires the highs-sys C++ solver. WASI cross-compile of
+  # highs-sys has been flaky (CMake Threads::Threads target unavailable in
+  # the WASI sysroot — see v0.10.0 release run 25966236046). Until that
+  # upstream issue is resolved (tracked separately), this job must NOT
+  # block `create-release` from publishing the binaries that DID build.
+  # Test evidence is a desirable add-on, not a required gate; cargo test
+  # already ran on the merge commit before the tag was pushed.
   build-test-evidence:
     name: Build test evidence
     runs-on: ubuntu-latest
+    continue-on-error: true  # NB: doesn't block create-release; see note above.
     steps:
       - uses: actions/checkout@v6
 
@@ -307,9 +316,14 @@ jobs:
           path: vscode-rivet/*.vsix
 
   # ── Create GitHub Release ─────────────────────────────────────────────
+  # Note: build-test-evidence is intentionally NOT in `needs` — that job
+  # depends on a flaky WASI cross-compile (spar → highs-sys) and a failure
+  # there must not block publication of the cross-platform binaries. If
+  # the test-evidence tarball does build, it will be available as a
+  # workflow artifact and can be attached to the release manually.
   create-release:
     name: Create GitHub Release
-    needs: [build-binaries, build-compliance, build-test-evidence, build-vsix, docs-check]
+    needs: [build-binaries, build-compliance, build-vsix, docs-check]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
