@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1778942692571,
+  "lastUpdate": 1778947120043,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "0371cada8a54111d405ff4265e072a35770041e3",
-          "message": "feat(schema): rivet schema migrate Phase 2 — conflict markers + --continue / --skip / --edit (#242)\n\n* feat(schema): rivet schema migrate Phase 2 — conflict resolution UX\n\nPhase 2 of issue #236. Phase 1 (in 0.6.0) shipped the diff engine and\nmechanical apply with snapshot/abort. Phase 2 adds the rebase-style\nconflict-resolution flow.\n\nEngine (rivet-core/src/migrate.rs):\n* `MigrationState::Conflict` joins the existing `Planned / InProgress\n  / Complete` states.\n* `MigrationManifest.resolutions` tracks per-artifact `pending /\n  resolved / skipped` status across `--apply / --continue / --skip /\n  --edit`.\n* `MigrationLayout::current_conflict_path` writes the artifact id the\n  walker paused on; `--status` surfaces it.\n* `diff_artifacts` now emits `FieldValueConflict` for any source\n  field whose value violates the target field's `allowed_values`\n  enum (e.g. `priority: 5` → `[must|should|could|wont]`).\n* `apply_to_file_partial` skips conflict-class entries; the `--apply`\n  walker uses it so mechanical changes always commit before pausing.\n* `write_conflict_markers` splices git-rebase-style `<<<<<<<` /\n  `=======` / `>>>>>>>` blocks into the affected field.\n  `scan_conflict_markers` is the inverse used by `--continue` and the\n  `MigrationConflict` doc-check invariant.\n* `restore_artifact_from_snapshot` swaps a single artifact back to\n  its pre-migration form for `--skip`.\n\nCLI (rivet-cli/src/migrate_cmd.rs + main.rs):\n* `--apply` no longer bails on conflicts — it walks the plan,\n  applies every mechanical/decidable change, then writes markers for\n  the first conflict and exits non-zero with state CONFLICT.\n* `--continue` verifies markers are gone, re-parses the file as\n  YAML, marks resolved, advances.\n* `--skip` rebuilds the file from the snapshot (mechanical-pass\n  applied to other artifacts in the same file) and restores the\n  conflicted artifact's pre-migration form.\n* `--edit <ID>` re-stamps markers on a previously-resolved or\n  skipped conflict.\n* `--status` reports CONFLICT state plus the current conflict's id\n  and file, with next-step suggestions.\n\nValidation (rivet-core/src/doc_check.rs):\n* `MigrationConflict` doc-invariant scans every `*.yaml` /  `*.yml`\n  under `<project>/artifacts/` and emits a violation for any line\n  that begins with `<<<<<<<` / `=======` / `>>>>>>>`. Prevents\n  accidental commits with leftover markers.\n\nTests (rivet-core/src/migrate.rs + rivet-cli/tests/migrate_integration.rs):\n* 7 new unit tests covering enum-mismatch detection, marker round\n  trip, scan, restore-from-snapshot, partial-apply, plan lookup, and\n  Conflict state roundtrip.\n* 6 new integration tests covering the apply-pauses-on-conflict\n  flow, --continue success, --continue marker rejection, --skip\n  restore, --edit re-open, and the docs-check MigrationConflict\n  surface.\n\nPhase 3 (deferred): dashboard `/migrations/<id>` view, `rivet\nrecipes` subcommand for recipe distribution, provenance entries on\nmigrated artifacts.\n\nImplements: REQ-007, REQ-010\nImplements: REQ-004\nVerifies: REQ-007, REQ-010, REQ-004\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n* docs(migrate): Phase 2 conflict-resolution flow in rivet docs schema-migrate\n\nExtend the embedded `rivet docs schema-migrate` topic with:\n* Updated quick-start commands (`--continue`, `--skip`, `--edit`)\n* CONFLICT state in the state-machine diagram\n* Worked example of marker syntax + resolution workflow\n* `current-conflict` file in the storage-layout table\n* Note on the `MigrationConflict` doc-check invariant\n* Refreshed \"still deferred\" list (dashboard, recipes subcommand).\n\nRefs: FEAT-001\n\n---------\n\nCo-authored-by: Claude Opus 4.7 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-04-29T16:36:57-05:00",
-          "tree_id": "2cf269edb5cd2b47ad2b743f822b5c075116ada8",
-          "url": "https://github.com/pulseengine/rivet/commit/0371cada8a54111d405ff4265e072a35770041e3"
-        },
-        "date": 1777503383360,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 75237,
-            "range": "± 566",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 884751,
-            "range": "± 6734",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 14673610,
-            "range": "± 694089",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1749,
-            "range": "± 3",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 19361,
-            "range": "± 32",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 348648,
-            "range": "± 1497",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 88,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 87,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 87,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1094316,
-            "range": "± 13183",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 158519,
-            "range": "± 1231",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1831611,
-            "range": "± 32987",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 39290192,
-            "range": "± 2153059",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 122737,
-            "range": "± 559",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 1175214,
-            "range": "± 11072",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 19815038,
-            "range": "± 1957111",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 3907,
-            "range": "± 6",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 40778,
-            "range": "± 73",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 746271,
-            "range": "± 4103",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 53076,
-            "range": "± 490",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 587833,
-            "range": "± 1990",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 8456232,
-            "range": "± 673172",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 676,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 5511,
-            "range": "± 12",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 142675,
-            "range": "± 482",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 21910,
-            "range": "± 117",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 160280,
-            "range": "± 1334",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1486859,
-            "range": "± 24759",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1702050,
             "range": "± 24704",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e2466dbb1b16ea992b29f81cf41ff7b367fd6876",
+          "message": "release(v0.10.0): variant + supplier + AI session + TCL workstream A (#290)\n\n* release(v0.10.0): variant + supplier + AI session + TCL workstream A\n\nWorkspace version bump 0.9.0 → 0.10.0. Theme: audit-grade story —\nthree orthogonal features that together move rivet from \"trace your\nproject\" to \"describe the boundary and defend the tool's role across\nit.\"\n\nHighlights (full notes in CHANGELOG.md):\n- Variant-aware properties — per-variant field values (#285, #255).\n- Cross-org / supplier-boundary coverage MVP (#286, #253).\n- AI session provenance — schema half (#289, partially #127).\n- Tool-qualification workstream A — typed claim + dossier (#289).\n- rivet stats --qualification + --qualification-mode flag (#289).\n- TCL/TQL numbering convention fix in dogfood STPA (#289).\n\nCo-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>\n\n* fix(release): docs-check violations on v0.10.0 release commit\n\nTwo docs-check violations on PR #290:\n- VersionConsistency: vscode-rivet/package.json bumped 0.9.0 → 0.10.0\n  (it has its own version field, not workspace-inherited).\n- SubcommandReferences: CHANGELOG mentioned `rivet audit` which is a\n  Phase 2 future subcommand. Rephrased to \"audit-side enforcement\n  subcommand\" so the literal `rivet audit` no longer parses as a\n  current-cli reference.\n\nLocal `rivet docs check` now passes (54 files, 0 violations).\n\nCo-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.7 <noreply@anthropic.com>",
+          "timestamp": "2026-05-16T10:51:50-05:00",
+          "tree_id": "43ce0a6486e586d39bad5a0fbe853867ad8d8cb1",
+          "url": "https://github.com/pulseengine/rivet/commit/e2466dbb1b16ea992b29f81cf41ff7b367fd6876"
+        },
+        "date": 1778947118761,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 75538,
+            "range": "± 270",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 901030,
+            "range": "± 5102",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 15309552,
+            "range": "± 1209299",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1670,
+            "range": "± 33",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 19188,
+            "range": "± 119",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 363777,
+            "range": "± 1487",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 85,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 85,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 85,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1270186,
+            "range": "± 13898",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 168430,
+            "range": "± 1786",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1943544,
+            "range": "± 23067",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 34386106,
+            "range": "± 4199922",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 116502,
+            "range": "± 819",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1056957,
+            "range": "± 32705",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 14130663,
+            "range": "± 1900283",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 3876,
+            "range": "± 7",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 41149,
+            "range": "± 163",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 745391,
+            "range": "± 8287",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 53260,
+            "range": "± 218",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 586263,
+            "range": "± 2550",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7081851,
+            "range": "± 786962",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 663,
+            "range": "± 8",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 5467,
+            "range": "± 16",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 149958,
+            "range": "± 1684",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 23533,
+            "range": "± 47",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 173888,
+            "range": "± 2988",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1603653,
+            "range": "± 18942",
             "unit": "ns/iter"
           }
         ]
