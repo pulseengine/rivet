@@ -47,6 +47,7 @@ fn art(id: &str, t: &str, tags: &[&str], status: Option<&str>, links: &[(&str, &
             .map(|(lt, tgt)| Link {
                 link_type: (*lt).into(),
                 target: (*tgt).into(),
+                external: None,
             })
             .collect(),
         fields: BTreeMap::new(),

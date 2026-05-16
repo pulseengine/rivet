@@ -293,6 +293,7 @@ mod proofs {
             links.push(Link {
                 link_type: "depends-on".into(),
                 target: target_id,
+                external: None,
             });
         }
 
@@ -440,6 +441,7 @@ mod proofs {
                 vec![Link {
                     link_type: "dep".into(),
                     target: "B".into(),
+                    external: None,
                 }],
             ))
             .unwrap();
@@ -450,6 +452,7 @@ mod proofs {
                 vec![Link {
                     link_type: "dep".into(),
                     target: "C".into(),
+                    external: None,
                 }],
             ))
             .unwrap();
@@ -473,6 +476,7 @@ mod proofs {
                 vec![Link {
                     link_type: "dep".into(),
                     target: "CYC-B".into(),
+                    external: None,
                 }],
             ))
             .unwrap();
@@ -483,6 +487,7 @@ mod proofs {
                 vec![Link {
                     link_type: "dep".into(),
                     target: "CYC-A".into(),
+                    external: None,
                 }],
             ))
             .unwrap();
@@ -521,14 +526,17 @@ mod proofs {
                 Link {
                     link_type: "satisfies".into(),
                     target: "SC-1".into(),
+                    external: None,
                 },
                 Link {
                     link_type: "satisfies".into(),
                     target: "SC-3".into(),
+                    external: None,
                 },
                 Link {
                     link_type: "implements".into(),
                     target: "DD-001".into(),
+                    external: None,
                 },
             ],
             fields,

@@ -293,6 +293,7 @@ proptest! {
                     let links = vec![Link {
                         link_type: link_type.clone(),
                         target: target.clone(),
+                        external: None,
                     }];
                     let art = make_artifact_with_links(id, artifact_type, links);
                     if store.insert(art).is_ok() {

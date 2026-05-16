@@ -467,6 +467,7 @@ fn extract_nested_sub_artifacts(
                                     sa.artifact.links.push(Link {
                                         link_type: link_type.clone(),
                                         target: pid.clone(),
+                                        external: None,
                                     });
                                 }
                             }
@@ -522,6 +523,7 @@ fn extract_sequence_items_with_inherited(
                             sa.artifact.links.push(Link {
                                 link_type: link_type.clone(),
                                 target: value.clone(),
+                                external: None,
                             });
                         }
                     } else if !sa.artifact.fields.contains_key(field) {
@@ -612,6 +614,7 @@ fn extract_section_item(
                 links.push(Link {
                     link_type: link_type.clone(),
                     target,
+                    external: None,
                 });
             }
             // Also handle single-value shorthand: `uca: UCA-1`
@@ -621,6 +624,7 @@ fn extract_section_item(
                         links.push(Link {
                             link_type: link_type.clone(),
                             target,
+                            external: None,
                         });
                     }
                 }
@@ -1031,6 +1035,9 @@ fn extract_links(value_node: &SyntaxNode) -> Vec<Link> {
 
         let mut link_type = String::new();
         let mut target = String::new();
+        // Issue #288: when `target:` is a mapping (cross-org link
+        // types), the structured payload lands here.
+        let mut external: Option<crate::model::ExternalLinkTarget> = None;
 
         for entry in map.children() {
             if node_kind(&entry) != SyntaxKind::MappingEntry {
@@ -1052,8 +1059,37 @@ fn extract_links(value_node: &SyntaxNode) -> Vec<Link> {
                     }
                 }
                 "target" => {
-                    if let Some(t) = scalar_text(&v) {
-                        target = t;
+                    // Issue #288: a structured `target:` is a YAML
+                    // mapping nested under the link entry. The CST
+                    // may surface this as a `Mapping` child of the
+                    // value, OR as raw newline-indented text when
+                    // the parser didn't promote it to a typed node.
+                    // Cover both: dedent the raw value text so the
+                    // mapping's relative indentation becomes
+                    // absolute, then round-trip through serde_yaml.
+                    // If it parses as `ExternalLinkTarget`, prefer
+                    // the structured shape; otherwise fall back to
+                    // scalar_text for the flat `target: ID` form.
+                    let raw = v.text().to_string();
+                    let looks_like_mapping = child_of_kind(&v, SyntaxKind::Mapping).is_some()
+                        || raw.trim().contains(':');
+                    let mut handled = false;
+                    if looks_like_mapping {
+                        let dedented = dedent_block(&raw);
+                        if let Ok(ext) =
+                            serde_yaml::from_str::<crate::model::ExternalLinkTarget>(&dedented)
+                        {
+                            if !ext.anchor.is_empty() {
+                                target = ext.anchor.clone();
+                                external = Some(ext);
+                                handled = true;
+                            }
+                        }
+                    }
+                    if !handled {
+                        if let Some(t) = scalar_text(&v) {
+                            target = t;
+                        }
                     }
                 }
                 _ => {}
@@ -1061,7 +1097,11 @@ fn extract_links(value_node: &SyntaxNode) -> Vec<Link> {
         }
 
         if !link_type.is_empty() && !target.is_empty() {
-            links.push(Link { link_type, target });
+            links.push(Link {
+                link_type,
+                target,
+                external,
+            });
         }
     }
 
@@ -1073,30 +1113,56 @@ fn extract_links(value_node: &SyntaxNode) -> Vec<Link> {
 /// Re-parses the value text via serde_yaml and converts `type` + `target`
 /// into `Link`s. Unknown shapes and parse errors silently produce no
 /// links (matching the permissive behaviour of the primary path).
+///
+/// Accepts both the flat-string and the structured `target:` mapping
+/// shapes (issue #288) by delegating directly to `Link`'s
+/// `Deserialize` impl.
 fn extract_links_via_serde(value_node: &SyntaxNode) -> Vec<Link> {
-    #[derive(serde::Deserialize)]
-    struct RawLink {
-        #[serde(rename = "type")]
-        link_type: Option<String>,
-        target: Option<String>,
-    }
     let text = value_node.text().to_string();
     let trimmed = text.trim();
     if trimmed.is_empty() {
         return Vec::new();
     }
-    let Ok(raws) = serde_yaml::from_str::<Vec<RawLink>>(trimmed) else {
+    let Ok(raws) = serde_yaml::from_str::<Vec<Link>>(trimmed) else {
         return Vec::new();
     };
     raws.into_iter()
-        .filter_map(|r| match (r.link_type, r.target) {
-            (Some(t), Some(tgt)) if !t.is_empty() && !tgt.is_empty() => Some(Link {
-                link_type: t,
-                target: tgt,
-            }),
-            _ => None,
-        })
+        .filter(|l| !l.link_type.is_empty() && !l.target.is_empty())
         .collect()
+}
+
+/// Strip the minimum common leading-whitespace prefix from every
+/// non-empty line of `s`. The CST surfaces an indented block-scalar
+/// value with leading whitespace preserved; YAML re-parsing needs
+/// the inner mapping to start at column 0. Tabs and spaces are
+/// treated as equal-cost whitespace. Used by the issue #288
+/// structured-target parsing path.
+fn dedent_block(s: &str) -> String {
+    let lines: Vec<&str> = s.split('\n').collect();
+    // Find the minimum leading whitespace across non-blank lines.
+    let mut min_indent: Option<usize> = None;
+    for line in &lines {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let n = line.chars().take_while(|c| matches!(c, ' ' | '\t')).count();
+        min_indent = Some(min_indent.map_or(n, |m| m.min(n)));
+    }
+    let strip = min_indent.unwrap_or(0);
+    let mut out = String::with_capacity(s.len());
+    for (i, line) in lines.iter().enumerate() {
+        if line.trim().is_empty() {
+            // Preserve blank lines as-is.
+            out.push_str(line);
+        } else {
+            let trimmed_prefix: String = line.chars().skip(strip).collect();
+            out.push_str(&trimmed_prefix);
+        }
+        if i + 1 < lines.len() {
+            out.push('\n');
+        }
+    }
+    out
 }
 
 // ── Provenance extraction ─────────────────────────────────────────────
@@ -1143,6 +1209,7 @@ fn extract_provenance(value_node: &SyntaxNode) -> Option<Provenance> {
         session_id,
         timestamp,
         reviewed_by,
+        federation: None,
     })
 }
 
@@ -1677,6 +1744,47 @@ artifacts:
             2,
             "flow-style links under-counted: got {flow_links:?}"
         );
+    }
+
+    /// Structured `target:` mapping (issue #288) is recognised by the
+    /// CST extractor: the anchor becomes `Link.target` and the rest
+    /// flows into `Link.external`. Regression guard: the previous
+    /// implementation called `scalar_text` on the mapping value and
+    /// silently mis-targeted the link at the first key text ("org").
+    ///
+    /// Verifies: REQ-028
+    #[test]
+    fn links_extraction_structured_external_target() {
+        let source = "\
+artifacts:
+  - id: A-1
+    type: req
+    title: cross-org link
+    links:
+      - type: derives-from-external
+        target:
+          org: acme-electronics
+          contract: PO-4711
+          doc-id: REQ-SW-022
+          anchor: ANCHOR-ACME-001
+";
+        let hir = extract_generic_artifacts(source);
+        assert_eq!(hir.artifacts.len(), 1);
+        let links = &hir.artifacts[0].artifact.links;
+        assert_eq!(links.len(), 1, "expected one link, got {links:?}");
+        assert_eq!(links[0].link_type, "derives-from-external");
+        assert_eq!(
+            links[0].target, "ANCHOR-ACME-001",
+            "structured-target link must populate Link.target with anchor"
+        );
+        let ext = links[0]
+            .external
+            .as_ref()
+            .expect("structured-target link must populate Link.external");
+        assert_eq!(ext.org, "acme-electronics");
+        assert_eq!(ext.contract.as_deref(), Some("PO-4711"));
+        assert_eq!(ext.doc_id.as_deref(), Some("REQ-SW-022"));
+        assert_eq!(ext.anchor, "ANCHOR-ACME-001");
     }
 
     /// 4. Custom fields stored as serde_yaml::Value correctly.

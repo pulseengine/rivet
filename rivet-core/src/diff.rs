@@ -155,6 +155,7 @@ impl ArtifactDiff {
                 .map(|(lt, tgt)| Link {
                     link_type: (*lt).clone(),
                     target: (*tgt).clone(),
+                    external: None,
                 })
                 .collect();
             let links_removed: Vec<Link> = base_links
@@ -162,6 +163,7 @@ impl ArtifactDiff {
                 .map(|(lt, tgt)| Link {
                     link_type: (*lt).clone(),
                     target: (*tgt).clone(),
+                    external: None,
                 })
                 .collect();
 

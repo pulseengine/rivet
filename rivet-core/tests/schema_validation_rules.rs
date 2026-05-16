@@ -49,6 +49,7 @@ fn artifact(id: &str, art_type: &str, status: &str, links: &[(&str, &str)]) -> A
             .map(|(lt, tgt)| Link {
                 link_type: (*lt).into(),
                 target: (*tgt).into(),
+                external: None,
             })
             .collect(),
         fields: BTreeMap::new(),

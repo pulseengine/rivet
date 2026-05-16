@@ -521,6 +521,7 @@ fn convert_wit_artifact_to_host(
         .map(|l| Link {
             link_type: l.link_type,
             target: l.target,
+            external: None,
         })
         .collect();
 
@@ -575,6 +576,7 @@ fn convert_host_artifact_to_wit(
         .map(|l| wit::Link {
             link_type: l.link_type.clone(),
             target: l.target.clone(),
+            external: None,
         })
         .collect();
 
@@ -798,6 +800,7 @@ mod tests {
             links: vec![wit::Link {
                 link_type: "satisfies".into(),
                 target: "REQ-000".into(),
+                external: None,
             }],
             fields: vec![wit::FieldEntry {
                 key: "priority".into(),

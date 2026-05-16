@@ -330,6 +330,7 @@ fn test_remove_with_incoming_links_rejected() {
             vec![Link {
                 link_type: "satisfies".to_string(),
                 target: "REQ-001".to_string(),
+                external: None,
             }],
             BTreeMap::new(),
         ))

@@ -1287,10 +1287,12 @@ mod tests {
             Link {
                 link_type: "undeclared-type".to_string(),
                 target: "B-1".to_string(),
+                external: None,
             },
             Link {
                 link_type: "undeclared-type".to_string(),
                 target: "B-2".to_string(),
+                external: None,
             },
         ];
         let mut store = Store::new();
@@ -1363,6 +1365,7 @@ mod tests {
         let links = vec![Link {
             link_type: "mitigated_by".to_string(),
             target: "MIT-1".to_string(),
+            external: None,
         }];
         let art = make_artifact("A-1", "test", None, None, vec![], links);
         let diags = req.check(&art, "test-rule", Severity::Warning);
@@ -2019,6 +2022,7 @@ then:
         dd.links = vec![Link {
             link_type: "satisfies".to_string(),
             target: "REQ-001".to_string(),
+            external: None,
         }];
         store.insert(dd).unwrap();
         store
@@ -2105,6 +2109,7 @@ then:
         dd.links = vec![Link {
             link_type: "satisfies".to_string(),
             target: "REQ-001".to_string(),
+            external: None,
         }];
         store.insert(dd).unwrap();
 
@@ -2186,6 +2191,7 @@ then:
         Link {
             link_type: "satisfies".to_string(),
             target: target.to_string(),
+            external: None,
         }
     }
 
@@ -2647,6 +2653,7 @@ then:
             vec![Link {
                 link_type: "satisfies".to_string(),
                 target: "B-1".to_string(),
+                external: None,
             }],
         );
         assert!(
@@ -2753,6 +2760,7 @@ then:
                 links: vec![Link {
                     link_type: "verifies".into(),
                     target: target.into(),
+                    external: None,
                 }],
                 fields: BTreeMap::new(),
                 fields_per_variant: Default::default(),
@@ -2959,6 +2967,7 @@ then:
             links: vec![Link {
                 link_type: "verifies".into(),
                 target: "REQ-MISSING".into(),
+                external: None,
             }],
             fields: BTreeMap::new(),
             fields_per_variant: Default::default(),
@@ -3041,6 +3050,7 @@ then:
             links: vec![Link {
                 link_type: "verifies".into(),
                 target: "REQ-MISSING".into(),
+                external: None,
             }],
             fields: BTreeMap::new(),
             fields_per_variant: Default::default(),
@@ -3420,6 +3430,7 @@ then:
             links: vec![Link {
                 link_type: "verifies".into(), // correct
                 target: "REQ-001".into(),
+                external: None,
             }],
             fields: BTreeMap::new(),
             fields_per_variant: Default::default(),

@@ -89,6 +89,16 @@ link-types:
     inverse: derived-into
     description: Source is derived from the target
 
+  - name: derives-from-external
+    inverse: derived-into-external
+    description: >
+      Cross-organizational derivation: the source artifact derives from an
+      upstream document owned by another organization. The link target is
+      a mapping `{org, contract, doc-id, last-synced, sha256, anchor}`
+      that names the supplier, the contract, the upstream ID, and a local
+      `external-anchor` artifact for graph navigation. See
+      docs/design/cross-org-supplier-traceability.md §4.2 and issue #288.
+
   - name: mitigates
     inverse: mitigated-by
     description: Source mitigates or prevents the target

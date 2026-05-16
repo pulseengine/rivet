@@ -62,6 +62,7 @@ fn fixture_store() -> (Store, LinkGraph) {
             .map(|(lt, tgt)| Link {
                 link_type: (*lt).into(),
                 target: (*tgt).into(),
+                external: None,
             })
             .collect(),
         fields: BTreeMap::new(),
@@ -509,10 +510,12 @@ proptest! {
                 Link {
                     link_type: "verifies".into(),
                     target: "REQ-001".into(),
+                    external: None,
                 },
                 Link {
                     link_type: "verifies".into(),
                     target: "REQ-UNRESOLVED".into(),
+                    external: None,
                 },
             ],
             fields: BTreeMap::new(),

@@ -352,6 +352,7 @@ mod tests {
                 .map(|(lt, tgt)| Link {
                     link_type: lt.into(),
                     target: tgt.into(),
+                    external: None,
                 })
                 .collect(),
             fields: BTreeMap::new(),

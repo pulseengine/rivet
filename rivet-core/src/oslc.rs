@@ -645,18 +645,21 @@ pub fn oslc_to_artifact(resource: &OslcResource) -> Result<Artifact, Error> {
                 link_list.push(Link {
                     link_type: "elaborated-by".to_string(),
                     target: extract_link_target(&link.href),
+                    external: None,
                 });
             }
             for link in &r.satisfied_by {
                 link_list.push(Link {
                     link_type: "satisfied-by".to_string(),
                     target: extract_link_target(&link.href),
+                    external: None,
                 });
             }
             for link in &r.tracked_by {
                 link_list.push(Link {
                     link_type: "tracked-by".to_string(),
                     target: extract_link_target(&link.href),
+                    external: None,
                 });
             }
             (r.description.clone(), None, link_list, BTreeMap::new())
@@ -667,6 +670,7 @@ pub fn oslc_to_artifact(resource: &OslcResource) -> Result<Artifact, Error> {
                 link_list.push(Link {
                     link_type: "validates".to_string(),
                     target: extract_link_target(&link.href),
+                    external: None,
                 });
             }
             (r.description.clone(), None, link_list, BTreeMap::new())
@@ -677,6 +681,7 @@ pub fn oslc_to_artifact(resource: &OslcResource) -> Result<Artifact, Error> {
                 link_list.push(Link {
                     link_type: "reports-on".to_string(),
                     target: extract_link_target(&link.href),
+                    external: None,
                 });
             }
             (None, r.status.clone(), link_list, BTreeMap::new())
@@ -687,12 +692,14 @@ pub fn oslc_to_artifact(resource: &OslcResource) -> Result<Artifact, Error> {
                 link_list.push(Link {
                     link_type: "implements".to_string(),
                     target: extract_link_target(&link.href),
+                    external: None,
                 });
             }
             for link in &r.affects_requirement {
                 link_list.push(Link {
                     link_type: "affects".to_string(),
                     target: extract_link_target(&link.href),
+                    external: None,
                 });
             }
             (
@@ -1546,6 +1553,7 @@ mod tests {
             links: vec![Link {
                 link_type: "satisfied-by".to_string(),
                 target: "IMPL-001".to_string(),
+                external: None,
             }],
             fields: BTreeMap::new(),
             fields_per_variant: Default::default(),
@@ -1579,6 +1587,7 @@ mod tests {
             links: vec![Link {
                 link_type: "validates".to_string(),
                 target: "REQ-001".to_string(),
+                external: None,
             }],
             fields: BTreeMap::new(),
             fields_per_variant: Default::default(),
@@ -1610,6 +1619,7 @@ mod tests {
             links: vec![Link {
                 link_type: "reports-on".to_string(),
                 target: "TC-001".to_string(),
+                external: None,
             }],
             fields: BTreeMap::new(),
             fields_per_variant: Default::default(),
@@ -1645,10 +1655,12 @@ mod tests {
                 Link {
                     link_type: "implements".to_string(),
                     target: "REQ-001".to_string(),
+                    external: None,
                 },
                 Link {
                     link_type: "affects".to_string(),
                     target: "REQ-002".to_string(),
+                    external: None,
                 },
             ],
             fields: BTreeMap::new(),

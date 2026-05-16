@@ -1362,10 +1362,12 @@ mod tests {
             Link {
                 link_type: "satisfies".into(),
                 target: "DD-001".into(),
+                external: None,
             },
             Link {
                 link_type: "satisfies".into(),
                 target: "DD-002".into(),
+                external: None,
             },
         ];
         let map = diff_artifacts(&recipe, &[a], None);

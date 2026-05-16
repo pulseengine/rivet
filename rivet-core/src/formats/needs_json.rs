@@ -312,6 +312,7 @@ fn convert_need(
         .map(|target| Link {
             link_type: link_type.to_owned(),
             target: transform_id(target, &config.id_transform),
+            external: None,
         })
         .collect();
 

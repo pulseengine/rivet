@@ -254,6 +254,7 @@ proptest! {
                     art.links.push(Link {
                         link_type: "leads-to-loss".into(),
                         target: ids[target_idx].clone(),
+                        external: None,
                     });
                     store.upsert(art);
                 }
@@ -316,6 +317,7 @@ fn prop_validation_determinism() {
             links: vec![Link {
                 link_type: "leads-to-loss".into(),
                 target: "DET-L1".into(),
+                external: None,
             }],
             fields: BTreeMap::new(),
             fields_per_variant: Default::default(),
@@ -335,6 +337,7 @@ fn prop_validation_determinism() {
             links: vec![Link {
                 link_type: "leads-to-loss".into(),
                 target: "NONEXISTENT".into(),
+                external: None,
             }],
             fields: BTreeMap::new(),
             fields_per_variant: Default::default(),

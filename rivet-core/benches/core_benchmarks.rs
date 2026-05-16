@@ -85,6 +85,7 @@ fn generate_artifacts(n: usize, links_per: usize) -> Vec<Artifact> {
                     Link {
                         link_type: "leads-to-loss".into(),
                         target: format!("BENCH-{target_idx}"),
+                        external: None,
                     }
                 })
                 .filter(|l| l.target != format!("BENCH-{i}"))

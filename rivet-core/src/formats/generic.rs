@@ -123,14 +123,7 @@ impl Adapter for GenericYamlAdapter {
                     description: a.description.clone(),
                     status: a.status.clone(),
                     tags: a.tags.clone(),
-                    links: a
-                        .links
-                        .iter()
-                        .map(|l| GenericLink {
-                            link_type: l.link_type.clone(),
-                            target: l.target.clone(),
-                        })
-                        .collect(),
+                    links: a.links.clone(),
                     fields: a.fields.clone(),
                     fields_per_variant: a.fields_per_variant.clone(),
                     provenance: a.provenance.clone(),
@@ -165,7 +158,7 @@ struct GenericArtifact {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     tags: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    links: Vec<GenericLink>,
+    links: Vec<Link>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     fields: BTreeMap<String, serde_yaml::Value>,
     #[serde(
@@ -176,13 +169,6 @@ struct GenericArtifact {
     fields_per_variant: BTreeMap<String, BTreeMap<String, serde_yaml::Value>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     provenance: Option<Provenance>,
-}
-
-#[derive(Deserialize, serde::Serialize)]
-struct GenericLink {
-    #[serde(rename = "type")]
-    link_type: String,
-    target: String,
 }
 
 pub fn parse_generic_yaml(content: &str, source: Option<&Path>) -> Result<Vec<Artifact>, Error> {
@@ -198,14 +184,7 @@ pub fn parse_generic_yaml(content: &str, source: Option<&Path>) -> Result<Vec<Ar
             description: a.description,
             status: a.status,
             tags: a.tags,
-            links: a
-                .links
-                .into_iter()
-                .map(|l| Link {
-                    link_type: l.link_type,
-                    target: l.target,
-                })
-                .collect(),
+            links: a.links,
             fields: a.fields,
             fields_per_variant: a.fields_per_variant,
             provenance: a.provenance,

@@ -176,6 +176,7 @@ fn test_generic_yaml_roundtrip() {
             vec![Link {
                 link_type: "satisfies".into(),
                 target: "RT-001".into(),
+                external: None,
             }],
             {
                 let mut f = BTreeMap::new();
@@ -368,6 +369,7 @@ fn test_traceability_matrix() {
         h.links.push(Link {
             link_type: "leads-to-loss".into(),
             target: target.into(),
+            external: None,
         });
         store.insert(h).unwrap();
     }
@@ -463,6 +465,7 @@ fn test_query_filters() {
             vec![Link {
                 link_type: "satisfies".into(),
                 target: "A-3".into(),
+                external: None,
             }],
             BTreeMap::new(),
         ))
@@ -499,6 +502,7 @@ fn test_query_filters() {
             vec![Link {
                 link_type: "implements".into(),
                 target: "A-3".into(),
+                external: None,
             }],
             BTreeMap::new(),
         ))
@@ -589,6 +593,7 @@ fn test_link_graph_integration() {
     h.links.push(Link {
         link_type: "leads-to-loss".into(),
         target: "L-1".into(),
+        external: None,
     });
     store.insert(h).unwrap();
 
@@ -596,6 +601,7 @@ fn test_link_graph_integration() {
     sc.links.push(Link {
         link_type: "prevents".into(),
         target: "H-1".into(),
+        external: None,
     });
     store.insert(sc).unwrap();
 
@@ -657,6 +663,7 @@ fn test_aspice_traceability_rules() {
     sys_req.links.push(Link {
         link_type: "derives-from".into(),
         target: "STKH-1".into(),
+        external: None,
     });
     store.insert(sys_req).unwrap();
 
@@ -664,6 +671,7 @@ fn test_aspice_traceability_rules() {
     sw_req.links.push(Link {
         link_type: "derives-from".into(),
         target: "SYSREQ-1".into(),
+        external: None,
     });
     store.insert(sw_req).unwrap();
 
@@ -758,6 +766,7 @@ fn test_reqif_roundtrip() {
             vec![Link {
                 link_type: "derives-from".into(),
                 target: "REQ-001".into(),
+                external: None,
             }],
             BTreeMap::new(),
         ),
@@ -770,6 +779,7 @@ fn test_reqif_roundtrip() {
             vec![Link {
                 link_type: "verifies".into(),
                 target: "REQ-001".into(),
+                external: None,
             }],
             BTreeMap::new(),
         ),
@@ -881,6 +891,7 @@ fn test_reqif_store_integration() {
             vec![Link {
                 link_type: "derives-from".into(),
                 target: "SYS-001".into(),
+                external: None,
             }],
             BTreeMap::new(),
         ),
@@ -1003,6 +1014,7 @@ fn test_diff_modified_artifact() {
         vec![Link {
             link_type: "satisfies".into(),
             target: "M-2".into(),
+            external: None,
         }],
         {
             let mut f = BTreeMap::new();
@@ -1026,10 +1038,12 @@ fn test_diff_modified_artifact() {
             Link {
                 link_type: "satisfies".into(),
                 target: "M-2".into(),
+                external: None,
             },
             Link {
                 link_type: "derives-from".into(),
                 target: "M-3".into(),
+                external: None,
             },
         ],
         {

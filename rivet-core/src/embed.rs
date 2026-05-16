@@ -2288,6 +2288,7 @@ traceability-rules:
                 req.links.push(crate::model::Link {
                     link_type: "verifies".into(),
                     target: format!("TC-{i:03}"),
+                    external: None,
                 });
             }
             artifacts.push(req);
@@ -2679,6 +2680,7 @@ traceability-rules:
         req1.links.push(crate::model::Link {
             link_type: "verifies".into(),
             target: "TC-1".into(),
+            external: None,
         });
         let store = make_store(vec![req1, plain("TC-1", "test", None, &[])]);
         let graph = LinkGraph::build(&store, &schema);

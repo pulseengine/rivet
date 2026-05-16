@@ -195,6 +195,7 @@ fn backlinks_from_spar_to_local() {
         links: vec![Link {
             link_type: "allocated-from".into(),
             target: "REQ-001".into(),
+            external: None,
         }],
         fields: BTreeMap::new(),
         fields_per_variant: Default::default(),

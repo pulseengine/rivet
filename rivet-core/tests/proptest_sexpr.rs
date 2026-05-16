@@ -104,6 +104,7 @@ fn arb_artifact() -> impl Strategy<Value = Artifact> {
                 .map(|(lt, tgt)| Link {
                     link_type: lt.to_string(),
                     target: tgt,
+                    external: None,
                 })
                 .collect();
             Artifact {
