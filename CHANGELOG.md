@@ -5,7 +5,72 @@
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-05-16
+
+Theme: **audit-grade story**. Three orthogonal features that together
+move rivet from "trace your project" to "describe the boundary and
+defend the tool's role across it." Variant-aware properties (#255),
+supplier-boundary coverage (#253), AI session provenance (#127), and
+the tool-qualification dossier (TCL workstream A) ship as the four
+mechanical primitives behind that story.
+
 ### Added
+
+- **Variant-aware properties — per-variant field values** (#285,
+  closes #255). New `fields-per-variant` map on every artifact +
+  `Artifact::fields_for_variant(Option<&str>) -> Cow<...>` resolver
+  with a zero-allocation `Borrowed` fallback. Schema-driven YAML
+  parser recognises the typed key (no fall-through to the generic
+  `fields` map). `#[derive(Default)]` on `Artifact` so future struct
+  additions stay additive. Phase 2 (variant config loading +
+  validate/coverage wiring) tracked in #287.
+
+- **Cross-org / supplier-boundary coverage MVP** (#286, closes #253).
+  New `external-anchor` artifact type in `schemas/common.yaml` marks
+  the typed leaf at a supplier hand-off. `CoverageEntry` gains
+  `external_boundary` + `external_boundary_ids` so the auditor sees
+  three categories instead of two — satisfied / delegated to supplier
+  / genuinely uncovered. The classification rule only honours
+  on-contract anchors (anchor's `expected-derived-types` overlaps the
+  rule's target types) — off-contract anchors do NOT silently absorb
+  gaps. New `rivet supplier list` + `rivet supplier check` commands.
+  `rivet coverage` JSON output extended additively. Phase 2
+  (federation handshake, `rivet supplier pull` for ReqIF/file) tracked
+  in #288.
+
+- **AI session provenance — schema half** (#289, partially closes
+  #127). New `ai-session` artifact type in `schemas/common.yaml`
+  pins a Claude Code (or other AI) session to a commit so the auditor
+  can reconstruct who/what authored a change: session-id, session-hash
+  (SHA-256 of transcript), model-id, tool-version, commit-sha,
+  started/ended timestamps, invoker. New link type `produced-by`
+  carries the artifact → session relationship. Phase 2 (commit hook
+  + audit-side enforcement subcommand) tracked alongside.
+
+- **Tool-qualification workstream A — typed claim + dossier** (#289).
+  New `tool-confidence` artifact type in `schemas/iso-26262.yaml`
+  carries the typed TI/TD/TCL claim with `regime:` field so the
+  DO-330/26262 numbering cross-walk is machine-readable. New
+  `ai-found-defect` artifact type in `schemas/common.yaml` captures
+  errors introduced by AI authoring that rivet's detection layer
+  caught (severity, triage-status, detected-by). Companion link types
+  `defect-against` and `corrects`. Dogfood claim `TQ-CONF-RIVET`
+  (`safety/tool-qualification/rivet-tool-confidence.yaml`) at
+  TI2/TD1/TCL1. Companion dossier at
+  `docs/design/tool-qualification-dossier.md` rendered via
+  `rivet docs tool-qualification`.
+
+- **`rivet stats --qualification`** (#289). JSON-only configuration
+  baseline manifest for the dossier — lists rivet version, schemas
+  in use, every `tool-confidence` artifact, and `ai-found-defect`
+  aggregates (by severity, by triage-status, open-IDs). The snapshot
+  a safety manager pastes into the dossier evidence section.
+
+- **`--qualification-mode` flag** (#289). Top-level flag that
+  refuses out-of-scope subcommands per the dossier scope list.
+  Initial gate refuses `rivet sync` (Phase 2 federation not yet
+  qualified); read-only commands stay allowed. The flag is sticky
+  for one invocation only.
 
 - **`rivet coverage --aggregate <FILE>...`** (#188 sub-issue 3). File-based
   cross-repo V&V matrix aggregator: each repo's CI emits its
@@ -14,6 +79,14 @@
   access — inputs are plain files; duplicate `(repo, id)` rows are
   coalesced so re-runs are idempotent, and the merged JSON re-feeds the
   aggregator unchanged.
+
+### Fixed
+
+- **TCL/TQL numbering convention in dogfood STPA** (#289, TCL design
+  A1). `safety/stpa/tool-qualification.yaml` header now follows ISO
+  26262-8 Table 3 unambiguously (TCL1 = lowest demand) instead of
+  mixing 26262 and DO-330 conventions. The typed `tool-confidence`
+  artifact's `regime` field disambiguates downstream.
 
 ## [0.9.0] — 2026-05-11
 
