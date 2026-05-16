@@ -78,6 +78,15 @@ impl CitedSourceKind {
     pub fn is_local(self) -> bool {
         matches!(self, CitedSourceKind::File)
     }
+
+    /// True for kinds whose backend is implemented in Phase 2 (this
+    /// PR, issue #288). Phase 2 adds the ReqIF backend on top of
+    /// Phase 1's file backend; both are read-only hash-of-bytes
+    /// checks. ReqIF additionally parses the XML so a malformed
+    /// upstream surfaces as a typed error.
+    pub fn is_local_phase2(self) -> bool {
+        matches!(self, CitedSourceKind::File | CitedSourceKind::Reqif)
+    }
 }
 
 /// Parsed and validated `cited-source` field.
@@ -269,6 +278,31 @@ pub fn resolve_file_uri(uri: &str, project_root: &Path) -> PathBuf {
     }
 }
 
+/// Resolve a `kind: reqif` URI to an absolute filesystem path.
+///
+/// Phase 2 (issue #288) implements the local-file form only:
+/// - bare relative paths (e.g. `./suppliers/acme.reqif`)
+/// - bare absolute paths
+/// - `reqif://...` URIs (the path component, treated identically to
+///   `file://`)
+/// - `file://...` URIs (allowed for `kind: reqif` so projects can
+///   reuse existing `cited-source` blocks with the file scheme)
+///
+/// HTTP(S) ReqIF endpoints are out of scope for Phase 2 — they
+/// require a fetch backend with auth handling (design doc §5.2).
+pub fn resolve_reqif_uri(uri: &str, project_root: &Path) -> PathBuf {
+    if let Some(rest) = uri.strip_prefix("reqif://") {
+        let p = Path::new(rest);
+        return if p.is_absolute() {
+            p.to_path_buf()
+        } else {
+            project_root.join(p)
+        };
+    }
+    // Reuse the file-URI resolver for `file://` and bare-path forms.
+    resolve_file_uri(uri, project_root)
+}
+
 /// Outcome of checking a single `cited-source` field against its source.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CheckOutcome {
@@ -403,12 +437,16 @@ pub fn check_cited_source(
     project_root: &Path,
     _check_remote: bool,
 ) -> CheckOutcome {
-    if !src.kind.is_local() {
-        // Phase 2 wires the http/github/oslc/reqif/polarion backends.
+    if !src.kind.is_local_phase2() {
+        // The http / github / oslc / polarion backends still skip
+        // through; their network paths land in Phase 3+.
         return CheckOutcome::SkippedRemote;
     }
 
-    let path = resolve_file_uri(&src.uri, project_root);
+    let path = match src.kind {
+        CitedSourceKind::Reqif => resolve_reqif_uri(&src.uri, project_root),
+        _ => resolve_file_uri(&src.uri, project_root),
+    };
     let computed = match sha256_file(&path) {
         Ok(h) => h,
         Err(e) => {
@@ -418,11 +456,43 @@ pub fn check_cited_source(
         }
     };
 
+    // For ReqIF we additionally smoke-test that the file at least
+    // parses as XML, surfacing malformed upstream payloads at validate
+    // time rather than at federation-pull time. Issue #288, design
+    // doc §4.4 calls for "sha verification at fetch time" — we run
+    // the hash unconditionally; the XML check is a guardrail.
+    if matches!(src.kind, CitedSourceKind::Reqif) {
+        if let Err(e) = parse_reqif_well_formed(&path) {
+            return CheckOutcome::FileError {
+                reason: format!("{}: malformed ReqIF: {e}", path.display()),
+            };
+        }
+    }
+
     match &src.sha256 {
         None => CheckOutcome::MissingHash { computed },
         Some(stamped) if stamped.eq_ignore_ascii_case(&computed) => CheckOutcome::Match,
         Some(_) => CheckOutcome::Drift { computed },
     }
+}
+
+/// Read the file at `path` and verify it parses as a ReqIF XML
+/// document. Returns an error if the file is unreadable or the XML
+/// is malformed. We don't fully type-check the SPEC-OBJECT graph
+/// here — that's reqif.rs's `parse_reqif`'s job at import time;
+/// this is a lightweight well-formedness gate so `rivet validate`
+/// flags rotten supplier payloads early.
+fn parse_reqif_well_formed(path: &Path) -> Result<(), String> {
+    let xml = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    // Empty XML is rejected — every ReqIF root has a <REQ-IF> element.
+    if xml.trim().is_empty() {
+        return Err("empty XML".to_string());
+    }
+    // Reuse the strict reqif.rs parser with an empty type-map. Any
+    // failure (missing root, bad nesting, etc.) returns Err.
+    let _ = crate::reqif::parse_reqif(&xml, &std::collections::HashMap::new())
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 /// Validate every artifact's `cited-source` field and return the
@@ -1322,5 +1392,154 @@ artifacts:
             update_cited_source_in_file(&yaml_path, "REQ-001", "deadbeef", "2026-04-27T12:00:00Z")
                 .unwrap();
         assert!(!changed);
+    }
+
+    // ── ReqIF backend (#288 Phase 2) ─────────────────────────────────
+
+    /// Minimal well-formed ReqIF XML. Reused across the reqif backend
+    /// tests; the spec-object/header counts are kept small so each
+    /// fixture stays inspectable.
+    fn minimal_reqif_xml() -> &'static str {
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<REQ-IF xmlns="http://www.omg.org/spec/ReqIF/20110401/reqif.xsd">
+  <THE-HEADER>
+    <REQ-IF-HEADER IDENTIFIER="hdr-1">
+      <SOURCE-TOOL-ID>rivet-test-fixture</SOURCE-TOOL-ID>
+      <TITLE>Phase 2 ReqIF backend fixture</TITLE>
+    </REQ-IF-HEADER>
+  </THE-HEADER>
+  <CORE-CONTENT>
+    <REQ-IF-CONTENT>
+      <DATATYPES />
+      <SPEC-TYPES />
+      <SPEC-OBJECTS />
+      <SPEC-RELATIONS />
+      <SPECIFICATIONS />
+    </REQ-IF-CONTENT>
+  </CORE-CONTENT>
+</REQ-IF>
+"#
+    }
+
+    /// `kind: reqif` with a valid local file: the backend computes
+    /// the sha256 and returns `Match` when the stamped value agrees.
+    /// Without the Phase 2 change, this kind returns `SkippedRemote`
+    /// — so this test fails on a Phase 1-only build.
+    ///
+    /// Verifies: REQ-004
+    #[test]
+    fn check_cited_source_reqif_match_when_hash_agrees() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("supplier.reqif");
+        let xml = minimal_reqif_xml();
+        std::fs::write(&path, xml).unwrap();
+        let stamped = sha256_hex(xml.as_bytes());
+        let cs = CitedSource {
+            uri: path.file_name().unwrap().to_string_lossy().into_owned(),
+            kind: CitedSourceKind::Reqif,
+            sha256: Some(stamped),
+            last_checked: None,
+        };
+        let outcome = check_cited_source(&cs, dir.path(), false);
+        assert_eq!(outcome, CheckOutcome::Match, "reqif match must verify");
+    }
+
+    /// `kind: reqif` with a valid local file but stale stamped hash
+    /// returns `Drift` carrying the freshly computed hash.
+    ///
+    /// Verifies: REQ-004
+    #[test]
+    fn check_cited_source_reqif_drift_when_hash_differs() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("supplier.reqif");
+        std::fs::write(&path, minimal_reqif_xml()).unwrap();
+        let cs = CitedSource {
+            uri: "supplier.reqif".into(),
+            kind: CitedSourceKind::Reqif,
+            sha256: Some("0".repeat(64)),
+            last_checked: None,
+        };
+        let outcome = check_cited_source(&cs, dir.path(), false);
+        match outcome {
+            CheckOutcome::Drift { computed } => {
+                assert_eq!(computed.len(), 64, "hex sha256 is 64 chars");
+            }
+            other => panic!("expected Drift, got {other:?}"),
+        }
+    }
+
+    /// `kind: reqif` with no `sha256:` stamp returns `MissingHash`
+    /// carrying the computed hash so the auditor can stamp the file
+    /// in one go.
+    ///
+    /// Verifies: REQ-004
+    #[test]
+    fn check_cited_source_reqif_missing_hash_returns_computed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("s.reqif");
+        std::fs::write(&path, minimal_reqif_xml()).unwrap();
+        let cs = CitedSource {
+            uri: "s.reqif".into(),
+            kind: CitedSourceKind::Reqif,
+            sha256: None,
+            last_checked: None,
+        };
+        let outcome = check_cited_source(&cs, dir.path(), false);
+        match outcome {
+            CheckOutcome::MissingHash { computed } => {
+                assert_eq!(computed, sha256_hex(minimal_reqif_xml().as_bytes()));
+            }
+            other => panic!("expected MissingHash, got {other:?}"),
+        }
+    }
+
+    /// Malformed ReqIF XML at the cited path surfaces as
+    /// `FileError` with a `malformed ReqIF` message, not a silent
+    /// hash drift. This is the "ReqIF well-formedness gate" guarding
+    /// against rotten supplier payloads getting stamped.
+    ///
+    /// Verifies: REQ-004
+    #[test]
+    fn check_cited_source_reqif_rejects_malformed_xml() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bad.reqif");
+        std::fs::write(&path, "<not><well>formed</xml>").unwrap();
+        let cs = CitedSource {
+            uri: "bad.reqif".into(),
+            kind: CitedSourceKind::Reqif,
+            sha256: None,
+            last_checked: None,
+        };
+        let outcome = check_cited_source(&cs, dir.path(), false);
+        match outcome {
+            CheckOutcome::FileError { reason } => {
+                assert!(
+                    reason.contains("malformed ReqIF"),
+                    "FileError must flag malformed ReqIF, got: {reason}"
+                );
+            }
+            other => panic!("expected FileError, got {other:?}"),
+        }
+    }
+
+    /// The `reqif://...` URI form resolves to the project-relative
+    /// path (Phase 2 only supports the local-file equivalent).
+    ///
+    /// Verifies: REQ-004
+    #[test]
+    fn resolve_reqif_uri_handles_scheme_and_relative() {
+        let proj = Path::new("/tmp/project-root");
+        assert_eq!(
+            resolve_reqif_uri("reqif://suppliers/acme.reqif", proj),
+            proj.join("suppliers/acme.reqif")
+        );
+        assert_eq!(
+            resolve_reqif_uri("./suppliers/acme.reqif", proj),
+            proj.join("./suppliers/acme.reqif")
+        );
+        assert_eq!(
+            resolve_reqif_uri("/abs/path.reqif", proj),
+            Path::new("/abs/path.reqif")
+        );
     }
 }
