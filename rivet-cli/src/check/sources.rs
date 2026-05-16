@@ -365,7 +365,7 @@ pub fn apply_updates(report: &Report, interactive: bool) -> Result<usize> {
 }
 
 /// Best-effort ISO-8601 UTC timestamp without pulling chrono in.
-fn current_iso8601_utc() -> String {
+pub(crate) fn current_iso8601_utc() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)

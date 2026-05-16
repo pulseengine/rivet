@@ -1233,6 +1233,20 @@ enum SupplierAction {
         #[arg(short, long, default_value = "text")]
         format: String,
     },
+    /// Federation pull: fetch an `external-anchor`'s `cited-source`
+    /// into the local supplier cache (#288 Phase 2). Supports
+    /// `kind: file` and `kind: reqif` — both are read-only on the
+    /// source side and produce a sha256-verified snapshot under
+    /// `.rivet/supplier-cache/<org>/<contract>/`. Idempotent: a
+    /// re-pull with identical bytes is a no-op aside from updating
+    /// `last-synced`.
+    Pull {
+        /// `external-anchor` artifact ID (e.g. `ANCHOR-ACME-001`).
+        anchor: String,
+        /// Output format: "text" (default) or "json".
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1957,6 +1971,7 @@ fn run(cli: Cli) -> Result<bool> {
         Command::Supplier { action } => match action {
             SupplierAction::List { format } => cmd_supplier_list(&cli, format),
             SupplierAction::Check { format } => cmd_supplier_check(&cli, format),
+            SupplierAction::Pull { anchor, format } => cmd_supplier_pull(&cli, anchor, format),
         },
         Command::Baseline { action } => match action {
             BaselineAction::Verify { name, strict } => cmd_baseline_verify(&cli, name, *strict),
@@ -5890,6 +5905,241 @@ fn cmd_supplier_check(cli: &Cli, format: &str) -> Result<bool> {
     Ok(true)
 }
 
+/// `rivet supplier pull <anchor>` — federation handshake (#288).
+///
+/// Reads the external-anchor's `cited-source`, fetches the source
+/// payload locally (Phase 2: `kind: file` and `kind: reqif`),
+/// verifies the sha256 if stamped, and stages the result under
+/// `.rivet/supplier-cache/<org>/<contract>/`. A manifest carrying
+/// the [`FederationProvenance`] block is written alongside so the
+/// auditor can reconstruct the source. Read-only on the supplier
+/// side; idempotent on the cache side.
+fn cmd_supplier_pull(cli: &Cli, anchor_id: &str, format: &str) -> Result<bool> {
+    use rivet_core::cited_source as cs;
+    use rivet_core::model::FederationProvenance;
+
+    validate_format(format, &["text", "json"])?;
+    let ctx = ProjectContext::load(cli)?;
+    let project_root = cli.project.clone();
+
+    // Locate the anchor by ID.
+    let anchor = ctx
+        .store
+        .iter()
+        .find(|a| a.id == anchor_id)
+        .ok_or_else(|| anyhow::anyhow!("no artifact with id '{anchor_id}' in project store"))?;
+    if anchor.artifact_type != "external-anchor" {
+        anyhow::bail!(
+            "artifact '{anchor_id}' has type '{}', expected 'external-anchor'",
+            anchor.artifact_type
+        );
+    }
+
+    // Read `cited-source` — required for a pull.
+    let cited_raw = anchor.fields.get("cited-source").ok_or_else(|| {
+        anyhow::anyhow!(
+            "anchor '{anchor_id}' has no 'cited-source' field — \
+             nothing to fetch. See docs/design/cross-org-supplier-traceability.md."
+        )
+    })?;
+    let cited = cs::parse_cited_source(cited_raw)
+        .map_err(|e| anyhow::anyhow!("anchor '{anchor_id}' cited-source: {e}"))?;
+
+    // Phase 2 supports `kind: file` and `kind: reqif`.
+    let kind_str = cited.kind.as_str();
+    match cited.kind {
+        cs::CitedSourceKind::File | cs::CitedSourceKind::Reqif => {}
+        other => anyhow::bail!(
+            "supplier pull does not yet implement `kind: {}` (Phase 2 supports file|reqif). \
+             See issue #288.",
+            other.as_str()
+        ),
+    }
+
+    // Resolve to a local source path. Both supported kinds use the
+    // file-URI resolver (reqif:// degrades to file://).
+    let source_path = match cited.kind {
+        cs::CitedSourceKind::Reqif => cs::resolve_reqif_uri(&cited.uri, &project_root),
+        _ => cs::resolve_file_uri(&cited.uri, &project_root),
+    };
+
+    // Read the bytes once; compute hash; cross-check stamped sha256
+    // if present. We refuse to write a cache entry whose stamped
+    // hash doesn't match the wire payload (auditor-grade: a drift
+    // would silently let the cache lie about what was delivered).
+    let bytes = std::fs::read(&source_path).with_context(|| {
+        format!(
+            "reading source for '{anchor_id}': {}",
+            source_path.display()
+        )
+    })?;
+    let source_hash = cs::sha256_hex(&bytes);
+    if let Some(stamped) = &cited.sha256 {
+        if !stamped.eq_ignore_ascii_case(&source_hash) {
+            anyhow::bail!(
+                "anchor '{anchor_id}' cited-source sha256 drift: \
+                 stamped {stamped} but file hashes to {source_hash}. \
+                 Refusing to write a poisoned cache entry. Re-stamp the \
+                 anchor and retry."
+            );
+        }
+    }
+    // For ReqIF, also verify well-formedness — caches a bad payload otherwise.
+    if matches!(cited.kind, cs::CitedSourceKind::Reqif) {
+        rivet_core::reqif::parse_reqif(
+            std::str::from_utf8(&bytes)
+                .map_err(|e| anyhow::anyhow!("ReqIF must be UTF-8 XML: {e}"))?,
+            &std::collections::HashMap::new(),
+        )
+        .map_err(|e| anyhow::anyhow!("ReqIF parse failed for {}: {e}", source_path.display()))?;
+    }
+
+    // Determine cache target. Path layout per #288 brief:
+    //   .rivet/supplier-cache/<org>/<contract>/<anchor>.<ext>
+    let source_of_truth = anchor.fields.get("source-of-truth");
+    let org = source_of_truth
+        .and_then(|v| v.as_mapping())
+        .and_then(|m| m.get(serde_yaml::Value::String("org".into())))
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown-org");
+    let contract = source_of_truth
+        .and_then(|v| v.as_mapping())
+        .and_then(|m| m.get(serde_yaml::Value::String("contract".into())))
+        .and_then(|v| v.as_str())
+        .or_else(|| {
+            anchor
+                .fields
+                .get("contract-reference")
+                .and_then(|v| v.as_str())
+        })
+        .unwrap_or("unknown-contract");
+
+    let cache_root = project_root
+        .join(".rivet")
+        .join("supplier-cache")
+        .join(sanitize_path_component(org))
+        .join(sanitize_path_component(contract));
+    std::fs::create_dir_all(&cache_root)
+        .with_context(|| format!("creating supplier cache dir: {}", cache_root.display()))?;
+
+    // Filename: <anchor>.<ext>; ext from kind. For ReqIF use `.reqif`,
+    // for plain files inherit the source's extension when available.
+    let payload_name = match cited.kind {
+        cs::CitedSourceKind::Reqif => format!("{anchor_id}.reqif"),
+        _ => {
+            let ext = source_path
+                .extension()
+                .and_then(|s| s.to_str())
+                .unwrap_or("bin");
+            format!("{anchor_id}.{ext}")
+        }
+    };
+    let payload_path = cache_root.join(&payload_name);
+    let manifest_path = cache_root.join(format!("{anchor_id}.manifest.yaml"));
+
+    // Idempotency: if the existing payload already has the same hash,
+    // we still refresh the manifest's `fetched-at` so re-runs leave a
+    // trail in the file mtime but don't churn the bytes.
+    let mut bytes_unchanged = false;
+    if payload_path.exists() {
+        if let Ok(existing) = std::fs::read(&payload_path) {
+            if cs::sha256_hex(&existing) == source_hash {
+                bytes_unchanged = true;
+            }
+        }
+    }
+    if !bytes_unchanged {
+        std::fs::write(&payload_path, &bytes)
+            .with_context(|| format!("writing cache payload: {}", payload_path.display()))?;
+    }
+
+    let fetched_at = check::sources::current_iso8601_utc();
+    let source_id = cited
+        .uri
+        .rsplit('/')
+        .next()
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| cited.uri.clone());
+    let source_tool = match cited.kind {
+        cs::CitedSourceKind::Reqif => "reqif-1.2".to_string(),
+        _ => "file".to_string(),
+    };
+    let provenance = FederationProvenance {
+        source_org: org.to_string(),
+        source_tool,
+        source_id: source_id.clone(),
+        anchor: anchor_id.to_string(),
+        fetched_at: fetched_at.clone(),
+        source_hash: source_hash.clone(),
+        mapping_recipe: None,
+    };
+    // The manifest YAML is hand-authored to be readable; we wrap
+    // the provenance struct under a single top-level key so future
+    // additions (cached-artifacts:, signatures:) compose cleanly.
+    let manifest = serde_yaml::to_string(&serde_json::json!({
+        "federation": provenance,
+        "cache": {
+            "payload": payload_name,
+            "kind": kind_str,
+        },
+    }))
+    .map_err(|e| anyhow::anyhow!("serializing manifest: {e}"))?;
+    std::fs::write(&manifest_path, manifest)
+        .with_context(|| format!("writing manifest: {}", manifest_path.display()))?;
+
+    if format == "json" {
+        let output = serde_json::json!({
+            "command": "supplier pull",
+            "anchor": anchor_id,
+            "org": org,
+            "contract": contract,
+            "kind": kind_str,
+            "source_path": source_path.display().to_string(),
+            "source_hash": source_hash,
+            "fetched_at": fetched_at,
+            "cache_payload": payload_path.display().to_string(),
+            "cache_manifest": manifest_path.display().to_string(),
+            "bytes_unchanged": bytes_unchanged,
+        });
+        println!("{}", serde_json::to_string_pretty(&output).unwrap());
+    } else {
+        println!("Pulled '{anchor_id}' from {kind_str} source:");
+        println!("  org/contract:   {org} / {contract}");
+        println!("  source:         {}", source_path.display());
+        println!("  sha256:         {source_hash}");
+        println!("  cache payload:  {}", payload_path.display());
+        println!("  cache manifest: {}", manifest_path.display());
+        println!("  fetched-at:     {fetched_at}");
+        if bytes_unchanged {
+            println!("  (payload bytes unchanged — manifest refreshed only)");
+        }
+    }
+    Ok(true)
+}
+
+/// Sanitize a single path component for use under
+/// `.rivet/supplier-cache/<org>/<contract>/`. Limits to ASCII
+/// alphanum + `-_.` so a typo in `source-of-truth.contract` can't
+/// escape the cache root. Empty after sanitization becomes
+/// `unknown`.
+fn sanitize_path_component(s: &str) -> String {
+    let cleaned: String = s
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if cleaned.is_empty() {
+        "unknown".to_string()
+    } else {
+        cleaned
+    }
+}
+
 /// Test-to-requirement coverage via source markers.
 fn cmd_coverage_tests(cli: &Cli, format: &str, scan_paths: &[PathBuf]) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
@@ -8008,6 +8258,7 @@ fn parse_yaml_content(
                         .map(|l| rivet_core::model::Link {
                             link_type: l.r#type,
                             target: l.target,
+                            external: None,
                         })
                         .collect(),
                     fields: raw.fields,
@@ -8038,6 +8289,7 @@ fn parse_yaml_content(
                         .map(|l| rivet_core::model::Link {
                             link_type: l.r#type,
                             target: l.target,
+                            external: None,
                         })
                         .collect(),
                     fields: raw.fields,
@@ -12344,6 +12596,7 @@ fn cmd_add(
         .map(|(link_type, target)| Link {
             link_type: link_type.clone(),
             target: target.clone(),
+            external: None,
         })
         .collect();
 
@@ -12403,6 +12656,7 @@ fn cmd_link(cli: &Cli, source_id: &str, link_type: &str, target_id: &str) -> Res
     let link = Link {
         link_type: link_type.to_string(),
         target: target_id.to_string(),
+        external: None,
     };
 
     mutate::add_link_to_file(source_id, &link, &source_file)
@@ -12850,6 +13104,7 @@ fn cmd_batch(cli: &Cli, file: &std::path::Path) -> Result<bool> {
                         Link {
                             link_type: l.link_type.clone(),
                             target,
+                            external: None,
                         }
                     })
                     .collect();
@@ -12940,6 +13195,7 @@ fn cmd_batch(cli: &Cli, file: &std::path::Path) -> Result<bool> {
                         Link {
                             link_type: l.link_type.clone(),
                             target,
+                            external: None,
                         }
                     })
                     .collect();
@@ -12995,6 +13251,7 @@ fn cmd_batch(cli: &Cli, file: &std::path::Path) -> Result<bool> {
                 let link = Link {
                     link_type: link_type.clone(),
                     target: target.clone(),
+                    external: None,
                 };
 
                 mutate::add_link_to_file(&source, &link, &source_file)

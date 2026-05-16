@@ -3743,3 +3743,353 @@ fn audit_json_envelope_shape_on_failure() {
         "summary.total_violations; got: {parsed}"
     );
 }
+
+// ── rivet supplier pull (#288 Phase 2) ───────────────────────────────────
+
+/// Build a fresh dev-preset project, append an `external-anchor`
+/// whose `cited-source` points to a local fixture, return the temp
+/// dir alongside the file path so each test can choose what to
+/// stamp/fetch.
+fn supplier_pull_project_with_file(
+    payload: &[u8],
+    stamp_correct_hash: bool,
+) -> (tempfile::TempDir, std::path::PathBuf) {
+    use sha2::{Digest, Sha256};
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let dir = tmp.path();
+
+    let init = Command::new(rivet_bin())
+        .args(["init", "--preset", "dev", "--dir", dir.to_str().unwrap()])
+        .output()
+        .expect("rivet init");
+    assert!(init.status.success(), "init failed: {init:?}");
+
+    // Write the payload at a stable relative path.
+    let payload_path = dir.join("suppliers").join("acme.bin");
+    std::fs::create_dir_all(payload_path.parent().unwrap()).unwrap();
+    std::fs::write(&payload_path, payload).expect("write payload");
+
+    // Compute hash (or pick a wrong one).
+    let mut hasher = Sha256::new();
+    hasher.update(payload);
+    let real_hash = format!("{:x}", hasher.finalize());
+    let stamped = if stamp_correct_hash {
+        real_hash.clone()
+    } else {
+        "0".repeat(64)
+    };
+
+    let req_path = dir.join("artifacts").join("requirements.yaml");
+    let existing = std::fs::read_to_string(&req_path).expect("read requirements");
+    let extra = format!(
+        r#"
+  - id: ANCHOR-ACME-001
+    type: external-anchor
+    title: Supplier ACME — bin payload
+    status: approved
+    fields:
+      source-of-truth:
+        org: acme-electronics
+        contract: PO-4711
+      expected-derived-types:
+        - requirement
+      received-status: not-received
+      contract-reference: DIA-2026-001
+      cited-source:
+        uri: suppliers/acme.bin
+        kind: file
+        sha256: {stamped}
+"#
+    );
+    std::fs::write(&req_path, format!("{existing}{extra}")).expect("write requirements");
+    (tmp, payload_path)
+}
+
+/// Happy path: `rivet supplier pull` for a `kind: file` anchor with
+/// a correctly stamped sha256 writes the payload + a manifest into
+/// `.rivet/supplier-cache/<org>/<contract>/` and exits 0.
+///
+/// Verifies: REQ-007
+#[test]
+fn supplier_pull_kind_file_writes_cache_and_manifest() {
+    let payload = b"-- supplier payload v1 --";
+    let (tmp, _) = supplier_pull_project_with_file(payload, true);
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            tmp.path().to_str().unwrap(),
+            "supplier",
+            "pull",
+            "ANCHOR-ACME-001",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run supplier pull");
+
+    assert!(
+        output.status.success(),
+        "supplier pull must exit 0. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let value: serde_json::Value = serde_json::from_str(&stdout).expect("valid json");
+    assert_eq!(value["command"], "supplier pull");
+    assert_eq!(value["anchor"], "ANCHOR-ACME-001");
+    assert_eq!(value["org"], "acme-electronics");
+    assert_eq!(value["contract"], "PO-4711");
+    assert_eq!(value["kind"], "file");
+
+    // Verify cache files exist under the expected layout.
+    let cache = tmp
+        .path()
+        .join(".rivet")
+        .join("supplier-cache")
+        .join("acme-electronics")
+        .join("PO-4711");
+    let payload_path = cache.join("ANCHOR-ACME-001.bin");
+    let manifest_path = cache.join("ANCHOR-ACME-001.manifest.yaml");
+    assert!(payload_path.exists(), "payload cached at {payload_path:?}");
+    assert!(
+        manifest_path.exists(),
+        "manifest written at {manifest_path:?}"
+    );
+    let cached_bytes = std::fs::read(&payload_path).unwrap();
+    assert_eq!(cached_bytes, payload, "payload bytes must match exactly");
+    let manifest = std::fs::read_to_string(&manifest_path).unwrap();
+    assert!(
+        manifest.contains("source-org: acme-electronics"),
+        "manifest must carry source-org, got: {manifest}"
+    );
+    assert!(
+        manifest.contains("source-tool: file"),
+        "manifest must carry source-tool, got: {manifest}"
+    );
+    assert!(
+        manifest.contains("anchor: ANCHOR-ACME-001"),
+        "manifest must carry anchor, got: {manifest}"
+    );
+    assert!(
+        manifest.contains("source-hash:"),
+        "manifest must carry source-hash, got: {manifest}"
+    );
+}
+
+/// Stamped sha256 that doesn't match the payload bytes refuses to
+/// write the cache (the auditor must re-stamp first). The error
+/// surfaces on stderr with a `drift` message.
+///
+/// Verifies: REQ-007
+#[test]
+fn supplier_pull_refuses_on_sha256_drift() {
+    let payload = b"-- supplier payload v1 --";
+    let (tmp, _) = supplier_pull_project_with_file(payload, false);
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            tmp.path().to_str().unwrap(),
+            "supplier",
+            "pull",
+            "ANCHOR-ACME-001",
+        ])
+        .output()
+        .expect("run supplier pull");
+
+    assert!(
+        !output.status.success(),
+        "supplier pull must exit non-zero on stamped-hash drift"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("drift") || stderr.contains("sha256"),
+        "error should mention sha256 drift, got: {stderr}"
+    );
+    // No cache should be written.
+    let cache = tmp
+        .path()
+        .join(".rivet")
+        .join("supplier-cache")
+        .join("acme-electronics")
+        .join("PO-4711");
+    let payload_path = cache.join("ANCHOR-ACME-001.bin");
+    assert!(
+        !payload_path.exists(),
+        "drift must NOT write a cache entry, but found {payload_path:?}"
+    );
+}
+
+/// Re-running `rivet supplier pull` with the same source is a no-op
+/// on the payload bytes (idempotent) and only refreshes the manifest.
+///
+/// Verifies: REQ-007
+#[test]
+fn supplier_pull_idempotent_on_re_run() {
+    let payload = b"-- supplier payload v1 --";
+    let (tmp, _) = supplier_pull_project_with_file(payload, true);
+
+    let first = Command::new(rivet_bin())
+        .args([
+            "--project",
+            tmp.path().to_str().unwrap(),
+            "supplier",
+            "pull",
+            "ANCHOR-ACME-001",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("first pull");
+    assert!(first.status.success(), "first pull must succeed");
+    let v1: serde_json::Value =
+        serde_json::from_slice(&first.stdout).expect("valid json on first pull");
+    assert_eq!(v1["bytes_unchanged"], serde_json::Value::Bool(false));
+
+    let second = Command::new(rivet_bin())
+        .args([
+            "--project",
+            tmp.path().to_str().unwrap(),
+            "supplier",
+            "pull",
+            "ANCHOR-ACME-001",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("second pull");
+    assert!(second.status.success(), "second pull must succeed");
+    let v2: serde_json::Value =
+        serde_json::from_slice(&second.stdout).expect("valid json on second pull");
+    assert_eq!(
+        v2["bytes_unchanged"],
+        serde_json::Value::Bool(true),
+        "re-pull with identical bytes must report bytes_unchanged=true"
+    );
+}
+
+/// `kind: reqif` end-to-end: minimal well-formed ReqIF in the
+/// project, anchored cited-source, hash agrees → cache layout
+/// shows `.reqif` extension and `source-tool: reqif-1.2`.
+///
+/// Verifies: REQ-007
+#[test]
+fn supplier_pull_kind_reqif_writes_reqif_extension() {
+    use sha2::{Digest, Sha256};
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let dir = tmp.path();
+
+    let init = Command::new(rivet_bin())
+        .args(["init", "--preset", "dev", "--dir", dir.to_str().unwrap()])
+        .output()
+        .expect("rivet init");
+    assert!(init.status.success(), "init failed: {init:?}");
+
+    let reqif_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<REQ-IF xmlns="http://www.omg.org/spec/ReqIF/20110401/reqif.xsd">
+  <THE-HEADER>
+    <REQ-IF-HEADER IDENTIFIER="hdr-1">
+      <SOURCE-TOOL-ID>supplier-tool</SOURCE-TOOL-ID>
+      <TITLE>Supplier delivery</TITLE>
+    </REQ-IF-HEADER>
+  </THE-HEADER>
+  <CORE-CONTENT>
+    <REQ-IF-CONTENT>
+      <DATATYPES />
+      <SPEC-TYPES />
+      <SPEC-OBJECTS />
+      <SPEC-RELATIONS />
+      <SPECIFICATIONS />
+    </REQ-IF-CONTENT>
+  </CORE-CONTENT>
+</REQ-IF>
+"#;
+    let payload_path = dir.join("suppliers").join("acme.reqif");
+    std::fs::create_dir_all(payload_path.parent().unwrap()).unwrap();
+    std::fs::write(&payload_path, reqif_xml).expect("write reqif");
+    let mut hasher = Sha256::new();
+    hasher.update(reqif_xml.as_bytes());
+    let stamped = format!("{:x}", hasher.finalize());
+
+    let req_path = dir.join("artifacts").join("requirements.yaml");
+    let existing = std::fs::read_to_string(&req_path).expect("read requirements");
+    let extra = format!(
+        r#"
+  - id: ANCHOR-REQIF-001
+    type: external-anchor
+    title: Supplier ACME — reqif payload
+    status: approved
+    fields:
+      source-of-truth:
+        org: acme-electronics
+        contract: PO-9000
+      expected-derived-types:
+        - requirement
+      received-status: received-as-reqif
+      cited-source:
+        uri: suppliers/acme.reqif
+        kind: reqif
+        sha256: {stamped}
+"#
+    );
+    std::fs::write(&req_path, format!("{existing}{extra}")).expect("write requirements");
+
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir.to_str().unwrap(),
+            "supplier",
+            "pull",
+            "ANCHOR-REQIF-001",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run supplier pull");
+    assert!(
+        output.status.success(),
+        "kind: reqif pull must succeed. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let v: serde_json::Value = serde_json::from_slice(&output.stdout).expect("json");
+    assert_eq!(v["kind"], "reqif");
+
+    let cache = dir
+        .join(".rivet")
+        .join("supplier-cache")
+        .join("acme-electronics")
+        .join("PO-9000");
+    let payload_in_cache = cache.join("ANCHOR-REQIF-001.reqif");
+    assert!(payload_in_cache.exists(), "cache must hold .reqif file");
+    let manifest = std::fs::read_to_string(cache.join("ANCHOR-REQIF-001.manifest.yaml")).unwrap();
+    assert!(
+        manifest.contains("source-tool: reqif-1.2"),
+        "manifest must mark source-tool as reqif-1.2, got: {manifest}"
+    );
+}
+
+/// Non-existent anchor ID fails with a clear "no artifact" error.
+///
+/// Verifies: REQ-007
+#[test]
+fn supplier_pull_unknown_anchor_errors() {
+    let tmp = supplier_project();
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            tmp.path().to_str().unwrap(),
+            "supplier",
+            "pull",
+            "ANCHOR-DOES-NOT-EXIST",
+        ])
+        .output()
+        .expect("run supplier pull");
+
+    assert!(
+        !output.status.success(),
+        "unknown anchor must exit non-zero"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("ANCHOR-DOES-NOT-EXIST"),
+        "error must name the missing anchor, got: {stderr}"
+    );
+}
