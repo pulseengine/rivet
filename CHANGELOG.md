@@ -45,7 +45,7 @@ mechanical primitives behind that story.
   (SHA-256 of transcript), model-id, tool-version, commit-sha,
   started/ended timestamps, invoker. New link type `produced-by`
   carries the artifact → session relationship. Phase 2 (commit hook
-  + `rivet audit` enforcement) tracked alongside.
+  + audit-side enforcement subcommand) tracked alongside.
 
 - **Tool-qualification workstream A — typed claim + dossier** (#289).
   New `tool-confidence` artifact type in `schemas/iso-26262.yaml`
