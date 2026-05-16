@@ -642,8 +642,17 @@ fn build_pipeline_with_extras(
 ///
 /// When the `rowan-yaml` feature is enabled, uses the schema-driven rowan
 /// parser (`parse_artifacts_v2`) which reads `yaml-section` metadata from
-/// the schema. In debug builds, both parsers run and their output is
-fn build_store(
+/// the schema.
+///
+/// **Tracked** (v0.10.0 follow-up, Mobile/Scale lens finding): previously
+/// this was a plain `fn`, so every downstream caller (`validate_all`,
+/// `build_link_graph`, `compute_coverage_tracked`) re-built the whole
+/// `Store` HashMap on every salsa revision — defeating the incremental
+/// validation story sold by the dossier. With `#[salsa::tracked]`,
+/// salsa memoizes the Store and returns the cached value when the
+/// underlying `parse_artifacts_v2` outputs haven't changed.
+#[salsa::tracked]
+pub fn build_store(
     db: &dyn salsa::Database,
     source_set: SourceFileSet,
     schema_set: SchemaInputSet,
@@ -672,7 +681,10 @@ fn build_store(
 ///
 /// Adapter artifacts are inserted last, so conflicting IDs are resolved
 /// in favour of the adapter — matching the direct-path ordering.
-fn build_store_with_extras(
+///
+/// **Tracked** alongside `build_store` — see that function's note.
+#[salsa::tracked]
+pub fn build_store_with_extras(
     db: &dyn salsa::Database,
     source_set: SourceFileSet,
     schema_set: SchemaInputSet,
