@@ -3120,3 +3120,135 @@ fn bundle_invalid_format_fails() {
         "stderr must list valid formats, got: {stderr}"
     );
 }
+
+// ── rivet supplier (#253 MVP) ───────────────────────────────────────────
+
+/// Build a minimal project with one `external-anchor` artifact and a
+/// design-decision that links to it. Used by the supplier smoke tests.
+fn supplier_project() -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let dir = tmp.path();
+
+    let init = Command::new(rivet_bin())
+        .args(["init", "--preset", "dev", "--dir", dir.to_str().unwrap()])
+        .output()
+        .expect("rivet init");
+    assert!(init.status.success(), "init failed: {:?}", init);
+
+    // Append an external anchor + a delegating DD to the requirements file.
+    //
+    // NB: use a raw string. Plain `"\<newline>..."` literals trigger Rust's
+    // whitespace-eating line continuation, which silently strips leading
+    // indentation and breaks YAML at column 0.
+    let req_path = dir.join("artifacts").join("requirements.yaml");
+    let existing = std::fs::read_to_string(&req_path).expect("read requirements");
+    let extra = r#"
+  - id: ANCHOR-ACME-001
+    type: external-anchor
+    title: Supplier ACME — SW driver pack
+    status: approved
+    fields:
+      source-of-truth:
+        org: acme-electronics
+        contract: PO-4711
+      expected-derived-types:
+        - requirement
+      received-status: not-received
+      contract-reference: DIA-2026-001
+  - id: DD-DELEGATED
+    type: design-decision
+    title: Delegated to supplier
+    status: approved
+    links:
+      - type: derives-from
+        target: ANCHOR-ACME-001
+"#;
+    std::fs::write(&req_path, format!("{existing}{extra}")).expect("write requirements");
+    tmp
+}
+
+#[test]
+fn supplier_list_text_output() {
+    let tmp = supplier_project();
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            tmp.path().to_str().unwrap(),
+            "supplier",
+            "list",
+        ])
+        .output()
+        .expect("run supplier list");
+
+    assert!(
+        output.status.success(),
+        "supplier list must exit 0. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("ANCHOR-ACME-001"),
+        "list must show the anchor ID, got: {stdout}"
+    );
+    assert!(
+        stdout.contains("not-received"),
+        "list must show received-status, got: {stdout}"
+    );
+}
+
+#[test]
+fn supplier_list_json_shape() {
+    let tmp = supplier_project();
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            tmp.path().to_str().unwrap(),
+            "supplier",
+            "list",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run supplier list --format json");
+
+    assert!(output.status.success(), "json must succeed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let value: serde_json::Value = serde_json::from_str(&stdout).expect("valid json");
+    assert_eq!(value["command"], "supplier list");
+    assert_eq!(value["count"], 1);
+    assert_eq!(value["anchors"][0]["id"], "ANCHOR-ACME-001");
+    assert_eq!(value["anchors"][0]["received_status"], "not-received");
+    assert_eq!(value["anchors"][0]["contract_reference"], "DIA-2026-001");
+}
+
+#[test]
+fn supplier_check_classifies_delegated_dd_as_boundary() {
+    let tmp = supplier_project();
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            tmp.path().to_str().unwrap(),
+            "supplier",
+            "check",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run supplier check");
+
+    assert!(output.status.success(), "check must succeed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let value: serde_json::Value = serde_json::from_str(&stdout).expect("valid json");
+
+    // At least one rule should report DD-DELEGATED as external-boundary.
+    let rules = value["rules"].as_array().expect("rules array");
+    let saw_boundary = rules.iter().any(|r| {
+        r["external_boundary_ids"]
+            .as_array()
+            .is_some_and(|ids| ids.iter().any(|i| i == "DD-DELEGATED"))
+    });
+    assert!(
+        saw_boundary,
+        "DD-DELEGATED must be classified as external_boundary, got: {value}"
+    );
+}

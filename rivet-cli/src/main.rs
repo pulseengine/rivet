@@ -659,6 +659,19 @@ enum Command {
         action: ExternalsAction,
     },
 
+    /// Cross-organizational / supplier-boundary traceability (#253).
+    ///
+    /// `rivet supplier list` shows every `external-anchor` artifact —
+    /// the typed leaves marking points where the in-house chain hands
+    /// off to a supplier. `rivet supplier check` runs coverage and
+    /// reports the 3-state breakdown (satisfied / external-boundary /
+    /// uncovered) so the auditor can distinguish "delegated" from
+    /// "missing." See docs/design/cross-org-supplier-traceability.md.
+    Supplier {
+        #[command(subcommand)]
+        action: SupplierAction,
+    },
+
     /// Analyze change impact between current state and a baseline
     Impact {
         /// Git ref to compare against (branch, tag, or commit)
@@ -1155,6 +1168,24 @@ enum ExternalsAction {
         /// Project root directory (default: current directory).
         #[arg(long, default_value = ".")]
         path: PathBuf,
+        /// Output format: "text" (default) or "json".
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum SupplierAction {
+    /// List every `external-anchor` artifact (chain end at a supplier
+    /// boundary) with its received-status and expected derivatives.
+    List {
+        /// Output format: "text" (default) or "json".
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+    /// Coverage report with the 3-state breakdown (satisfied /
+    /// external-boundary / uncovered). Read-only.
+    Check {
         /// Output format: "text" (default) or "json".
         #[arg(short, long, default_value = "text")]
         format: String,
@@ -1835,6 +1866,10 @@ fn run(cli: Cli) -> Result<bool> {
         Command::Lock { update } => cmd_lock(&cli, *update),
         Command::Externals { action } => match action {
             ExternalsAction::Discover { path, format } => cmd_externals_discover(path, format),
+        },
+        Command::Supplier { action } => match action {
+            SupplierAction::List { format } => cmd_supplier_list(&cli, format),
+            SupplierAction::Check { format } => cmd_supplier_check(&cli, format),
         },
         Command::Baseline { action } => match action {
             BaselineAction::Verify { name, strict } => cmd_baseline_verify(&cli, name, *strict),
@@ -5346,20 +5381,25 @@ fn cmd_coverage(
                     "link_type": e.link_type,
                     "direction": e.direction,
                     "covered": e.covered,
+                    "external_boundary": e.external_boundary,
+                    "external_boundary_ids": e.external_boundary_ids,
                     "total": e.total,
                     "percentage": (e.percentage() * 10.0).round() / 10.0,
+                    "accounted_percentage": (e.accounted_percentage() * 10.0).round() / 10.0,
                     "uncovered_ids": e.uncovered_ids,
                 })
             })
             .collect();
         let total: usize = report.entries.iter().map(|e| e.total).sum();
         let covered: usize = report.entries.iter().map(|e| e.covered).sum();
+        let external_boundary: usize = report.entries.iter().map(|e| e.external_boundary).sum();
         let overall_pct = (report.overall_coverage() * 10.0).round() / 10.0;
         let mut output = serde_json::json!({
             "command": "coverage",
             "rules": rules_json,
             "overall": {
                 "covered": covered,
+                "external_boundary": external_boundary,
                 "total": total,
                 "percentage": overall_pct,
             },
@@ -5376,27 +5416,60 @@ fn cmd_coverage(
         }
         println!("{}", serde_json::to_string_pretty(&output).unwrap());
     } else {
+        let any_boundary = report.entries.iter().any(|e| e.external_boundary > 0);
         println!("Traceability Coverage Report\n");
-        println!(
-            "  {:<30} {:<20} {:>8} {:>8} {:>8}",
-            "Rule", "Source Type", "Covered", "Total", "%"
-        );
+        if any_boundary {
+            println!(
+                "  {:<30} {:<20} {:>8} {:>9} {:>8} {:>8}",
+                "Rule", "Source Type", "Covered", "Boundary", "Total", "%"
+            );
+        } else {
+            println!(
+                "  {:<30} {:<20} {:>8} {:>8} {:>8}",
+                "Rule", "Source Type", "Covered", "Total", "%"
+            );
+        }
         println!("  {}", "-".repeat(80));
 
         for entry in &report.entries {
-            println!(
-                "  {:<30} {:<20} {:>8} {:>8} {:>7.1}%",
-                entry.rule_name,
-                entry.source_type,
-                entry.covered,
-                entry.total,
-                entry.percentage()
-            );
+            if any_boundary {
+                println!(
+                    "  {:<30} {:<20} {:>8} {:>9} {:>8} {:>7.1}%",
+                    entry.rule_name,
+                    entry.source_type,
+                    entry.covered,
+                    entry.external_boundary,
+                    entry.total,
+                    entry.percentage()
+                );
+            } else {
+                println!(
+                    "  {:<30} {:<20} {:>8} {:>8} {:>7.1}%",
+                    entry.rule_name,
+                    entry.source_type,
+                    entry.covered,
+                    entry.total,
+                    entry.percentage()
+                );
+            }
         }
 
         let overall = report.overall_coverage();
         println!("  {}", "-".repeat(80));
         println!("  {:<52} {:>7.1}%", "Overall (weighted)", overall);
+
+        // 3-state breakdown for the auditor — only printed when at least
+        // one boundary exists, to keep the common case uncluttered.
+        if any_boundary {
+            let total: usize = report.entries.iter().map(|e| e.total).sum();
+            let covered: usize = report.entries.iter().map(|e| e.covered).sum();
+            let boundary: usize = report.entries.iter().map(|e| e.external_boundary).sum();
+            let uncovered: usize = report.entries.iter().map(|e| e.uncovered_ids.len()).sum();
+            println!(
+                "  Breakdown: {} satisfied, {} external-boundary, {} uncovered (of {})",
+                covered, boundary, uncovered, total
+            );
+        }
 
         // Show uncovered artifacts
         let has_uncovered = report.entries.iter().any(|e| !e.uncovered_ids.is_empty());
@@ -5406,6 +5479,25 @@ fn cmd_coverage(
                 if !entry.uncovered_ids.is_empty() {
                     println!("  {} ({}):", entry.rule_name, entry.source_type);
                     for id in &entry.uncovered_ids {
+                        println!("    {}", id);
+                    }
+                }
+            }
+        }
+
+        // Show external-boundary artifacts (issue #253). Distinct list
+        // because the auditor needs "delegated to supplier" to read
+        // differently from "missing in our store."
+        let has_boundary = report
+            .entries
+            .iter()
+            .any(|e| !e.external_boundary_ids.is_empty());
+        if has_boundary {
+            println!("\nExternal-boundary artifacts (delegated to supplier):");
+            for entry in &report.entries {
+                if !entry.external_boundary_ids.is_empty() {
+                    println!("  {} ({}):", entry.rule_name, entry.source_type);
+                    for id in &entry.external_boundary_ids {
                         println!("    {}", id);
                     }
                 }
@@ -5429,6 +5521,177 @@ fn cmd_coverage(
         }
     }
 
+    Ok(true)
+}
+
+/// `rivet supplier list` — enumerate every `external-anchor` artifact
+/// in the project, with its expected derivatives and received status.
+/// Read-only.
+///
+/// Issue #253 MVP: this is the minimum-viable surface so an auditor can
+/// answer "what supplier boundaries does this project declare?" before
+/// running coverage.
+fn cmd_supplier_list(cli: &Cli, format: &str) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
+    let ctx = ProjectContext::load(cli)?;
+    let anchors: Vec<_> = ctx
+        .store
+        .iter()
+        .filter(|a| a.artifact_type == "external-anchor")
+        .collect();
+
+    if format == "json" {
+        let entries: Vec<serde_json::Value> = anchors
+            .iter()
+            .map(|a| {
+                let expected = a
+                    .fields
+                    .get("expected-derived-types")
+                    .cloned()
+                    .unwrap_or(serde_yaml::Value::Null);
+                let received = a
+                    .fields
+                    .get("received-status")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("not-set");
+                let contract = a
+                    .fields
+                    .get("contract-reference")
+                    .and_then(|v| v.as_str());
+                serde_json::json!({
+                    "id": a.id,
+                    "title": a.title,
+                    "expected_derived_types": serde_json::to_value(&expected).unwrap_or(serde_json::Value::Null),
+                    "received_status": received,
+                    "contract_reference": contract,
+                })
+            })
+            .collect();
+        let output = serde_json::json!({
+            "command": "supplier list",
+            "count": anchors.len(),
+            "anchors": entries,
+        });
+        println!("{}", serde_json::to_string_pretty(&output).unwrap());
+        return Ok(true);
+    }
+
+    if anchors.is_empty() {
+        println!("No `external-anchor` artifacts declared.");
+        println!(
+            "See docs/design/cross-org-supplier-traceability.md for how \
+             to mark a supplier boundary."
+        );
+        return Ok(true);
+    }
+
+    println!("External anchors ({} declared):\n", anchors.len());
+    println!(
+        "  {:<28} {:<10} {:<20} Expected derivatives",
+        "ID", "Status", "Contract"
+    );
+    println!("  {}", "-".repeat(80));
+    for a in &anchors {
+        let received = a
+            .fields
+            .get("received-status")
+            .and_then(|v| v.as_str())
+            .unwrap_or("?");
+        let contract = a
+            .fields
+            .get("contract-reference")
+            .and_then(|v| v.as_str())
+            .unwrap_or("-");
+        let expected = a
+            .fields
+            .get("expected-derived-types")
+            .and_then(|v| match v {
+                serde_yaml::Value::Sequence(items) => Some(
+                    items
+                        .iter()
+                        .filter_map(|i| i.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                ),
+                _ => None,
+            })
+            .unwrap_or_else(|| "-".to_string());
+        println!(
+            "  {:<28} {:<10} {:<20} {}",
+            a.id, received, contract, expected
+        );
+    }
+    Ok(true)
+}
+
+/// `rivet supplier check` — read-only coverage report with the 3-state
+/// breakdown surfaced, filtered down to rules where at least one
+/// boundary or uncovered exists.
+fn cmd_supplier_check(cli: &Cli, format: &str) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
+    let ctx = ProjectContext::load(cli)?;
+    let report = coverage::compute_coverage(&ctx.store, &ctx.schema, &ctx.graph);
+
+    let interesting: Vec<_> = report
+        .entries
+        .iter()
+        .filter(|e| e.external_boundary > 0 || !e.uncovered_ids.is_empty())
+        .collect();
+
+    if format == "json" {
+        let rules: Vec<serde_json::Value> = interesting
+            .iter()
+            .map(|e| {
+                serde_json::json!({
+                    "name": e.rule_name,
+                    "source_type": e.source_type,
+                    "covered": e.covered,
+                    "external_boundary": e.external_boundary,
+                    "external_boundary_ids": e.external_boundary_ids,
+                    "uncovered": e.uncovered_ids.len(),
+                    "uncovered_ids": e.uncovered_ids,
+                    "total": e.total,
+                    "accounted_percentage": (e.accounted_percentage() * 10.0).round() / 10.0,
+                })
+            })
+            .collect();
+        let total_boundary: usize = report.entries.iter().map(|e| e.external_boundary).sum();
+        let total_uncovered: usize = report.entries.iter().map(|e| e.uncovered_ids.len()).sum();
+        let output = serde_json::json!({
+            "command": "supplier check",
+            "summary": {
+                "external_boundary": total_boundary,
+                "uncovered": total_uncovered,
+            },
+            "rules": rules,
+        });
+        println!("{}", serde_json::to_string_pretty(&output).unwrap());
+        return Ok(true);
+    }
+
+    if interesting.is_empty() {
+        println!("No supplier-boundary or uncovered findings. Every rule satisfied in-house.");
+        return Ok(true);
+    }
+
+    println!("Supplier-boundary coverage:\n");
+    for e in &interesting {
+        println!(
+            "  {} ({}): {} satisfied, {} external-boundary, {} uncovered (of {})",
+            e.rule_name,
+            e.source_type,
+            e.covered,
+            e.external_boundary,
+            e.uncovered_ids.len(),
+            e.total
+        );
+        if !e.external_boundary_ids.is_empty() {
+            println!("    boundary: {}", e.external_boundary_ids.join(", "));
+        }
+        if !e.uncovered_ids.is_empty() {
+            println!("    uncovered: {}", e.uncovered_ids.join(", "));
+        }
+    }
     Ok(true)
 }
 
