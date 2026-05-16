@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1778923425289,
+  "lastUpdate": 1778942692571,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "40fdff0377d65e8a0a53c22ca8b0398fc90ac7dd",
-          "message": "feat(docs-check): subcommand-coverage gate — walk clap tree + assert each path has an embedded doc (#241)\n\n* feat(docs-check): subcommand-coverage gate — walk clap tree + assert each path has an embedded doc\n\nAdds `--coverage` (and `--strict`) flags to `rivet docs check` that walk\nthe live clap CLI tree, build subcommand paths (`schema/show`,\n`variant/check-all`, …), and cross-reference each against the embedded\ndocs registry. Default is warn-only so the gate can land in CI before\nthe existing inventory of uncovered subcommands is filled.\n\nCoverage rules are layered:\n  1. Exact slug match (`schema/show` → `schema-show` or literal `schema/show`)\n  2. Parent-walk to the next-shorter path\n  3. Manual umbrella mapping via `COVERAGE_TOPIC_MAP` (e.g. `cli` covers\n     most top-level commands; `mutation` covers add/link/modify/…)\n  4. Allow-list for clap-builtin synthetic commands (`help`,\n     `commit-msg-check`)\n\nThe 0.6.0 inventory has 33 uncovered paths across 7 top-level\nsubcommands: variant, baseline, snapshot, runs, pipelines, templates,\nclose-gaps. (`mcp` got its topic in 0.5.1 and is now covered.) The\n`--strict` flag is the future CI gate; `--coverage` alone is the\ndiscovery surface.\n\nTouches the existing `cmd_docs_check` dispatch only to add the new\n`--coverage` early branch — backward compatible with `rivet docs check`\n(no flags).\n\nImplements: REQ-007\nRefs: REQ-004\n\n* docs(docs-check): topic_slugs API + new docs-coverage topic + cli topic update\n\nExposes `docs::topic_slugs()` and `docs::has_topic()` so the\nsubcommand-coverage gate can cross-reference clap subcommand paths\nagainst the embedded TOPICS registry without re-listing slugs.\n\nAdds a new `docs-coverage` reference topic that documents the gate's\nmatching rules, the warn-then-strict ramp-up, and the allow-list policy\nfor clap-builtin synthetic commands.\n\nUpdates the `cli` reference topic to surface `rivet docs check\n--coverage` next to the existing `rivet docs check` entry.\n\nImplements: REQ-007\n\n* test(docs-check): coverage gate fixtures + integration tests\n\nFive integration tests exercising the subcommand-coverage gate's\nexternal contract:\n\n  * coverage_warn_only_exits_zero — the default mode never breaks the\n    build, even when uncovered paths are listed\n  * coverage_strict_fails_when_uncovered_present — `--strict` exits\n    non-zero exactly when the report shows uncovered paths (and exit 0\n    otherwise, so the test stays green when docs catch up)\n  * coverage_json_envelope — `--format json` produces the standard\n    envelope (command/status/total/covered/uncovered/subcommands)\n  * coverage_allowlist_excludes_internal_helpers — `commit-msg-check`\n    is allow-listed and never appears in the uncovered list\n  * docs_check_without_coverage_unchanged — backward compatibility:\n    `rivet docs check` (no flags) still runs the existing doc-vs-reality\n    invariants\n\nAsserts on report SHAPE rather than specific names so the tests stay\ngreen as docs are written for previously-uncovered subcommands.\n\nEight unit tests in `coverage_gate_tests` exercise\n`compute_coverage_rows` against a fake clap tree (one parent + two\nleaves) — the implementation sketch from the task spec — covering\nparent-walk, leaf-specific override, allow-list, umbrella topic_map,\nand a sanity check that every entry in the production\n`COVERAGE_TOPIC_MAP` points at a real topic in `docs::TOPICS`.\n\nVerifies: REQ-007\n\n* ci: wire rivet docs check --coverage into Docs Check job (warn-only)\n\nAdds a new step to the existing `docs-check` job that runs the\nsubcommand-coverage gate in warn-only mode (no `--strict`). This makes\nthe inventory visible in every CI run without breaking the build on the\nexisting seven uncovered top-level commands (variant, baseline,\nsnapshot, runs, pipelines, templates, close-gaps).\n\nThe flip to `--strict` happens in a follow-up commit once the obvious\ngaps have docs.",
-          "timestamp": "2026-04-29T16:36:52-05:00",
-          "tree_id": "f014554108fa90cae87714dc2f3d24feea073532",
-          "url": "https://github.com/pulseengine/rivet/commit/40fdff0377d65e8a0a53c22ca8b0398fc90ac7dd"
-        },
-        "date": 1777501286521,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 80133,
-            "range": "± 2561",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 847636,
-            "range": "± 6398",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 12873693,
-            "range": "± 1176270",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2164,
-            "range": "± 9",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 27062,
-            "range": "± 136",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 363810,
-            "range": "± 1198",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1189117,
-            "range": "± 115708",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 160206,
-            "range": "± 803",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1912287,
-            "range": "± 12400",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 24968668,
-            "range": "± 1117103",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 139305,
-            "range": "± 544",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 1208939,
-            "range": "± 27671",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 15569214,
-            "range": "± 1104512",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4384,
-            "range": "± 13",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 62040,
-            "range": "± 467",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 762544,
-            "range": "± 6226",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 61782,
-            "range": "± 630",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 703014,
-            "range": "± 9102",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7950561,
-            "range": "± 228605",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 843,
-            "range": "± 3",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 7912,
-            "range": "± 28",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 110427,
-            "range": "± 646",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 23505,
-            "range": "± 471",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 165521,
-            "range": "± 573",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1566833,
-            "range": "± 8218",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1606326,
             "range": "± 23927",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ed4a4919463730d8ffa27845baa227735ad4e9d5",
+          "message": "feat(tcl): tool-qualification workstream A + AI session provenance (#127) (#289)\n\nCloses #127 (AI session provenance — schema half) and ships the smallest\nviable surface of TCL design workstream A (per\ndocs/design/tool-confidence-level.md §7.4).\n\n**Schema additions (schemas/common.yaml)**\n\n- `ai-session` artifact type — pins a Claude Code (or other AI) session\n  to a commit so the auditor can reconstruct *who/what* authored a\n  change. Fields: session-id, session-hash (SHA-256 of transcript),\n  model-id, tool-version, commit-sha, started-at, ended-at, invoker.\n- `ai-found-defect` artifact type (TCL A3) — typed defect record for\n  errors introduced by AI authoring that rivet's detection machinery\n  caught. Fields: severity, triage-status (open/accepted/rejected/\n  deduplicated), detected-by, discovered-at, triaged-at, triaged-by.\n- Link types: `defect-against` (defect → target), `corrects` (fix →\n  defect), `produced-by` (artifact → ai-session).\n\n**Schema additions (schemas/iso-26262.yaml)**\n\n- `tool-confidence` artifact type (TCL A2) — typed tool-qualification\n  claim per ISO 26262-8 §11.4.7. Fields: tool-id, ti (TI1/TI2), td\n  (TD1/TD2/TD3), tcl (TCL1/TCL2/TCL3), regime (iso-26262/do-178c/\n  do-330/en-50128/iec-61508/iec-62304/iso-21434/iso-pas-8800), claim-\n  status (self-claimed/qualified/conditional/target), scope. link-field\n  `qualification-evidence` points at the proofs / oracle runs that\n  defend the TD claim.\n\n**Dogfood (TCL A1)**\n\n- Fix inverted TCL/TQL convention in safety/stpa/tool-qualification.yaml\n  header (now follows ISO 26262 Table 3: TCL1 = lowest demand).\n- New typed claim `TQ-CONF-RIVET` at safety/tool-qualification/\n  rivet-tool-confidence.yaml — rivet's own TI2/TD1/TCL1 self-claim\n  links to the seven hazards in the dogfood STPA.\n- rivet.yaml: load `iso-26262` schema + scan\n  `safety/tool-qualification/` source path.\n\n**CLI (TCL A4, A5)**\n\n- `--qualification-mode` flag on the top-level Cli. Initial gate\n  refuses `rivet sync` (Phase 2 federation, out of scope per dossier\n  §4). Read-only commands stay allowed; the list is deliberately\n  narrow — better to expand than to silently block audit work.\n- `rivet stats --qualification` — JSON-only configuration baseline\n  manifest for the dossier. Lists rivet version, schemas in use,\n  every `tool-confidence` artifact with its claim, and `ai-found-\n  defect` aggregates (by severity, by triage-status, plus open-IDs).\n  This is the snapshot the safety manager pastes into the dossier.\n- `rivet docs tool-qualification` — renders the new dossier doc\n  (docs/design/tool-qualification-dossier.md) wired into the docs\n  topic registry.\n\n**Tests**\n\n- Integration: `stats_qualification_emits_baseline_manifest_for_dogfood`\n  validates the full JSON envelope contains TQ-CONF-RIVET at TCL1.\n- Integration: `qualification_mode_blocks_sync` asserts the gate\n  produces a non-zero exit with a discoverable error message.\n\n**Not in this PR**\n\n- `rivet check ai-defects-open` oracle (deferred — needs the agent-\n  pipelines wiring, which is a bigger refactor).\n- Phase 2 of #127 (commit hook to auto-stamp ai-session metadata,\n  `rivet audit` to enforce that every AI commit has a session record).\n- Independent assessment (claim-status stays self-claimed).\n\nImplements: REQ-002, REQ-007, REQ-010\nRefs: FEAT-001, #127\n\nCo-authored-by: Claude Opus 4.7 <noreply@anthropic.com>",
+          "timestamp": "2026-05-16T09:38:29-05:00",
+          "tree_id": "8c465602fd97b2076a40851703a391dcdba4fab0",
+          "url": "https://github.com/pulseengine/rivet/commit/ed4a4919463730d8ffa27845baa227735ad4e9d5"
+        },
+        "date": 1778942691749,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 80503,
+            "range": "± 503",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 845667,
+            "range": "± 3024",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 12549543,
+            "range": "± 825341",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2211,
+            "range": "± 19",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 27454,
+            "range": "± 658",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 377511,
+            "range": "± 1221",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 93,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1351260,
+            "range": "± 19098",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 162828,
+            "range": "± 1181",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1839384,
+            "range": "± 123043",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 24838551,
+            "range": "± 1245383",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 123170,
+            "range": "± 976",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1058529,
+            "range": "± 18993",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 11712608,
+            "range": "± 667915",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4267,
+            "range": "± 39",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 60371,
+            "range": "± 558",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 748239,
+            "range": "± 3733",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 61865,
+            "range": "± 1272",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 693629,
+            "range": "± 5688",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8013638,
+            "range": "± 368464",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 826,
+            "range": "± 138",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7276,
+            "range": "± 55",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 116785,
+            "range": "± 3500",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 25312,
+            "range": "± 592",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 181499,
+            "range": "± 988",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1702050,
+            "range": "± 24704",
             "unit": "ns/iter"
           }
         ]
