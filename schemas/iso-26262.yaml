@@ -191,6 +191,81 @@ artifact-types:
         required: true
         cardinality: one-or-many
 
+  # ── Tool qualification (Part 8 clause 11, TCL design A2) ─────────────
+  - name: tool-confidence
+    description: >
+      A typed tool-qualification claim per ISO 26262-8 §11.4.7. Carries
+      TI (Tool Impact, §11.4.5.3) and TD (Tool error Detection,
+      §11.4.5.4) classifications and the derived TCL. One artifact per
+      tool whose output is used as compliance evidence. The
+      `qualification-evidence` link-field points at the proofs / oracle
+      runs / cited-sources that defend the TD claim.
+
+      Numbering: this file uses ISO 26262 conventions (TCL1 = lowest
+      confidence demand, TCL3 = highest). DO-330 / DO-178C TQL inverts
+      this — cross-walk lives in docs/design/tool-confidence-level.md
+      §2.7 and 3.3. The `regime` field disambiguates.
+    fields:
+      - name: tool-id
+        type: string
+        required: true
+        description: 'Tool identifier (e.g. "rivet", "polarion", "doors-next").'
+      - name: ti
+        type: string
+        required: true
+        allowed-values: [TI1, TI2]
+        description: >
+          Tool Impact: TI1 = the tool cannot violate or fail to detect
+          safety requirements; TI2 = it can. Source 26262-8 §11.4.5.3.
+      - name: td
+        type: string
+        required: true
+        allowed-values: [TD1, TD2, TD3]
+        description: >
+          Tool error Detection: TD1 = high confidence the tool's errors
+          are prevented or caught; TD3 = low. Source 26262-8 §11.4.5.4.
+      - name: tcl
+        type: string
+        required: true
+        allowed-values: [TCL1, TCL2, TCL3]
+        description: >
+          Derived per ISO 26262-8 Table 3. TCL1 = lowest confidence
+          demand. The field is required (rather than computed) so the
+          claim is explicit and auditable.
+      - name: regime
+        type: string
+        required: true
+        allowed-values:
+          - iso-26262
+          - do-178c
+          - do-330
+          - en-50128
+          - iec-61508
+          - iec-62304
+          - iso-21434
+          - iso-pas-8800
+        description: Standards regime under which the claim is made.
+      - name: claim-status
+        type: string
+        required: true
+        allowed-values: [self-claimed, qualified, conditional, target]
+        description: >
+          `self-claimed` = vendor asserts; `qualified` = independent
+          assessment passed; `conditional` = qualified subject to scope
+          constraints; `target` = aspirational, dossier in progress.
+      - name: scope
+        type: text
+        required: false
+        description: >
+          What the claim covers (and explicitly does NOT cover). Free-form
+          prose — populated in the dossier.
+    link-fields:
+      - name: qualification-evidence
+        link-type: verifies
+        target-types: []
+        required: false
+        cardinality: one-or-many
+
 # ──────────────────────────────────────────────────────────────────────────
 # Link types
 # ──────────────────────────────────────────────────────────────────────────

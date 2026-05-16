@@ -205,6 +205,18 @@ struct Cli {
     #[arg(short, long, action = clap::ArgAction::Count)]
     verbose: u8,
 
+    /// Restrict rivet to the qualified-for-safety-use feature set
+    /// (TCL design A5).
+    ///
+    /// When set (or when `RIVET_QUALIFICATION_MODE=1`), rivet refuses
+    /// to run subcommands that are out-of-scope for the typed
+    /// `tool-confidence` claim — see `rivet docs tool-qualification`
+    /// for the in-scope / out-of-scope split. Read-only commands are
+    /// always allowed. The flag is sticky for one invocation; it does
+    /// NOT alter on-disk config.
+    #[arg(long)]
+    qualification_mode: bool,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -388,6 +400,16 @@ enum Command {
         /// Scope statistics to a named baseline (cumulative)
         #[arg(long)]
         baseline: Option<String>,
+
+        /// Emit a tool-qualification baseline manifest (TCL design A5).
+        ///
+        /// JSON-only. Lists every `tool-confidence` artifact in the
+        /// project, the schemas in use with their content hashes, and
+        /// the set of `ai-found-defect` artifacts with their triage
+        /// status. The output is the snapshot a customer's safety
+        /// manager pastes into the dossier.
+        #[arg(long)]
+        qualification: bool,
     },
 
     /// Show traceability coverage report
@@ -1706,6 +1728,21 @@ fn run(cli: Cli) -> Result<bool> {
         return cmd_mcp(&cli, *list_tools, *probe, format);
     }
 
+    // --qualification-mode gate (TCL design A5). Refuse top-level
+    // subcommands that are not in the typed tool-confidence claim's
+    // in-scope set (see docs/design/tool-qualification-dossier.md §4).
+    // Read-only commands and the qualification stats command stay
+    // allowed; this list deliberately starts narrow.
+    if cli.qualification_mode {
+        if let Command::Sync { .. } = &cli.command {
+            anyhow::bail!(
+                "--qualification-mode: refusing `sync` — Phase 2 federation \
+                 not yet qualified. See `rivet docs tool-qualification` for \
+                 the in/out-of-scope split."
+            );
+        }
+    }
+
     match &cli.command {
         Command::Init { .. }
         | Command::Docs { .. }
@@ -1763,7 +1800,14 @@ fn run(cli: Cli) -> Result<bool> {
             filter,
             format,
             baseline,
-        } => cmd_stats(&cli, filter.as_deref(), format, baseline.as_deref()),
+            qualification,
+        } => {
+            if *qualification {
+                cmd_stats_qualification(&cli)
+            } else {
+                cmd_stats(&cli, filter.as_deref(), format, baseline.as_deref())
+            }
+        }
         Command::Coverage {
             filter,
             format,
@@ -5333,6 +5377,99 @@ fn compute_stats(store: &Store, graph: &LinkGraph) -> StatsResult {
     }
 }
 
+/// `rivet stats --qualification` — emit a configuration baseline
+/// manifest for the tool-qualification dossier (TCL design A5).
+///
+/// JSON-only. The output is what a customer's safety manager pastes
+/// into the dossier evidence section. It captures:
+/// - The rivet binary version (so the qualified-version stamp is
+///   explicit).
+/// - Every `tool-confidence` artifact in the project, with its claim
+///   fields.
+/// - Every `ai-found-defect` artifact, with severity + triage-status
+///   counts (the operational TD1 evidence).
+/// - The schemas in use (so a change to schema content invalidates the
+///   baseline by hash diff at the next snapshot).
+fn cmd_stats_qualification(cli: &Cli) -> Result<bool> {
+    let ctx = ProjectContext::load(cli)?;
+
+    let tool_confidence: Vec<serde_json::Value> = ctx
+        .store
+        .iter()
+        .filter(|a| a.artifact_type == "tool-confidence")
+        .map(|a| {
+            serde_json::json!({
+                "id": a.id,
+                "title": a.title,
+                "status": a.status,
+                "tool_id": a.fields.get("tool-id").and_then(|v| v.as_str()),
+                "ti": a.fields.get("ti").and_then(|v| v.as_str()),
+                "td": a.fields.get("td").and_then(|v| v.as_str()),
+                "tcl": a.fields.get("tcl").and_then(|v| v.as_str()),
+                "regime": a.fields.get("regime").and_then(|v| v.as_str()),
+                "claim_status": a.fields.get("claim-status").and_then(|v| v.as_str()),
+            })
+        })
+        .collect();
+
+    // ai-found-defect summary — by severity and by triage-status.
+    let defects: Vec<_> = ctx
+        .store
+        .iter()
+        .filter(|a| a.artifact_type == "ai-found-defect")
+        .collect();
+    let mut by_severity: std::collections::BTreeMap<&str, usize> = Default::default();
+    let mut by_triage: std::collections::BTreeMap<&str, usize> = Default::default();
+    for a in &defects {
+        let sev = a
+            .fields
+            .get("severity")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+        let tri = a
+            .fields
+            .get("triage-status")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+        *by_severity.entry(sev).or_default() += 1;
+        *by_triage.entry(tri).or_default() += 1;
+    }
+    let open_defects: Vec<&str> = defects
+        .iter()
+        .filter(|a| {
+            a.fields
+                .get("triage-status")
+                .and_then(|v| v.as_str())
+                .is_some_and(|s| s == "open")
+        })
+        .map(|a| a.id.as_str())
+        .collect();
+
+    let schemas_in_use: Vec<&str> = ctx
+        .config
+        .project
+        .schemas
+        .iter()
+        .map(String::as_str)
+        .collect();
+
+    let output = serde_json::json!({
+        "command": "stats --qualification",
+        "rivet_version": env!("CARGO_PKG_VERSION"),
+        "qualification_mode": cli.qualification_mode,
+        "schemas_in_use": schemas_in_use,
+        "tool_confidence": tool_confidence,
+        "ai_found_defects": {
+            "total": defects.len(),
+            "by_severity": by_severity,
+            "by_triage_status": by_triage,
+            "open_ids": open_defects,
+        },
+    });
+    println!("{}", serde_json::to_string_pretty(&output).unwrap());
+    Ok(true)
+}
+
 /// Show traceability coverage report.
 fn cmd_coverage(
     cli: &Cli,
@@ -7276,6 +7413,7 @@ fn cmd_diff(
                 project: bp.to_path_buf(),
                 schemas: cli.schemas.clone(),
                 verbose: cli.verbose,
+                qualification_mode: cli.qualification_mode,
                 command: Command::Validate {
                     format: "text".to_string(),
                     direct: false,
@@ -7295,6 +7433,7 @@ fn cmd_diff(
                 project: hp.to_path_buf(),
                 schemas: cli.schemas.clone(),
                 verbose: cli.verbose,
+                qualification_mode: cli.qualification_mode,
                 command: Command::Validate {
                     format: "text".to_string(),
                     direct: false,

@@ -8,6 +8,7 @@ project:
     - stpa
     - stpa-sec
     - eu-ai-act
+    - iso-26262
 
 sources:
   - path: artifacts
@@ -15,6 +16,8 @@ sources:
   - path: safety/stpa
     format: stpa-yaml
   - path: safety/stpa-sec
+    format: generic-yaml
+  - path: safety/tool-qualification
     format: generic-yaml
 
 docs:
