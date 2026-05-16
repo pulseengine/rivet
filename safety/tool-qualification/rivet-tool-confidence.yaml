@@ -1,0 +1,73 @@
+# =============================================================================
+# Tool Qualification — rivet's own typed confidence claim
+# =============================================================================
+#
+# This file holds the rivet-on-rivet dogfood for the `tool-confidence`
+# artifact type (TCL design A2, schemas/iso-26262.yaml). It pairs with
+# `safety/stpa/tool-qualification.yaml` (the hazard analysis that
+# justifies the claim) and `docs/design/tool-qualification-dossier.md`
+# (the prose-shaped dossier).
+#
+# Why three files for one claim:
+# - The STPA captures *why* tool errors are hazardous (Step 1).
+# - The dossier explains the qualification argument in prose.
+# - This file is the *machine-readable* claim that `rivet stats
+#   --qualification` reads to emit a configuration baseline.
+#
+# Numbering follows ISO 26262-8 §11.4.7 Table 3: TCL1 = lowest demand,
+# TCL3 = highest. Cross-walk to DO-330/TQL lives in
+# docs/design/tool-confidence-level.md §2.7.
+# =============================================================================
+
+artifacts:
+
+  - id: TQ-CONF-RIVET
+    type: tool-confidence
+    title: Rivet — tool confidence claim (ISO 26262-8 Part 8 §11.4.7)
+    status: draft
+    description: >
+      Rivet's typed tool-qualification claim. The TI/TD analysis is
+      defended by the STPA in `safety/stpa/tool-qualification.yaml`
+      (losses L-TQ-001..003, hazards H-TQ-001..007) and by the
+      mechanical detection layer (validate, oracle gating, Kani/Verus,
+      mutation testing, cited-source verification, ai-found-defect
+      triage). The dossier prose lives in
+      `docs/design/tool-qualification-dossier.md`.
+    tags: [safety, dogfood, iso-26262]
+    fields:
+      tool-id: rivet
+      ti: TI2
+      td: TD1
+      tcl: TCL1
+      regime: iso-26262
+      claim-status: self-claimed
+      scope: |
+        Covered by this claim: rivet validate (link-graph, traceability
+        rules, schema field checks, s-expression evaluator), rivet
+        commits (trailer audit), rivet coverage (single-org + supplier
+        3-state), rivet supplier {list,check}.
+
+        Out of scope (NOT qualified by this claim): rivet sync /
+        rivet supplier pull (Phase 2), rivet migrate (importers),
+        rivet serve (read-only web UI), MCP write tools that bypass
+        validate (--qualification-mode disables these).
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      session-id: tcl-a-workstream
+      timestamp: 2026-05-16T09:30:00Z
+    links:
+      - type: verifies
+        target: H-TQ-001
+      - type: verifies
+        target: H-TQ-002
+      - type: verifies
+        target: H-TQ-003
+      - type: verifies
+        target: H-TQ-004
+      - type: verifies
+        target: H-TQ-005
+      - type: verifies
+        target: H-TQ-006
+      - type: verifies
+        target: H-TQ-007

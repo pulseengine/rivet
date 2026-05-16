@@ -101,11 +101,124 @@ link-types:
     inverse: constrains
     description: Source is constrained by the target
 
+  # ── AI-provenance and tool-qualification links (#127, TCL design §7.2) ──
+  - name: defect-against
+    inverse: has-defect
+    description: >
+      An `ai-found-defect` is filed against the artifact it relates to
+      (a requirement, design-decision, or any other type). The defect's
+      triage state gates whether the target may transition to `released`.
+  - name: corrects
+    inverse: corrected-by
+    description: >
+      A commit / artifact corrects a previously-reported `ai-found-defect`.
+      Used to trace from the fix back to the defect record.
+  - name: produced-by
+    inverse: produced
+    description: >
+      An artifact (or commit) was produced by an `ai-session`. The
+      audit-side equivalent of git's `Co-Authored-By` trailer.
+
 # ──────────────────────────────────────────────────────────────────────────
-# Cross-organizational / supplier-boundary artifact types.
-# See docs/design/cross-org-supplier-traceability.md for the rationale.
+# Cross-organizational / AI-provenance / tool-qualification artifact types.
+# See docs/design/cross-org-supplier-traceability.md, docs/design/
+# tool-confidence-level.md, and issue #127 for the rationale.
 # ──────────────────────────────────────────────────────────────────────────
 artifact-types:
+
+  # ── AI session provenance (#127) ────────────────────────────────────
+  - name: ai-session
+    description: >
+      A Claude Code (or other AI assistant) session whose work product
+      landed in the repo. Pins the session to a commit so the auditor
+      can reconstruct *who/what* authored a change. Each `ai-session`
+      is the unit of authorship that AI provenance trailers (created-by,
+      model, session-id) ultimately resolve back to.
+    fields:
+      - name: session-id
+        type: string
+        required: true
+        description: Stable ID from the AI assistant (e.g. Claude Code session UUID).
+      - name: session-hash
+        type: string
+        required: false
+        description: >
+          SHA-256 of the session transcript file at the time of commit.
+          Lets the auditor verify the session log hasn't been tampered with.
+      - name: model-id
+        type: string
+        required: true
+        description: 'Model used (e.g. "claude-opus-4-7", "claude-sonnet-4-6").'
+      - name: tool-version
+        type: string
+        required: false
+        description: 'AI tool version (e.g. "claude-code-1.0.0").'
+      - name: commit-sha
+        type: string
+        required: false
+        description: >
+          Git commit SHA that captured this session's work product. May
+          be absent before the session commits.
+      - name: started-at
+        type: string
+        required: false
+        description: ISO-8601 timestamp.
+      - name: ended-at
+        type: string
+        required: false
+        description: ISO-8601 timestamp.
+      - name: invoker
+        type: string
+        required: false
+        description: Human operator who ran the session (login or email).
+    link-fields: []
+
+  # ── AI-found defect (TCL design §6.2, A3) ───────────────────────────
+  - name: ai-found-defect
+    description: >
+      A defect introduced by an AI authoring step that rivet's detection
+      machinery (validate, oracles, mutation, proofs, cited-source
+      verification) caught. Closes the loop between "AI made an error"
+      and "the tool reflected it back" — the operational primitive that
+      raises rivet's TD claim (Tool error Detection per ISO 26262-8
+      §11.4.5.4) when the upstream author is non-human.
+    fields:
+      - name: severity
+        type: string
+        required: true
+        allowed-values: [critical, major, minor, info]
+        description: Engineering severity at time of triage.
+      - name: triage-status
+        type: string
+        required: true
+        allowed-values: [open, accepted, rejected, deduplicated]
+        description: >
+          Triage state. `open` means awaiting human review; the other
+          three are terminal. The `ai-defects-open` oracle gates release
+          on this field.
+      - name: detected-by
+        type: string
+        required: true
+        description: >
+          Rivet machinery that caught it (e.g. `validate`,
+          `oracle:cited-source-fresh`, `kani:proof_NN`, `mutation`,
+          `docs-check`, `human-review`).
+      - name: discovered-at
+        type: string
+        required: false
+        description: ISO-8601 timestamp.
+      - name: triaged-at
+        type: string
+        required: false
+        description: ISO-8601 timestamp.
+      - name: triaged-by
+        type: string
+        required: false
+        description: Reviewer who triaged the finding.
+      - name: notes
+        type: text
+        required: false
+    link-fields: []
 
   - name: external-anchor
     description: >

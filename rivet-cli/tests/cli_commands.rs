@@ -3121,6 +3121,63 @@ fn bundle_invalid_format_fails() {
     );
 }
 
+// ── rivet stats --qualification / --qualification-mode (TCL A5) ─────────
+
+#[test]
+fn stats_qualification_emits_baseline_manifest_for_dogfood() {
+    // The rivet repo dogfoods its own tool-confidence claim
+    // (safety/tool-qualification/rivet-tool-confidence.yaml). The
+    // baseline manifest must surface it as TQ-CONF-RIVET at TCL1.
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "stats",
+            "--qualification",
+        ])
+        .output()
+        .expect("run rivet stats --qualification");
+    assert!(
+        output.status.success(),
+        "stats --qualification must exit 0. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let value: serde_json::Value = serde_json::from_str(&stdout).expect("valid JSON");
+    assert_eq!(value["command"], "stats --qualification");
+    let confs = value["tool_confidence"].as_array().expect("array");
+    let rivet_claim = confs
+        .iter()
+        .find(|c| c["id"] == "TQ-CONF-RIVET")
+        .expect("TQ-CONF-RIVET present");
+    assert_eq!(rivet_claim["tcl"], "TCL1");
+    assert_eq!(rivet_claim["regime"], "iso-26262");
+}
+
+#[test]
+fn qualification_mode_blocks_sync() {
+    // --qualification-mode refuses sync (out-of-scope per the dossier).
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "--qualification-mode",
+            "sync",
+            "--local",
+        ])
+        .output()
+        .expect("run rivet --qualification-mode sync");
+    assert!(
+        !output.status.success(),
+        "sync must be refused under --qualification-mode"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("qualification-mode") && stderr.contains("sync"),
+        "stderr must mention qualification-mode + sync, got: {stderr}"
+    );
+}
+
 // ── rivet supplier (#253 MVP) ───────────────────────────────────────────
 
 /// Build a minimal project with one `external-anchor` artifact and a

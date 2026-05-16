@@ -12,17 +12,23 @@
 # import, MCP write tools, and git hook integration.
 #
 # Tool Confidence Level (TCL): TCL1 (ISO 26262-8 §11.4.7) — rivet's
-# output is directly used as compliance evidence, but oracle-gated
-# validation raises Tool error Detection (TD) enough that the TI×TD
-# matrix lands at TCL1. A false PASS from rivet can prevent detection
-# of a safety-critical gap; the TI/TD analysis under Workstream A of
-# the tool-qualification dossier qualifies that claim.
+# output is directly used as compliance evidence (TI2, §11.4.5.3),
+# but oracle-gated validation, mutation testing, Kani/Verus proofs,
+# cited-source verification, and the `ai-found-defect` triage loop
+# raise Tool error Detection to TD1 (§11.4.5.4); the TI×TD matrix
+# therefore lands at TCL1 (Table 3). A false PASS from rivet can
+# prevent detection of a safety-critical gap; the TI/TD analysis lives
+# in `docs/design/tool-qualification-dossier.md` and is mechanically
+# tracked by the typed `tool-confidence` artifact in
+# `schemas/iso-26262.yaml` (see TQ-CONF-RIVET below).
 #
-# Cross-walk: ISO 26262 numbers TCL inversely to DO-330. 26262 TCL1
-# is the *lowest* confidence demand (TCL3 highest); DO-330 TQL-1 is
-# the *highest* rigor (TQL-5 lowest). The legacy "TCL 1 (highest)"
-# wording in this file mixed the two conventions; this file now
-# follows ISO 26262 numbering.
+# Numbering convention (ISO 26262-8 §11.4.7 Table 3):
+#   TCL1 = lowest confidence demand (rivet's claim).
+#   TCL3 = highest confidence demand.
+# DO-330 inverts this: TQL-1 = highest rigor, TQL-5 = lowest. The
+# cross-walk lives in `docs/design/tool-confidence-level.md` §2.7 and
+# §3.3; the typed `tool-confidence` artifact carries `regime:` so
+# downstream consumers don't have to disambiguate.
 #
 # Reference: STPA Handbook §2.3, ISO 26262-8 §11.4.7
 # =============================================================================

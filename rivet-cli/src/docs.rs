@@ -278,7 +278,16 @@ const TOPICS: &[DocTopic] = &[
         category: "Schemas",
         content: embedded::SCHEMA_VV_COVERAGE,
     },
+    DocTopic {
+        slug: "tool-qualification",
+        title: "Tool qualification dossier — rivet (ISO 26262-8 §11.4.7)",
+        category: "Reference",
+        content: TOOL_QUALIFICATION_DOC,
+    },
 ];
+
+const TOOL_QUALIFICATION_DOC: &str =
+    include_str!("../../docs/design/tool-qualification-dossier.md");
 
 /// Return all registered topic slugs in declaration order.
 ///
