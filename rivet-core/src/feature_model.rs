@@ -1210,9 +1210,7 @@ fn eval_constraint(expr: &Expr, selected: &BTreeSet<String>) -> bool {
 /// `name:`) are returned as an error — a project that ships duplicate
 /// variant names has an ambiguity bug the user must fix before any
 /// downstream consumer can pick the "right" one.
-pub fn load_variant_configs_from_dir(
-    dir: &std::path::Path,
-) -> Result<Vec<VariantConfig>, Error> {
+pub fn load_variant_configs_from_dir(dir: &std::path::Path) -> Result<Vec<VariantConfig>, Error> {
     if !dir.exists() {
         return Ok(Vec::new());
     }
@@ -1235,10 +1233,7 @@ pub fn load_variant_configs_from_dir(
         let yaml = std::fs::read_to_string(path)
             .map_err(|e| Error::Io(format!("reading {}: {e}", path.display())))?;
         let vc: VariantConfig = serde_yaml::from_str(&yaml).map_err(|e| {
-            Error::Schema(format!(
-                "parsing variant config {}: {e}",
-                path.display()
-            ))
+            Error::Schema(format!("parsing variant config {}: {e}", path.display()))
         })?;
         if !seen.insert(vc.name.clone()) {
             return Err(Error::Schema(format!(
@@ -2024,16 +2019,8 @@ bindings:
     fn load_variant_configs_from_dir_loads_every_yaml_sorted() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path();
-        std::fs::write(
-            dir.join("zeta.yaml"),
-            "name: zeta\nselects: [a, b]\n",
-        )
-        .unwrap();
-        std::fs::write(
-            dir.join("alpha.yaml"),
-            "name: alpha\nselects: [x]\n",
-        )
-        .unwrap();
+        std::fs::write(dir.join("zeta.yaml"), "name: zeta\nselects: [a, b]\n").unwrap();
+        std::fs::write(dir.join("alpha.yaml"), "name: alpha\nselects: [x]\n").unwrap();
         std::fs::write(
             dir.join("notes.txt"),
             "ignored because the extension is wrong\n",
@@ -2058,10 +2045,7 @@ bindings:
         std::fs::write(dir.join("b.yaml"), "name: dupe\nselects: [y]\n").unwrap();
         let err = load_variant_configs_from_dir(dir).unwrap_err();
         let msg = format!("{err}");
-        assert!(
-            msg.contains("duplicate variant name 'dupe'"),
-            "got: {msg}"
-        );
+        assert!(msg.contains("duplicate variant name 'dupe'"), "got: {msg}");
     }
 
     #[test]
