@@ -2659,6 +2659,7 @@ then:
                 tags: vec![],
                 links: vec![],
                 fields: BTreeMap::new(),
+                fields_per_variant: Default::default(),
                 provenance: None,
                 source_file: None,
             }
@@ -2676,6 +2677,7 @@ then:
                     target: target.into(),
                 }],
                 fields: BTreeMap::new(),
+                fields_per_variant: Default::default(),
                 provenance: None,
                 source_file: None,
             }
@@ -2792,6 +2794,7 @@ then:
             tags: vec![],
             links: vec![],
             fields: BTreeMap::new(),
+            fields_per_variant: Default::default(),
             provenance: None,
             source_file: None,
         };
@@ -2880,6 +2883,7 @@ then:
                 target: "REQ-MISSING".into(),
             }],
             fields: BTreeMap::new(),
+            fields_per_variant: Default::default(),
             provenance: None,
             source_file: None,
         };
@@ -2961,6 +2965,7 @@ then:
                 target: "REQ-MISSING".into(),
             }],
             fields: BTreeMap::new(),
+            fields_per_variant: Default::default(),
             provenance: None,
             source_file: None,
         };
@@ -3088,6 +3093,7 @@ then:
             tags: vec![],
             links: vec![],
             fields: BTreeMap::new(),
+            fields_per_variant: Default::default(),
             provenance: None,
             source_file: None,
         };
@@ -3133,6 +3139,7 @@ then:
             tags: vec![],
             links: vec![],
             fields: BTreeMap::new(),
+            fields_per_variant: Default::default(),
             provenance: None,
             source_file: None,
         };
@@ -3236,6 +3243,7 @@ then:
             tags: vec![],
             links: vec![],
             fields: BTreeMap::new(),
+            fields_per_variant: Default::default(),
             provenance: None,
             source_file: None,
         };
@@ -3320,6 +3328,7 @@ then:
             tags: vec![],
             links: vec![],
             fields: BTreeMap::new(),
+            fields_per_variant: Default::default(),
             provenance: None,
             source_file: None,
         };
@@ -3335,6 +3344,7 @@ then:
                 target: "REQ-001".into(),
             }],
             fields: BTreeMap::new(),
+            fields_per_variant: Default::default(),
             provenance: None,
             source_file: None,
         };
@@ -3402,6 +3412,7 @@ then:
             tags: vec![],
             links: vec![],
             fields: BTreeMap::new(),
+            fields_per_variant: Default::default(),
             provenance: None,
             source_file: None,
         };

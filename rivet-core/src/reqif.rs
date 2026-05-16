@@ -882,6 +882,7 @@ pub fn parse_reqif(xml: &str, type_map: &HashMap<String, String>) -> Result<Vec<
             tags,
             links: vec![], // filled in below from SPEC-RELATIONS
             fields,
+            fields_per_variant: Default::default(),
             provenance,
             source_file: None,
         };
@@ -1505,6 +1506,7 @@ mod tests {
                     f.insert("priority".into(), serde_yaml::Value::String("must".into()));
                     f
                 },
+                fields_per_variant: Default::default(),
                 provenance: None,
                 source_file: None,
             },
@@ -1520,6 +1522,7 @@ mod tests {
                     target: "REQ-001".into(),
                 }],
                 fields: BTreeMap::new(),
+                fields_per_variant: Default::default(),
                 provenance: None,
                 source_file: None,
             },
@@ -1726,6 +1729,7 @@ mod tests {
             tags: vec![],
             links: vec![],
             fields: BTreeMap::new(),
+            fields_per_variant: Default::default(),
             provenance: Some(Provenance {
                 created_by: "ai-assisted".into(),
                 model: Some("claude-opus-4-7".into()),
@@ -1783,6 +1787,7 @@ mod tests {
             tags: vec![],
             links: vec![],
             fields: fields.clone(),
+            fields_per_variant: Default::default(),
             provenance: None,
             source_file: None,
         };
@@ -1852,6 +1857,7 @@ mod tests {
             tags: vec![],
             links: vec![],
             fields,
+            fields_per_variant: Default::default(),
             provenance: None,
             source_file: None,
         };
@@ -1887,6 +1893,7 @@ mod tests {
             ],
             links: vec![],
             fields: BTreeMap::new(),
+            fields_per_variant: Default::default(),
             provenance: None,
             source_file: None,
         };
@@ -2000,6 +2007,7 @@ mod tests {
             tags: vec![],
             links: vec![],
             fields,
+            fields_per_variant: Default::default(),
             provenance: None,
             source_file: None,
         };
@@ -2062,6 +2070,7 @@ mod tests {
             tags: vec![],
             links: vec![],
             fields,
+            fields_per_variant: Default::default(),
             provenance: None,
             source_file: None,
         };
@@ -2188,6 +2197,7 @@ mod tests {
             tags: vec![],
             links: vec![],
             fields: BTreeMap::new(),
+            fields_per_variant: Default::default(),
             provenance: None,
             source_file: None,
         };
@@ -2593,6 +2603,7 @@ mod tests {
                     },
                 ],
                 fields: BTreeMap::new(),
+                fields_per_variant: Default::default(),
                 provenance: None,
                 source_file: None,
             },
@@ -2608,6 +2619,7 @@ mod tests {
                     target: "TC-3".into(),
                 }],
                 fields: BTreeMap::new(),
+                fields_per_variant: Default::default(),
                 provenance: None,
                 source_file: None,
             },

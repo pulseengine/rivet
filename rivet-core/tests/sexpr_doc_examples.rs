@@ -50,6 +50,7 @@ fn art(id: &str, t: &str, tags: &[&str], status: Option<&str>, links: &[(&str, &
             })
             .collect(),
         fields: BTreeMap::new(),
+        fields_per_variant: Default::default(),
         provenance: None,
         source_file: None,
     }

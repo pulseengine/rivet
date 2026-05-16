@@ -353,6 +353,7 @@ fn convert_need(
         tags: item.tags.clone(),
         links,
         fields,
+        fields_per_variant: Default::default(),
         provenance: None,
         source_file: source.map(|p| p.to_path_buf()),
     }

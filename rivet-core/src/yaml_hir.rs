@@ -726,6 +726,7 @@ fn extract_section_item(
             tags,
             links,
             fields,
+            fields_per_variant: Default::default(),
             provenance,
             source_file: None, // set by caller
         },
@@ -821,6 +822,8 @@ fn extract_artifact_from_item(item: &SyntaxNode, result: &mut ParsedYamlFile) {
     let mut tags: Vec<String> = Vec::new();
     let mut links: Vec<Link> = Vec::new();
     let mut fields: BTreeMap<String, serde_yaml::Value> = BTreeMap::new();
+    let mut fields_per_variant: BTreeMap<String, BTreeMap<String, serde_yaml::Value>> =
+        BTreeMap::new();
     let mut field_spans: BTreeMap<String, Span> = BTreeMap::new();
     let mut provenance: Option<Provenance> = None;
 
@@ -884,6 +887,33 @@ fn extract_artifact_from_item(item: &SyntaxNode, result: &mut ParsedYamlFile) {
             "provenance" => {
                 provenance = extract_provenance(&value_node);
                 field_spans.insert("provenance".into(), value_span);
+            }
+            "fields-per-variant" => {
+                // Issue #255: nested mapping of variant-name → fields map.
+                // Outer mapping: variant config name → BTreeMap of field
+                // overrides. The full extracted YAML value is converted
+                // via the generic path, then unpacked into the typed
+                // shape.
+                let raw = node_to_yaml_value(&value_node);
+                if let serde_yaml::Value::Mapping(outer) = raw {
+                    for (vk, vv) in outer {
+                        let Some(variant_name) = vk.as_str() else {
+                            continue;
+                        };
+                        if let serde_yaml::Value::Mapping(inner) = vv {
+                            let mut overlay = std::collections::BTreeMap::new();
+                            for (fk, fv) in inner {
+                                if let Some(field_name) = fk.as_str() {
+                                    overlay.insert(field_name.to_string(), fv);
+                                }
+                            }
+                            if !overlay.is_empty() {
+                                fields_per_variant.insert(variant_name.to_string(), overlay);
+                            }
+                        }
+                    }
+                }
+                field_spans.insert("fields-per-variant".into(), value_span);
             }
             "fields" => {
                 // Nested mapping of custom fields
@@ -962,6 +992,7 @@ fn extract_artifact_from_item(item: &SyntaxNode, result: &mut ParsedYamlFile) {
         tags,
         links,
         fields,
+        fields_per_variant,
         provenance,
         source_file: None,
     };
@@ -2237,5 +2268,56 @@ artifacts:
                  got:\n{desc}"
             );
         }
+    }
+
+    /// Issue #255: the schema-driven parser must populate the typed
+    /// `fields_per_variant` from YAML's `fields-per-variant:` key, not
+    /// stash it as a generic untyped entry in `fields` (which is what
+    /// the fallthrough "unknown top-level key" branch would do).
+    #[test]
+    fn schema_driven_extracts_fields_per_variant() {
+        let source = "\
+artifacts:
+  - id: REQ-THERMAL-01
+    type: requirement
+    title: Operating temperature envelope
+    status: approved
+    fields:
+      priority: must
+      max-temp-c: 80
+    fields-per-variant:
+      automotive:
+        max-temp-c: 80
+        min-temp-c: -40
+      industrial:
+        max-temp-c: 100
+";
+        let schema = crate::schema::Schema::merge(&[]);
+        let parsed = extract_schema_driven(source, &schema, None);
+        assert_eq!(parsed.artifacts.len(), 1);
+        let a = &parsed.artifacts[0].artifact;
+
+        // The typed field must be populated, NOT smuggled into
+        // `fields["fields-per-variant"]`.
+        assert!(
+            !a.fields.contains_key("fields-per-variant"),
+            "fields-per-variant must NOT fall through to the generic fields map"
+        );
+        assert_eq!(a.fields_per_variant.len(), 2, "two variants declared");
+        assert!(a.fields_per_variant.contains_key("automotive"));
+        assert!(a.fields_per_variant.contains_key("industrial"));
+
+        // Resolver applies the overlay correctly. yaml_hir parses bare
+        // digits as Value::Number per YAML 1.2 core schema, but leading
+        // signs ("-40") fall through to String — compare each value
+        // against the type yaml_hir actually produces.
+        let auto = a.fields_for_variant(Some("automotive"));
+        assert_eq!(auto.get("max-temp-c").and_then(|v| v.as_u64()), Some(80));
+        assert_eq!(auto.get("min-temp-c").and_then(|v| v.as_str()), Some("-40"));
+
+        let indu = a.fields_for_variant(Some("industrial"));
+        assert_eq!(indu.get("max-temp-c").and_then(|v| v.as_u64()), Some(100));
+        // priority inherits from default
+        assert_eq!(indu.get("priority").and_then(|v| v.as_str()), Some("must"));
     }
 }

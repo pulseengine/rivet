@@ -911,6 +911,7 @@ fn req(id: &str, title: &str, description: Option<&str>) -> Artifact {
         tags: vec![],
         links: vec![],
         fields: std::collections::BTreeMap::new(),
+        fields_per_variant: Default::default(),
         provenance: None,
         source_file: None,
     }

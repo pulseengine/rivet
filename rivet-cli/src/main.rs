@@ -7551,6 +7551,7 @@ fn parse_yaml_content(
                         })
                         .collect(),
                     fields: raw.fields,
+                    fields_per_variant: Default::default(),
                     provenance: None,
                     source_file: Some(std::path::PathBuf::from(file_path)),
                 })
@@ -7580,6 +7581,7 @@ fn parse_yaml_content(
                         })
                         .collect(),
                     fields: raw.fields,
+                    fields_per_variant: Default::default(),
                     provenance: None,
                     source_file: Some(std::path::PathBuf::from(file_path)),
                 })
@@ -11376,6 +11378,7 @@ fn cmd_add(
         tags: tags.to_vec(),
         links: link_vec,
         fields: fields_map,
+        fields_per_variant: Default::default(),
         provenance: None,
         source_file: None,
     };
@@ -11882,6 +11885,7 @@ fn cmd_batch(cli: &Cli, file: &std::path::Path) -> Result<bool> {
                     tags: tags.clone(),
                     links: link_vec,
                     fields: fields.clone(),
+                    fields_per_variant: Default::default(),
                     provenance: None,
                     source_file: None,
                 };
@@ -11971,6 +11975,7 @@ fn cmd_batch(cli: &Cli, file: &std::path::Path) -> Result<bool> {
                     tags: tags.clone(),
                     links: link_vec,
                     fields: fields.clone(),
+                    fields_per_variant: Default::default(),
                     provenance: None,
                     source_file: None,
                 };
@@ -13750,6 +13755,7 @@ mod lsp_tests {
                 tags: vec![],
                 links: vec![],
                 fields: std::collections::BTreeMap::new(),
+                fields_per_variant: Default::default(),
                 provenance: None,
                 source_file: Some(path.clone()),
             })
@@ -13794,6 +13800,7 @@ mod lsp_tests {
                 tags: vec![],
                 links: vec![],
                 fields: std::collections::BTreeMap::new(),
+                fields_per_variant: Default::default(),
                 provenance: None,
                 source_file: Some(path.clone()),
             })
@@ -13835,6 +13842,7 @@ mod lsp_tests {
                 tags: vec![],
                 links: vec![],
                 fields: std::collections::BTreeMap::new(),
+                fields_per_variant: Default::default(),
                 provenance: None,
                 source_file: Some(path.clone()),
             })
@@ -13921,6 +13929,7 @@ mod lsp_tests {
                 tags: vec![],
                 links: vec![],
                 fields: std::collections::BTreeMap::new(),
+                fields_per_variant: Default::default(),
                 provenance: None,
                 source_file: Some(path_a.clone()),
             })
@@ -13935,6 +13944,7 @@ mod lsp_tests {
                 tags: vec![],
                 links: vec![],
                 fields: std::collections::BTreeMap::new(),
+                fields_per_variant: Default::default(),
                 provenance: None,
                 source_file: Some(path_b.clone()),
             })
@@ -13949,6 +13959,7 @@ mod lsp_tests {
                 tags: vec![],
                 links: vec![],
                 fields: std::collections::BTreeMap::new(),
+                fields_per_variant: Default::default(),
                 provenance: None,
                 source_file: Some(path_b.clone()),
             })
@@ -14020,6 +14031,7 @@ artifacts:
                 tags: vec![],
                 links: vec![],
                 fields: std::collections::BTreeMap::new(),
+                fields_per_variant: Default::default(),
                 provenance: None,
                 source_file: Some(path.clone()),
             })
@@ -14165,6 +14177,7 @@ mod stats_tests {
             tags: vec![],
             links: vec![],
             fields: Default::default(),
+            fields_per_variant: Default::default(),
             provenance: None,
             source_file: None,
         }

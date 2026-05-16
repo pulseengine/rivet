@@ -79,6 +79,7 @@ fn make_artifact(id: &str, artifact_type: &str) -> Artifact {
         tags: vec![],
         links: vec![],
         fields: BTreeMap::new(),
+        fields_per_variant: Default::default(),
         provenance: None,
         source_file: None,
     }
@@ -94,6 +95,7 @@ fn make_artifact_with_links(id: &str, artifact_type: &str, links: Vec<Link>) -> 
         tags: vec![],
         links,
         fields: BTreeMap::new(),
+        fields_per_variant: Default::default(),
         provenance: None,
         source_file: None,
     }

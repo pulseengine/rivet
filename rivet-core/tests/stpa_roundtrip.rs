@@ -80,6 +80,7 @@ fn test_store_insert_and_lookup() {
         tags: vec![],
         links: vec![],
         fields: Default::default(),
+        fields_per_variant: Default::default(),
         provenance: None,
         source_file: None,
     };
@@ -102,6 +103,7 @@ fn test_duplicate_id_rejected() {
         tags: vec![],
         links: vec![],
         fields: Default::default(),
+        fields_per_variant: Default::default(),
         provenance: None,
         source_file: None,
     };
@@ -116,6 +118,7 @@ fn test_duplicate_id_rejected() {
         tags: vec![],
         links: vec![],
         fields: Default::default(),
+        fields_per_variant: Default::default(),
         provenance: None,
         source_file: None,
     };
@@ -140,6 +143,7 @@ fn test_broken_link_detected() {
             target: "L-NONEXISTENT".into(),
         }],
         fields: Default::default(),
+        fields_per_variant: Default::default(),
         provenance: None,
         source_file: None,
     };
@@ -165,6 +169,7 @@ fn test_validation_catches_unknown_type() {
         tags: vec![],
         links: vec![],
         fields: Default::default(),
+        fields_per_variant: Default::default(),
         provenance: None,
         source_file: None,
     };

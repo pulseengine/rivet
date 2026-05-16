@@ -99,7 +99,14 @@ pub struct Provenance {
 /// Base fields (`id`, `title`, `description`, `status`, `tags`, `links`)
 /// are first-class struct members.  Domain-specific properties live in the
 /// `fields` map and are validated against the schema.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+///
+/// **`Default` note:** `id`, `artifact_type`, `title` default to empty
+/// strings; all collections empty; all `Option` fields `None`. Useful
+/// for test construction via
+/// `Artifact { id: "X".into(), artifact_type: "req".into(), ..Default::default() }`.
+/// Production code always parses from YAML and never relies on defaults
+/// being meaningful.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Artifact {
     /// Unique identifier.
     pub id: ArtifactId,
@@ -129,6 +136,31 @@ pub struct Artifact {
     /// Domain-specific fields (validated against schema).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub fields: BTreeMap<String, serde_yaml::Value>,
+
+    /// Per-variant field overrides (issue #255, single-master overlay).
+    ///
+    /// Outer key: variant config name (e.g. `automotive`, `industrial`,
+    /// `consumer` — the `name:` field of a file under
+    /// `artifacts/variants/`). Inner map: same shape as `fields`,
+    /// keyed by field name, value is the variant-specific override.
+    ///
+    /// Resolution semantics (option A from
+    /// `docs/design/variant-aware-properties.md`):
+    /// - When no variant is active (`fields_for_variant(None)`), the
+    ///   default `fields` map is returned unchanged.
+    /// - When a variant is active and present in this map, its
+    ///   per-field overrides are overlaid on top of `fields` (later
+    ///   wins). Fields not declared in the variant inherit the
+    ///   default.
+    /// - When a variant is active but not declared here, the default
+    ///   `fields` map is returned (silent fallback — the artifact
+    ///   simply has no variant-specific differentiation).
+    #[serde(
+        default,
+        rename = "fields-per-variant",
+        skip_serializing_if = "BTreeMap::is_empty"
+    )]
+    pub fields_per_variant: BTreeMap<String, BTreeMap<String, serde_yaml::Value>>,
 
     /// AI provenance metadata.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -201,6 +233,37 @@ impl Artifact {
     #[inline]
     pub fn is_released(&self) -> bool {
         self.status_is("released")
+    }
+
+    /// Resolve the effective `fields` map for a given variant.
+    ///
+    /// Returns a `Cow<...>`:
+    /// - `Borrowed(&self.fields)` when no overlay applies (no variant,
+    ///   unknown variant, or empty overlay) — zero allocations.
+    /// - `Owned(merged)` when the variant has overrides — clones the
+    ///   default map once and overlays the variant's keys on top.
+    ///
+    /// Per `docs/design/variant-aware-properties.md` §5.2, the merge is
+    /// a flat `BTreeMap` overlay: variant keys override default keys;
+    /// default keys not mentioned in the variant carry through.
+    pub fn fields_for_variant(
+        &self,
+        variant: Option<&str>,
+    ) -> std::borrow::Cow<'_, BTreeMap<String, serde_yaml::Value>> {
+        let Some(name) = variant else {
+            return std::borrow::Cow::Borrowed(&self.fields);
+        };
+        let Some(overlay) = self.fields_per_variant.get(name) else {
+            return std::borrow::Cow::Borrowed(&self.fields);
+        };
+        if overlay.is_empty() {
+            return std::borrow::Cow::Borrowed(&self.fields);
+        }
+        let mut merged = self.fields.clone();
+        for (k, v) in overlay {
+            merged.insert(k.clone(), v.clone());
+        }
+        std::borrow::Cow::Owned(merged)
     }
 }
 
@@ -276,6 +339,97 @@ mod tests {
         assert!(a.status_is("Needs-Review"));
         assert!(!a.is_draft());
         assert!(!a.is_approved());
+    }
+
+    // ── fields-per-variant (#255) ────────────────────────────────────
+
+    fn art_with_variant_overrides() -> Artifact {
+        let mut a = minimal_artifact("REQ-THERMAL-01", "requirement");
+        a.fields
+            .insert("max-temp-c".into(), serde_yaml::Value::Number(80.into()));
+        a.fields
+            .insert("priority".into(), serde_yaml::Value::String("must".into()));
+        a.fields_per_variant.insert("automotive".into(), {
+            let mut m = BTreeMap::new();
+            m.insert("max-temp-c".into(), serde_yaml::Value::Number(80.into()));
+            m.insert(
+                "min-temp-c".into(),
+                serde_yaml::Value::Number((-40i64).into()),
+            );
+            m
+        });
+        a.fields_per_variant.insert("industrial".into(), {
+            let mut m = BTreeMap::new();
+            m.insert("max-temp-c".into(), serde_yaml::Value::Number(100.into()));
+            m
+        });
+        a
+    }
+
+    #[test]
+    fn fields_for_variant_none_returns_default_fields() {
+        let a = art_with_variant_overrides();
+        let f = a.fields_for_variant(None);
+        assert!(matches!(f, std::borrow::Cow::Borrowed(_)));
+        assert_eq!(f.get("max-temp-c"), a.fields.get("max-temp-c"));
+        assert_eq!(f.get("priority"), a.fields.get("priority"));
+    }
+
+    #[test]
+    fn fields_for_variant_unknown_returns_default_fields() {
+        let a = art_with_variant_overrides();
+        let f = a.fields_for_variant(Some("consumer"));
+        assert!(
+            matches!(f, std::borrow::Cow::Borrowed(_)),
+            "unknown variant must fall back to default fields, not allocate"
+        );
+    }
+
+    #[test]
+    fn fields_for_variant_known_overlays_and_keeps_unmentioned_defaults() {
+        let a = art_with_variant_overrides();
+        let f = a.fields_for_variant(Some("industrial"));
+        // Industrial variant overrides max-temp-c but doesn't mention
+        // priority — priority must inherit from default.
+        assert_eq!(
+            f.get("max-temp-c"),
+            Some(&serde_yaml::Value::Number(100.into())),
+            "industrial overrides max-temp-c to 100"
+        );
+        assert_eq!(
+            f.get("priority"),
+            Some(&serde_yaml::Value::String("must".into())),
+            "priority inherits from default"
+        );
+    }
+
+    #[test]
+    fn fields_for_variant_known_adds_new_keys() {
+        let a = art_with_variant_overrides();
+        let f = a.fields_for_variant(Some("automotive"));
+        // Automotive adds min-temp-c which the default doesn't have.
+        assert_eq!(
+            f.get("min-temp-c"),
+            Some(&serde_yaml::Value::Number((-40i64).into()))
+        );
+    }
+
+    #[test]
+    fn fields_for_variant_yaml_roundtrip_preserves_overlay() {
+        // Serialise an artifact with fields-per-variant, parse it back,
+        // confirm the typed field survives the round-trip via serde.
+        let a = art_with_variant_overrides();
+        let yaml = serde_yaml::to_string(&a).unwrap();
+        let parsed: Artifact = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(parsed.fields_per_variant.len(), 2);
+        assert!(parsed.fields_per_variant.contains_key("automotive"));
+        assert!(parsed.fields_per_variant.contains_key("industrial"));
+        // Resolver still produces the right overlay after round-trip.
+        let f = parsed.fields_for_variant(Some("industrial"));
+        assert_eq!(
+            f.get("max-temp-c"),
+            Some(&serde_yaml::Value::Number(100.into()))
+        );
     }
 
     #[test]

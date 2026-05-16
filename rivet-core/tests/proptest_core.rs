@@ -100,8 +100,8 @@ proptest! {
                 tags: vec![],
                 links: vec![],
                 fields: BTreeMap::new(),
-                provenance: None,
-                source_file: None,
+                fields_per_variant: Default::default(),
+                provenance: None,                source_file: None,
             }
         }).collect();
 
@@ -142,8 +142,8 @@ proptest! {
             tags: vec![],
             links: vec![],
             fields: BTreeMap::new(),
-            provenance: None,
-            source_file: None,
+            fields_per_variant: Default::default(),
+            provenance: None,            source_file: None,
         };
         let a2 = Artifact {
             id: id.clone(),
@@ -154,8 +154,8 @@ proptest! {
             tags: vec![],
             links: vec![],
             fields: BTreeMap::new(),
-            provenance: None,
-            source_file: None,
+            fields_per_variant: Default::default(),
+            provenance: None,            source_file: None,
         };
 
         prop_assert!(store.insert(a1).is_ok());
@@ -240,8 +240,8 @@ proptest! {
                 tags: vec![],
                 links: vec![],
                 fields: BTreeMap::new(),
-                provenance: None,
-                source_file: None,
+                fields_per_variant: Default::default(),
+                provenance: None,                source_file: None,
             }).unwrap();
         }
 
@@ -299,6 +299,7 @@ fn prop_validation_determinism() {
             tags: vec![],
             links: vec![],
             fields: BTreeMap::new(),
+            fields_per_variant: Default::default(),
             provenance: None,
             source_file: None,
         })
@@ -317,6 +318,7 @@ fn prop_validation_determinism() {
                 target: "DET-L1".into(),
             }],
             fields: BTreeMap::new(),
+            fields_per_variant: Default::default(),
             provenance: None,
             source_file: None,
         })
@@ -335,6 +337,7 @@ fn prop_validation_determinism() {
                 target: "NONEXISTENT".into(),
             }],
             fields: BTreeMap::new(),
+            fields_per_variant: Default::default(),
             provenance: None,
             source_file: None,
         })
@@ -385,8 +388,8 @@ proptest! {
                 tags: vec![],
                 links: vec![],
                 fields: BTreeMap::new(),
-                provenance: None,
-                source_file: None,
+                fields_per_variant: Default::default(),
+                provenance: None,                source_file: None,
             }).unwrap();
         }
 

@@ -132,6 +132,7 @@ impl Adapter for GenericYamlAdapter {
                         })
                         .collect(),
                     fields: a.fields.clone(),
+                    fields_per_variant: a.fields_per_variant.clone(),
                     provenance: a.provenance.clone(),
                 })
                 .collect(),
@@ -167,6 +168,12 @@ struct GenericArtifact {
     links: Vec<GenericLink>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     fields: BTreeMap<String, serde_yaml::Value>,
+    #[serde(
+        default,
+        rename = "fields-per-variant",
+        skip_serializing_if = "BTreeMap::is_empty"
+    )]
+    fields_per_variant: BTreeMap<String, BTreeMap<String, serde_yaml::Value>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     provenance: Option<Provenance>,
 }
@@ -200,6 +207,7 @@ pub fn parse_generic_yaml(content: &str, source: Option<&Path>) -> Result<Vec<Ar
                 })
                 .collect(),
             fields: a.fields,
+            fields_per_variant: a.fields_per_variant,
             provenance: a.provenance,
             source_file: source.map(|p| p.to_path_buf()),
         })
