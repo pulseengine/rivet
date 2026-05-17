@@ -643,6 +643,27 @@ enum Command {
         strict: bool,
     },
 
+    /// Audit AI-authored commits against ai-session artifacts (#127).
+    ///
+    /// Two gates: (1) every AI-authored commit on the current branch must
+    /// have a matching `ai-session` artifact with `commit-sha` set; (2)
+    /// every `ai-session` with a `commit-sha` must point at a commit that
+    /// exists and is reachable from HEAD. Read-only.
+    Audit {
+        /// Starting git ref (default: merge-base with origin/main, then HEAD~50).
+        #[arg(long)]
+        since: Option<String>,
+        /// Ending git ref (default: HEAD).
+        #[arg(long)]
+        until: Option<String>,
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
+        /// Exit non-zero when any violation is found (CI mode).
+        #[arg(long)]
+        strict: bool,
+    },
+
     /// Start the HTMX-powered dashboard server
     Serve {
         /// Port to listen on (0 = auto-assign)
@@ -1903,6 +1924,12 @@ fn run(cli: Cli) -> Result<bool> {
             format,
             strict,
         } => cmd_commits(&cli, since.as_deref(), range.as_deref(), format, *strict),
+        Command::Audit {
+            since,
+            until,
+            format,
+            strict,
+        } => cmd_audit(&cli, since.as_deref(), until.as_deref(), format, *strict),
         Command::Serve { port, bind, watch } => {
             check_for_updates();
             let port = *port;
@@ -9517,6 +9544,356 @@ fn cmd_commits_json(analysis: &rivet_core::commits::CommitAnalysis, strict: bool
     let has_errors = !analysis.broken_refs.is_empty();
     let has_warnings = !analysis.orphans.is_empty() || !analysis.unimplemented.is_empty();
     let fail = has_errors || (strict && has_warnings);
+    Ok(!fail)
+}
+
+// ── rivet audit (#127 Phase 2) ──────────────────────────────────────────
+
+/// A commit we observed via `git log`.
+#[derive(Debug, Clone)]
+struct AuditCommit {
+    hash: String,
+    subject: String,
+    author_name: String,
+    author_email: String,
+    body: String,
+}
+
+impl AuditCommit {
+    /// True if any provenance signal in the commit metadata marks this
+    /// commit as authored by an AI assistant. We look for:
+    /// - `Co-Authored-By: ... noreply@anthropic.com`
+    /// - `Generated-With: ai*` / `Created-By: ai*`
+    fn is_ai_authored(&self) -> bool {
+        for line in self.body.lines() {
+            let trimmed = line.trim();
+            // Co-Authored-By trailer with Anthropic's noreply.
+            if let Some(rest) = trimmed
+                .strip_prefix("Co-Authored-By:")
+                .or_else(|| trimmed.strip_prefix("Co-authored-by:"))
+            {
+                if rest.contains("noreply@anthropic.com") {
+                    return true;
+                }
+            }
+            // Generated-With / Created-By trailers whose value is "ai" or
+            // "ai-assisted" (the project's `provenance.created-by` vocab).
+            // Match the bare value or that value followed by a separator —
+            // not arbitrary words that happen to start with "ai".
+            for key in [
+                "Generated-With:",
+                "Created-By:",
+                "generated-with:",
+                "created-by:",
+            ] {
+                if let Some(rest) = trimmed.strip_prefix(key) {
+                    let val = rest.trim().to_ascii_lowercase();
+                    let first_token: &str = val.split([' ', ',', ';', '\t']).next().unwrap_or("");
+                    if first_token == "ai" || first_token == "ai-assisted" {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+}
+
+/// Run `git` in the project directory and return stdout on success.
+fn git_in(project: &Path, args: &[&str]) -> Result<std::process::Output> {
+    std::process::Command::new("git")
+        .args(args)
+        .current_dir(project)
+        .output()
+        .with_context(|| format!("running git {}", args.join(" ")))
+}
+
+/// Resolve `--since` default: try `git merge-base origin/main HEAD`, fall
+/// back to `HEAD~50` if the merge-base lookup fails (no origin remote, no
+/// origin/main, shallow clone, etc.).
+fn default_since(project: &Path) -> String {
+    if let Ok(out) = git_in(project, &["merge-base", "origin/main", "HEAD"]) {
+        if out.status.success() {
+            let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !s.is_empty() {
+                return s;
+            }
+        }
+    }
+    "HEAD~50".to_string()
+}
+
+/// Parse `git log --format=...` output. We use a `\x00` record separator
+/// at the END of each commit record to avoid being confused by newlines
+/// inside the commit body.
+fn parse_git_log_audit(stdout: &str) -> Vec<AuditCommit> {
+    let mut out = Vec::new();
+    for record in stdout.split('\0') {
+        let record = record.trim_start_matches('\n');
+        if record.trim().is_empty() {
+            continue;
+        }
+        // Format we emit: %H%n%an%n%ae%n%s%n%B
+        // i.e. hash, author name, author email, subject, body.
+        let mut parts = record.splitn(5, '\n');
+        let hash = match parts.next() {
+            Some(h) => h.trim().to_string(),
+            None => continue,
+        };
+        if hash.is_empty() {
+            continue;
+        }
+        let author_name = parts.next().unwrap_or("").to_string();
+        let author_email = parts.next().unwrap_or("").to_string();
+        let subject = parts.next().unwrap_or("").to_string();
+        let body = parts.next().unwrap_or("").to_string();
+        out.push(AuditCommit {
+            hash,
+            subject,
+            author_name,
+            author_email,
+            body,
+        });
+    }
+    out
+}
+
+/// Walk the AI-session artifacts, build a map from any commit-sha they
+/// reference (full or truncated) → session ID. Returns the map plus the
+/// list of (session_id, raw_sha) pairs (so we can also gate-check each
+/// session.commit-sha for existence on Gate 2).
+fn collect_sessions(
+    store: &Store,
+) -> (
+    std::collections::HashMap<String, String>,
+    Vec<(String, String)>,
+    usize,
+) {
+    let mut sha_to_session: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+    let mut session_shas: Vec<(String, String)> = Vec::new();
+    let mut total = 0usize;
+    for a in store.iter().filter(|a| a.artifact_type == "ai-session") {
+        total += 1;
+        if let Some(sha) = a.fields.get("commit-sha").and_then(|v| v.as_str()) {
+            let sha = sha.trim().to_ascii_lowercase();
+            if sha.is_empty() {
+                continue;
+            }
+            session_shas.push((a.id.clone(), sha.clone()));
+            sha_to_session.insert(sha, a.id.clone());
+        }
+    }
+    (sha_to_session, session_shas, total)
+}
+
+/// True if the session map contains an entry whose key is a prefix of
+/// `commit_hash`, or `commit_hash` is a prefix of the key. Either direction
+/// matches the spec's "short or long SHA prefix" rule.
+fn session_for_commit<'a>(
+    sha_to_session: &'a std::collections::HashMap<String, String>,
+    commit_hash: &str,
+) -> Option<&'a String> {
+    let lower = commit_hash.to_ascii_lowercase();
+    // Exact / prefix match: scan all keys.
+    for (k, v) in sha_to_session {
+        if lower.starts_with(k.as_str()) || k.starts_with(lower.as_str()) {
+            return Some(v);
+        }
+    }
+    None
+}
+
+/// Implementation of `rivet audit`.
+fn cmd_audit(
+    cli: &Cli,
+    since: Option<&str>,
+    until: Option<&str>,
+    format: &str,
+    strict: bool,
+) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
+
+    let ctx = ProjectContext::load(cli)?;
+    let project_path = std::fs::canonicalize(&cli.project).unwrap_or_else(|_| cli.project.clone());
+
+    // Resolve since/until refs.
+    let since_ref = match since {
+        Some(s) => s.to_string(),
+        None => default_since(&project_path),
+    };
+    let until_ref = until.unwrap_or("HEAD").to_string();
+    let range = format!("{}..{}", since_ref, until_ref);
+
+    // Format the log. Use \x00 as a record separator at the end of each
+    // commit record so the body's internal newlines don't break parsing.
+    let log_format = "%H%n%an%n%ae%n%s%n%B";
+    let log_arg = format!("--format={log_format}%x00");
+    let log_out =
+        git_in(&project_path, &["log", &log_arg, &range]).context("running git log for audit")?;
+    if !log_out.status.success() {
+        let stderr = String::from_utf8_lossy(&log_out.stderr);
+        anyhow::bail!("git log failed for range '{}': {}", range, stderr.trim());
+    }
+    let stdout = String::from_utf8_lossy(&log_out.stdout);
+    let commits = parse_git_log_audit(&stdout);
+
+    let ai_commits: Vec<&AuditCommit> = commits.iter().filter(|c| c.is_ai_authored()).collect();
+
+    // Build the session→commit map.
+    let (sha_to_session, session_shas, sessions_total) = collect_sessions(&ctx.store);
+
+    // Gate 1: AI-authored commit without an ai-session.
+    let mut commits_without_session: Vec<&AuditCommit> = Vec::new();
+    for c in &ai_commits {
+        if session_for_commit(&sha_to_session, &c.hash).is_none() {
+            commits_without_session.push(c);
+        }
+    }
+
+    // Gate 2: ai-session.commit-sha that doesn't exist or isn't reachable.
+    let mut bad_sessions: Vec<(String, String, &'static str)> = Vec::new();
+    for (session_id, sha) in &session_shas {
+        // git cat-file -e <sha> — exists?
+        let exists = git_in(&project_path, &["cat-file", "-e", sha])
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if !exists {
+            bad_sessions.push((session_id.clone(), sha.clone(), "not-found"));
+            continue;
+        }
+        // git merge-base --is-ancestor <sha> HEAD — reachable?
+        let reachable = git_in(
+            &project_path,
+            &["merge-base", "--is-ancestor", sha, &until_ref],
+        )
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+        if !reachable {
+            bad_sessions.push((session_id.clone(), sha.clone(), "unreachable"));
+        }
+    }
+
+    let total_violations = commits_without_session.len() + bad_sessions.len();
+    let passed = total_violations == 0;
+
+    // Resolve since/until for the report — use short SHAs when possible.
+    let short_since = git_in(&project_path, &["rev-parse", "--short", &since_ref])
+        .ok()
+        .and_then(|o| {
+            if o.status.success() {
+                Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| since_ref.clone());
+    let short_until = git_in(&project_path, &["rev-parse", "--short", &until_ref])
+        .ok()
+        .and_then(|o| {
+            if o.status.success() {
+                Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| until_ref.clone());
+
+    if format == "json" {
+        let commits_violations: Vec<serde_json::Value> = commits_without_session
+            .iter()
+            .map(|c| {
+                let short = if c.hash.len() >= 7 {
+                    &c.hash[..7]
+                } else {
+                    &c.hash
+                };
+                serde_json::json!({
+                    "commit": short,
+                    "subject": c.subject,
+                    "author": format!("{} <{}>", c.author_name, c.author_email),
+                    "rule": "audit.ai-commit-without-session",
+                })
+            })
+            .collect();
+        let session_violations: Vec<serde_json::Value> = bad_sessions
+            .iter()
+            .map(|(sid, sha, reason)| {
+                serde_json::json!({
+                    "session_id": sid,
+                    "commit_sha": sha,
+                    "reason": reason,
+                    "rule": "audit.session-commit-missing",
+                })
+            })
+            .collect();
+        let envelope = serde_json::json!({
+            "command": "audit",
+            "passed": passed,
+            "since": short_since,
+            "until": short_until,
+            "ai_commits_scanned": ai_commits.len(),
+            "ai_sessions_in_project": sessions_total,
+            "violations": {
+                "ai_commits_without_session": commits_violations,
+                "sessions_with_missing_commit": session_violations,
+            },
+            "summary": {
+                "total_violations": total_violations,
+            }
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&envelope).context("serializing audit JSON")?
+        );
+        let fail = strict && !passed;
+        return Ok(!fail);
+    }
+
+    // Text output.
+    if passed {
+        println!(
+            "audit: PASS ({} AI-authored commit(s), {} ai-session artifact(s), all matched)",
+            ai_commits.len(),
+            sessions_total
+        );
+    } else {
+        println!("audit: FAIL — {} violation(s)", total_violations);
+        if !commits_without_session.is_empty() {
+            println!();
+            println!(
+                "AI-authored commits without ai-session artifact ({}):",
+                commits_without_session.len()
+            );
+            for c in &commits_without_session {
+                let short = if c.hash.len() >= 7 {
+                    &c.hash[..7]
+                } else {
+                    &c.hash
+                };
+                println!(
+                    "  {short} \"{}\" — by {} <{}>",
+                    c.subject, c.author_name, c.author_email
+                );
+            }
+        }
+        if !bad_sessions.is_empty() {
+            println!();
+            println!(
+                "ai-session artifacts with missing or unreachable commit ({}):",
+                bad_sessions.len()
+            );
+            for (sid, sha, reason) in &bad_sessions {
+                println!("  {sid} -> {sha} ({reason})");
+            }
+        }
+        println!();
+        println!("Run `rivet add --type ai-session --field commit-sha=<sha> ...` for each");
+        println!("orphan commit, and update or remove sessions that point at vanished");
+        println!("commits.");
+    }
+
+    let fail = strict && !passed;
     Ok(!fail)
 }
 

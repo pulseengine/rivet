@@ -3440,3 +3440,306 @@ fn supplier_check_classifies_delegated_dd_as_boundary() {
         "DD-DELEGATED must be classified as external_boundary, got: {value}"
     );
 }
+
+// ── rivet audit (#127 Phase 2) ─────────────────────────────────────────
+// Verifies: REQ-004
+
+/// Initialize a git repo with `git init`, a baseline commit, and then a
+/// second commit whose message is `message` authored by `author_email`.
+/// Returns (baseline_sha, target_sha) — pass `--since <baseline_sha>` to
+/// `rivet audit` so the second commit appears in the range.
+fn audit_init_git_repo(
+    dir: &std::path::Path,
+    message: &str,
+    author_email: &str,
+) -> (String, String) {
+    let run = |args: &[&str]| {
+        let out = Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .expect("git command");
+        assert!(
+            out.status.success(),
+            "git {} failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        out
+    };
+
+    run(&["init", "-q", "-b", "main"]);
+    run(&["config", "user.email", "baseline@example.com"]);
+    run(&["config", "user.name", "Baseline"]);
+    run(&["config", "commit.gpgsign", "false"]);
+
+    // Baseline commit — guaranteed not AI-authored.
+    std::fs::write(dir.join("README.md"), "# audit test\n").expect("write README");
+    run(&["add", "README.md"]);
+    run(&["commit", "-q", "-m", "chore: baseline"]);
+    let baseline_out = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(dir)
+        .output()
+        .expect("rev-parse baseline");
+    let baseline = String::from_utf8_lossy(&baseline_out.stdout)
+        .trim()
+        .to_string();
+
+    // Target commit — message + author are caller-controlled.
+    run(&["config", "user.email", author_email]);
+    run(&["config", "user.name", "Audit Test"]);
+    std::fs::write(dir.join("file.txt"), "payload\n").expect("write file.txt");
+    run(&["add", "file.txt"]);
+    run(&["commit", "-q", "-m", message]);
+    let target_out = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(dir)
+        .output()
+        .expect("rev-parse target");
+    let target = String::from_utf8_lossy(&target_out.stdout)
+        .trim()
+        .to_string();
+
+    (baseline, target)
+}
+
+/// Write a minimal rivet.yaml + artifact YAML, ready for `rivet audit`.
+fn audit_write_project(dir: &std::path::Path, artifacts_yaml: &str) {
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        "project:\n  name: audit-test\n  version: \"0.1.0\"\n  \
+         schemas: [common]\nsources:\n  - path: artifacts\n    \
+         format: generic-yaml\n",
+    )
+    .expect("write rivet.yaml");
+    let artifacts_dir = dir.join("artifacts");
+    std::fs::create_dir_all(&artifacts_dir).expect("artifacts dir");
+    std::fs::write(artifacts_dir.join("sessions.yaml"), artifacts_yaml)
+        .expect("write sessions.yaml");
+}
+
+/// Gate 1 passes when every AI-authored commit has a matching `ai-session`.
+#[test]
+fn audit_passes_when_ai_commits_have_matching_sessions() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let dir = tmp.path();
+
+    let (baseline, target) = audit_init_git_repo(
+        dir,
+        "feat: do a thing\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n",
+        "alice@example.com",
+    );
+    let short = &target[..7];
+
+    let artifacts = format!(
+        "artifacts:\n  - id: AI-SESS-001\n    type: ai-session\n    \
+         title: claude session\n    fields:\n      \
+         session-id: abc-123\n      model-id: claude-opus-4-7\n      \
+         commit-sha: \"{short}\"\n"
+    );
+    audit_write_project(dir, &artifacts);
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir.to_str().unwrap(),
+            "audit",
+            "--since",
+            &baseline,
+            "--strict",
+        ])
+        .output()
+        .expect("rivet audit");
+
+    assert!(
+        out.status.success(),
+        "audit must pass; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("audit: PASS"),
+        "expected PASS line; got:\n{stdout}"
+    );
+}
+
+/// Gate 1 fails (with `--strict`) when an AI-authored commit has no matching
+/// `ai-session`. Without `--strict`, the same project must still exit 0 but
+/// still print the violation in the report.
+#[test]
+fn audit_fails_when_ai_commit_has_no_session() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let dir = tmp.path();
+
+    let (baseline, target) = audit_init_git_repo(
+        dir,
+        "feat: orphan ai commit\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n",
+        "alice@example.com",
+    );
+
+    // Project with NO ai-session artifacts.
+    audit_write_project(dir, "artifacts: []\n");
+
+    // --strict: must fail.
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir.to_str().unwrap(),
+            "audit",
+            "--since",
+            &baseline,
+            "--strict",
+        ])
+        .output()
+        .expect("rivet audit --strict");
+    assert!(
+        !out.status.success(),
+        "audit --strict must fail when AI commits lack sessions; stdout:\n{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("audit: FAIL"),
+        "FAIL banner; got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains(&target[..7]),
+        "short SHA listed; got:\n{stdout}"
+    );
+
+    // Without --strict: exit 0, but report still printed.
+    let lenient = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir.to_str().unwrap(),
+            "audit",
+            "--since",
+            &baseline,
+        ])
+        .output()
+        .expect("rivet audit");
+    assert!(
+        lenient.status.success(),
+        "no-strict run must exit 0 even with violations"
+    );
+    let lenient_out = String::from_utf8_lossy(&lenient.stdout);
+    assert!(
+        lenient_out.contains("audit: FAIL"),
+        "lenient run still prints the report; got:\n{lenient_out}"
+    );
+}
+
+/// Gate 2 fails when an `ai-session.commit-sha` points at a missing or
+/// unreachable commit.
+#[test]
+fn audit_fails_when_session_points_at_missing_commit() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let dir = tmp.path();
+
+    let (baseline, _target) =
+        audit_init_git_repo(dir, "chore: scaffold human\n", "alice@example.com");
+
+    // Session points at a SHA that does NOT exist in the repo.
+    let artifacts = "artifacts:\n  - id: AI-SESS-666\n    type: ai-session\n    \
+         title: fabricated\n    fields:\n      session-id: zzz\n      \
+         model-id: claude-opus-4-7\n      commit-sha: deadbeefdeadbeef\n";
+    audit_write_project(dir, artifacts);
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir.to_str().unwrap(),
+            "audit",
+            "--since",
+            &baseline,
+            "--strict",
+        ])
+        .output()
+        .expect("rivet audit --strict");
+    assert!(
+        !out.status.success(),
+        "audit --strict must fail when session points at missing commit"
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("AI-SESS-666"), "session id; got:\n{stdout}");
+    assert!(
+        stdout.contains("deadbeefdeadbeef"),
+        "missing sha listed; got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("not-found"),
+        "reason 'not-found'; got:\n{stdout}"
+    );
+}
+
+/// JSON envelope shape on a failing project. Verifies the documented keys
+/// so downstream CI consumers can rely on them.
+#[test]
+fn audit_json_envelope_shape_on_failure() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let dir = tmp.path();
+
+    let (baseline, target) = audit_init_git_repo(
+        dir,
+        "feat: another orphan\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n",
+        "alice@example.com",
+    );
+    audit_write_project(dir, "artifacts: []\n");
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir.to_str().unwrap(),
+            "audit",
+            "--since",
+            &baseline,
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("rivet audit --format json");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("audit --format json must emit valid JSON");
+
+    assert_eq!(
+        parsed.get("command").and_then(|v| v.as_str()),
+        Some("audit"),
+        "command field; got: {parsed}"
+    );
+    assert_eq!(
+        parsed.get("passed").and_then(|v| v.as_bool()),
+        Some(false),
+        "passed=false; got: {parsed}"
+    );
+    let viol = parsed
+        .get("violations")
+        .and_then(|v| v.get("ai_commits_without_session"))
+        .and_then(|v| v.as_array())
+        .expect("violations array present");
+    assert_eq!(viol.len(), 1, "one violation; got: {parsed}");
+    let entry = &viol[0];
+    assert_eq!(
+        entry.get("rule").and_then(|v| v.as_str()),
+        Some("audit.ai-commit-without-session"),
+        "rule key; got: {entry}"
+    );
+    assert!(
+        entry
+            .get("commit")
+            .and_then(|v| v.as_str())
+            .is_some_and(|c| target.starts_with(c)),
+        "commit short SHA prefixes full sha; got: {entry}"
+    );
+    assert_eq!(
+        parsed
+            .get("summary")
+            .and_then(|s| s.get("total_violations"))
+            .and_then(|v| v.as_u64()),
+        Some(1),
+        "summary.total_violations; got: {parsed}"
+    );
+}
