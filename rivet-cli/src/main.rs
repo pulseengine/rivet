@@ -2102,9 +2102,7 @@ fn run(cli: Cli) -> Result<bool> {
                 strict,
                 format,
             } => cmd_check_sources(&cli, *update, *apply, *strict, format),
-            CheckAction::AiDefectsOpen { format } => {
-                cmd_check_ai_defects_open(&cli, format)
-            }
+            CheckAction::AiDefectsOpen { format } => cmd_check_ai_defects_open(&cli, format),
         },
         #[cfg(feature = "wasm")]
         Command::Import {
@@ -11524,10 +11522,7 @@ fn cmd_check_ai_defects_open(cli: &Cli, format: &str) -> Result<bool> {
             .get("triage-status")
             .and_then(|v| v.as_str())
             .unwrap_or("");
-        let triaged_by = defect
-            .fields
-            .get("triaged-by")
-            .and_then(|v| v.as_str());
+        let triaged_by = defect.fields.get("triaged-by").and_then(|v| v.as_str());
 
         // Gate 1 — open defects against released/approved artifacts.
         if triage == "open" {
@@ -11554,11 +11549,7 @@ fn cmd_check_ai_defects_open(cli: &Cli, format: &str) -> Result<bool> {
 
         // Gate 2 — segregation of duties.
         if let Some(tb) = triaged_by {
-            if let Some(session_link) = defect
-                .links
-                .iter()
-                .find(|l| l.link_type == "produced-by")
-            {
+            if let Some(session_link) = defect.links.iter().find(|l| l.link_type == "produced-by") {
                 if let Some(session) = ctx.store.get(&session_link.target) {
                     if session.artifact_type == "ai-session" {
                         let invoker = session
@@ -11598,7 +11589,9 @@ fn cmd_check_ai_defects_open(cli: &Cli, format: &str) -> Result<bool> {
         });
         println!("{}", serde_json::to_string_pretty(&out)?);
     } else if pass {
-        println!("ai-defects-open: PASS (no open AI defects against released artifacts; no self-triaged findings)");
+        println!(
+            "ai-defects-open: PASS (no open AI defects against released artifacts; no self-triaged findings)"
+        );
     } else {
         println!("ai-defects-open: FAIL — {violations} violation(s)\n");
         if !open_against_released.is_empty() {

@@ -3194,7 +3194,11 @@ fn ai_defects_project(triage: &str, target_status: &str, self_triage: bool) -> t
     assert!(init.status.success(), "init failed: {init:?}");
 
     let invoker = "alice@example.com";
-    let triaged_by = if self_triage { invoker } else { "bob@example.com" };
+    let triaged_by = if self_triage {
+        invoker
+    } else {
+        "bob@example.com"
+    };
     let req_path = dir.join("artifacts").join("requirements.yaml");
     let existing = std::fs::read_to_string(&req_path).expect("read");
     let extra = format!(
@@ -3247,7 +3251,10 @@ fn ai_defects_open_passes_when_triaged_and_no_self_triage() {
         .expect("run check ai-defects-open");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let value: serde_json::Value = serde_json::from_str(&stdout).expect("valid json");
-    assert_eq!(value["passed"], true, "must pass when triage != open. got: {value}");
+    assert_eq!(
+        value["passed"], true,
+        "must pass when triage != open. got: {value}"
+    );
 }
 
 #[test]

@@ -1182,10 +1182,8 @@ artifacts:
     #[test]
     fn build_store_cache_returns_equal_on_noop_revision() {
         let db = RivetDatabase::new();
-        let sources = db.load_sources(&[
-            ("reqs.yaml", SOURCE_REQ),
-            ("design.yaml", SOURCE_DD_LINKED),
-        ]);
+        let sources =
+            db.load_sources(&[("reqs.yaml", SOURCE_REQ), ("design.yaml", SOURCE_DD_LINKED)]);
         let schemas = db.load_schemas(&[("test", TEST_SCHEMA)]);
 
         let store_1 = build_store(&db, sources, schemas);
