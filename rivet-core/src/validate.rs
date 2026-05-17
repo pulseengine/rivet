@@ -306,6 +306,23 @@ pub fn validate(store: &Store, schema: &Schema, graph: &LinkGraph) -> Vec<Diagno
     validate_with_externals(store, schema, graph, &BTreeMap::new())
 }
 
+/// Variant-aware twin of [`validate`].
+///
+/// Each artifact's required-fields, allowed-values, and conditional-rule
+/// checks consult [`crate::model::Artifact::fields_for_variant`] so a
+/// variant overlay's keys take precedence over the artifact's default
+/// `fields` map. Pass `variant: None` for the default-flavour run.
+///
+/// See `docs/design/variant-aware-properties.md` §6 Phase 2.
+pub fn validate_with_variant(
+    store: &Store,
+    schema: &Schema,
+    graph: &LinkGraph,
+    variant: Option<&str>,
+) -> Vec<Diagnostic> {
+    validate_with_externals_and_variant(store, schema, graph, &BTreeMap::new(), variant)
+}
+
 /// Validate a store against a schema, link graph, and per-prefix external
 /// schemas. Externally-prefixed artifacts (id like `<prefix>:<id>`) are
 /// type-checked against `externals[prefix]` when present, so cross-repo
@@ -317,29 +334,56 @@ pub fn validate_with_externals(
     graph: &LinkGraph,
     externals: &ExternalSchemas,
 ) -> Vec<Diagnostic> {
-    let mut diagnostics = validate_structural_with_externals(store, schema, graph, externals);
+    validate_with_externals_and_variant(store, schema, graph, externals, None)
+}
+
+/// Variant-aware twin of [`validate_with_externals`]. When `variant` is
+/// `Some(name)`, per-artifact field reads inside the structural and
+/// conditional-rule checks resolve through `fields_for_variant`.
+pub fn validate_with_externals_and_variant(
+    store: &Store,
+    schema: &Schema,
+    graph: &LinkGraph,
+    externals: &ExternalSchemas,
+    variant: Option<&str>,
+) -> Vec<Diagnostic> {
+    let mut diagnostics =
+        validate_structural_with_externals_and_variant(store, schema, graph, externals, variant);
 
     // 0. Check conditional rule consistency (schema-level)
     diagnostics.extend(crate::schema::check_conditional_consistency(
         &schema.conditional_rules,
     ));
 
-    // 8. Check conditional rules (pre-compile regexes to avoid re-compilation per artifact)
+    // 8. Check conditional rules (pre-compile regexes to avoid re-compilation per artifact).
+    //
+    // When a variant is active, `matches_artifact_for_variant_with` and
+    // `check_for_variant` resolve field reads through the artifact's
+    // per-variant overlay so a rule whose `when` condition is satisfied
+    // by the default `priority: must` may NOT fire under a variant that
+    // overrides `priority: should` (and vice versa). The `variant: None`
+    // path delegates to the borrowed-Cow fast path.
     for rule in &schema.conditional_rules {
         let compiled_re = rule.when.compile_regex();
         let condition_re = rule.condition.as_ref().and_then(|c| c.compile_regex());
         for artifact in store.iter() {
             // If a precondition is set, it must also match
             if let Some(cond) = &rule.condition {
-                if !cond.matches_artifact_with(artifact, condition_re.as_ref()) {
+                if !cond.matches_artifact_for_variant_with(artifact, condition_re.as_ref(), variant)
+                {
                     continue;
                 }
             }
             if rule
                 .when
-                .matches_artifact_with(artifact, compiled_re.as_ref())
+                .matches_artifact_for_variant_with(artifact, compiled_re.as_ref(), variant)
             {
-                diagnostics.extend(rule.then.check(artifact, &rule.name, rule.severity));
+                diagnostics.extend(rule.then.check_for_variant(
+                    artifact,
+                    &rule.name,
+                    rule.severity,
+                    variant,
+                ));
             }
         }
     }
@@ -466,6 +510,21 @@ pub fn validate_structural(store: &Store, schema: &Schema, graph: &LinkGraph) ->
     validate_structural_with_externals(store, schema, graph, &BTreeMap::new())
 }
 
+/// Variant-aware twin of [`validate_structural`].
+///
+/// Required-field and allowed-values checks resolve through the
+/// per-variant overlay so a field that only exists on the variant
+/// satisfies a `required: true` field definition, and a variant-only
+/// value is checked against `allowed-values`.
+pub fn validate_structural_with_variant(
+    store: &Store,
+    schema: &Schema,
+    graph: &LinkGraph,
+    variant: Option<&str>,
+) -> Vec<Diagnostic> {
+    validate_structural_with_externals_and_variant(store, schema, graph, &BTreeMap::new(), variant)
+}
+
 /// Structural validation aware of per-prefix external schemas.
 ///
 /// Behaves like [`validate_structural`] but consults `externals[prefix]` when
@@ -480,6 +539,20 @@ pub fn validate_structural_with_externals(
     schema: &Schema,
     graph: &LinkGraph,
     externals: &ExternalSchemas,
+) -> Vec<Diagnostic> {
+    validate_structural_with_externals_and_variant(store, schema, graph, externals, None)
+}
+
+/// Variant-aware twin of [`validate_structural_with_externals`]. When
+/// `variant` is `Some(name)`, required-field presence and allowed-value
+/// checks read through [`crate::model::Artifact::fields_for_variant`]
+/// so the per-variant overlay wins over the default `fields` map.
+pub fn validate_structural_with_externals_and_variant(
+    store: &Store,
+    schema: &Schema,
+    graph: &LinkGraph,
+    externals: &ExternalSchemas,
+    variant: Option<&str>,
 ) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
@@ -518,9 +591,14 @@ pub fn validate_structural_with_externals(
             }
         };
 
+        // Resolve the fields map once per artifact through the variant
+        // overlay. `Cow::Borrowed(&artifact.fields)` when no variant
+        // applies — zero allocations on the common path.
+        let effective_fields = artifact.fields_for_variant(variant);
+
         // 2. Check required fields
         for field in &type_def.fields {
-            if field.required && !artifact.fields.contains_key(&field.name) {
+            if field.required && !effective_fields.contains_key(&field.name) {
                 // Also check if the field name matches a base field (description, etc.)
                 let has_base = match field.name.as_str() {
                     "description" => artifact.description.is_some(),
@@ -545,7 +623,7 @@ pub fn validate_structural_with_externals(
 
             // 3. Check allowed values
             if let Some(allowed) = &field.allowed_values {
-                if let Some(value) = artifact.fields.get(&field.name) {
+                if let Some(value) = effective_fields.get(&field.name) {
                     if let Some(s) = value.as_str() {
                         // Value is already a YAML string — straightforward check
                         if !allowed.iter().any(|a| a == s) {
@@ -3440,6 +3518,138 @@ then:
             Severity::Error,
             "phase-7 traceability draft-downgrade must NOT cascade into \
              phase-9 validation rules"
+        );
+    }
+
+    // ── Variant-aware field overlays (issue #287, Phase 2) ───────────────
+    //
+    // Phase 2 wires `Artifact::fields_for_variant` into the validate
+    // engine: required-fields, allowed-values, and conditional rules
+    // resolve through the per-variant overlay so an active variant's
+    // value wins over the default `fields` map. The two tests below
+    // verify the visible-from-CLI behaviour change.
+
+    /// Test A: conditional rule fires for the default flavour but is
+    /// suppressed under a variant whose overlay disables the trigger.
+    ///
+    /// Setup:
+    ///   - Artifact `R-1` has `fields.priority = must` and
+    ///     `fields-per-variant.automotive.priority = should`.
+    ///   - Conditional rule: "when priority equals 'must', require
+    ///     `rationale` field".
+    ///
+    /// Expected:
+    ///   - `validate(store, schema, graph)` (no variant): rule fires
+    ///     because the default flavour has `priority: must`.
+    ///   - `validate_with_variant(.., Some("automotive"))`: rule does
+    ///     NOT fire because the variant overlay sets `priority: should`.
+    // rivet: verifies REQ-004
+    #[test]
+    fn conditional_rule_respects_variant_field_overlay() {
+        let rule = ConditionalRule {
+            name: "must-needs-rationale".to_string(),
+            description: None,
+            condition: None,
+            when: Condition::Equals {
+                field: "priority".to_string(),
+                value: "must".to_string(),
+            },
+            then: Requirement::RequiredFields {
+                fields: vec!["rationale".to_string()],
+            },
+            severity: Severity::Error,
+        };
+        let schema = make_schema(vec![rule]);
+
+        let mut art = make_artifact("R-1", "test", None, None, vec![], vec![]);
+        art.fields.insert(
+            "priority".to_string(),
+            serde_yaml::Value::String("must".to_string()),
+        );
+        let mut overlay = BTreeMap::new();
+        overlay.insert(
+            "priority".to_string(),
+            serde_yaml::Value::String("should".to_string()),
+        );
+        art.fields_per_variant
+            .insert("automotive".to_string(), overlay);
+
+        let mut store = Store::new();
+        store.insert(art).unwrap();
+        let graph = LinkGraph::build(&store, &schema);
+
+        // No variant: condition matches default `priority: must` → rule fires.
+        let diags_default = validate(&store, &schema, &graph);
+        assert_eq!(
+            rule_count(&diags_default, "must-needs-rationale"),
+            1,
+            "default flavour: priority=must matches, rationale missing → rule must fire",
+        );
+
+        // Variant active: overlay replaces `priority` with `should` → rule does NOT fire.
+        let diags_variant = validate_with_variant(&store, &schema, &graph, Some("automotive"));
+        assert_eq!(
+            rule_count(&diags_variant, "must-needs-rationale"),
+            0,
+            "variant 'automotive' overlays priority=should so the rule's 'when' \
+             precondition fails — the rule must not fire",
+        );
+
+        // Unknown variant falls back to defaults (overlay miss → borrowed Cow).
+        let diags_unknown = validate_with_variant(&store, &schema, &graph, Some("does-not-exist"));
+        assert_eq!(
+            rule_count(&diags_unknown, "must-needs-rationale"),
+            1,
+            "unknown variant name must behave like the default flavour",
+        );
+    }
+
+    /// Test B: a required field is missing on the default flavour but
+    /// satisfied by a variant overlay.
+    ///
+    /// Setup:
+    ///   - Schema declares `asil` as a required field on the "test"
+    ///     type.
+    ///   - Artifact has no `fields.asil` but has
+    ///     `fields-per-variant.automotive.asil = D`.
+    ///
+    /// Expected:
+    ///   - `validate_structural` (no variant): emits `required-field`.
+    ///   - `validate_structural_with_variant(.., Some("automotive"))`:
+    ///     passes (overlay supplies the field).
+    // rivet: verifies REQ-004
+    #[test]
+    fn required_field_satisfied_by_variant_overlay() {
+        let schema = schema_with_fields(vec![required_field("asil")]);
+
+        let mut art = make_artifact("R-2", "test", None, None, vec![], vec![]);
+        let mut overlay = BTreeMap::new();
+        overlay.insert(
+            "asil".to_string(),
+            serde_yaml::Value::String("D".to_string()),
+        );
+        art.fields_per_variant
+            .insert("automotive".to_string(), overlay);
+
+        let mut store = Store::new();
+        store.insert(art).unwrap();
+        let graph = LinkGraph::build(&store, &schema);
+
+        // Default flavour: no `asil` on the artifact → required-field fires.
+        let diags_default = validate_structural(&store, &schema, &graph);
+        assert_eq!(
+            rule_count(&diags_default, "required-field"),
+            1,
+            "default flavour: asil missing → required-field must fire",
+        );
+
+        // Variant active: overlay supplies `asil` → check passes.
+        let diags_variant =
+            validate_structural_with_variant(&store, &schema, &graph, Some("automotive"));
+        assert_eq!(
+            rule_count(&diags_variant, "required-field"),
+            0,
+            "variant 'automotive' overlay supplies asil=D → required-field must NOT fire",
         );
     }
 }
