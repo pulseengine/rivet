@@ -14,6 +14,12 @@ on:
 
 permissions:
   contents: write
+  # Required for sigstore keyless signing (cosign): GitHub OIDC token
+  # is the trust anchor — Fulcio mints a short-lived signing cert from
+  # the workflow's identity, the signature is recorded in Rekor, and
+  # consumers verify via the issuer + identity (no long-lived keys to
+  # rotate). See `Sign release assets with cosign` step below.
+  id-token: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -344,6 +350,37 @@ jobs:
           cd release
           sha256sum * > SHA256SUMS.txt
           cat SHA256SUMS.txt
+
+      # ── Sigstore keyless signing (Supply-Chain-Pentester finding) ──
+      # Closes the gap called out in the v0.10.0 adversarial review:
+      # SHA256SUMS shipped unsigned, so an attacker who could replace
+      # the release-page asset could also replace the checksum file.
+      # Sigstore keyless flow binds the signature to the GitHub-Actions
+      # OIDC identity (workflow ref + commit SHA + actor); no long-lived
+      # keys to rotate. Verification:
+      #   cosign verify-blob \
+      #     --certificate-identity-regexp "https://github.com/pulseengine/rivet/.github/workflows/release.yml@.*" \
+      #     --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+      #     --signature SHA256SUMS.txt.sig \
+      #     --bundle SHA256SUMS.txt.cosign.bundle \
+      #     SHA256SUMS.txt
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: 'v2.4.1'
+
+      - name: Sign SHA256SUMS with cosign (keyless OIDC)
+        run: |
+          cd release
+          cosign sign-blob \
+            --yes \
+            --bundle SHA256SUMS.txt.cosign.bundle \
+            --output-signature SHA256SUMS.txt.sig \
+            --output-certificate SHA256SUMS.txt.pem \
+            SHA256SUMS.txt
+          echo "::notice::SHA256SUMS signed via sigstore keyless flow."
+          echo "::notice::Bundle: SHA256SUMS.txt.cosign.bundle (verifier-friendly)."
+          echo "::notice::Detached: SHA256SUMS.txt.sig + SHA256SUMS.txt.pem."
 
       - name: Create or update Release
         env:
