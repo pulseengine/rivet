@@ -1,9 +1,24 @@
 # Tool qualification dossier — rivet (ISO 26262-8 §11.4.7)
 
-**Status:** draft (TCL workstream A4)
+**Status:** draft (TCL workstream A4) — **`claim-status: self-claimed`, not externally qualified.**
 **Audience:** safety leads, certification authorities, OEM tool-qualification reviewers
-**Last revised:** 2026-05-16
+**Last revised:** 2026-05-16 (after v0.10.0 self-review)
 **Companion:** `docs/design/tool-confidence-level.md` (the *why*), `safety/stpa/tool-qualification.yaml` (the hazard analysis), `safety/tool-qualification/rivet-tool-confidence.yaml` (the typed claim)
+
+## 0. Honest scope statement (read this first)
+
+This dossier was drafted by the rivet maintainers, including AI-assisted authoring sessions. The TI2 / TD1 / TCL1 claim is **self-claimed under ISO 26262-8 §11.4.7 — not externally qualified.** The artifact at `safety/tool-qualification/rivet-tool-confidence.yaml` carries `claim-status: self-claimed` and `status: draft` to make this machine-readable.
+
+**The following are NOT yet defensible without further work:**
+
+- **No independent confirmation reviewer** per ISO 26262-2 §6.4.7. The artifact `TQ-CONF-RIVET` was authored under `provenance.created-by: ai-assisted` — the same kind of AI session this dossier proposes to qualify.
+- **Cross-walks to DO-330 / IEC 62304 / EN 50128** in §1 are clause-level **unverified**. They come from training-data recall, not from reviewed copies of the standards. Treat the regime table as a *project pointer*, not a qualification mapping.
+- The **five-layer "product of miss rates"** argument in §3 assumes independence that is **not proven** — Kani, validate, proptest, and the oracles all consume the same parser and the same `Artifact` model. Common-mode failure dominates and is not yet quantified.
+- **Mutation testing currently runs 29 mutants** (26 caught, 3 unviable). The ASIL B/C/D thresholds named in the design note refer to a future 500+-mutant suite that has not been built.
+- The **Kani proof set is 27 harnesses** in `rivet-core/src/proofs.rs`. Where any tooling or claim cites larger figures (e.g. "2000+ proofs"), that refers to internal CBMC sub-obligations and is **not** the right number to quote externally — count harnesses, not obligations.
+- `proofs/rocq/Schema.v` contains **one `Admitted.` theorem** (`vmodel_chain_two_steps`, line 523). `rivet-core/src/verus_specs.rs:217` contains **`assume(backlink_symmetric(g, s));`** — these are not yet `Qed`'d / proved.
+- `ai-session.invoker` is personal data per **DSGVO Art. 4**. The schema declares `lawful-basis`, `retention-period`, `erasure-mechanism` fields and a `dpia` artifact type (since v0.10.0 follow-up), but `rivet validate` does not yet enforce that an `invoker`-bearing session links to a DPIA.
+- The **release v0.10.0** binary archives ship a `SHA256SUMS.txt` that is **not cryptographically signed**. The git tag is not GPG-signed. Sigstore / cosign integration is tracked but unshipped.
 
 This dossier collects the qualification argument for **rivet** as a development tool used in safety-critical projects. It is the prose layer of a three-part artefact set:
 
@@ -37,7 +52,7 @@ TD1 means **high confidence** that errors in the tool are prevented or caught. R
 1. **Validate** — link-graph and traceability-rule checks; pre-existing, mature, has bounded-MC proofs (Kani) for the soundness side and proptest property suites for the completeness side.
 2. **Oracles** — declarative `agent-pipelines:` blocks gated by mechanical checks (cited-source freshness, schema-conformance, docs-check invariants).
 3. **Mutation testing** — `mutants.out/` runs catch silently-passing test gaps in rivet-core and rivet-cli.
-4. **Formal proofs** — Kani (bounded model checking, 2000+ proofs across rivet-core), Verus (selected modules), Rocq (verification theorems in `proofs/rocq/`).
+4. **Formal proofs** — Kani (bounded model checking, **27 harnesses** in `rivet-core/src/proofs.rs`; bounded input sizes ranging from 8 to 24 bytes for most parser harnesses), Verus (spec stubs in `verus_specs.rs`; the central `backlink_symmetric` obligation is currently `assume`'d, not proved), Rocq (12 `Qed`'d theorems + 15 lemmas across `proofs/rocq/Schema.v` and `Validation.v`; **one `Admitted` theorem** — `vmodel_chain_two_steps`). The five-layer independence argument that follows is **not yet defensible** — see §0.
 5. **`ai-found-defect` triage loop** — every defect caught by the above layers (and especially every defect introduced by AI authoring) becomes a typed artefact, links back to its `ai-session`, and gates release on triage state. This is the layer that compensates for the eroded human-review assumption when the upstream author is an AI assistant.
 
 The five layers are independent (catch different defect classes), so the residual-error probability is the *product* of their miss rates, not the sum. That is the operational basis for the TD1 claim.

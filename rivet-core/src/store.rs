@@ -46,7 +46,7 @@ use crate::model::{Artifact, ArtifactId, BaselineConfig};
 /// Holds all loaded artifacts and provides lookup by ID and by type.
 /// The store is the central data structure consumed by the link graph,
 /// validator, query engine, and matrix generator.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct Store {
     artifacts: HashMap<ArtifactId, Artifact>,
     by_type: HashMap<String, Vec<ArtifactId>>,

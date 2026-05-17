@@ -642,8 +642,17 @@ fn build_pipeline_with_extras(
 ///
 /// When the `rowan-yaml` feature is enabled, uses the schema-driven rowan
 /// parser (`parse_artifacts_v2`) which reads `yaml-section` metadata from
-/// the schema. In debug builds, both parsers run and their output is
-fn build_store(
+/// the schema.
+///
+/// **Tracked** (v0.10.0 follow-up, Mobile/Scale lens finding): previously
+/// this was a plain `fn`, so every downstream caller (`validate_all`,
+/// `build_link_graph`, `compute_coverage_tracked`) re-built the whole
+/// `Store` HashMap on every salsa revision — defeating the incremental
+/// validation story sold by the dossier. With `#[salsa::tracked]`,
+/// salsa memoizes the Store and returns the cached value when the
+/// underlying `parse_artifacts_v2` outputs haven't changed.
+#[salsa::tracked]
+pub fn build_store(
     db: &dyn salsa::Database,
     source_set: SourceFileSet,
     schema_set: SchemaInputSet,
@@ -672,7 +681,10 @@ fn build_store(
 ///
 /// Adapter artifacts are inserted last, so conflicting IDs are resolved
 /// in favour of the adapter — matching the direct-path ordering.
-fn build_store_with_extras(
+///
+/// **Tracked** alongside `build_store` — see that function's note.
+#[salsa::tracked]
+pub fn build_store_with_extras(
     db: &dyn salsa::Database,
     source_set: SourceFileSet,
     schema_set: SchemaInputSet,
@@ -1155,6 +1167,33 @@ artifacts:
         assert_eq!(artifacts.len(), 1);
         assert_eq!(artifacts[0].id, "REQ-001");
         assert_eq!(artifacts[0].artifact_type, "requirement");
+    }
+
+    // ── Test 10a: build_store is salsa-tracked (cache hit on no-op) ─────
+
+    /// Mobile/Scale lens (v0.10.0 review) found `build_store` was a plain
+    /// `fn` rather than `#[salsa::tracked]`, so every downstream query
+    /// rebuilt the whole `Store` HashMap on every revision. After making
+    /// it tracked, repeated calls with the same `source_set`/`schema_set`
+    /// must return *bitwise-identical* `Store` values — proving salsa
+    /// served the cache rather than re-running the function.
+    ///
+    /// rivet: verifies REQ-029
+    #[test]
+    fn build_store_cache_returns_equal_on_noop_revision() {
+        let db = RivetDatabase::new();
+        let sources =
+            db.load_sources(&[("reqs.yaml", SOURCE_REQ), ("design.yaml", SOURCE_DD_LINKED)]);
+        let schemas = db.load_schemas(&[("test", TEST_SCHEMA)]);
+
+        let store_1 = build_store(&db, sources, schemas);
+        let store_2 = build_store(&db, sources, schemas);
+        assert_eq!(
+            store_1, store_2,
+            "build_store must produce equal Stores across repeated calls \
+             with the same inputs (PartialEq) — necessary condition for \
+             salsa cache hit"
+        );
     }
 
     // ── Test 10: merged schema via build_schema ─────────────────────────

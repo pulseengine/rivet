@@ -26,13 +26,19 @@ artifacts:
     title: Rivet — tool confidence claim (ISO 26262-8 Part 8 §11.4.7)
     status: draft
     description: >
-      Rivet's typed tool-qualification claim. The TI/TD analysis is
-      defended by the STPA in `safety/stpa/tool-qualification.yaml`
-      (losses L-TQ-001..003, hazards H-TQ-001..007) and by the
-      mechanical detection layer (validate, oracle gating, Kani/Verus,
-      mutation testing, cited-source verification, ai-found-defect
-      triage). The dossier prose lives in
-      `docs/design/tool-qualification-dossier.md`.
+      Rivet's typed tool-qualification claim. **`claim-status:
+      self-claimed`** — this is the *target shape* the maintainers aim
+      to defend, not an externally-qualified credential. The TI/TD
+      analysis points at the STPA in `safety/stpa/tool-qualification.yaml`
+      (losses L-TQ-001..003, hazards H-TQ-001..007) and the mechanical
+      detection layer (validate, oracle gating including
+      `rivet check ai-defects-open`, Kani/Verus, mutation testing,
+      cited-source verification, ai-found-defect triage). The dossier
+      prose, including §0 "Honest scope statement" enumerating what is
+      NOT yet defensible (no independent confirmation reviewer,
+      unverified cross-walks, unproven independence, 29-mutant testing,
+      one `Admitted` Rocq theorem, no signed SHA256SUMS, no DPIA
+      enforcement), lives in `docs/design/tool-qualification-dossier.md`.
     tags: [safety, dogfood, iso-26262]
     fields:
       tool-id: rivet
@@ -42,15 +48,21 @@ artifacts:
       regime: iso-26262
       claim-status: self-claimed
       scope: |
-        Covered by this claim: rivet validate (link-graph, traceability
-        rules, schema field checks, s-expression evaluator), rivet
-        commits (trailer audit), rivet coverage (single-org + supplier
-        3-state), rivet supplier {list,check}.
+        Covered by this claim (in-scope subcommands):
+          rivet validate, rivet commits (trailer audit), rivet coverage
+          (single-org + supplier 3-state), rivet supplier {list,check},
+          rivet check ai-defects-open (TCL workstream B TD1 gate).
 
-        Out of scope (NOT qualified by this claim): rivet sync /
-        rivet supplier pull (Phase 2), rivet migrate (importers),
-        rivet serve (read-only web UI), MCP write tools that bypass
-        validate (--qualification-mode disables these).
+        OUT OF SCOPE (NOT qualified): rivet sync, rivet supplier pull
+          (Phase 2), rivet migrate, rivet serve, MCP write tools.
+
+        ALSO NOT DEFENDED by this claim (see dossier §0):
+          no independent confirmation reviewer; unverified
+          DO-330/IEC 62304/EN 50128 cross-walks; unproven five-layer
+          independence; 29-mutant testing; one `Admitted` Rocq theorem;
+          one `assume`'d Verus obligation; unsigned SHA256SUMS;
+          unsigned git tag; no validate-time enforcement of DPIA
+          linkage from `ai-session.invoker`-bearing artifacts.
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-7
