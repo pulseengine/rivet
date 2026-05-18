@@ -2141,7 +2141,7 @@ fn run(cli: Cli) -> Result<bool> {
             format,
             file,
             output,
-        } => cmd_import_results(format, file, output),
+        } => cmd_import_results(&cli, format, file, output),
         Command::NextId {
             r#type,
             prefix,
@@ -12089,12 +12089,13 @@ fn cmd_import(
 
 /// Import test results or artifacts from external formats.
 fn cmd_import_results(
+    cli: &Cli,
     format: &str,
     file: &std::path::Path,
     output: &std::path::Path,
 ) -> Result<bool> {
     match format {
-        "junit" => cmd_import_results_junit(file, output),
+        "junit" => cmd_import_results_junit(cli, file, output),
         "needs-json" => cmd_import_results_needs_json(file, output),
         other => {
             anyhow::bail!("unknown import format: '{other}' (supported: junit, needs-json)")
@@ -12103,14 +12104,44 @@ fn cmd_import_results(
 }
 
 /// Import JUnit XML test results.
-fn cmd_import_results_junit(file: &std::path::Path, output: &std::path::Path) -> Result<bool> {
-    use rivet_core::junit::{ImportSummary, parse_junit_xml};
+///
+/// Consults source-marker comments (`// rivet: verifies REQ-NNN`) via
+/// `test_scanner::scan_source_files` so that nextest-style cases like
+/// `tests::my_test`/classname `mod::foo::tests` get linked to a real
+/// artifact ID instead of the unjoinable `classname.name` concatenation.
+fn cmd_import_results_junit(
+    cli: &Cli,
+    file: &std::path::Path,
+    output: &std::path::Path,
+) -> Result<bool> {
+    use rivet_core::junit::{ImportSummary, parse_junit_xml_with_markers};
     use rivet_core::results::TestRunFile;
+    use rivet_core::test_scanner;
 
     let xml = std::fs::read_to_string(file)
         .with_context(|| format!("failed to read {}", file.display()))?;
 
-    let runs = parse_junit_xml(&xml)
+    // Default scan paths mirror cmd_coverage_tests: src/ and tests/ under the
+    // project dir, falling back to the project root if neither exists.
+    let scan_paths: Vec<PathBuf> = {
+        let mut defaults = Vec::new();
+        let src = cli.project.join("src");
+        let tests = cli.project.join("tests");
+        if src.is_dir() {
+            defaults.push(src);
+        }
+        if tests.is_dir() {
+            defaults.push(tests);
+        }
+        if defaults.is_empty() {
+            defaults.push(cli.project.clone());
+        }
+        defaults
+    };
+    let patterns = test_scanner::default_patterns();
+    let markers = test_scanner::scan_source_files(&scan_paths, &patterns);
+
+    let runs = parse_junit_xml_with_markers(&xml, &markers)
         .with_context(|| format!("failed to parse JUnit XML from {}", file.display()))?;
 
     if runs.is_empty() {

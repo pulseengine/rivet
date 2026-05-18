@@ -57,6 +57,8 @@
 )]
 
 use std::collections::HashMap;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 use quick_xml::Reader;
 use quick_xml::events::Event;
@@ -185,6 +187,62 @@ pub fn parse_junit_xml(xml: &str) -> Result<Vec<TestRun>, Error> {
         .enumerate()
         .map(|(i, s)| suite_to_run(s, i))
         .collect())
+}
+
+/// Same as [`parse_junit_xml`] but, for testcases that fall through to the
+/// "classname.name" fallback (i.e. no bracketed ID and `classname` is not
+/// itself an artifact ID), tries to resolve a real artifact ID by consulting
+/// `markers` produced by [`crate::test_scanner::scan_source_files`].
+///
+/// A marker matches a JUnit case iff its `test_name` equals the case name OR
+/// the case name ends with `marker.test_name` (so a Rust JUnit name like
+/// `tests::my_test` will match a marker whose `test_name` is `my_test`).
+///
+/// Existing `parse_junit_xml` behaviour is preserved: if no marker matches,
+/// the fallback concatenation is kept.
+pub fn parse_junit_xml_with_markers(
+    xml: &str,
+    markers: &[crate::test_scanner::TestMarker],
+) -> Result<Vec<TestRun>, Error> {
+    let suites = parse_suites(xml)?;
+    Ok(suites
+        .into_iter()
+        .enumerate()
+        .map(|(i, s)| suite_to_run_with_markers(s, i, markers))
+        .collect())
+}
+
+/// Look up a marker whose `test_name` matches the JUnit case name.
+///
+/// Matches either by exact equality with the case name or by suffix-match —
+/// i.e. the case name ends with `marker.test_name`, with the preceding char
+/// constrained to a separator (anything that isn't an identifier char) so
+/// that a marker for `my_test` does not spuriously match `not_my_test`.
+fn find_marker_for_case<'a>(
+    case_name: &str,
+    markers: &'a [crate::test_scanner::TestMarker],
+) -> Option<&'a crate::test_scanner::TestMarker> {
+    for m in markers {
+        if m.test_name.is_empty() {
+            continue;
+        }
+        if case_name == m.test_name {
+            return Some(m);
+        }
+        if case_name.ends_with(&m.test_name) {
+            let prefix_len = case_name.len().saturating_sub(m.test_name.len());
+            if prefix_len == 0 {
+                return Some(m);
+            }
+            if let Some(b) = case_name.as_bytes().get(prefix_len - 1) {
+                let c = *b as char;
+                if !c.is_ascii_alphanumeric() && c != '_' {
+                    return Some(m);
+                }
+            }
+        }
+    }
+    None
 }
 
 fn parse_suites(xml: &str) -> Result<Vec<ParsedSuite>, Error> {
@@ -347,7 +405,70 @@ fn collect_attrs(e: &quick_xml::events::BytesStart<'_>) -> HashMap<String, Strin
 
 // ── Conversion ───────────────────────────────────────────────────────────────
 
+/// Slugify a JUnit timestamp into a filename-safe form.
+///
+/// Drops fractional seconds and any timezone offset gunk, replaces `:` and `+`
+/// with `-`. Example: `2026-05-17T06:35:44.123+02:00` → `2026-05-17T06-35-44`.
+/// Output is restricted to ASCII alphanumeric plus `-` and `_`.
+fn slugify_timestamp(ts: &str) -> String {
+    // Drop fractional seconds: everything between '.' and the next non-digit.
+    let mut cleaned = String::with_capacity(ts.len());
+    let bytes = ts.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b == b'.' {
+            // Skip the '.' and any following ASCII digits (fractional seconds).
+            i += 1;
+            while i < bytes.len() && bytes[i].is_ascii_digit() {
+                i += 1;
+            }
+            continue;
+        }
+        cleaned.push(b as char);
+        i += 1;
+    }
+
+    // Replace ':' and '+' with '-' then drop anything that isn't safe.
+    cleaned
+        .chars()
+        .map(|c| match c {
+            ':' | '+' => '-',
+            other => other,
+        })
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .collect()
+}
+
+/// Stable hash of the suite's content (test-name list + counts) for use as a
+/// disambiguator when no timestamp is present. Identical input → identical hash
+/// (idempotent re-imports); different content → different hash.
+fn content_hash(cases: &[ParsedCase]) -> String {
+    let mut hasher = DefaultHasher::new();
+    cases.len().hash(&mut hasher);
+    for c in cases {
+        c.name.hash(&mut hasher);
+        c.classname.hash(&mut hasher);
+        // Tag the outcome variant so pass↔fail flips change the hash.
+        match &c.outcome {
+            Outcome::Pass => 0u8.hash(&mut hasher),
+            Outcome::Fail { .. } => 1u8.hash(&mut hasher),
+            Outcome::Error { .. } => 2u8.hash(&mut hasher),
+            Outcome::Skipped => 3u8.hash(&mut hasher),
+        }
+    }
+    format!("{:016x}", hasher.finish())
+}
+
 fn suite_to_run(suite: ParsedSuite, index: usize) -> TestRun {
+    suite_to_run_with_markers(suite, index, &[])
+}
+
+fn suite_to_run_with_markers(
+    suite: ParsedSuite,
+    index: usize,
+    markers: &[crate::test_scanner::TestMarker],
+) -> TestRun {
     let safe_name: String = suite
         .name
         .chars()
@@ -359,17 +480,36 @@ fn suite_to_run(suite: ParsedSuite, index: usize) -> TestRun {
             }
         })
         .collect();
+
+    // Disambiguator: prefer parsed timestamp (slugified), else stable content
+    // hash so identical re-imports collide (idempotent) but different runs split.
+    let disambiguator = match &suite.timestamp {
+        Some(ts) => {
+            let slug = slugify_timestamp(ts);
+            if slug.is_empty() {
+                content_hash(&suite.cases)
+            } else {
+                slug
+            }
+        }
+        None => content_hash(&suite.cases),
+    };
+
     let run_id = if safe_name.is_empty() {
-        format!("junit-import-{index}")
+        format!("junit-import-{index}-{disambiguator}")
     } else {
-        format!("junit-{safe_name}")
+        format!("junit-{safe_name}-{disambiguator}")
     };
 
     let timestamp = suite
         .timestamp
         .unwrap_or_else(|| "1970-01-01T00:00:00Z".to_string());
 
-    let results = suite.cases.into_iter().map(case_to_result).collect();
+    let results = suite
+        .cases
+        .into_iter()
+        .map(|c| case_to_result_with_markers(c, markers))
+        .collect();
 
     TestRun {
         run: RunMetadata {
@@ -384,8 +524,23 @@ fn suite_to_run(suite: ParsedSuite, index: usize) -> TestRun {
     }
 }
 
-fn case_to_result(c: ParsedCase) -> TestResult {
-    let artifact = artifact_id_for(&c.name, &c.classname);
+fn case_to_result_with_markers(
+    c: ParsedCase,
+    markers: &[crate::test_scanner::TestMarker],
+) -> TestResult {
+    let mut artifact = artifact_id_for(&c.name, &c.classname);
+    // Marker fallback: when artifact_id_for returned the "classname.name"
+    // fallback (a string with "::" or ".", not a recognised artifact ID) and
+    // we have markers, try to find one whose test_name matches the JUnit case
+    // name. Bracketed and direct-classname IDs are preserved because
+    // `is_artifact_id` is true.
+    let looks_like_fallback_concat =
+        !is_artifact_id(&artifact) && (artifact.contains("::") || artifact.contains('.'));
+    if !markers.is_empty() && looks_like_fallback_concat {
+        if let Some(m) = find_marker_for_case(&c.name, markers) {
+            artifact = m.target_id.clone();
+        }
+    }
     let duration = c.time.map(|t| format!("{t}s"));
 
     // Prefer the `message` attribute; fall back to element text body.
@@ -537,7 +692,8 @@ mod tests {
         let runs = parse_junit_xml(SAMPLE_JUNIT).expect("parse failed");
         assert_eq!(runs.len(), 1);
         let run = &runs[0];
-        assert_eq!(run.run.id, "junit-rivet-core-tests");
+        // Timestamp is slugified into the run_id (colons → dashes).
+        assert_eq!(run.run.id, "junit-rivet-core-tests-2026-03-28T10-00-00Z");
         assert_eq!(run.run.timestamp, "2026-03-28T10:00:00Z");
         assert_eq!(run.run.source, Some("junit-xml".to_string()));
         assert_eq!(run.results.len(), 4);
@@ -596,8 +752,8 @@ mod tests {
 </testsuites>"#;
         let runs = parse_junit_xml(xml).expect("parse failed");
         assert_eq!(runs.len(), 2);
-        assert_eq!(runs[0].run.id, "junit-Suite-A");
-        assert_eq!(runs[1].run.id, "junit-Suite-B");
+        assert_eq!(runs[0].run.id, "junit-Suite-A-2026-01-01T00-00-00Z");
+        assert_eq!(runs[1].run.id, "junit-Suite-B-2026-01-02T00-00-00Z");
         assert_eq!(runs[0].results[0].status, TestStatus::Pass);
         assert_eq!(runs[1].results[0].status, TestStatus::Fail);
     }
@@ -634,5 +790,126 @@ mod tests {
     fn test_parse_junit_does_not_panic_on_malformed() {
         // Should not panic even on garbage input
         let _ = parse_junit_xml("not xml at all <<<");
+    }
+
+    // --- Bug #1: run_id disambiguation ---
+
+    #[test]
+    fn run_id_includes_timestamp_when_present() {
+        let xml_a = r#"<testsuite name="ci" timestamp="2026-05-17T06:35:44Z">
+  <testcase name="t1" classname="REQ-001"/>
+</testsuite>"#;
+        let xml_b = r#"<testsuite name="ci" timestamp="2026-05-17T07:00:00Z">
+  <testcase name="t1" classname="REQ-001"/>
+</testsuite>"#;
+        let a = parse_junit_xml(xml_a).expect("parse a");
+        let b = parse_junit_xml(xml_b).expect("parse b");
+        assert_ne!(a[0].run.id, b[0].run.id);
+        // Slugified timestamps must be embedded.
+        assert!(
+            a[0].run.id.contains("2026-05-17T06-35-44Z"),
+            "got {}",
+            a[0].run.id
+        );
+        assert!(
+            b[0].run.id.contains("2026-05-17T07-00-00Z"),
+            "got {}",
+            b[0].run.id
+        );
+        // run_id must only contain safe characters.
+        for c in a[0].run.id.chars() {
+            assert!(
+                c.is_ascii_alphanumeric() || c == '-' || c == '_',
+                "unsafe char {c:?} in {}",
+                a[0].run.id
+            );
+        }
+    }
+
+    #[test]
+    fn run_id_stable_hash_when_no_timestamp() {
+        let xml = r#"<testsuite name="ci">
+  <testcase name="t1" classname="REQ-001"/>
+  <testcase name="t2" classname="REQ-002"/>
+</testsuite>"#;
+        let a = parse_junit_xml(xml).expect("parse a");
+        let b = parse_junit_xml(xml).expect("parse b");
+        // Idempotent: same input → same id.
+        assert_eq!(a[0].run.id, b[0].run.id);
+        // run_id must only contain safe characters.
+        for c in a[0].run.id.chars() {
+            assert!(
+                c.is_ascii_alphanumeric() || c == '-' || c == '_',
+                "unsafe char {c:?} in {}",
+                a[0].run.id
+            );
+        }
+    }
+
+    #[test]
+    fn run_id_different_hash_when_content_differs() {
+        let xml_a = r#"<testsuite name="ci">
+  <testcase name="t1" classname="REQ-001"/>
+</testsuite>"#;
+        let xml_b = r#"<testsuite name="ci">
+  <testcase name="t2" classname="REQ-002"/>
+</testsuite>"#;
+        let a = parse_junit_xml(xml_a).expect("parse a");
+        let b = parse_junit_xml(xml_b).expect("parse b");
+        assert_ne!(a[0].run.id, b[0].run.id);
+    }
+
+    // --- Bug #2: marker-based artifact lookup ---
+
+    #[test]
+    fn marker_lookup_supplies_artifact_id_when_fallback_concat() {
+        use crate::test_scanner::TestMarker;
+        use std::path::PathBuf;
+
+        let xml = r#"<testsuite name="nextest" timestamp="2026-05-17T06:35:44Z">
+  <testcase name="tests::my_test" classname="mod::foo::tests"/>
+</testsuite>"#;
+        let markers = vec![TestMarker {
+            test_name: "my_test".into(),
+            file: PathBuf::from("src/foo.rs"),
+            line: 10,
+            link_type: "verifies".into(),
+            target_id: "REQ-001".into(),
+        }];
+        let runs = parse_junit_xml_with_markers(xml, &markers).expect("parse");
+        assert_eq!(runs[0].results[0].artifact, "REQ-001");
+    }
+
+    #[test]
+    fn marker_lookup_does_not_override_explicit_bracket() {
+        use crate::test_scanner::TestMarker;
+        use std::path::PathBuf;
+
+        let xml = r#"<testsuite name="nextest" timestamp="2026-05-17T06:35:44Z">
+  <testcase name="tests::my_test [REQ-002]" classname="mod::foo::tests"/>
+</testsuite>"#;
+        // A marker that COULD match if we let it, but bracket must win.
+        let markers = vec![TestMarker {
+            test_name: "my_test".into(),
+            file: PathBuf::from("src/foo.rs"),
+            line: 10,
+            link_type: "verifies".into(),
+            target_id: "REQ-001".into(),
+        }];
+        let runs = parse_junit_xml_with_markers(xml, &markers).expect("parse");
+        assert_eq!(runs[0].results[0].artifact, "REQ-002");
+    }
+
+    #[test]
+    fn marker_lookup_returns_fallback_when_no_match() {
+        let xml = r#"<testsuite name="nextest" timestamp="2026-05-17T06:35:44Z">
+  <testcase name="tests::my_test" classname="mod::foo::tests"/>
+</testsuite>"#;
+        // No markers → fallback concatenation preserved.
+        let runs = parse_junit_xml_with_markers(xml, &[]).expect("parse");
+        assert_eq!(
+            runs[0].results[0].artifact,
+            "mod::foo::tests.tests::my_test"
+        );
     }
 }
