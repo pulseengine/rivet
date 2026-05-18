@@ -410,7 +410,21 @@ jobs:
         # "x3 baseline" rule — anything slower than that is reported as
         # `timeout` (counts as caught) rather than `missed`. With 30s
         # cap and 16-way sharding, each shard finishes in ~12-20 min.
-        run: cargo mutants -p ${{ matrix.crate }} --shard ${{ matrix.shard }} --timeout 30 --jobs 4 --output mutants-out -- --lib || true
+        #
+        # `--jobs 2` (was 4): smithy operator flagged on 2026-05-18 that
+        # lean-mem runners were hitting their 32G cgroup ceiling
+        # (runner3 31.0G/32G with 996MB headroom, ~3GB swap). Each
+        # cargo-mutants worker compiles a fresh target dir and runs the
+        # full test suite — at 4-way parallel that's ~8G per worker on
+        # a 32G runner, which is at or above cargo-rustc's compile peak
+        # for rivet-core's larger crates and triggers the same swap-
+        # death-spiral pattern the cgroup bump was meant to break.
+        # Halving concurrency gives ~16G per worker, comfortable for
+        # the compile peak with headroom for the test suite. Trade-off:
+        # each shard takes ~2x as long (was 12-20 min, now 20-40 min),
+        # but the lean-mem pool stops needing emergency cgroup-ceiling
+        # bumps every quarter.
+        run: cargo mutants -p ${{ matrix.crate }} --shard ${{ matrix.shard }} --timeout 30 --jobs 2 --output mutants-out -- --lib || true
       - name: Check surviving mutants
         run: |
           MISSED=0
