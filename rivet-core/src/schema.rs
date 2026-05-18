@@ -594,6 +594,46 @@ impl Condition {
             _ => None,
         }
     }
+
+    /// Variant-aware twin of [`matches_artifact_with`].
+    ///
+    /// Resolves the field value through the artifact's per-variant
+    /// overlay when `variant` is `Some(_)`. When `variant` is `None`,
+    /// behaves identically to [`matches_artifact_with`].
+    #[inline]
+    pub fn matches_artifact_for_variant_with(
+        &self,
+        artifact: &Artifact,
+        compiled: Option<&Regex>,
+        variant: Option<&str>,
+    ) -> bool {
+        // Fast path: no variant means no overlay; preserve borrowed-Cow path.
+        if variant.is_none() {
+            return self.matches_artifact_with(artifact, compiled);
+        }
+        match self {
+            Condition::Equals { field, value } => {
+                get_field_value_for_variant(artifact, field, variant).is_some_and(|v| v == *value)
+            }
+            Condition::Matches { field, pattern } => {
+                if let Some(re) = compiled {
+                    get_field_value_for_variant(artifact, field, variant)
+                        .is_some_and(|v| re.is_match(&v))
+                } else {
+                    // Inline-compile fallback to match the non-variant path
+                    // (callers should normally pre-compile via `compile_regex`).
+                    let Ok(re) = Regex::new(pattern) else {
+                        return false;
+                    };
+                    get_field_value_for_variant(artifact, field, variant)
+                        .is_some_and(|v| re.is_match(&v))
+                }
+            }
+            Condition::Exists { field } => {
+                get_field_value_for_variant(artifact, field, variant).is_some()
+            }
+        }
+    }
 }
 
 /// Get a string value for a field from an artifact, checking base fields first.
@@ -664,6 +704,67 @@ fn resolve_dotted_path<'a>(value: &'a serde_yaml::Value, rest: &str) -> Option<C
     } else {
         let child = mapping.get(rest)?;
         yaml_value_to_cow(child)
+    }
+}
+
+/// Variant-aware twin of [`get_field_value`].
+///
+/// Reads from the artifact's per-variant overlay (via
+/// [`Artifact::fields_for_variant`]) so a condition like
+/// `field: priority, equals: should` resolves against the variant
+/// overlay's `priority` if the variant set one, falling back to the
+/// default `fields` map otherwise.
+///
+/// Returns owned `String` (rather than `Cow<'a, str>`) because the
+/// merged map produced by `fields_for_variant` is short-lived when a
+/// variant is active. When `variant` is `None`, we delegate to the
+/// borrowed-Cow fast path.
+///
+/// Base fields (`status`, `description`, `title`, `id`, `tags`) are NOT
+/// overlay-able — variants only affect entries in the `fields` map,
+/// matching the design in `docs/design/variant-aware-properties.md` §5.2.
+#[inline]
+pub(crate) fn get_field_value_for_variant(
+    artifact: &Artifact,
+    field: &str,
+    variant: Option<&str>,
+) -> Option<String> {
+    // When no variant is active, defer to the borrowed-Cow fast path
+    // to avoid the merge clone.
+    if variant.is_none() {
+        return get_field_value(artifact, field).map(|c| c.into_owned());
+    }
+
+    // Dotted paths (e.g. `provenance.created-by`) read from the fields
+    // map only — and we want them variant-aware too.
+    if let Some(dot_pos) = field.find('.') {
+        let root = &field[..dot_pos];
+        let rest = &field[dot_pos + 1..];
+        let merged = artifact.fields_for_variant(variant);
+        let root_val = merged.get(root)?;
+        return resolve_dotted_path(root_val, rest).map(Cow::into_owned);
+    }
+
+    match field {
+        "status" => artifact.status.clone(),
+        "description" => artifact.description.clone(),
+        "title" => Some(artifact.title.clone()),
+        "id" => Some(artifact.id.clone()),
+        _ => {
+            if field == "tags" {
+                if artifact.tags.is_empty() {
+                    None
+                } else {
+                    Some(artifact.tags.join(","))
+                }
+            } else {
+                let merged = artifact.fields_for_variant(variant);
+                merged
+                    .get(field)
+                    .and_then(yaml_value_to_cow)
+                    .map(Cow::into_owned)
+            }
+        }
     }
 }
 
@@ -757,6 +858,53 @@ impl Requirement {
             }
         }
         diags
+    }
+
+    /// Variant-aware twin of [`check`]. `RequiredFields` reads through
+    /// the per-variant overlay so a field declared only on the variant
+    /// satisfies the requirement.
+    ///
+    /// `RequiredLinks` is not variant-aware (Phase 2 deliberately keeps
+    /// links variant-flat — see `docs/design/variant-aware-properties.md`
+    /// §6 Phase 2 scope: "fields only").
+    pub fn check_for_variant(
+        &self,
+        artifact: &Artifact,
+        rule_name: &str,
+        severity: Severity,
+        variant: Option<&str>,
+    ) -> Vec<crate::validate::Diagnostic> {
+        if variant.is_none() {
+            return self.check(artifact, rule_name, severity);
+        }
+        match self {
+            Requirement::RequiredFields { fields } => {
+                let mut diags = Vec::new();
+                for field_name in fields {
+                    let has_field =
+                        get_field_value_for_variant(artifact, field_name, variant).is_some();
+                    if !has_field {
+                        diags.push(crate::validate::Diagnostic {
+                            source_file: None,
+                            line: None,
+                            column: None,
+                            severity,
+                            artifact_id: Some(artifact.id.clone()),
+                            rule: rule_name.to_string(),
+                            message: format!(
+                                "conditional rule '{}': field '{}' is required when condition is met",
+                                rule_name, field_name
+                            ),
+                        });
+                    }
+                }
+                diags
+            }
+            Requirement::RequiredLinks { .. } => {
+                // Links remain variant-agnostic in Phase 2.
+                self.check(artifact, rule_name, severity)
+            }
+        }
     }
 }
 

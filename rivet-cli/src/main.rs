@@ -4622,8 +4622,22 @@ fn cmd_validate(
     //   `reclassify_externals_diagnostics` as a post-pass to converge on the
     //   same diagnostic set.
     let is_scoped = baseline_name.is_some() || variant_scope_name.is_some();
-    let mut diagnostics = if direct {
-        validate::validate_with_externals(&store, &schema, &graph, &external_schemas)
+    // Per-variant field overlays (Phase 2 of #287) need to thread the
+    // active variant name through validate so required-fields,
+    // allowed-values, and conditional-rule checks consult
+    // `Artifact::fields_for_variant`. The salsa path doesn't yet take
+    // variant as a tracked input, so when a variant is active we fall
+    // through to the direct path's variant-aware entrypoint.
+    let active_variant: Option<&str> = variant_scope_name.as_ref().map(|(name, _)| name.as_str());
+    let use_direct = direct || active_variant.is_some();
+    let mut diagnostics = if use_direct {
+        validate::validate_with_externals_and_variant(
+            &store,
+            &schema,
+            &graph,
+            &external_schemas,
+            active_variant,
+        )
     } else {
         let all_diags = run_salsa_validation(cli, &config)?;
         let scoped_diags = if is_scoped {
