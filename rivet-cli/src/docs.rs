@@ -104,6 +104,12 @@ const TOPICS: &[DocTopic] = &[
         content: COMMIT_TRACEABILITY_DOC,
     },
     DocTopic {
+        slug: "audit",
+        title: "rivet audit — AI-session/commit traceability gate",
+        category: "Reference",
+        content: AUDIT_DOC,
+    },
+    DocTopic {
         slug: "cross-repo",
         title: "Cross-Repository Linking",
         category: "Reference",
@@ -974,6 +980,119 @@ are not considered orphans even without trailers.
 Use `trace-exempt-artifacts` to list artifact IDs that should not appear in
 the "unimplemented" report — useful when retrofitting traceability onto an
 existing project where historical commits lack trailers.
+"#;
+
+const AUDIT_DOC: &str = r#"# rivet audit — AI-session/commit traceability gate
+
+`rivet audit` is a read-only CI gate that closes the loop between git
+commits authored by AI assistants and the `ai-session` artifacts that
+document them. It is the operational TD1 (Tool error Detection per
+ISO 26262-8 §11.4.5.4) primitive for AI-authored changes; see the v0.10
+tool-qualification dossier, §3 layer 5.
+
+## What it checks
+
+`rivet audit` enforces two gates over the current branch's history.
+
+### Gate 1 — Every AI-authored commit must have an `ai-session`
+
+A commit is **AI-authored** when any of these trailer signals is present
+in the commit message:
+
+- `Co-Authored-By:` containing `noreply@anthropic.com` (the Claude Code
+  convention).
+- `Generated-With:` or `Created-By:` whose value starts with `ai` or
+  `ai-assisted` (case-insensitive).
+
+For every AI-authored commit, `rivet audit` looks for an `ai-session`
+artifact whose `commit-sha` field matches the commit hash. Either a
+short-SHA (≥7 chars) or full-SHA prefix match is accepted.
+
+A violation looks like:
+`audit.ai-commit-without-session` — emitted in the JSON envelope and
+the text report.
+
+### Gate 2 — Every `ai-session.commit-sha` must point at a real commit
+
+For every `ai-session` artifact that has `commit-sha` set, `rivet audit`
+verifies via `git cat-file -e` that the commit exists, and via
+`git merge-base --is-ancestor` that it is reachable from HEAD (or from
+`--until` if supplied).
+
+A session pointing at a missing commit means either drift (a rebase or
+force-push removed the commit), or a fabricated session record. Either
+way it is a fail.
+
+Violation rule: `audit.session-commit-missing`, with `reason` either
+`not-found` or `unreachable`.
+
+## CLI shape
+
+```
+rivet audit [--since <ref>] [--until <ref>] [--format text|json] [--strict]
+```
+
+- `--since` — starting git ref (default: `git merge-base origin/main HEAD`,
+  fallback `HEAD~50`).
+- `--until` — ending git ref (default: `HEAD`).
+- `--format` — `text` (default) or `json`.
+- `--strict` — exit non-zero when any violation is found. Without
+  `--strict`, the audit still prints the report but exits 0, so local
+  developers can see what's wrong without their working tree breaking.
+
+## When to run it
+
+- **CI (required check):** run `rivet audit --strict --format json` on
+  every PR.
+- **Locally:** run `rivet audit` (without `--strict`) before pushing if
+  the branch has AI-authored commits — the text report tells you which
+  commit needs an `ai-session` added.
+- **Pre-release:** run `rivet audit --strict` on the release branch as
+  part of the qualification-evidence snapshot.
+
+## How it composes with the rest of the AI-provenance layer
+
+- `rivet check ai-defects-open` (PR #295) gates release on the
+  `ai-found-defect` triage state.
+- `rivet audit` gates release on AI-session/commit coverage.
+
+Together the two cover the "who authored it" and "what defects did rivet
+catch" halves of the operational TD1 evidence. Both are required CI
+checks in qualified projects.
+
+## Example
+
+```
+$ rivet audit --strict
+audit: FAIL — 1 violation(s)
+
+AI-authored commits without ai-session artifact (1):
+  abc1234 "feat(parser): add streaming tokens" — by Alice <alice@example.com>
+
+Run `rivet add --type ai-session --field commit-sha=<sha> ...` for each
+orphan commit, and update or remove sessions that point at vanished
+commits.
+```
+
+To fix, add an `ai-session` artifact:
+
+```
+rivet add --type ai-session \
+  --id AI-SESS-042 \
+  --field session-id=<claude-session-uuid> \
+  --field model-id=claude-opus-4-7 \
+  --field commit-sha=abc1234 \
+  --field invoker=alice@example.com
+```
+
+## Out of scope
+
+- Auto-stamping `ai-session` from local Claude Code session logs is
+  Phase 2.5 (a separate PR will scan `~/.claude/projects/*.jsonl`).
+- `session-hash` verification — `rivet audit` will check the field for
+  presence once Phase 2.5 lands; it does not currently recompute hashes.
+- Git hook installation — see `rivet init --hooks` for the convenience
+  installer.
 "#;
 
 const CROSS_REPO_DOC: &str = r#"# Cross-Repository Artifact Linking
