@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1779086709886,
+  "lastUpdate": 1779087275080,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "08b87f86de28055a8e37b97211a3d184939943f8",
-          "message": "ci(release-npm): switch to workflow_run trigger so npm publish auto-fires after Release (#261)\n\nThe Release workflow creates the GitHub Release page using the default\nGITHUB_TOKEN, and GitHub deliberately suppresses downstream workflow\ntriggers from runs that authenticated with GITHUB_TOKEN (loop-prevention\nguarantee). As a result, release-npm.yml's `release: published` trigger\nnever fires for v0.7.0 or v0.8.0 — both stuck without npm publication\ndespite the binary archives being on the GitHub Release page.\n\nSwitch to workflow_run on the upstream Release workflow. This is the\ndocumented escape hatch for chaining workflows when the upstream uses\nGITHUB_TOKEN. Side effects:\n\n  * head_branch on a tag-push source workflow is the tag name itself\n    (e.g. v0.8.0), so version resolution stays straightforward.\n  * Guard added against non-release tags so a manual Release run on a\n    branch ref doesn't accidentally trigger an npm publish.\n  * Both jobs gated on workflow_run.conclusion == 'success' so failed\n    upstream releases don't fire downstream publishes; workflow_dispatch\n    bypasses the gate for manual backfills.\n\nBackfilling v0.7.0 and v0.8.0 npm publication will be done via\nworkflow_dispatch once this lands on main.\n\nCo-authored-by: Claude Opus 4.7 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-05-03T10:39:23-05:00",
-          "tree_id": "1fbd6fc48afe7456c356d076db2576fe9c57fff9",
-          "url": "https://github.com/pulseengine/rivet/commit/08b87f86de28055a8e37b97211a3d184939943f8"
-        },
-        "date": 1777840150561,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 79586,
-            "range": "± 410",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 859207,
-            "range": "± 3763",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 16540011,
-            "range": "± 1087598",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1983,
-            "range": "± 8",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 24978,
-            "range": "± 46",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 351600,
-            "range": "± 10570",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1227040,
-            "range": "± 24198",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 167730,
-            "range": "± 894",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1950464,
-            "range": "± 60108",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 37911232,
-            "range": "± 4174028",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 135292,
-            "range": "± 1501",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 1249301,
-            "range": "± 20852",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 20064139,
-            "range": "± 1301279",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4166,
-            "range": "± 231",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 44661,
-            "range": "± 159",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 751547,
-            "range": "± 15291",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 63438,
-            "range": "± 1919",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 705708,
-            "range": "± 2718",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 8763046,
-            "range": "± 386243",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 789,
-            "range": "± 19",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 7412,
-            "range": "± 39",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 92475,
-            "range": "± 909",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 22836,
-            "range": "± 571",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 144392,
-            "range": "± 684",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1340857,
-            "range": "± 22341",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1528087,
             "range": "± 7926",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b4ad938eac5adba852fdc6f9b175c5982e688841",
+          "message": "feat(variant): Phase 2 — thread fields_per_variant through validate (#287) (#298)\n\nCloses #287. v0.10.0 (PR #285) shipped `Artifact::fields_per_variant`\nand the `fields_for_variant(Option<&str>) -> Cow<'_, BTreeMap<...>>`\nresolver as a building block but nothing consumed variant overlays\nduring validate. This PR wires the resolver through the validation\nengine.\n\n**rivet-core/src/schema.rs** — variant-aware helpers (additive):\n- `get_field_value_for_variant(artifact, field, variant)` resolves\n  through `Artifact::fields_for_variant` when `variant` is `Some(_)`,\n  delegates to the existing borrowed-Cow path when `None` (zero\n  allocations on the no-variant path).\n- `Condition::matches_artifact_for_variant_with(...)`.\n- `Requirement::check_for_variant(...)` for `RequiredFields`. Per\n  design §6 Phase 2 scope (\"fields only\"), `RequiredLinks` stays\n  variant-flat — links aren't overlayed.\n\n**rivet-core/src/validate.rs** — additive wrappers + threading:\n- New public APIs: `validate_with_variant`,\n  `validate_with_externals_and_variant`,\n  `validate_structural_with_variant`,\n  `validate_structural_with_externals_and_variant`.\n- Existing `validate*` functions thin-wrap the variant-aware version\n  with `variant: None`. No breaking signature changes.\n- Required-fields and allowed-values reads now go through\n  `artifact.fields_for_variant(variant)` (resolved once per artifact\n  as `effective_fields`).\n- Conditional rules (phase 8) use\n  `cond.matches_artifact_for_variant_with` +\n  `rule.then.check_for_variant`.\n\n**rivet-cli/src/main.rs cmd_validate** — threads the active variant:\n- When `--variant <name>` is set, falls through to the direct path\n  (salsa doesn't yet take variant as a tracked input) and calls\n  `validate_with_externals_and_variant(..., active_variant)`.\n- Baseline-only / no-variant / `--direct` paths preserved.\n\nTests added (rivet-core/src/validate.rs, mod tests):\n1. `conditional_rule_respects_variant_field_overlay` — artifact has\n   `fields.priority=must` and `fields-per-variant.automotive.priority=\n   should`. Conditional rule fires on `priority==must`. Without\n   variant: rule fires. With `Some(\"automotive\")`: doesn't fire.\n   With unknown variant: behaves like no variant (1 diag).\n2. `required_field_satisfied_by_variant_overlay` — required field\n   `asil` absent from `fields` but present in\n   `fields-per-variant.automotive.asil=D`. Without variant: 1\n   required-field error. With `Some(\"automotive\")`: 0 errors.\n\nNOT in this PR (deliberately):\n- `rivet list --variant <name>` filtering.\n- `rivet coverage --variant <name>` scoping.\n- Variant-aware s-expr validation rules (phase 9 in validate.rs).\n- Salsa-tracked variant input (direct-path fallback for now).\n- Cross-product multi-axis variants.\n- `when:` clause on external-anchor.\n\nImplements: REQ-004, REQ-007\nRefs: FEAT-001, #287\n\nCo-authored-by: Claude Opus 4.7 <noreply@anthropic.com>",
+          "timestamp": "2026-05-18T01:48:12-05:00",
+          "tree_id": "1b5ded13f4a171454da8b2da6c66da4fd1bacee2",
+          "url": "https://github.com/pulseengine/rivet/commit/b4ad938eac5adba852fdc6f9b175c5982e688841"
+        },
+        "date": 1779087274525,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 80868,
+            "range": "± 428",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 867037,
+            "range": "± 14798",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 17319687,
+            "range": "± 1312336",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1935,
+            "range": "± 33",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 24935,
+            "range": "± 73",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 378233,
+            "range": "± 4047",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 97,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1452514,
+            "range": "± 45664",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 167915,
+            "range": "± 591",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 2040898,
+            "range": "± 49472",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 51247349,
+            "range": "± 3016791",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 120394,
+            "range": "± 2768",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1110692,
+            "range": "± 15665",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 26014425,
+            "range": "± 2551020",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4172,
+            "range": "± 23",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 45249,
+            "range": "± 153",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 759386,
+            "range": "± 6974",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 64110,
+            "range": "± 144",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 719886,
+            "range": "± 10868",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 11231376,
+            "range": "± 179665",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 811,
+            "range": "± 8",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7243,
+            "range": "± 14",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 91616,
+            "range": "± 816",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 23288,
+            "range": "± 139",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 169670,
+            "range": "± 663",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1578266,
+            "range": "± 22711",
             "unit": "ns/iter"
           }
         ]
