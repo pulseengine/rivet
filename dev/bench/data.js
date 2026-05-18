@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1779087275080,
+  "lastUpdate": 1779136417150,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "9c36acbefabd0c96518ed50140e8060eb29f6cd9",
-          "message": "ci: migrate 16 of 21 ci.yml jobs to smithy self-hosted runners (#262)\n\n* ci: migrate 16 of 21 ci.yml jobs to smithy self-hosted runners\n\nBuilds on the spar pilot (pulseengine/spar#201) — same runner-class\nmapping, same workarounds for the rustsec parser CVSS 4.0 issue,\nsame direct-cargo-deny pattern.\n\nMigrated to smithy:\n\n  rust-cpu      clippy, docs-check, test, semver-checks, coverage,\n                proptest, fuzz, msrv\n  lean-mem      miri, mutants, verus\n  light         fmt, yaml-lint, deny, supply-chain, release-results\n\nStay on ubuntu-latest (each with explanatory comment in-place):\n\n  - playwright       (--with-deps does sudo apt-get; smithy runners no sudo)\n  - vscode-extension (xvfb-run + downloaded VS Code Test setup)\n  - audit            (cargo-audit 0.21 rustsec parser rejects CVSS 4.0)\n  - kani             (kani-verifier bundles CBMC, ~100 MB install)\n  - rocq             (Coq install, not on smithy yet)\n\nTwo non-trivial fixes inside migrated jobs:\n\n  - test: actionlint install moved from `sudo mv /tmp/actionlint\n    /usr/local/bin` to `mv /tmp/actionlint $HOME/.local/bin` plus\n    GITHUB_PATH update. Smithy runners have no sudo; same binary,\n    different writable location.\n  - deny: dropped the `cargo deny check` (which would fail loading\n    advisory-db with CVSS 4.0) for `cargo deny check bans licenses\n    sources`. The audit job (still on hosted) covers vulnerability\n    matching meanwhile.\n\nExpected improvement: spar's broad migration showed ~470x end-to-end\nspeedup on clippy (~470 min → 1 min) thanks to queue elimination.\nRivet should see similar — its recent runs showed 600+ min total.\n\n* ci(miri): bump timeout-minutes 15->30 after smithy run hit limit\n\nFirst migration run timed out exactly at 15:00 with tests still\nprogressing (last printed test at ~11:00). Smithy's lean-mem class\nappears to run the slow tail tests slower than the previous hosted\nrunner did — could be cgroup memory pressure (24G MemoryHigh under\nMiri's shadow allocations) or just longer tail test perf. Bumping\nthe budget conservatively; revisit once we have a few green runs\nto dial it back closer to actual.\n\nSemver Checks is also failing on this PR — upstream issue\n('unsupported rustdoc format v57', the action ships a too-old\ncargo-semver-checks). NOT a smithy-migration issue; would fail on\nhosted too. Tracked as a separate followup; doesn't block this PR.\n\n* ci: retrigger after smithy TMPDIR fix\n\nSmithy main now points TMPDIR / TMP / TEMP at the per-runner\n/var/lib/runners/runnerN/_tmp on lv_runners (500 G), instead of\nthe host's /tmp on lv_root (80 G). Previous run hit 'no space\nleft on device' when the rivet HTML-export test ran out of root\nFS budget. Runners restarted; this commit triggers a fresh CI.\n\n* ci(semver-checks): replace stale wrapper action with direct cargo install\n\nobi1kenobi/cargo-semver-checks-action@v2 bundles an older\ncargo-semver-checks that doesn't recognise rustdoc JSON v57\n(the format current stable rustdoc emits). Every PR run failed\nwith 'unsupported rustdoc format v57 for file: rivet_core.json'.\n\nGoing direct: install the latest cargo-semver-checks at job time\nand invoke it. Slightly slower on cold cache but tracks the\nupstream rustdoc format. Same end-effect as the wrapper.\n\nCaught during the rivet broad-CI smithy migration (PR #262); not\nrelated to self-hosted vs hosted.\n\n* ci: retrigger after smithy disk cleanup + tmpfiles policy\n\nlv_runners had filled to 100% from accumulated per-runner _tmp.\nSmithy main commit b4af61e adds /etc/tmpfiles.d/smithy-runner-tmp.conf\nto age files >24 h out of those dirs daily. Manual cleanup ran today\n(466G -> 92G used). Re-triggering CI to confirm Miri / Mutation /\nVerus jobs land green now that disk is back to 20% used.",
-          "timestamp": "2026-05-10T07:36:44-05:00",
-          "tree_id": "7e4a8a2ba13fb3bbc1f0a68ded31cf0230ff0d14",
-          "url": "https://github.com/pulseengine/rivet/commit/9c36acbefabd0c96518ed50140e8060eb29f6cd9"
-        },
-        "date": 1778420415919,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 80319,
-            "range": "± 293",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 839672,
-            "range": "± 6078",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 15252126,
-            "range": "± 1666994",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2226,
-            "range": "± 11",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 23735,
-            "range": "± 1358",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 365918,
-            "range": "± 6853",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 94,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 94,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1185092,
-            "range": "± 62753",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 161456,
-            "range": "± 3335",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1964085,
-            "range": "± 8086",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 36133846,
-            "range": "± 3279796",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 138513,
-            "range": "± 928",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 1206718,
-            "range": "± 28805",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 19860814,
-            "range": "± 3518599",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4269,
-            "range": "± 18",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 61118,
-            "range": "± 365",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 825367,
-            "range": "± 6061",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 61862,
-            "range": "± 281",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 689757,
-            "range": "± 10135",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 8297293,
-            "range": "± 713336",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 813,
-            "range": "± 4",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 7612,
-            "range": "± 78",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 112856,
-            "range": "± 819",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 22260,
-            "range": "± 917",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 153365,
-            "range": "± 1169",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1453811,
-            "range": "± 32789",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1578266,
             "range": "± 22711",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0a21a570c8f206c82ac188112e516dc4c490e1be",
+          "message": "fix(import): junit import — stop overwriting + restore test→artifact link (#302)\n\nUser-reported regressions against `rivet import-results --format junit`:\n\n**Bug #1: silent overwrite on re-import.** `suite_to_run` built\n`run_id = format!(\"junit-{safe_name}\")` from the testsuite name only,\nso two CI runs of the same suite produced identical filenames and the\nsecond import wiped the first.\n\nFix: append a disambiguator to the run_id. When the JUnit\n`<testsuite timestamp=\"...\">` attribute is present (most CI tooling\nemits it), slugify it: `2026-05-17T06-35-44Z`. When absent, hash the\nsuite's case list (name, classname, outcome variant) and append as\n16-hex DefaultHasher digest. Identical re-imports of the same artefact\nremain idempotent (same hash → same filename → no churn); different\ncontent distinguishes itself.\n\n**Bug #2: test→artifact link dropped on cargo-nextest output.**\n`artifact_id_for` has 4 heuristics; the fallback emits a literal\n`\"classname.name\"` concatenation that the test-coverage report cannot\njoin back to any artifact. cargo-nextest doesn't bracket\n`[REQ-NNN]` or use the artifact ID as classname, so most rivet-on-rust\nprojects hit the fallback.\n\nFix: hook the JUnit importer into `test_scanner`. New public\n`parse_junit_xml_with_markers(xml, markers)` adds a 5th heuristic —\nwhen the existing fallback fires, look up a marker whose `test_name`\nmatches the case name (exact or suffix with separator). The CLI\n(`cmd_import_results_junit`) scans the project's `src/`+`tests/` for\n`// rivet: verifies REQ-NNN` markers before parsing the XML, then\npasses them to the new function. Bracketed and direct-classname IDs\nare preserved (they short-circuit before the marker lookup).\n\nExisting `parse_junit_xml` kept working unchanged (delegates to the\nnew path with an empty marker slice). No schema changes.\n\nTests added (6):\n- run_id_includes_timestamp_when_present\n- run_id_stable_hash_when_no_timestamp\n- run_id_different_hash_when_content_differs\n- marker_lookup_supplies_artifact_id_when_fallback_concat\n- marker_lookup_does_not_override_explicit_bracket\n- marker_lookup_returns_fallback_when_no_match\n\nWorkspace: 1003 lib tests pass (was 996, +7). Clippy clean. Format clean.\n\nTrace: skip\n\nCo-authored-by: Claude Opus 4.7 <noreply@anthropic.com>",
+          "timestamp": "2026-05-18T15:27:04-05:00",
+          "tree_id": "3b8503610152cc384f7648e68f9a3792ed14b9dd",
+          "url": "https://github.com/pulseengine/rivet/commit/0a21a570c8f206c82ac188112e516dc4c490e1be"
+        },
+        "date": 1779136416537,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 83398,
+            "range": "± 323",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 868012,
+            "range": "± 34264",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 11611794,
+            "range": "± 871767",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2173,
+            "range": "± 61",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 27437,
+            "range": "± 451",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 376022,
+            "range": "± 1610",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 95,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 95,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1437602,
+            "range": "± 16716",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 160245,
+            "range": "± 1687",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1846682,
+            "range": "± 11758",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 23604917,
+            "range": "± 294202",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 125405,
+            "range": "± 3931",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1103442,
+            "range": "± 27128",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 12053769,
+            "range": "± 925410",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4307,
+            "range": "± 191",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 58741,
+            "range": "± 358",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 746241,
+            "range": "± 8195",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 60733,
+            "range": "± 758",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 672387,
+            "range": "± 15381",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7428942,
+            "range": "± 45704",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 811,
+            "range": "± 12",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7251,
+            "range": "± 128",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 113538,
+            "range": "± 1249",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 24106,
+            "range": "± 143",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 171485,
+            "range": "± 1673",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1594975,
+            "range": "± 15940",
             "unit": "ns/iter"
           }
         ]
