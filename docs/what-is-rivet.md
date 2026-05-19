@@ -290,6 +290,8 @@ trustworthy.
 
 ## 6. What rivet is NOT
 
+For the categorical integrator-facing limits — eight numbered "Rivet is not..." sub-sections in the Cederqvist / ISO 26262-10 SEooC Safety Manual register, each with a worked cliff showing where the tool reports green while the engineering reality is red — see [docs/rivet-is-not.md](rivet-is-not.md). That document is the doctrinal version of this section. The bullets below are the marketing-voice summary.
+
 Honesty over hype.
 
 - **Not a replacement for Polarion's live collaborative editing.**

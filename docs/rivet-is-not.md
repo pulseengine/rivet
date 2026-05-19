@@ -4,6 +4,8 @@
 
 Rivet validates a typed knowledge graph of engineering artifacts against a domain schema, detects drift across repositories, and emits machine-checkable status. Within those bounds it is strict and reliable. Outside those bounds the following limits apply.
 
+For the longer positioning — per-situation playbooks, schema catalogue, the human-vs-AI role split, quickstart — see [docs/what-is-rivet.md](what-is-rivet.md). That document is the marketing-voice introduction; this one is the SEooC Safety Manual draft. They describe the same tool from opposite directions.
+
 ## What Rivet is not
 
 In 1993, Per Cederqvist's CVS manual carried a section called [*"What is CVS not?"*](https://www.gnu.org/software/trans-coord/manual/cvs/html_node/What-is-CVS-not_003f.html) — a frank inventory of what the tool would not do for you. The section below exists for Rivet. It is the contract about what Rivet does **not** decide.
