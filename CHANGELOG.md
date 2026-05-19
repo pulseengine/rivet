@@ -5,6 +5,111 @@
 
 ## [Unreleased]
 
+## [0.10.1] — 2026-05-19
+
+Theme: **adversarial-review action items + user-reported regressions**.
+Six PRs landed in three days, each citing a specific finding from the
+v0.10.0 adversarial-review batch (DPO / Auditor / Formal-Skeptiker /
+Supply-Chain-Pentester / PM / Mobile-Scale lenses) or a direct user bug
+report. Patch-shaped because every change is additive: no breaking
+schema or CLI changes, only new fields/subcommands/heuristics.
+
+### Added
+
+- **`rivet audit`** subcommand (#297, partially closes #127). Read-only
+  AI-session/commit traceability gate. Two checks: (a) every AI-authored
+  commit (detected via `Co-Authored-By: ...noreply@anthropic.com` or
+  `Generated-With:`/`Created-By: ai|ai-assisted` trailers) must have an
+  `ai-session` artifact whose `commit-sha` matches; (b) every
+  `ai-session.commit-sha` must point at a commit that exists and is
+  reachable from HEAD. Composes with `rivet check ai-defects-open`
+  (#295) — together they are the two operational TD1 loops the dossier
+  §3 layer 5 names.
+
+- **`rivet check ai-defects-open`** oracle (#295, TCL workstream B).
+  Blocks release if any `ai-found-defect` with `triage-status: open`
+  links to a `released`/`approved` artifact, OR if `triaged-by` equals
+  the originating session's `invoker` (DPO segregation-of-duties).
+  Ships the gate the dossier §3 had previously *claimed* without
+  implementing.
+
+- **`dpia` artifact type** in `schemas/common.yaml` (#295). DSGVO Art. 35
+  Data Protection Impact Assessment record. Fields: `dpo-sign-off`,
+  `personal-data-categories`, `risk-assessment`, `mitigation-measures`,
+  `consultation-date`. Companion fields on `ai-session`: `lawful-basis`,
+  `retention-period`, `erasure-mechanism`. Schema only — validate-time
+  enforcement of the link from `invoker`-bearing sessions is deferred.
+
+- **Variant-aware validate** (#298, Phase 2 of #287). The
+  `fields_for_variant` resolver shipped in v0.10.0 now flows through
+  validate's required-fields, allowed-values, and conditional-rule
+  checks. New public APIs:
+  `validate_with_variant`, `validate_with_externals_and_variant`,
+  `validate_structural_with_variant`,
+  `validate_structural_with_externals_and_variant`. CLI's
+  `--variant <name>` flag finally has teeth.
+
+- **JUnit importer marker join** (#302). New
+  `parse_junit_xml_with_markers(xml, markers)` adds a 5th heuristic to
+  `artifact_id_for`: when the existing fallback fires (cargo-nextest
+  output without bracketed `[REQ-NNN]`), look up a marker whose
+  `test_name` matches the case name. CLI's
+  `rivet import-results --format junit` scans the project's
+  `src/`+`tests/` for `// rivet: verifies REQ-NNN` markers and threads
+  them in. Restores the test → artifact link that was silently dropped.
+
+### Fixed
+
+- **JUnit import overwrote previous runs** (#302, user-reported).
+  `suite_to_run` derived `run_id` purely from the testsuite name, so
+  a second CI run with the same name wiped the first. Now appends
+  either the slugified `<testsuite timestamp>` (most CI emits it) or a
+  16-hex `DefaultHasher` content digest. Idempotent on re-import of the
+  same artefact, distinct on a new CI run.
+
+- **Salsa `build_store` was not memoized** (#295, Mobile/Scale lens
+  finding). Marked `#[salsa::tracked]` plus `#[salsa::tracked]` on
+  `build_store_with_extras`. Required adding `PartialEq` to `Store`.
+  Previously every revision rebuilt the whole HashMap (cloning every
+  artifact) — the "incremental validator" was doing an O(N) rebuild on
+  every keystroke. Now cache-hits on identical inputs.
+
+- **Dossier scope statement overstated v0.10.0** (#295, Auditor +
+  Formal-Skeptiker lens). `docs/design/tool-qualification-dossier.md`
+  gained §0 "Honest scope statement" enumerating what is NOT yet
+  defensible: no independent confirmation reviewer; unverified
+  DO-330/IEC 62304/EN 50128 cross-walks; unproven five-layer
+  independence; 29-mutant testing baseline; one `Admitted` Rocq theorem
+  (`vmodel_chain_two_steps`); one `assume`'d Verus obligation
+  (`backlink_symmetric`); unsigned SHA256SUMS; no DPIA enforcement.
+  Strips the "Kani 2000+ proofs" claim (real number: 27 harnesses).
+  Companion typed claim `TQ-CONF-RIVET.fields.scope` updated to match.
+
+### Changed
+
+- **Release `SHA256SUMS` now signed via sigstore keyless OIDC** (#296,
+  Supply-Chain-Pentester lens). New artifacts on the release page:
+  `SHA256SUMS.txt.cosign.bundle`, `SHA256SUMS.txt.sig`,
+  `SHA256SUMS.txt.pem`. Trust anchor binds to the GitHub-Actions
+  workflow identity (issuer
+  `https://token.actions.githubusercontent.com`, subject
+  `.github/workflows/release.yml@refs/tags/vX.Y.Z`). Verification is
+  documented in new `RELEASING.md`. No long-lived signing key to rotate.
+
+- **`build-test-evidence` non-blocking again** (#294). The release
+  workflow's `build-test-evidence` job pulls in the spar wasm32-wasip2
+  build, which transitively requires the highs-sys C++ solver and a
+  flaky WASI cross-compile. Made `continue-on-error: true` and dropped
+  from `create-release.needs`. Future tag pushes survive without
+  manual republishing. Root-cause investigation tracked in #293.
+
+- **`cargo-mutants --jobs 4 → --jobs 2`** (#301). lean-mem runners
+  were hitting their 32G cgroup ceiling under 4-way parallel mutation
+  testing (~8G/worker triggering swap-death-spiral). 2-way gives
+  ~16G/worker with comfortable headroom. Each shard takes ~2× as long
+  (was 12-20 min, now 20-40 min) but the lean-mem pool stops needing
+  emergency cgroup-ceiling bumps.
+
 ## [0.10.0] — 2026-05-16
 
 Theme: **audit-grade story**. Three orthogonal features that together
