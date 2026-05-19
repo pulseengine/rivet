@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1779190328772,
+  "lastUpdate": 1779206043685,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "dd2453571aed5753a3370163f9f4d495b78023c3",
-          "message": "feat(coverage): rivet coverage --matrix — V&V matrix from repo-status artifacts (#243)\n\nAdds the V&V coverage matrix view to `rivet coverage`: reads\n`repo-status` artifacts (schema `vv-coverage` from PR #232) and renders\na per-repo × per-technique matrix in text, json, markdown, or html.\n\nSub-issue 2 of #188. Sub-issue 1 (the schema) shipped in #232; the\ncross-repo aggregator (sub-issue 3) is still out of scope here per\nthe prior triage decomposition because the agent's GitHub access is\nrestricted to `pulseengine/rivet` only.\n\n- New flag `--matrix` on the existing `Coverage` subcommand. Mutually\n  exclusive with `--tests` at the clap layer.\n- `--format` accepts `text` (default), `json`, `markdown`, `html` when\n  `--matrix` is set; the original `text|json` contract for non-matrix\n  coverage is preserved.\n\n| State    | Glyph | JSON        | Meaning                                |\n|----------|-------|-------------|----------------------------------------|\n| absent   | ·     | \"absent\"    | Technique not in `techniques-applied`. |\n| applied  | ○     | \"applied\"   | Applied but not gated in CI.           |\n| gated    | ●     | \"gated\"     | In `techniques-gated-in-ci`.           |\n\nColumns are the sorted union of `techniques-applied` ∪\n`techniques-gated-in-ci` across all rows, so the matrix only shows\ntechniques at least one repo cares about.\n\n- text: fixed-width table with the legend on top.\n- markdown: pipe table; pastes verbatim into a PR body or wiki.\n- html: `<section><table>` fragment with `cell-{absent,applied,gated}`\n  classes for downstream styling, with `&` and friends escaped.\n- json: structured `{command: \"coverage-matrix\", columns, repos[]}`\n  envelope. Each repo carries its raw lists plus a precomputed\n  `cells[]` so consumers don't have to recompute set membership.\n\n- 7 new integration tests in `rivet-cli/tests/cli_commands.rs`:\n  markdown / html / json / text-default rendering, invalid-format\n  diagnostic, `--matrix` × `--tests` clap conflict, empty-project\n  graceful render across all four formats.\n- `cargo test -p rivet-cli` — full suite green (432 tests).\n- `cargo test -p rivet-core --lib` — 896 pass.\n- `cargo clippy -p rivet-cli --all-targets -- -D warnings` — clean.\n- `cargo fmt --all -- --check` — clean.\n- `rivet validate` diagnostics unchanged from origin/main (pre-existing\n  6 errors in the spar-external fixture, untouched here).\n\n- New `coverage-matrix` topic in `rivet docs` documenting the surface,\n  cell semantics, authoring `repo-status`, and the four output formats.\n- New `schema/vv-coverage` topic exposing the schema YAML directly.\n\nRefs: #188\nRefs: #184\n\nImplements: REQ-007\n\nCo-authored-by: Claude <noreply@anthropic.com>",
-          "timestamp": "2026-05-10T22:24:05-05:00",
-          "tree_id": "27f93935f3ec9b5f88a70ba1c5f2130a370521f2",
-          "url": "https://github.com/pulseengine/rivet/commit/dd2453571aed5753a3370163f9f4d495b78023c3"
-        },
-        "date": 1778470468942,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 79783,
-            "range": "± 2001",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 836010,
-            "range": "± 8042",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 10849015,
-            "range": "± 231463",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2192,
-            "range": "± 20",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 26404,
-            "range": "± 420",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 368883,
-            "range": "± 16147",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 96,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 95,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1187227,
-            "range": "± 12830",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 162632,
-            "range": "± 738",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1888943,
-            "range": "± 29006",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 27561423,
-            "range": "± 2269876",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 139784,
-            "range": "± 920",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 1233921,
-            "range": "± 25720",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 12449142,
-            "range": "± 209868",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4349,
-            "range": "± 7",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 60469,
-            "range": "± 155",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 756266,
-            "range": "± 7805",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 61868,
-            "range": "± 7477",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 697505,
-            "range": "± 9189",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7652341,
-            "range": "± 15669",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 851,
-            "range": "± 49",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 7986,
-            "range": "± 31",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 122346,
-            "range": "± 2924",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 24500,
-            "range": "± 65",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 174863,
-            "range": "± 623",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1632373,
-            "range": "± 25794",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1476459,
             "range": "± 21549",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "bfebc592baab78fc8b752713bc5d56bd3171e332",
+          "message": "feat(supplier): Phase 2 — federation handshake + FederationProvenance (#288) (#292)\n\n* feat(supplier): derives-from-external structured target + FederationProvenance (#288)\n\nItems 1 and 4 of issue #288 (Phase 2 federation handshake). Lays the\ndata-model foundation for cross-org link semantics and the provenance\nblock that `rivet supplier pull` will stamp on imported artifacts.\n\n- `Link.external: Option<ExternalLinkTarget>` — when YAML `target:` is\n  a mapping (the cross-org `*-external` link types), `Link.target`\n  mirrors the mapping's `anchor:` field for graph navigation while the\n  full `{org, contract, doc-id, last-synced, sha256, anchor}` payload\n  flows into `Link.external`. Existing flat-string targets round-trip\n  unchanged via a custom serde impl that emits whichever shape the\n  link carries.\n\n- `derives-from-external` link type in `schemas/common.yaml`. Companion\n  inverse: `derived-into-external`.\n\n- `FederationProvenance` block on `Provenance` for federated artifacts:\n  `{source-org, source-tool, source-id, anchor, fetched-at,\n  source-hash, mapping-recipe}`. Optional — first-party / AI / human\n  artifacts continue to serialise without the block.\n\n- `yaml_hir.rs` CST link extractor handles the structured-target shape\n  by dedenting the raw value text and round-tripping through\n  serde_yaml. Regression-tested against the previous behaviour, which\n  silently mis-targeted the link at the first key (\"org\") of the\n  mapping value.\n\n- Mechanical: every `Link { link_type, target }` initialiser across\n  core + cli + tests now includes `external: None`, and the same\n  pattern is added to a handful of stub Provenance constructions for\n  the new `federation: None` field.\n\nTests (oracle-gated, fail without the change):\n- `model::tests::link_flat_target_yaml_roundtrip`\n- `model::tests::link_structured_target_yaml_parse`\n- `model::tests::link_structured_target_yaml_serialize_then_parse`\n- `model::tests::link_structured_target_requires_anchor`\n- `model::tests::federation_provenance_yaml_roundtrip`\n- `model::tests::provenance_federation_block_is_optional`\n- `yaml_hir::tests::links_extraction_structured_external_target`\n\nPhase 2 cited-source ReqIF backend and `rivet supplier pull` ship in\nfollow-up commits on the same branch.\n\nImplements: REQ-010\nRefs: REQ-020, FEAT-001\n\nhttps://claude.ai/code/session_01Ms4nZDTtdfzvzTu8m3ghSj\n\n* feat(cited-source): kind: reqif backend with sha + XML well-formedness gate (#288)\n\nItem 2 of issue #288 (Phase 2 federation handshake). Promotes ReqIF\nfrom \"round-trip only\" to a first-class local-file backend alongside\n`kind: file`.\n\n- `CitedSourceKind::is_local_phase2()` admits `Reqif` in addition to\n  `File`.\n- `resolve_reqif_uri()` handles `reqif://`, `file://`, and bare-path\n  forms — all degrade to local-file semantics. HTTP(S) ReqIF endpoints\n  remain Phase 3+ (auth / fetch backend out of scope here).\n- `check_cited_source` for `kind: reqif`: read bytes, sha256, verify\n  against stamped hash → `Match` / `Drift` / `MissingHash`. Plus a\n  ReqIF XML well-formedness check via `reqif::parse_reqif` so a\n  malformed supplier delivery surfaces as a typed `FileError` at\n  `rivet validate` time rather than poisoning the supplier cache at\n  pull time.\n\nTests (oracle-gated, fail without the change):\n- `cited_source::tests::check_cited_source_reqif_match_when_hash_agrees`\n- `cited_source::tests::check_cited_source_reqif_drift_when_hash_differs`\n- `cited_source::tests::check_cited_source_reqif_missing_hash_returns_computed`\n- `cited_source::tests::check_cited_source_reqif_rejects_malformed_xml`\n- `cited_source::tests::resolve_reqif_uri_handles_scheme_and_relative`\n\nFixes: REQ-004\nRefs: REQ-020, FEAT-001\n\nhttps://claude.ai/code/session_01Ms4nZDTtdfzvzTu8m3ghSj\n\n* feat(supplier): rivet supplier pull <anchor> — federation handshake (#288)\n\nItem 3 of issue #288 (Phase 2 federation handshake). Wires the\n`external-anchor` artifact's `cited-source` to a local supplier cache\nunder `.rivet/supplier-cache/<org>/<contract>/`. Phase 2 backends:\n`kind: file` and `kind: reqif`; both are read-only on the source side\nand idempotent on the cache side.\n\n- New CLI subcommand: `rivet supplier pull <anchor> [--format text|json]`.\n- Looks up the anchor by ID, validates it's `external-anchor`-typed,\n  parses its `cited-source` field, fetches the local payload, and\n  cross-checks the stamped sha256 against the wire bytes. Refuses to\n  write a poisoned cache entry when the stamped hash drifts — the\n  auditor must re-stamp the anchor and retry.\n- For ReqIF, runs `reqif::parse_reqif` to verify XML well-formedness\n  before caching.\n- Writes payload as `<anchor>.<ext>` (`.reqif` for reqif kind,\n  inherits source extension for file kind) and a sibling\n  `<anchor>.manifest.yaml` carrying the `FederationProvenance` block\n  + cache metadata.\n- Idempotent: a re-pull with identical bytes refreshes the manifest's\n  `fetched-at` but leaves the payload untouched (the JSON output\n  reports `bytes_unchanged: true`).\n- `sanitize_path_component()` clamps `<org>` / `<contract>` to ASCII\n  alphanum + `-_.` so an injected path separator can't escape the\n  cache root.\n\nMade `check::sources::current_iso8601_utc()` crate-public for reuse\nas the fetch-timestamp source.\n\nTests (oracle-gated, fail without the change):\n- `cli_commands::supplier_pull_kind_file_writes_cache_and_manifest`\n- `cli_commands::supplier_pull_refuses_on_sha256_drift`\n- `cli_commands::supplier_pull_idempotent_on_re_run`\n- `cli_commands::supplier_pull_kind_reqif_writes_reqif_extension`\n- `cli_commands::supplier_pull_unknown_anchor_errors`\n\nImplements: REQ-007\nRefs: REQ-020, FEAT-001\n\nhttps://claude.ai/code/session_01Ms4nZDTtdfzvzTu8m3ghSj\n\n---------\n\nCo-authored-by: Claude <noreply@anthropic.com>",
+          "timestamp": "2026-05-19T10:46:52-05:00",
+          "tree_id": "92eb60c79f406bcc25fff673528b964d49652d40",
+          "url": "https://github.com/pulseengine/rivet/commit/bfebc592baab78fc8b752713bc5d56bd3171e332"
+        },
+        "date": 1779206042187,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 84103,
+            "range": "± 456",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 894847,
+            "range": "± 5546",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 14218636,
+            "range": "± 626699",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2188,
+            "range": "± 12",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25505,
+            "range": "± 406",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 367284,
+            "range": "± 2857",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 93,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 93,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 93,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1453169,
+            "range": "± 25833",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 151042,
+            "range": "± 9613",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1751427,
+            "range": "± 17740",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 26747394,
+            "range": "± 1171881",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 130156,
+            "range": "± 1398",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1137316,
+            "range": "± 24356",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 14481483,
+            "range": "± 1071664",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4305,
+            "range": "± 37",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 61694,
+            "range": "± 1361",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 804261,
+            "range": "± 7310",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 61214,
+            "range": "± 202",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 691955,
+            "range": "± 3633",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8193007,
+            "range": "± 288658",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 734,
+            "range": "± 9",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7537,
+            "range": "± 73",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 115541,
+            "range": "± 840",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 25553,
+            "range": "± 391",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 185462,
+            "range": "± 2799",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1738470,
+            "range": "± 25607",
             "unit": "ns/iter"
           }
         ]
