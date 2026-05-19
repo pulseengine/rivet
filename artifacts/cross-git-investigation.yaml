@@ -687,6 +687,75 @@ artifacts:
       model: claude-opus-4-7
       timestamp: 2026-05-19T18:30:00Z
 
+  # ── REQ-074: independent audit of every docs/ file ────────────────────
+  - id: REQ-074
+    type: requirement
+    title: "Audit every docs/ markdown against {useful, done-vs-planned, still-true}; act on the verdicts"
+    status: draft
+    description: |
+      Trigger: user feedback 2026-05-19 — "i would question to validate
+      the need of all the documents against an independent subagent
+      validating the usefulness as well as if it describes something
+      done or planned or compared if it is still true". The request is
+      a per-document audit against three criteria:
+
+        1. Useful — is this doc still worth having for any audience?
+        2. Done vs planned — describes shipped behaviour, or
+           speculative / superseded planning state?
+        3. Still true — for docs describing shipped behaviour, does the
+           description match current main? (v0.10.1, vs many docs
+           authored against v0.4.1 / v0.5.0 / v0.7.0.)
+
+      MUST do the audit as an independent process (subagent or human
+      reviewer, NOT the original author of each doc) and produce a
+      typed verdict per file: KEEP / UPDATE / ARCHIVE / DELETE /
+      INVESTIGATE. The first pass of this audit was launched together
+      with this requirement; its output should be captured under
+      `.rivet/runs/` or a follow-up evidence path and linked back to
+      this requirement.
+
+      MUST then act on each verdict, in roughly this order:
+        (a) DELETE candidates removed (one PR per cluster).
+        (b) ARCHIVE candidates moved to `docs/historical/` (one PR).
+        (c) UPDATE candidates refreshed (one PR per doc or per
+            cohesive group).
+        (d) INVESTIGATE candidates triaged by the relevant maintainer.
+
+      The audit and the acting-on-it are explicitly separate phases —
+      a verdict is not an action. The first phase is mechanical
+      classification; the second is human-mediated cleanup.
+
+      Connection to [[REQ-073]]: the frontmatter dogfood and the
+      content audit are complementary. Frontmatter makes documents
+      first-class artifacts in the graph; the audit decides which of
+      those artifacts should live, change, or die. Doing them in this
+      order (audit first, then frontmatter the survivors) avoids
+      stamping `id:` + `title:` onto documents we're about to delete.
+
+      Recommended audit cadence after the first pass: per release
+      train (every minor version bump runs the same audit). Once
+      stable, gate via CI with a `rivet docs --audit` sub-command if
+      one ships (out of scope for v0.11; tracked under REQ-073 (d)).
+
+      Evidence:
+        - user feedback 2026-05-19 (verbatim above)
+        - the audit output (pending — first pass scheduled with this
+          commit, results to be captured separately)
+    tags: [docs, audit, dogfood, governance]
+    fields:
+      priority: must
+      category: non-functional
+      baseline: v0.11.0-track
+    links:
+      - type: derives-from
+        target: FEAT-135
+      - type: traces-to
+        target: REQ-073
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-05-19T20:00:00Z
+
   # ── REQ-073: docs/ folder structure + frontmatter coverage ────────────
   - id: REQ-073
     type: requirement
