@@ -874,8 +874,12 @@ artifacts:
 
       Evidence:
         - user feedback 2026-05-19 (verbatim above)
-        - the audit output (pending — first pass scheduled with this
-          commit, results to be captured separately)
+        - [[DOC-DOCS-AUDIT-2026-05-19]] — first-pass audit captured at
+          `docs/research/2026-05-19-docs-audit.md` (52 files classified
+          into KEEP 18 / UPDATE 11 / ARCHIVE 16 / DELETE 0 /
+          INVESTIGATE 4 / out-of-scope 3; five worst offenders +
+          three exemplars + directory-structure proposal + two CI
+          checks that would prevent two-thirds of the staleness)
       Acceptance:
         - The audit output (a table of `{path | verdict | last |
           note}` for every .md under docs/) is captured at
@@ -977,6 +981,23 @@ artifacts:
         - user feedback 2026-05-19: "in general i think the whole
           docs folder is not well structured and planning stuff in
           which might be interesting for some time but..."
+
+      Side-finding discovered while capturing the [[REQ-074]] audit:
+      docs/ markdown files declared with `id:` in frontmatter are
+      NOT addressable as `traces-to` link targets from artifact
+      YAML. Attempting `traces-to: DOC-DOCS-AUDIT-2026-05-19`
+      from REQ-074's links list produced `ERROR: link 'traces-to'
+      targets 'DOC-DOCS-AUDIT-2026-05-19' which does not exist`,
+      and `broken cross-refs: 1` in the validate JSON. The
+      artifact store and the document store share an ID namespace
+      but do not unify into one graph. The `[[DOC-ID]]` reference
+      syntax in document bodies bridges from docs → artifacts; the
+      reverse bridge does not exist. Closing REQ-073 (a) on
+      frontmatter coverage is not sufficient; (b) on the docs/
+      structure decision should also decide whether documents
+      become first-class artifacts in the typed-link graph or
+      remain a parallel system. Add this to the acceptance set
+      below if a unified-graph decision is made.
       Acceptance:
         - `rivet validate 2>&1 | grep -c "no YAML frontmatter"`
           returns 0 (currently 11 on main as of this commit).
@@ -997,6 +1018,8 @@ artifacts:
     links:
       - type: derives-from
         target: FEAT-135
+      - type: traces-to
+        target: REQ-074
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-7
