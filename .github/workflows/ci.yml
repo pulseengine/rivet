@@ -114,7 +114,10 @@ jobs:
   # ── Playwright E2E ────────────────────────────────────────────────────
   playwright:
     name: Playwright E2E
-    needs: [test]
+    # Decoupled from `test` (#299): Playwright runs the release binary
+    # end-to-end and is independent of cargo-test passing. Keeping it
+    # gated on `test` blocked an ubuntu-latest job behind self-hosted
+    # rust-cpu saturation (2026-05-17 incident).
     # Stays on ubuntu-latest: `npx playwright install --with-deps` runs
     # `apt-get install` (sudo needed) and pulls in Chromium + a slate
     # of system libraries. Smithy runners have no sudo.
@@ -522,7 +525,10 @@ jobs:
   # PR-sized subset completes in <20 min.
   kani:
     name: Kani Proofs
-    needs: [test]
+    # Decoupled from `test` (#299): Kani harnesses are bounded model
+    # checks against rivet-core; they don't read cargo-test status.
+    # Keeping the gate blocked an ubuntu-latest job behind self-hosted
+    # rust-cpu saturation (2026-05-17 incident).
     # Stays on ubuntu-latest: kani-verifier bundles CBMC (~100 MB),
     # not pre-installed on smithy. Move once toolchains role ships kani.
     runs-on: ubuntu-latest
@@ -605,7 +611,10 @@ jobs:
   # port. TODO: flip to hard gate after the Rocq 9 port PR.
   rocq:
     name: Rocq Proofs
-    needs: [test]
+    # Decoupled from `test` (#299): Rocq theorem proving runs against
+    # vendored .v files; it doesn't read cargo-test status. Keeping
+    # the gate blocked an ubuntu-latest job behind self-hosted rust-cpu
+    # saturation (2026-05-17 incident).
     # Stays on ubuntu-latest: Rocq (Coq) install is heavy and
     # not pre-provisioned on smithy. Migrate once toolchains role ships it.
     runs-on: ubuntu-latest
