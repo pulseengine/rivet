@@ -1,6 +1,12 @@
 # Rivet is not...
 
-In 1993, Per Cederqvist's CVS manual carried a section called *"CVS is not..."* — a frank inventory of what the tool would not do for you. "CVS is not a substitute for management." "CVS is not a substitute for developer communication." "You are outside the realm of CVS's competence." Three decades later, AI-era tooling has lost that habit: capability lists ship, limitation sections do not. Cursor has no *"Cursor is not..."* page. A free 1993 utility was more candid about its scope than billion-dollar products are in 2026. The section below exists to break that pattern for Rivet. It is the contract about what Rivet does **not** decide.
+## What Rivet is
+
+Rivet validates a typed knowledge graph of engineering artifacts against a domain schema, detects drift across repositories, and emits machine-checkable status. Within those bounds it is strict and reliable. Outside those bounds the following limits apply.
+
+## What Rivet is not
+
+In 1993, Per Cederqvist's CVS manual carried a section called *"CVS is not..."* — a frank inventory of what the tool would not do for you. The section below exists for Rivet. It is the contract about what Rivet does **not** decide.
 
 ## 1. Rivet is not a substitute for engineering management.
 
@@ -18,7 +24,7 @@ Rivet is a schema-driven validator, not a schema author. The 28 built-in schemas
 
 The `cited-source` field carries a `sha256` of an upstream document; `rivet sync` pins externals to a commit SHA in `rivet.lock`; `rivet baseline verify` cross-checks `baseline/<name>` tags across repos. These mechanisms **detect drift** — they raise their hand when the supplier's document, the upstream repo, or a sibling team's baseline has moved. They do not decide what to do about the drift. The conversation with the supplier about whether the new revision of REQ-SW-022 invalidates your hazard analysis is still a phone call, an email thread, or a meeting. Rivet tells you the hash changed; the engineering judgment about whether the change is benign or catastrophic is human work.
 
-*Cliff:* `rivet baseline verify` flags that the supplier repo's `baseline/v4` tag now points at a different commit than your `rivet.lock` records. An agent re-runs `rivet lock` to refresh the SHA. The diff is mechanically resolved. Nobody asked the supplier why the baseline moved.
+*Cliff:* `rivet baseline verify` flags that the supplier repo's `baseline/v4` tag now points at a different commit than your `rivet.lock` records. An engineer (or an agent) re-runs `rivet lock` an hour before the release branch cut to make the diagnostic go green. The diff is mechanically resolved. Nobody asked the supplier why the baseline moved.
 
 ## 4. Rivet is not a safety case.
 
@@ -26,17 +32,19 @@ The `cited-source` field carries a `sha256` of an upstream document; `rivet sync
 
 *Cliff:* an agent generates a GSN safety case linking every `requirement` to a `verification` and reports "argument complete." The TCL claim on the qualification artifact is `self-claimed`. The argument is structurally sound and substantively unqualified. The notified body will say so.
 
-## 5. Rivet is not an AI prompt-correctness checker.
+## 5. Rivet is not a semantic validator.
 
-Rivet validates the artifact the AI wrote — its schema conformance, its links, its status gates, its s-expression rules. It does not validate the AI's reasoning that produced the artifact. A hazard whose `description` is hallucinated, a `loss-scenario` whose causal chain is plausible but wrong, a `controller-constraint` that mechanically inverts the UCA but ignores a feedback loop the AI did not see — all of these can pass `rivet validate` cleanly. The oracle checks shape and graph integrity; it has no semantic model of your physical system. The `ai-found-defect` triage loop exists precisely because we know AI authors introduce defects the surrounding mechanical layers will not catch.
+Rivet validates the artifact's *shape*, not its *meaning*. Schema conformance, link integrity, status gates, s-expression rules — all of these check the artifact as a piece of structured data. They do not check whether the data describes the physical world correctly. A hazard whose `description` is hallucinated by an agent, or invented by a tired engineer on Friday afternoon, a `loss-scenario` whose causal chain is plausible but wrong, a `controller-constraint` that mechanically inverts the UCA but ignores a feedback loop nobody on the project has yet seen — all of these can pass `rivet validate` cleanly. The oracle checks shape and graph integrity; it has no semantic model of your physical system. The `ai-found-defect` triage loop exists precisely because AI authors introduce defects the surrounding mechanical layers will not catch — but the same defect class is older than AI authoring, and human-authored variants pass the same way.
 
-*Cliff:* `rivet add hazard -t "Battery overheat during regen braking"` validates green. The hazard is real. The agent then writes a `loss-scenario` blaming a sensor the vehicle does not have. The link shape is correct, the status gate passes, the schema is satisfied. The system engineer who knows the bill of materials is the only person who can catch this.
+*Cliff:* `rivet add hazard -t "Battery overheat during regen braking"` validates green. The hazard is real. Whoever authored it — agent or engineer — then writes a `loss-scenario` blaming a sensor the vehicle does not have. The link shape is correct, the status gate passes, the schema is satisfied. The system engineer who knows the bill of materials is the only person who can catch this.
 
 ## 6. Rivet is not a legal or DPIA conformance instrument.
 
-The `dpia` artifact type and the schema's `lawful-basis`, `retention-period`, and `erasure-mechanism` fields are *records* of a Data Protection Impact Assessment. Recording an assessment is not performing one. DSGVO Art. 35 requires a qualitative judgment about risk to data subjects that a data-protection officer, not a YAML validator, is competent to make. Likewise the EU AI Act schema's `risk-category` field records the classification; it does not produce it. Rivet makes the assessment auditable once it exists. Conformance with the underlying legal duty is an activity that happens *before* the artifact is written.
+The `dpia` artifact type and the schema's `lawful-basis`, `retention-period`, and `erasure-mechanism` fields are *records* of a Data Protection Impact Assessment. Recording an assessment is not performing one. DSGVO Art. 35 (GDPR Art. 35) requires a qualitative judgment about risk to data subjects that a data-protection officer, not a YAML validator, is competent to make. Likewise the EU AI Act schema's `risk-category` field records the classification; it does not produce it. Rivet makes the assessment auditable once it exists. Conformance with the underlying legal duty is an activity that happens *before* the artifact is written.
 
-*Cliff:* the qualification dossier itself notes that `ai-session.invoker` is personal data per DSGVO Art. 4, and that `rivet validate` does not yet enforce that an invoker-bearing session links to a DPIA. An agent stamps thousands of AI sessions with `invoker:` and zero DPIAs. Validation is green. The DPO is not.
+The recording-without-performing failure mode is common in practice for a structural reason: the recording is cheap and the performing is expensive. Writing a `dpia` YAML takes minutes; convening the DPO, mapping the data flows, and reaching a defensible risk judgment takes weeks. Under deadline pressure, every team — agent-driven or human-driven — defaults to the cheap operation and hopes nobody asks until after the release. Rivet cannot tell the two apart; the well-formed `dpia` artifact looks identical whether the assessment was performed or invented.
+
+*Cliff:* the qualification dossier itself notes that `ai-session.invoker` is personal data per DSGVO Art. 4 (GDPR Art. 4), and that `rivet validate` does not yet enforce that an invoker-bearing session links to a DPIA. An engineer or agent stamps thousands of AI sessions with `invoker:` and zero DPIAs because the release branch cut is at 16:00. Validation is green. The DPO is not.
 
 ## 7. Rivet is not a multi-repo dependency manager.
 
@@ -66,8 +74,8 @@ rivet validate
 
 The diagnostic that does **not** fire: no oracle confirms that any of the twelve `verification` artifacts describes a test that exists, runs, or would detect a violation of the requirement it claims to verify. Rivet's concept of "verifies" — like CVS's concept of "conflict" — is purely structural. It is a link of type `verifies` between two well-formed artifacts. Whether the verification *actually verifies the requirement* in the physical sense is outside the realm of Rivet's competence. The auditor reading the traceability matrix sees a green cell. The test report, when someone finally writes it, reveals the cell to be ceremony.
 
-This is the Cederqvist function-signature example, transposed: file A (the requirement) and file B (the verification) link cleanly. The textual graph is consistent. The logical conflict — *no test exists* — lives one layer above what the tool can see.
+This is the Cederqvist function-signature example, the same pattern at a different layer: file A (the requirement) and file B (the verification) link cleanly. The textual graph is consistent. The logical conflict — *no test exists* — lives one layer above what the tool can see.
 
 ## The prescription
 
-Acquire the habit of reading the artifacts your agent just wrote, and talking to the engineers whose domain the artifacts describe. A PASS from `rivet validate` means the graph is well-formed; it does not mean the system is safe, the requirement is correct, the supplier agrees, the DPO has been consulted, the test exists, or the tool is qualified. The Rivet user in 2026 is increasingly an AI agent paired with a human reviewer. The agent's job is to keep the graph well-formed. The reviewer's job is everything the graph cannot tell you. Neither role is optional; the tool will not catch you if you skip one.
+Cederqvist closed his *"CVS is not..."* section with: *"Acquire the habit of reading specs and talking to your peers."* The Rivet prescription is the same, adapted: read the artifacts your agent just wrote, and talk to the engineers whose domain the artifacts describe. A PASS from `rivet validate` means the graph is well-formed; it does not mean the system is safe, the requirement is correct, the supplier agrees, the DPO has been consulted, the test exists, or the tool is qualified. The Rivet user in 2026 is increasingly an AI agent paired with a human reviewer. The agent's job is to keep the graph well-formed. The reviewer's job is everything the graph cannot tell you. Neither role is optional; the tool will not catch you if you skip one.
