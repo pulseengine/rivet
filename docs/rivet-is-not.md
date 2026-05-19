@@ -6,7 +6,7 @@ Rivet validates a typed knowledge graph of engineering artifacts against a domai
 
 ## What Rivet is not
 
-In 1993, Per Cederqvist's CVS manual carried a section called *"CVS is not..."* — a frank inventory of what the tool would not do for you. The section below exists for Rivet. It is the contract about what Rivet does **not** decide.
+In 1993, Per Cederqvist's CVS manual carried a section called [*"What is CVS not?"*](https://www.gnu.org/software/trans-coord/manual/cvs/html_node/What-is-CVS-not_003f.html) — a frank inventory of what the tool would not do for you. The section below exists for Rivet. It is the contract about what Rivet does **not** decide.
 
 ## 1. Rivet is not a substitute for engineering management.
 
