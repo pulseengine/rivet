@@ -1,0 +1,688 @@
+# Cross-git Rivet investigation — change list (2026-05-19)
+#
+# Investigation summary: docs/research/cross-git-repo-investigation.md
+# Findings catalogue:    /tmp/rivet-cross-git/findings.md (11 findings, F1-F11)
+# Persona reactions:     /tmp/rivet-cross-git/personas/0[1-6]-*.md
+# Test bed + logs:       /tmp/rivet-cross-git/{acme-supplier,pulse-integrator,tuv-auditor}/, logs/
+#
+# This file dogfoods Rivet: every required change is expressed as a Rivet
+# artifact rather than as a GitHub issue. The traceability of "why this
+# change" → "evidence" lives in the artifact graph, not in a separate
+# tracker. Investigation feature ANCHORS the requirements; the design
+# decision records the one architectural commitment that needs a project
+# choice (F7).
+
+artifacts:
+
+  # ── Anchor: the investigation as a feature ────────────────────────────
+  - id: FEAT-135
+    type: feature
+    title: Cross-org boundary — explicit Assumptions of Use (SEooC register)
+    status: draft
+    description: |
+      The cross-organisational features shipped via #253 (supplier MVP)
+      and #288/#292 (federation handshake) had never been exercised
+      end-to-end across three independent git repositories until the
+      2026-05-19 investigation (six AI personas, ten scenarios, three
+      test-bed repos in different orgs). The investigation surfaced 11
+      findings, of which four (F1, F2, F5, F8) cluster as one defect
+      family: rivet reports textual success on a semantically-failed
+      operation (the Cederqvist green-PASS cliff).
+
+      This feature anchors the change-list that follows. It is also the
+      target for the safety-property and AoU register that
+      `docs/rivet-is-not.md` §7 must grow per the SEooC documentation
+      pattern the project has converged on (see memory:
+      seooc-safety-manual-register).
+
+      Evidence:
+        - docs/research/cross-git-repo-investigation.md (§4 SEooC frame)
+        - /tmp/rivet-cross-git/findings.md (F1-F11)
+        - /tmp/rivet-cross-git/personas/02-tuv-auditor.md (the AoU draft)
+        - /tmp/rivet-cross-git/personas/06-supplier-producer.md
+          (the missing Producer's AoU)
+    tags: [cross-org, federation, seooc, safety-manual]
+    fields:
+      priority: must
+      category: functional
+      phase: phase-2
+      baseline: v0.11.0-track
+    links:
+      - type: traces-to
+        target: REQ-010
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-05-19T18:30:00Z
+
+  # ── DD: the architectural commitment (F7) ─────────────────────────────
+  - id: DD-067
+    type: design-decision
+    title: Pick one cross-repo mechanism for v1.0
+    status: draft
+    description: |
+      Rivet currently ships two parallel cross-repo mechanisms with no
+      documented relationship (F7):
+
+        (a) `externals:` in rivet.yaml + `rivet sync` + prefixed IDs
+            (e.g. `acme:WIDGET-1`). Pin = git SHA via `rivet lock`.
+            Supplier must be a rivet repo.
+        (b) `external-anchor` artifact + `cited-source` typed field +
+            `rivet supplier pull`. Pin = sha256 of file contents.
+            Supplier-agnostic (works for ReqIF, PDF, OSLC sources).
+
+      The Federation Architect persona's analysis (file:
+      /tmp/rivet-cross-git/personas/03-federation-architect.md) lays
+      out the choice: of four typical OEMs only one could ever consume
+      `externals:` — three out of four ship ReqIF/Polarion/Excel. The
+      git-aware federated graph is the wrong abstraction for
+      cross-organisational work; content-hash pinning on a delivered
+      artifact is what the DIA actually contracts on.
+
+      The Submodules Migrant persona (file: 05-*.md) corroborates:
+      "Two parallel cross-repo systems with no documented relationship
+      is exactly the kind of thing that made me reject the last three
+      submodules-replacements."
+
+      Recommendation under review: keep `external-anchor` + `cited-source`
+      as the canonical cross-repo primitive; deprecate `externals:` over
+      v0.11 (doc topic removed) → v0.12 (`legacy: true` in schema) →
+      v1.0 (removed entirely). The rivet-to-rivet case becomes "a
+      supplier publishes a manifest of anchors and the consumer
+      subscribes" — same primitive, generalised.
+
+      Counter-arguments to weigh:
+        - `externals:` powers the existing cross-repo doc topic and the
+          v0.10.x dogfood tests. Removing it affects internal use.
+        - The "supplier publishes a manifest of anchors" generalisation
+          is not designed yet; it would be REQ-NEW work, not just
+          deletion.
+        - Some integrators are already on `externals:` and will resist
+          deprecation. The mitigation is a long sunset window and a
+          documented migration recipe.
+
+      Decision required by: v0.11.0 planning. Until decided, REQ-067 below
+      tracks the documentation gap as a stop-the-press AoU.
+    rationale: |
+      The two-mechanism status quo is the OSLC failure mode the
+      Federation Architect persona named directly: ship the second
+      mechanism, claim it supersedes the first, keep both alive forever
+      because somebody depends on the old one. Three of four canonical
+      OEMs cannot consume the git-based `externals:` model; only
+      content-hash pinning fits ReqIF, Polarion, and Excel-via-SFTP
+      suppliers. The architect's recommendation (delete `externals:`
+      over v0.11 → v1.0) is therefore not aesthetic preference but
+      operational necessity for cross-org work that is not
+      rivet-to-rivet. Counter-argument: the existing dogfood + the
+      cross-repo doc topic depend on `externals:` and removal cost is
+      not zero. Holding the decision open until v0.11.0 planning gives
+      time to draft the supplier-publishes-anchor-manifest replacement.
+    tags: [cross-org, architecture, deprecation]
+    fields:
+      decision-status: proposed
+      decision-date: 2026-05-19
+      decision-maker: project-lead
+    links:
+      - type: traces-to
+        target: FEAT-135
+      - type: satisfies
+        target: REQ-067
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-05-19T18:30:00Z
+
+  # ── REQ-062: F2 — validate must not lie about failed parses ───────────
+  - id: REQ-062
+    type: requirement
+    title: "rivet validate must surface skipped artifact files as Errors, not stderr-only WARNs"
+    status: draft
+    description: |
+      `rivet validate` currently emits `[WARN  rivet_core::formats::generic]
+      skipping ...: YAML parse error: unknown field ...` to stderr while
+      reporting `Result: PASS (0 warnings)` to stdout. The skipped files
+      are not counted in `errors`, `warnings`, or `diagnostics[]` in
+      either the text or JSON output. The Cederqvist principle (and
+      ISO 26262-8 §11.4.5.3 by extension): a tool whose error-detection
+      layer reports the inverse of ground truth cannot stand as TD1.
+
+      The fix MUST:
+        - promote any skipped artifact file to an Error-severity
+          Diagnostic counted in `errors[]` with `rule: artifact-parse-error`,
+        - exit non-zero when any file in a configured source path failed
+          to parse,
+        - reflect this in both text and `--format json` output.
+
+      Sub-case F2a: user wrote wrong-shape artifact YAML (e.g., one
+      artifact per file without `artifacts:` wrapper). Surfaces with
+      "unknown field 'id'".
+
+      Sub-case F2b: project legitimately has non-artifact YAML in the
+      configured source path (feature models, variant configs, binding
+      manifests). Rivet's own repo trips on this with 140 stderr WARNs
+      from `artifacts/{bindings,feature-model,variants/*}.yaml`. The fix
+      must distinguish "could not parse" (Error) from "is not an
+      artifact-file and shouldn't have been considered" (silently
+      excluded or whitelisted via rivet.yaml).
+
+      Evidence:
+        - docs/research/cross-git-repo-investigation.md §2 F2 (dogfood
+          observation: 140 WARNs on Rivet's own repo)
+        - /tmp/rivet-cross-git/findings.md F2 (reproducer)
+        - /tmp/rivet-cross-git/personas/01-pragmatic-maintainer.md
+          ("if rivet validate can ever PASS while files in the project
+           failed to parse, the tool is lying")
+        - /tmp/rivet-cross-git/personas/02-tuv-auditor.md
+          ("a green PASS over a parse that failed is the same defect
+           as a green PASS over a safety case that failed")
+        - /tmp/rivet-cross-git/personas/04-first-time-user.md
+          (real first-time-user trust loss)
+
+      Verification: oracle-gated test in
+      `rivet-cli/tests/cli_commands.rs` that asserts a project with
+      one wrong-shape file (a) reports a parse-error Diagnostic in
+      `--format json`, (b) exits non-zero, (c) refuses to claim PASS.
+    tags: [validate, p0, cross-org, seooc, cederqvist]
+    fields:
+      priority: must
+      category: functional
+      baseline: v0.11.0-track
+    links:
+      - type: derives-from
+        target: FEAT-135
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-05-19T18:30:00Z
+
+  # ── REQ-063: F1 — broken safety-critical presets ──────────────────────
+  - id: REQ-063
+    type: requirement
+    title: "rivet init must not silently produce non-validating projects for safety-critical presets"
+    status: draft
+    description: |
+      `rivet init --preset {do-178c, en-50128, iec-61508, iec-62304}`
+      exits 0 and writes `rivet.yaml` with `schemas: [common, <name>]`
+      but the schema is neither embedded in the binary nor written to
+      disk. The next `rivet validate` fails with `Schema error: schema
+      '<name>' not found on disk or as embedded schema`. The broken set
+      is exactly the four safety-critical industry-standard presets;
+      the five working presets (dev, aspice, stpa, cybersecurity, aadl)
+      are demo/dogfood quality.
+
+      The First-Time User persona's reaction captures the user-perceived
+      consequence: "If I were cynical I'd say the demo presets work and
+      the production presets don't."
+
+      Fix options (any one suffices):
+        (a) embed the four schemas in the binary like the working five,
+        (b) write them to `./schemas/<name>.yaml` during init,
+        (c) refuse init with `--preset <unimplemented>` and produce a
+            helpful error naming what is implemented today.
+
+      Option (c) is the lowest-cost honest fix. Option (a) is the right
+      long-term move once the schemas exist; option (b) is a sensible
+      middle ground if file-on-disk is acceptable. Until any one ships,
+      AoU-X5 in docs/rivet-is-not.md must explicitly state that these
+      four presets are not for new compliance work.
+
+      Evidence:
+        - /tmp/rivet-cross-git/findings.md F1 (preset-by-preset reproducer)
+        - /tmp/rivet-cross-git/personas/04-first-time-user.md
+          (real first-30-minute failure)
+        - /tmp/rivet-cross-git/personas/01-pragmatic-maintainer.md
+          ("turns a sales demo into a lawsuit")
+    tags: [init, preset, safety-critical, p1]
+    fields:
+      priority: must
+      category: functional
+      baseline: v0.11.0-track
+    links:
+      - type: derives-from
+        target: FEAT-135
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-05-19T18:30:00Z
+
+  # ── REQ-064: F5 — derives-from-external must parse end-to-end ─────────
+  - id: REQ-064
+    type: requirement
+    title: "derives-from-external link must parse structured-target mapping end-to-end"
+    status: draft
+    description: |
+      The `derives-from-external` link type (shipped via #292 with
+      structured target `{org, contract, doc-id, last-synced, sha256,
+      anchor}`) is silently demoted to `derives-from` with zero targets
+      when used in production validate. Reproducer S4 of the
+      investigation: a sw-req with a `derives-from-external` mapping
+      target yields `ERROR: link 'derives-from' requires at least 1
+      target, found 0`. The schema knows about the link type; the
+      yaml_hir extractor does not handle the mapping shape outside of
+      the #292 unit-test fixture.
+
+      The TÜV Auditor persona's framing: "the v0.10.1 release notes
+      claim derives-from-external carries the structured payload; the
+      test bed shows the parser silently demotes the link... fix the
+      parser or retract the claim; both are acceptable, silence is not."
+
+      The Producer persona's downstream consequence: "consumer follows
+      the published design doc, writes the link against my artifact,
+      gets an ERROR that names the wrong link type, and sends me an
+      angry email at 16:30 on a Friday."
+
+      Fix MUST: ensure `rivet validate` correctly identifies and
+      processes `derives-from-external` links with structured targets
+      such that (a) the link type is preserved, (b) the anchor field of
+      the structured target is used for graph navigation, (c) the full
+      structured payload survives in `Link.external`.
+
+      Verification: cross-repo integration test using the test-bed
+      fixture shape from /tmp/rivet-cross-git/pulse-integrator/.
+    tags: [link-type, cross-org, advertised-not-shipped, p1]
+    fields:
+      priority: must
+      category: functional
+      baseline: v0.11.0-track
+    links:
+      - type: derives-from
+        target: FEAT-135
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-05-19T18:30:00Z
+
+  # ── REQ-065: F6 — warning propagation across cross-repo boundary ──────
+  - id: REQ-065
+    type: requirement
+    title: "rivet validate must expose supplier diagnostics via opt-in cross_repo_diagnostics"
+    status: draft
+    description: |
+      `rivet validate` on the consumer does NOT surface the supplier's
+      diagnostics. ACME has 3 warnings + 1 info in its standalone
+      validate; Pulse (which links to ACME via BOTH `externals:` AND
+      `external-anchor`/`cited-source`) reports `cross_repo_broken: 0`
+      and no ACME diagnostics. The consumer's green PASS is independent
+      of the supplier's internal state — the Cederqvist function-signature
+      cliff transposed across an organisational boundary.
+
+      This is the SEooC-defining finding of the investigation. Four of
+      six personas (Pragmatic, Auditor, Submodules Migrant, Producer)
+      converge on the same prescription:
+
+        (a) document this categorically as AoU-X1 in docs/rivet-is-not.md
+            (the integrator runs validate on every linked external in CI;
+            Rivet does not propagate supplier diagnostics across the
+            boundary),
+        (b) ship a `--with-externals-validate` flag that, when set, runs
+            validate in each external and surfaces diagnostics under a
+            new `cross_repo_diagnostics` array in `--format json`,
+        (c) keep the default behaviour (no propagation) because the
+            cross-repo run has different performance characteristics —
+            but make the trade-off explicit, not implicit.
+
+      Producer-tension to record: this propagation is good for auditors
+      (transparency) and uncomfortable for producers (internal warnings
+      shipped to customers). The Safety Manual must name the tension
+      and let each contract specify the policy.
+
+      Evidence:
+        - /tmp/rivet-cross-git/logs/s3-warnings.log (the empirical proof
+          of non-propagation: ACME stdout vs Pulse stdout)
+        - /tmp/rivet-cross-git/personas/02-tuv-auditor.md (AoU draft)
+        - /tmp/rivet-cross-git/personas/06-supplier-producer.md
+          (the producer-tension framing)
+    tags: [validate, cross-repo, seooc-aou, p1]
+    fields:
+      priority: must
+      category: functional
+      baseline: v0.11.0-track
+    links:
+      - type: derives-from
+        target: FEAT-135
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-05-19T18:30:00Z
+
+  # ── REQ-066: F4 — cited-source missing from external-anchor schema ────
+  - id: REQ-066
+    type: requirement
+    title: "external-anchor schema must declare cited-source field (one-line schema edit)"
+    status: draft
+    description: |
+      Every `external-anchor` artifact with a `cited-source` (the shape
+      `rivet supplier pull` requires) emits at validate time:
+
+        INFO: [ANCHOR-X] field 'cited-source' is not defined in schema
+              for type 'external-anchor'
+
+      The artifact type built for cross-org references does not declare
+      the field that enables federation. Fix: one-line addition to
+      `schemas/common.yaml` under the `external-anchor` type's field
+      list, naming `cited-source` with `type: mapping`, `required: false`,
+      and a description pointing at `rivet docs schema-cited-sources`.
+
+      This is the cheapest fix in the entire change list. Ship it as a
+      standalone PR; closes a per-artifact noise diagnostic that affects
+      every cross-org integration.
+
+      Evidence:
+        - /tmp/rivet-cross-git/logs/s1-clean-import.log (the spurious INFO)
+        - schemas/common.yaml:300-346 (the external-anchor declaration
+          that needs the field added)
+    tags: [schema, external-anchor, small-fix, p2]
+    fields:
+      priority: should
+      category: non-functional
+      baseline: v0.11.0-track
+    links:
+      - type: derives-from
+        target: FEAT-135
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-05-19T18:30:00Z
+
+  # ── REQ-067: F7 — document the architectural commitment ───────────────
+  - id: REQ-067
+    type: requirement
+    title: "cross-repo doc topic must name the two parallel systems and when each applies"
+    status: draft
+    description: |
+      Until DD-067 is decided, integrators have no documented basis to
+      pick between `externals:` (git-based federated graph) and
+      `external-anchor` + `cited-source` (content-hash anchored
+      document). The cross-repo doc topic talks only about the first;
+      the schema-cited-sources doc topic talks only about the second.
+      The just-shipped `rivet supplier pull` (the federation handshake)
+      is mentioned only in `rivet supplier --help` — F11.
+
+      Until the architectural commitment is made, the doc must:
+        (a) acknowledge both mechanisms exist,
+        (b) describe when each applies (decision tree: supplier is rivet
+            and you want git federation → externals; supplier is
+            non-rivet OR you only need a single document anchor →
+            external-anchor),
+        (c) link to DD-067 as the open architectural decision,
+        (d) include the AoU-X7 register entry: "the integrator picks
+            exactly one of the two cross-repo mechanisms per cross-link
+            and documents the choice".
+
+      When DD-067 lands one way or the other, this requirement closes
+      and the deprecation/removal work begins.
+
+      Related design decision: see [[DD-067]] for the architectural
+      commitment to be made.
+    tags: [docs, cross-repo, architecture, p2]
+    fields:
+      priority: should
+      category: non-functional
+      baseline: v0.11.0-track
+    links:
+      - type: derives-from
+        target: FEAT-135
+      - type: traces-to
+        target: DD-067
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-05-19T18:30:00Z
+
+  # ── REQ-068: F8 — supplier pull must refuse on drift ──────────────────
+  - id: REQ-068
+    type: requirement
+    title: "rivet supplier pull must refuse-and-error on sha256 mismatch against a prior stamp"
+    status: draft
+    description: |
+      `rivet supplier pull <anchor>` currently accepts new supplier
+      bytes silently, overwriting the local cache and exiting 0 (S2
+      reproducer in /tmp/rivet-cross-git/logs/s2-drift.log). The new
+      sha256 appears in the output but with no DRIFT header, no error
+      severity, no exit-code change. By contrast,
+      `rivet validate --strict-cited-sources` correctly fails on the
+      same drift.
+
+      The asymmetry is the bug: pull (the side that brings the new bytes
+      INTO the cache) silently accepts them; validate (the side that
+      observes them after the fact) refuses. Pull must be the
+      authorisation point; validate is the verification point.
+
+      Fix MUST:
+        (a) Detect when `pull` would overwrite a previously-stamped
+            cache entry with new bytes whose sha256 contradicts the
+            stamp.
+        (b) Refuse and exit non-zero with an error naming the prior
+            hash, the new hash, and the supplier identity.
+        (c) Provide `--accept-drift` flag for explicit auditor override
+            (auditor accepts the new bytes are intentional supplier
+            revision; equivalent to re-stamping).
+
+      Producer-side concern (persona 6): without this, the consumer's
+      CI can quietly pull a different version of an ACME-shipped
+      document and ACME's stamp never enters the conversation. That is
+      the cryptographic-verifiability failure that destroys cross-org
+      audit trails.
+
+      Evidence:
+        - /tmp/rivet-cross-git/logs/s2-drift.log (silent overwrite,
+          exit 0, new hash with no header)
+        - /tmp/rivet-cross-git/personas/02-tuv-auditor.md
+          ("destructive operation masquerading as a fetch")
+        - /tmp/rivet-cross-git/personas/06-supplier-producer.md
+          (producer-side liability)
+    tags: [supplier-pull, drift, cryptographic-verifiability, p2]
+    fields:
+      priority: must
+      category: functional
+      baseline: v0.11.0-track
+    links:
+      - type: derives-from
+        target: FEAT-135
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-05-19T18:30:00Z
+
+  # ── REQ-069: Producer-side commands ───────────────────────────────────
+  - id: REQ-069
+    type: requirement
+    title: "rivet supplier publish + producer-readable manifest for the producer-side cross-org story"
+    status: draft
+    description: |
+      Every cross-org command in v0.10.1 is consumer-side: `supplier list`,
+      `supplier check`, `supplier pull`. There is no `supplier publish`,
+      no `supplier sign`, no producer-readable manifest a supplier can
+      attach to a PO that downstream consumers ingest.
+
+      The Producer persona's headline finding: "Ship `rivet supplier
+      publish` before you ship one more consumer-side feature. Producers
+      need a command that hashes, signs, and emits a manifest WE can
+      attach to a PO, independent of whether the consumer is running
+      Rivet at all."
+
+      The Producer's drafted AoU (file:
+      /tmp/rivet-cross-git/personas/06-supplier-producer.md) is the
+      template Rivet does not yet ship:
+
+        ACME-shipped artifacts are delivered as a sha256-pinned file
+        plus a published manifest. Consumers assume obligations:
+          (a) validate received sha256 against ACME's published manifest
+              before ingestion,
+          (b) run rivet validate in ACME's published baseline before
+              raising defects,
+          (c) treat derives-from-external as the contractually-meaningful
+              boundary,
+          (d) any warning ACME shipped in the published manifest is
+              in-scope for audit — absence in consumer-side validate
+              does not constitute absence of warnings.
+
+      MUST design and ship (in this order):
+        (i)  A producer-side manifest format covering: artifact list,
+             per-artifact sha256, baseline-validate-state-at-publish-time,
+             contract reference, signature (sigstore keyless preferred,
+             matching the v0.10.1 release-signing precedent).
+        (ii) `rivet supplier publish` command that emits the manifest.
+        (iii) Consumer-side `rivet supplier verify <manifest>` that
+              cross-checks every linked external-anchor against the
+              producer's published state.
+
+      Until this lands, every cross-org Rivet integration is a
+      single-sided contract drafted by the consumer alone.
+    tags: [supplier, producer, federation, phase-3]
+    fields:
+      priority: must
+      category: functional
+      baseline: v0.11.0-track
+    links:
+      - type: derives-from
+        target: FEAT-135
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-05-19T18:30:00Z
+
+  # ── REQ-070: README link for rivet-is-not.md ──────────────────────────
+  - id: REQ-070
+    type: requirement
+    title: "Link docs/rivet-is-not.md from the top of README.md"
+    status: draft
+    description: |
+      The First-Time User persona's specific request: "That doc up
+      front saves a senior engineer half a day, easily. Put it in the
+      README, not three clicks deep."
+
+      The doc exists at docs/rivet-is-not.md (written 2026-05-19, in
+      SEooC + Cederqvist register per memory: seooc-safety-manual-register).
+      It needs to be linked from README.md at the top of the project
+      overview, alongside the install/quickstart links — not at the
+      bottom under "Further reading".
+
+      Suggested README anchor text:
+        > **Before using Rivet:** read [What Rivet is not](docs/rivet-is-not.md).
+        > It enumerates the boundaries of Rivet's competence and the
+        > obligations that remain the integrator's responsibility. The
+        > doc is shorter than this README; reading it first saves a
+        > day's debugging.
+
+      ~5 LOC README edit. Closes one of the cheapest user-friendliness
+      wins in the entire change list.
+    tags: [docs, readme, onboarding, small-fix]
+    fields:
+      priority: should
+      category: non-functional
+      baseline: v0.11.0-track
+    links:
+      - type: derives-from
+        target: FEAT-135
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-05-19T18:30:00Z
+
+  # ── REQ-071: Cross-repo CI doc topic ──────────────────────────────────
+  - id: REQ-071
+    type: requirement
+    title: "rivet docs cross-repo-ci topic with worked GitHub Actions example + AoU register"
+    status: draft
+    description: |
+      `rivet docs --grep CI`, `rivet docs --grep "github action"`, and
+      `rivet docs --grep "multi-repo"` return no useful multi-repo CI
+      recipe (S10 of the investigation). Without one, every adopter
+      writes their own — guaranteed inconsistency.
+
+      MUST ship `rivet docs cross-repo-ci` covering:
+        (a) The recommended CI sequence: `rivet sync` → `rivet supplier
+            pull <anchor>` (for each external-anchor) → `rivet validate
+            --strict-cited-sources --fail-on warning`, with exit-code
+            gating after each step.
+        (b) A worked GitHub Actions YAML example using actions/checkout
+            and rivet's released-binary download path.
+        (c) The AoU register inline: AoU-X1 through AoU-X7 from
+            docs/rivet-is-not.md §7 (once that section is written —
+            tracked separately under FEAT-135 deliverables).
+        (d) The producer-side companion section (once REQ-069 ships):
+            how to consume a producer's `supplier publish` manifest.
+
+      Initial scope ~80 LOC of markdown plus a 50-line workflow
+      example. Closes F10 + F11.
+
+      Depends on: [[REQ-069]] for the producer-side manifest format.
+    tags: [docs, ci, cross-repo, small-fix]
+    fields:
+      priority: should
+      category: non-functional
+      baseline: v0.11.0-track
+    links:
+      - type: derives-from
+        target: FEAT-135
+      - type: traces-to
+        target: REQ-069
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-05-19T18:30:00Z
+
+  # ── REQ-072: docs/rivet-is-not.md §7 — AoU register growth ────────────
+  - id: REQ-072
+    type: requirement
+    title: "docs/rivet-is-not.md must grow an explicit AoU register for cross-org boundary"
+    status: draft
+    description: |
+      The current docs/rivet-is-not.md (drafted 2026-05-19 in the
+      SEooC + Cederqvist register) has eight categorical "Rivet is not..."
+      sections. Section 7 ("Rivet is not a multi-repo dependency
+      manager") names the boundary but does not yet enumerate the
+      explicit Assumptions of Use.
+
+      MUST extend docs/rivet-is-not.md §7 (or add a new §7a "Cross-org
+      Assumptions of Use") with AoU-X1 through AoU-X7 from the
+      investigation synthesis:
+
+        AoU-X1: integrator runs validate in every linked external (F6)
+        AoU-X2: integrator treats supplier-pull as fetch, not authorisation (F8)
+        AoU-X3: integrator re-derives diagnostics from supplier JSON, not from
+                cross_repo_* counters (F6)
+        AoU-X4: integrator bisects cross-org regressions in supplier's repo (F9)
+        AoU-X5: integrator does not use broken safety-critical presets (F1) ─
+                until REQ-063 closes
+        AoU-X6: integrator continues to use git submodule / repo for repository
+                lifecycle (F7, F9)
+        AoU-X7: integrator picks exactly one cross-repo mechanism per link
+                until DD-067 decides (F7)
+
+      Each AoU MUST cite the source finding (F-number) and link to the
+      worked example in REQ-071's cross-repo-ci doc topic.
+
+      The Auditor persona's framing: "the Safety Manual draft must say
+      so verbatim. Without it, every 'green' cross-org PASS is the
+      Cederqvist function-signature example transposed across an
+      organisational boundary."
+
+      Tooling implication: this turns the README onboarding doc
+      (docs/rivet-is-not.md) into a v1.0 Safety Manual draft. Per
+      memory: seooc-safety-manual-register, the v1.0 Safety Manual
+      production is then a translation pass, not an authoring pass.
+
+      Cross-references inline (typed links below): [[REQ-063]] tracks
+      the F1 closure that AoU-X5 will become obsolete after; [[DD-067]]
+      decides whether AoU-X7 collapses to one mechanism; [[REQ-071]]
+      hosts the worked AoU register inline.
+    tags: [docs, seooc, aou, safety-manual]
+    fields:
+      priority: must
+      category: non-functional
+      baseline: v0.11.0-track
+    links:
+      - type: derives-from
+        target: FEAT-135
+      - type: traces-to
+        target: REQ-063
+      - type: traces-to
+        target: DD-067
+      - type: traces-to
+        target: REQ-071
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-05-19T18:30:00Z
