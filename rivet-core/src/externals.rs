@@ -1277,11 +1277,13 @@ mod tests {
             links: vec![
                 Link {
                     link_type: "traces-to".to_string(),
-                    target: "REQ-001".to_string(), // links back to our local artifact
+                    target: "REQ-001".to_string(), // links back to our local artifact,
+                    external: None,
                 },
                 Link {
                     link_type: "mitigates".to_string(),
-                    target: "EXT-OTHER".to_string(), // links to something in their own project
+                    target: "EXT-OTHER".to_string(), // links to something in their own project,
+                    external: None,
                 },
             ],
             fields: std::collections::BTreeMap::new(),
@@ -1320,7 +1322,8 @@ mod tests {
             tags: vec![],
             links: vec![Link {
                 link_type: "traces-to".to_string(),
-                target: "other:REQ-001".to_string(), // cross-external ref
+                target: "other:REQ-001".to_string(), // cross-external ref,
+                external: None,
             }],
             fields: std::collections::BTreeMap::new(),
             fields_per_variant: Default::default(),

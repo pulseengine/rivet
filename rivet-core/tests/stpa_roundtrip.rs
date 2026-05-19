@@ -141,6 +141,7 @@ fn test_broken_link_detected() {
         links: vec![rivet_core::model::Link {
             link_type: "leads-to-loss".into(),
             target: "L-NONEXISTENT".into(),
+            external: None,
         }],
         fields: Default::default(),
         fields_per_variant: Default::default(),

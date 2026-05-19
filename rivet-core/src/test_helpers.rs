@@ -104,6 +104,7 @@ pub fn artifact_with_links(id: &str, art_type: &str, links: &[(&str, &str)]) -> 
         .map(|(lt, t)| Link {
             link_type: lt.to_string(),
             target: t.to_string(),
+            external: None,
         })
         .collect();
     a

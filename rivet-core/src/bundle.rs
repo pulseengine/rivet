@@ -231,6 +231,7 @@ mod tests {
                 .map(|(t, target)| Link {
                     link_type: t.into(),
                     target: target.into(),
+                    external: None,
                 })
                 .collect(),
             fields: BTreeMap::new(),

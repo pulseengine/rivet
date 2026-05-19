@@ -48,13 +48,154 @@ pub type ArtifactId = String;
 pub const TRACED_STATUSES: &[&str] = &["implemented", "done", "approved", "accepted", "verified"];
 
 /// A typed, directional link from one artifact to another.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+///
+/// `target` is always the in-store artifact ID. For most link types this
+/// is the only piece of target metadata. For cross-organizational
+/// `*-external` link types (issue #288, design doc §4.2), the YAML
+/// target may be a mapping; the mapping's `anchor:` becomes `target`
+/// and the rest (org / contract / doc-id / last-synced / sha256) is
+/// captured in [`external`](Self::external). Existing flat-string
+/// `target: ID` continues to round-trip unchanged.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Link {
     /// Semantic type of this link (e.g., "leads-to-loss", "verifies").
     pub link_type: String,
-    /// Target artifact ID.
+    /// Target artifact ID — for `*-external` link types, equal to the
+    /// referenced `external-anchor` artifact (the mapping's `anchor:` key).
     pub target: ArtifactId,
+    /// Structured cross-org payload — populated only when the YAML
+    /// `target:` was a mapping (i.e. `*-external` link types). `None`
+    /// for the flat string form used by every other link type.
+    pub external: Option<ExternalLinkTarget>,
+}
+
+/// Structured cross-organizational link metadata.
+///
+/// Carried by `*-external` link types (currently
+/// `derives-from-external`). The `anchor` is the in-store
+/// `external-anchor` artifact this link terminates at — coverage and
+/// link-graph machinery use that as the actual target. The other
+/// fields describe *what* was delegated, *to whom*, and *which
+/// revision the upstream tool delivered*.
+///
+/// Mirrors `cited-source` semantics: `sha256` plus `last-synced`
+/// stamp the snapshot. The auditor can verify the upstream
+/// document hasn't drifted since the supplier handed it over.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExternalLinkTarget {
+    /// Originating organization (e.g. `acme-electronics`). Free-form
+    /// short name — matches the `source-of-truth.org` on the anchor.
+    pub org: String,
+    /// Contract / PO / DIA reference. Matches the anchor's
+    /// `contract-reference` field at the audit-trail level.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contract: Option<String>,
+    /// Foreign ID at the supplier (e.g. their ReqIF identifier).
+    #[serde(default, rename = "doc-id", skip_serializing_if = "Option::is_none")]
+    pub doc_id: Option<String>,
+    /// ISO-8601 date of the last successful pull.
+    #[serde(
+        default,
+        rename = "last-synced",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub last_synced: Option<String>,
+    /// Hex sha256 of the wire payload the supplier delivered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
+    /// Local `external-anchor` artifact ID. Required: this is what
+    /// the in-store traceability graph follows.
+    pub anchor: ArtifactId,
+}
+
+// ── Link YAML round-trip ─────────────────────────────────────────────────
+//
+// YAML accepts two `target:` shapes:
+//
+//   target: REQ-001                  # flat string — every existing link type
+//
+//   target:                          # mapping — *-external link types only
+//     org: acme
+//     contract: PO-4711
+//     doc-id: REQ-SW-022
+//     anchor: ANCHOR-ACME-001
+//
+// `Link::target` is always populated with the in-store ID; for the
+// mapping form that's the `anchor:` field. The remaining mapping
+// keys land in `Link::external`. Serialization preserves whichever
+// shape was used: a link with `external: Some(...)` emits the
+// mapping form, otherwise the flat string.
+
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+enum LinkTargetWire {
+    Flat(String),
+    Structured(ExternalLinkTarget),
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LinkWire {
+    #[serde(rename = "type")]
+    link_type: String,
+    target: LinkTargetWire,
+}
+
+impl serde::Serialize for Link {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let target = match &self.external {
+            Some(ext) => LinkTargetWire::Structured(ext.clone()),
+            None => LinkTargetWire::Flat(self.target.clone()),
+        };
+        let wire = LinkWire {
+            link_type: self.link_type.clone(),
+            target,
+        };
+        wire.serialize(serializer)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Link {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = LinkWire::deserialize(deserializer)?;
+        Ok(match wire.target {
+            LinkTargetWire::Flat(s) => Link {
+                link_type: wire.link_type,
+                target: s,
+                external: None,
+            },
+            LinkTargetWire::Structured(ext) => {
+                if ext.anchor.is_empty() {
+                    return Err(serde::de::Error::custom(
+                        "structured link target requires non-empty 'anchor' field",
+                    ));
+                }
+                let target = ext.anchor.clone();
+                Link {
+                    link_type: wire.link_type,
+                    target,
+                    external: Some(ext),
+                }
+            }
+        })
+    }
+}
+
+impl Link {
+    /// Construct a plain link by ID. Convenience used in tests and
+    /// non-external code paths.
+    pub fn new<S, T>(link_type: S, target: T) -> Self
+    where
+        S: Into<String>,
+        T: Into<ArtifactId>,
+    {
+        Link {
+            link_type: link_type.into(),
+            target: target.into(),
+            external: None,
+        }
+    }
 }
 
 /// AI provenance metadata for an artifact.
@@ -88,6 +229,54 @@ pub struct Provenance {
         rename = "reviewed-by"
     )]
     pub reviewed_by: Option<String>,
+    /// Federation provenance — populated only when this artifact was
+    /// imported from another organization via `rivet supplier pull`
+    /// (issue #288). The block is omitted entirely for first-party
+    /// artifacts and AI/human-authored ones.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub federation: Option<FederationProvenance>,
+}
+
+/// Cross-organizational provenance for a federated artifact.
+///
+/// Stamped on every artifact written under `.rivet/supplier-cache/`
+/// by `rivet supplier pull` (issue #288, design doc §4.6). The
+/// auditor uses this block to reconstruct: which supplier, which
+/// contract, which payload (by sha256), and when the pull happened.
+///
+/// Parallels the AI [`Provenance`] block in spirit — both answer
+/// "where did this artifact come from?" — but the dimension is
+/// cross-org instead of cross-author.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct FederationProvenance {
+    /// Originating organization (e.g. `acme-electronics`).
+    #[serde(rename = "source-org")]
+    pub source_org: String,
+    /// Tool of record at the supplier (e.g. `reqif-1.2`, `polarion-3.21`,
+    /// `doors-9.7`). Free-form string — matches the anchor's
+    /// `received-status` variant where applicable.
+    #[serde(rename = "source-tool")]
+    pub source_tool: String,
+    /// Foreign artifact ID at the supplier.
+    #[serde(rename = "source-id")]
+    pub source_id: String,
+    /// Local `external-anchor` artifact ID this import belongs to.
+    pub anchor: ArtifactId,
+    /// ISO-8601 timestamp the pull completed.
+    #[serde(rename = "fetched-at")]
+    pub fetched_at: String,
+    /// Hex sha256 of the wire payload at fetch time.
+    #[serde(rename = "source-hash")]
+    pub source_hash: String,
+    /// Path to the mapping recipe applied at import (Phase 3). `None`
+    /// in Phase 2 — fields land in `fields:` as-imported.
+    #[serde(
+        default,
+        rename = "mapping-recipe",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub mapping_recipe: Option<String>,
 }
 
 /// An artifact — the fundamental unit of the data model.
@@ -465,6 +654,198 @@ description: Initial release
         assert_eq!(configs[0].name, "v0.1.0");
         assert_eq!(configs[1].description, None);
         assert_eq!(configs[2].name, "v0.3.0");
+    }
+
+    // ── derives-from-external structured target (#288) ──────────────
+
+    /// Flat-string target round-trips unchanged — every existing
+    /// link type. Regression test: the new custom (de)serializer for
+    /// `Link` must not break the legacy shape.
+    ///
+    /// Verifies: REQ-010
+    #[test]
+    fn link_flat_target_yaml_roundtrip() {
+        let l = Link::new("satisfies", "REQ-001");
+        let yaml = serde_yaml::to_string(&l).unwrap();
+        assert!(
+            yaml.contains("type: satisfies"),
+            "flat-link YAML should include type, got: {yaml}"
+        );
+        assert!(
+            yaml.contains("target: REQ-001"),
+            "flat-link YAML should include scalar target, got: {yaml}"
+        );
+        // Round-trip parse.
+        let parsed: Link = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(parsed.link_type, "satisfies");
+        assert_eq!(parsed.target, "REQ-001");
+        assert!(parsed.external.is_none(), "no structured external");
+    }
+
+    /// Structured `target:` mapping parses to `external: Some(...)`
+    /// with the `anchor:` value mirrored into `target`. This is the
+    /// Phase 2 wire shape the design doc §4.2 specifies.
+    ///
+    /// Verifies: REQ-010
+    #[test]
+    fn link_structured_target_yaml_parse() {
+        let yaml = "
+type: derives-from-external
+target:
+  org: acme-electronics
+  contract: PO-4711
+  doc-id: REQ-SW-022
+  last-synced: 2026-04-20
+  sha256: 7f3c0000
+  anchor: ANCHOR-ACME-001
+";
+        let parsed: Link = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(parsed.link_type, "derives-from-external");
+        assert_eq!(
+            parsed.target, "ANCHOR-ACME-001",
+            "structured target must mirror `anchor:` into Link.target"
+        );
+        let ext = parsed
+            .external
+            .expect("structured target populates external");
+        assert_eq!(ext.org, "acme-electronics");
+        assert_eq!(ext.contract.as_deref(), Some("PO-4711"));
+        assert_eq!(ext.doc_id.as_deref(), Some("REQ-SW-022"));
+        assert_eq!(ext.last_synced.as_deref(), Some("2026-04-20"));
+        assert_eq!(ext.sha256.as_deref(), Some("7f3c0000"));
+        assert_eq!(ext.anchor, "ANCHOR-ACME-001");
+    }
+
+    /// Structured target serializes back to the mapping form (not the
+    /// flat string), so `rivet add --to ...` and edit tooling can
+    /// round-trip without losing the cross-org metadata.
+    ///
+    /// Verifies: REQ-010
+    #[test]
+    fn link_structured_target_yaml_serialize_then_parse() {
+        let original = Link {
+            link_type: "derives-from-external".into(),
+            target: "ANCHOR-X".into(),
+            external: Some(ExternalLinkTarget {
+                org: "acme".into(),
+                contract: Some("PO-1".into()),
+                doc_id: Some("REQ-99".into()),
+                last_synced: None,
+                sha256: Some("deadbeef".into()),
+                anchor: "ANCHOR-X".into(),
+            }),
+        };
+        let yaml = serde_yaml::to_string(&original).unwrap();
+        // The output MUST be the structured mapping form, not `target: ANCHOR-X`.
+        assert!(
+            yaml.contains("anchor: ANCHOR-X"),
+            "serialized YAML should carry anchor:, got: {yaml}"
+        );
+        assert!(
+            yaml.contains("org: acme"),
+            "serialized YAML should carry org:, got: {yaml}"
+        );
+        // Round-trip back.
+        let parsed: Link = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(parsed, original, "structured link must round-trip exactly");
+    }
+
+    /// A structured target missing `anchor:` is a hard schema error —
+    /// without it, the in-store graph has nothing to follow. We surface
+    /// it at deserialize time rather than producing a silent
+    /// not-yet-loaded link.
+    ///
+    /// Verifies: REQ-010
+    #[test]
+    fn link_structured_target_requires_anchor() {
+        let yaml = "
+type: derives-from-external
+target:
+  org: acme
+  contract: PO-1
+  anchor: \"\"
+";
+        let err = serde_yaml::from_str::<Link>(yaml).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("anchor"),
+            "missing-anchor error should mention 'anchor', got: {msg}"
+        );
+    }
+
+    // ── FederationProvenance shape (#288) ────────────────────────────
+
+    /// `FederationProvenance` round-trips through serde_yaml with the
+    /// canonical dashed-key form (`source-org`, `fetched-at`, …).
+    ///
+    /// Verifies: REQ-010
+    #[test]
+    fn federation_provenance_yaml_roundtrip() {
+        let fp = FederationProvenance {
+            source_org: "acme-electronics".into(),
+            source_tool: "reqif-1.2".into(),
+            source_id: "REQ-SW-022".into(),
+            anchor: "ANCHOR-ACME-001".into(),
+            fetched_at: "2026-05-16T08:00:00Z".into(),
+            source_hash: "deadbeef".into(),
+            mapping_recipe: None,
+        };
+        let yaml = serde_yaml::to_string(&fp).unwrap();
+        assert!(yaml.contains("source-org: acme-electronics"));
+        assert!(yaml.contains("source-tool: reqif-1.2"));
+        assert!(yaml.contains("source-id: REQ-SW-022"));
+        assert!(yaml.contains("anchor: ANCHOR-ACME-001"));
+        assert!(
+            yaml.contains("fetched-at: '2026-05-16T08:00:00Z'")
+                || yaml.contains("fetched-at: \"2026-05-16T08:00:00Z\"")
+                || yaml.contains("fetched-at: 2026-05-16T08:00:00Z")
+        );
+        assert!(yaml.contains("source-hash: deadbeef"));
+        let parsed: FederationProvenance = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(parsed, fp);
+    }
+
+    /// `Provenance` carries an optional `federation:` block, omitted
+    /// from serialized YAML when `None`. Stays backward-compatible
+    /// with existing AI-provenance YAML.
+    ///
+    /// Verifies: REQ-010
+    #[test]
+    fn provenance_federation_block_is_optional() {
+        let prov = Provenance {
+            created_by: "ai-assisted".into(),
+            model: Some("claude-opus-4-7".into()),
+            session_id: None,
+            timestamp: Some("2026-05-16T08:00:00Z".into()),
+            reviewed_by: None,
+            federation: None,
+        };
+        let yaml = serde_yaml::to_string(&prov).unwrap();
+        assert!(
+            !yaml.contains("federation"),
+            "federation: None should not appear in YAML, got: {yaml}"
+        );
+        // Add federation block, expect it to surface.
+        let prov_fed = Provenance {
+            federation: Some(FederationProvenance {
+                source_org: "acme".into(),
+                source_tool: "reqif-1.2".into(),
+                source_id: "X-1".into(),
+                anchor: "ANCHOR-1".into(),
+                fetched_at: "2026-05-16T08:00:00Z".into(),
+                source_hash: "abc".into(),
+                mapping_recipe: None,
+            }),
+            ..prov.clone()
+        };
+        let yaml2 = serde_yaml::to_string(&prov_fed).unwrap();
+        assert!(
+            yaml2.contains("federation:"),
+            "federation: Some(...) must surface, got: {yaml2}"
+        );
+        assert!(yaml2.contains("source-org: acme"));
+        let parsed: Provenance = serde_yaml::from_str(&yaml2).unwrap();
+        assert_eq!(parsed.federation, prov_fed.federation);
     }
 }
 

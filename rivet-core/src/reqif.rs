@@ -871,6 +871,7 @@ pub fn parse_reqif(xml: &str, type_map: &HashMap<String, String>) -> Result<Vec<
             session_id: prov_session_id,
             timestamp: prov_timestamp,
             reviewed_by: prov_reviewed_by,
+            federation: None,
         });
 
         let artifact = Artifact {
@@ -958,6 +959,7 @@ pub fn parse_reqif(xml: &str, type_map: &HashMap<String, String>) -> Result<Vec<
             artifacts[idx].links.push(Link {
                 link_type,
                 target: target_id.clone(),
+                external: None,
             });
         }
     }
@@ -1520,6 +1522,7 @@ mod tests {
                 links: vec![Link {
                     link_type: "verifies".into(),
                     target: "REQ-001".into(),
+                    external: None,
                 }],
                 fields: BTreeMap::new(),
                 fields_per_variant: Default::default(),
@@ -1736,6 +1739,7 @@ mod tests {
                 session_id: Some("s-1234".into()),
                 timestamp: Some("2026-04-19T12:34:56Z".into()),
                 reviewed_by: Some("alice".into()),
+                federation: None,
             }),
             source_file: None,
         };
@@ -2596,10 +2600,12 @@ mod tests {
                     Link {
                         link_type: "verifies".into(),
                         target: "TC-1".into(),
+                        external: None,
                     },
                     Link {
                         link_type: "verifies".into(),
                         target: "TC-2".into(),
+                        external: None,
                     },
                 ],
                 fields: BTreeMap::new(),
@@ -2617,6 +2623,7 @@ mod tests {
                 links: vec![Link {
                     link_type: "verifies".into(),
                     target: "TC-3".into(),
+                    external: None,
                 }],
                 fields: BTreeMap::new(),
                 fields_per_variant: Default::default(),

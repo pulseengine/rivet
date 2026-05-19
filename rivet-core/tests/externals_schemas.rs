@@ -255,6 +255,7 @@ fn external_link_types_are_not_flagged_unknown() {
         links: vec![Link {
             link_type: "implements".to_string(),
             target: "spar:OTHER".to_string(),
+            external: None,
         }],
         fields: BTreeMap::new(),
         fields_per_variant: Default::default(),

@@ -947,6 +947,7 @@ fn tool_add(project_dir: &Path, arguments: &Value) -> Result<Value> {
                     Some(Link {
                         link_type: lt.to_string(),
                         target: target.to_string(),
+                        external: None,
                     })
                 })
                 .collect()
@@ -1180,6 +1181,7 @@ fn tool_link(project_dir: &Path, source: &str, link_type: &str, target: &str) ->
     let link = Link {
         link_type: link_type.to_string(),
         target: target.to_string(),
+        external: None,
     };
 
     mutate::add_link_to_file(source, &link, &source_file)?;

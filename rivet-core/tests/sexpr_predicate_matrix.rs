@@ -56,14 +56,17 @@ fn base_artifact() -> Artifact {
             Link {
                 link_type: "satisfies".into(),
                 target: "SC-1".into(),
+                external: None,
             },
             Link {
                 link_type: "satisfies".into(),
                 target: "SC-3".into(),
+                external: None,
             },
             Link {
                 link_type: "implements".into(),
                 target: "DD-001".into(),
+                external: None,
             },
         ],
         fields: {
@@ -530,6 +533,7 @@ fn linked_from_source_filter_is_honoured() {
         links: vec![Link {
             link_type: "satisfies".into(),
             target: "SC-1".into(),
+            external: None,
         }],
         fields: BTreeMap::new(),
         fields_per_variant: Default::default(),
@@ -546,6 +550,7 @@ fn linked_from_source_filter_is_honoured() {
         links: vec![Link {
             link_type: "satisfies".into(),
             target: "SC-1".into(),
+            external: None,
         }],
         fields: BTreeMap::new(),
         fields_per_variant: Default::default(),
@@ -844,6 +849,7 @@ fn chain_store() -> (Store, LinkGraph) {
                 vec![Link {
                     link_type: "satisfies".into(),
                     target: t.into(),
+                    external: None,
                 }]
             })
             .unwrap_or_default(),

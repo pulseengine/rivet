@@ -1507,14 +1507,17 @@ mod tests {
                 Link {
                     link_type: "satisfies".into(),
                     target: "SC-1".into(),
+                    external: None,
                 },
                 Link {
                     link_type: "satisfies".into(),
                     target: "SC-3".into(),
+                    external: None,
                 },
                 Link {
                     link_type: "implements".into(),
                     target: "DD-001".into(),
+                    external: None,
                 },
             ],
             fields: {
@@ -2123,6 +2126,7 @@ mod tests {
                 .map(|(lt, tgt)| Link {
                     link_type: lt.into(),
                     target: tgt.into(),
+                    external: None,
                 })
                 .collect(),
             fields: BTreeMap::new(),
