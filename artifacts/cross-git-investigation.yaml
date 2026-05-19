@@ -182,6 +182,18 @@ artifacts:
       `rivet-cli/tests/cli_commands.rs` that asserts a project with
       one wrong-shape file (a) reports a parse-error Diagnostic in
       `--format json`, (b) exits non-zero, (c) refuses to claim PASS.
+      Acceptance:
+        - Create a project with one well-formed artifact YAML and one
+          malformed (top-level `id:` instead of `artifacts:` wrapper).
+        - Run `rivet validate --format json`.
+        - Verify exit code 1, `result: FAIL`, `errors >= 1`, and at
+          least one entry in `diagnostics[]` with `rule:
+          artifact-parse-error` whose `message` names the malformed
+          file.
+        - On Rivet's own repo (F2b reproducer), the pre-existing 140
+          stderr "no frontmatter" WARNs must either become counted
+          diagnostics or be excluded by an explicit `artifact_file:
+          false` / per-format dispatcher.
     tags: [validate, p0, cross-org, seooc, cederqvist]
     fields:
       priority: must
@@ -232,6 +244,18 @@ artifacts:
           (real first-30-minute failure)
         - /tmp/rivet-cross-git/personas/01-pragmatic-maintainer.md
           ("turns a sales demo into a lawsuit")
+      Acceptance:
+        - For each of {do-178c, en-50128, iec-61508, iec-62304}: in a
+          fresh tempdir, run `rivet init --preset <name>` then
+          `rivet validate`.
+        - If option (a) or (b) was chosen: validate exits 0 on a
+          freshly initialised project for all four presets.
+        - If option (c) was chosen: `rivet init --preset <broken>`
+          itself exits non-zero with a message naming the implemented
+          presets.
+        - Current baseline: all four fail with `Schema error: schema
+          '<name>' not found on disk or as embedded schema`. Any of
+          (a) / (b) / (c) closes this REQ.
     tags: [init, preset, safety-critical, p1]
     fields:
       priority: must
@@ -279,6 +303,22 @@ artifacts:
 
       Verification: cross-repo integration test using the test-bed
       fixture shape from /tmp/rivet-cross-git/pulse-integrator/.
+      Acceptance:
+        - In a project with one external-anchor and one sw-req whose
+          `links` contains a `derives-from-external` entry with a
+          structured mapping target `{org, contract, doc-id,
+          last-synced, sha256, anchor}`, run `rivet validate
+          --format json`.
+        - Verify no diagnostic with severity Error and text
+          matching "link 'derives-from' requires at least 1 target"
+          on the sw-req.
+        - Verify `rivet bundle <sw-req> --depth 1 --as jsonl`
+          resolves the structured target's `anchor` field to the
+          external-anchor artifact (a reachable node in depth-1
+          closure).
+        - Lock the regression with a fixture in
+          `rivet-cli/tests/cli_commands.rs` modeled on the
+          `supplier_pull_*` family.
     tags: [link-type, cross-org, advertised-not-shipped, p1]
     fields:
       priority: must
@@ -332,6 +372,19 @@ artifacts:
         - /tmp/rivet-cross-git/personas/02-tuv-auditor.md (AoU draft)
         - /tmp/rivet-cross-git/personas/06-supplier-producer.md
           (the producer-tension framing)
+      Acceptance:
+        - Set up two projects: supplier (with 3 deliberate validation
+          warnings on its own artifacts) and consumer (linked to
+          supplier via both `externals:` AND `external-anchor`).
+        - Run `rivet validate --with-externals-validate --format
+          json` in the consumer.
+        - Verify the JSON output contains a key
+          `cross_repo_diagnostics` with array length >= 3.
+        - Verify each entry carries fields: `source_project`,
+          `source_artifact_id`, `severity`, `message`, `rule`.
+        - Default behaviour (no `--with-externals-validate` flag)
+          MUST remain unchanged — no propagation, no performance
+          regression on single-repo validate.
     tags: [validate, cross-repo, seooc-aou, p1]
     fields:
       priority: must
@@ -371,6 +424,16 @@ artifacts:
         - /tmp/rivet-cross-git/logs/s1-clean-import.log (the spurious INFO)
         - schemas/common.yaml:300-346 (the external-anchor declaration
           that needs the field added)
+      Acceptance:
+        - In a project with one external-anchor whose YAML carries a
+          `cited-source: { uri, kind: file, sha256 }` field, run
+          `rivet validate --format json`.
+        - Verify zero diagnostics with text matching "field
+          'cited-source' is not defined in schema for type
+          'external-anchor'".
+        - Change is a one-line schema edit in
+          `schemas/common.yaml` under the `external-anchor` type's
+          `fields:` list.
     tags: [schema, external-anchor, small-fix, p2]
     fields:
       priority: should
@@ -414,6 +477,18 @@ artifacts:
 
       Related design decision: see [[DD-067]] for the architectural
       commitment to be made.
+      Acceptance:
+        - Run `rivet docs cross-repo`.
+        - Verify the output contains all three substrings:
+          "externals:", "external-anchor", and "supplier pull".
+        - Verify the output contains a decision-rule section header
+          (e.g., "When to use which") with at least three sentences
+          of guidance covering supplier-is-rivet vs supplier-is-not-rivet.
+        - Verify the output cites DD-067 (or the artifact that
+          replaces it) by ID.
+        - When DD-067 lands one direction or the other, this REQ
+          closes by either deprecating the discontinued mechanism in
+          the doc topic or by adding a sunset notice.
     tags: [docs, cross-repo, architecture, p2]
     fields:
       priority: should
@@ -471,6 +546,19 @@ artifacts:
           ("destructive operation masquerading as a fetch")
         - /tmp/rivet-cross-git/personas/06-supplier-producer.md
           (producer-side liability)
+      Acceptance:
+        - In a project with one external-anchor pulled and stamped
+          with sha256 X, mutate the supplier file so its bytes
+          now hash to Y != X.
+        - Run `rivet supplier pull <anchor>` without flags.
+        - Verify exit code non-zero with an error message naming
+          both X and Y and the supplier identity (org + contract).
+        - Run `rivet supplier pull <anchor> --accept-drift`.
+        - Verify exit 0, cache updated to Y, and the anchor's
+          `last-synced` field refreshed.
+        - Lock the regression with a fixture in
+          `rivet-cli/tests/cli_commands.rs` in the
+          `supplier_pull_*` family.
     tags: [supplier-pull, drift, cryptographic-verifiability, p2]
     fields:
       priority: must
@@ -529,6 +617,21 @@ artifacts:
 
       Until this lands, every cross-org Rivet integration is a
       single-sided contract drafted by the consumer alone.
+      Acceptance:
+        - `rivet supplier publish --help` returns subcommand help
+          (not "unrecognized subcommand").
+        - Running `rivet supplier publish --out manifest.yaml` on a
+          project with one or more external-anchors emits a YAML
+          manifest containing: per-artifact sha256,
+          baseline-validate-state-at-publish-time, contract
+          reference, optional sigstore signature path.
+        - `rivet supplier verify <manifest>` run from a consumer's
+          project returns exit 0 when the consumer's local
+          supplier-cache matches the manifest's hashes, non-zero
+          otherwise.
+        - Documentation: a `rivet docs supplier-publish` topic
+          exists and walks through the producer → consumer
+          handshake end-to-end.
     tags: [supplier, producer, federation, phase-3]
     fields:
       priority: must
@@ -567,6 +670,16 @@ artifacts:
 
       ~5 LOC README edit. Closes one of the cheapest user-friendliness
       wins in the entire change list.
+      Acceptance:
+        - `grep -c "docs/rivet-is-not.md" README.md` returns >= 1.
+        - The matching line appears before the first user-action
+          heading (typically "## Quick start", "## Install", or
+          equivalent).
+        - The link text contains the phrase "Rivet is not" so the
+          link is identifiable from surrounding prose without
+          following it.
+        - Verified via the docs-check oracle (a regression test
+          asserting the link's presence in README.md).
     tags: [docs, readme, onboarding, small-fix]
     fields:
       priority: should
@@ -608,6 +721,17 @@ artifacts:
       example. Closes F10 + F11.
 
       Depends on: [[REQ-069]] for the producer-side manifest format.
+      Acceptance:
+        - `rivet docs cross-repo-ci` returns content (not "topic
+          not found"); exit code 0.
+        - Output contains all four substrings: "rivet sync",
+          "rivet supplier pull", "rivet validate
+          --strict-cited-sources", and at least one of "github
+          actions" / "actions/checkout".
+        - Output references the AoU register (AoU-X1 through
+          AoU-X7 as named in REQ-072).
+        - A worked GitHub Actions YAML example is included that
+          exercises the recommended sequence in a runnable form.
     tags: [docs, ci, cross-repo, small-fix]
     fields:
       priority: should
@@ -668,6 +792,17 @@ artifacts:
       the F1 closure that AoU-X5 will become obsolete after; [[DD-067]]
       decides whether AoU-X7 collapses to one mechanism; [[REQ-071]]
       hosts the worked AoU register inline.
+      Acceptance:
+        - `grep -c "AoU-X[1-7]" docs/rivet-is-not.md` returns
+          exactly 7 (one per AoU).
+        - For each AoU-XN, verify the surrounding prose cites at
+          least one F-number (F1-F11) as the source finding —
+          regex `AoU-X[1-7].*F[0-9]+` matches each of the seven.
+        - A new §7a or extended §7 header contains the phrase
+          "Assumptions of Use" or "AoU".
+        - The pre-existing §7 ("Rivet is not a multi-repo
+          dependency manager") prose is preserved; the AoU
+          register is additive, not a rewrite.
     tags: [docs, seooc, aou, safety-manual]
     fields:
       priority: must
@@ -741,6 +876,24 @@ artifacts:
         - user feedback 2026-05-19 (verbatim above)
         - the audit output (pending — first pass scheduled with this
           commit, results to be captured separately)
+      Acceptance:
+        - The audit output (a table of `{path | verdict | last |
+          note}` for every .md under docs/) is captured at
+          `.rivet/runs/docs-audit-<date>/` or referenced from
+          this REQ via a `traces-to` link to a captured artifact.
+        - Each DELETE verdict has been acted on (file removed via
+          a PR that cites this REQ).
+        - Each ARCHIVE verdict has been moved to
+          `docs/historical/` (or an equivalent archive path
+          decided under REQ-073 (b)).
+        - Each UPDATE verdict has a corresponding doc-refresh PR
+          either merged or in flight, citing this REQ.
+        - Each INVESTIGATE verdict has been re-triaged by a
+          named maintainer and reclassified into one of the
+          four actionable categories.
+        - Re-running the audit yields zero new INVESTIGATE
+          verdicts and a strictly smaller UPDATE+DELETE count
+          than the previous pass.
     tags: [docs, audit, dogfood, governance]
     fields:
       priority: must
@@ -824,6 +977,18 @@ artifacts:
         - user feedback 2026-05-19: "in general i think the whole
           docs folder is not well structured and planning stuff in
           which might be interesting for some time but..."
+      Acceptance:
+        - `rivet validate 2>&1 | grep -c "no YAML frontmatter"`
+          returns 0 (currently 11 on main as of this commit).
+        - `docs/README.md` exists and describes the lifecycle for
+          each docs/ subdirectory (design/, plans/, research/,
+          and any new ones such as historical/ from REQ-074).
+        - Every .md file under paths declared in `rivet.yaml`'s
+          `docs:` list carries `id:`, `title:`, `type:`, and
+          `status:` frontmatter fields. Tags are recommended.
+        - (Optional, gated on a separate ship decision)
+          `rivet docs --check-frontmatter` subcommand exists and
+          CI uses it as a required check to prevent regression.
     tags: [docs, dogfood, frontmatter, structure]
     fields:
       priority: should
