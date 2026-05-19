@@ -686,3 +686,84 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-7
       timestamp: 2026-05-19T18:30:00Z
+
+  # ── REQ-073: docs/ folder structure + frontmatter coverage ────────────
+  - id: REQ-073
+    type: requirement
+    title: "docs/ tree must be navigable + every markdown file must carry rivet-managed frontmatter"
+    status: draft
+    description: |
+      The Rivet docs/ tree is currently 19 markdown files at depth 1 and
+      33 more at depth 2+ across three subdirs (design/, plans/,
+      research/). The mix is:
+
+        - permanent reference material (architecture.md, schemas.md,
+          getting-started.md, verification.md);
+        - design docs of varying ages (docs/design/*.md, mostly
+          authored for a single feature track and rarely revisited);
+        - ephemeral planning / research (docs/plans/*.md,
+          docs/research/*.md, including the cross-git investigation
+          snapshot from 2026-05-19);
+        - positioning material (what-is-rivet.md — flagged as
+          aspirational, still v0.4.1-era);
+        - integrator-facing limits (rivet-is-not.md — new, in SEooC
+          register).
+
+      The dogfood gap: of 19 depth-1 markdown files, **11 lack YAML
+      frontmatter** (`rivet validate` emits `rivet doc scanner
+      skipping ... no YAML frontmatter` for adoption-status.md,
+      feature-model-bindings.md, feature-model-schema.md,
+      getting-started.md, intro-talk-onepager.md, intro-talk-template.md,
+      mutation-testing.md, oracles.md, pre-commit.md,
+      pure-variants-comparison.md, schemas.md). Without frontmatter
+      they are invisible to `rivet docs`, the dashboard's Documents
+      view, and the `[[ID]]`-reference-tracking layer. Rivet does not
+      dogfood its own documents-as-artifacts model.
+
+      Additionally, mixing ephemeral snapshots with permanent
+      reference creates the structural problem named in user
+      feedback 2026-05-19: "planning stuff in which might be
+      interesting for some time" lives next to reference material
+      that should be stable. The cross-git investigation report this
+      requirement is filed under is itself an example — it is
+      `type: investigation, status: snapshot` per its frontmatter,
+      and probably belongs in a more clearly-ephemeral location than
+      docs/research/.
+
+      MUST (in roughly this order):
+        (a) Add YAML frontmatter to each of the 11 currently-skipped
+            files. Each gets at minimum `id:`, `title:`, `type:`,
+            `status:`, `tags:`. One commit per cluster (reference
+            docs / talk material / methodology docs).
+        (b) Decide and document the docs/ folder structure: which
+            subdirs are for what, lifecycle for each (permanent
+            reference / design docs / plans / research /
+            positioning / integrator-guides / safety-manuals).
+            One paragraph per subdir in a docs/README.md.
+        (c) Decide and document a `status:` lifecycle for ephemeral
+            docs (current → snapshot → archived → removed). The
+            cross-git investigation snapshot is the test case.
+        (d) Optionally: ship a `rivet docs --check-frontmatter`
+            sub-command that gates CI on every .md file in `docs:`
+            paths having an `id` + `title`. Closes the dogfood loop:
+            Rivet validates Rivet's own docs by Rivet's own rules.
+
+      Evidence:
+        - `rivet validate` output enumerating the 11 skipped files
+        - docs/ tree survey (19 + 33 = 52 markdown files; three
+          subdirs with overlapping purposes)
+        - user feedback 2026-05-19: "in general i think the whole
+          docs folder is not well structured and planning stuff in
+          which might be interesting for some time but..."
+    tags: [docs, dogfood, frontmatter, structure]
+    fields:
+      priority: should
+      category: non-functional
+      baseline: v0.11.0-track
+    links:
+      - type: derives-from
+        target: FEAT-135
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-05-19T19:30:00Z

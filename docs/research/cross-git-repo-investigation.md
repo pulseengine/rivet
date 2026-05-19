@@ -1,3 +1,11 @@
+---
+id: DOC-CROSS-GIT-INV-2026-05-19
+title: Cross-git Rivet investigation — findings, personas, Safety Manual draft
+type: investigation
+status: snapshot
+tags: [research, cross-org, federation, investigation, ephemeral]
+---
+
 # Cross-git Rivet investigation — findings, personas, Safety Manual draft
 
 **Status:** Research note · 2026-05-19 · Binary `rivet 0.10.1 (4354d99a main)` (post #292 federation handshake + #291 variant CLI surface).

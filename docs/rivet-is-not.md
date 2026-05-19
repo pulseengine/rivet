@@ -1,3 +1,11 @@
+---
+id: DOC-RIVET-LIMITS
+title: Rivet is not — categorical limits in SEooC / Cederqvist register
+type: safety-manual-draft
+status: draft
+tags: [integrator, safety-manual, seooc, limits, cederqvist]
+---
+
 # Rivet is not...
 
 ## What Rivet is
