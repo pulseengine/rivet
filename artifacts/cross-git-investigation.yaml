@@ -103,22 +103,23 @@ artifacts:
 
       Decision required by: v0.11.0 planning. Until decided, REQ-067 below
       tracks the documentation gap as a stop-the-press AoU.
-    rationale: |
-      The two-mechanism status quo is the OSLC failure mode the
-      Federation Architect persona named directly: ship the second
-      mechanism, claim it supersedes the first, keep both alive forever
-      because somebody depends on the old one. Three of four canonical
-      OEMs cannot consume the git-based `externals:` model; only
-      content-hash pinning fits ReqIF, Polarion, and Excel-via-SFTP
-      suppliers. The architect's recommendation (delete `externals:`
-      over v0.11 → v1.0) is therefore not aesthetic preference but
-      operational necessity for cross-org work that is not
-      rivet-to-rivet. Counter-argument: the existing dogfood + the
-      cross-repo doc topic depend on `externals:` and removal cost is
-      not zero. Holding the decision open until v0.11.0 planning gives
-      time to draft the supplier-publishes-anchor-manifest replacement.
     tags: [cross-org, architecture, deprecation]
     fields:
+      rationale: |
+        The two-mechanism status quo is the OSLC failure mode the
+        Federation Architect persona named directly: ship the second
+        mechanism, claim it supersedes the first, keep both alive
+        forever because somebody depends on the old one. Three of four
+        canonical OEMs cannot consume the git-based `externals:` model;
+        only content-hash pinning fits ReqIF, Polarion, and
+        Excel-via-SFTP suppliers. The architect's recommendation
+        (delete `externals:` over v0.11 → v1.0) is therefore not
+        aesthetic preference but operational necessity for cross-org
+        work that is not rivet-to-rivet. Counter-argument: the existing
+        dogfood + the cross-repo doc topic depend on `externals:` and
+        removal cost is not zero. Holding the decision open until
+        v0.11.0 planning gives time to draft the
+        supplier-publishes-anchor-manifest replacement.
       decision-status: proposed
       decision-date: 2026-05-19
       decision-maker: project-lead

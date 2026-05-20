@@ -6,6 +6,17 @@ status: snapshot
 tags: [research, cross-org, federation, investigation, ephemeral]
 ---
 
+<!-- rivet-docs-check: design-doc-aspirational-ok -->
+<!-- This is a dated research snapshot. It deliberately references
+     test-bed artifacts (REQ-ABS-001, ANCHOR-ACME-001) that live in
+     /tmp/rivet-cross-git/, not the rivet store, and subcommands that
+     do NOT exist (rivet migrate, rivet workspace) precisely because
+     the findings are about their absence. The doc-check
+     existence invariants do not apply to a snapshot of this kind —
+     same category as docs/design/ and docs/plans/. (A follow-up
+     under REQ-073 should teach doc_check to auto-cover docs/research/
+     so this marker becomes unnecessary.) -->
+
 # Cross-git Rivet investigation — findings, personas, Safety Manual draft
 
 **Status:** Research note · 2026-05-19 · Binary `rivet 0.10.1 (4354d99a main)` (post #292 federation handshake + #291 variant CLI surface).
