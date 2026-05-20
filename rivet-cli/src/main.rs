@@ -4544,6 +4544,33 @@ fn cmd_validate(
         ..
     } = ctx;
 
+    // REQ-062 / F2: `load_artifacts` swallows per-file YAML parse failures
+    // to a stderr `log::warn!`, so a malformed artifact file produced a
+    // green `Result: PASS` over an effectively-empty load. Re-walk every
+    // `generic`/`generic-yaml` source and collect the files that failed to
+    // import, classified into:
+    //   * ParseError       — a malformed artifact file (F2a) -> Error diag.
+    //   * NotArtifactFile  — legitimate non-artifact YAML living under the
+    //                        source path, e.g. `bindings.yaml` (F2b)
+    //                        -> silently skipped, no diagnostic.
+    let mut parse_error_skips: Vec<rivet_core::SkippedFile> = Vec::new();
+    for source in &config.sources {
+        match rivet_core::load_artifacts_with_skips(source, &cli.project, &schema) {
+            Ok((_artifacts, skips)) => {
+                for skip in skips {
+                    if skip.kind == rivet_core::SkipKind::ParseError {
+                        parse_error_skips.push(skip);
+                    }
+                }
+            }
+            Err(e) => {
+                // A hard load error here is already surfaced by
+                // `ProjectContext::load`; don't double-report.
+                log::warn!("could not re-scan source '{}' for skips: {e}", source.path);
+            }
+        }
+    }
+
     // Apply baseline scoping if requested
     let (store, graph) = if let Some(bl) = baseline_name {
         if let Some(ref baselines) = config.baselines {
@@ -4796,6 +4823,26 @@ fn cmd_validate(
     );
     diagnostics.extend(cited_source_diags);
 
+    // REQ-062 / F2a: surface malformed artifact files as Error diagnostics.
+    // These would otherwise be invisible (swallowed to a stderr log line by
+    // `load_artifacts`), letting `rivet validate` report PASS over a file
+    // that never loaded. They flow into `errors`, the text/JSON output, and
+    // the exit code like any other Error.
+    for skip in &parse_error_skips {
+        let mut diag = validate::Diagnostic::new(
+            Severity::Error,
+            None,
+            "artifact-parse-error",
+            format!(
+                "artifact file {} failed to parse: {}",
+                skip.path.display(),
+                skip.reason
+            ),
+        );
+        diag.source_file = Some(skip.path.clone());
+        diagnostics.push(diag);
+    }
+
     // Cross-repo link validation (skipped with --skip-external-validation)
     let mut cross_repo_broken: Vec<rivet_core::externals::BrokenRef> = Vec::new();
     let mut backlinks: Vec<rivet_core::externals::CrossRepoBacklink> = Vec::new();
@@ -4884,6 +4931,7 @@ fn cmd_validate(
                 serde_json::json!({
                     "severity": format!("{:?}", d.severity).to_lowercase(),
                     "artifact_id": d.artifact_id,
+                    "rule": d.rule,
                     "message": d.message,
                 })
             })

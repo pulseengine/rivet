@@ -276,6 +276,43 @@ pub fn load_artifacts(
     }
 }
 
+/// Like [`load_artifacts`], but additionally reports YAML files that were
+/// skipped during a `generic`/`generic-yaml` directory import.
+///
+/// `load_artifacts` swallows per-file parse failures to a `log::warn!` line
+/// (see `formats::generic::import_generic_directory`), which means a
+/// malformed artifact file produces a green PASS over an empty load
+/// (REQ-062 / F2). This entrypoint re-walks the source directory via
+/// [`formats::generic::scan_skipped_files`] and returns the classified
+/// [`SkippedFile`]s alongside the artifacts so callers (notably
+/// `rivet validate`) can surface malformed files as Error diagnostics
+/// while still silently skipping legitimate non-artifact YAML.
+///
+/// For non-`generic` formats the skips vec is always empty — those
+/// adapters fail loudly rather than skipping files.
+///
+/// This is a separate function (not a signature change to `load_artifacts`)
+/// to keep the `rivet-core` public API semver-compatible.
+pub fn load_artifacts_with_skips(
+    source: &model::SourceConfig,
+    base_dir: &Path,
+    schema: &schema::Schema,
+) -> Result<(Vec<model::Artifact>, Vec<SkippedFile>), Error> {
+    let artifacts = load_artifacts(source, base_dir, schema)?;
+    let skips = match source.format.as_str() {
+        "generic" | "generic-yaml" => {
+            let path = base_dir.join(&source.path);
+            if path.is_dir() {
+                formats::generic::scan_skipped_files(&path)
+            } else {
+                Vec::new()
+            }
+        }
+        _ => Vec::new(),
+    };
+    Ok((artifacts, skips))
+}
+
 /// Import artifacts from a source using schema-driven rowan extraction.
 fn import_with_schema(
     source: &adapter::AdapterSource,
@@ -326,3 +363,7 @@ fn import_with_schema(
 }
 
 pub mod providers;
+
+/// Re-export of the skipped-file classification types so the CLI can name
+/// them without reaching into the `formats::generic` module path.
+pub use formats::generic::{SkipKind, SkippedFile};

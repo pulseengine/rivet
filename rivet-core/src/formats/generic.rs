@@ -57,7 +57,7 @@
 )]
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Maximum allowed YAML file size (10 MB). Files exceeding this limit are
 /// rejected before parsing to mitigate resource-exhaustion attacks (SSC-6).
@@ -233,10 +233,143 @@ fn import_generic_directory(dir: &Path) -> Result<Vec<Artifact>, Error> {
     Ok(artifacts)
 }
 
+/// Why a YAML file under a `generic`/`generic-yaml` source path was not
+/// loaded as an artifact list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SkipKind {
+    /// The file looks like it was *meant* to be an artifact file but is
+    /// malformed (not valid YAML, a broken `artifacts:` list, or an
+    /// artifact written without the `artifacts:` wrapper). This is a
+    /// user-facing error (F2a).
+    ParseError,
+    /// The file is legitimate non-artifact YAML that happens to live under
+    /// the `artifacts/` source path (e.g. `bindings.yaml`,
+    /// `feature-model.yaml`, `variants/*.yaml`). It is skipped silently
+    /// with no diagnostic (F2b).
+    NotArtifactFile,
+}
+
+/// A YAML file that `import_generic_file` declined to load, together with
+/// the classification of *why* (see [`SkipKind`]).
+#[derive(Debug, Clone)]
+pub struct SkippedFile {
+    /// Path to the file that failed to import.
+    pub path: PathBuf,
+    /// Human-readable reason (the underlying parse/IO error message).
+    pub reason: String,
+    /// Whether this is a malformed artifact file (`ParseError`) or
+    /// legitimate non-artifact YAML (`NotArtifactFile`).
+    pub kind: SkipKind,
+}
+
+/// Classify a `.yaml`/`.yml` file that failed `import_generic_file`.
+///
+/// Re-parses the raw content as a generic `serde_yaml::Value` and applies
+/// the REQ-062 classification rule:
+///
+/// 1. Not valid YAML at all -> [`SkipKind::ParseError`] (F2a).
+/// 2. Top-level mapping has an `artifacts` key -> [`SkipKind::ParseError`]
+///    (a malformed artifacts list).
+/// 3. Top-level mapping has BOTH `id` and `type` keys ->
+///    [`SkipKind::ParseError`] (an artifact written without the
+///    `artifacts:` wrapper — the exact F2a reproducer).
+/// 4. Anything else -> [`SkipKind::NotArtifactFile`] (F2b — skip silently).
+fn classify_skip(content: &str) -> SkipKind {
+    let value: serde_yaml::Value = match serde_yaml::from_str(content) {
+        Ok(v) => v,
+        // Case 1: not valid YAML at all.
+        Err(_) => return SkipKind::ParseError,
+    };
+    if let serde_yaml::Value::Mapping(map) = value {
+        let has_key = |k: &str| map.contains_key(serde_yaml::Value::String(k.to_string()));
+        // Case 2: a top-level `artifacts:` key means this was intended as
+        // an artifact-list file; if `import_generic_file` rejected it, the
+        // list itself is malformed.
+        if has_key("artifacts") {
+            return SkipKind::ParseError;
+        }
+        // Case 3: both `id` and `type` at top level — an artifact written
+        // without the required `artifacts:` wrapper.
+        if has_key("id") && has_key("type") {
+            return SkipKind::ParseError;
+        }
+    }
+    // Case 4: legitimate non-artifact YAML (mapping without the artifact
+    // signals, a list, or a scalar).
+    SkipKind::NotArtifactFile
+}
+
+/// Recursively collect `.yaml`/`.yml` file paths under `dir`, mirroring the
+/// directory walk in [`import_generic_directory`].
+fn collect_yaml_paths(dir: &Path, out: &mut Vec<PathBuf>) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path
+            .extension()
+            .is_some_and(|ext| ext == "yaml" || ext == "yml")
+        {
+            out.push(path);
+        } else if path.is_dir() {
+            collect_yaml_paths(&path, out);
+        }
+    }
+}
+
+/// Walk `dir` exactly like [`import_generic_directory`] and report every
+/// `.yaml`/`.yml` file that fails `import_generic_file`, classified per the
+/// REQ-062 rule (see [`classify_skip`]).
+///
+/// Well-formed artifact files produce no entry. The returned vec is the
+/// missing diagnostic signal: without it, malformed artifact files were
+/// swallowed to a stderr `log::warn!` and `rivet validate` reported a green
+/// PASS over an empty load.
+pub fn scan_skipped_files(dir: &Path) -> Vec<SkippedFile> {
+    let mut paths = Vec::new();
+    collect_yaml_paths(dir, &mut paths);
+    let mut skipped = Vec::new();
+    for path in paths {
+        match import_generic_file(&path) {
+            Ok(_) => {}
+            Err(e) => {
+                let reason = e.to_string();
+                let kind = match std::fs::read_to_string(&path) {
+                    Ok(content) => classify_skip(&content),
+                    // Couldn't even read the file (IO error / non-UTF-8) —
+                    // treat as a parse error so it surfaces.
+                    Err(_) => SkipKind::ParseError,
+                };
+                skipped.push(SkippedFile { path, reason, kind });
+            }
+        }
+    }
+    skipped
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::io::Write;
+
+    /// REQ-062 / F2: genuinely corrupt YAML (not even parseable) is a
+    /// ParseError; a bare list / scalar with no artifact signal is not.
+    /// Complements `scan_skipped_files_classifies_malformed_vs_non_artifact`
+    /// which covers the directory-walk + the `id`+`type` and `bindings`
+    /// cases.
+    ///
+    /// rivet: verifies REQ-062
+    #[test]
+    fn classify_skip_treats_corrupt_yaml_as_parse_error() {
+        assert_eq!(classify_skip("{[unbalanced: yaml"), SkipKind::ParseError);
+        // A bare list / scalar with no artifact signal is not an error.
+        assert_eq!(
+            classify_skip("- just\n- a\n- list\n"),
+            SkipKind::NotArtifactFile
+        );
+    }
 
     #[test]
     fn rejects_oversized_yaml_file() {
@@ -311,6 +444,64 @@ Artifacts:
             result.is_err(),
             "parse must fail on wrong-case top-level key 'Artifacts'; got Ok({:?})",
             result.as_ref().ok()
+        );
+    }
+
+    /// `scan_skipped_files` must distinguish a malformed artifact file
+    /// (F2a — top-level `id:`/`type:` without the `artifacts:` wrapper)
+    /// from legitimate non-artifact YAML (F2b — a `bindings:` file), and
+    /// must produce no entry at all for a well-formed `artifacts:` file.
+    ///
+    /// rivet: implements REQ-004 verifies REQ-062
+    #[test]
+    fn scan_skipped_files_classifies_malformed_vs_non_artifact() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // F2a: an artifact written WITHOUT the `artifacts:` wrapper.
+        let malformed = dir.path().join("malformed.yaml");
+        std::fs::write(
+            &malformed,
+            "id: REQ-001\ntype: requirement\ntitle: Orphan artifact\n",
+        )
+        .unwrap();
+
+        // F2b: legitimate non-artifact YAML living under the source path.
+        let bindings = dir.path().join("bindings.yaml");
+        std::fs::write(&bindings, "bindings:\n  - core\n  - dashboard\n").unwrap();
+
+        // Well-formed artifact file — must produce no skip entry.
+        let good = dir.path().join("requirements.yaml");
+        std::fs::write(
+            &good,
+            "artifacts:\n  - id: REQ-002\n    type: requirement\n    title: Valid\n",
+        )
+        .unwrap();
+
+        let skipped = scan_skipped_files(dir.path());
+
+        let malformed_entry = skipped
+            .iter()
+            .find(|s| s.path == malformed)
+            .expect("malformed.yaml must be reported as skipped");
+        assert_eq!(
+            malformed_entry.kind,
+            SkipKind::ParseError,
+            "an artifact without the `artifacts:` wrapper is F2a (ParseError)"
+        );
+
+        let bindings_entry = skipped
+            .iter()
+            .find(|s| s.path == bindings)
+            .expect("bindings.yaml must be reported as skipped");
+        assert_eq!(
+            bindings_entry.kind,
+            SkipKind::NotArtifactFile,
+            "a `bindings:` file is legitimate non-artifact YAML (F2b)"
+        );
+
+        assert!(
+            !skipped.iter().any(|s| s.path == good),
+            "a well-formed `artifacts:` file must produce no skip entry"
         );
     }
 }

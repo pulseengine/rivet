@@ -393,6 +393,108 @@ fn validate_json() {
     );
 }
 
+/// REQ-062 / F2: `rivet validate` must surface a malformed artifact file
+/// as an Error diagnostic — not swallow it to a stderr log line under a
+/// green PASS. A file with top-level `id:`/`type:` (an artifact written
+/// without the `artifacts:` wrapper) must fail validation. A legitimate
+/// non-artifact file (`bindings.yaml`) must NOT add an error (F2b).
+///
+/// rivet: verifies REQ-062
+#[test]
+fn validate_surfaces_parse_error_on_malformed_artifact_file() {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let dir = tmp.path();
+
+    let init = Command::new(rivet_bin())
+        .args(["init", "--preset", "dev", "--dir", dir.to_str().unwrap()])
+        .output()
+        .expect("failed to execute rivet init");
+    assert!(
+        init.status.success(),
+        "rivet init must exit 0. stderr: {}",
+        String::from_utf8_lossy(&init.stderr)
+    );
+
+    // F2a: an artifact written WITHOUT the required `artifacts:` wrapper.
+    std::fs::write(
+        dir.join("artifacts").join("malformed.yaml"),
+        "id: REQ-OOPS\ntype: requirement\ntitle: Forgot the artifacts wrapper\n",
+    )
+    .expect("write malformed.yaml");
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir.to_str().unwrap(),
+            "validate",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("failed to execute rivet validate");
+
+    assert!(
+        !out.status.success(),
+        "validate must exit non-zero when an artifact file fails to parse"
+    );
+    let parsed: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("validate JSON must be valid");
+    assert_eq!(
+        parsed.get("result").and_then(|v| v.as_str()),
+        Some("FAIL"),
+        "result must be FAIL; got: {parsed}"
+    );
+    assert!(
+        parsed.get("errors").and_then(|v| v.as_u64()).unwrap_or(0) >= 1,
+        "errors must be >= 1; got: {parsed}"
+    );
+    let diags = parsed
+        .get("diagnostics")
+        .and_then(|v| v.as_array())
+        .expect("diagnostics array");
+    let parse_err = diags
+        .iter()
+        .find(|d| d.get("rule").and_then(|r| r.as_str()) == Some("artifact-parse-error"));
+    let parse_err = parse_err.unwrap_or_else(|| {
+        panic!("expected a diagnostic with rule 'artifact-parse-error'; got: {parsed}")
+    });
+    assert!(
+        parse_err
+            .get("message")
+            .and_then(|m| m.as_str())
+            .is_some_and(|m| m.contains("malformed.yaml")),
+        "the artifact-parse-error message must name the malformed file; got: {parse_err}"
+    );
+
+    // F2b: a legitimate non-artifact file under the same source path must
+    // NOT contribute an error. Capture the error count, add bindings.yaml,
+    // and assert the count does not grow.
+    let errors_before = parsed.get("errors").and_then(|v| v.as_u64()).unwrap_or(0);
+    std::fs::write(
+        dir.join("artifacts").join("bindings.yaml"),
+        "bindings:\n  - feature: core\n    artifact: REQ-001\n",
+    )
+    .expect("write bindings.yaml");
+
+    let out2 = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir.to_str().unwrap(),
+            "validate",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("failed to execute rivet validate (2)");
+    let parsed2: serde_json::Value =
+        serde_json::from_slice(&out2.stdout).expect("validate JSON (2) must be valid");
+    assert_eq!(
+        parsed2.get("errors").and_then(|v| v.as_u64()).unwrap_or(0),
+        errors_before,
+        "a legitimate non-artifact file (bindings.yaml) must not add an error; got: {parsed2}"
+    );
+}
+
 // ── rivet stats ─────────────────────────────────────────────────────────
 
 /// `rivet stats --format json` produces valid JSON with total count.
