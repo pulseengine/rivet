@@ -1,3 +1,11 @@
+---
+id: DOC-RIVET-INTRO
+title: "rivet: because AI agents still don't remember why"
+type: positioning
+status: current
+tags: [positioning, introduction, marketing-voice]
+---
+
 <!-- rivet-docs-check: design-doc-aspirational-ok -->
 <!-- AUDIT-FILE: verified 2026-04-22 — positioning doc may reference planned
      v0.5.0 features and counts that drift with the artifact tree. -->
@@ -289,6 +297,8 @@ trustworthy.
 ---
 
 ## 6. What rivet is NOT
+
+For the categorical integrator-facing limits — eight numbered "Rivet is not..." sub-sections in the Cederqvist / ISO 26262-10 SEooC Safety Manual register, each with a worked cliff showing where the tool reports green while the engineering reality is red — see [docs/rivet-is-not.md](rivet-is-not.md). That document is the doctrinal version of this section. The bullets below are the marketing-voice summary.
 
 Honesty over hype.
 
