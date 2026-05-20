@@ -134,10 +134,15 @@ pub struct DocFile {
 
 impl DocFile {
     pub fn new(rel_path: PathBuf, content: String) -> Self {
+        // `plans/` and `design/` are forward-looking; `historical/` is
+        // frozen archive (REQ-073/074). All three legitimately reference
+        // subcommands / artifact counts / IDs that have since changed,
+        // so they opt out of the existence-based invariants.
         let is_design_doc = content.contains("rivet-docs-check: design-doc-aspirational-ok")
-            || rel_path
-                .components()
-                .any(|c| c.as_os_str() == "plans" || c.as_os_str() == "design");
+            || rel_path.components().any(|c| {
+                let s = c.as_os_str();
+                s == "plans" || s == "design" || s == "historical"
+            });
         Self {
             rel_path,
             content,
@@ -1584,6 +1589,27 @@ mod tests {
         assert_eq!(v.len(), 1);
         assert_eq!(v[0].claim, "rivet discover");
         assert_eq!(v[0].file, PathBuf::from("README.md"));
+    }
+
+    /// REQ-073/074: a file under `docs/historical/` is a frozen archive
+    /// snapshot and opts out of the existence-based invariants — same as
+    /// `plans/` and `design/` — without needing the explicit marker.
+    ///
+    /// rivet: verifies REQ-074
+    #[test]
+    fn historical_dir_is_design_doc_without_marker() {
+        assert!(
+            doc("docs/historical/old-plan.md", "Run `rivet discover`.").is_design_doc,
+            "docs/historical/ must be exempt from existence invariants"
+        );
+        assert!(
+            doc("docs/plans/p.md", "x").is_design_doc,
+            "docs/plans/ exemption must still hold"
+        );
+        assert!(
+            !doc("docs/getting-started.md", "x").is_design_doc,
+            "a normal reference doc must NOT be auto-exempt"
+        );
     }
 
     #[test]
