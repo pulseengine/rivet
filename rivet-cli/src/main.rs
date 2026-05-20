@@ -353,6 +353,15 @@ enum Command {
         /// were skipped.
         #[arg(long = "check-remote-sources")]
         check_remote_sources: bool,
+
+        /// Promote `orphan-artifact` warnings (an artifact with no
+        /// inbound and no outbound links, disconnected from the
+        /// traceability graph) to errors. Orphans are reported as
+        /// Warnings by default; use this in CI to enforce "every
+        /// artifact must be linked into the graph". Mirrors
+        /// `--strict-cited-sources`.
+        #[arg(long = "strict-orphans")]
+        strict_orphans: bool,
     },
 
     /// Show a single artifact by ID
@@ -1863,6 +1872,7 @@ fn run(cli: Cli) -> Result<bool> {
             strict_cited_sources,
             strict_cited_source_stale,
             check_remote_sources,
+            strict_orphans,
         } => cmd_validate(
             &cli,
             format,
@@ -1878,6 +1888,7 @@ fn run(cli: Cli) -> Result<bool> {
             *strict_cited_sources,
             *strict_cited_source_stale,
             *check_remote_sources,
+            *strict_orphans,
         ),
         Command::List {
             r#type,
@@ -4541,6 +4552,7 @@ fn cmd_validate(
     strict_cited_sources: bool,
     strict_cited_source_stale: bool,
     check_remote_sources: bool,
+    strict_orphans: bool,
 ) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
     let fail_on_threshold = parse_fail_on(fail_on)?;
@@ -4566,15 +4578,24 @@ fn cmd_validate(
     //   * NotArtifactFile  — legitimate non-artifact YAML living under the
     //                        source path, e.g. `bindings.yaml` (F2b)
     //                        -> silently skipped, no diagnostic.
+    //
+    // REQ-075: the same load-report channel additionally detects two
+    // artifacts that declare the same `id`. `Store::upsert` is keyed by ID
+    // and last-write-wins, so by the time `validate::validate` runs only
+    // the survivor exists. Duplicate IDs are gathered here, at load time,
+    // across every source — a collision can straddle two source paths —
+    // and emitted as `duplicate-artifact-id` Error diagnostics below.
     let mut parse_error_skips: Vec<rivet_core::SkippedFile> = Vec::new();
+    let mut loaded_for_dup_check: Vec<rivet_core::model::Artifact> = Vec::new();
     for source in &config.sources {
-        match rivet_core::load_artifacts_with_skips(source, &cli.project, &schema) {
-            Ok((_artifacts, skips)) => {
-                for skip in skips {
+        match rivet_core::load_artifacts_with_report(source, &cli.project, &schema) {
+            Ok(report) => {
+                for skip in report.skipped {
                     if skip.kind == rivet_core::SkipKind::ParseError {
                         parse_error_skips.push(skip);
                     }
                 }
+                loaded_for_dup_check.extend(report.artifacts);
             }
             Err(e) => {
                 // A hard load error here is already surfaced by
@@ -4583,6 +4604,10 @@ fn cmd_validate(
             }
         }
     }
+    // Detect duplicate IDs across the union of all sources. The per-source
+    // reports above only see one source each; a project-wide pass catches
+    // an ID claimed in source A and again in source B.
+    let duplicate_ids = rivet_core::detect_duplicate_ids_for_validate(&loaded_for_dup_check);
 
     // Apply baseline scoping if requested
     let (store, graph) = if let Some(bl) = baseline_name {
@@ -4853,6 +4878,65 @@ fn cmd_validate(
             ),
         );
         diag.source_file = Some(skip.path.clone());
+        diagnostics.push(diag);
+    }
+
+    // REQ-075 / F2: two artifacts declaring the same `id` collapse
+    // silently — `Store::upsert` is last-write-wins, so `validate` only
+    // ever sees the survivor. Detection happened at load time above; emit
+    // one Error diagnostic per collision naming both source files and the
+    // colliding ID.
+    for dup in &duplicate_ids {
+        let first = dup
+            .first_file
+            .as_ref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "<unknown source>".to_string());
+        let second = dup
+            .second_file
+            .as_ref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "<unknown source>".to_string());
+        let mut diag = validate::Diagnostic::new(
+            Severity::Error,
+            Some(dup.id.clone()),
+            "duplicate-artifact-id",
+            format!(
+                "artifact id '{}' is declared more than once: {} and {} \
+                 — the second definition silently overwrites the first",
+                dup.id, first, second
+            ),
+        );
+        diag.source_file = dup.second_file.clone();
+        diagnostics.push(diag);
+    }
+
+    // REQ-076: surface orphan artifacts (no inbound and no outbound links,
+    // disconnected from the traceability graph) through the `validate`
+    // diagnostic channel. This reuses `LinkGraph::orphans` — the exact
+    // computation behind `rivet stats`'s "Orphan artifacts (no links): N".
+    //
+    // Severity is Warning by default and Error under `--strict-orphans`,
+    // mirroring the `cited-source-drift` / `--strict-cited-sources`
+    // pattern. Warning-by-default is required: the rivet repo itself
+    // carries orphans, so a hard-error default would break its own
+    // dogfood `validate` (REQ-062's F2b lesson applied to severity).
+    let orphan_severity = if strict_orphans {
+        Severity::Error
+    } else {
+        Severity::Warning
+    };
+    for orphan_id in graph.orphans(&store) {
+        let mut diag = validate::Diagnostic::new(
+            orphan_severity,
+            Some(orphan_id.clone()),
+            "orphan-artifact",
+            format!(
+                "artifact '{orphan_id}' is an orphan: it has no inbound or \
+                 outbound links and is disconnected from the traceability graph"
+            ),
+        );
+        diag.source_file = store.get(orphan_id).and_then(|a| a.source_file.clone());
         diagnostics.push(diag);
     }
 
@@ -5618,8 +5702,46 @@ fn cmd_stats(
     // counts line up with the visible artifact set when --filter or
     // --baseline is in effect. Externals-aware so the numbers match the
     // post-#245 `rivet validate` output.
-    let diagnostics =
+    let mut diagnostics =
         validate::validate_with_externals(&store, &ctx.schema, &graph, &ctx.external_schemas);
+    // REQ-076: `rivet validate` emits one `orphan-artifact` Warning per
+    // orphan. Mirror that here so the `warnings` count stays consistent
+    // with `rivet validate` (see `stats_json_counts_match_validate`).
+    // `--strict-orphans` is a `validate`-only flag, so stats always uses
+    // the default Warning severity.
+    for orphan_id in &stats.orphans {
+        diagnostics.push(validate::Diagnostic::new(
+            Severity::Warning,
+            Some(orphan_id.clone()),
+            "orphan-artifact",
+            format!(
+                "artifact '{orphan_id}' is an orphan: it has no inbound or \
+                 outbound links and is disconnected from the traceability graph"
+            ),
+        ));
+    }
+    // REQ-075: `rivet validate` emits one `duplicate-artifact-id` Error
+    // per ID claimed by more than one artifact. Re-load every source and
+    // run the same load-time duplicate scan so the `errors` count stays
+    // consistent with `rivet validate` (see `stats_json_counts_match_validate`).
+    {
+        let mut loaded: Vec<rivet_core::model::Artifact> = Vec::new();
+        for source in &ctx.config.sources {
+            if let Ok(report) =
+                rivet_core::load_artifacts_with_report(source, &cli.project, &ctx.schema)
+            {
+                loaded.extend(report.artifacts);
+            }
+        }
+        for dup in rivet_core::detect_duplicate_ids_for_validate(&loaded) {
+            diagnostics.push(validate::Diagnostic::new(
+                Severity::Error,
+                Some(dup.id.clone()),
+                "duplicate-artifact-id",
+                format!("artifact id '{}' is declared more than once", dup.id),
+            ));
+        }
+    }
     let errors = diagnostics
         .iter()
         .filter(|d| d.severity == Severity::Error)
@@ -8092,6 +8214,7 @@ fn cmd_diff(
                     strict_cited_sources: false,
                     strict_cited_source_stale: false,
                     check_remote_sources: false,
+                    strict_orphans: false,
                 },
             };
             let head_cli = Cli {
@@ -8113,6 +8236,7 @@ fn cmd_diff(
                     strict_cited_sources: false,
                     strict_cited_source_stale: false,
                     check_remote_sources: false,
+                    strict_orphans: false,
                 },
             };
             let bc = ProjectContext::load(&base_cli)?;

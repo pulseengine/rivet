@@ -634,6 +634,253 @@ fn validate_accepts_derives_from_external_structured_target() {
     );
 }
 
+/// REQ-075 / F2: two artifacts that declare the same `id` collapse
+/// silently — `Store::upsert` is last-write-wins, so by the time
+/// `validate::validate` runs only one survives and the validator is
+/// structurally blind to the collision. `rivet validate` must detect the
+/// duplicate at LOAD time and emit a `duplicate-artifact-id` Error
+/// diagnostic naming both source files. Verified for both the two-files
+/// case and the twice-in-one-file case.
+///
+/// rivet: verifies REQ-075
+#[test]
+fn validate_detects_duplicate_artifact_ids() {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let dir = tmp.path();
+
+    let init = Command::new(rivet_bin())
+        .args(["init", "--preset", "dev", "--dir", dir.to_str().unwrap()])
+        .output()
+        .expect("failed to execute rivet init");
+    assert!(
+        init.status.success(),
+        "rivet init must exit 0. stderr: {}",
+        String::from_utf8_lossy(&init.stderr)
+    );
+
+    // Two artifact files that both declare `id: REQ-DUP`. `upsert` keeps
+    // only one; the load-time duplicate check must still see both.
+    std::fs::write(
+        dir.join("artifacts").join("file-a.yaml"),
+        "artifacts:\n  - id: REQ-DUP\n    type: requirement\n    \
+         title: First definition\n    status: draft\n    \
+         fields:\n      priority: must\n      category: functional\n",
+    )
+    .expect("write file-a.yaml");
+    std::fs::write(
+        dir.join("artifacts").join("file-b.yaml"),
+        "artifacts:\n  - id: REQ-DUP\n    type: requirement\n    \
+         title: Second definition\n    status: draft\n    \
+         fields:\n      priority: must\n      category: functional\n",
+    )
+    .expect("write file-b.yaml");
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir.to_str().unwrap(),
+            "validate",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("failed to execute rivet validate");
+
+    assert!(
+        !out.status.success(),
+        "validate must exit non-zero when an artifact id is duplicated"
+    );
+    let parsed: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("validate JSON must be valid");
+    assert_eq!(
+        parsed.get("result").and_then(|v| v.as_str()),
+        Some("FAIL"),
+        "result must be FAIL; got: {parsed}"
+    );
+    assert!(
+        parsed.get("errors").and_then(|v| v.as_u64()).unwrap_or(0) >= 1,
+        "errors must be >= 1; got: {parsed}"
+    );
+    let diags = parsed
+        .get("diagnostics")
+        .and_then(|v| v.as_array())
+        .expect("diagnostics array");
+    let dup = diags
+        .iter()
+        .find(|d| d.get("rule").and_then(|r| r.as_str()) == Some("duplicate-artifact-id"))
+        .unwrap_or_else(|| {
+            panic!("expected a diagnostic with rule 'duplicate-artifact-id'; got: {parsed}")
+        });
+    let msg = dup
+        .get("message")
+        .and_then(|m| m.as_str())
+        .expect("duplicate diagnostic must have a message");
+    assert!(
+        msg.contains("REQ-DUP"),
+        "the duplicate-artifact-id message must name the colliding id; got: {msg}"
+    );
+    assert!(
+        msg.contains("file-a.yaml") && msg.contains("file-b.yaml"),
+        "the duplicate-artifact-id message must name both source files; got: {msg}"
+    );
+
+    // The same ID twice within a SINGLE file's `artifacts:` list.
+    let tmp2 = tempfile::tempdir().expect("create temp dir 2");
+    let dir2 = tmp2.path();
+    let init2 = Command::new(rivet_bin())
+        .args(["init", "--preset", "dev", "--dir", dir2.to_str().unwrap()])
+        .output()
+        .expect("failed to execute rivet init (2)");
+    assert!(init2.status.success(), "rivet init (2) must exit 0");
+    std::fs::write(
+        dir2.join("artifacts").join("requirements.yaml"),
+        "artifacts:\n  - id: REQ-DUP\n    type: requirement\n    \
+         title: First\n    status: draft\n    \
+         fields:\n      priority: must\n      category: functional\n  \
+         - id: REQ-DUP\n    type: requirement\n    \
+         title: Second\n    status: draft\n    \
+         fields:\n      priority: must\n      category: functional\n",
+    )
+    .expect("write requirements.yaml with duplicate");
+
+    let out2 = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir2.to_str().unwrap(),
+            "validate",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("failed to execute rivet validate (2)");
+    assert!(
+        !out2.status.success(),
+        "validate must exit non-zero for two same-id entries in one file"
+    );
+    let parsed2: serde_json::Value =
+        serde_json::from_slice(&out2.stdout).expect("validate JSON (2) must be valid");
+    let diags2 = parsed2
+        .get("diagnostics")
+        .and_then(|v| v.as_array())
+        .expect("diagnostics array (2)");
+    assert!(
+        diags2
+            .iter()
+            .any(|d| d.get("rule").and_then(|r| r.as_str()) == Some("duplicate-artifact-id")),
+        "two same-id entries in one file must produce a duplicate-artifact-id diagnostic; \
+         got: {parsed2}"
+    );
+}
+
+/// REQ-076: an orphan artifact — no inbound and no outbound links,
+/// disconnected from the traceability graph — must be surfaced by
+/// `rivet validate` as an `orphan-artifact` diagnostic. Severity is
+/// Warning by default (so a project with orphans does not hard-fail),
+/// promotable to Error with `--strict-orphans`.
+///
+/// rivet: verifies REQ-076
+#[test]
+fn validate_reports_orphans_as_warnings() {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let dir = tmp.path();
+
+    let init = Command::new(rivet_bin())
+        .args(["init", "--preset", "dev", "--dir", dir.to_str().unwrap()])
+        .output()
+        .expect("failed to execute rivet init");
+    assert!(
+        init.status.success(),
+        "rivet init must exit 0. stderr: {}",
+        String::from_utf8_lossy(&init.stderr)
+    );
+
+    // Replace the seeded artifacts with a single requirement that has no
+    // links of any kind — a textbook orphan.
+    std::fs::write(
+        dir.join("artifacts").join("requirements.yaml"),
+        "artifacts:\n  - id: REQ-ORPHAN\n    type: requirement\n    \
+         title: Disconnected requirement\n    status: draft\n    \
+         fields:\n      priority: must\n      category: functional\n",
+    )
+    .expect("write requirements.yaml");
+
+    // Default run: orphan surfaces as a Warning; the run still exits 0
+    // (orphans must not hard-fail by default).
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir.to_str().unwrap(),
+            "validate",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("failed to execute rivet validate");
+    let parsed: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("validate JSON must be valid");
+    let diags = parsed
+        .get("diagnostics")
+        .and_then(|v| v.as_array())
+        .expect("diagnostics array");
+    let orphan = diags
+        .iter()
+        .find(|d| {
+            d.get("rule").and_then(|r| r.as_str()) == Some("orphan-artifact")
+                && d.get("artifact_id").and_then(|a| a.as_str()) == Some("REQ-ORPHAN")
+        })
+        .unwrap_or_else(|| {
+            panic!("expected an orphan-artifact diagnostic for REQ-ORPHAN; got: {parsed}")
+        });
+    assert_eq!(
+        orphan.get("severity").and_then(|s| s.as_str()),
+        Some("warning"),
+        "orphan-artifact must default to severity 'warning'; got: {orphan}"
+    );
+
+    // `--strict-orphans` promotes the same diagnostic to Error and the
+    // run exits non-zero.
+    let strict = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir.to_str().unwrap(),
+            "validate",
+            "--format",
+            "json",
+            "--strict-orphans",
+        ])
+        .output()
+        .expect("failed to execute rivet validate --strict-orphans");
+    assert!(
+        !strict.status.success(),
+        "validate --strict-orphans must exit non-zero when an orphan exists"
+    );
+    let parsed_strict: serde_json::Value =
+        serde_json::from_slice(&strict.stdout).expect("strict validate JSON must be valid");
+    assert_eq!(
+        parsed_strict.get("result").and_then(|v| v.as_str()),
+        Some("FAIL"),
+        "result must be FAIL under --strict-orphans; got: {parsed_strict}"
+    );
+    let strict_orphan = parsed_strict
+        .get("diagnostics")
+        .and_then(|v| v.as_array())
+        .expect("strict diagnostics array")
+        .iter()
+        .find(|d| {
+            d.get("rule").and_then(|r| r.as_str()) == Some("orphan-artifact")
+                && d.get("artifact_id").and_then(|a| a.as_str()) == Some("REQ-ORPHAN")
+        })
+        .unwrap_or_else(|| {
+            panic!("expected an orphan-artifact diagnostic under --strict-orphans; got: {parsed_strict}")
+        });
+    assert_eq!(
+        strict_orphan.get("severity").and_then(|s| s.as_str()),
+        Some("error"),
+        "orphan-artifact must be severity 'error' under --strict-orphans; got: {strict_orphan}"
+    );
+}
+
+
 // ── rivet stats ─────────────────────────────────────────────────────────
 
 /// `rivet stats --format json` produces valid JSON with total count.
