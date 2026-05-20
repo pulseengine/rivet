@@ -382,8 +382,9 @@ server-side-validated before it lands.
 - **Polarion / ReqIF fidelity audit.**
   [docs/design/polarion-reqif-fidelity.md](design/polarion-reqif-fidelity.md).
 - **Roadmap.** [docs/roadmap.md](roadmap.md).
-- **Audit report.** [docs/audit-report.md](audit-report.md) — state
-  of doc-vs-reality after PR #171's audit.
+- **Audit report.** [docs/historical/audit-report.md](historical/audit-report.md)
+  — archived doc-vs-reality snapshot (2026-03-09). Superseded by
+  [docs/research/2026-05-19-docs-audit.md](research/2026-05-19-docs-audit.md).
 
 ---
 
