@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1779208290923,
+  "lastUpdate": 1779293670252,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "f45cafa1b33908f72d05fe6c50422f51e2072fea",
-          "message": "fix(stpa): correct TCL numbering to ISO 26262-8 (TCL1) with DO-330 cross-walk (#257)\n\nThe \"Tool Confidence Level\" header in safety/stpa/tool-qualification.yaml\nread \"TCL 1 (highest)\" — which mixed two opposite conventions: ISO 26262-8\n§11.4.7 numbers TCL inversely to DO-330 (26262 TCL1 is the *lowest*\nconfidence demand; DO-330 TQL-1 is the *highest* rigor). The legacy\nwording was self-contradictory in our own dogfood — flagged by the\nqualification-dossier triage on issue #254 (Workstream A, A1).\n\nReplace the header with:\n  * \"TCL1 (ISO 26262-8 §11.4.7)\" — 26262 numbering, no parenthetical\n    that contradicts the standard.\n  * Brief explanation that oracle-gated validation raises TD enough to\n    keep the TI×TD matrix at TCL1, with the safety risk still framed\n    explicitly (a false PASS can prevent detection of a safety-critical\n    gap).\n  * Cross-walk paragraph documenting the inverse numbering between\n    26262 (TCL1 lowest, TCL3 highest) and DO-330 (TQL-1 highest, TQL-5\n    lowest) so future readers don't repeat the same mix-up.\n\nComment-only change. No schema, no validation logic, no rust source\ntouched. `rivet validate` error set is byte-identical to the pristine-\nmain baseline (the 6 pre-existing errors live in the spar external\nfixture and are unaffected).\n\nWorkstream A2-A5 (typed `tool-confidence` artifact, `ai-found-defect`\ntype, dossier doc, `--qualification-mode` flag) remain — this PR is the\nA1 slice only and intentionally does not close #254.\n\nImplements: REQ-002\nRefs: #254\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code) — issue-triage agent run 2026-05-01.\n\nCo-authored-by: Claude <noreply@anthropic.com>",
-          "timestamp": "2026-05-10T22:51:38-05:00",
-          "tree_id": "7c461778bbcf64acdd9f73284f28a6588be76f04",
-          "url": "https://github.com/pulseengine/rivet/commit/f45cafa1b33908f72d05fe6c50422f51e2072fea"
-        },
-        "date": 1778473133765,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 81443,
-            "range": "± 744",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 866536,
-            "range": "± 4386",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 11719574,
-            "range": "± 1014582",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2209,
-            "range": "± 7",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 25847,
-            "range": "± 1119",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 339537,
-            "range": "± 1812",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 98,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 98,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1201780,
-            "range": "± 40574",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 159512,
-            "range": "± 1086",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1917407,
-            "range": "± 9194",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 23924124,
-            "range": "± 1374281",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 139372,
-            "range": "± 664",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 1218382,
-            "range": "± 30753",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 13151057,
-            "range": "± 634666",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4246,
-            "range": "± 10",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 59656,
-            "range": "± 656",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 761154,
-            "range": "± 4186",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 60225,
-            "range": "± 2107",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 673765,
-            "range": "± 1619",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7723432,
-            "range": "± 261663",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 825,
-            "range": "± 7",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 7387,
-            "range": "± 31",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 111732,
-            "range": "± 971",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 24202,
-            "range": "± 98",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 163227,
-            "range": "± 559",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1521465,
-            "range": "± 18582",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1360245,
             "range": "± 12417",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2edaf06e98ad61395bdb0653b917770c992abfc3",
+          "message": "docs(cross-org): cross-git investigation — findings + SEooC AoU register + change list as Rivet artifacts (#304)\n\n* docs(cross-org): cross-git investigation — findings + SEooC AoU register + change list as Rivet artifacts\n\nThree coordinated outputs from the 2026-05-19 cross-git investigation\n(6 personas, 10 scenarios, 3 test-bed repos in /tmp/rivet-cross-git/):\n\n  • docs/research/cross-git-repo-investigation.md — full synthesis:\n    11 findings, persona-converging carve-into-the-wall quotes, SEooC\n    safety-property + Assumptions-of-Use register, architectural\n    commitment question (which cross-repo mechanism survives), the\n    missing producer-side story, and comparison to git-submodules\n    and Google's `repo` tool.\n\n  • docs/rivet-is-not.md — Cederqvist-style epistemic-honesty doc in\n    SEooC Safety Manual register. Eight categorical \"Rivet is not...\"\n    sub-sections, each grounded in a real Rivet operation and naming a\n    concrete cliff. Linked from the synthesis as the doc the\n    First-Time User persona wished they had found at hour zero.\n\n  • artifacts/cross-git-investigation.yaml — the change list itself,\n    dogfooded as Rivet artifacts rather than GitHub issues:\n      FEAT-135 anchors the AoU register.\n      DD-067 records the open architectural commitment (delete\n              `externals:` in favour of `external-anchor`?).\n      REQ-062  validate must surface skipped files as Errors (P0;\n               unanimous persona blocker).\n      REQ-063  init must not silently produce broken safety-critical\n               projects (DO-178C / EN-50128 / IEC-61508 / IEC-62304).\n      REQ-064  derives-from-external must parse structured-target\n               end-to-end (advertised in #292, not delivered).\n      REQ-065  cross-repo diagnostics propagation (the SEooC AoU).\n      REQ-066  one-line schema fix: external-anchor must declare\n               cited-source.\n      REQ-067  doc topic must explain both mechanisms until DD-067\n               decides.\n      REQ-068  supplier pull must refuse-and-error on sha256 drift.\n      REQ-069  rivet supplier publish + producer-readable manifest\n               (the missing producer-side story).\n      REQ-070  link docs/rivet-is-not.md from README.\n      REQ-071  add rivet docs cross-repo-ci topic with worked GH\n               Actions example + AoU register.\n      REQ-072  docs/rivet-is-not.md §7 grows AoU-X1..X7 explicitly.\n\nEach artifact cites file:line evidence in the test logs + persona\nreactions. The change list IS its own oracle: running `rivet validate`\non the rivet repo itself reproduces F2 with 140 silent-skip WARNs on\nbindings.yaml, feature-model.yaml, and the variant configs.\n\nRefs: FEAT-135, REQ-010, REQ-004, FEAT-001\n\nCo-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>\n\n* docs(rivet-is-not): apply reviewer edits — open frame, semantic-validator retitle, DPIA expansion, Cederqvist close\n\nSubstantive review of docs/rivet-is-not.md returned six small-but-pointed\nedits. Applied in order:\n\n  1. Open frame trimmed to one paragraph and paired with a new \"What\n     Rivet is\" sibling section (three sentences). Reviewer:\n     \"Cederqvist himself would have used one [paragraph].\"\n  2. Stripped the \"billion-dollar products in 2026\" sentence — the\n     one slip from doctrinal voice into marketing-voice critique.\n  3. §5 retitled \"Rivet is not a semantic validator\" (was \"AI\n     prompt-correctness checker\"). The deeper claim is categorical;\n     AI-authored hallucination is one instance. Body and cliff\n     adjusted to keep both AI-driven and human-driven examples.\n  4. §6 expanded with a paragraph on why the recording-without-\n     performing failure mode is common in practice (recording is\n     cheap, performing is expensive; every team defaults to the\n     cheap operation under deadline pressure).\n  5. §3 cliff retold for \"an engineer (or an agent)\" with explicit\n     release-cut deadline framing. Reviewer asked for at least one\n     human-driven cliff to make clear the categorical limits hold\n     regardless of authorship.\n  6. Closing prescription opens with a Cederqvist citation:\n     \"Acquire the habit of reading specs and talking to your peers\"\n     adapted for the agent-plus-reviewer pair. Cederqvist now bookends\n     the document — once at the open, once at the close — placing it\n     in a tradition rather than borrowing from one.\n  7. \"transposed\" → \"the same pattern at a different layer\" (reviewer\n     called the former \"slightly bookish\").\n  8. DSGVO Art. 35 / Art. 4 first uses now carry \"(GDPR Art. NN)\" in\n     parentheses for the non-German-speaking reader.\n\nReviewer's overall verdict: \"Ship it after the small edits.\"\n\nRefs: FEAT-135, REQ-072\n\nCo-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>\n\n* docs(rivet-is-not): link the Cederqvist source at first mention\n\nVerified the canonical GNU mirror of the \"What is CVS not?\" section\n(part of the CVS manual maintained downstream of Cederqvist's 1993\nauthorship). Opening sentence: \"CVS can do a lot of things for you,\nbut it does not try to be everything for everyone.\" That sentence is\nthe structural-honesty thesis the document inherits.\n\nOne inline link at the first Cederqvist mention. The closing\nprescription keeps its bare-name attribution. Reviewer's other\nannotations considered:\n\n  - \"notified body\" terminology in §4 — kept; the surrounding\n    vocabulary (ISO 26262-8, DO-330, GSN) is already specialist,\n    and a reader who follows those terms knows \"notified body\".\n  - Load-bearing path citations in §4 (rivet-tool-confidence.yaml,\n    tool-qualification-dossier.md) and §7 (cross-org-supplier-\n    traceability.md §2) all verified to resolve in this commit.\n    The reviewer's broader suggestion of a rivet validate rule to\n    keep them honest is a feature request, not this PR's scope.\n  - Possible §6/§8 collapse into \"Rivet records, it does not\n    verify\" — kept separate. Reviewer marked it \"Not a required\n    edit\"; both sections currently land.\n\nRefs: FEAT-135, REQ-072\n\nCo-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>\n\n* docs: cross-link rivet-is-not.md ↔ what-is-rivet.md — different registers, same tool\n\nThe just-shipped docs/rivet-is-not.md and the existing\ndocs/what-is-rivet.md both carry a \"What rivet is NOT\" framing — but\nin different registers. Pre-existing what-is-rivet.md §6 is a\nmarketing-voice bullet list (\"Honesty over hype\" plus seven items\nmixing real limits with v0.5.0 roadmap pointers). New\ndocs/rivet-is-not.md is the SEooC Safety Manual draft in\nCederqvist register.\n\nBoth audiences are legitimate:\n  - what-is-rivet.md is the positioning doc (carries the\n    `<!-- rivet-docs-check: design-doc-aspirational-ok -->` marker)\n    and is the right entry point for someone evaluating Rivet.\n  - rivet-is-not.md is the integrator-facing categorical-limits\n    doc and is the right reference for someone building Rivet into\n    a safety case.\n\nAdding one-sentence cross-references in each direction so a reader\nlanding on either doc can find the other. Neither doc is deleted or\nmerged — they describe the same tool from opposite directions and\nserve different points in the integrator lifecycle.\n\nOut of scope for this commit:\n  - what-is-rivet.md staleness (it's still v0.4.1 / 2026-04-19\n    positioning with several \"planned for v0.5.0\" markers that\n    have shipped or rescoped in v0.10.x). Tracked as a follow-up;\n    the design-doc-aspirational-ok marker acknowledges the lag.\n  - Any consolidation of the two §6/bullets vs §1-§8/categorical\n    treatments. Both currently land, in their respective registers.\n\nRefs: FEAT-135, REQ-072\n\nCo-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>\n\n* docs: dogfood frontmatter on the three new/touched docs + REQ-073 for the broader docs/ structure gap\n\nUser flag 2026-05-19: \"i think the whole docs folder is not well\nstructured and planning stuff in which might be interesting for\nsome time but...\" The point lands. Of 19 depth-1 markdown files\nunder docs/, 11 lack YAML frontmatter — they are invisible to\n`rivet docs`, the dashboard Documents view, and the [[ID]] linkage\nlayer. Rivet does not dogfood its own documents-as-artifacts model.\n\nThis commit handles three things, no more:\n\n  1. Add frontmatter to the three docs introduced or touched in\n     this PR — so the immediate output of this PR doesn't itself\n     widen the dogfood gap:\n       docs/rivet-is-not.md\n         id: DOC-RIVET-LIMITS · type: safety-manual-draft · status: draft\n       docs/research/cross-git-repo-investigation.md\n         id: DOC-CROSS-GIT-INV-2026-05-19 · type: investigation · status: snapshot\n       docs/what-is-rivet.md\n         id: DOC-RIVET-INTRO · type: positioning · status: current\n\n  2. Track the broader docs/ structural problem as REQ-073 in the\n     existing change list (artifacts/cross-git-investigation.yaml).\n     The requirement enumerates: the 11 skipped files; the\n     three-subdir mixing (design/, plans/, research/); the\n     ephemeral-vs-reference lifecycle question; and a candidate\n     `rivet docs --check-frontmatter` CI gate that would close the\n     dogfood loop. Linked back to FEAT-135.\n\n  3. Document the lifecycle distinction explicitly via the\n     `status: snapshot` field on the investigation report —\n     contrasting it with `status: current` for the positioning\n     doc. Future docs in docs/research/ should follow the same\n     pattern until REQ-073's subdir policy lands.\n\nOut of scope for this commit:\n  - Frontmatter for the other 11 docs (REQ-073 tracks it; touching\n    them now would make this PR a docs-bulk-edit).\n  - Reorganising docs/ subdirs (REQ-073 (b)).\n  - The `rivet docs --check-frontmatter` sub-command (REQ-073 (d)).\n\nRefs: FEAT-135, REQ-073\n\nCo-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>\n\n* docs(req): REQ-074 — independent audit of every docs/ markdown against {useful, done-vs-planned, still-true}\n\nUser feedback 2026-05-19 after REQ-073 landed:\n\n  \"i would question to validate the need of all the documents\n   against an independent subagent validating the usefulness as\n   well as if it describes something done or planned or compared\n   if it is still true\"\n\nFiling as REQ-074 in the same change list. The audit is a phase\ndistinct from acting on the audit:\n\n  Phase 1: mechanical classification per file — KEEP / UPDATE /\n           ARCHIVE / DELETE / INVESTIGATE — done by an independent\n           reviewer (subagent or human, NOT the original author).\n  Phase 2: act on each verdict, one PR per cluster.\n\nREQ-074 connects to REQ-073: do the audit first, then frontmatter\nthe survivors — avoid stamping `id:` + `title:` onto docs we're\nabout to delete.\n\nFirst-pass audit launched together with this commit (independent\nsubagent reading docs/ + spot-checking against current main +\nv0.10.1 binary state). Verdict output will be captured separately\nand linked back to REQ-074.\n\nRefs: FEAT-135, REQ-074\n\nCo-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>\n\n* docs(req): add executable Acceptance criteria to REQ-062..REQ-074\n\nUser feedback 2026-05-19: \"ensure that these requirement have a\nvalidation with a step which can be executed and tested against\".\n\nA REQ without acceptance criteria is a wish, not a requirement.\nAdding an `Acceptance:` block to the description of every one of\nthe 13 requirements in artifacts/cross-git-investigation.yaml.\n\nEach block answers the same three questions:\n\n  1. What is the literal action / shell command that demonstrates\n     the REQ is satisfied?\n  2. What output / exit code / diagnostic is expected?\n  3. Where is the regression-test fixture that locks the behaviour?\n\nExamples of the register:\n\n  REQ-062  → \"Create a project with one well-formed artifact YAML\n              and one malformed (top-level `id:` instead of\n              `artifacts:` wrapper). Run `rivet validate --format\n              json`. Verify exit code 1, `result: FAIL`, `errors\n              >= 1`, and at least one entry in `diagnostics[]`\n              with `rule: artifact-parse-error`...\"\n\n  REQ-072  → \"`grep -c \"AoU-X[1-7]\" docs/rivet-is-not.md` returns\n              exactly 7.\"\n\n  REQ-073  → \"`rivet validate 2>&1 | grep -c \"no YAML frontmatter\"`\n              returns 0 (currently 11 on main as of this commit).\"\n\n  REQ-074  → \"Re-running the audit yields zero new INVESTIGATE\n              verdicts and a strictly smaller UPDATE+DELETE count\n              than the previous pass.\"\n\nEach criterion is testable from the shell without ambiguity. None\nare aspirational; all are mechanical or doc-grep checks.\n\nSchema note: Acceptance lives inside the description prose block,\nnot as a separate `acceptance:` field. That keeps the artifacts\nschema-conformant (no `field-undefined` INFOs) while still letting\na reviewer find the verification step instantly via a Ctrl-F on\n\"Acceptance:\" — 13 hits, 13 REQs.\n\nRefs: FEAT-135, REQ-062, REQ-063, REQ-064, REQ-065, REQ-066,\n      REQ-067, REQ-068, REQ-069, REQ-070, REQ-071, REQ-072,\n      REQ-073, REQ-074\n\nCo-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>\n\n* docs(audit): land REQ-074 first-pass docs audit + record doc-vs-artifact graph-unification gap as REQ-073 side-finding\n\nUser feedback drove REQ-074 (independent audit of all 52 docs/\nmarkdown files against {useful, done-vs-planned, still-true}).\nFirst-pass audit completed by independent subagent:\n\n  Verdict counts: KEEP 18 / UPDATE 11 / ARCHIVE 16 / DELETE 0 /\n                  INVESTIGATE 4 / out-of-scope-this-PR 3\n\n  Five worst offenders (most likely to mislead a reader today):\n    1. docs/schemas.md     — lists 5 of 28 shipped schemas\n    2. docs/architecture.md — module table omits ~half of rivet-core;\n                              schema table same defect as schemas.md;\n                              claims OSLC shipped as CLI surface (it isn't)\n    3. docs/oracles.md     — lists 3 of 5 shipped oracles (missing\n                              `sources` and `ai-defects-open` — the\n                              latter is load-bearing for the\n                              tool-qualification dossier's TD1 layer)\n    4. docs/roadmap.md     — marks v0.4.0-and-later as \"Phase 3 — Planned\"\n                              while v0.10.x has shipped most of it\n    5. docs/audit-report.md — 2026-03-09 snapshot still indexed as\n                              a current doc; claims \"Fuzz/Mutation\n                              NOT IMPLEMENTED\" while CI runs both\n\n  Three exemplars (use as templates for the rest):\n    1. design/tool-qualification-dossier.md — §0 honest-scope\n    2. design/polarion-reqif-fidelity.md   — field-by-field LOSSLESS/LOSSY/ABSENT\n    3. design/status-gate-rules.md         — self-declares \"shipped (date, branch)\"\n\n  Directory-structure proposal (8 subdirs by lifecycle):\n    reference/ architecture/ design/ plans/ historical/\n    research/ marketing/ status/\n\n  Two CI checks that would prevent two-thirds of staleness:\n    1. `last-verified:` older than 90 days → warning\n       (extend the cited-source-stale rule to docs)\n    2. Prose-numeric claims (\"28 schemas\") must either be\n       `{{stats:...}}` embeds or carry `<!-- AUDIT: verified DATE -->`\n\n  Single most cost-effective fix: move 12× `plans/2026-03-*.md` +\n  `audit-report.md` to `docs/historical/`. Removes most of the rot\n  in one PR.\n\nCaptured at `docs/research/2026-05-19-docs-audit.md` with\nfrontmatter (id: DOC-DOCS-AUDIT-2026-05-19, type: audit,\nstatus: snapshot). Referenced from REQ-074's Evidence section via\n`[[DOC-DOCS-AUDIT-2026-05-19]]` document-cross-reference syntax.\n\n────────────────────────────────────────────────────────────────\n\nSIDE-FINDING — recorded under REQ-073 description:\n\nTried to add `traces-to: DOC-DOCS-AUDIT-2026-05-19` to REQ-074's\ntyped links. `rivet validate` emitted:\n\n  ERROR: [REQ-074] link 'traces-to' targets\n         'DOC-DOCS-AUDIT-2026-05-19' which does not exist\n  broken cross-refs: 1\n\nDocuments declared with `id:` in markdown frontmatter are NOT\naddressable as typed-link targets from artifact YAML. The\nartifact store and the document store share an ID namespace but\ndo not unify into one graph. The `[[ID]]` syntax in doc bodies\nbridges from docs → artifacts; the reverse bridge does not exist.\n\nThis is a real dogfood gap — Rivet ships two graphs that look\nunified at the namespace level but aren't. Recorded as a sub-clause\nof REQ-073 (b)'s docs/ structure decision: when REQ-073 (b)\ndecides the structure, it should also decide whether documents\nbecome first-class artifacts in the typed graph or remain a\nparallel system. Workaround in this commit: artifact YAML\nreferences the audit via prose `[[DOC-ID]]` only; typed link is\nomitted.\n\nRefs: FEAT-135, REQ-073, REQ-074\n\nCo-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>\n\n* fix: green up PR #304 — doc-check markers + DD-067 rationale field placement\n\nPR #304's CI surfaced two real failures (the other five — Playwright,\nMiri, Proptest, Kani, Rocq — are the known pre-existing flakes).\n\n── Docs Check: 7 violations across 2 files ──\n\n  cross-git-repo-investigation.md — 6 violations:\n    ArtifactCounts ×2  (\"10 scenarios\")\n    ArtifactIdValidity ×2  (REQ-ABS-001, ANCHOR-ACME-001 — test-bed\n      artifacts that live in /tmp/rivet-cross-git/, not the store)\n    SubcommandReferences ×2  (rivet migrate, rivet workspace —\n      referenced precisely because the findings are about their\n      absence)\n  rivet-is-not.md — 1 violation:\n    ArtifactIdValidity  (REQ-SW-022 — an illustrative supplier\n      requirement ID in §3 prose)\n\n  Fix: the investigation doc is a `status: snapshot` research\n  document — same category as docs/design/ and docs/plans/, which\n  doc_check auto-treats as design docs. Added the\n  `design-doc-aspirational-ok` marker (with a comment explaining the\n  snapshot rationale and noting that doc_check should learn to\n  auto-cover docs/research/ — a follow-up under REQ-073). For\n  rivet-is-not.md, which is a reference doc and must stay\n  doc-check-clean without a blanket marker, used a precise\n  `<!-- rivet-docs-check: ignore REQ-SW-022 -->` on the one line.\n\n  Result: doc-check PASS (57 files, 0 violations).\n\n── Test: 2 failures, both from DD-067 ──\n\n  test_dogfood_validate and stats_json_counts_match_validate both\n  failed because DD-067 carried its `rationale` as a TOP-LEVEL\n  artifact key. The `design-decision` schema (schemas/dev.yaml)\n  declares `rationale` as a *required field* — it belongs inside\n  `fields:`, not at artifact top level. Moved it in.\n\n  Worth recording: the salsa-cached `rivet validate` path reported\n  6 errors while `rivet stats` and `rivet validate --direct`\n  reported 7 — the missing-required-field on DD-067 was visible to\n  the direct validator and to stats but NOT to the salsa-incremental\n  path. That divergence is a real salsa-incremental-correctness bug,\n  F2-adjacent (two code paths disagreeing on the same input). It is\n  not introduced by this PR and not in scope to fix here, but it is\n  why the CI Test job caught DD-067 while a local salsa-cached\n  `rivet validate` did not. Flagging for a future REQ.\n\n  Both tests verified green locally:\n    test_dogfood_validate ... ok\n    stats_json_counts_match_validate ... ok\n\nRefs: FEAT-135, REQ-073\n\nCo-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.7 <noreply@anthropic.com>",
+          "timestamp": "2026-05-20T11:07:57-05:00",
+          "tree_id": "2da8150113bd609b9005b6087ca25f835eb535fa",
+          "url": "https://github.com/pulseengine/rivet/commit/2edaf06e98ad61395bdb0653b917770c992abfc3"
+        },
+        "date": 1779293668837,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 83344,
+            "range": "± 1162",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 900971,
+            "range": "± 4848",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 14039810,
+            "range": "± 516231",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2120,
+            "range": "± 14",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 27194,
+            "range": "± 361",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 374533,
+            "range": "± 2510",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 93,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 94,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1428743,
+            "range": "± 24363",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 147834,
+            "range": "± 572",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1763095,
+            "range": "± 37286",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 28203174,
+            "range": "± 1358017",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 129190,
+            "range": "± 1426",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1120998,
+            "range": "± 10644",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 17790355,
+            "range": "± 763016",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4396,
+            "range": "± 175",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 61531,
+            "range": "± 543",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 792986,
+            "range": "± 5398",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 62515,
+            "range": "± 1241",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 695312,
+            "range": "± 9570",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8671326,
+            "range": "± 237752",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 790,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7790,
+            "range": "± 107",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 118056,
+            "range": "± 808",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 23040,
+            "range": "± 463",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 169623,
+            "range": "± 2269",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1503591,
+            "range": "± 27179",
             "unit": "ns/iter"
           }
         ]
