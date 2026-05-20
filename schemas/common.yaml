@@ -353,6 +353,18 @@ artifact-types:
         description: >
           Optional contract / PO / DIA reference for traceability into
           the legal artefact (ISO 26262-8 §5 DIA, ASPICE SUP.10).
+      - name: cited-source
+        type: mapping
+        required: false
+        description: >
+          Optional sha256-stamped reference to the upstream document this
+          anchor delegates to. The mapping carries `uri`, `kind` (file |
+          reqif | url | github | oslc | polarion), `sha256`, and
+          `last-checked`. `rivet supplier pull` fetches it into the
+          local supplier cache; `rivet validate` checks drift. Declared
+          here so the field that makes `external-anchor` functional for
+          federation is no longer an undefined-field INFO at validate
+          time (REQ-066). See `rivet docs schema-cited-sources`.
     link-fields: []
 
 # ──────────────────────────────────────────────────────────────────────────

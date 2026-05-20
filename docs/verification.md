@@ -134,7 +134,7 @@ a qualification gate:
 | `deny`         | `cargo deny`        | License violations, duplicate deps     |
 | `vet`          | `cargo vet`         | Supply chain verification              |
 | `coverage`     | `cargo llvm-cov`    | Code coverage metrics                  |
-| `msrv`         | MSRV 1.85 check     | Backward compatibility ([[REQ-011]])   |
+| `msrv`         | MSRV 1.89 check     | Backward compatibility ([[REQ-011]])   |
 
 ## 9. Requirement-to-Test Mapping
 
