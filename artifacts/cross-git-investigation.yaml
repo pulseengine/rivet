@@ -1025,3 +1025,132 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-7
       timestamp: 2026-05-19T19:30:00Z
+
+  # ── REQ-075: duplicate artifact ID detection ──────────────────────────
+  - id: REQ-075
+    type: requirement
+    title: "rivet validate must detect duplicate artifact IDs — silent last-write-wins today"
+    status: draft
+    description: |
+      Two artifacts that declare the same `id` — whether in two files or
+      twice in one file — are silently collapsed. The CLI load loop does
+      `store.upsert(artifact)` per artifact; `upsert` is update-or-insert
+      keyed by ID, so the second definition overwrites the first. By the
+      time `validate::validate` runs there is only one survivor, so the
+      validator is structurally blind to the collision.
+
+      Empirically confirmed 2026-05-20: a project with `artifacts/file-a.yaml`
+      and `artifacts/file-b.yaml` both declaring `id: REQ-DUP` produces
+      `Result: PASS (0 warnings)` and a store with one REQ-DUP entry
+      (file-b's — file-a's definition destroyed).
+
+      `docs/artifact-format` explicitly states "IDs must be unique across
+      all artifact files in the project" — a stated invariant that
+      nothing enforces. This is the unresolved core of investigation
+      scenario S8 (naming collisions) and a direct sibling of REQ-062:
+      same F2 defect family — silent data loss under a green PASS.
+
+      Cross-repo `prefix:ID` references are namespaced (e.g.
+      `acme:WIDGET-1` vs a local `WIDGET-1` do not collide) and are NOT
+      in scope here. Two *local* artifacts colliding is the bug.
+
+      The fix MUST detect the collision at LOAD time, where both copies
+      still exist — not in `validate::validate`, which only ever sees
+      the survivor. When a load would `upsert` over an already-present
+      ID, record a collision and emit an Error-severity Diagnostic with
+      `rule: duplicate-artifact-id` whose message names BOTH source
+      files and the colliding ID. Reuse the `load_artifacts_with_skips`
+      load-report channel REQ-062 established.
+
+      Evidence:
+        - empirical reproducer (2026-05-20)
+        - docs/artifact-format — the unenforced uniqueness invariant
+        - docs/research/cross-git-repo-investigation.md — scenario S8
+        - [[REQ-062]] — the sibling fix; reuse its load-report channel
+      Acceptance:
+        - Create a project with two artifact files that both declare
+          `id: REQ-DUP`. Run `rivet validate --format json`.
+        - Verify exit code non-zero, `result: FAIL`, `errors >= 1`,
+          and a `diagnostics[]` entry with `rule: duplicate-artifact-id`
+          whose message names both file paths and `REQ-DUP`.
+        - Verify the same for two `id: REQ-DUP` entries within a SINGLE
+          file's `artifacts:` list.
+        - Verify a cross-repo `acme:WIDGET-1` + local `WIDGET-1` pair
+          does NOT trigger it (prefix namespacing is correct).
+        - Regression-test in `rivet-cli/tests/cli_commands.rs`.
+    tags: [validate, p1, duplicate-id, f2-family]
+    fields:
+      priority: must
+      category: functional
+      baseline: v0.11.0-track
+    links:
+      - type: derives-from
+        target: FEAT-135
+      - type: traces-to
+        target: REQ-062
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-05-20T09:00:00Z
+
+  # ── REQ-076: orphan artifacts visible to validate, not only stats ─────
+  - id: REQ-076
+    type: requirement
+    title: "Orphan artifacts must be visible to rivet validate, not only rivet stats"
+    status: draft
+    description: |
+      `rivet stats` reports `Orphan artifacts (no links): N` and a JSON
+      `orphans` array. `rivet validate` never mentions orphans at all
+      (confirmed 2026-05-20: `rivet validate 2>&1 | grep -ic orphan`
+      returns 0). An orphan — an artifact with no inbound and no
+      outbound links, disconnected from the traceability graph —
+      passes `rivet validate` clean. Orphan detection exists but is
+      quarantined in a command nobody gates CI on.
+
+      Rivet's own main carries 5 orphans today — three local
+      (SL-AI-003, SL-TQ-004, SL-TQ-005) and two spar-external — none
+      of which `rivet validate` surfaces.
+
+      The fix MUST make `rivet validate` emit one Diagnostic per orphan
+      with `rule: orphan-artifact`. Severity: Warning by default,
+      promotable to Error under a new `--strict-orphans` flag (and
+      already escalated by the existing `--fail-on warning`). Warning,
+      not hard-Error, by default for one concrete reason: the rivet
+      repo itself has 5 orphans, so a hard-error default would make
+      Rivet's own `validate` fail — REQ-062's F2b lesson applied to
+      severity. Mirrors the established `cited-source-drift` pattern
+      (Warning by default, Error with `--strict-cited-sources`).
+
+      The `orphans` computation already exists for `rivet stats`; this
+      REQ reuses it — the work is surfacing the same finding through the
+      `validate` diagnostic channel, not re-deriving it.
+
+      Evidence:
+        - `rivet stats` output: "Orphan artifacts (no links): 5"
+        - `rivet validate` output: zero mentions of "orphan"
+        - the 5 orphan IDs on rivet's own main (2026-05-20)
+      Acceptance:
+        - In a project with one artifact that has no links, run
+          `rivet validate --format json`. Verify a `diagnostics[]`
+          entry with `rule: orphan-artifact` and `severity: warning`
+          naming the orphan.
+        - Run `rivet validate --strict-orphans` — verify the same
+          diagnostic is `severity: error` and the run exits non-zero.
+        - Verify `rivet stats` orphan count and the count of
+          `orphan-artifact` diagnostics from `rivet validate` agree
+          for the same project.
+        - Regression-test in `rivet-cli/tests/cli_commands.rs`.
+    tags: [validate, orphans, traceability, strict-flag]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.11.0-track
+    links:
+      - type: derives-from
+        target: FEAT-135
+      - type: traces-to
+        target: REQ-062
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+      timestamp: 2026-05-20T09:00:00Z
