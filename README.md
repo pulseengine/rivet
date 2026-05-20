@@ -56,6 +56,13 @@ This is not an audit-after-the-fact tool. The point is that the agent
 *authors* against the typed schema while the oracle is firing — so the
 evidence is born compliant instead of being reverse-engineered later.
 
+> **Before you build Rivet into a process, read [What Rivet is
+> not](docs/rivet-is-not.md).** It enumerates — in the register of an
+> ISO 26262-10 SEooC Safety Manual — the boundaries of Rivet's
+> competence and the obligations that remain the integrator's, not the
+> tool's. It is shorter than this README; reading it first saves a
+> day's debugging.
+
 ## Install
 
 ```bash

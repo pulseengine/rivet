@@ -82,7 +82,7 @@ audit, deny, vet, coverage).
 
 [[REQ-009]] ties test results to GitHub releases as evidence artifacts.
 
-[[REQ-011]] pins Rust edition 2024 with MSRV 1.85.
+[[REQ-011]] pins Rust edition 2024 with MSRV 1.89.
 
 ### 3.7 V-Model Traceability Flow
 
