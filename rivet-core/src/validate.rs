@@ -519,6 +519,18 @@ fn link_satisfies_field(actual: &str, required: &str) -> bool {
             .is_some_and(|base| base == required)
 }
 
+/// An artifact whose ID is `prefix:ID`-qualified was loaded from a linked
+/// external project (`rivet sync`), present in the store ONLY so the
+/// consumer's `prefix:ID` cross-links resolve. It must NOT be subjected to
+/// the consumer's own per-artifact validation — that is the supplier's
+/// gate, surfaced opt-in via `rivet validate --with-externals-validate`
+/// (REQ-065 / AoU-X1). Every per-artifact diagnostic pass skips these
+/// (REQ-082). The broken-link check is unaffected — it reads `graph`,
+/// which is built from the full store, so cross-links still resolve.
+fn is_external_artifact(artifact: &crate::model::Artifact) -> bool {
+    artifact.id.contains(':')
+}
+
 /// Structural validation only (phases 1-7).
 ///
 /// Validates types, required fields, allowed values, link cardinality,
@@ -577,6 +589,11 @@ pub fn validate_structural_with_externals_and_variant(
 
     // 1. Check that every artifact has a known type
     for artifact in store.iter() {
+        // REQ-082: external (prefixed) artifacts are present only for
+        // cross-link resolution — do not validate the supplier's project.
+        if is_external_artifact(artifact) {
+            continue;
+        }
         let type_def = match lookup_type(artifact, schema, externals) {
             TypeLookup::Found(td) => td,
             TypeLookup::Unknown => {
@@ -922,6 +939,10 @@ pub fn validate_structural_with_externals_and_variant(
     use std::collections::BTreeSet;
     let known_link_types: BTreeSet<&str> = schema.link_types.keys().map(String::as_str).collect();
     for artifact in store.iter() {
+        // REQ-082: skip external (prefixed) artifacts — supplier's gate.
+        if is_external_artifact(artifact) {
+            continue;
+        }
         let (ext_prefix, ext_known): (Option<&str>, BTreeSet<&str>) =
             match artifact.id.split_once(':') {
                 Some((prefix, _)) => match externals.get(prefix) {
@@ -981,6 +1002,10 @@ pub fn validate_structural_with_externals_and_variant(
 
     // 9. Check unknown fields (not defined in schema for this artifact type)
     for artifact in store.iter() {
+        // REQ-082: skip external (prefixed) artifacts — supplier's gate.
+        if is_external_artifact(artifact) {
+            continue;
+        }
         if let Some(type_def) = schema.artifact_type(&artifact.artifact_type) {
             let known_fields: std::collections::HashSet<&str> =
                 type_def.fields.iter().map(|f| f.name.as_str()).collect();
@@ -1024,6 +1049,10 @@ pub fn validate_structural_with_externals_and_variant(
     // unknown-link-type pass's per-(artifact, link-type) policy.
     // (BTreeSet is already imported at the top of pass 8 above.)
     for artifact in store.iter() {
+        // REQ-082: skip external (prefixed) artifacts — supplier's gate.
+        if is_external_artifact(artifact) {
+            continue;
+        }
         let linked_targets: BTreeSet<&str> =
             artifact.links.iter().map(|l| l.target.as_str()).collect();
         let mut warned: BTreeSet<String> = BTreeSet::new();
@@ -1242,6 +1271,10 @@ pub fn validate_variants(
     let known_sorted: Vec<&str> = known_variants.iter().map(String::as_str).collect();
 
     for artifact in store.iter() {
+        // REQ-082: skip external (prefixed) artifacts — supplier's gate.
+        if is_external_artifact(artifact) {
+            continue;
+        }
         // ── 1. variant-key cross-check ──────────────────────────────
         for variant_key in artifact.fields_per_variant.keys() {
             if !known_variants.contains(variant_key) {

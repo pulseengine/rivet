@@ -1018,6 +1018,113 @@ fn validate_with_externals_validate_surfaces_supplier_diagnostics() {
     );
 }
 
+/// REQ-082: a linked external repo's OWN schema violations must not be
+/// counted against the consumer's default `rivet validate`. External
+/// (`prefix:ID`) artifacts are in the store only so cross-links resolve;
+/// validating the supplier's project is opt-in (`--with-externals-validate`).
+///
+/// rivet: verifies REQ-082
+#[test]
+fn validate_does_not_count_external_repo_violations() {
+    let root = tempfile::tempdir().expect("temp dir");
+    let supplier = root.path().join("supplier");
+    let consumer = root.path().join("consumer");
+    std::fs::create_dir_all(&supplier).unwrap();
+    std::fs::create_dir_all(&consumer).unwrap();
+
+    // Supplier: a dev project carrying a real schema violation
+    // (out-of-enum priority) — the kind of error that, before REQ-082,
+    // flooded the consumer's error total after `rivet sync`.
+    let init_s = Command::new(rivet_bin())
+        .args([
+            "init",
+            "--preset",
+            "dev",
+            "--dir",
+            supplier.to_str().unwrap(),
+        ])
+        .output()
+        .expect("init supplier");
+    assert!(
+        init_s.status.success(),
+        "init supplier: {}",
+        String::from_utf8_lossy(&init_s.stderr)
+    );
+    std::fs::write(
+        supplier.join("artifacts").join("bad.yaml"),
+        "artifacts:\n\
+         \x20 - id: REQ-SUPPLIER-BAD\n    type: requirement\n\
+         \x20   title: Supplier req with an invalid priority\n\
+         \x20   status: approved\n\
+         \x20   fields: {priority: TotallyInvalid, category: functional}\n",
+    )
+    .expect("write supplier bad.yaml");
+
+    let init_c = Command::new(rivet_bin())
+        .args([
+            "init",
+            "--preset",
+            "dev",
+            "--dir",
+            consumer.to_str().unwrap(),
+        ])
+        .output()
+        .expect("init consumer");
+    assert!(
+        init_c.status.success(),
+        "init consumer: {}",
+        String::from_utf8_lossy(&init_c.stderr)
+    );
+    std::fs::write(
+        consumer.join("rivet.yaml"),
+        format!(
+            "project:\n  name: consumer\n  version: \"0.1.0\"\n  schemas: [common, dev]\n\
+             externals:\n  sup:\n    path: {}\n    prefix: sup\n\
+             sources:\n  - path: artifacts\n    format: generic-yaml\n",
+            supplier.display()
+        ),
+    )
+    .expect("write consumer rivet.yaml");
+    let sync = Command::new(rivet_bin())
+        .args(["--project", consumer.to_str().unwrap(), "sync"])
+        .output()
+        .expect("rivet sync");
+    assert!(
+        sync.status.success(),
+        "sync: {}",
+        String::from_utf8_lossy(&sync.stderr)
+    );
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            consumer.to_str().unwrap(),
+            "validate",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("validate");
+    let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).expect("validate JSON");
+    let diags = parsed
+        .get("diagnostics")
+        .and_then(|v| v.as_array())
+        .expect("diagnostics array");
+    let external_diags: Vec<_> = diags
+        .iter()
+        .filter(|d| {
+            d.get("artifact_id")
+                .and_then(|a| a.as_str())
+                .is_some_and(|id| id.starts_with("sup:"))
+        })
+        .collect();
+    assert!(
+        external_diags.is_empty(),
+        "the consumer's validate must not carry diagnostics for the \
+         external repo's own artifacts; got: {external_diags:?}"
+    );
+}
+
 // ── rivet stats ─────────────────────────────────────────────────────────
 
 /// `rivet stats --format json` produces valid JSON with total count.

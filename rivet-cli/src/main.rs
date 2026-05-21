@@ -4941,6 +4941,12 @@ fn cmd_validate(
         Severity::Warning
     };
     for orphan_id in graph.orphans(&store) {
+        // REQ-082: an external (prefixed) artifact appearing orphaned in
+        // the consumer's graph is the supplier's concern, not a finding
+        // against the consumer.
+        if orphan_id.contains(':') {
+            continue;
+        }
         let mut diag = validate::Diagnostic::new(
             orphan_severity,
             Some(orphan_id.clone()),
@@ -5050,10 +5056,28 @@ fn cmd_validate(
         }
     }
 
-    // Lifecycle completeness check
-    let all_artifacts: Vec<_> = store.iter().cloned().collect();
+    // Lifecycle completeness check — consumer's own artifacts only;
+    // external (prefixed) artifacts are the supplier's gate (REQ-082).
+    let all_artifacts: Vec<_> = store
+        .iter()
+        .filter(|a| !a.id.contains(':'))
+        .cloned()
+        .collect();
     let lifecycle_gaps =
         rivet_core::lifecycle::check_lifecycle_completeness(&all_artifacts, &schema, &graph);
+
+    // REQ-082: external (prefixed `prefix:ID`) artifacts are loaded into
+    // the store only so the consumer's `prefix:ID` cross-links resolve.
+    // Their own schema / rule / conditional-rule / traceability
+    // violations are the SUPPLIER's gate — surfaced opt-in via
+    // `--with-externals-validate` (REQ-065 / AoU-X1) — never counted
+    // against the consumer's default run. Drop every diagnostic keyed to
+    // a prefixed external ID, whichever validation pass produced it
+    // (structural, conditional, traceability, salsa or direct). A broken
+    // cross-link FROM a consumer artifact is keyed to the consumer's own
+    // ID and is correctly kept; `artifact-parse-error` diagnostics carry
+    // no artifact_id and are kept.
+    diagnostics.retain(|d| !d.artifact_id.as_deref().is_some_and(|id| id.contains(':')));
 
     let errors = diagnostics
         .iter()
