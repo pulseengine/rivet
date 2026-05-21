@@ -1,3 +1,11 @@
+---
+id: DOC-FEATURE-MODEL-BINDINGS
+title: Feature Binding File Format
+type: reference
+status: current
+tags: [reference, variant, feature-model, bindings]
+---
+
 # Feature Binding File Format
 
 A binding file maps features from the feature model to the artifacts and

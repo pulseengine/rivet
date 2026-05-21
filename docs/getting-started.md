@@ -1,3 +1,11 @@
+---
+id: DOC-GETTING-STARTED
+title: Getting Started
+type: guide
+status: current
+tags: [guide, onboarding, cli, getting-started]
+---
+
 # Getting Started
 
 Rivet is a schema-driven SDLC artifact manager for safety-critical systems. It keeps

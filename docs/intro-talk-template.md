@@ -1,3 +1,11 @@
+---
+id: DOC-INTRO-TEMPLATE
+title: Introducing rivet — presenter template
+type: positioning
+status: current
+tags: [positioning, pitch, marketing, talk-template]
+---
+
 # Introducing rivet — presenter template
 
 A reusable structure for introducing rivet in 5, 15, or 30 minutes. Pick the audience variant in §1, the demo depth in §3, and the close in §5. Hook and thesis (§2) are the same for all audiences — that's the canonical message.

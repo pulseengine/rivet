@@ -1,3 +1,11 @@
+---
+id: DOC-ADOPTION-STATUS
+title: rivet-validate adoption status
+type: status
+status: snapshot
+tags: [adoption, status, audit, dogfood]
+---
+
 # `rivet-validate` adoption status
 
 This file records the most recent run of

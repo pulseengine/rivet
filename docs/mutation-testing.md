@@ -1,3 +1,11 @@
+---
+id: DOC-MUTATION-TESTING
+title: Mutation testing with cargo-mutants
+type: guide
+status: current
+tags: [guide, testing, mutation, cargo-mutants]
+---
+
 # Mutation testing with cargo-mutants
 
 This document captures rivet's mutation-testing pattern so other

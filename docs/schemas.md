@@ -1,3 +1,11 @@
+---
+id: DOC-SCHEMA-REFERENCE
+title: Schema Reference
+type: reference
+status: current
+tags: [schema, reference, stpa, aspice, cybersecurity, safety]
+---
+
 # Schema Reference
 
 Rivet schemas are YAML files that define artifact types, link types, field constraints,
@@ -8,15 +16,66 @@ loads `common` plus one or more domain schemas.
 
 ## Available Schemas
 
-| Schema          | Version | Types | Rules | Domain                                |
-|-----------------|---------|-------|-------|---------------------------------------|
-| `common`        | 0.1.0   | --    | --    | Base fields and link types            |
-| `dev`           | 0.1.0   | 3     | 2     | Software development tracking         |
-| `stpa`          | 0.1.0   | 10    | 7     | STPA safety analysis                  |
-| `aspice`        | 0.2.0   | 14    | 10    | Automotive SPICE V-model              |
-| `cybersecurity` | 0.1.0   | 10    | 10    | Cybersecurity (SEC.1-4 / ISO 21434)   |
+The `schemas/` directory ships a catalogue of domain schemas covering systems-safety
+analysis, automotive process models, functional-safety standards, AI-safety regulation,
+and supply-chain compliance, plus a set of *bridge* schemas that wire those domains
+together. Every domain schema implicitly extends `common`.
 
-Schemas are located in `schemas/` relative to the project directory.
+This catalogue grows; the table below is a snapshot, not a hard contract. The
+authoritative inventory is whatever `schemas/*.yaml` actually contains in the repository
+you are using -- run `ls schemas/` to see it.
+
+### Domain schemas
+
+<!-- AUDIT: verified 2026-05-21 -->
+As of this writing the directory ships 21 domain schemas and 8 bridge schemas.
+
+| Schema           | Domain                                                            |
+|------------------|-------------------------------------------------------------------|
+| `common`         | Base fields and link types shared by every schema                 |
+| `dev`            | Lightweight software-development tracking (Rivet dogfoods this)   |
+| `stpa`           | STPA systems-theoretic process analysis (the full four-step model)|
+| `stpa-sec`       | STPA-Sec security-extended analysis                               |
+| `stpa-ai`        | STPA-for-AI: ML-lifecycle hazards, data provenance, retraining     |
+| `aspice`         | Automotive SPICE PAM v4.0 V-model                                 |
+| `cybersecurity`  | Automotive cybersecurity (SEC.1-4 / ISO/SAE 21434)                |
+| `iso-26262`      | ISO 26262 road-vehicle functional safety                          |
+| `iso-pas-8800`   | ISO/PAS 8800 AI safety lifecycle for road vehicles                |
+| `sotif`          | ISO 21448 Safety Of The Intended Functionality                   |
+| `do-178c`        | DO-178C airborne software certification                           |
+| `en-50128`       | EN 50128 railway software safety                                  |
+| `iec-61508`      | IEC 61508 functional safety of E/E/PE systems                     |
+| `iec-62304`      | IEC 62304 medical-device software lifecycle                       |
+| `eu-ai-act`      | EU AI Act technical documentation for high-risk AI systems        |
+| `safety-case`    | GSN (Goal Structuring Notation) structured safety arguments       |
+| `aadl`           | AADL architecture components, flows, and analysis results         |
+| `score`          | Eclipse SCORE metamodel (ASIL-rated open-source software)         |
+| `supply-chain`   | Software supply chain: SBOM, build provenance, CVE tracking       |
+| `vv-coverage`    | Repo-level V&V technique coverage matrix                          |
+| `research`       | Market research, competitive analysis, patent landscape           |
+
+### Bridge schemas
+
+Bridge schemas declare cross-domain link types so artifacts modelled under one schema can
+trace into another (e.g. an STPA hazard linked to an ISO 26262 safety goal). Load a bridge
+schema alongside both of the domain schemas it connects.
+
+| Bridge schema                     | Connects                                  |
+|-----------------------------------|--------------------------------------------|
+| `stpa-dev.bridge`                 | STPA analysis <-> `dev` requirements        |
+| `iso-8800-stpa.bridge`            | ISO/PAS 8800 <-> STPA                       |
+| `sotif-stpa.bridge`               | SOTIF <-> STPA                              |
+| `eu-ai-act-stpa.bridge`           | EU AI Act <-> STPA                          |
+| `eu-ai-act-aspice.bridge`         | EU AI Act <-> ASPICE                        |
+| `safety-case-stpa.bridge`         | GSN safety case <-> STPA                    |
+| `safety-case-eu-ai-act.bridge`    | GSN safety case <-> EU AI Act               |
+| `supply-chain-dev.bridge`         | Supply chain <-> `dev` requirements         |
+
+Schemas are located in `schemas/` relative to the project directory. The remaining
+sections of this document describe the structurally distinct schemas (`common`, `dev`,
+`stpa`, `aspice`, `cybersecurity`) field-by-field; the standards-aligned schemas above
+follow the same shape and are best read directly from their YAML, which carries an
+extensive header comment per file.
 
 ---
 

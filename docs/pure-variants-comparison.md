@@ -1,3 +1,11 @@
+---
+id: DOC-PURE-VARIANTS-COMPARISON
+title: Rivet vs pure::variants — Feature Framework Comparison
+type: research
+status: snapshot
+tags: [research, comparison, variant, feature-model, pure-variants]
+---
+
 # Rivet vs pure::variants — Feature Framework Comparison
 
 Status: research report, v0.4.3 baseline.
