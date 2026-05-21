@@ -116,6 +116,12 @@ const TOPICS: &[DocTopic] = &[
         content: CROSS_REPO_DOC,
     },
     DocTopic {
+        slug: "cross-repo-ci",
+        title: "Cross-repo CI — sync, pull, validate in a pipeline",
+        category: "Reference",
+        content: CROSS_REPO_CI_DOC,
+    },
+    DocTopic {
         slug: "mutation",
         title: "CLI mutation commands (add, modify, remove, link, unlink)",
         category: "Reference",
@@ -1103,6 +1109,28 @@ Rivet supports linking artifacts across multiple git repositories using
 a mesh topology. Any rivet project can declare dependencies on other rivet
 projects and reference their artifacts using prefixed IDs.
 
+## Two cross-repo mechanisms — pick one per link
+
+Rivet ships **two** distinct cross-repo mechanisms. They are not
+interchangeable; choose per cross-link and document the choice
+(AoU-X7 in docs/rivet-is-not.md).
+
+| | `externals:` (this topic) | `external-anchor` + `cited-source` |
+|---|---|---|
+| Source | another **rivet** git repo | any file — incl. ReqIF, PDF, OSLC export |
+| Pin | git commit SHA (`rivet lock`) | sha256 of the file's bytes |
+| Reference | prefixed ID — `prefix:ID` | structured `derives-from-external` target / an `external-anchor` artifact |
+| Fetch | `rivet sync` clones into `.rivet/repos/` | `rivet supplier pull` into `.rivet/supplier-cache/` |
+| Use when | the supplier is a rivet project and you want to navigate its whole artifact graph | the supplier is non-rivet, or only a single delivered document needs anchoring |
+
+`externals:` is git-aware federated traceability. `external-anchor` is
+git-agnostic, content-hash-pinned traceability — see
+`rivet docs schema-cited-sources` and `rivet docs cross-repo-ci`. The
+question of whether one mechanism should eventually subsume the other
+is the open architectural decision **DD-067**
+(`artifacts/cross-git-investigation.yaml`); until it is decided, both
+ship and the integrator owns the per-link choice.
+
 ## Configuration
 
 Declare external dependencies in `rivet.yaml`:
@@ -1200,6 +1228,71 @@ Repos participate in baselines by tagging: `git tag baseline/v1.0`
 - **DD-015**: Mesh topology — any repo links to any other
 - **DD-016**: Distributed baselining — repos tag themselves
 - **DD-017**: Transitive dependency resolution — declare direct deps only
+"#;
+
+const CROSS_REPO_CI_DOC: &str = r#"# Cross-repo CI
+
+How to gate a multi-repo Rivet workspace in CI. Single-repo CI is
+covered by `rivet docs commit-traceability`; this topic is the
+cross-repo sequence and the obligations it does NOT discharge for you.
+
+## The recommended sequence
+
+For a consumer project that links one or more externals, run, in order,
+failing the job on any non-zero exit:
+
+```bash
+rivet sync                                  # 1. fetch externals into .rivet/repos/
+rivet supplier pull <anchor> [<anchor> ...]  # 2. fetch each external-anchor's cited-source
+rivet validate --strict-cited-sources --fail-on warning
+                                             # 3. gate: drift is an error, warnings fail
+rivet validate --with-externals-validate     # 4. surface the SUPPLIER's own diagnostics
+```
+
+Step 3 catches `cited-source` drift and tightens the local gate. Step 4
+is the cross-repo diagnostic propagation (REQ-065): without it the
+consumer's PASS says nothing about whether the supplier's own artifacts
+are sound.
+
+## Worked GitHub Actions example
+
+```yaml
+name: rivet-cross-repo
+on: [push, pull_request]
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install rivet
+        run: cargo install --path rivet-cli
+      - name: Sync externals
+        run: rivet sync
+      - name: Pull supplier anchors
+        run: |
+          for a in $(rivet supplier list --format json | jq -r '.anchors[].id'); do
+            rivet supplier pull "$a"
+          done
+      - name: Validate (gate)
+        run: rivet validate --strict-cited-sources --fail-on warning
+      - name: Surface supplier diagnostics (non-gating)
+        run: rivet validate --with-externals-validate || true
+```
+
+## What this does NOT do — the integrator's Assumptions of Use
+
+CI running the sequence above does not discharge the cross-org
+obligations enumerated in `docs/rivet-is-not.md` §7a. In brief:
+
+- **AoU-X1** — you must run validate in every linked external; absence
+  of `cross_repo_diagnostics` is silence, not confirmation.
+- **AoU-X2** — `rivet supplier pull` is a fetch, not an authorisation;
+  always follow it with `validate --strict-cited-sources`.
+- **AoU-X4** — Rivet does not bisect across repo boundaries; attribute
+  cross-repo regressions in the supplier's repo yourself.
+
+Read `docs/rivet-is-not.md` §7a for the full register before relying on
+a green cross-repo CI run.
 "#;
 
 const STPA_DOC: &str = concat!(
