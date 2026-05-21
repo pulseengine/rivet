@@ -5,6 +5,72 @@
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-05-21
+
+Theme: **the cross-git investigation**. A 2026-05-19 investigation
+(six adversarial personas, ten scenarios, three test-bed repos in
+different orgs) found eleven ways `rivet validate` could report a
+green PASS while the project was, in fact, broken — the Cederqvist
+"the tool reports textual success over a semantically-failed
+operation" cliff. The findings were filed as typed Rivet artifacts
+(FEAT-135, REQ-062..REQ-077) and closed across three waves. Minor
+version: new flags and validation behaviour, no breaking schema or
+CLI removal — but `rivet validate` is now stricter (it fails on
+inputs it previously skipped silently), so a project that "passed"
+on 0.10.x may legitimately FAIL on 0.11.0. That is the fix working.
+
+### Added
+
+- `rivet validate --with-externals-validate` — runs validate inside
+  each linked external project and surfaces its diagnostics under a
+  `cross_repo_diagnostics` array (REQ-065).
+- `rivet validate --strict-orphans` — promote `orphan-artifact`
+  warnings to errors for CI (REQ-076).
+- `rivet supplier pull --accept-drift` — the explicit auditor
+  override for sha256 drift (REQ-068).
+- `rivet docs cross-repo-ci` — a new topic: the multi-repo CI
+  sequence, a worked GitHub Actions example, the AoU register
+  (REQ-071).
+- `docs/rivet-is-not.md` — an ISO 26262-10 SEooC Safety-Manual-draft
+  "Rivet is not..." doc with the Cross-org Assumptions-of-Use
+  register AoU-X1..X7 (REQ-072), linked from the README.
+- `external-anchor` schema now declares the `cited-source` field
+  (REQ-066); `docs/historical/` archive + `docs/README.md`.
+
+### Fixed
+
+- **`rivet validate` reported `PASS` over artifact files that failed
+  to parse** — the skip was a stderr log line, uncounted. Skipped
+  files are now Error diagnostics (`artifact-parse-error`) and the
+  run exits non-zero (REQ-062). The headline finding.
+- **Duplicate artifact IDs** silently collapsed via `Store::upsert`
+  last-write-wins — now detected at load time (`duplicate-artifact-id`,
+  REQ-075). The new check immediately surfaced a real `REQ-060`
+  collision in Rivet's own `artifacts/` (resolved → `REQ-077`).
+- **Orphan artifacts** (no inbound/outbound links) were invisible to
+  `rivet validate` — now reported (`orphan-artifact`, Warning;
+  REQ-076).
+- `rivet init --preset {do-178c, en-50128, iec-61508, iec-62304}`
+  produced unvalidatable projects — the four safety-critical schemas
+  are now embedded in the binary (REQ-063).
+- A `derives-from-external` link did not satisfy a required
+  `derives-from` link-field — the cross-org variant now counts
+  (REQ-064).
+- `rivet supplier pull` silently overwrote the cache on sha256
+  drift — it now refuses, naming both hashes (REQ-068).
+- Stale documentation: MSRV (1.85 → 1.89), the schema/oracle/module
+  counts in `schemas.md` / `architecture.md` / `oracles.md` (REQ-074).
+
+### Changed
+
+- `rivet validate --format json` diagnostics now include the `rule`
+  field.
+- 17 stale planning docs archived to `docs/historical/`;
+  `docs/historical/` is doc-check-exempt like `plans/` / `design/`.
+- The `rivet docs cross-repo` topic now documents both cross-repo
+  mechanisms (`externals:` vs `external-anchor` + `cited-source`)
+  and when to use each (REQ-067).
+
 ## [0.10.1] — 2026-05-19
 
 Theme: **adversarial-review action items + user-reported regressions**.

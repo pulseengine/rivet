@@ -173,7 +173,12 @@ test.describe("Rendering invariants — render-shape contracts", () => {
     await expect(desc).toBeVisible();
 
     // Inside that description, mermaid block was emitted as <pre.mermaid>.
-    const mermaidPre = desc.locator("pre.mermaid");
+    // ARCH-CORE-001's description carries TWO fenced mermaid blocks (a
+    // `flowchart LR` and a `stateDiagram-v2`); scope to `.first()` — the
+    // flowchart — so the strict-mode locator resolves to one element. The
+    // invariant under test (description-mermaid renders as <pre.mermaid>)
+    // holds per-block; the `.svg-viewer` count check below covers both.
+    const mermaidPre = desc.locator("pre.mermaid").first();
     await expect(mermaidPre).toBeVisible();
     // Body should contain the diagram source so mermaid.js can render it.
     await expect(mermaidPre).toContainText("flowchart");

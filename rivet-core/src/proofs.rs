@@ -213,6 +213,8 @@ mod proofs {
             covered,
             total,
             uncovered_ids: vec![],
+            external_boundary: 0,
+            external_boundary_ids: vec![],
         };
 
         let pct = entry.percentage();
