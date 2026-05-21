@@ -303,7 +303,11 @@ traceability-rules:
     from-types: [validation]
     severity: error
 
-  # Independent assessment for SIL 3-4
+  # Independent assessment (required for SIL 3-4)
+  # Note: IEC 61508-1 clause 8.2.15 scopes the independent assessment
+  # to SIL 3-4 safety concepts. SIL-level filtering is a project-level
+  # concern documented in the assessment itself; this rule checks that
+  # an assessment artifact exists and references the safety concept.
   - name: safety-concept-has-assessment
     description: >
       SIL 3-4 safety concepts must have an independent safety assessment.
@@ -312,6 +316,3 @@ traceability-rules:
     required-backlink: assesses
     from-types: [safety-assessment]
     severity: error
-    condition:
-      field: sil-target
-      values: [SIL-3, SIL-4]

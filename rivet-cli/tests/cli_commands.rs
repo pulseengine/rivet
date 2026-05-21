@@ -348,6 +348,71 @@ fn init_dev_preset() {
     );
 }
 
+/// Regression test for REQ-063: the four safety-critical industry-standard
+/// presets (`do-178c`, `en-50128`, `iec-61508`, `iec-62304`) must produce
+/// projects that `rivet validate` accepts.
+///
+/// Before the fix, `rivet init --preset iec-61508` exited 0 and wrote a
+/// `rivet.yaml` naming a schema that was neither embedded in the binary nor
+/// written to disk; the next `rivet validate` failed with
+/// `Schema error: schema '<name>' not found on disk or as embedded schema`.
+/// The fix embeds the four schemas in the binary alongside the working five.
+///
+/// This test is itself a mechanical oracle: it drives the real `rivet`
+/// binary end-to-end (`init` then `validate`) and asserts both exit 0,
+/// mirroring the `init_stpa_preset` pattern.
+#[test]
+fn init_safety_critical_presets_produce_validating_projects() {
+    for preset in ["do-178c", "en-50128", "iec-61508", "iec-62304"] {
+        let tmp = tempfile::tempdir().expect("create temp dir");
+        let dir = tmp.path();
+
+        // init must exit 0
+        let init_out = Command::new(rivet_bin())
+            .args(["init", "--preset", preset, "--dir", dir.to_str().unwrap()])
+            .output()
+            .expect("failed to execute rivet init");
+        assert!(
+            init_out.status.success(),
+            "rivet init --preset {preset} must exit 0. stderr:\n{}",
+            String::from_utf8_lossy(&init_out.stderr)
+        );
+
+        // rivet.yaml must reference the preset's schema
+        let config_path = dir.join("rivet.yaml");
+        assert!(
+            config_path.exists(),
+            "rivet.yaml must be created for {preset}"
+        );
+
+        // validate the freshly-initialized project — must exit 0 with no errors
+        let validate_out = Command::new(rivet_bin())
+            .args([
+                "--project",
+                dir.to_str().unwrap(),
+                "validate",
+                "--format",
+                "json",
+            ])
+            .output()
+            .expect("failed to execute rivet validate");
+        assert!(
+            validate_out.status.success(),
+            "rivet validate must exit 0 for preset {preset}. stderr:\n{}",
+            String::from_utf8_lossy(&validate_out.stderr)
+        );
+
+        let stdout = String::from_utf8_lossy(&validate_out.stdout);
+        let parsed: serde_json::Value = serde_json::from_str(&stdout)
+            .unwrap_or_else(|e| panic!("validate JSON must be valid for {preset}: {e}"));
+        let errors = parsed.get("errors").and_then(|v| v.as_u64()).unwrap_or(999);
+        assert_eq!(
+            errors, 0,
+            "freshly-initialized {preset} project must have 0 validation errors, got {errors}"
+        );
+    }
+}
+
 // ── rivet validate ──────────────────────────────────────────────────────
 
 /// `rivet validate --format json` produces valid JSON with "command":"validate".

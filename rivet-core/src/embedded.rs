@@ -32,6 +32,10 @@ pub const SCHEMA_ISO_PAS_8800: &str = include_str!("../../schemas/iso-pas-8800.y
 pub const SCHEMA_SOTIF: &str = include_str!("../../schemas/sotif.yaml");
 pub const SCHEMA_SUPPLY_CHAIN: &str = include_str!("../../schemas/supply-chain.yaml");
 pub const SCHEMA_VV_COVERAGE: &str = include_str!("../../schemas/vv-coverage.yaml");
+pub const SCHEMA_DO_178C: &str = include_str!("../../schemas/do-178c.yaml");
+pub const SCHEMA_EN_50128: &str = include_str!("../../schemas/en-50128.yaml");
+pub const SCHEMA_IEC_61508: &str = include_str!("../../schemas/iec-61508.yaml");
+pub const SCHEMA_IEC_62304: &str = include_str!("../../schemas/iec-62304.yaml");
 
 // ── Embedded migration recipes ──────────────────────────────────────────
 
@@ -81,6 +85,10 @@ pub const SCHEMA_NAMES: &[&str] = &[
     "sotif",
     "supply-chain",
     "vv-coverage",
+    "do-178c",
+    "en-50128",
+    "iec-61508",
+    "iec-62304",
 ];
 
 /// Metadata for a built-in bridge schema.
@@ -152,6 +160,10 @@ pub fn embedded_schema(name: &str) -> Option<&'static str> {
         "sotif" => Some(SCHEMA_SOTIF),
         "supply-chain" => Some(SCHEMA_SUPPLY_CHAIN),
         "vv-coverage" => Some(SCHEMA_VV_COVERAGE),
+        "do-178c" => Some(SCHEMA_DO_178C),
+        "en-50128" => Some(SCHEMA_EN_50128),
+        "iec-61508" => Some(SCHEMA_IEC_61508),
+        "iec-62304" => Some(SCHEMA_IEC_62304),
         _ => None,
     }
 }
