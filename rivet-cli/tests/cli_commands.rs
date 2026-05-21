@@ -348,6 +348,71 @@ fn init_dev_preset() {
     );
 }
 
+/// Regression test for REQ-063: the four safety-critical industry-standard
+/// presets (`do-178c`, `en-50128`, `iec-61508`, `iec-62304`) must produce
+/// projects that `rivet validate` accepts.
+///
+/// Before the fix, `rivet init --preset iec-61508` exited 0 and wrote a
+/// `rivet.yaml` naming a schema that was neither embedded in the binary nor
+/// written to disk; the next `rivet validate` failed with
+/// `Schema error: schema '<name>' not found on disk or as embedded schema`.
+/// The fix embeds the four schemas in the binary alongside the working five.
+///
+/// This test is itself a mechanical oracle: it drives the real `rivet`
+/// binary end-to-end (`init` then `validate`) and asserts both exit 0,
+/// mirroring the `init_stpa_preset` pattern.
+#[test]
+fn init_safety_critical_presets_produce_validating_projects() {
+    for preset in ["do-178c", "en-50128", "iec-61508", "iec-62304"] {
+        let tmp = tempfile::tempdir().expect("create temp dir");
+        let dir = tmp.path();
+
+        // init must exit 0
+        let init_out = Command::new(rivet_bin())
+            .args(["init", "--preset", preset, "--dir", dir.to_str().unwrap()])
+            .output()
+            .expect("failed to execute rivet init");
+        assert!(
+            init_out.status.success(),
+            "rivet init --preset {preset} must exit 0. stderr:\n{}",
+            String::from_utf8_lossy(&init_out.stderr)
+        );
+
+        // rivet.yaml must reference the preset's schema
+        let config_path = dir.join("rivet.yaml");
+        assert!(
+            config_path.exists(),
+            "rivet.yaml must be created for {preset}"
+        );
+
+        // validate the freshly-initialized project — must exit 0 with no errors
+        let validate_out = Command::new(rivet_bin())
+            .args([
+                "--project",
+                dir.to_str().unwrap(),
+                "validate",
+                "--format",
+                "json",
+            ])
+            .output()
+            .expect("failed to execute rivet validate");
+        assert!(
+            validate_out.status.success(),
+            "rivet validate must exit 0 for preset {preset}. stderr:\n{}",
+            String::from_utf8_lossy(&validate_out.stderr)
+        );
+
+        let stdout = String::from_utf8_lossy(&validate_out.stdout);
+        let parsed: serde_json::Value = serde_json::from_str(&stdout)
+            .unwrap_or_else(|e| panic!("validate JSON must be valid for {preset}: {e}"));
+        let errors = parsed.get("errors").and_then(|v| v.as_u64()).unwrap_or(999);
+        assert_eq!(
+            errors, 0,
+            "freshly-initialized {preset} project must have 0 validation errors, got {errors}"
+        );
+    }
+}
+
 // ── rivet validate ──────────────────────────────────────────────────────
 
 /// `rivet validate --format json` produces valid JSON with "command":"validate".
@@ -492,6 +557,326 @@ fn validate_surfaces_parse_error_on_malformed_artifact_file() {
         parsed2.get("errors").and_then(|v| v.as_u64()).unwrap_or(0),
         errors_before,
         "a legitimate non-artifact file (bindings.yaml) must not add an error; got: {parsed2}"
+    );
+}
+
+/// REQ-064: a `derives-from-external` link (the cross-org variant of
+/// `derives-from`, terminating at an `external-anchor`) must satisfy a
+/// required `derives-from` link-field. Before the fix the cardinality
+/// check counted only exact `derives-from` links, so a sw-req that
+/// derived from an external anchor failed with a spurious
+/// `link 'derives-from' requires at least 1 target, found 0` Error.
+///
+/// rivet: verifies REQ-064
+#[test]
+fn validate_accepts_derives_from_external_structured_target() {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let dir = tmp.path();
+    let init = Command::new(rivet_bin())
+        .args(["init", "--preset", "aspice", "--dir", dir.to_str().unwrap()])
+        .output()
+        .expect("rivet init");
+    assert!(
+        init.status.success(),
+        "init: {}",
+        String::from_utf8_lossy(&init.stderr)
+    );
+
+    std::fs::write(
+        dir.join("artifacts").join("ext.yaml"),
+        "artifacts:\n\
+         \x20 - id: ANCHOR-X\n\
+         \x20   type: external-anchor\n\
+         \x20   title: ACME anchor\n\
+         \x20   status: approved\n\
+         \x20   fields:\n\
+         \x20     source-of-truth: {org: acme, contract: PO-1, doc-id: D-1}\n\
+         \x20     expected-derived-types: [sw-req]\n\
+         \x20     received-status: received-other\n\
+         \x20 - id: SWREQ-X\n\
+         \x20   type: sw-req\n\
+         \x20   title: Derives from an external anchor\n\
+         \x20   status: draft\n\
+         \x20   fields: {req-type: functional, priority: must}\n\
+         \x20   links:\n\
+         \x20     - type: derives-from-external\n\
+         \x20       target: {org: acme, contract: PO-1, doc-id: D-1, anchor: ANCHOR-X}\n",
+    )
+    .expect("write ext.yaml");
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir.to_str().unwrap(),
+            "validate",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("rivet validate");
+    let parsed: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("validate JSON must be valid");
+    let diags = parsed
+        .get("diagnostics")
+        .and_then(|v| v.as_array())
+        .expect("diagnostics array");
+    let spurious = diags.iter().any(|d| {
+        d.get("artifact_id").and_then(|a| a.as_str()) == Some("SWREQ-X")
+            && d.get("rule").and_then(|r| r.as_str()) == Some("cardinality")
+            && d.get("message")
+                .and_then(|m| m.as_str())
+                .is_some_and(|m| m.contains("requires at least 1 target"))
+    });
+    assert!(
+        !spurious,
+        "a derives-from-external link must satisfy the derives-from \
+         link-field cardinality; got: {parsed}"
+    );
+}
+
+/// REQ-075 / F2: two artifacts that declare the same `id` collapse
+/// silently — `Store::upsert` is last-write-wins, so by the time
+/// `validate::validate` runs only one survives and the validator is
+/// structurally blind to the collision. `rivet validate` must detect the
+/// duplicate at LOAD time and emit a `duplicate-artifact-id` Error
+/// diagnostic naming both source files. Verified for both the two-files
+/// case and the twice-in-one-file case.
+///
+/// rivet: verifies REQ-075
+#[test]
+fn validate_detects_duplicate_artifact_ids() {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let dir = tmp.path();
+
+    let init = Command::new(rivet_bin())
+        .args(["init", "--preset", "dev", "--dir", dir.to_str().unwrap()])
+        .output()
+        .expect("failed to execute rivet init");
+    assert!(
+        init.status.success(),
+        "rivet init must exit 0. stderr: {}",
+        String::from_utf8_lossy(&init.stderr)
+    );
+
+    // Two artifact files that both declare `id: REQ-DUP`. `upsert` keeps
+    // only one; the load-time duplicate check must still see both.
+    std::fs::write(
+        dir.join("artifacts").join("file-a.yaml"),
+        "artifacts:\n  - id: REQ-DUP\n    type: requirement\n    \
+         title: First definition\n    status: draft\n    \
+         fields:\n      priority: must\n      category: functional\n",
+    )
+    .expect("write file-a.yaml");
+    std::fs::write(
+        dir.join("artifacts").join("file-b.yaml"),
+        "artifacts:\n  - id: REQ-DUP\n    type: requirement\n    \
+         title: Second definition\n    status: draft\n    \
+         fields:\n      priority: must\n      category: functional\n",
+    )
+    .expect("write file-b.yaml");
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir.to_str().unwrap(),
+            "validate",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("failed to execute rivet validate");
+
+    assert!(
+        !out.status.success(),
+        "validate must exit non-zero when an artifact id is duplicated"
+    );
+    let parsed: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("validate JSON must be valid");
+    assert_eq!(
+        parsed.get("result").and_then(|v| v.as_str()),
+        Some("FAIL"),
+        "result must be FAIL; got: {parsed}"
+    );
+    assert!(
+        parsed.get("errors").and_then(|v| v.as_u64()).unwrap_or(0) >= 1,
+        "errors must be >= 1; got: {parsed}"
+    );
+    let diags = parsed
+        .get("diagnostics")
+        .and_then(|v| v.as_array())
+        .expect("diagnostics array");
+    let dup = diags
+        .iter()
+        .find(|d| d.get("rule").and_then(|r| r.as_str()) == Some("duplicate-artifact-id"))
+        .unwrap_or_else(|| {
+            panic!("expected a diagnostic with rule 'duplicate-artifact-id'; got: {parsed}")
+        });
+    let msg = dup
+        .get("message")
+        .and_then(|m| m.as_str())
+        .expect("duplicate diagnostic must have a message");
+    assert!(
+        msg.contains("REQ-DUP"),
+        "the duplicate-artifact-id message must name the colliding id; got: {msg}"
+    );
+    assert!(
+        msg.contains("file-a.yaml") && msg.contains("file-b.yaml"),
+        "the duplicate-artifact-id message must name both source files; got: {msg}"
+    );
+
+    // The same ID twice within a SINGLE file's `artifacts:` list.
+    let tmp2 = tempfile::tempdir().expect("create temp dir 2");
+    let dir2 = tmp2.path();
+    let init2 = Command::new(rivet_bin())
+        .args(["init", "--preset", "dev", "--dir", dir2.to_str().unwrap()])
+        .output()
+        .expect("failed to execute rivet init (2)");
+    assert!(init2.status.success(), "rivet init (2) must exit 0");
+    std::fs::write(
+        dir2.join("artifacts").join("requirements.yaml"),
+        "artifacts:\n  - id: REQ-DUP\n    type: requirement\n    \
+         title: First\n    status: draft\n    \
+         fields:\n      priority: must\n      category: functional\n  \
+         - id: REQ-DUP\n    type: requirement\n    \
+         title: Second\n    status: draft\n    \
+         fields:\n      priority: must\n      category: functional\n",
+    )
+    .expect("write requirements.yaml with duplicate");
+
+    let out2 = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir2.to_str().unwrap(),
+            "validate",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("failed to execute rivet validate (2)");
+    assert!(
+        !out2.status.success(),
+        "validate must exit non-zero for two same-id entries in one file"
+    );
+    let parsed2: serde_json::Value =
+        serde_json::from_slice(&out2.stdout).expect("validate JSON (2) must be valid");
+    let diags2 = parsed2
+        .get("diagnostics")
+        .and_then(|v| v.as_array())
+        .expect("diagnostics array (2)");
+    assert!(
+        diags2
+            .iter()
+            .any(|d| d.get("rule").and_then(|r| r.as_str()) == Some("duplicate-artifact-id")),
+        "two same-id entries in one file must produce a duplicate-artifact-id diagnostic; \
+         got: {parsed2}"
+    );
+}
+
+/// REQ-076: an orphan artifact — no inbound and no outbound links,
+/// disconnected from the traceability graph — must be surfaced by
+/// `rivet validate` as an `orphan-artifact` diagnostic. Severity is
+/// Warning by default (so a project with orphans does not hard-fail),
+/// promotable to Error with `--strict-orphans`.
+///
+/// rivet: verifies REQ-076
+#[test]
+fn validate_reports_orphans_as_warnings() {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let dir = tmp.path();
+
+    let init = Command::new(rivet_bin())
+        .args(["init", "--preset", "dev", "--dir", dir.to_str().unwrap()])
+        .output()
+        .expect("failed to execute rivet init");
+    assert!(
+        init.status.success(),
+        "rivet init must exit 0. stderr: {}",
+        String::from_utf8_lossy(&init.stderr)
+    );
+
+    // Replace the seeded artifacts with a single requirement that has no
+    // links of any kind — a textbook orphan.
+    std::fs::write(
+        dir.join("artifacts").join("requirements.yaml"),
+        "artifacts:\n  - id: REQ-ORPHAN\n    type: requirement\n    \
+         title: Disconnected requirement\n    status: draft\n    \
+         fields:\n      priority: must\n      category: functional\n",
+    )
+    .expect("write requirements.yaml");
+
+    // Default run: orphan surfaces as a Warning; the run still exits 0
+    // (orphans must not hard-fail by default).
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir.to_str().unwrap(),
+            "validate",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("failed to execute rivet validate");
+    let parsed: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("validate JSON must be valid");
+    let diags = parsed
+        .get("diagnostics")
+        .and_then(|v| v.as_array())
+        .expect("diagnostics array");
+    let orphan = diags
+        .iter()
+        .find(|d| {
+            d.get("rule").and_then(|r| r.as_str()) == Some("orphan-artifact")
+                && d.get("artifact_id").and_then(|a| a.as_str()) == Some("REQ-ORPHAN")
+        })
+        .unwrap_or_else(|| {
+            panic!("expected an orphan-artifact diagnostic for REQ-ORPHAN; got: {parsed}")
+        });
+    assert_eq!(
+        orphan.get("severity").and_then(|s| s.as_str()),
+        Some("warning"),
+        "orphan-artifact must default to severity 'warning'; got: {orphan}"
+    );
+
+    // `--strict-orphans` promotes the same diagnostic to Error and the
+    // run exits non-zero.
+    let strict = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir.to_str().unwrap(),
+            "validate",
+            "--format",
+            "json",
+            "--strict-orphans",
+        ])
+        .output()
+        .expect("failed to execute rivet validate --strict-orphans");
+    assert!(
+        !strict.status.success(),
+        "validate --strict-orphans must exit non-zero when an orphan exists"
+    );
+    let parsed_strict: serde_json::Value =
+        serde_json::from_slice(&strict.stdout).expect("strict validate JSON must be valid");
+    assert_eq!(
+        parsed_strict.get("result").and_then(|v| v.as_str()),
+        Some("FAIL"),
+        "result must be FAIL under --strict-orphans; got: {parsed_strict}"
+    );
+    let strict_orphan = parsed_strict
+        .get("diagnostics")
+        .and_then(|v| v.as_array())
+        .expect("strict diagnostics array")
+        .iter()
+        .find(|d| {
+            d.get("rule").and_then(|r| r.as_str()) == Some("orphan-artifact")
+                && d.get("artifact_id").and_then(|a| a.as_str()) == Some("REQ-ORPHAN")
+        })
+        .unwrap_or_else(|| {
+            panic!("expected an orphan-artifact diagnostic under --strict-orphans; got: {parsed_strict}")
+        });
+    assert_eq!(
+        strict_orphan.get("severity").and_then(|s| s.as_str()),
+        Some("error"),
+        "orphan-artifact must be severity 'error' under --strict-orphans; got: {strict_orphan}"
     );
 }
 
@@ -4065,6 +4450,148 @@ fn supplier_pull_idempotent_on_re_run() {
         v2["bytes_unchanged"],
         serde_json::Value::Bool(true),
         "re-pull with identical bytes must report bytes_unchanged=true"
+    );
+}
+
+/// REQ-068 regression: `rivet supplier pull` is the authorisation
+/// point for supplier bytes. After a first pull stamps the cache with
+/// sha256 X, mutating the supplier file so it hashes to Y must make a
+/// flagless re-pull refuse — exit non-zero with an error naming both
+/// X and Y plus the supplier identity (org + contract), and leaving
+/// the cache untouched. Re-running with `--accept-drift` is the
+/// explicit auditor authorisation path: it exits 0 and overwrites the
+/// cache with the new bytes.
+///
+/// Verifies: REQ-068
+#[test]
+fn supplier_pull_refuses_on_sha256_drift_without_accept_flag() {
+    use sha2::{Digest, Sha256};
+
+    let payload_v1 = b"-- supplier payload v1 --";
+    let (tmp, payload_path) = supplier_pull_project_with_file(payload_v1, true);
+    let project = tmp.path().to_str().unwrap().to_string();
+
+    // First pull: establishes the cache + manifest stamped to hash X.
+    let first = Command::new(rivet_bin())
+        .args([
+            "--project",
+            &project,
+            "supplier",
+            "pull",
+            "ANCHOR-ACME-001",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("first pull");
+    assert!(
+        first.status.success(),
+        "first pull must succeed. stderr: {}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+
+    let cache = tmp
+        .path()
+        .join(".rivet")
+        .join("supplier-cache")
+        .join("acme-electronics")
+        .join("PO-4711");
+    let cached_payload = cache.join("ANCHOR-ACME-001.bin");
+    assert_eq!(
+        std::fs::read(&cached_payload).unwrap(),
+        payload_v1,
+        "first pull caches v1 bytes"
+    );
+
+    let mut h1 = Sha256::new();
+    h1.update(payload_v1);
+    let hash_x = format!("{:x}", h1.finalize());
+
+    // Mutate the supplier file so its bytes now hash to Y != X.
+    let payload_v2 = b"-- supplier payload v2 (revised by supplier) --";
+    std::fs::write(&payload_path, payload_v2).expect("mutate supplier file");
+    let mut h2 = Sha256::new();
+    h2.update(payload_v2);
+    let hash_y = format!("{:x}", h2.finalize());
+    assert_ne!(hash_x, hash_y, "sanity: the mutation must change the hash");
+
+    // Flagless re-pull: must refuse and name both hashes + identity.
+    let drift = Command::new(rivet_bin())
+        .args(["--project", &project, "supplier", "pull", "ANCHOR-ACME-001"])
+        .output()
+        .expect("drift pull");
+    assert!(
+        !drift.status.success(),
+        "pull on sha256 drift must exit non-zero without --accept-drift"
+    );
+    let stderr = String::from_utf8_lossy(&drift.stderr);
+    assert!(
+        stderr.contains(&hash_x),
+        "drift error must name the prior sha256 X ({hash_x}), got: {stderr}"
+    );
+    assert!(
+        stderr.contains(&hash_y),
+        "drift error must name the new sha256 Y ({hash_y}), got: {stderr}"
+    );
+    assert!(
+        stderr.contains("acme-electronics") && stderr.contains("PO-4711"),
+        "drift error must name the supplier identity (org + contract), got: {stderr}"
+    );
+    // The refusal must NOT overwrite the cache.
+    assert_eq!(
+        std::fs::read(&cached_payload).unwrap(),
+        payload_v1,
+        "a refused drift pull must leave the cache untouched"
+    );
+
+    // `--accept-drift`: explicit auditor authorisation → exit 0,
+    // cache overwritten with the new bytes.
+    let accepted = Command::new(rivet_bin())
+        .args([
+            "--project",
+            &project,
+            "supplier",
+            "pull",
+            "ANCHOR-ACME-001",
+            "--accept-drift",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("accept-drift pull");
+    assert!(
+        accepted.status.success(),
+        "pull --accept-drift must exit 0. stderr: {}",
+        String::from_utf8_lossy(&accepted.stderr)
+    );
+    let v: serde_json::Value =
+        serde_json::from_slice(&accepted.stdout).expect("valid json on accept-drift pull");
+    assert_eq!(v["drift_accepted"], serde_json::Value::Bool(true));
+    assert_eq!(v["source_hash"], hash_y);
+    assert_eq!(
+        std::fs::read(&cached_payload).unwrap(),
+        payload_v2,
+        "accept-drift pull must overwrite the cache with the new bytes"
+    );
+
+    // The anchor must be re-stamped to Y so a subsequent re-pull of
+    // the SAME bytes is idempotent (not a fresh drift).
+    let re_pull = Command::new(rivet_bin())
+        .args([
+            "--project",
+            &project,
+            "supplier",
+            "pull",
+            "ANCHOR-ACME-001",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("idempotent re-pull after accept-drift");
+    assert!(
+        re_pull.status.success(),
+        "re-pull of identical accepted bytes must exit 0. stderr: {}",
+        String::from_utf8_lossy(&re_pull.stderr)
     );
 }
 

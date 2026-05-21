@@ -213,36 +213,28 @@ traceability-rules:
     severity: error
 
   # Unit verification coverage
-  - name: sw-unit-has-verification-classA
-    description: Every software unit should be verified (Class A — warning)
-    source-type: sw-unit
-    required-backlink: verifies
-    from-types: [sw-unit-verification]
-    severity: warning
-    condition:
-      field: sw-class
-      values: [A]
-
-  - name: sw-unit-has-verification-classBC
-    description: Every software unit must be verified (Class B/C — error)
+  # Note: IEC 62304 scales the rigour of unit verification by software
+  # safety class (5.5.3 / 5.5.5) — Class A is advisory while Class B/C
+  # is mandatory. Per-class filtering is a project-level concern
+  # documented in the unit and its dev plan; this rule checks that a
+  # unit-verification artifact exists for every software unit.
+  - name: sw-unit-has-verification
+    description: Every software unit must be verified by a unit-verification artifact
     source-type: sw-unit
     required-backlink: verifies
     from-types: [sw-unit-verification]
     severity: error
-    condition:
-      field: sw-class
-      values: [B, C]
 
-  # Integration testing for Class C
+  # Integration testing
+  # Note: IEC 62304 5.6 makes integration testing mandatory for Class C
+  # software. Per-class filtering is a project-level concern; this rule
+  # checks that an integration-test artifact references the item.
   - name: sw-arch-item-has-integration-test
-    description: Every architecture item must be integration-tested (Class C)
+    description: Every architecture item must be integration-tested
     source-type: sw-arch-item
     required-backlink: verifies
     from-types: [sw-integration-test]
     severity: error
-    condition:
-      field: sw-class
-      values: [C]
 
   # Release completeness
   - name: sw-release-has-system-tests

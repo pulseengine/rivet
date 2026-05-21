@@ -500,6 +500,25 @@ fn render_validation_message(
         .replace("{rule}", &rule.id)
 }
 
+/// Does a link of type `actual` satisfy a link-field that requires
+/// `required`?
+///
+/// A `<base>-external` link is the cross-organizational variant of the
+/// `<base>` link — e.g. `derives-from-external` for `derives-from`. It
+/// terminates at an `external-anchor` rather than an in-house artifact,
+/// but the derivation still happened; it just crossed an org boundary.
+/// So `derives-from-external` satisfies a required `derives-from`
+/// link-field. The cardinality count uses this; the target-type check
+/// deliberately does NOT — the `*-external` link legitimately points at
+/// an `external-anchor`, which is not in the base field's target types
+/// (REQ-064).
+fn link_satisfies_field(actual: &str, required: &str) -> bool {
+    actual == required
+        || actual
+            .strip_suffix("-external")
+            .is_some_and(|base| base == required)
+}
+
 /// Structural validation only (phases 1-7).
 ///
 /// Validates types, required fields, allowed values, link cardinality,
@@ -721,7 +740,7 @@ pub fn validate_structural_with_externals_and_variant(
             let count = artifact
                 .links
                 .iter()
-                .filter(|l| l.link_type == link_field.link_type)
+                .filter(|l| link_satisfies_field(&l.link_type, &link_field.link_type))
                 .count();
 
             match link_field.cardinality {

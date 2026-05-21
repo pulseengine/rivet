@@ -353,6 +353,15 @@ enum Command {
         /// were skipped.
         #[arg(long = "check-remote-sources")]
         check_remote_sources: bool,
+
+        /// Promote `orphan-artifact` warnings (an artifact with no
+        /// inbound and no outbound links, disconnected from the
+        /// traceability graph) to errors. Orphans are reported as
+        /// Warnings by default; use this in CI to enforce "every
+        /// artifact must be linked into the graph". Mirrors
+        /// `--strict-cited-sources`.
+        #[arg(long = "strict-orphans")]
+        strict_orphans: bool,
     },
 
     /// Show a single artifact by ID
@@ -1283,6 +1292,15 @@ enum SupplierAction {
         /// Output format: "text" (default) or "json".
         #[arg(short, long, default_value = "text")]
         format: String,
+        /// Accept supplier byte drift: when the new payload's sha256
+        /// contradicts the hash recorded on a prior pull (cache
+        /// manifest) or the anchor's stamped `cited-source.sha256`,
+        /// `pull` normally refuses. With `--accept-drift` the auditor
+        /// explicitly authorizes the new bytes — the cache is
+        /// overwritten and the anchor's `cited-source` stamp +
+        /// `last-synced` are refreshed. REQ-068.
+        #[arg(long)]
+        accept_drift: bool,
     },
 }
 
@@ -1854,6 +1872,7 @@ fn run(cli: Cli) -> Result<bool> {
             strict_cited_sources,
             strict_cited_source_stale,
             check_remote_sources,
+            strict_orphans,
         } => cmd_validate(
             &cli,
             format,
@@ -1869,6 +1888,7 @@ fn run(cli: Cli) -> Result<bool> {
             *strict_cited_sources,
             *strict_cited_source_stale,
             *check_remote_sources,
+            *strict_orphans,
         ),
         Command::List {
             r#type,
@@ -2014,7 +2034,11 @@ fn run(cli: Cli) -> Result<bool> {
         Command::Supplier { action } => match action {
             SupplierAction::List { format } => cmd_supplier_list(&cli, format),
             SupplierAction::Check { format } => cmd_supplier_check(&cli, format),
-            SupplierAction::Pull { anchor, format } => cmd_supplier_pull(&cli, anchor, format),
+            SupplierAction::Pull {
+                anchor,
+                format,
+                accept_drift,
+            } => cmd_supplier_pull(&cli, anchor, format, *accept_drift),
         },
         Command::Baseline { action } => match action {
             BaselineAction::Verify { name, strict } => cmd_baseline_verify(&cli, name, *strict),
@@ -4528,6 +4552,7 @@ fn cmd_validate(
     strict_cited_sources: bool,
     strict_cited_source_stale: bool,
     check_remote_sources: bool,
+    strict_orphans: bool,
 ) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
     let fail_on_threshold = parse_fail_on(fail_on)?;
@@ -4553,15 +4578,24 @@ fn cmd_validate(
     //   * NotArtifactFile  — legitimate non-artifact YAML living under the
     //                        source path, e.g. `bindings.yaml` (F2b)
     //                        -> silently skipped, no diagnostic.
+    //
+    // REQ-075: the same load-report channel additionally detects two
+    // artifacts that declare the same `id`. `Store::upsert` is keyed by ID
+    // and last-write-wins, so by the time `validate::validate` runs only
+    // the survivor exists. Duplicate IDs are gathered here, at load time,
+    // across every source — a collision can straddle two source paths —
+    // and emitted as `duplicate-artifact-id` Error diagnostics below.
     let mut parse_error_skips: Vec<rivet_core::SkippedFile> = Vec::new();
+    let mut loaded_for_dup_check: Vec<rivet_core::model::Artifact> = Vec::new();
     for source in &config.sources {
-        match rivet_core::load_artifacts_with_skips(source, &cli.project, &schema) {
-            Ok((_artifacts, skips)) => {
-                for skip in skips {
+        match rivet_core::load_artifacts_with_report(source, &cli.project, &schema) {
+            Ok(report) => {
+                for skip in report.skipped {
                     if skip.kind == rivet_core::SkipKind::ParseError {
                         parse_error_skips.push(skip);
                     }
                 }
+                loaded_for_dup_check.extend(report.artifacts);
             }
             Err(e) => {
                 // A hard load error here is already surfaced by
@@ -4570,6 +4604,10 @@ fn cmd_validate(
             }
         }
     }
+    // Detect duplicate IDs across the union of all sources. The per-source
+    // reports above only see one source each; a project-wide pass catches
+    // an ID claimed in source A and again in source B.
+    let duplicate_ids = rivet_core::detect_duplicate_ids_for_validate(&loaded_for_dup_check);
 
     // Apply baseline scoping if requested
     let (store, graph) = if let Some(bl) = baseline_name {
@@ -4840,6 +4878,65 @@ fn cmd_validate(
             ),
         );
         diag.source_file = Some(skip.path.clone());
+        diagnostics.push(diag);
+    }
+
+    // REQ-075 / F2: two artifacts declaring the same `id` collapse
+    // silently — `Store::upsert` is last-write-wins, so `validate` only
+    // ever sees the survivor. Detection happened at load time above; emit
+    // one Error diagnostic per collision naming both source files and the
+    // colliding ID.
+    for dup in &duplicate_ids {
+        let first = dup
+            .first_file
+            .as_ref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "<unknown source>".to_string());
+        let second = dup
+            .second_file
+            .as_ref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "<unknown source>".to_string());
+        let mut diag = validate::Diagnostic::new(
+            Severity::Error,
+            Some(dup.id.clone()),
+            "duplicate-artifact-id",
+            format!(
+                "artifact id '{}' is declared more than once: {} and {} \
+                 — the second definition silently overwrites the first",
+                dup.id, first, second
+            ),
+        );
+        diag.source_file = dup.second_file.clone();
+        diagnostics.push(diag);
+    }
+
+    // REQ-076: surface orphan artifacts (no inbound and no outbound links,
+    // disconnected from the traceability graph) through the `validate`
+    // diagnostic channel. This reuses `LinkGraph::orphans` — the exact
+    // computation behind `rivet stats`'s "Orphan artifacts (no links): N".
+    //
+    // Severity is Warning by default and Error under `--strict-orphans`,
+    // mirroring the `cited-source-drift` / `--strict-cited-sources`
+    // pattern. Warning-by-default is required: the rivet repo itself
+    // carries orphans, so a hard-error default would break its own
+    // dogfood `validate` (REQ-062's F2b lesson applied to severity).
+    let orphan_severity = if strict_orphans {
+        Severity::Error
+    } else {
+        Severity::Warning
+    };
+    for orphan_id in graph.orphans(&store) {
+        let mut diag = validate::Diagnostic::new(
+            orphan_severity,
+            Some(orphan_id.clone()),
+            "orphan-artifact",
+            format!(
+                "artifact '{orphan_id}' is an orphan: it has no inbound or \
+                 outbound links and is disconnected from the traceability graph"
+            ),
+        );
+        diag.source_file = store.get(orphan_id).and_then(|a| a.source_file.clone());
         diagnostics.push(diag);
     }
 
@@ -5605,8 +5702,46 @@ fn cmd_stats(
     // counts line up with the visible artifact set when --filter or
     // --baseline is in effect. Externals-aware so the numbers match the
     // post-#245 `rivet validate` output.
-    let diagnostics =
+    let mut diagnostics =
         validate::validate_with_externals(&store, &ctx.schema, &graph, &ctx.external_schemas);
+    // REQ-076: `rivet validate` emits one `orphan-artifact` Warning per
+    // orphan. Mirror that here so the `warnings` count stays consistent
+    // with `rivet validate` (see `stats_json_counts_match_validate`).
+    // `--strict-orphans` is a `validate`-only flag, so stats always uses
+    // the default Warning severity.
+    for orphan_id in &stats.orphans {
+        diagnostics.push(validate::Diagnostic::new(
+            Severity::Warning,
+            Some(orphan_id.clone()),
+            "orphan-artifact",
+            format!(
+                "artifact '{orphan_id}' is an orphan: it has no inbound or \
+                 outbound links and is disconnected from the traceability graph"
+            ),
+        ));
+    }
+    // REQ-075: `rivet validate` emits one `duplicate-artifact-id` Error
+    // per ID claimed by more than one artifact. Re-load every source and
+    // run the same load-time duplicate scan so the `errors` count stays
+    // consistent with `rivet validate` (see `stats_json_counts_match_validate`).
+    {
+        let mut loaded: Vec<rivet_core::model::Artifact> = Vec::new();
+        for source in &ctx.config.sources {
+            if let Ok(report) =
+                rivet_core::load_artifacts_with_report(source, &cli.project, &ctx.schema)
+            {
+                loaded.extend(report.artifacts);
+            }
+        }
+        for dup in rivet_core::detect_duplicate_ids_for_validate(&loaded) {
+            diagnostics.push(validate::Diagnostic::new(
+                Severity::Error,
+                Some(dup.id.clone()),
+                "duplicate-artifact-id",
+                format!("artifact id '{}' is declared more than once", dup.id),
+            ));
+        }
+    }
     let errors = diagnostics
         .iter()
         .filter(|d| d.severity == Severity::Error)
@@ -6174,7 +6309,16 @@ fn cmd_supplier_check(cli: &Cli, format: &str) -> Result<bool> {
 /// the [`FederationProvenance`] block is written alongside so the
 /// auditor can reconstruct the source. Read-only on the supplier
 /// side; idempotent on the cache side.
-fn cmd_supplier_pull(cli: &Cli, anchor_id: &str, format: &str) -> Result<bool> {
+///
+/// REQ-068: `pull` is the *authorisation* point for supplier bytes.
+/// When the new payload's sha256 contradicts a previously recorded
+/// hash — either the anchor's stamped `cited-source.sha256` or the
+/// `source-hash` from a prior cache manifest — the pull refuses
+/// (exit non-zero) and names both hashes plus the supplier identity.
+/// The auditor authorises the new bytes with `--accept-drift`, which
+/// overwrites the cache and refreshes the stamp + `last-synced`. A
+/// first pull (no prior stamp, no prior manifest) is unaffected.
+fn cmd_supplier_pull(cli: &Cli, anchor_id: &str, format: &str, accept_drift: bool) -> Result<bool> {
     use rivet_core::cited_source as cs;
     use rivet_core::model::FederationProvenance;
 
@@ -6194,6 +6338,9 @@ fn cmd_supplier_pull(cli: &Cli, anchor_id: &str, format: &str) -> Result<bool> {
             anchor.artifact_type
         );
     }
+    // The anchor's source YAML — needed to re-stamp `cited-source`
+    // (sha256 + last-checked) when an auditor accepts a byte drift.
+    let anchor_source_file = anchor.source_file.clone();
 
     // Read `cited-source` — required for a pull.
     let cited_raw = anchor.fields.get("cited-source").ok_or_else(|| {
@@ -6223,10 +6370,9 @@ fn cmd_supplier_pull(cli: &Cli, anchor_id: &str, format: &str) -> Result<bool> {
         _ => cs::resolve_file_uri(&cited.uri, &project_root),
     };
 
-    // Read the bytes once; compute hash; cross-check stamped sha256
-    // if present. We refuse to write a cache entry whose stamped
-    // hash doesn't match the wire payload (auditor-grade: a drift
-    // would silently let the cache lie about what was delivered).
+    // Read the bytes once; compute the wire hash. Drift detection
+    // (REQ-068) happens below, once the prior recorded hash and the
+    // supplier identity are known so the error can name both.
     let bytes = std::fs::read(&source_path).with_context(|| {
         format!(
             "reading source for '{anchor_id}': {}",
@@ -6234,16 +6380,6 @@ fn cmd_supplier_pull(cli: &Cli, anchor_id: &str, format: &str) -> Result<bool> {
         )
     })?;
     let source_hash = cs::sha256_hex(&bytes);
-    if let Some(stamped) = &cited.sha256 {
-        if !stamped.eq_ignore_ascii_case(&source_hash) {
-            anyhow::bail!(
-                "anchor '{anchor_id}' cited-source sha256 drift: \
-                 stamped {stamped} but file hashes to {source_hash}. \
-                 Refusing to write a poisoned cache entry. Re-stamp the \
-                 anchor and retry."
-            );
-        }
-    }
     // For ReqIF, also verify well-formedness — caches a bad payload otherwise.
     if matches!(cited.kind, cs::CitedSourceKind::Reqif) {
         rivet_core::reqif::parse_reqif(
@@ -6297,6 +6433,57 @@ fn cmd_supplier_pull(cli: &Cli, anchor_id: &str, format: &str) -> Result<bool> {
     let payload_path = cache_root.join(&payload_name);
     let manifest_path = cache_root.join(format!("{anchor_id}.manifest.yaml"));
 
+    // ── REQ-068: drift detection ─────────────────────────────────────
+    // `pull` is the authorisation point for supplier bytes. Establish
+    // the prior recorded hash from the strongest available record:
+    //   1. The prior cache manifest's `federation.source-hash` — the
+    //      authoritative record of what was last pulled into the cache.
+    //   2. The anchor's stamped `cited-source.sha256` — the fallback
+    //      when no manifest exists yet (e.g. a hand-stamped anchor).
+    // If a prior hash exists and contradicts the new wire hash, the
+    // supplier has changed bytes since the last pull. Refuse unless
+    // `--accept-drift` explicitly authorises the new revision.
+    let prior_manifest_hash: Option<String> = std::fs::read_to_string(&manifest_path)
+        .ok()
+        .and_then(|m| serde_yaml::from_str::<serde_yaml::Value>(&m).ok())
+        .and_then(|v| {
+            v.get("federation")
+                .and_then(|f| f.get("source-hash"))
+                .and_then(|h| h.as_str())
+                .map(str::to_string)
+        });
+    let prior_recorded_hash: Option<(&str, String)> = prior_manifest_hash
+        .as_deref()
+        .map(|h| ("prior cache manifest", h.to_string()))
+        .or_else(|| {
+            cited
+                .sha256
+                .as_deref()
+                .map(|h| ("anchor cited-source.sha256", h.to_string()))
+        });
+    let drift_detected = prior_recorded_hash
+        .as_ref()
+        .is_some_and(|(_, prior)| !prior.eq_ignore_ascii_case(&source_hash));
+    if drift_detected && !accept_drift {
+        let (prior_src, prior_hash) = prior_recorded_hash.as_ref().unwrap();
+        anyhow::bail!(
+            "DRIFT: supplier bytes for anchor '{anchor_id}' changed since the last pull.\n  \
+             supplier:   {org} / {contract}\n  \
+             prior sha256 ({prior_src}): {prior_hash}\n  \
+             new sha256 (wire payload):   {source_hash}\n  \
+             source: {source}\n\
+             Refusing to overwrite the supplier cache. A `pull` that silently \
+             accepted these bytes would grant the supplier authority to revise \
+             the delivered artifact with no audit trail. If this revision is \
+             intentional, an auditor must re-run with `--accept-drift` to \
+             authorise it explicitly.",
+            source = source_path.display(),
+        );
+    }
+    // `accept_drift_applied` is true only when an auditor authorised an
+    // actual byte change — used to refresh the anchor stamp + last-synced.
+    let accept_drift_applied = drift_detected && accept_drift;
+
     // Idempotency: if the existing payload already has the same hash,
     // we still refresh the manifest's `fetched-at` so re-runs leave a
     // trail in the file mtime but don't churn the bytes.
@@ -6347,6 +6534,29 @@ fn cmd_supplier_pull(cli: &Cli, anchor_id: &str, format: &str) -> Result<bool> {
     std::fs::write(&manifest_path, manifest)
         .with_context(|| format!("writing manifest: {}", manifest_path.display()))?;
 
+    // REQ-068: when an auditor accepted a byte drift, re-stamp the
+    // anchor so the source-of-record reflects the authorised revision.
+    // This refreshes `cited-source.sha256` to the new hash and
+    // `cited-source.last-checked` (the anchor's `last-synced` mark) to
+    // the fetch time — equivalent to a manual re-stamp.
+    let mut anchor_restamped = false;
+    if accept_drift_applied {
+        let target = anchor_source_file.clone().ok_or_else(|| {
+            anyhow::anyhow!(
+                "anchor '{anchor_id}' has no known source file — cannot \
+                 re-stamp after --accept-drift"
+            )
+        })?;
+        anchor_restamped =
+            cs::update_cited_source_in_file(&target, anchor_id, &source_hash, &fetched_at)
+                .with_context(|| {
+                    format!(
+                        "re-stamping anchor '{anchor_id}' cited-source in {}",
+                        target.display()
+                    )
+                })?;
+    }
+
     if format == "json" {
         let output = serde_json::json!({
             "command": "supplier pull",
@@ -6360,6 +6570,8 @@ fn cmd_supplier_pull(cli: &Cli, anchor_id: &str, format: &str) -> Result<bool> {
             "cache_payload": payload_path.display().to_string(),
             "cache_manifest": manifest_path.display().to_string(),
             "bytes_unchanged": bytes_unchanged,
+            "drift_accepted": accept_drift_applied,
+            "anchor_restamped": anchor_restamped,
         });
         println!("{}", serde_json::to_string_pretty(&output).unwrap());
     } else {
@@ -6372,6 +6584,12 @@ fn cmd_supplier_pull(cli: &Cli, anchor_id: &str, format: &str) -> Result<bool> {
         println!("  fetched-at:     {fetched_at}");
         if bytes_unchanged {
             println!("  (payload bytes unchanged — manifest refreshed only)");
+        }
+        if accept_drift_applied {
+            println!(
+                "  DRIFT ACCEPTED: supplier bytes changed; cache overwritten \
+                 and anchor cited-source re-stamped to {source_hash}."
+            );
         }
     }
     Ok(true)
@@ -7996,6 +8214,7 @@ fn cmd_diff(
                     strict_cited_sources: false,
                     strict_cited_source_stale: false,
                     check_remote_sources: false,
+                    strict_orphans: false,
                 },
             };
             let head_cli = Cli {
@@ -8017,6 +8236,7 @@ fn cmd_diff(
                     strict_cited_sources: false,
                     strict_cited_source_stale: false,
                     check_remote_sources: false,
+                    strict_orphans: false,
                 },
             };
             let bc = ProjectContext::load(&base_cli)?;

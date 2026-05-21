@@ -276,6 +276,46 @@ pub fn load_artifacts(
     }
 }
 
+/// A second artifact in a load that claims an `id` already taken by an
+/// artifact loaded earlier from the same project.
+///
+/// `Store::upsert` is keyed by ID and last-write-wins, so two artifacts
+/// declaring the same `id` collapse silently — by the time
+/// `validate::validate` runs only the survivor exists, and the validator
+/// is structurally blind to the collision (REQ-075, F2 family). This type
+/// captures the collision at LOAD time, where both copies are still
+/// visible, so callers (notably `rivet validate`) can surface it as an
+/// Error diagnostic naming both files.
+///
+/// Cross-repo `prefix:ID` references are namespaced and loaded through a
+/// separate path; they never appear here. Only two *local* artifacts
+/// colliding produce a `DuplicateId`.
+#[derive(Debug, Clone)]
+pub struct DuplicateId {
+    /// The artifact ID claimed by two artifacts.
+    pub id: String,
+    /// Source file of the artifact that claimed the ID first (the one
+    /// that would be overwritten by `upsert`).
+    pub first_file: Option<PathBuf>,
+    /// Source file of the later artifact that collided. When two
+    /// artifacts in a single file share an ID this equals `first_file`.
+    pub second_file: Option<PathBuf>,
+}
+
+/// The full result of loading one or more sources: the loaded artifacts
+/// plus the load-time anomalies that `load_artifacts` alone would discard
+/// — files skipped during a directory import ([`SkippedFile`], REQ-062)
+/// and duplicate artifact IDs ([`DuplicateId`], REQ-075).
+#[derive(Debug, Default)]
+pub struct LoadReport {
+    /// The artifacts loaded from the source(s).
+    pub artifacts: Vec<model::Artifact>,
+    /// YAML files that were not loaded as artifacts, classified by reason.
+    pub skipped: Vec<SkippedFile>,
+    /// Artifact IDs claimed by more than one artifact.
+    pub duplicates: Vec<DuplicateId>,
+}
+
 /// Like [`load_artifacts`], but additionally reports YAML files that were
 /// skipped during a `generic`/`generic-yaml` directory import.
 ///
@@ -299,7 +339,40 @@ pub fn load_artifacts_with_skips(
     schema: &schema::Schema,
 ) -> Result<(Vec<model::Artifact>, Vec<SkippedFile>), Error> {
     let artifacts = load_artifacts(source, base_dir, schema)?;
-    let skips = match source.format.as_str() {
+    let skips = scan_source_skips(source, base_dir);
+    Ok((artifacts, skips))
+}
+
+/// Like [`load_artifacts_with_skips`], but also detects duplicate artifact
+/// IDs across the loaded artifacts (REQ-075).
+///
+/// This extends the REQ-062 load-report channel with duplicate detection.
+/// Detection happens here, at LOAD time, because once the artifacts are
+/// `upsert`ed into a `Store` only the last writer for each ID survives —
+/// `validate::validate` can never see the collision.
+///
+/// Like [`load_artifacts_with_skips`], this is a separate entrypoint so
+/// `load_artifacts`'s signature stays semver-stable.
+pub fn load_artifacts_with_report(
+    source: &model::SourceConfig,
+    base_dir: &Path,
+    schema: &schema::Schema,
+) -> Result<LoadReport, Error> {
+    let artifacts = load_artifacts(source, base_dir, schema)?;
+    let skipped = scan_source_skips(source, base_dir);
+    let duplicates = detect_duplicate_ids(&artifacts);
+    Ok(LoadReport {
+        artifacts,
+        skipped,
+        duplicates,
+    })
+}
+
+/// Re-walk a `generic`/`generic-yaml` source directory and classify the
+/// `.yaml`/`.yml` files that failed to import. For non-`generic` formats
+/// (or single-file sources) the result is always empty.
+fn scan_source_skips(source: &model::SourceConfig, base_dir: &Path) -> Vec<SkippedFile> {
+    match source.format.as_str() {
         "generic" | "generic-yaml" => {
             let path = base_dir.join(&source.path);
             if path.is_dir() {
@@ -309,8 +382,45 @@ pub fn load_artifacts_with_skips(
             }
         }
         _ => Vec::new(),
-    };
-    Ok((artifacts, skips))
+    }
+}
+
+/// Scan a loaded artifact list for IDs claimed by more than one artifact.
+///
+/// Public entrypoint for callers (notably `rivet validate`) that load
+/// every source first and need a single project-wide duplicate pass: a
+/// collision can straddle two source paths, which per-source
+/// [`load_artifacts_with_report`] calls would each miss. Detection happens
+/// here, before the artifacts are `upsert`ed into a `Store`, because
+/// `upsert` is keyed by ID and last-write-wins (REQ-075).
+pub fn detect_duplicate_ids_for_validate(artifacts: &[model::Artifact]) -> Vec<DuplicateId> {
+    detect_duplicate_ids(artifacts)
+}
+
+/// Scan a loaded artifact list for IDs claimed by more than one artifact.
+///
+/// The first artifact to claim an ID is remembered; every later artifact
+/// with the same ID yields one [`DuplicateId`] pairing the first file with
+/// the colliding file. Two collisions on the same ID produce two entries.
+fn detect_duplicate_ids(artifacts: &[model::Artifact]) -> Vec<DuplicateId> {
+    let mut seen: std::collections::HashMap<&str, Option<PathBuf>> =
+        std::collections::HashMap::new();
+    let mut duplicates = Vec::new();
+    for a in artifacts {
+        match seen.get(a.id.as_str()) {
+            Some(first_file) => {
+                duplicates.push(DuplicateId {
+                    id: a.id.clone(),
+                    first_file: first_file.clone(),
+                    second_file: a.source_file.clone(),
+                });
+            }
+            None => {
+                seen.insert(a.id.as_str(), a.source_file.clone());
+            }
+        }
+    }
+    duplicates
 }
 
 /// Import artifacts from a source using schema-driven rowan extraction.
@@ -367,3 +477,7 @@ pub mod providers;
 /// Re-export of the skipped-file classification types so the CLI can name
 /// them without reaching into the `formats::generic` module path.
 pub use formats::generic::{SkipKind, SkippedFile};
+
+// `DuplicateId` and `LoadReport` are declared in this module directly;
+// they are part of the same load-report channel as `SkippedFile` and are
+// already public (no re-export needed).
