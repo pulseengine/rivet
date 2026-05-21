@@ -1,0 +1,224 @@
+# Mythos silent-failure hunt — findings (2026-05-21)
+#
+# A Mythos-style slop hunt (scripts/mythos/discover-silent-failure.md, the
+# degraded-input oracle) run after v0.11.0, hunting the F2 silent-failure
+# class — code that reports success over an input it should reject — in
+# the ingest/parse subsystems the cross-git investigation (FEAT-135) did
+# not cover. Four discovery agents, four confirmed findings, every one
+# FIX_SIZE: SMALL. Each subsystem already contained a sibling check that
+# does the right thing; the bug is always one code path that forgot to.
+#
+# Shipped as v0.11.1 (patch — all localized, no new flags/schema).
+
+artifacts:
+
+  - id: REQ-078
+    type: requirement
+    title: "rivet commits must flag malformed/typo'd artifact trailers, not silently treat them as orphans"
+    status: draft
+    description: |
+      `parse_commit_message` (rivet-core/src/commits.rs) returns an empty
+      `artifact_refs` for a trailer whose ID is malformed — e.g.
+      `Implements: REQ-O1` (capital letter O, a one-keystroke typo for
+      REQ-001). `analyze_commits` then routes the commit through
+      `CommitClass::Orphan` (a warning), so `rivet commits` exits 0 and
+      the CI gate passes. The author plainly intended a link; the tool
+      silently downgrades a broken link to a benign orphan.
+
+      In-file precedent: a well-formed but unknown ID (`REQ-99999`) IS
+      correctly classified `BrokenRef` (error, non-zero exit). The gap is
+      asymmetric — a clearly-wrong link is treated MORE leniently than a
+      merely-stale one.
+
+      Acceptance:
+        - In a temp git repo, make a commit `Implements: REQ-O1`. Run
+          `rivet commits` — verify exit non-zero and a broken/malformed
+          reference reported (not a silent orphan).
+        - A typo'd trailer KEY (`Implments: REQ-001`) is likewise
+          flagged, not dropped.
+        - A well-formed valid trailer still classifies as `linked`.
+        - Regression test in `rivet-core/src/commits.rs` tests.
+    tags: [commits, silent-failure, f2-family, mythos, p2]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.11.1-track
+    links:
+      - type: derives-from
+        target: FEAT-135
+
+  - id: REQ-079
+    type: requirement
+    title: "ReqIF import must reject a SPEC-OBJECT with missing/dangling TYPE, not silently type it 'unknown'"
+    status: draft
+    description: |
+      `parse_reqif` (rivet-core/src/reqif.rs, ~line 711) resolves a
+      SPEC-OBJECT's type with `.unwrap_or("unknown")`: a SPEC-OBJECT with
+      no `<TYPE>` element, or a `SPEC-OBJECT-TYPE-REF` pointing at an
+      undeclared type, silently becomes `artifact_type: "unknown"` and
+      `parse_reqif` returns `Ok` — no error, no `log::warn!`, no
+      diagnostic. ReqIF 1.2's XSD makes `SPEC-OBJECT/TYPE` mandatory;
+      `docs/design/polarion-reqif-fidelity.md` lists `artifact_type` as
+      LOSSLESS — it never sanctions an unknown-type fallback.
+
+      Sibling precedent in the SAME function (~lines 919-973): dangling
+      `SPEC-RELATION` source/target refs are collected and the import is
+      rejected (`"ReqIF import rejected N dangling SPEC-RELATION ..."`).
+      The dangling-TYPE-ref case is the un-fixed twin.
+
+      Acceptance:
+        - Parse a ReqIF where a SPEC-OBJECT has no `<TYPE>` — verify
+          `parse_reqif` returns `Err`, naming the SPEC-OBJECT identifier.
+        - Same for a SPEC-OBJECT whose TYPE references an undeclared
+          SPEC-OBJECT-TYPE.
+        - A well-formed ReqIF still imports cleanly.
+        - Folds in the lesser sibling at ~line 928 (unresolved
+          SPEC-RELATION-TYPE-REF silently `unwrap_or("traces-to")`).
+        - Regression test in `rivet-core/src/reqif.rs` tests.
+    tags: [reqif, import, silent-failure, f2-family, mythos, p2]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.11.1-track
+    links:
+      - type: derives-from
+        target: FEAT-135
+
+  - id: REQ-080
+    type: requirement
+    title: "Schema migration must run the enum value-check on field-map-renamed fields, not skip it"
+    status: draft
+    description: |
+      `diff_artifacts` (rivet-core/src/migrate.rs, ~lines 461-475): when a
+      field is renamed via the recipe's `field_map`, the code pushes a
+      `FieldRename` change and `continue`s — skipping the
+      `allowed_values` enum check at ~lines 483-504, which is only
+      reachable for non-renamed fields. So a source value that is
+      out-of-enum for the TARGET field (e.g. `prio: 7` renamed into an
+      enum `priority` field constrained to {must,should,could,wont})
+      produces ZERO conflicts, `has_conflicts()` is false, and the
+      migration completes `COMPLETE` (exit 0) with `priority: 7` written
+      against the enum.
+
+      `rivet docs schema-migrate` explicitly defines a `conflict` as
+      "field needs value-mapping (`priority: 5` -> enum)" — the renamed
+      path should hit the conflict path, not bypass it. The non-renamed
+      path already does this correctly (sibling precedent in-function).
+
+      Acceptance:
+        - Run `diff_artifacts` (or `rivet migrate`) with a recipe that
+          field-map-renames `prio` -> `priority` and a source artifact
+          `prio: 7` (out of the target enum). Verify a
+          `FieldValueConflict` / `Conflict`-class change is emitted and
+          `has_conflicts()` is true.
+        - An in-enum renamed value still migrates as a clean mechanical
+          rename.
+        - Folds in the neighbour: `apply_to_file` returning
+          `Ok(original)` with no diagnostic on a file lacking the
+          top-level `artifacts:` key.
+        - Regression test in `rivet-core/src/migrate.rs` tests.
+    tags: [migrate, silent-failure, f2-family, mythos, p2]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.11.1-track
+    links:
+      - type: derives-from
+        target: FEAT-135
+
+  - id: REQ-081
+    type: requirement
+    title: "needs.json import must reject duplicate artifact IDs, not return Ok with colliding artifacts"
+    status: draft
+    description: |
+      `import_needs_json` (rivet-core/src/formats/needs_json.rs) builds a
+      `Vec<Artifact>` from the sphinx-needs `needs` map. Two needs that
+      carry the identical inner `id` field produce two artifacts both
+      claiming that ID; `import_needs_json` returns `Ok` with both, the
+      CLI prints `Imported 2 artifacts` and exits 0. The CLI's REQ-050
+      link check builds a `HashSet` of IDs, which silently DEDUPS the
+      collision instead of flagging it.
+
+      Artifact IDs must be unique — the exact invariant REQ-075's
+      `detect_duplicate_ids` enforces for project loads. The importer is
+      the unguarded entry point for the same violation.
+
+      Acceptance:
+        - Call `import_needs_json` on a needs.json with two needs sharing
+          one inner `id`. Verify it returns `Err` (Adapter error) naming
+          the colliding ID.
+        - A needs.json with all-distinct IDs still imports cleanly.
+        - Folds in the neighbour: `convert_need` mapping a missing `type`
+          field to the literal `"unknown"` with no diagnostic.
+        - Reuse `detect_duplicate_ids_for_validate` (pub, REQ-075) so the
+          rule has one definition.
+        - Regression test in `rivet-core/src/formats/needs_json.rs`.
+    tags: [needs-json, import, duplicate-id, silent-failure, f2-family, mythos, p2]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.11.1-track
+    links:
+      - type: derives-from
+        target: FEAT-135
+      - type: traces-to
+        target: REQ-075
+
+  - id: REQ-082
+    type: requirement
+    title: "rivet validate must not count linked external repos' own schema violations against the consumer"
+    status: draft
+    description: |
+      User-reported against v0.11.0 (2026-05-21). After `rivet sync`,
+      `rivet validate` on a consumer project reports thousands of errors
+      (~5800 in the reporter's case) — `link-target-type`, `cardinality`,
+      schema validation-rule violations — ALL originating from the
+      loaded external repos' own artifacts. The consumer's own artifacts
+      produce zero errors. `rm -rf .rivet/repos && rivet validate` → PASS.
+
+      Root cause: `ProjectContext::load` (rivet-cli/src/main.rs ~12616)
+      `store.upsert`s every external artifact (ID-prefixed `prefix:ID`)
+      into the SAME store that `cmd_validate` hands to
+      `validate::validate`. The external artifacts therefore receive the
+      consumer's full per-artifact validation — type, fields, cardinality,
+      link-target-type, lifecycle, validation-rules. A supplier project
+      that is not itself error-free pushes its internal violations into
+      the consumer's `errors` total and fails the consumer's gate.
+
+      This directly contradicts REQ-065 / AoU-X1: "the consumer's PASS
+      does not otherwise reflect the supplier's validation state." The
+      old issue-#245 intent ("type-check prefixed artifacts against their
+      own schema") is superseded by the deliberate AoU-X1 design — the
+      supplier's diagnostics are opt-in via `--with-externals-validate`,
+      never part of the consumer's default gate.
+
+      Fix: external (prefixed) artifacts stay in the store ONLY so
+      `prefix:ID` cross-links resolve (the broken-ref check needs them).
+      `validate::validate`, the lifecycle pass, and the orphan pass must
+      run over the consumer's OWN artifacts only — those whose ID is not
+      `prefix:`-qualified. The graph stays built from the full store so
+      cross-links still resolve. `--with-externals-validate` (REQ-065)
+      remains the way to see the supplier's own diagnostics, separately.
+
+      Acceptance:
+        - Consumer project with an `externals:` entry whose external
+          project contains real schema violations. `rivet sync` then
+          `rivet validate` (no flags): verify the consumer's `errors`
+          total counts ONLY the consumer's own artifacts — the
+          external's violations do not appear and do not cause FAIL.
+        - `prefix:ID` cross-links from the consumer still resolve (a
+          consumer artifact linking `prefix:REAL-ID` is not a broken
+          ref; linking `prefix:NONEXISTENT` still is).
+        - `rivet validate --with-externals-validate` still surfaces the
+          external's diagnostics under `cross_repo_diagnostics`.
+        - Regression test in `rivet-cli/tests/cli_commands.rs`.
+    tags: [validate, cross-repo, externals, silent-failure-inverse, p1]
+    fields:
+      priority: must
+      category: functional
+      baseline: v0.11.1-track
+    links:
+      - type: derives-from
+        target: FEAT-135
+      - type: traces-to
+        target: REQ-065

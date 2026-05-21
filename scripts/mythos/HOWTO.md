@@ -31,6 +31,17 @@ One of:
 - Code path with no commit trailer (`Implements:` / `Refs:` / `Fixes:` /
   `Verifies:`) and no artifact that references it by path — i.e. the code
   drifted from the spec or was never traced to one.
+- **Silent-failure slop** — a path that reports success (`PASS`, exit 0,
+  empty `diagnostics`, a silently-dropped record) over a degraded input
+  it should have rejected. The Cederqvist cliff: textual success over a
+  semantically-failed operation. Surfaced by the 2026-05-19 cross-git
+  investigation (FEAT-135, REQ-062..REQ-076). Hunted by the variant
+  prompt `discover-silent-failure.md` with the **degraded-input
+  oracle** (construct a malformed/duplicate/ambiguous input, show the
+  command passes anyway) rather than the excision oracle. Run that
+  prompt against ingest / parse / count / merge / check surfaces;
+  the cross-git fixes already cleared validate/load/supplier, so hunt
+  the OTHER subsystems (import, migrate, coverage, stamp, export, mcp).
 
 ## Prerequisites
 
