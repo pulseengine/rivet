@@ -706,18 +706,39 @@ pub fn parse_reqif(xml: &str, type_map: &HashMap<String, String>) -> Result<Vec<
     }
 
     // Parse SPEC-OBJECTS into Artifacts.
+    //
+    // ReqIF 1.2's XSD makes `SPEC-OBJECT/TYPE` mandatory, and
+    // `docs/design/polarion-reqif-fidelity.md` lists `artifact_type` as
+    // LOSSLESS — there is no sanctioned unknown-type fallback. A SPEC-OBJECT
+    // with no `<TYPE>` element, or a `SPEC-OBJECT-TYPE-REF` pointing at an
+    // undeclared SPEC-OBJECT-TYPE, is collected into `untyped`; the whole
+    // import is rejected (mirrors the dangling-SPEC-RELATION block below)
+    // rather than silently typing the artifact `"unknown"`.
     let mut artifacts: Vec<Artifact> = Vec::new();
+    let mut untyped: Vec<String> = Vec::new();
     for obj in &content.spec_objects.objects {
-        let artifact_type = obj
-            .object_type_ref
-            .as_ref()
-            .and_then(|r| {
-                object_type_names
+        let artifact_type = match &obj.object_type_ref {
+            Some(r) => {
+                match object_type_names
                     .get(r.spec_object_type_ref.as_str())
                     .copied()
-            })
-            .unwrap_or("unknown")
-            .to_string();
+                {
+                    Some(name) => name.to_string(),
+                    None => {
+                        untyped.push(format!(
+                            "SPEC-OBJECT {} -> type {}",
+                            obj.identifier, r.spec_object_type_ref
+                        ));
+                        // Placeholder; the import is rejected after the loop.
+                        "unknown".to_string()
+                    }
+                }
+            }
+            None => {
+                untyped.push(format!("SPEC-OBJECT {} has no TYPE", obj.identifier));
+                "unknown".to_string()
+            }
+        };
 
         let mut status: Option<String> = None;
         let mut tags: Vec<String> = Vec::new();
@@ -890,6 +911,14 @@ pub fn parse_reqif(xml: &str, type_map: &HashMap<String, String>) -> Result<Vec<
         artifacts.push(artifact);
     }
 
+    if !untyped.is_empty() {
+        return Err(Error::Adapter(format!(
+            "ReqIF import rejected {} SPEC-OBJECT(s) with missing/dangling TYPE: {}",
+            untyped.len(),
+            untyped.join("; ")
+        )));
+    }
+
     // Build UUID -> resolved ID map (for StrictDoc where IDENTIFIER is a UUID
     // but we use ReqIF.ForeignID as the artifact ID).
     let uuid_to_id: HashMap<String, String> = content
@@ -915,18 +944,33 @@ pub fn parse_reqif(xml: &str, type_map: &HashMap<String, String>) -> Result<Vec<
     // existing SpecObject is collected into `dangling`; the whole import is
     // rejected if any are seen, rather than silently creating phantom Links
     // that would show up as broken edges in the LinkGraph.
+    //
+    // The relation's TYPE gets the same treatment: a missing `<TYPE>` or a
+    // `SPEC-RELATION-TYPE-REF` pointing at an undeclared SPEC-RELATION-TYPE is
+    // collected into `dangling` instead of silently falling back to
+    // `"traces-to"`, which would mislabel the link role.
     let mut dangling: Vec<String> = Vec::new();
     for rel in &content.spec_relations.relations {
-        let link_type = rel
-            .relation_type_ref
-            .as_ref()
-            .and_then(|r| {
-                relation_type_names
-                    .get(r.spec_relation_type_ref.as_str())
-                    .copied()
-            })
-            .unwrap_or("traces-to")
-            .to_string();
+        let link_type = match &rel.relation_type_ref {
+            Some(r) => match relation_type_names
+                .get(r.spec_relation_type_ref.as_str())
+                .copied()
+            {
+                Some(name) => name.to_string(),
+                None => {
+                    dangling.push(format!(
+                        "SPEC-RELATION {} -> type {} (undeclared SPEC-RELATION-TYPE)",
+                        rel.identifier, r.spec_relation_type_ref
+                    ));
+                    // Placeholder; the import is rejected after the loop.
+                    "traces-to".to_string()
+                }
+            },
+            None => {
+                dangling.push(format!("SPEC-RELATION {} has no TYPE", rel.identifier));
+                "traces-to".to_string()
+            }
+        };
 
         // Resolve UUID references to artifact IDs
         let source_id = uuid_to_id
@@ -966,7 +1010,7 @@ pub fn parse_reqif(xml: &str, type_map: &HashMap<String, String>) -> Result<Vec<
 
     if !dangling.is_empty() {
         return Err(Error::Adapter(format!(
-            "ReqIF import rejected {} dangling SPEC-RELATION target(s): {}",
+            "ReqIF import rejected {} dangling SPEC-RELATION reference(s): {}",
             dangling.len(),
             dangling.join("; ")
         )));
@@ -2155,6 +2199,7 @@ mod tests {
       <DATATYPES/>
       <SPEC-TYPES>
         <SPEC-OBJECT-TYPE IDENTIFIER="SOT-req" LONG-NAME="requirement"/>
+        <SPEC-RELATION-TYPE IDENTIFIER="SRT-traces-to" LONG-NAME="traces-to"/>
       </SPEC-TYPES>
       <SPEC-OBJECTS>
         <SPEC-OBJECT IDENTIFIER="R-1" LONG-NAME="Existing">
@@ -2163,6 +2208,7 @@ mod tests {
       </SPEC-OBJECTS>
       <SPEC-RELATIONS>
         <SPEC-RELATION IDENTIFIER="REL-1">
+          <TYPE><SPEC-RELATION-TYPE-REF>SRT-traces-to</SPEC-RELATION-TYPE-REF></TYPE>
           <SOURCE><SPEC-OBJECT-REF>MISSING-SRC</SPEC-OBJECT-REF></SOURCE>
           <TARGET><SPEC-OBJECT-REF>R-1</SPEC-OBJECT-REF></TARGET>
         </SPEC-RELATION>
@@ -2172,6 +2218,183 @@ mod tests {
 </REQ-IF>"#;
         let err = parse_reqif(xml, &HashMap::new()).expect_err("dangling source rejected");
         assert!(err.to_string().contains("MISSING-SRC"));
+    }
+
+    /// A SPEC-OBJECT with no `<TYPE>` element must be rejected — ReqIF 1.2's
+    /// XSD makes `SPEC-OBJECT/TYPE` mandatory, so silently typing the
+    /// artifact `"unknown"` (the old `unwrap_or` fallback) is a data-loss bug.
+    // rivet: verifies REQ-079
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_spec_object_without_type_rejected() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<REQ-IF xmlns="http://www.omg.org/spec/ReqIF/20110401/reqif.xsd">
+  <THE-HEADER>
+    <REQ-IF-HEADER IDENTIFIER="missing-type"/>
+  </THE-HEADER>
+  <CORE-CONTENT>
+    <REQ-IF-CONTENT>
+      <DATATYPES/>
+      <SPEC-TYPES>
+        <SPEC-OBJECT-TYPE IDENTIFIER="SOT-req" LONG-NAME="requirement"/>
+      </SPEC-TYPES>
+      <SPEC-OBJECTS>
+        <SPEC-OBJECT IDENTIFIER="R-NOTYPE" LONG-NAME="Untyped req"/>
+      </SPEC-OBJECTS>
+      <SPEC-RELATIONS/>
+    </REQ-IF-CONTENT>
+  </CORE-CONTENT>
+</REQ-IF>"#;
+
+        let err = parse_reqif(xml, &HashMap::new())
+            .expect_err("SPEC-OBJECT without TYPE should be rejected");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("R-NOTYPE"),
+            "error should name the untyped SPEC-OBJECT: {msg}"
+        );
+        assert!(
+            msg.contains("no TYPE"),
+            "error should explain the TYPE is missing: {msg}"
+        );
+    }
+
+    /// A SPEC-OBJECT whose `SPEC-OBJECT-TYPE-REF` points at an undeclared
+    /// SPEC-OBJECT-TYPE must be rejected, naming both the object and the
+    /// dangling type ref — not silently typed `"unknown"`.
+    // rivet: verifies REQ-079
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_spec_object_dangling_type_ref_rejected() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<REQ-IF xmlns="http://www.omg.org/spec/ReqIF/20110401/reqif.xsd">
+  <THE-HEADER>
+    <REQ-IF-HEADER IDENTIFIER="dangling-type"/>
+  </THE-HEADER>
+  <CORE-CONTENT>
+    <REQ-IF-CONTENT>
+      <DATATYPES/>
+      <SPEC-TYPES>
+        <SPEC-OBJECT-TYPE IDENTIFIER="SOT-req" LONG-NAME="requirement"/>
+      </SPEC-TYPES>
+      <SPEC-OBJECTS>
+        <SPEC-OBJECT IDENTIFIER="R-BADTYPE" LONG-NAME="Bad-typed req">
+          <TYPE><SPEC-OBJECT-TYPE-REF>SOT-DOES-NOT-EXIST</SPEC-OBJECT-TYPE-REF></TYPE>
+        </SPEC-OBJECT>
+      </SPEC-OBJECTS>
+      <SPEC-RELATIONS/>
+    </REQ-IF-CONTENT>
+  </CORE-CONTENT>
+</REQ-IF>"#;
+
+        let err = parse_reqif(xml, &HashMap::new())
+            .expect_err("dangling SPEC-OBJECT-TYPE-REF should be rejected");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("R-BADTYPE"),
+            "error should name the SPEC-OBJECT: {msg}"
+        );
+        assert!(
+            msg.contains("SOT-DOES-NOT-EXIST"),
+            "error should name the dangling type ref: {msg}"
+        );
+    }
+
+    /// A SPEC-RELATION whose `SPEC-RELATION-TYPE-REF` points at an undeclared
+    /// SPEC-RELATION-TYPE must be rejected rather than silently falling back
+    /// to the `"traces-to"` link role.
+    // rivet: verifies REQ-079
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_spec_relation_dangling_type_ref_rejected() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<REQ-IF xmlns="http://www.omg.org/spec/ReqIF/20110401/reqif.xsd">
+  <THE-HEADER>
+    <REQ-IF-HEADER IDENTIFIER="rel-bad-type"/>
+  </THE-HEADER>
+  <CORE-CONTENT>
+    <REQ-IF-CONTENT>
+      <DATATYPES/>
+      <SPEC-TYPES>
+        <SPEC-OBJECT-TYPE IDENTIFIER="SOT-req" LONG-NAME="requirement"/>
+      </SPEC-TYPES>
+      <SPEC-OBJECTS>
+        <SPEC-OBJECT IDENTIFIER="R-1" LONG-NAME="Source req">
+          <TYPE><SPEC-OBJECT-TYPE-REF>SOT-req</SPEC-OBJECT-TYPE-REF></TYPE>
+        </SPEC-OBJECT>
+        <SPEC-OBJECT IDENTIFIER="R-2" LONG-NAME="Target req">
+          <TYPE><SPEC-OBJECT-TYPE-REF>SOT-req</SPEC-OBJECT-TYPE-REF></TYPE>
+        </SPEC-OBJECT>
+      </SPEC-OBJECTS>
+      <SPEC-RELATIONS>
+        <SPEC-RELATION IDENTIFIER="REL-1">
+          <TYPE><SPEC-RELATION-TYPE-REF>SRT-DOES-NOT-EXIST</SPEC-RELATION-TYPE-REF></TYPE>
+          <SOURCE><SPEC-OBJECT-REF>R-1</SPEC-OBJECT-REF></SOURCE>
+          <TARGET><SPEC-OBJECT-REF>R-2</SPEC-OBJECT-REF></TARGET>
+        </SPEC-RELATION>
+      </SPEC-RELATIONS>
+    </REQ-IF-CONTENT>
+  </CORE-CONTENT>
+</REQ-IF>"#;
+
+        let err = parse_reqif(xml, &HashMap::new())
+            .expect_err("dangling SPEC-RELATION-TYPE-REF should be rejected");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("REL-1"),
+            "error should name the SPEC-RELATION: {msg}"
+        );
+        assert!(
+            msg.contains("SRT-DOES-NOT-EXIST"),
+            "error should name the dangling type ref: {msg}"
+        );
+    }
+
+    /// A well-formed ReqIF — every SPEC-OBJECT and SPEC-RELATION carries a
+    /// `<TYPE>` resolving to a declared type — still imports cleanly. Guards
+    /// against the REQ-079 rejection over-firing on valid input.
+    // rivet: verifies REQ-079
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_well_formed_reqif_with_types_imports_ok() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<REQ-IF xmlns="http://www.omg.org/spec/ReqIF/20110401/reqif.xsd">
+  <THE-HEADER>
+    <REQ-IF-HEADER IDENTIFIER="well-formed"/>
+  </THE-HEADER>
+  <CORE-CONTENT>
+    <REQ-IF-CONTENT>
+      <DATATYPES/>
+      <SPEC-TYPES>
+        <SPEC-OBJECT-TYPE IDENTIFIER="SOT-req" LONG-NAME="requirement"/>
+        <SPEC-RELATION-TYPE IDENTIFIER="SRT-traces-to" LONG-NAME="traces-to"/>
+      </SPEC-TYPES>
+      <SPEC-OBJECTS>
+        <SPEC-OBJECT IDENTIFIER="R-1" LONG-NAME="Source req">
+          <TYPE><SPEC-OBJECT-TYPE-REF>SOT-req</SPEC-OBJECT-TYPE-REF></TYPE>
+        </SPEC-OBJECT>
+        <SPEC-OBJECT IDENTIFIER="R-2" LONG-NAME="Target req">
+          <TYPE><SPEC-OBJECT-TYPE-REF>SOT-req</SPEC-OBJECT-TYPE-REF></TYPE>
+        </SPEC-OBJECT>
+      </SPEC-OBJECTS>
+      <SPEC-RELATIONS>
+        <SPEC-RELATION IDENTIFIER="REL-1">
+          <TYPE><SPEC-RELATION-TYPE-REF>SRT-traces-to</SPEC-RELATION-TYPE-REF></TYPE>
+          <SOURCE><SPEC-OBJECT-REF>R-1</SPEC-OBJECT-REF></SOURCE>
+          <TARGET><SPEC-OBJECT-REF>R-2</SPEC-OBJECT-REF></TARGET>
+        </SPEC-RELATION>
+      </SPEC-RELATIONS>
+    </REQ-IF-CONTENT>
+  </CORE-CONTENT>
+</REQ-IF>"#;
+
+        let arts = parse_reqif(xml, &HashMap::new())
+            .expect("well-formed ReqIF with types should import cleanly");
+        assert_eq!(arts.len(), 2);
+        assert_eq!(arts[0].artifact_type, "requirement");
+        assert_eq!(arts[0].links.len(), 1, "the traces-to link should survive");
+        assert_eq!(arts[0].links[0].link_type, "traces-to");
+        assert_eq!(arts[0].links[0].target, "R-2");
     }
 
     /// Legacy comma-joined tags (from older rivet exports or other tools)
