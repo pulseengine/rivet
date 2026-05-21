@@ -5,6 +5,52 @@
 
 ## [Unreleased]
 
+## [0.11.1] — 2026-05-21
+
+Theme: **the Mythos silent-failure hunt**. A `scripts/mythos/`
+slop-hunt re-run after v0.11.0 — adjusted with a new degraded-input
+oracle (`discover-silent-failure.md`) targeting the F2 silent-failure
+class the cross-git investigation surfaced — swept the ingest/parse
+subsystems the FEAT-135 waves did not cover. Four discovery agents
+returned four confirmed findings; in every case the subsystem already
+contained a sibling check doing the right thing and one code path that
+forgot to. Filed as REQ-078..REQ-081 (`artifacts/mythos-silent-failure-findings.yaml`).
+A fifth fix, REQ-082, addresses a user-reported v0.11.0 regression.
+Patch-shaped: every change is a localized fix, no new flags, no schema
+change.
+
+### Fixed
+
+- **`rivet commits` silently treated malformed artifact trailers as
+  benign orphans** — a one-keystroke typo (`Implements: REQ-O1`) or a
+  typo'd trailer key (`Implments:`) produced an empty `artifact_refs`,
+  classified `Orphan` (warning, exit 0). Malformed references are now
+  flagged as broken, asymmetric with the existing `BrokenRef` check
+  for well-formed-but-unknown IDs (REQ-078).
+- **ReqIF import silently typed a SPEC-OBJECT `unknown`** when its
+  `<TYPE>` was missing or referenced an undeclared SPEC-OBJECT-TYPE —
+  `parse_reqif` returned `Ok`. It now rejects the import naming the
+  offending SPEC-OBJECT, matching the sibling dangling-SPEC-RELATION
+  check (REQ-079).
+- **Schema migration skipped the enum value-check on field-map-renamed
+  fields** — a source value out of the target field's `allowed_values`
+  enum produced zero conflicts and migrated `COMPLETE`. The renamed
+  path now hits the same conflict path as the non-renamed path
+  (REQ-080).
+- **`needs.json` import accepted duplicate artifact IDs** — two
+  sphinx-needs entries sharing one inner `id` both imported, exit 0.
+  The importer now rejects the collision, reusing REQ-075's
+  `detect_duplicate_ids` so the uniqueness rule has one definition
+  (REQ-081).
+- **`rivet validate` counted linked external repos' own schema
+  violations against the consumer** — after `rivet sync`, a consumer
+  project reported thousands of errors all originating from loaded
+  external repos' artifacts, contradicting REQ-065 / AoU-X1. External
+  (`prefix:`-qualified) artifacts now stay in the store ONLY so the
+  consumer's `prefix:ID` cross-links resolve; every per-artifact
+  validation pass skips them. The supplier's diagnostics remain opt-in
+  via `--with-externals-validate` (REQ-082). User-reported.
+
 ## [0.11.0] — 2026-05-21
 
 Theme: **the cross-git investigation**. A 2026-05-19 investigation
