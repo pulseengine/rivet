@@ -44,6 +44,7 @@ fn make_commit(
         date: "2025-06-01T00:00:00+00:00".into(),
         commit_type: rivet_core::commits::parse_commit_type(subject),
         artifact_refs,
+        malformed_refs: Vec::new(),
         changed_files,
         has_skip_trailer,
     }

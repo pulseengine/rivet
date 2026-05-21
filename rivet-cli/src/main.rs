@@ -10124,9 +10124,39 @@ fn cmd_commit_msg_check(cli: &Cli, file: &std::path::Path) -> Result<bool> {
 
     // Parse artifact trailers
     let trailer_map: &BTreeMap<String, String> = &commits_cfg.trailers;
-    let (artifact_refs, _) =
+    let parsed =
         rivet_core::commits::parse_commit_message(message, trailer_map, &commits_cfg.skip_trailer);
 
+    // Malformed or typo'd trailers are hard errors (REQ-078): a botched
+    // artifact-ID token or a mistyped trailer key must not slip through
+    // as a silent orphan.
+    if !parsed.malformed_refs.is_empty() {
+        eprintln!("error: commit message has malformed artifact trailers:");
+        for m in &parsed.malformed_refs {
+            match m.kind {
+                rivet_core::commits::MalformedKind::Id => {
+                    eprintln!(
+                        "  '{}' under '{}:' is not a valid artifact ID",
+                        m.token, m.context
+                    );
+                }
+                rivet_core::commits::MalformedKind::Key => {
+                    eprintln!(
+                        "  '{}:' is not a known trailer key (did you mean '{}:'?)",
+                        m.token, m.context
+                    );
+                }
+            }
+        }
+        eprintln!();
+        eprintln!(
+            "Fix the trailer, or add '{}' to skip.",
+            commits_cfg.skip_trailer
+        );
+        return Ok(false);
+    }
+
+    let artifact_refs = &parsed.artifact_refs;
     let all_ids: Vec<String> = artifact_refs.values().flatten().cloned().collect();
 
     if all_ids.is_empty() {
@@ -10313,10 +10343,17 @@ fn cmd_commits(
             } else {
                 &br.hash
             };
-            println!(
-                "  {short} {}: unknown ID '{}' (trailer: {})",
-                br.subject, br.missing_id, br.link_type
-            );
+            if br.malformed {
+                println!(
+                    "  {short} {}: malformed trailer '{}' ({})",
+                    br.subject, br.missing_id, br.link_type
+                );
+            } else {
+                println!(
+                    "  {short} {}: unknown ID '{}' (trailer: {})",
+                    br.subject, br.missing_id, br.link_type
+                );
+            }
         }
     }
 
@@ -10363,12 +10400,18 @@ fn cmd_commits(
 }
 
 fn cmd_commits_json(analysis: &rivet_core::commits::CommitAnalysis, strict: bool) -> Result<bool> {
+    let malformed_count = analysis
+        .broken_refs
+        .iter()
+        .filter(|br| br.malformed)
+        .count();
     let json = serde_json::json!({
         "summary": {
             "linked": analysis.linked.len(),
             "orphans": analysis.orphans.len(),
             "exempt": analysis.exempt.len(),
             "broken_refs": analysis.broken_refs.len(),
+            "malformed_refs": malformed_count,
         },
         "broken_refs": analysis.broken_refs.iter().map(|br| {
             serde_json::json!({
@@ -10376,6 +10419,7 @@ fn cmd_commits_json(analysis: &rivet_core::commits::CommitAnalysis, strict: bool
                 "subject": br.subject,
                 "missing_id": br.missing_id,
                 "link_type": br.link_type,
+                "malformed": br.malformed,
             })
         }).collect::<Vec<_>>(),
         "orphans": analysis.orphans.iter().map(|c| {
