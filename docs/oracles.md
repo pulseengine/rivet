@@ -1,3 +1,11 @@
+---
+id: DOC-ORACLES
+title: "Oracles — rivet check"
+type: reference
+status: current
+tags: [oracles, check, ci, agent-pipelines, reference]
+---
+
 # Oracles — `rivet check ...`
 
 Oracles are reusable, mechanical checks that either pass (exit 0) or fire
@@ -5,9 +13,20 @@ Oracles are reusable, mechanical checks that either pass (exit 0) or fire
 pipeline declared in a schema's `agent-pipelines:` block can gate a step
 on a single oracle's outcome.
 
-This document lists the oracle catalog shipped in v0.4.3 and their JSON
+This document lists the oracle catalog shipped in v0.10.1 and their JSON
 output schemas. The JSON shape is the contract pipelines consume —
 downstream tools must not re-parse text output.
+
+The catalog currently has five oracles, all variants of the `CheckAction`
+enum in `rivet-cli/src/main.rs`:
+
+| Oracle             | Purpose                                                       |
+|--------------------|---------------------------------------------------------------|
+| `bidirectional`    | Every forward link with a declared inverse has its inverse    |
+| `review-signoff`   | A `released` artifact has a reviewer distinct from the author |
+| `gaps-json`        | Canonical JSON gap summary grouped by artifact                |
+| `sources`          | `cited-source` hash status (match / drift / missing / stale)  |
+| `ai-defects-open`  | Block release on open `ai-found-defect` against shipped work  |
 
 ## General contract
 
@@ -23,7 +42,7 @@ Exit codes:
 - `1` — oracle fires (one or more violations).
 - `2` — invocation error (unknown artifact, invalid format, etc.).
 
-All three oracles in this catalog live under the `rivet check ...`
+All oracles in this catalog live under the `rivet check ...`
 subcommand namespace.
 
 ## 1. `rivet check bidirectional`
@@ -151,6 +170,53 @@ rivet check gaps-json [--baseline NAME] [--format json|text]
 - Exit code reflects `by_severity.error`: oracle fires iff `error > 0`.
   Warnings and infos are reported in the JSON but do not fail the gate.
 
+## 4. `rivet check sources`
+
+Walks every artifact carrying a `cited-source` and classifies its hash
+status against the referenced file. The cited-source mechanism is how
+Rivet detects drift between an artifact and an upstream document it cites.
+
+```
+rivet check sources [--update [--apply]] [--strict] [--format text|json]
+```
+
+Three modes:
+
+- **default** — read-only listing of every cited-source and its status.
+- **`--update`** — refresh `sha256` + `last-checked` stamps; prompts
+  per-artifact unless paired with `--apply` for a non-interactive batch.
+- **`--strict`** — read-only audit gate. Walks every cited-source and
+  exits non-zero if anything has drifted, is missing a hash, is stale
+  (`last-checked` older than 30 days or absent), or could not be read.
+  Mutually exclusive with `--update`.
+
+Status values: `match`, `drift`, `missing-hash`, `read-error`,
+`skipped-remote`, `stale`. Phase 1 handles `kind: file` cited sources;
+remote sources are skipped (see `rivet docs schema-cited-sources`).
+
+In CI, `rivet check sources --strict` is the gate; `--update --apply` is
+the (separate) fix invocation.
+
+## 5. `rivet check ai-defects-open`
+
+Blocks a release when an unresolved AI-found defect still attaches to
+shipped work. The oracle fires if any `ai-found-defect` with
+`triage-status: open` links to an artifact whose `status` is `released`
+or `approved`, **or** if a defect's `triaged-by` equals the originating
+session's `invoker` (a DPO segregation-of-duties violation — the same
+person cannot both author and clear the defect).
+
+```
+rivet check ai-defects-open [--format text|json]
+```
+
+This oracle is the operational primitive for the Tool Confidence Level
+(TCL) workstream. The tool-qualification dossier
+(`docs/design/tool-qualification-dossier.md`, also `rivet docs
+tool-qualification`) cites this loop as the TD1 detection layer that
+compensates for eroded human review when the upstream author is an AI
+assistant. Without this gate the TD1 claim has no mechanical backing.
+
 ## Pipeline wiring
 
 An agent pipeline step in a schema declares which oracles must pass before
@@ -166,6 +232,10 @@ agent-pipelines:
         oracles: [review-signoff]
       - id: collect-gaps
         oracles: [gaps-json]
+      - id: verify-cited-sources
+        oracles: [sources]
+      - id: block-open-ai-defects
+        oracles: [ai-defects-open]
 ```
 
 The runner exec's `rivet check <oracle>` with `--format json` and captures

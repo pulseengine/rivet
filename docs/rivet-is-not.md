@@ -63,6 +63,76 @@ The recording-without-performing failure mode is common in practice for a struct
 
 *Cliff:* an agent runs `rivet sync` against a supplier repo that ships ReqIF rather than rivet YAML. The sync succeeds because the externals graph is satisfied at the directory level; the supplier's artifacts are unreadable; coverage silently reports the boundary as `UNCOVERED` rather than `EXTERNAL_BOUNDARY`. The matrix looks like the supplier never delivered.
 
+## 7a. Cross-org Assumptions of Use
+
+Section 7 names the boundary. This section makes the boundary operational. The cross-git
+investigation (`docs/research/cross-git-repo-investigation.md` §4.2) enumerated eleven
+findings — referred to below as **F1** through **F11** — about Rivet's behaviour when an
+integrator links to an external, separately-owned repository. Every finding that the
+integrator must compensate for becomes an explicit **Assumption of Use (AoU)**: a thing
+Rivet does *not* do, that the integrator is therefore obliged to do instead.
+
+This is the SEooC discipline applied across an organisational boundary. A "green" cross-org
+PASS is only meaningful if these assumptions hold. If they do not, the green PASS is the
+Cederqvist function-signature example transposed across an org boundary: each repository
+is internally consistent, the cross-repo link is well-formed, and the defect lives in the
+gap between the two repositories that no single `rivet validate` run can see. A worked
+CI register implementing this whole list inline is hosted in the `rivet docs
+cross-repo-ci` topic (see [[REQ-071]]).
+
+The register below is **additive** to §7; it does not replace the prose above it. Each
+assumption cites the source finding (an F-number) it compensates for.
+
+**AoU-X1 — Validate every linked external. (Source finding: F6.)**
+The integrator runs `rivet validate --strict-cited-sources --fail-on warning` (and, once
+it lands, the parse-error-as-error fix) on *every* linked external repository as part of
+CI. Rivet does not propagate a supplier's validation state to the consumer. The absence of
+a `cross_repo_diagnostics` block in the consumer's JSON output is silence, not
+confirmation that the supplier validated cleanly. F6 is the finding that `rivet validate`
+on the consumer does not surface the supplier's diagnostics.
+
+**AoU-X2 — Treat supplier-pull as fetch, never as authorisation. (Source finding: F8.)**
+The integrator treats `rivet supplier pull` as a fetch operation and never as an
+authorisation or sign-off. Pull silently overwrites the local cache when the supplier's
+bytes change and exits 0 with no drift header. CI must follow every `pull` with
+`rivet validate --strict-cited-sources` and gate on the exit code. F8 is the finding that
+`rivet supplier pull` overwrites on drift with exit 0 and no header.
+
+**AoU-X3 — Re-derive cross-org diagnostics from the supplier's own JSON. (Source finding: F6.)**
+The integrator re-derives every cross-org diagnostic count from the supplier's own
+`rivet validate --format json` output, never from the consumer's `cross_repo_*` counters.
+Those counters are wired but currently report zero against silence; they will report
+real supplier diagnostics only once F6 is closed, and not before.
+
+**AoU-X4 — Bisect cross-org regressions in the supplier's repository. (Source finding: F9.)**
+The integrator bisects cross-org regressions inside the supplier's repository, using
+`git bisect run` or the supplier's own tooling. Rivet does not bisect across repository
+boundaries. `rivet impact --baseline <pre-regression-tag>` may identify the artifact set
+that changed, but cross-repo attribution is human work. F9 is the finding that there is no
+bisect support and no documented cross-repo bisect workflow.
+
+**AoU-X5 — Do not use the broken safety-critical presets. (Source finding: F1.)**
+The integrator does not use `rivet init --preset {do-178c, en-50128, iec-61508,
+iec-62304}` for new compliance work until that defect is closed. The four safety-critical
+presets currently emit a `rivet.yaml` referencing a schema the binary cannot resolve; the
+error surfaces only on the next `rivet validate`. Use `--preset dev` and write the schema
+by hand, or wait. F1 is the finding that `rivet init --preset {…}` silently creates a
+broken project; this AoU becomes obsolete once [[REQ-063]] closes it.
+
+**AoU-X6 — Keep using git submodule / repo for repository lifecycle. (Source findings: F7, F9.)**
+The integrator continues to use `git submodule`, `git subrepo`, or Google's `repo` tool
+for repository lifecycle — clones, fetches, branch state, merge conflicts in pinned SHAs.
+Rivet's diagnostics layer (`external-anchor`, `cited-source`) is layered *on top of* the
+repository lifecycle, not in place of it. F7 and F9 together establish that Rivet ships no
+repository lifecycle management and no cross-boundary bisect or blame.
+
+**AoU-X7 — Pick exactly one cross-repo mechanism per link. (Source finding: F7.)**
+The integrator picks exactly one of the two cross-repo mechanisms — `externals:` or
+`external-anchor` — for each cross-link, and documents the choice. Both ship in v0.10.1
+with no documented relationship between them; F7 is the finding that names these two
+parallel systems. Until that consolidation is committed under [[DD-067]], the integrator
+must own the choice locally and consistently.
+
 ## 8. Rivet is not an AI provenance verifier.
 
 When an agent stamps an artifact with `provenance.created-by: ai-assisted` and `model: claude-opus-4-7`, Rivet records the self-report. It does not independently confirm that an Anthropic model was actually invoked, that the cited model version was the one used, or that the `ai-session` block honestly reflects the prompt and the response. The `rivet stamp` command writes what it is told to write. The pre-commit hook that auto-stamps on edits runs in the same trust boundary as the agent doing the editing. Provenance is a recording mechanism, not a forensic one — useful exactly to the degree that the surrounding process (signed commits, CI-side re-validation, the human reviewing the PR) is trusted.

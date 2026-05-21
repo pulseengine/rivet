@@ -1,3 +1,11 @@
+---
+id: DOC-INTRO-ONEPAGER
+title: rivet — one-page introduction
+type: positioning
+status: current
+tags: [positioning, pitch, marketing, onepager]
+---
+
 # rivet — one-page introduction
 
 *Hand this to someone on the way to lunch. Read in 90 seconds. Try the demo in 5 minutes.*

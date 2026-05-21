@@ -1,3 +1,11 @@
+---
+id: DOC-FEATURE-MODEL-SCHEMA
+title: Feature Model Schema
+type: reference
+status: current
+tags: [reference, variant, feature-model, schema]
+---
+
 # Feature Model Schema
 
 This document is the reference for `rivet variant` YAML files:

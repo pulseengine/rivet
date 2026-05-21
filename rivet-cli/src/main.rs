@@ -362,6 +362,17 @@ enum Command {
         /// `--strict-cited-sources`.
         #[arg(long = "strict-orphans")]
         strict_orphans: bool,
+
+        /// Also run `rivet validate` inside every linked external
+        /// project and surface its diagnostics under a
+        /// `cross_repo_diagnostics` array (JSON) / a "Cross-repo
+        /// diagnostics" section (text). Off by default: the consumer's
+        /// PASS does not otherwise reflect the supplier's validation
+        /// state (REQ-065 / AoU-X1). Independent of
+        /// `--skip-external-validation`, which governs cross-*ref*
+        /// checking.
+        #[arg(long = "with-externals-validate")]
+        with_externals_validate: bool,
     },
 
     /// Show a single artifact by ID
@@ -1873,6 +1884,7 @@ fn run(cli: Cli) -> Result<bool> {
             strict_cited_source_stale,
             check_remote_sources,
             strict_orphans,
+            with_externals_validate,
         } => cmd_validate(
             &cli,
             format,
@@ -1889,6 +1901,7 @@ fn run(cli: Cli) -> Result<bool> {
             *strict_cited_source_stale,
             *check_remote_sources,
             *strict_orphans,
+            *with_externals_validate,
         ),
         Command::List {
             r#type,
@@ -4553,6 +4566,7 @@ fn cmd_validate(
     strict_cited_source_stale: bool,
     check_remote_sources: bool,
     strict_orphans: bool,
+    with_externals_validate: bool,
 ) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
     let fail_on_threshold = parse_fail_on(fail_on)?;
@@ -5002,6 +5016,40 @@ fn cmd_validate(
         }
     }
 
+    // REQ-065 / AoU-X1: opt-in cross-repo diagnostic propagation. By
+    // default the consumer's validate says nothing about the supplier's
+    // own validation state — `--with-externals-validate` runs validate
+    // inside each linked external and surfaces its diagnostics here.
+    // Independent of `--skip-external-validation` (which governs
+    // cross-*ref* checking, not the supplier's internal state).
+    let mut cross_repo_diagnostics: Vec<(String, validate::Diagnostic)> = Vec::new();
+    if with_externals_validate {
+        if let Some(ref externals) = config.externals {
+            if !externals.is_empty() {
+                match rivet_core::externals::load_all_externals(externals, &cli.project) {
+                    Ok(resolved) => {
+                        for ext in &resolved {
+                            let Some(ref ext_schema) = ext.schema else {
+                                continue;
+                            };
+                            let mut ext_store = Store::new();
+                            for a in &ext.artifacts {
+                                ext_store.upsert(a.clone());
+                            }
+                            let ext_graph = LinkGraph::build(&ext_store, ext_schema);
+                            for d in validate::validate(&ext_store, ext_schema, &ext_graph) {
+                                cross_repo_diagnostics.push((ext.prefix.clone(), d));
+                            }
+                        }
+                    }
+                    Err(e) => eprintln!(
+                        "  warning: --with-externals-validate: could not load externals: {e}"
+                    ),
+                }
+            }
+        }
+    }
+
     // Lifecycle completeness check
     let all_artifacts: Vec<_> = store.iter().cloned().collect();
     let lifecycle_gaps =
@@ -5085,6 +5133,18 @@ fn cmd_validate(
                 })
             })
             .collect();
+        let cross_repo_diagnostics_json: Vec<serde_json::Value> = cross_repo_diagnostics
+            .iter()
+            .map(|(prefix, d)| {
+                serde_json::json!({
+                    "source_project": prefix,
+                    "source_artifact_id": d.artifact_id,
+                    "severity": format!("{:?}", d.severity).to_lowercase(),
+                    "rule": d.rule,
+                    "message": d.message,
+                })
+            })
+            .collect();
         let total_errors = errors + cross_errors;
         let result_str = if total_errors > 0 { "FAIL" } else { "PASS" };
         let mut output = serde_json::json!({
@@ -5104,6 +5164,7 @@ fn cmd_validate(
             "circular_dependencies": cycles_json,
             "version_conflict_details": conflicts_json,
             "lifecycle_coverage": lifecycle_json,
+            "cross_repo_diagnostics": cross_repo_diagnostics_json,
         });
         if let Some((ref vname, bound_count)) = variant_scope_name {
             output["variant"] = serde_json::json!({
@@ -5178,6 +5239,24 @@ fn cmd_validate(
                     gap.artifact_type,
                     gap.artifact_status.as_deref().unwrap_or("none"),
                     gap.missing.join(", "),
+                );
+            }
+        }
+
+        if with_externals_validate && !cross_repo_diagnostics.is_empty() {
+            println!();
+            println!(
+                "Cross-repo diagnostics ({}) — from --with-externals-validate; \
+                 these are the SUPPLIER's, not gating this run:",
+                cross_repo_diagnostics.len()
+            );
+            for (prefix, d) in &cross_repo_diagnostics {
+                eprintln!(
+                    "  [{}] {}: [{}] {}",
+                    prefix,
+                    format!("{:?}", d.severity).to_uppercase(),
+                    d.artifact_id.as_deref().unwrap_or("-"),
+                    d.message,
                 );
             }
         }
@@ -8215,6 +8294,7 @@ fn cmd_diff(
                     strict_cited_source_stale: false,
                     check_remote_sources: false,
                     strict_orphans: false,
+                    with_externals_validate: false,
                 },
             };
             let head_cli = Cli {
@@ -8237,6 +8317,7 @@ fn cmd_diff(
                     strict_cited_source_stale: false,
                     check_remote_sources: false,
                     strict_orphans: false,
+                    with_externals_validate: false,
                 },
             };
             let bc = ProjectContext::load(&base_cli)?;

@@ -1,3 +1,11 @@
+---
+id: DOC-PRE-COMMIT
+title: Canonical pre-commit configuration
+type: reference
+status: current
+tags: [reference, pre-commit, ci, hooks]
+---
+
 # Canonical pre-commit configuration
 
 Rivet ships a 21-hook `.pre-commit-config.yaml` that is the reference for

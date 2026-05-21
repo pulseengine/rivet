@@ -880,6 +880,144 @@ fn validate_reports_orphans_as_warnings() {
     );
 }
 
+/// REQ-065 / AoU-X1: by default the consumer's `rivet validate` says
+/// nothing about a linked external's own validation state — the
+/// `cross_repo_diagnostics` array is empty. `--with-externals-validate`
+/// runs validate inside each external and surfaces its diagnostics.
+///
+/// rivet: verifies REQ-065
+#[test]
+fn validate_with_externals_validate_surfaces_supplier_diagnostics() {
+    let root = tempfile::tempdir().expect("temp dir");
+    let supplier = root.path().join("supplier");
+    let consumer = root.path().join("consumer");
+    std::fs::create_dir_all(&supplier).unwrap();
+    std::fs::create_dir_all(&consumer).unwrap();
+
+    // Supplier: a dev project with two deliberately invalid-priority reqs.
+    let init_s = Command::new(rivet_bin())
+        .args([
+            "init",
+            "--preset",
+            "dev",
+            "--dir",
+            supplier.to_str().unwrap(),
+        ])
+        .output()
+        .expect("init supplier");
+    assert!(
+        init_s.status.success(),
+        "init supplier: {}",
+        String::from_utf8_lossy(&init_s.stderr)
+    );
+    std::fs::write(
+        supplier.join("artifacts").join("reqs.yaml"),
+        "artifacts:\n\
+         \x20 - id: REQ-S1\n    type: requirement\n    title: Bad priority one\n\
+         \x20   status: approved\n    fields: {priority: NotValid, category: functional}\n\
+         \x20 - id: REQ-S2\n    type: requirement\n    title: Bad priority two\n\
+         \x20   status: approved\n    fields: {priority: AlsoBad, category: functional}\n",
+    )
+    .expect("write supplier reqs");
+
+    // Consumer: links the supplier as a path external.
+    let init_c = Command::new(rivet_bin())
+        .args([
+            "init",
+            "--preset",
+            "dev",
+            "--dir",
+            consumer.to_str().unwrap(),
+        ])
+        .output()
+        .expect("init consumer");
+    assert!(
+        init_c.status.success(),
+        "init consumer: {}",
+        String::from_utf8_lossy(&init_c.stderr)
+    );
+    std::fs::write(
+        consumer.join("rivet.yaml"),
+        format!(
+            "project:\n  name: consumer\n  version: \"0.1.0\"\n  schemas: [common, dev]\n\
+             externals:\n  sup:\n    path: {}\n    prefix: sup\n\
+             sources:\n  - path: artifacts\n    format: generic-yaml\n",
+            supplier.display()
+        ),
+    )
+    .expect("write consumer rivet.yaml");
+    let sync = Command::new(rivet_bin())
+        .args(["--project", consumer.to_str().unwrap(), "sync"])
+        .output()
+        .expect("rivet sync");
+    assert!(
+        sync.status.success(),
+        "sync: {}",
+        String::from_utf8_lossy(&sync.stderr)
+    );
+
+    // Default validate — cross_repo_diagnostics MUST be empty.
+    let plain = Command::new(rivet_bin())
+        .args([
+            "--project",
+            consumer.to_str().unwrap(),
+            "validate",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("validate plain");
+    let plain_json: serde_json::Value =
+        serde_json::from_slice(&plain.stdout).expect("plain validate JSON");
+    assert_eq!(
+        plain_json
+            .get("cross_repo_diagnostics")
+            .and_then(|v| v.as_array())
+            .map(|a| a.len()),
+        Some(0),
+        "default validate must not surface external diagnostics; got: {plain_json}"
+    );
+
+    // --with-externals-validate — MUST surface the supplier's warnings.
+    let withv = Command::new(rivet_bin())
+        .args([
+            "--project",
+            consumer.to_str().unwrap(),
+            "validate",
+            "--with-externals-validate",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("validate --with-externals-validate");
+    let withv_json: serde_json::Value =
+        serde_json::from_slice(&withv.stdout).expect("validate JSON");
+    let crd = withv_json
+        .get("cross_repo_diagnostics")
+        .and_then(|v| v.as_array())
+        .expect("cross_repo_diagnostics array");
+    assert!(
+        crd.len() >= 3,
+        "expected >= 3 supplier diagnostics; got {}: {withv_json}",
+        crd.len()
+    );
+    let first = &crd[0];
+    for key in [
+        "source_project",
+        "source_artifact_id",
+        "severity",
+        "rule",
+        "message",
+    ] {
+        assert!(first.get(key).is_some(), "entry missing '{key}': {first}");
+    }
+    assert_eq!(
+        first.get("source_project").and_then(|v| v.as_str()),
+        Some("sup"),
+        "source_project must be the external prefix; got: {first}"
+    );
+}
+
 // ── rivet stats ─────────────────────────────────────────────────────────
 
 /// `rivet stats --format json` produces valid JSON with total count.

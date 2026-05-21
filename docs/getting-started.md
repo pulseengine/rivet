@@ -1,3 +1,11 @@
+---
+id: DOC-GETTING-STARTED
+title: Getting Started
+type: guide
+status: current
+tags: [guide, onboarding, cli, getting-started]
+---
+
 # Getting Started
 
 Rivet is a schema-driven SDLC artifact manager for safety-critical systems. It keeps
@@ -1117,7 +1125,8 @@ rivet export --format zola --output ./site --prefix rivet \
 
 Generated structure:
 - `content/<prefix>/artifacts/*.md` — one page per artifact with TOML frontmatter
-- `content/<prefix>/docs/*.md` — documents with resolved `[[ID]]` wiki-links
+- `content/<prefix>/docs/*.md` — documents with their wiki-style
+  artifact cross-links resolved to page links
 - `data/<prefix>/artifacts.json` — full data for `load_data()`
 - `data/<prefix>/validation.json` — PASS/FAIL status for export freshness
 

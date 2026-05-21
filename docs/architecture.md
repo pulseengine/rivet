@@ -67,32 +67,98 @@ root: RivetSystem::RivetCli.Impl
 
 ### 2.1 rivet-core Modules
 
+The library crate has grown well beyond the original core set. The table below groups the
+modules by concern; consult `ls rivet-core/src/` for the authoritative file list.
+
+**Artifact model and storage**
+
 | Module       | Purpose                                                          |
 |--------------|------------------------------------------------------------------|
 | `model`      | Core data types: `Artifact`, `Link`, `ProjectConfig`, `SourceConfig` |
 | `store`      | In-memory artifact store with by-ID and by-type indexing         |
 | `schema`     | Schema loading, merging, artifact type and link type definitions |
 | `links`      | `LinkGraph` construction via petgraph, backlinks, orphan detection |
+| `document`   | Markdown documents with YAML frontmatter and wiki-link references |
+| `results`    | Test run results model, YAML loading, and `ResultStore`          |
+
+**Validation, coverage, and analysis**
+
+| Module       | Purpose                                                          |
+|--------------|------------------------------------------------------------------|
 | `validate`   | Validation engine: types, fields, cardinality, traceability rules |
 | `coverage`   | Traceability coverage computation per rule                       |
+| `coverage_evidence` | Coverage-to-evidence cross-checking                        |
 | `matrix`     | Traceability matrix computation (forward and backward)           |
 | `query`      | Query engine: filter artifacts by type, status, tag, link presence |
 | `diff`       | Artifact diff and diagnostic diff between two store snapshots    |
-| `document`   | Markdown documents with YAML frontmatter and wiki-link references |
-| `results`    | Test run results model, YAML loading, and `ResultStore`          |
-| `adapter`    | Adapter trait and configuration for import/export                |
-| `reqif`      | ReqIF 1.2 XML import/export adapter                             |
-| `oslc`       | OSLC client for discovery, query, CRUD, and sync (feature-gated) |
+| `impact`     | Change-impact analysis between store snapshots                   |
+| `convergence`| Convergence / gap-closure tracking                               |
+| `doc_check`  | Documentation invariants (`rivet docs check`) over `.md` bodies  |
+| `lifecycle`  | Artifact status lifecycle transitions and gating                 |
+| `compliance` | Compliance-report computation across domain schemas              |
+
+**Incremental engine (rowan + salsa)**
+
+| Module        | Purpose                                                         |
+|---------------|-----------------------------------------------------------------|
+| `db`          | salsa database: tracked queries and incremental revalidation    |
+| `yaml_cst`    | Lossless YAML concrete syntax tree (rowan)                      |
+| `yaml_hir`    | Higher-level YAML IR: artifact / link extraction from the CST   |
+| `yaml_edit`   | Structure-preserving YAML edits for `rivet add` / `modify`      |
+| `sexpr`       | S-expression parser for `validation-rules:` / status gates      |
+| `sexpr_eval`  | S-expression evaluator against the artifact store               |
+
+**Cross-repo, variants, and provenance**
+
+| Module          | Purpose                                                       |
+|-----------------|---------------------------------------------------------------|
+| `externals`     | Cross-repo `externals:` resolution, `git clone`/`fetch`, lock |
+| `baseline`      | Named baseline tags and baseline-scoped validation            |
+| `snapshot`      | Point-in-time store snapshots for diff / impact               |
+| `feature_model` | Feature-model parsing and SAT-style constraint checking       |
+| `variant_emit`  | Variant-resolved artifact emission                            |
+| `commits`       | Git commit-trailer parsing and commit-to-artifact coverage    |
+| `cited_source`  | `cited-source` hash tracking and drift detection              |
+| `ownership`     | Artifact ownership / `CODEOWNERS`-style attribution           |
+
+**Mutation, formats, and integration**
+
+| Module         | Purpose                                                        |
+|----------------|----------------------------------------------------------------|
+| `mutate`       | Schema-validated artifact mutation (`add`, `modify`, `link`, …) |
+| `adapter`      | Adapter trait and configuration for import/export              |
+| `reqif`        | ReqIF 1.2 XML import/export adapter                            |
+| `oslc`         | OSLC client library (not exposed as a CLI subcommand — see §7) |
 | `wasm_runtime` | WASM component adapter runtime (feature-gated)                 |
-| `error`      | Unified error type for the library                               |
-| `formats/`   | Format-specific adapters: `generic` (YAML), `stpa` (STPA YAML)  |
+| `bazel`        | MODULE.bazel parsing for build-system-aware cross-repo discovery|
+| `mcp`          | Model Context Protocol server primitives                       |
+| `export`       | HTML / Zola static-site export                                 |
+| `embed`        | `{{stats:}}` / `{{coverage:}}` embed expansion in doc bodies   |
+| `verus_specs`  | Verus specification scaffolding for formal verification        |
+| `proofs`       | Proof-artifact tracking (Kani / Verus / Rocq)                  |
+| `formats/`     | Format-specific adapters: `generic` (YAML), `aadl`, `needs_json`|
+| `error`        | Unified error type for the library                             |
+
+This is a representative grouping, not an exhaustive file list; smaller support modules
+(`agent_pipelines`, `test_scanner`, `runs`, `templates`, `migrate`, `bundle`, …) round
+out the crate.
 
 ### 2.2 rivet-cli Modules
 
-| Module  | Purpose                                                              |
-|---------|----------------------------------------------------------------------|
-| `main`  | CLI entry point, clap argument parsing, subcommand dispatch          |
-| `serve` | axum HTTP server with HTMX-rendered dashboard pages                  |
+| Module          | Purpose                                                       |
+|-----------------|---------------------------------------------------------------|
+| `main`          | CLI entry point, clap argument parsing, subcommand dispatch   |
+| `check`         | Oracle subcommands (`rivet check ...`) — see `docs/oracles.md`|
+| `close_gaps`    | `rivet close-gaps` gap-closure driver                         |
+| `docs`          | `rivet docs <topic>` / `rivet docs check` documentation tools |
+| `mcp`           | `rivet mcp` Model Context Protocol server entry point         |
+| `serve`         | axum HTTP server with HTMX-rendered dashboard pages           |
+| `render`        | Server-side HTML rendering helpers for `serve`                |
+| `schema_cmd`    | `rivet schema` inspection subcommands                         |
+| `pipelines_cmd` | `rivet pipelines` agent-pipeline runner                       |
+| `runs_cmd`      | `rivet runs` evidence-run management                          |
+| `migrate_cmd`   | `rivet schema migrate` schema-migration subcommand            |
+| `templates_cmd` | `rivet templates` scaffold subcommand                         |
 
 ## 3. Data Flow
 
@@ -147,17 +213,24 @@ This design is specified by [[REQ-010]] and [[DD-003]].
 ### 3.2 Adapter Pipeline
 
 Adapters implement the `Adapter` trait, which defines `import()` and
-`export()` methods. Three native adapters exist:
+`export()` methods. The native adapters under `rivet-core/src/formats/` are:
 
-1. **GenericYamlAdapter** -- Canonical YAML format with explicit type, links
+1. **GenericYamlAdapter** (`generic`) -- Canonical YAML format with explicit type, links
    array, and fields map. Used for Rivet's own artifacts.
-2. **StpaYamlAdapter** -- Imports STPA analysis artifacts from the meld
-   project's YAML format (losses, hazards, UCAs, etc.).
-3. **ReqIfAdapter** -- Import/export for OMG ReqIF 1.2 XML, enabling
-   interchange with DOORS, Polarion, and codebeamer ([[REQ-005]]).
+2. **AadlAdapter** (`aadl`) -- Imports AADL architecture models (components, flows,
+   analysis results) for the architecture-level traceability bridge.
+3. **NeedsJsonAdapter** (`needs_json`) -- Imports sphinx-needs `needs.json` exports with
+   configurable type mapping ([[REQ-025]]).
 
-The WASM adapter runtime ([[DD-004]]) and OSLC sync adapter ([[DD-001]])
-extend this pipeline for plugin formats and remote tool synchronization.
+Two further adapters live alongside the format adapters: the **ReqIfAdapter**
+(`rivet-core/src/reqif.rs`) for OMG ReqIF 1.2 XML import/export ([[REQ-005]], enabling
+interchange with DOORS, Polarion, and codebeamer), and the WASM adapter runtime
+([[DD-004]]) for plugin formats.
+
+The `oslc` module ([[DD-001]]) is a client *library* for OSLC discovery, query, and CRUD;
+it is **not** wired to a `rivet` CLI subcommand. OSLC has no command-line
+surface today — neither an `oslc` subcommand nor an `--oslc` flag on
+`sync` — see §7.
 
 ```aadl
 root: RivetAdapters::WasmRuntime.Impl
@@ -266,13 +339,21 @@ traceability-rules:
 
 ### 5.2 Available Schemas
 
-| Schema          | Types | Link Types | Rules | Domain                         |
-|-----------------|-------|------------|-------|--------------------------------|
-| `common`        | 0     | 9          | 0     | Base fields and link types     |
-| `dev`           | 3     | 1          | 2     | Development tracking           |
-| `stpa`          | 10    | 5          | 7     | STPA safety analysis           |
-| `aspice`        | 14    | 2          | 10    | ASPICE v4.0 V-model            |
-| `cybersecurity` | 10    | 2          | 10    | SEC.1-4, ISO/SAE 21434         |
+The `schemas/` directory ships a catalogue of domain schemas — STPA, ASPICE 4.0,
+ISO 26262, ISO/PAS 8800, SOTIF, DO-178C, EN 50128, IEC 61508, IEC 62304, the EU AI Act,
+GSN safety cases, AADL, Eclipse SCORE, supply-chain — plus a set of *bridge* schemas that
+declare cross-domain link types. The structurally distinct examples are summarised below;
+the canonical inventory is `docs/schemas.md` and, ultimately, `schemas/*.yaml` itself.
+
+| Schema          | Domain                         |
+|-----------------|--------------------------------|
+| `common`        | Base fields and link types     |
+| `dev`           | Development tracking           |
+| `stpa`          | STPA safety analysis           |
+| `aspice`        | ASPICE v4.0 V-model            |
+| `cybersecurity` | SEC.1-4, ISO/SAE 21434         |
+
+See `docs/schemas.md` for the full domain and bridge-schema catalogue.
 
 ### 5.3 Merge Semantics
 
@@ -298,7 +379,10 @@ dashboard alongside artifacts they verify.
 
 This architecture reflects the following key decisions:
 
-- [[DD-001]] -- OSLC over per-tool REST adapters for external tool sync
+- [[DD-001]] -- OSLC over per-tool REST adapters for external tool sync. The decision
+  stands and the `oslc` client library exists, but OSLC is **not** exposed as a CLI
+  subcommand in the current release; `rivet --help` has no `oslc` entry. See
+  `docs/plans/2026-03-16-oslc-analysis.md` for the deliberate non-shipping rationale.
 - [[DD-002]] -- petgraph for link graph operations
 - [[DD-003]] -- Mergeable YAML schemas for domain composition
 - [[DD-004]] -- WIT-based WASM adapter interface for plugins
