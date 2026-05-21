@@ -157,7 +157,7 @@ out the crate.
 | `schema_cmd`    | `rivet schema` inspection subcommands                         |
 | `pipelines_cmd` | `rivet pipelines` agent-pipeline runner                       |
 | `runs_cmd`      | `rivet runs` evidence-run management                          |
-| `migrate_cmd`   | `rivet migrate` schema-migration subcommand                   |
+| `migrate_cmd`   | `rivet schema migrate` schema-migration subcommand            |
 | `templates_cmd` | `rivet templates` scaffold subcommand                         |
 
 ## 3. Data Flow
@@ -228,8 +228,9 @@ interchange with DOORS, Polarion, and codebeamer), and the WASM adapter runtime
 ([[DD-004]]) for plugin formats.
 
 The `oslc` module ([[DD-001]]) is a client *library* for OSLC discovery, query, and CRUD;
-it is **not** wired to a `rivet` CLI subcommand. There is no `rivet oslc` or
-`rivet sync --oslc` surface today — see §7.
+it is **not** wired to a `rivet` CLI subcommand. OSLC has no command-line
+surface today — neither an `oslc` subcommand nor an `--oslc` flag on
+`sync` — see §7.
 
 ```aadl
 root: RivetAdapters::WasmRuntime.Impl
