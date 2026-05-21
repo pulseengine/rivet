@@ -880,7 +880,6 @@ fn validate_reports_orphans_as_warnings() {
     );
 }
 
-
 // ── rivet stats ─────────────────────────────────────────────────────────
 
 /// `rivet stats --format json` produces valid JSON with total count.

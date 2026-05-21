@@ -390,7 +390,7 @@ artifacts:
       timestamp: 2026-04-22T20:25:20Z
   # ── Requirements ────────────────────────────────────────────────────
 
-  - id: REQ-060
+  - id: REQ-077
     type: requirement
     title: Every embed option must validate before the embed renders
     status: approved
