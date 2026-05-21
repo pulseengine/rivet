@@ -5845,6 +5845,11 @@ fn cmd_stats(
             ));
         }
     }
+    // REQ-082: drop diagnostics keyed to external (`prefix:ID`) artifacts —
+    // a linked external repo's own violations are the supplier's gate, not
+    // the consumer's. Mirrors the identical filter in `cmd_validate` so the
+    // `errors`/`warnings` counts stay consistent (stats_json_counts_match_validate).
+    diagnostics.retain(|d| !d.artifact_id.as_deref().is_some_and(|id| id.contains(':')));
     let errors = diagnostics
         .iter()
         .filter(|d| d.severity == Severity::Error)
