@@ -560,6 +560,80 @@ fn validate_surfaces_parse_error_on_malformed_artifact_file() {
     );
 }
 
+/// REQ-064: a `derives-from-external` link (the cross-org variant of
+/// `derives-from`, terminating at an `external-anchor`) must satisfy a
+/// required `derives-from` link-field. Before the fix the cardinality
+/// check counted only exact `derives-from` links, so a sw-req that
+/// derived from an external anchor failed with a spurious
+/// `link 'derives-from' requires at least 1 target, found 0` Error.
+///
+/// rivet: verifies REQ-064
+#[test]
+fn validate_accepts_derives_from_external_structured_target() {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let dir = tmp.path();
+    let init = Command::new(rivet_bin())
+        .args(["init", "--preset", "aspice", "--dir", dir.to_str().unwrap()])
+        .output()
+        .expect("rivet init");
+    assert!(
+        init.status.success(),
+        "init: {}",
+        String::from_utf8_lossy(&init.stderr)
+    );
+
+    std::fs::write(
+        dir.join("artifacts").join("ext.yaml"),
+        "artifacts:\n\
+         \x20 - id: ANCHOR-X\n\
+         \x20   type: external-anchor\n\
+         \x20   title: ACME anchor\n\
+         \x20   status: approved\n\
+         \x20   fields:\n\
+         \x20     source-of-truth: {org: acme, contract: PO-1, doc-id: D-1}\n\
+         \x20     expected-derived-types: [sw-req]\n\
+         \x20     received-status: received-other\n\
+         \x20 - id: SWREQ-X\n\
+         \x20   type: sw-req\n\
+         \x20   title: Derives from an external anchor\n\
+         \x20   status: draft\n\
+         \x20   fields: {req-type: functional, priority: must}\n\
+         \x20   links:\n\
+         \x20     - type: derives-from-external\n\
+         \x20       target: {org: acme, contract: PO-1, doc-id: D-1, anchor: ANCHOR-X}\n",
+    )
+    .expect("write ext.yaml");
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir.to_str().unwrap(),
+            "validate",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("rivet validate");
+    let parsed: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("validate JSON must be valid");
+    let diags = parsed
+        .get("diagnostics")
+        .and_then(|v| v.as_array())
+        .expect("diagnostics array");
+    let spurious = diags.iter().any(|d| {
+        d.get("artifact_id").and_then(|a| a.as_str()) == Some("SWREQ-X")
+            && d.get("rule").and_then(|r| r.as_str()) == Some("cardinality")
+            && d.get("message")
+                .and_then(|m| m.as_str())
+                .is_some_and(|m| m.contains("requires at least 1 target"))
+    });
+    assert!(
+        !spurious,
+        "a derives-from-external link must satisfy the derives-from \
+         link-field cardinality; got: {parsed}"
+    );
+}
+
 // ── rivet stats ─────────────────────────────────────────────────────────
 
 /// `rivet stats --format json` produces valid JSON with total count.
