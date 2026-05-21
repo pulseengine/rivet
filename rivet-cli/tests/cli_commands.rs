@@ -4207,6 +4207,148 @@ fn supplier_pull_idempotent_on_re_run() {
     );
 }
 
+/// REQ-068 regression: `rivet supplier pull` is the authorisation
+/// point for supplier bytes. After a first pull stamps the cache with
+/// sha256 X, mutating the supplier file so it hashes to Y must make a
+/// flagless re-pull refuse — exit non-zero with an error naming both
+/// X and Y plus the supplier identity (org + contract), and leaving
+/// the cache untouched. Re-running with `--accept-drift` is the
+/// explicit auditor authorisation path: it exits 0 and overwrites the
+/// cache with the new bytes.
+///
+/// Verifies: REQ-068
+#[test]
+fn supplier_pull_refuses_on_sha256_drift_without_accept_flag() {
+    use sha2::{Digest, Sha256};
+
+    let payload_v1 = b"-- supplier payload v1 --";
+    let (tmp, payload_path) = supplier_pull_project_with_file(payload_v1, true);
+    let project = tmp.path().to_str().unwrap().to_string();
+
+    // First pull: establishes the cache + manifest stamped to hash X.
+    let first = Command::new(rivet_bin())
+        .args([
+            "--project",
+            &project,
+            "supplier",
+            "pull",
+            "ANCHOR-ACME-001",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("first pull");
+    assert!(
+        first.status.success(),
+        "first pull must succeed. stderr: {}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+
+    let cache = tmp
+        .path()
+        .join(".rivet")
+        .join("supplier-cache")
+        .join("acme-electronics")
+        .join("PO-4711");
+    let cached_payload = cache.join("ANCHOR-ACME-001.bin");
+    assert_eq!(
+        std::fs::read(&cached_payload).unwrap(),
+        payload_v1,
+        "first pull caches v1 bytes"
+    );
+
+    let mut h1 = Sha256::new();
+    h1.update(payload_v1);
+    let hash_x = format!("{:x}", h1.finalize());
+
+    // Mutate the supplier file so its bytes now hash to Y != X.
+    let payload_v2 = b"-- supplier payload v2 (revised by supplier) --";
+    std::fs::write(&payload_path, payload_v2).expect("mutate supplier file");
+    let mut h2 = Sha256::new();
+    h2.update(payload_v2);
+    let hash_y = format!("{:x}", h2.finalize());
+    assert_ne!(hash_x, hash_y, "sanity: the mutation must change the hash");
+
+    // Flagless re-pull: must refuse and name both hashes + identity.
+    let drift = Command::new(rivet_bin())
+        .args(["--project", &project, "supplier", "pull", "ANCHOR-ACME-001"])
+        .output()
+        .expect("drift pull");
+    assert!(
+        !drift.status.success(),
+        "pull on sha256 drift must exit non-zero without --accept-drift"
+    );
+    let stderr = String::from_utf8_lossy(&drift.stderr);
+    assert!(
+        stderr.contains(&hash_x),
+        "drift error must name the prior sha256 X ({hash_x}), got: {stderr}"
+    );
+    assert!(
+        stderr.contains(&hash_y),
+        "drift error must name the new sha256 Y ({hash_y}), got: {stderr}"
+    );
+    assert!(
+        stderr.contains("acme-electronics") && stderr.contains("PO-4711"),
+        "drift error must name the supplier identity (org + contract), got: {stderr}"
+    );
+    // The refusal must NOT overwrite the cache.
+    assert_eq!(
+        std::fs::read(&cached_payload).unwrap(),
+        payload_v1,
+        "a refused drift pull must leave the cache untouched"
+    );
+
+    // `--accept-drift`: explicit auditor authorisation → exit 0,
+    // cache overwritten with the new bytes.
+    let accepted = Command::new(rivet_bin())
+        .args([
+            "--project",
+            &project,
+            "supplier",
+            "pull",
+            "ANCHOR-ACME-001",
+            "--accept-drift",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("accept-drift pull");
+    assert!(
+        accepted.status.success(),
+        "pull --accept-drift must exit 0. stderr: {}",
+        String::from_utf8_lossy(&accepted.stderr)
+    );
+    let v: serde_json::Value =
+        serde_json::from_slice(&accepted.stdout).expect("valid json on accept-drift pull");
+    assert_eq!(v["drift_accepted"], serde_json::Value::Bool(true));
+    assert_eq!(v["source_hash"], hash_y);
+    assert_eq!(
+        std::fs::read(&cached_payload).unwrap(),
+        payload_v2,
+        "accept-drift pull must overwrite the cache with the new bytes"
+    );
+
+    // The anchor must be re-stamped to Y so a subsequent re-pull of
+    // the SAME bytes is idempotent (not a fresh drift).
+    let re_pull = Command::new(rivet_bin())
+        .args([
+            "--project",
+            &project,
+            "supplier",
+            "pull",
+            "ANCHOR-ACME-001",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("idempotent re-pull after accept-drift");
+    assert!(
+        re_pull.status.success(),
+        "re-pull of identical accepted bytes must exit 0. stderr: {}",
+        String::from_utf8_lossy(&re_pull.stderr)
+    );
+}
+
 /// `kind: reqif` end-to-end: minimal well-formed ReqIF in the
 /// project, anchored cited-source, hash agrees → cache layout
 /// shows `.reqif` extension and `source-tool: reqif-1.2`.
