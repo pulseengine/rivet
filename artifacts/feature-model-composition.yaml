@@ -1,0 +1,93 @@
+# Feature-model composition — multi-file feature models (2026-05-21)
+#
+# User-requested topic (2026-05-21): author a product line's feature
+# tree across multiple files — the top-level model in one file, each
+# sub-level (powertrain, ECU, ...) in its own file — and have a binding
+# file relate them into one resolved tree. The motivating example:
+# "build a car or a motorcycle; the powertrain runs on 4 wheels or 2;
+# the ECU further down controls this."
+#
+# Rivet today: a feature model is strictly one file. `FeatureModel`
+# (rivet-core/src/feature_model.rs:58) parses exactly `root`, `features`,
+# `constraints`, `attribute-schema` — no `include`, `import`, `extends`.
+#
+# Design settled with the requester: each file stays a first-class,
+# standalone feature model (already solvable per-file today); a new
+# `feature-model-binding` file mounts sub-models at parent features with
+# explicit mapping + prefix namespacing — the same by-reference model as
+# `externals: prefix:ID`. See docs/pure-variants-comparison.md §6 (PV's
+# Feature-Model / Family-Model split — the binding is the gluing layer).
+#
+# Targeted v0.12.0 (new capability — minor version, not a v0.11.1 patch).
+
+artifacts:
+
+  - id: REQ-083
+    type: requirement
+    title: "Feature models must compose across files — sub-models mounted at parent features via an explicit, prefixed binding"
+    status: draft
+    description: |
+      Rivet feature models are single-file: `FeatureModel`
+      (rivet-core/src/feature_model.rs:58) parses only `root`,
+      `features`, `constraints`, `attribute-schema` — there is no
+      `include`, `import`, or `extends`. A product line therefore
+      cannot be authored as a top-level tree plus per-level sub-trees
+      owned by different teams (e.g. vehicle -> powertrain -> ECU).
+
+      Design (settled with the requester, 2026-05-21):
+
+      - Each feature-model file remains a first-class, standalone
+        model. `rivet variant solve <sub-model>` already resolves a
+        complete per-file model with its own root and constraints,
+        with no parent. The "run each subfeature on its own" property
+        is preserved, not newly built — sub-models need not always
+        break down from a top.
+      - A new `feature-model-binding` file (`kind:
+        feature-model-binding`) declares composition: which sub-model
+        file mounts at which parent feature. The mapping is EXPLICIT
+        (parent feature name -> sub-model file) and the mounted
+        sub-model's features are PREFIX-namespaced — mirroring the
+        `externals: prefix:ID` by-reference model — so one sub-model
+        is reusable under several parents without name collisions.
+      - On load, Rivet splices each sub-model's tree in at its mount
+        point and unions the constraint sets into ONE resolved tree
+        for the solver. The merged tree is what `solve` / `check` /
+        `explain` operate on; each file still validates independently.
+      - Parent constraints may reference prefixed child features,
+        e.g. `(implies car powertrain:four-wheel)`.
+
+      This is the Feature-Model / Family-Model layering that
+      docs/pure-variants-comparison.md §6 describes: the binding layer
+      is the solution-space glue. Per the F2 silent-failure class, a
+      broken mount must fail loudly — never a silent skip.
+
+      Acceptance:
+        - `rivet variant solve powertrain.feature.yaml` resolves the
+          sub-model standalone (own root + constraints, no parent),
+          exit 0.
+        - Given a `feature-model-binding` mounting
+          `powertrain.feature.yaml` at parent feature `powertrain`
+          with prefix `powertrain`, `rivet variant solve <binding>`
+          yields a single merged tree and `rivet variant list
+          <binding>` shows the child features namespaced
+          (`powertrain:four-wheel`).
+        - A parent constraint `(implies car powertrain:four-wheel)` is
+          enforced by the solver and surfaced by `rivet variant
+          explain`.
+        - The same sub-model mounted under two parents gets two
+          distinct prefixes; features do not collide.
+        - A mount whose target file is missing, or whose declared
+          prefix collides with another mount, is a hard ERROR with
+          non-zero exit — never a silent skip.
+        - Regression tests in rivet-core (`feature_model.rs`) and
+          rivet-cli (variant CLI integration).
+    tags: [variant, ple, feature-model, composition, multi-file]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.12.0-track
+    links:
+      - type: derives-from
+        target: REQ-042
+      - type: traces-to
+        target: REQ-044

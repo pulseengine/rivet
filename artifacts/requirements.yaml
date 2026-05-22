@@ -1455,3 +1455,53 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-7
       timestamp: 2026-04-22T20:29:48Z
+
+  - id: REQ-084
+    type: requirement
+    title: "Verus proof CI must fail loudly when its Nix install fails — a continue-on-error proof job that verifies nothing is a silent failure"
+    status: draft
+    description: |
+      The Verus Proofs CI job (.github/workflows/ci.yml) installs Nix
+      via DeterminateSystems/nix-installer-action, then runs
+      `bazel test //verus:rivet_specs_verify`. The job is
+      `continue-on-error: true` — intentionally soft-gated, because
+      Verus has an open SMT proof gap (ci.yml lines 555-558).
+
+      On the self-hosted runner (`[self-hosted, linux, x64, lean-mem]`,
+      NoNewPrivileges=true, no sudo) the `nix-installer` binary
+      escalates via `sudo` and fails; the `Install Nix` step errors and
+      `Verify Verus specs` is then SKIPPED. Because the job is
+      `continue-on-error`, the workflow stays green. Net effect: the
+      Verus proof job has been verifying nothing while reporting no
+      blocking failure — the F2 silent-failure class. A proof job that
+      is not proving anything is worse than a red one.
+
+      Confirmed 2026-05-21 on PR #311 run 26246893086: the Verus job
+      step sequence was `failure Install Nix` -> `skipped Verify Verus
+      specs`.
+
+      Pinning the action + `determinate: false` (shipped in v0.11.1)
+      fixed the Rocq job on ubuntu-latest but cannot fix Verus: no
+      version of `nix-installer-action` installs Nix without root. The
+      durable fix is to run the Verus (and Rocq) Bazel/Nix jobs in a
+      rootless `nixos/nix` container — Nix pre-installed in the image,
+      no installer, no daemon, no sudo, no unpinned-action drift
+      surface.
+
+      Acceptance:
+        - The Verus CI job's `Verify Verus specs` step actually
+          executes — assert it is not `skipped` in the job step list.
+        - Environment breakage (Nix/toolchain unavailable) makes the
+          job FAIL visibly, distinct from a soft-gated proof result:
+          `continue-on-error` must not be able to mask a job that
+          never ran the verifier.
+        - A completed Verus job's `verus-test-log` artifact contains a
+          real Verus solver result.
+    tags: [ci, verus, silent-failure, f2-family, nix]
+    fields:
+      priority: should
+      category: non-functional
+      baseline: v0.12.0-track
+    links:
+      - type: derives-from
+        target: FEAT-135
