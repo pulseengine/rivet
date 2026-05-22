@@ -13,7 +13,9 @@
 //!   float    = [+-]? [0-9]+ '.' [0-9]*
 //!   bool     = 'true' | 'false'
 //!   wildcard = '_'
-//!   symbol   = [a-zA-Z_!?] [a-zA-Z0-9_\-!?.*]*
+//!   symbol   = [a-zA-Z_!?><=] [a-zA-Z0-9_\-!?.*><=:]*
+//!              (`:` lets a namespaced feature reference such as
+//!              `prefix:feature` lex as a single symbol — REQ-083)
 //!   comment  = ';' ... newline
 
 // SAFETY-REVIEW (SCRC Phase 1, DD-058): File-scope blanket allow for
@@ -277,7 +279,7 @@ fn is_symbol_cont(b: u8) -> bool {
     b.is_ascii_alphanumeric()
         || matches!(
             b,
-            b'_' | b'-' | b'!' | b'?' | b'.' | b'*' | b'>' | b'<' | b'='
+            b'_' | b'-' | b'!' | b'?' | b'.' | b'*' | b'>' | b'<' | b'=' | b':'
         )
 }
 
