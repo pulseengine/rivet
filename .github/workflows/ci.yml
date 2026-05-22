@@ -201,7 +201,10 @@ jobs:
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
       - name: Run cargo audit
-        # wasmtime advisories ignored — behind optional wasm feature gate.
+        # wasmtime advisories ignored — behind optional wasm feature gate
+        # (not built by default). RUSTSEC-2026-0149 (wasmtime-wasi 43,
+        # high) has no fix in the 43.x line; clearing it needs a wasmtime
+        # 43->45 major bump, tracked separately.
         run: >-
           cargo audit
           --ignore RUSTSEC-2026-0085
@@ -217,6 +220,7 @@ jobs:
           --ignore RUSTSEC-2026-0096
           --ignore RUSTSEC-2026-0103
           --ignore RUSTSEC-2026-0104
+          --ignore RUSTSEC-2026-0149
 
   deny:
     # Renamed: skipping advisories until smithy ships an upgraded
