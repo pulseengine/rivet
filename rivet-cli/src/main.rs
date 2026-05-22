@@ -4663,9 +4663,7 @@ fn cmd_validate(
     //   nothing : ordinary project validation.
     let (store, graph, variant_scope_name) = match (model_path, variant_path, binding_path) {
         (Some(mp), Some(vp), Some(bp)) => {
-            let model_yaml = std::fs::read_to_string(mp)
-                .with_context(|| format!("reading feature model {}", mp.display()))?;
-            let fm = rivet_core::feature_model::FeatureModel::from_yaml(&model_yaml)
+            let fm = rivet_core::feature_model::FeatureModel::load(mp)
                 .map_err(|e| anyhow::anyhow!("{e}"))?;
 
             let variant_yaml = std::fs::read_to_string(vp)
@@ -4710,9 +4708,7 @@ fn cmd_validate(
             // Model + binding, no variant: validate model/binding consistency
             // without resolving a specific variant. Unknown feature names in
             // the binding file are reported as errors.
-            let model_yaml = std::fs::read_to_string(mp)
-                .with_context(|| format!("reading feature model {}", mp.display()))?;
-            let fm = rivet_core::feature_model::FeatureModel::from_yaml(&model_yaml)
+            let fm = rivet_core::feature_model::FeatureModel::load(mp)
                 .map_err(|e| anyhow::anyhow!("{e}"))?;
 
             let binding_yaml = std::fs::read_to_string(bp)
@@ -11415,9 +11411,7 @@ fn cmd_variant_check(
 ) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
 
-    let model_yaml = std::fs::read_to_string(model_path)
-        .with_context(|| format!("reading {}", model_path.display()))?;
-    let model = rivet_core::feature_model::FeatureModel::from_yaml(&model_yaml)
+    let model = rivet_core::feature_model::FeatureModel::load(model_path)
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
     let variant_yaml = std::fs::read_to_string(variant_path)
@@ -11479,9 +11473,7 @@ fn cmd_variant_check_all(
 ) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
 
-    let model_yaml = std::fs::read_to_string(model_path)
-        .with_context(|| format!("reading {}", model_path.display()))?;
-    let model = rivet_core::feature_model::FeatureModel::from_yaml(&model_yaml)
+    let model = rivet_core::feature_model::FeatureModel::load(model_path)
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
     let binding_yaml = std::fs::read_to_string(binding_path)
@@ -11557,9 +11549,7 @@ fn cmd_variant_check_all(
 fn cmd_variant_list(model_path: &std::path::Path, format: &str) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
 
-    let model_yaml = std::fs::read_to_string(model_path)
-        .with_context(|| format!("reading {}", model_path.display()))?;
-    let model = rivet_core::feature_model::FeatureModel::from_yaml(&model_yaml)
+    let model = rivet_core::feature_model::FeatureModel::load(model_path)
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
     if format == "json" {
@@ -11623,9 +11613,7 @@ fn cmd_variant_solve(
 ) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
 
-    let model_yaml = std::fs::read_to_string(model_path)
-        .with_context(|| format!("reading {}", model_path.display()))?;
-    let model = rivet_core::feature_model::FeatureModel::from_yaml(&model_yaml)
+    let model = rivet_core::feature_model::FeatureModel::load(model_path)
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
     let variant_yaml = std::fs::read_to_string(variant_path)
@@ -11758,9 +11746,7 @@ fn load_and_solve_variant(
     rivet_core::feature_model::FeatureModel,
     rivet_core::feature_model::ResolvedVariant,
 )> {
-    let model_yaml = std::fs::read_to_string(model_path)
-        .with_context(|| format!("reading {}", model_path.display()))?;
-    let model = rivet_core::feature_model::FeatureModel::from_yaml(&model_yaml)
+    let model = rivet_core::feature_model::FeatureModel::load(model_path)
         .map_err(|e| anyhow::anyhow!("{e}"))?;
     let variant_yaml = std::fs::read_to_string(variant_path)
         .with_context(|| format!("reading {}", variant_path.display()))?;
@@ -12086,9 +12072,7 @@ fn cmd_variant_manifest(
 ) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
 
-    let model_yaml = std::fs::read_to_string(model_path)
-        .with_context(|| format!("reading {}", model_path.display()))?;
-    let model = rivet_core::feature_model::FeatureModel::from_yaml(&model_yaml)
+    let model = rivet_core::feature_model::FeatureModel::load(model_path)
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
     let variant_yaml = std::fs::read_to_string(variant_path)
@@ -12172,9 +12156,7 @@ fn cmd_variant_matrix(
         other => anyhow::bail!("unknown --wrap `{other}`: expected `fragment` or `job`"),
     };
 
-    let model_yaml = std::fs::read_to_string(model_path)
-        .with_context(|| format!("reading {}", model_path.display()))?;
-    let model = rivet_core::feature_model::FeatureModel::from_yaml(&model_yaml)
+    let model = rivet_core::feature_model::FeatureModel::load(model_path)
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
     let binding_yaml = std::fs::read_to_string(binding_path)

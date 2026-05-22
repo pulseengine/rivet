@@ -159,6 +159,52 @@ and `allowed but unbound` features.
 Maps features to the artifacts and source files that implement them.
 See [feature-model-bindings.md](feature-model-bindings.md).
 
+## 4. Composing models across files
+
+A large product line can be split across files: a top-level model in one
+file, each sub-level (powertrain, ECU, …) in its own file owned by
+whichever team owns that level. Every model file remains a valid,
+independently-solvable feature model on its own — `rivet variant list
+--model powertrain.yaml` works with no parent.
+
+A **`feature-model-binding`** file (REQ-083) declares how the files
+compose:
+
+```yaml
+kind: feature-model-binding
+compose:
+  - parent: vehicle.yaml             # path, relative to this binding file
+    mount:
+      powertrain:                    # a feature in the parent = the mount point
+        model: powertrain.yaml       # the sub-model file
+        prefix: pwt                  # prefix for the sub-model's features
+  - parent: powertrain.yaml          # a sub-model may itself be a parent
+    mount:
+      ecu-control:
+        model: ecu.yaml
+        prefix: ecu
+```
+
+On load, each mounted sub-model is spliced into its parent: the
+sub-model's features are namespaced under the mount `prefix`
+(`pwt:four-wheel`), its root becomes a child of the mount-point feature,
+and the constraint sets are unioned into one resolved tree that
+`solve` / `check` / `explain` / `list` all operate on.
+
+Rules:
+
+- The **mount point** must be an explicit feature in the parent model
+  with a non-`leaf` group (`mandatory`, `optional`, `alternative`, `or`)
+  so the sub-model can attach.
+- Every mount **`prefix`** must be unique across the whole composition.
+- A parent constraint may reference a prefixed child feature, e.g.
+  `(implies car pwt:four-wheel)`.
+- A broken mount — missing file, unknown or `leaf` mount point, duplicate
+  prefix, cyclic composition — is a hard error, never a silent skip.
+
+Any `rivet variant` command accepts a binding file wherever it accepts a
+plain model: `rivet variant list --model binding.yaml`.
+
 ## CLI reference
 
 ```sh

@@ -986,6 +986,29 @@ impl FeatureModel {
         Self::from_yaml_struct(merged)
     }
 
+    /// Load a feature model from a file, dispatching on its `kind:`.
+    ///
+    /// A file declaring `kind: feature-model-binding` is composed via
+    /// [`load_composed`](Self::load_composed); any other file is parsed as
+    /// a single feature model via [`from_yaml`](Self::from_yaml). This is
+    /// the entry point CLI commands use, so a `--model` argument
+    /// transparently accepts either a plain model or a composition.
+    pub fn load(path: &std::path::Path) -> Result<Self, Error> {
+        let src = std::fs::read_to_string(path)
+            .map_err(|e| Error::Schema(format!("feature model `{}`: {e}", path.display())))?;
+        #[derive(Deserialize)]
+        struct KindProbe {
+            kind: Option<String>,
+        }
+        let probe: KindProbe = serde_yaml::from_str(&src)
+            .map_err(|e| Error::Schema(format!("feature model `{}`: {e}", path.display())))?;
+        if probe.kind.as_deref() == Some("feature-model-binding") {
+            Self::load_composed(path)
+        } else {
+            Self::from_yaml(&src)
+        }
+    }
+
     /// Validate the feature tree: no cycles, all children referenced exist,
     /// group types consistent with child counts.
     fn validate_tree(&self) -> Result<(), Error> {
