@@ -2777,4 +2777,139 @@ compose:
         let err = FeatureModel::load_composed(&bpath).unwrap_err();
         assert!(format!("{err}").contains("leaf"), "got: {err}");
     }
+
+    /// rivet: verifies REQ-083
+    #[test]
+    fn compose_empty_compose_is_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bpath = tmp.path().join("binding.yaml");
+        std::fs::write(&bpath, "kind: feature-model-binding\ncompose: []\n").unwrap();
+        let err = FeatureModel::load_composed(&bpath).unwrap_err();
+        assert!(format!("{err}").contains("empty"), "got: {err}");
+    }
+
+    /// rivet: verifies REQ-083
+    #[test]
+    fn compose_parent_listed_twice_is_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bpath = tmp.path().join("binding.yaml");
+        std::fs::write(
+            &bpath,
+            r#"kind: feature-model-binding
+compose:
+  - parent: vehicle.yaml
+    mount:
+      a:
+        model: sub.yaml
+        prefix: p1
+  - parent: vehicle.yaml
+    mount:
+      b:
+        model: sub.yaml
+        prefix: p2
+"#,
+        )
+        .unwrap();
+        let err = FeatureModel::load_composed(&bpath).unwrap_err();
+        assert!(format!("{err}").contains("more than once"), "got: {err}");
+    }
+
+    /// rivet: verifies REQ-083
+    #[test]
+    fn compose_multiple_roots_is_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bpath = tmp.path().join("binding.yaml");
+        // Two parents, neither mounted by the other — no single root.
+        std::fs::write(
+            &bpath,
+            r#"kind: feature-model-binding
+compose:
+  - parent: a.yaml
+    mount:
+      f:
+        model: x.yaml
+        prefix: p1
+  - parent: b.yaml
+    mount:
+      g:
+        model: y.yaml
+        prefix: p2
+"#,
+        )
+        .unwrap();
+        let err = FeatureModel::load_composed(&bpath).unwrap_err();
+        assert!(format!("{err}").contains("root"), "got: {err}");
+    }
+
+    /// rivet: verifies REQ-083
+    #[test]
+    fn compose_cyclic_binding_is_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bpath = tmp.path().join("binding.yaml");
+        // a mounts b, b mounts a — every parent is also mounted, no root.
+        std::fs::write(
+            &bpath,
+            r#"kind: feature-model-binding
+compose:
+  - parent: a.yaml
+    mount:
+      fa:
+        model: b.yaml
+        prefix: pb
+  - parent: b.yaml
+    mount:
+      fb:
+        model: a.yaml
+        prefix: pa
+"#,
+        )
+        .unwrap();
+        let err = FeatureModel::load_composed(&bpath).unwrap_err();
+        assert!(format!("{err}").contains("cyclic"), "got: {err}");
+    }
+
+    /// A composition cycle deeper than the root (root -> a -> b -> a) is
+    /// caught by the recursion-path guard, not root detection.
+    ///
+    /// rivet: verifies REQ-083
+    #[test]
+    fn compose_deep_cycle_is_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        let model = |root: &str, child: &str| {
+            format!(
+                "kind: feature-model\nroot: {root}\nfeatures:\n  {root}:\n    \
+                 group: mandatory\n    children: [{child}]\n  {child}:\n    \
+                 group: mandatory\n"
+            )
+        };
+        std::fs::write(dir.join("root.yaml"), model("r", "ma")).unwrap();
+        std::fs::write(dir.join("a.yaml"), model("a", "mb")).unwrap();
+        std::fs::write(dir.join("b.yaml"), model("b", "ma2")).unwrap();
+        let bpath = dir.join("binding.yaml");
+        std::fs::write(
+            &bpath,
+            r#"kind: feature-model-binding
+compose:
+  - parent: root.yaml
+    mount:
+      ma:
+        model: a.yaml
+        prefix: pa
+  - parent: a.yaml
+    mount:
+      mb:
+        model: b.yaml
+        prefix: pb
+  - parent: b.yaml
+    mount:
+      ma2:
+        model: a.yaml
+        prefix: pa2
+"#,
+        )
+        .unwrap();
+        let err = FeatureModel::load_composed(&bpath).unwrap_err();
+        assert!(format!("{err}").contains("cycle"), "got: {err}");
+    }
 }
