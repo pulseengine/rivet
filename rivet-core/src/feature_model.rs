@@ -2912,4 +2912,264 @@ compose:
         let err = FeatureModel::load_composed(&bpath).unwrap_err();
         assert!(format!("{err}").contains("cycle"), "got: {err}");
     }
+
+    /// A sub-model's own constraints are prefixed during composition so
+    /// they keep referring to the right (now namespaced) features. Proven
+    /// end-to-end: the constraint must still fire under the solver.
+    ///
+    /// rivet: verifies REQ-083
+    #[test]
+    fn compose_prefixes_submodel_constraints() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        std::fs::write(
+            dir.join("powertrain.yaml"),
+            r#"kind: feature-model
+root: powertrain
+features:
+  powertrain:
+    group: mandatory
+    children: [drive, extras]
+  drive:
+    group: alternative
+    children: [four-wheel, two-wheel]
+  four-wheel: { group: leaf }
+  two-wheel: { group: leaf }
+  extras:
+    group: optional
+    children: [traction-control]
+  traction-control: { group: leaf }
+constraints:
+  - (implies four-wheel traction-control)
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("vehicle.yaml"),
+            r#"kind: feature-model
+root: vehicle
+features:
+  vehicle:
+    group: mandatory
+    children: [powertrain]
+  powertrain:
+    group: mandatory
+"#,
+        )
+        .unwrap();
+        let bpath = dir.join("binding.yaml");
+        std::fs::write(
+            &bpath,
+            r#"kind: feature-model-binding
+compose:
+  - parent: vehicle.yaml
+    mount:
+      powertrain:
+        model: powertrain.yaml
+        prefix: pwt
+"#,
+        )
+        .unwrap();
+
+        let model = FeatureModel::load_composed(&bpath).unwrap();
+        assert_eq!(model.constraints.len(), 1);
+
+        // If `four-wheel` in the sub-model's constraint was not rewritten
+        // to `pwt:four-wheel`, the implication would not fire for the
+        // prefixed selection. Solving proves the prefixing happened.
+        let vc = VariantConfig {
+            name: "t".to_string(),
+            selects: vec!["pwt:four-wheel".to_string()],
+        };
+        let resolved = solve(&model, &vc).unwrap();
+        assert!(
+            resolved.effective_features.contains("pwt:traction-control"),
+            "the sub-model constraint must be prefixed and still fire: {:?}",
+            resolved.effective_features
+        );
+    }
+
+    /// A sub-model's `attribute-schema` is carried into the composed model.
+    ///
+    /// rivet: verifies REQ-083
+    #[test]
+    fn compose_merges_submodel_attribute_schema() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        std::fs::write(
+            dir.join("powertrain.yaml"),
+            r#"kind: feature-model
+root: powertrain
+attribute-schema:
+  power-kw:
+    type: int
+features:
+  powertrain:
+    group: alternative
+    children: [four-wheel, two-wheel]
+  four-wheel:
+    group: leaf
+    attributes:
+      power-kw: 150
+  two-wheel:
+    group: leaf
+    attributes:
+      power-kw: 60
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("vehicle.yaml"),
+            r#"kind: feature-model
+root: vehicle
+features:
+  vehicle:
+    group: mandatory
+    children: [powertrain]
+  powertrain:
+    group: mandatory
+"#,
+        )
+        .unwrap();
+        let bpath = dir.join("binding.yaml");
+        std::fs::write(
+            &bpath,
+            r#"kind: feature-model-binding
+compose:
+  - parent: vehicle.yaml
+    mount:
+      powertrain:
+        model: powertrain.yaml
+        prefix: pwt
+"#,
+        )
+        .unwrap();
+
+        let model = FeatureModel::load_composed(&bpath).unwrap();
+        assert!(
+            model.attribute_schema.contains_key("power-kw"),
+            "the sub-model's attribute-schema must be carried into the \
+             composed model"
+        );
+    }
+
+    /// The same attribute-schema key declared by two composed models is a
+    /// hard error — composition must not silently pick one.
+    ///
+    /// rivet: verifies REQ-083
+    #[test]
+    fn compose_attribute_schema_collision_is_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        std::fs::write(
+            dir.join("powertrain.yaml"),
+            r#"kind: feature-model
+root: powertrain
+attribute-schema:
+  power-kw:
+    type: int
+features:
+  powertrain: { group: leaf }
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("vehicle.yaml"),
+            r#"kind: feature-model
+root: vehicle
+attribute-schema:
+  power-kw:
+    type: string
+features:
+  vehicle:
+    group: mandatory
+    children: [powertrain]
+  powertrain:
+    group: mandatory
+"#,
+        )
+        .unwrap();
+        let bpath = dir.join("binding.yaml");
+        std::fs::write(
+            &bpath,
+            r#"kind: feature-model-binding
+compose:
+  - parent: vehicle.yaml
+    mount:
+      powertrain:
+        model: powertrain.yaml
+        prefix: pwt
+"#,
+        )
+        .unwrap();
+
+        let err = FeatureModel::load_composed(&bpath).unwrap_err();
+        assert!(format!("{err}").contains("attribute-schema"), "got: {err}");
+    }
+
+    /// `FeatureModel::load` dispatches on `kind:` — a plain model file is
+    /// parsed directly, a `feature-model-binding` file is composed.
+    ///
+    /// rivet: verifies REQ-083
+    #[test]
+    fn load_dispatches_on_kind() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+
+        let plain = dir.join("plain.yaml");
+        std::fs::write(&plain, SUB_POWERTRAIN).unwrap();
+        let m = FeatureModel::load(&plain).unwrap();
+        assert_eq!(m.root, "powertrain");
+
+        std::fs::write(dir.join("powertrain.yaml"), SUB_POWERTRAIN).unwrap();
+        std::fs::write(
+            dir.join("vehicle.yaml"),
+            r#"kind: feature-model
+root: vehicle
+features:
+  vehicle:
+    group: mandatory
+    children: [powertrain]
+  powertrain:
+    group: mandatory
+"#,
+        )
+        .unwrap();
+        let bpath = dir.join("binding.yaml");
+        std::fs::write(
+            &bpath,
+            r#"kind: feature-model-binding
+compose:
+  - parent: vehicle.yaml
+    mount:
+      powertrain:
+        model: powertrain.yaml
+        prefix: pwt
+"#,
+        )
+        .unwrap();
+        let composed = FeatureModel::load(&bpath).unwrap();
+        assert_eq!(composed.root, "vehicle");
+        assert!(composed.features.contains_key("pwt:four-wheel"));
+    }
+
+    /// An unreadable or malformed binding file fails loudly, naming the
+    /// file — never a silent skip.
+    ///
+    /// rivet: verifies REQ-083
+    #[test]
+    fn compose_unreadable_binding_is_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Nonexistent binding path.
+        let missing = tmp.path().join("nope.yaml");
+        assert!(FeatureModel::load_composed(&missing).is_err());
+        // Malformed YAML.
+        let bad = tmp.path().join("bad.yaml");
+        std::fs::write(&bad, "kind: feature-model-binding\ncompose: [: : :\n").unwrap();
+        let err = FeatureModel::load_composed(&bad).unwrap_err();
+        assert!(
+            format!("{err}").contains("feature-model-binding"),
+            "got: {err}"
+        );
+    }
 }
