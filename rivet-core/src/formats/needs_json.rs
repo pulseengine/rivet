@@ -188,6 +188,26 @@ fn import_needs_json_inner(
 
     let link_type = config.default_link_type.as_deref().unwrap_or("satisfies");
 
+    // Reject needs missing the `type` field. sphinx-needs always emits a
+    // `type`; a need lacking it is degraded input. `convert_need` would
+    // otherwise silently substitute the literal `"unknown"` type, producing
+    // an artifact that does not match any schema (REQ-081). Reported as the
+    // sphinx-needs map keys, which name the offending entries.
+    let mut typeless: Vec<&str> = version
+        .needs
+        .iter()
+        .filter(|(_, item)| item.need_type.is_none())
+        .map(|(key, _)| key.as_str())
+        .collect();
+    if !typeless.is_empty() {
+        typeless.sort_unstable();
+        return Err(Error::Adapter(format!(
+            "needs.json: {} need(s) missing the required `type` field: {}",
+            typeless.len(),
+            typeless.join(", ")
+        )));
+    }
+
     let mut artifacts: Vec<Artifact> = version
         .needs
         .values()
@@ -196,6 +216,23 @@ fn import_needs_json_inner(
 
     // Deterministic output order.
     artifacts.sort_by(|a, b| a.id.cmp(&b.id));
+
+    // Artifact IDs must be unique. Two sphinx-needs entries carrying the
+    // same inner `id` (or whose IDs collide after `id-transform`) would
+    // otherwise produce two artifacts both claiming one ID, and the import
+    // would return `Ok` with the silent collision (REQ-081). Reuse the
+    // REQ-075 duplicate rule so the invariant has a single definition.
+    let duplicates = crate::detect_duplicate_ids_for_validate(&artifacts);
+    if !duplicates.is_empty() {
+        let mut ids: Vec<&str> = duplicates.iter().map(|d| d.id.as_str()).collect();
+        ids.sort_unstable();
+        ids.dedup();
+        return Err(Error::Adapter(format!(
+            "needs.json: {} artifact ID(s) claimed by more than one need: {}",
+            ids.len(),
+            ids.join(", ")
+        )));
+    }
 
     Ok(artifacts)
 }
@@ -299,6 +336,11 @@ fn convert_need(
     source: Option<&Path>,
 ) -> Artifact {
     let id = transform_id(&item.id, &config.id_transform);
+    // `import_needs_json_inner` rejects needs with no `type` before any
+    // `convert_need` call, so `need_type` is always `Some` here. The
+    // `"unknown"` fallback is a defensive belt-and-braces value and is
+    // not reachable through the public `import_needs_json` entry point
+    // (REQ-081).
     let artifact_type = map_type(
         item.need_type.as_deref().unwrap_or("unknown"),
         &config.type_mapping,
@@ -607,5 +649,90 @@ mod tests {
         let arts = import_needs_json(json, &Default::default()).unwrap();
         assert_eq!(arts.len(), 1);
         assert_eq!(arts[0].id, "req--x");
+    }
+
+    // ----- Test: duplicate artifact IDs rejected (REQ-081) --------------
+
+    // rivet: verifies REQ-081
+    #[test]
+    fn duplicate_inner_id_returns_error() {
+        // Two distinct needs map keys, but the inner `id` is identical, so
+        // both convert to the same artifact ID. The import must reject this
+        // rather than return `Ok` with a silent collision (REQ-081).
+        let json = minimal_needs_json(
+            r#"
+            "key_a": {
+                "id": "req__shared",
+                "type": "req",
+                "title": "First claimant"
+            },
+            "key_b": {
+                "id": "req__shared",
+                "type": "req",
+                "title": "Second claimant"
+            }
+            "#,
+        );
+        let result = import_needs_json(&json, &Default::default());
+        assert!(result.is_err(), "expected Err for colliding IDs");
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("req--shared"),
+            "error should name the colliding ID: {err}"
+        );
+        assert!(
+            err.contains("more than one need"),
+            "unexpected error message: {err}"
+        );
+    }
+
+    // rivet: verifies REQ-081
+    #[test]
+    fn distinct_ids_import_cleanly() {
+        // All-distinct IDs must still import without error (REQ-081).
+        let json = minimal_needs_json(
+            r#"
+            "req__one": {
+                "id": "req__one",
+                "type": "req",
+                "title": "One"
+            },
+            "req__two": {
+                "id": "req__two",
+                "type": "req",
+                "title": "Two"
+            }
+            "#,
+        );
+        let arts = import_needs_json(&json, &Default::default()).unwrap();
+        assert_eq!(arts.len(), 2);
+        assert_eq!(arts[0].id, "req--one");
+        assert_eq!(arts[1].id, "req--two");
+    }
+
+    // ----- Test: missing `type` field rejected (REQ-081) ----------------
+
+    // rivet: verifies REQ-081
+    #[test]
+    fn missing_type_returns_error() {
+        // sphinx-needs always emits `type`; a need lacking it is degraded
+        // input and must be flagged rather than silently typed "unknown"
+        // (REQ-081).
+        let json = minimal_needs_json(
+            r#"
+            "req__no_type": {
+                "id": "req__no_type",
+                "title": "No type field"
+            }
+            "#,
+        );
+        let result = import_needs_json(&json, &Default::default());
+        assert!(result.is_err(), "expected Err for need missing `type`");
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("req__no_type"),
+            "error should name the offending need key: {err}"
+        );
+        assert!(err.contains("type"), "unexpected error message: {err}");
     }
 }

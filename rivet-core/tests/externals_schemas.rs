@@ -10,19 +10,25 @@
     clippy::print_stderr
 )]
 
-//! Integration tests for issue #245: externals must load their own schemas
-//! so externally-prefixed artifacts type-check against the schemas they were
-//! authored under, not the downstream's.
+//! Integration tests for externally-prefixed artifact validation.
 //!
-//! Without this fix, sigil's repro produces 326 `unknown artifact type`
-//! ERRORs on synth-prefixed artifacts (types defined in synth's schemas
-//! but not in sigil's). After the fix, those errors collapse to zero.
+//! Issue #245 originally type-checked externally-prefixed artifacts against
+//! the external's own schema (loaded via the external loader) so a consumer
+//! whose schema set differs from the supplier's would not see spurious
+//! `unknown artifact type` ERRORs. REQ-082 (v0.11.1) supersedes that: a
+//! consumer's default `rivet validate` gate must reflect only the consumer's
+//! own artifacts, so externally-prefixed artifacts are skipped by every
+//! per-artifact validation pass entirely — they are loaded ONLY so the
+//! consumer's `prefix:ID` cross-links resolve. The external's own
+//! diagnostics are opt-in via `rivet validate --with-externals-validate`
+//! (REQ-065 / AoU-X1). The external-loader half (`load_all_externals`
+//! surfacing the supplier's schema) is still exercised here — that loader
+//! feeds `--with-externals-validate`.
 
 use rivet_core::externals::{load_all_externals, load_external_project};
 use rivet_core::links::LinkGraph;
 use rivet_core::model::ExternalProject;
 use rivet_core::model::{Artifact, Link};
-use rivet_core::schema::Severity;
 use rivet_core::store::Store;
 use rivet_core::validate::{ExternalSchemas, validate_with_externals};
 use std::collections::BTreeMap;
@@ -36,26 +42,27 @@ fn spar_fixture_dir() -> PathBuf {
         .join("spar-external")
 }
 
-/// Simulates the sigil-loading-synth scenario. Downstream declares only
-/// `common`; the external declares `common + aadl`. Before this fix, the
-/// downstream's validator produced an ERROR for every synth-prefixed
-/// `aadl-component` artifact. With the fix, the external's schema resolves
-/// the type and the validator stays silent.
+/// REQ-082 supersedes the issue-#245 design this test originally pinned.
+/// #245 type-checked externally-prefixed artifacts against the external's
+/// own schema to suppress spurious `unknown artifact type` ERRORs. REQ-082
+/// goes further: externally-prefixed (`spar:`) artifacts are loaded only so
+/// the consumer's cross-links resolve, and are skipped by the schema
+/// per-artifact passes (type, fields, link-type, shorthand, variant-key) —
+/// the supplier's project is the supplier's gate
+/// (`--with-externals-validate` / AoU-X1). So a `spar:`-prefixed
+/// `aadl-component` produces NO `known-type` diagnostic whether or not the
+/// external's schema is registered.
 ///
-/// rivet: verifies REQ-007
+/// (Cross-link integrity — the `broken-link` pass — deliberately still runs
+/// over the full store so consumer→external links resolve; that pass is not
+/// a schema check and is out of scope here. The CLI's REQ-082 filter drops
+/// any residual prefixed-artifact diagnostics before the gate count.)
+///
+/// rivet: verifies REQ-082
 #[test]
-fn external_schemas_eliminate_spurious_unknown_type_errors() {
+fn external_prefixed_artifacts_skip_type_checking() {
     let fixture = spar_fixture_dir();
     let (artifacts, ext_schema) = load_external_project(&fixture).unwrap();
-    assert!(
-        ext_schema.is_some(),
-        "spar fixture declares schemas; loader must surface them"
-    );
-    let ext_schema = ext_schema.unwrap();
-    assert!(
-        ext_schema.artifact_type("aadl-component").is_some(),
-        "fixture's aadl schema declares 'aadl-component'"
-    );
 
     // Build a downstream-shaped store: simulate prefixing with `spar:`.
     let mut store = Store::new();
@@ -64,8 +71,8 @@ fn external_schemas_eliminate_spurious_unknown_type_errors() {
         store.upsert(a);
     }
 
-    // Downstream's own schema declares only `common`. `aadl-component` is
-    // NOT in it — exactly the sigil scenario.
+    // Downstream's own schema declares only `common`; `aadl-component` is
+    // NOT in it — pre-REQ-082 this produced an ERROR per spar artifact.
     let downstream_schema = rivet_core::load_schemas(
         &["common".to_string()],
         &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../schemas"),
@@ -73,57 +80,49 @@ fn external_schemas_eliminate_spurious_unknown_type_errors() {
     .expect("loading downstream-only schemas");
     assert!(
         downstream_schema.artifact_type("aadl-component").is_none(),
-        "downstream-only schema must NOT declare 'aadl-component' for the test \
-         to be meaningful (the fix removes spurious errors)"
+        "downstream-only schema must NOT declare 'aadl-component' for the \
+         test to be meaningful"
     );
-
     let graph = LinkGraph::build(&store, &downstream_schema);
 
-    let aadl_count = |diags: &[rivet_core::validate::Diagnostic]| -> usize {
+    // Every per-artifact diagnostic pass skips prefixed artifacts under
+    // REQ-082. The graph-level `broken-link` pass is deliberately exempt
+    // (it reads the full store so consumer→external links resolve), so it
+    // is carved out here — the test asserts on the per-artifact passes.
+    let schema_diags = |diags: &[rivet_core::validate::Diagnostic]| -> Vec<(String, String)> {
         diags
             .iter()
             .filter(|d| {
-                d.rule == "known-type"
-                    && d.severity == Severity::Error
-                    && d.artifact_id
-                        .as_deref()
-                        .is_some_and(|id| id.starts_with("spar:"))
-                    && d.message.contains("aadl-component")
+                d.artifact_id
+                    .as_deref()
+                    .is_some_and(|id| id.starts_with("spar:"))
+                    && d.rule != "broken-link"
             })
-            .count()
+            .map(|d| (d.rule.clone(), d.message.clone()))
+            .collect()
     };
 
-    // 1) Externals-unaware validation reproduces the bug: every spar-prefixed
-    //    `aadl-component` artifact yields an `unknown artifact type` ERROR.
-    let baseline =
+    // REQ-082: with NO external schema registered, spar-prefixed artifacts
+    // produce zero per-artifact diagnostics — they are skipped, not checked.
+    let no_ext =
         validate_with_externals(&store, &downstream_schema, &graph, &ExternalSchemas::new());
-    assert!(
-        aadl_count(&baseline) > 0,
-        "without the fix, externally-prefixed aadl-component artifacts must \
-         generate 'unknown artifact type' ERRORs — this baseline pins the \
-         pre-fix behaviour. all diags: {:?}",
-        baseline.iter().map(|d| &d.message).collect::<Vec<_>>()
+    assert_eq!(
+        schema_diags(&no_ext),
+        Vec::<(String, String)>::new(),
+        "REQ-082: externally-prefixed artifacts must produce no schema \
+         per-artifact diagnostics even with no external schema registered"
     );
 
-    // 2) With the external's own schema in the per-prefix map, those errors
-    //    must not appear. Other unrelated diagnostics may remain (e.g. the
-    //    spar fixture has a `requirement` artifact whose type is declared in
-    //    `dev.yaml`, which neither the downstream nor the external loaded);
-    //    we only assert on the AC-relevant aadl-component path.
+    // Registering the external's own schema changes nothing — prefixed
+    // artifacts are skipped regardless.
     let mut externals = ExternalSchemas::new();
-    externals.insert("spar".to_string(), Some(ext_schema));
-    let fixed = validate_with_externals(&store, &downstream_schema, &graph, &externals);
+    externals.insert("spar".to_string(), ext_schema);
+    let with_ext = validate_with_externals(&store, &downstream_schema, &graph, &externals);
     assert_eq!(
-        aadl_count(&fixed),
-        0,
-        "with the external's schema registered, externally-prefixed \
-         aadl-component artifacts must NOT generate 'unknown artifact type' \
-         ERRORs. still seeing: {:?}",
-        fixed
-            .iter()
-            .filter(|d| d.rule == "known-type")
-            .map(|d| (&d.artifact_id, &d.message))
-            .collect::<Vec<_>>()
+        schema_diags(&with_ext),
+        Vec::<(String, String)>::new(),
+        "REQ-082: registering the external's schema must not resurrect \
+         schema per-artifact diagnostics on prefixed artifacts"
     );
 }
 
@@ -165,18 +164,17 @@ fn load_all_externals_populates_schema() {
     );
 }
 
-/// Permissive-fallback: when an external is registered with `schema: None`
-/// (because its `rivet.yaml` declared no schemas, or its schemas failed to
-/// load), unknown-type findings for that prefix get demoted from ERROR to
-/// INFO so the downstream isn't spammed by an external it cannot type-check.
+/// REQ-082: a `prefix:`-qualified external artifact whose type the consumer
+/// cannot resolve produces NO `known-type` diagnostic at all — not ERROR,
+/// not the issue-#245 INFO demote. The supplier's types are the supplier's
+/// concern (AoU-X1); the consumer only loads external artifacts so its own
+/// `prefix:ID` cross-links resolve. Registration state of the prefix in
+/// `ExternalSchemas` is irrelevant — prefixed artifacts are skipped before
+/// the type check runs.
 ///
-/// rivet: verifies REQ-007
+/// rivet: verifies REQ-082
 #[test]
-fn external_without_schema_demotes_unknown_type_to_info() {
-    // Synthetic store: one artifact with a prefix whose external has no
-    // schema. We do not need any artifacts on disk for this — the
-    // permissive-fallback path is purely about `ExternalSchemas[prefix] ==
-    // None` triggering the demote.
+fn external_prefixed_unknown_type_is_not_diagnosed() {
     let mut store = Store::new();
     store.upsert(Artifact {
         id: "supplier:THING-1".to_string(),
@@ -199,45 +197,45 @@ fn external_without_schema_demotes_unknown_type_to_info() {
     .unwrap();
     let graph = LinkGraph::build(&store, &downstream_schema);
 
-    // Unknown to downstream → ERROR (sanity: no externals registered).
-    let baseline =
+    let known_type_diags = |diags: &[rivet_core::validate::Diagnostic]| -> usize {
+        diags
+            .iter()
+            .filter(|d| {
+                d.rule == "known-type" && d.artifact_id.as_deref() == Some("supplier:THING-1")
+            })
+            .count()
+    };
+
+    // No externals registered: still zero — the artifact is prefixed, so
+    // REQ-082 skips it before the type check.
+    let no_ext =
         validate_with_externals(&store, &downstream_schema, &graph, &ExternalSchemas::new());
-    assert!(
-        baseline.iter().any(|d| d.rule == "known-type"
-            && d.severity == Severity::Error
-            && d.artifact_id.as_deref() == Some("supplier:THING-1")),
-        "baseline must emit unknown-type ERROR when no externals registered"
+    assert_eq!(
+        known_type_diags(&no_ext),
+        0,
+        "REQ-082: a prefixed external artifact must produce no known-type \
+         diagnostic even with no ExternalSchemas registered"
     );
 
-    // Register the prefix with `None` schema → demote to INFO.
+    // Prefix registered with `None` schema: unchanged — still zero.
     let mut externals = ExternalSchemas::new();
     externals.insert("supplier".to_string(), None);
-    let demoted = validate_with_externals(&store, &downstream_schema, &graph, &externals);
-    let unknown_type: Vec<_> = demoted
-        .iter()
-        .filter(|d| d.rule == "known-type" && d.artifact_id.as_deref() == Some("supplier:THING-1"))
-        .collect();
+    let with_none = validate_with_externals(&store, &downstream_schema, &graph, &externals);
     assert_eq!(
-        unknown_type.len(),
-        1,
-        "expected exactly one known-type diagnostic for supplier:THING-1"
-    );
-    assert_eq!(
-        unknown_type[0].severity,
-        Severity::Info,
-        "with no schema registered for the prefix, unknown-type must be INFO, not ERROR"
-    );
-    assert!(
-        unknown_type[0].message.contains("supplier"),
-        "INFO message should name the external prefix"
+        known_type_diags(&with_none),
+        0,
+        "REQ-082: registering the prefix must not resurrect a known-type \
+         diagnostic on a prefixed external artifact"
     );
 }
 
-/// Unknown-link-type symmetry: a link type defined in the external's schema
-/// but not the downstream's must NOT be flagged for externally-prefixed
-/// artifacts. The fallback (no external schema) demotes to INFO.
+/// REQ-082 link-type symmetry: an externally-prefixed artifact is skipped by
+/// the per-artifact unknown-link-type pass exactly as it is by the type-check
+/// pass, so a link type the consumer's schema does not declare is never
+/// flagged on a `prefix:`-qualified artifact — with or without the prefix
+/// registered in `ExternalSchemas`.
 ///
-/// rivet: verifies REQ-007
+/// rivet: verifies REQ-082
 #[test]
 fn external_link_types_are_not_flagged_unknown() {
     // Synthetic store: external artifact whose link uses a link-type
@@ -270,24 +268,33 @@ fn external_link_types_are_not_flagged_unknown() {
     .unwrap();
     let graph = LinkGraph::build(&store, &downstream_schema);
 
-    // Permissive fallback: prefix registered with no schema.
+    let link_type_diags = |diags: &[rivet_core::validate::Diagnostic]| -> usize {
+        diags
+            .iter()
+            .filter(|d| {
+                d.rule == "unknown-link-type" && d.artifact_id.as_deref() == Some("spar:SPAR-X-001")
+            })
+            .count()
+    };
+
+    // No externals registered.
+    let no_ext =
+        validate_with_externals(&store, &downstream_schema, &graph, &ExternalSchemas::new());
+    assert_eq!(
+        link_type_diags(&no_ext),
+        0,
+        "REQ-082: a prefixed external artifact must produce no \
+         unknown-link-type diagnostic even with no ExternalSchemas registered"
+    );
+
+    // Prefix registered with no schema — unchanged.
     let mut externals = ExternalSchemas::new();
     externals.insert("spar".to_string(), None);
-    let diags = validate_with_externals(&store, &downstream_schema, &graph, &externals);
-    let link_type_diags: Vec<_> = diags
-        .iter()
-        .filter(|d| {
-            d.rule == "unknown-link-type" && d.artifact_id.as_deref() == Some("spar:SPAR-X-001")
-        })
-        .collect();
-    // If `implements` is in the downstream `common` schema, there will be
-    // zero diagnostics. Otherwise, the demoted-to-INFO path should fire.
-    for d in &link_type_diags {
-        assert_eq!(
-            d.severity,
-            Severity::Info,
-            "any unknown-link-type for an externally-prefixed artifact whose \
-             external has no schema must be INFO, not ERROR. got: {d:?}",
-        );
-    }
+    let with_none = validate_with_externals(&store, &downstream_schema, &graph, &externals);
+    assert_eq!(
+        link_type_diags(&with_none),
+        0,
+        "REQ-082: registering the prefix must not resurrect an \
+         unknown-link-type diagnostic on a prefixed external artifact"
+    );
 }

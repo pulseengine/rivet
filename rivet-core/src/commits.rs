@@ -50,6 +50,49 @@ use crate::error::Error;
 // Data types
 // ---------------------------------------------------------------------------
 
+/// A malformed artifact reference found in a commit trailer.
+///
+/// This covers two distinct authoring mistakes that previously went
+/// silently undetected (REQ-078):
+///
+///   * `MalformedKind::Id` — a trailer *value* token that clearly
+///     attempts an artifact ID (it contains a `-` and at least one
+///     ASCII digit) but does not satisfy [`is_artifact_id`], e.g.
+///     `Implements: REQ-O1` (capital letter O for a zero).
+///   * `MalformedKind::Key` — a trailer *key* that is within
+///     edit-distance 1 of a configured trailer key but is not an exact
+///     match, e.g. `Implments:` for `Implements:`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MalformedRef {
+    /// What kind of malformed reference this is.
+    pub kind: MalformedKind,
+    /// The offending token, exactly as it appeared in the commit.
+    pub token: String,
+    /// Context: for an `Id` this is the trailer key the token appeared
+    /// under; for a `Key` this is the configured key it most resembles.
+    pub context: String,
+}
+
+/// The category of a [`MalformedRef`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MalformedKind {
+    /// A trailer value that looks like a botched artifact ID.
+    Id,
+    /// A trailer key that looks like a botched (mistyped) trailer key.
+    Key,
+}
+
+/// The result of parsing a single commit message for traceability data.
+#[derive(Debug, Clone, Default)]
+pub struct CommitParse {
+    /// Artifact IDs extracted from trailers, keyed by link type.
+    pub artifact_refs: BTreeMap<String, Vec<String>>,
+    /// Trailer tokens that look like botched artifact references.
+    pub malformed_refs: Vec<MalformedRef>,
+    /// Whether the skip trailer was present.
+    pub has_skip_trailer: bool,
+}
+
 /// A parsed git commit with extracted metadata.
 #[derive(Debug, Clone)]
 pub struct ParsedCommit {
@@ -67,6 +110,8 @@ pub struct ParsedCommit {
     pub commit_type: Option<String>,
     /// Artifact IDs extracted from trailers, keyed by link type.
     pub artifact_refs: BTreeMap<String, Vec<String>>,
+    /// Trailer tokens that look like botched artifact references.
+    pub malformed_refs: Vec<MalformedRef>,
     /// Files changed by this commit.
     pub changed_files: Vec<String>,
     /// Whether the skip trailer was present.
@@ -78,7 +123,8 @@ pub struct ParsedCommit {
 pub enum CommitClass {
     /// All referenced artifact IDs exist in the store.
     Linked,
-    /// At least one referenced artifact ID does not exist.
+    /// At least one referenced artifact ID does not exist, or a trailer
+    /// contains a malformed/typo'd reference.
     BrokenRef,
     /// No artifact references at all (and not exempt).
     Orphan,
@@ -95,6 +141,9 @@ pub struct BrokenRef {
     pub missing_id: String,
     /// The link type / trailer key under which it was referenced.
     pub link_type: String,
+    /// True when the reference is malformed (a botched ID/key) rather
+    /// than merely well-formed-but-unknown.
+    pub malformed: bool,
 }
 
 /// Full analysis of a set of commits against a known artifact set.
@@ -229,8 +278,25 @@ pub fn expand_artifact_range(reference: &str) -> Vec<String> {
 /// "REQ-001", "FEAT-42", "DD-007".  Multiple IDs can appear separated
 /// by commas or whitespace.  Range syntax like "FEAT-052..056" is
 /// expanded into individual IDs.
+///
+/// Malformed tokens are silently dropped; use [`extract_artifact_refs`]
+/// when malformed references must also be surfaced.
 pub fn extract_artifact_ids(value: &str) -> Vec<String> {
+    extract_artifact_refs(value).0
+}
+
+/// Extract artifact IDs *and* malformed reference tokens from a trailer
+/// value.
+///
+/// Returns `(valid_ids, malformed_tokens)`. A token is considered a
+/// malformed reference — a botched artifact-ID *attempt* rather than
+/// ordinary prose — when it contains a hyphen and at least one ASCII
+/// digit yet does not satisfy [`is_artifact_id`]. This catches typos
+/// like `REQ-O1` (capital letter O for a zero) while leaving plain
+/// words such as `hot-fix` or numbers like `42` untouched.
+pub fn extract_artifact_refs(value: &str) -> (Vec<String>, Vec<String>) {
     let mut ids = Vec::new();
+    let mut malformed = Vec::new();
     // Split on commas and whitespace
     for token in value.split(|c: char| c == ',' || c.is_ascii_whitespace()) {
         let token = token.trim();
@@ -242,10 +308,22 @@ pub fn extract_artifact_ids(value: &str) -> Vec<String> {
         for id in &expanded {
             if is_artifact_id(id) {
                 ids.push(id.clone());
+            } else if looks_like_artifact_id_attempt(id) {
+                malformed.push(id.clone());
             }
         }
     }
-    ids
+    (ids, malformed)
+}
+
+/// Heuristic: does this token *look like* a (botched) artifact ID?
+///
+/// True when the token contains a hyphen and at least one ASCII digit
+/// but is not itself a valid artifact ID. This deliberately excludes
+/// ordinary hyphenated prose (no digit) and bare numbers (no hyphen),
+/// so `rivet commits` flags genuine typos without choking on free text.
+fn looks_like_artifact_id_attempt(token: &str) -> bool {
+    !is_artifact_id(token) && token.contains('-') && token.chars().any(|c| c.is_ascii_digit())
 }
 
 /// Check whether a string looks like an artifact ID.
@@ -268,8 +346,36 @@ fn is_artifact_id(s: &str) -> bool {
     }
 }
 
-/// Parse a full commit message: extract trailer-based artifact references
-/// and detect the skip trailer.
+/// Compute the Levenshtein edit distance between two strings.
+///
+/// Used to detect trailer keys that are one keystroke away from a
+/// configured key (`Implments:` vs `Implements:`).
+fn levenshtein(a: &str, b: &str) -> usize {
+    let a_len = a.chars().count();
+    let b_len = b.chars().count();
+    if a_len == 0 {
+        return b_len;
+    }
+    if b_len == 0 {
+        return a_len;
+    }
+
+    let mut prev: Vec<usize> = (0..=b_len).collect();
+    let mut curr = vec![0_usize; b_len + 1];
+
+    for (i, ca) in a.chars().enumerate() {
+        curr[0] = i + 1;
+        for (j, cb) in b.chars().enumerate() {
+            let cost = usize::from(ca != cb);
+            curr[j + 1] = (prev[j] + cost).min(prev[j + 1] + 1).min(curr[j] + 1);
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+    prev[b_len]
+}
+
+/// Parse a full commit message: extract trailer-based artifact references,
+/// detect malformed/typo'd references, and detect the skip trailer.
 ///
 /// `trailer_map` maps trailer keys (e.g. "Implements") to link types
 /// (e.g. "implements").  `skip_trailer` is the full "Key: value" string
@@ -278,28 +384,62 @@ pub fn parse_commit_message(
     message: &str,
     trailer_map: &BTreeMap<String, String>,
     skip_trailer: &str,
-) -> (BTreeMap<String, Vec<String>>, bool) {
+) -> CommitParse {
     let raw_trailers = parse_trailers(message);
     let mut artifact_refs: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut malformed_refs: Vec<MalformedRef> = Vec::new();
 
     for (trailer_key, link_type) in trailer_map {
         if let Some(values) = raw_trailers.get(trailer_key) {
             for value in values {
-                let ids = extract_artifact_ids(value);
+                let (ids, malformed) = extract_artifact_refs(value);
                 if !ids.is_empty() {
                     artifact_refs
                         .entry(link_type.clone())
                         .or_default()
                         .extend(ids);
                 }
+                for token in malformed {
+                    malformed_refs.push(MalformedRef {
+                        kind: MalformedKind::Id,
+                        token,
+                        context: trailer_key.clone(),
+                    });
+                }
             }
         }
     }
 
-    // Check for skip trailer
-    let has_skip = message.lines().any(|line| line.trim() == skip_trailer);
+    // Detect typo'd trailer KEYS: a key not in `trailer_map` that is
+    // within edit-distance 1 of a configured key. The skip-trailer key
+    // is also a legitimate target so it does not get flagged.
+    let skip_key = skip_trailer.split_once(':').map(|(k, _)| k.trim());
+    for raw_key in raw_trailers.keys() {
+        if trailer_map.contains_key(raw_key) || skip_key == Some(raw_key.as_str()) {
+            continue;
+        }
+        if let Some(closest) = trailer_map
+            .keys()
+            .filter(|cfg| levenshtein(raw_key, cfg) == 1)
+            // Prefer a longer configured key on ties for a stable hint.
+            .max_by_key(|cfg| cfg.len())
+        {
+            malformed_refs.push(MalformedRef {
+                kind: MalformedKind::Key,
+                token: raw_key.clone(),
+                context: closest.clone(),
+            });
+        }
+    }
 
-    (artifact_refs, has_skip)
+    // Check for skip trailer
+    let has_skip_trailer = message.lines().any(|line| line.trim() == skip_trailer);
+
+    CommitParse {
+        artifact_refs,
+        malformed_refs,
+        has_skip_trailer,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -352,8 +492,7 @@ pub fn parse_git_log_entry(
         format!("{}\n\n{}", subject, body)
     };
 
-    let (artifact_refs, has_skip_trailer) =
-        parse_commit_message(&full_message, trailer_map, skip_trailer);
+    let parsed = parse_commit_message(&full_message, trailer_map, skip_trailer);
 
     Some(ParsedCommit {
         hash,
@@ -362,9 +501,10 @@ pub fn parse_git_log_entry(
         author,
         date,
         commit_type,
-        artifact_refs,
+        artifact_refs: parsed.artifact_refs,
+        malformed_refs: parsed.malformed_refs,
         changed_files,
-        has_skip_trailer,
+        has_skip_trailer: parsed.has_skip_trailer,
     })
 }
 
@@ -412,11 +552,20 @@ pub fn git_log_commits(
 // Classification and analysis (Task 4)
 // ---------------------------------------------------------------------------
 
-/// Classify a commit based on its artifact references against the set of known IDs.
+/// Classify a commit based on its artifact references against the set of
+/// known IDs.
+///
+/// A commit with one or more malformed/typo'd references (`has_malformed`)
+/// is always [`CommitClass::BrokenRef`] — a clearly-botched link must
+/// never be downgraded to a benign [`CommitClass::Orphan`] (REQ-078).
 pub fn classify_commit_refs(
     artifact_refs: &BTreeMap<String, Vec<String>>,
     known_ids: &HashSet<String>,
+    has_malformed: bool,
 ) -> CommitClass {
+    if has_malformed {
+        return CommitClass::BrokenRef;
+    }
     let all_ids: Vec<&String> = artifact_refs.values().flatten().collect();
     if all_ids.is_empty() {
         return CommitClass::Orphan;
@@ -484,7 +633,8 @@ pub fn analyze_commits(
         }
 
         // 3. Classify by artifact references
-        let class = classify_commit_refs(&commit.artifact_refs, known_ids);
+        let has_malformed = !commit.malformed_refs.is_empty();
+        let class = classify_commit_refs(&commit.artifact_refs, known_ids, has_malformed);
         match class {
             CommitClass::Linked => {
                 // Record coverage
@@ -496,7 +646,7 @@ pub fn analyze_commits(
                 linked.push(commit);
             }
             CommitClass::BrokenRef => {
-                // Collect broken refs
+                // Collect well-formed-but-unknown broken refs.
                 for (link_type, ids) in &commit.artifact_refs {
                     for id in ids {
                         if !known_ids.contains(id) {
@@ -505,13 +655,33 @@ pub fn analyze_commits(
                                 subject: commit.subject.clone(),
                                 missing_id: id.clone(),
                                 link_type: link_type.clone(),
+                                malformed: false,
                             });
                         } else {
                             artifact_coverage.insert(id.clone());
                         }
                     }
                 }
-                // Still count partially linked commits in the linked set
+                // Collect malformed/typo'd references (REQ-078): a
+                // botched ID token or a mistyped trailer key. These are
+                // hard errors, never silent orphans.
+                for m in &commit.malformed_refs {
+                    let (missing_id, link_type) = match m.kind {
+                        MalformedKind::Id => (m.token.clone(), m.context.clone()),
+                        MalformedKind::Key => (
+                            m.token.clone(),
+                            format!("typo'd trailer key (did you mean '{}'?)", m.context),
+                        ),
+                    };
+                    broken_refs_list.push(BrokenRef {
+                        hash: commit.hash.clone(),
+                        subject: commit.subject.clone(),
+                        missing_id,
+                        link_type,
+                        malformed: true,
+                    });
+                }
+                // Still count partially linked commits in the linked set.
                 linked.push(commit);
             }
             CommitClass::Orphan => {
@@ -648,10 +818,13 @@ mod tests {
         trailer_map.insert("Implements".into(), "implements".into());
         trailer_map.insert("Fixes".into(), "fixes".into());
 
-        let (refs, skip) = parse_commit_message(msg, &trailer_map, "Trace: skip");
-        assert!(!skip);
-        assert_eq!(refs.get("implements").unwrap(), &vec!["REQ-001", "REQ-002"]);
-        assert_eq!(refs.get("fixes").unwrap(), &vec!["DD-003"]);
+        let parsed = parse_commit_message(msg, &trailer_map, "Trace: skip");
+        assert!(!parsed.has_skip_trailer);
+        assert_eq!(
+            parsed.artifact_refs.get("implements").unwrap(),
+            &vec!["REQ-001", "REQ-002"]
+        );
+        assert_eq!(parsed.artifact_refs.get("fixes").unwrap(), &vec!["DD-003"]);
     }
 
     // rivet: verifies REQ-017
@@ -659,9 +832,9 @@ mod tests {
     fn parse_message_with_skip() {
         let msg = "chore: update deps\n\nTrace: skip";
         let trailer_map = BTreeMap::new();
-        let (refs, skip) = parse_commit_message(msg, &trailer_map, "Trace: skip");
-        assert!(skip);
-        assert!(refs.is_empty());
+        let parsed = parse_commit_message(msg, &trailer_map, "Trace: skip");
+        assert!(parsed.has_skip_trailer);
+        assert!(parsed.artifact_refs.is_empty());
     }
 
     // rivet: verifies REQ-017
@@ -670,9 +843,9 @@ mod tests {
         let msg = "fix: quick patch";
         let mut trailer_map = BTreeMap::new();
         trailer_map.insert("Implements".into(), "implements".into());
-        let (refs, skip) = parse_commit_message(msg, &trailer_map, "Trace: skip");
-        assert!(!skip);
-        assert!(refs.is_empty());
+        let parsed = parse_commit_message(msg, &trailer_map, "Trace: skip");
+        assert!(!parsed.has_skip_trailer);
+        assert!(parsed.artifact_refs.is_empty());
     }
 
     // -- parse_git_log_entry --
@@ -715,7 +888,10 @@ mod tests {
         let mut refs = BTreeMap::new();
         refs.insert("implements".into(), vec!["REQ-001".into()]);
         let known: HashSet<String> = ["REQ-001".into()].into();
-        assert_eq!(classify_commit_refs(&refs, &known), CommitClass::Linked);
+        assert_eq!(
+            classify_commit_refs(&refs, &known, false),
+            CommitClass::Linked
+        );
     }
 
     // rivet: verifies REQ-017
@@ -724,7 +900,10 @@ mod tests {
         let mut refs = BTreeMap::new();
         refs.insert("implements".into(), vec!["REQ-999".into()]);
         let known: HashSet<String> = ["REQ-001".into()].into();
-        assert_eq!(classify_commit_refs(&refs, &known), CommitClass::BrokenRef);
+        assert_eq!(
+            classify_commit_refs(&refs, &known, false),
+            CommitClass::BrokenRef
+        );
     }
 
     // rivet: verifies REQ-017
@@ -732,7 +911,10 @@ mod tests {
     fn classify_orphan() {
         let refs = BTreeMap::new();
         let known: HashSet<String> = ["REQ-001".into()].into();
-        assert_eq!(classify_commit_refs(&refs, &known), CommitClass::Orphan);
+        assert_eq!(
+            classify_commit_refs(&refs, &known, false),
+            CommitClass::Orphan
+        );
     }
 
     // -- is_exempt --
@@ -748,6 +930,7 @@ mod tests {
             date: "2025-01-01".into(),
             commit_type: Some("chore".into()),
             artifact_refs: BTreeMap::new(),
+            malformed_refs: Vec::new(),
             changed_files: Vec::new(),
             has_skip_trailer: false,
         };
@@ -766,6 +949,7 @@ mod tests {
             date: "2025-01-01".into(),
             commit_type: Some("feat".into()),
             artifact_refs: BTreeMap::new(),
+            malformed_refs: Vec::new(),
             changed_files: Vec::new(),
             has_skip_trailer: true,
         };
@@ -783,6 +967,7 @@ mod tests {
             date: "2025-01-01".into(),
             commit_type: Some("feat".into()),
             artifact_refs: BTreeMap::new(),
+            malformed_refs: Vec::new(),
             changed_files: Vec::new(),
             has_skip_trailer: false,
         };
@@ -845,6 +1030,7 @@ mod tests {
                 date: "2025-01-01".into(),
                 commit_type: Some("feat".into()),
                 artifact_refs: linked_refs,
+                malformed_refs: Vec::new(),
                 changed_files: vec!["src/parser.rs".into()],
                 has_skip_trailer: false,
             },
@@ -857,6 +1043,7 @@ mod tests {
                 date: "2025-01-02".into(),
                 commit_type: Some("chore".into()),
                 artifact_refs: BTreeMap::new(),
+                malformed_refs: Vec::new(),
                 changed_files: vec!["Cargo.toml".into()],
                 has_skip_trailer: false,
             },
@@ -869,6 +1056,7 @@ mod tests {
                 date: "2025-01-03".into(),
                 commit_type: Some("feat".into()),
                 artifact_refs: BTreeMap::new(),
+                malformed_refs: Vec::new(),
                 changed_files: vec!["src/hack.rs".into()],
                 has_skip_trailer: false,
             },
@@ -881,6 +1069,7 @@ mod tests {
                 date: "2025-01-04".into(),
                 commit_type: Some("feat".into()),
                 artifact_refs: broken_refs,
+                malformed_refs: Vec::new(),
                 changed_files: vec!["src/fix.rs".into()],
                 has_skip_trailer: false,
             },
@@ -893,6 +1082,7 @@ mod tests {
                 date: "2025-01-05".into(),
                 commit_type: Some("feat".into()),
                 artifact_refs: BTreeMap::new(),
+                malformed_refs: Vec::new(),
                 changed_files: vec!["docs/guide.md".into()],
                 has_skip_trailer: false,
             },
@@ -1102,11 +1292,178 @@ mod tests {
         let mut trailer_map = BTreeMap::new();
         trailer_map.insert("Implements".into(), "implements".into());
 
-        let (refs, _skip) = parse_commit_message(msg, &trailer_map, "Trace: skip");
-        let impl_ids = refs.get("implements").unwrap();
+        let parsed = parse_commit_message(msg, &trailer_map, "Trace: skip");
+        let impl_ids = parsed.artifact_refs.get("implements").unwrap();
         assert_eq!(
             impl_ids,
             &vec!["FEAT-052", "FEAT-053", "FEAT-054", "FEAT-055", "FEAT-056"]
         );
+    }
+
+    // ── REQ-078: malformed/typo'd trailers must not pass as orphans ──────
+    //
+    // The bug: `Implements: REQ-O1` (capital letter O) yielded an empty
+    // `artifact_refs`, so the commit was classified `Orphan` (a warning,
+    // exit 0) instead of `BrokenRef` (an error, non-zero exit). A
+    // well-formed-but-unknown ID (`REQ-99999`) was already caught — the
+    // malformed case was the un-fixed asymmetry.
+
+    fn impl_trailer_map() -> BTreeMap<String, String> {
+        let mut m = BTreeMap::new();
+        m.insert("Implements".into(), "implements".into());
+        m.insert("Fixes".into(), "fixes".into());
+        m
+    }
+
+    // rivet: verifies REQ-078
+    #[test]
+    fn malformed_id_token_is_detected_not_dropped() {
+        // `REQ-O1` — capital letter O for a zero — looks like an artifact
+        // ID attempt but is not valid: it must surface as a malformed ref.
+        let (ids, malformed) = extract_artifact_refs("REQ-O1");
+        assert!(ids.is_empty(), "REQ-O1 must not be a valid artifact ID");
+        assert_eq!(malformed, vec!["REQ-O1"]);
+    }
+
+    // rivet: verifies REQ-078
+    #[test]
+    fn ordinary_prose_is_not_flagged_as_malformed() {
+        // A hyphenated word with no digit, and a bare number, are not
+        // artifact-ID attempts — `rivet commits` must not choke on prose.
+        let (ids, malformed) = extract_artifact_refs("hot-fix for issue 42");
+        assert!(ids.is_empty());
+        assert!(
+            malformed.is_empty(),
+            "prose must not be flagged as malformed: {malformed:?}"
+        );
+    }
+
+    // rivet: verifies REQ-078
+    #[test]
+    fn typod_id_classifies_as_broken_ref_not_orphan() {
+        // End-to-end: a commit whose only trailer is `Implements: REQ-O1`
+        // must classify as BrokenRef, never Orphan.
+        let trailer_map = impl_trailer_map();
+        let parsed = parse_commit_message(
+            "feat: add thing\n\nImplements: REQ-O1",
+            &trailer_map,
+            "Trace: skip",
+        );
+        assert!(
+            parsed.artifact_refs.is_empty(),
+            "the malformed token must not become a valid ref"
+        );
+        assert_eq!(parsed.malformed_refs.len(), 1);
+        assert_eq!(parsed.malformed_refs[0].kind, MalformedKind::Id);
+        assert_eq!(parsed.malformed_refs[0].token, "REQ-O1");
+
+        let known: HashSet<String> = ["REQ-001".into()].into();
+        // has_malformed = true → BrokenRef even with empty artifact_refs.
+        assert_eq!(
+            classify_commit_refs(&parsed.artifact_refs, &known, true),
+            CommitClass::BrokenRef,
+        );
+    }
+
+    // rivet: verifies REQ-078
+    #[test]
+    fn typod_trailer_key_is_flagged() {
+        // `Implments:` is edit-distance 1 from the configured `Implements:`
+        // key — it must be flagged, not silently dropped.
+        let trailer_map = impl_trailer_map();
+        let parsed = parse_commit_message(
+            "feat: add thing\n\nImplments: REQ-001",
+            &trailer_map,
+            "Trace: skip",
+        );
+        // The value never reaches `artifact_refs` because the key is wrong.
+        assert!(parsed.artifact_refs.is_empty());
+        assert_eq!(parsed.malformed_refs.len(), 1);
+        assert_eq!(parsed.malformed_refs[0].kind, MalformedKind::Key);
+        assert_eq!(parsed.malformed_refs[0].token, "Implments");
+        assert_eq!(parsed.malformed_refs[0].context, "Implements");
+    }
+
+    // rivet: verifies REQ-078
+    #[test]
+    fn unrelated_trailer_key_is_not_flagged_as_typo() {
+        // A genuinely unrelated trailer key (`Co-Authored-By:`,
+        // `Signed-off-by:` style) is far from every configured key and
+        // must not be mistaken for a typo.
+        let trailer_map = impl_trailer_map();
+        let parsed = parse_commit_message(
+            "feat: add thing\n\nImplements: REQ-001\nReviewed-By: Someone",
+            &trailer_map,
+            "Trace: skip",
+        );
+        assert!(
+            parsed.malformed_refs.is_empty(),
+            "unrelated key wrongly flagged: {:?}",
+            parsed.malformed_refs
+        );
+    }
+
+    // rivet: verifies REQ-078
+    #[test]
+    fn well_formed_valid_trailer_still_classifies_as_linked() {
+        // The control case: a correct trailer must keep working — no
+        // malformed refs, classifies Linked against a known store.
+        let trailer_map = impl_trailer_map();
+        let parsed = parse_commit_message(
+            "feat: add thing\n\nImplements: REQ-001",
+            &trailer_map,
+            "Trace: skip",
+        );
+        assert!(parsed.malformed_refs.is_empty());
+        assert_eq!(
+            parsed.artifact_refs.get("implements").unwrap(),
+            &vec!["REQ-001"]
+        );
+
+        let known: HashSet<String> = ["REQ-001".into()].into();
+        assert_eq!(
+            classify_commit_refs(&parsed.artifact_refs, &known, false),
+            CommitClass::Linked,
+        );
+    }
+
+    // rivet: verifies REQ-078
+    #[test]
+    fn analyze_commits_reports_malformed_ref_as_broken() {
+        // Full pipeline: a `feat` commit touching a traced path with a
+        // malformed trailer must land in `broken_refs` (error), NOT in
+        // `orphans` (warning) — so `rivet commits` exits non-zero.
+        let known_ids: HashSet<String> = ["REQ-001".into()].into();
+        let commit = ParsedCommit {
+            hash: "deadbeef".into(),
+            subject: "feat: add thing".into(),
+            body: String::new(),
+            author: "Alice".into(),
+            date: "2025-01-01".into(),
+            commit_type: Some("feat".into()),
+            artifact_refs: BTreeMap::new(),
+            malformed_refs: vec![MalformedRef {
+                kind: MalformedKind::Id,
+                token: "REQ-O1".into(),
+                context: "Implements".into(),
+            }],
+            changed_files: vec!["src/lib.rs".into()],
+            has_skip_trailer: false,
+        };
+        let analysis = analyze_commits(
+            vec![commit],
+            &known_ids,
+            &["chore".into()],
+            &["src/".into()],
+            &[],
+            &BTreeMap::new(),
+        );
+        assert!(
+            analysis.orphans.is_empty(),
+            "malformed commit must not be a silent orphan"
+        );
+        assert_eq!(analysis.broken_refs.len(), 1);
+        assert!(analysis.broken_refs[0].malformed);
+        assert_eq!(analysis.broken_refs[0].missing_id, "REQ-O1");
     }
 }

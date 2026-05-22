@@ -366,6 +366,39 @@ impl RewriteMap {
     }
 }
 
+/// Check whether `field_value`, written against `target_field_name` on
+/// `target_def`, satisfies that field's `allowed_values` enum.
+///
+/// Returns `Some(ChangeKind::FieldValueConflict)` when the target field
+/// is enum-constrained and the value is out of the enum; `None`
+/// otherwise (field absent, not enum-constrained, or in-enum).
+///
+/// Shared by both the identity-named and the field-map-renamed paths in
+/// [`diff_artifacts`] so an out-of-enum value is flagged as a conflict
+/// regardless of whether the recipe renamed the field.
+fn enum_conflict_for(
+    target_def: &crate::schema::ArtifactTypeDef,
+    target_field_name: &str,
+    field_value: &serde_yaml::Value,
+    target_type_name: &str,
+) -> Option<ChangeKind> {
+    let target_field = target_def
+        .fields
+        .iter()
+        .find(|f| f.name == target_field_name)?;
+    let allowed = target_field.allowed_values.as_ref()?;
+    let current_value = yaml_value_as_display(field_value);
+    if allowed.iter().any(|v| v == &current_value) {
+        return None;
+    }
+    Some(ChangeKind::FieldValueConflict {
+        in_type: target_type_name.to_string(),
+        field: target_field_name.to_string(),
+        from_value: current_value,
+        target_constraint: format!("[{}]", allowed.join("|")),
+    })
+}
+
 /// Compute a [`RewriteMap`] from a recipe + the source artifacts.
 ///
 /// `target_schema` is consulted (when `Some`) to detect unmapped fields
@@ -471,6 +504,24 @@ pub fn diff_artifacts(
                         },
                     });
                 }
+                // The renamed value still has to satisfy the TARGET
+                // field's `allowed_values` enum. Without this check a
+                // value that is out-of-enum for the renamed-into field
+                // (e.g. `prio: 7` -> enum `priority`) would slip through
+                // as a clean mechanical rename. Run the same enum check
+                // the identity-named path below runs.
+                if let Some(target_def) = target_type_def {
+                    if let Some(change) =
+                        enum_conflict_for(target_def, target_name, field_value, &target_type_name)
+                    {
+                        changes.push(PlannedChange {
+                            artifact_id: artifact.id.clone(),
+                            source_file: source_file.clone(),
+                            action: ActionClass::Conflict,
+                            change,
+                        });
+                    }
+                }
                 continue;
             }
             // No explicit mapping. If we have a target schema, check
@@ -482,25 +533,15 @@ pub fn diff_artifacts(
             // unmapped-fields policy.
             if let Some(target_def) = target_type_def {
                 if target_field_names.contains(field_name) {
-                    if let Some(target_field) =
-                        target_def.fields.iter().find(|f| f.name == *field_name)
+                    if let Some(change) =
+                        enum_conflict_for(target_def, field_name, field_value, &target_type_name)
                     {
-                        if let Some(allowed) = &target_field.allowed_values {
-                            let current_value = yaml_value_as_display(field_value);
-                            if !allowed.iter().any(|v| v == &current_value) {
-                                changes.push(PlannedChange {
-                                    artifact_id: artifact.id.clone(),
-                                    source_file: source_file.clone(),
-                                    action: ActionClass::Conflict,
-                                    change: ChangeKind::FieldValueConflict {
-                                        in_type: target_type_name.clone(),
-                                        field: field_name.clone(),
-                                        from_value: current_value,
-                                        target_constraint: format!("[{}]", allowed.join("|")),
-                                    },
-                                });
-                            }
-                        }
+                        changes.push(PlannedChange {
+                            artifact_id: artifact.id.clone(),
+                            source_file: source_file.clone(),
+                            action: ActionClass::Conflict,
+                            change,
+                        });
                     }
                 } else {
                     let action = match recipe.policies.unmapped_fields {
@@ -573,8 +614,15 @@ pub fn apply_to_file(
         .and_then(|v| v.as_sequence_mut());
 
     let Some(artifacts) = artifacts else {
-        // No `artifacts:` key — nothing to do. Return original.
-        return Ok(original.to_string());
+        // No top-level `artifacts:` sequence — the recipe is pointed at a
+        // wrong-shaped file. Returning `Ok(original)` here would report
+        // success having migrated nothing (a silent failure); surface it
+        // as an error instead.
+        return Err(Error::Schema(format!(
+            "file has no top-level `artifacts:` sequence; \
+             cannot apply migration (expected a Rivet artifact YAML, found {})",
+            describe_yaml_shape(&doc)
+        )));
     };
 
     let type_map: BTreeMap<&str, &TypeRewrite> = recipe
@@ -776,6 +824,20 @@ pub fn yaml_value_as_display(v: &serde_yaml::Value) -> String {
             .unwrap_or_default()
             .trim_end()
             .to_string(),
+    }
+}
+
+/// Describe the top-level shape of a parsed YAML document, for
+/// diagnostics when a file does not have the expected `artifacts:`
+/// sequence.
+fn describe_yaml_shape(doc: &serde_yaml::Value) -> &'static str {
+    match doc {
+        serde_yaml::Value::Mapping(_) => "a mapping without an `artifacts` key",
+        serde_yaml::Value::Sequence(_) => "a bare sequence",
+        serde_yaml::Value::Null => "an empty document",
+        serde_yaml::Value::Bool(_) | serde_yaml::Value::Number(_) => "a scalar",
+        serde_yaml::Value::String(_) => "a string",
+        serde_yaml::Value::Tagged(_) => "a tagged value",
     }
 }
 
@@ -1635,6 +1697,158 @@ mod tests {
             assert_eq!(from_value, "5");
             assert!(target_constraint.contains("must"));
         }
+    }
+
+    /// Build a target schema where `sw-req` has an enum `priority`
+    /// field constrained to {must,should,could,wont}.
+    fn enum_priority_target() -> Schema {
+        let mut target = Schema {
+            artifact_types: std::collections::HashMap::new(),
+            link_types: std::collections::HashMap::new(),
+            inverse_map: std::collections::HashMap::new(),
+            traceability_rules: vec![],
+            conditional_rules: vec![],
+            validation_rules: vec![],
+        };
+        let sw_req = crate::schema::ArtifactTypeDef {
+            name: "sw-req".into(),
+            description: "".into(),
+            fields: vec![crate::schema::FieldDef {
+                name: "priority".into(),
+                field_type: "enum".into(),
+                required: false,
+                description: None,
+                allowed_values: Some(vec![
+                    "must".into(),
+                    "should".into(),
+                    "could".into(),
+                    "wont".into(),
+                ]),
+            }],
+            link_fields: vec![],
+            aspice_process: None,
+            common_mistakes: vec![],
+            example: None,
+            yaml_section: None,
+            yaml_sections: vec![],
+            yaml_section_suffix: None,
+            shorthand_links: BTreeMap::new(),
+        };
+        target.artifact_types.insert("sw-req".into(), sw_req);
+        target
+    }
+
+    /// A recipe whose `requirement -> sw-req` rewrite renames the field
+    /// `prio` to the enum-constrained target field `priority`.
+    fn recipe_renaming_prio_to_priority() -> MigrationRecipe {
+        let mut recipe = dev_to_aspice();
+        let mut field_map = BTreeMap::new();
+        field_map.insert("prio".to_string(), "priority".to_string());
+        recipe.type_rewrites[0].field_map = field_map;
+        recipe
+    }
+
+    /// REQ-080: a field-map-renamed value that is out-of-enum for the
+    /// renamed-into TARGET field must emit a `FieldValueConflict` — the
+    /// renamed path must not bypass the enum check.
+    #[test]
+    fn diff_field_map_rename_emits_conflict_for_out_of_enum_value() {
+        let target = enum_priority_target();
+        let recipe = recipe_renaming_prio_to_priority();
+
+        let mut a = artifact("REQ-001", "requirement");
+        // `prio: 7` is out of the target `priority` enum.
+        a.fields.insert(
+            "prio".into(),
+            serde_yaml::Value::Number(serde_yaml::Number::from(7)),
+        );
+
+        let map = diff_artifacts(&recipe, &[a], Some(&target));
+
+        // The mechanical rename is still emitted.
+        let renames: Vec<&PlannedChange> = map
+            .changes
+            .iter()
+            .filter(|c| matches!(c.change, ChangeKind::FieldRename { .. }))
+            .collect();
+        assert_eq!(renames.len(), 1, "rename still emitted: {:?}", map.changes);
+
+        // And the out-of-enum value is flagged as a conflict on the
+        // RENAMED target field name.
+        let confs: Vec<&PlannedChange> = map
+            .changes
+            .iter()
+            .filter(|c| matches!(c.change, ChangeKind::FieldValueConflict { .. }))
+            .collect();
+        assert_eq!(
+            confs.len(),
+            1,
+            "renamed out-of-enum value must conflict: {:?}",
+            map.changes
+        );
+        assert_eq!(confs[0].action, ActionClass::Conflict);
+        assert!(map.has_conflicts(), "has_conflicts() must be true");
+        if let ChangeKind::FieldValueConflict {
+            field,
+            from_value,
+            target_constraint,
+            ..
+        } = &confs[0].change
+        {
+            assert_eq!(field, "priority", "conflict names the TARGET field");
+            assert_eq!(from_value, "7");
+            assert!(target_constraint.contains("must"));
+        }
+    }
+
+    /// REQ-080: an in-enum field-map-renamed value stays a clean
+    /// mechanical rename — no conflict.
+    #[test]
+    fn diff_field_map_rename_in_enum_value_is_clean_mechanical() {
+        let target = enum_priority_target();
+        let recipe = recipe_renaming_prio_to_priority();
+
+        let mut a = artifact("REQ-001", "requirement");
+        // `prio: should` is in the target `priority` enum.
+        a.fields
+            .insert("prio".into(), serde_yaml::Value::String("should".into()));
+
+        let map = diff_artifacts(&recipe, &[a], Some(&target));
+
+        assert!(
+            !map.has_conflicts(),
+            "in-enum renamed value must not conflict: {:?}",
+            map.changes
+        );
+        let renames: Vec<&PlannedChange> = map
+            .changes
+            .iter()
+            .filter(|c| matches!(c.change, ChangeKind::FieldRename { .. }))
+            .collect();
+        assert_eq!(
+            renames.len(),
+            1,
+            "clean mechanical rename: {:?}",
+            map.changes
+        );
+        assert_eq!(renames[0].action, ActionClass::Mechanical);
+    }
+
+    /// REQ-080 neighbour: `apply_to_file` on a YAML file lacking the
+    /// top-level `artifacts:` key must surface an error rather than
+    /// silently returning `Ok(original)` having migrated nothing.
+    #[test]
+    fn apply_to_file_errors_on_file_without_artifacts_key() {
+        let recipe = dev_to_aspice();
+        // A wrong-shaped file: a mapping with no `artifacts` key.
+        let original = "schema:\n  version: 1\n";
+        let err = apply_to_file(original, &[], &recipe)
+            .expect_err("must not silently report success on a wrong-shaped file");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("artifacts"),
+            "diagnostic should mention the missing `artifacts:` key: {msg}"
+        );
     }
 
     #[test]

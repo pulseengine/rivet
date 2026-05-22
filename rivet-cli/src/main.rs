@@ -4941,6 +4941,12 @@ fn cmd_validate(
         Severity::Warning
     };
     for orphan_id in graph.orphans(&store) {
+        // REQ-082: an external (prefixed) artifact appearing orphaned in
+        // the consumer's graph is the supplier's concern, not a finding
+        // against the consumer.
+        if orphan_id.contains(':') {
+            continue;
+        }
         let mut diag = validate::Diagnostic::new(
             orphan_severity,
             Some(orphan_id.clone()),
@@ -5050,10 +5056,28 @@ fn cmd_validate(
         }
     }
 
-    // Lifecycle completeness check
-    let all_artifacts: Vec<_> = store.iter().cloned().collect();
+    // Lifecycle completeness check — consumer's own artifacts only;
+    // external (prefixed) artifacts are the supplier's gate (REQ-082).
+    let all_artifacts: Vec<_> = store
+        .iter()
+        .filter(|a| !a.id.contains(':'))
+        .cloned()
+        .collect();
     let lifecycle_gaps =
         rivet_core::lifecycle::check_lifecycle_completeness(&all_artifacts, &schema, &graph);
+
+    // REQ-082: external (prefixed `prefix:ID`) artifacts are loaded into
+    // the store only so the consumer's `prefix:ID` cross-links resolve.
+    // Their own schema / rule / conditional-rule / traceability
+    // violations are the SUPPLIER's gate — surfaced opt-in via
+    // `--with-externals-validate` (REQ-065 / AoU-X1) — never counted
+    // against the consumer's default run. Drop every diagnostic keyed to
+    // a prefixed external ID, whichever validation pass produced it
+    // (structural, conditional, traceability, salsa or direct). A broken
+    // cross-link FROM a consumer artifact is keyed to the consumer's own
+    // ID and is correctly kept; `artifact-parse-error` diagnostics carry
+    // no artifact_id and are kept.
+    diagnostics.retain(|d| !d.artifact_id.as_deref().is_some_and(|id| id.contains(':')));
 
     let errors = diagnostics
         .iter()
@@ -5821,6 +5845,11 @@ fn cmd_stats(
             ));
         }
     }
+    // REQ-082: drop diagnostics keyed to external (`prefix:ID`) artifacts —
+    // a linked external repo's own violations are the supplier's gate, not
+    // the consumer's. Mirrors the identical filter in `cmd_validate` so the
+    // `errors`/`warnings` counts stay consistent (stats_json_counts_match_validate).
+    diagnostics.retain(|d| !d.artifact_id.as_deref().is_some_and(|id| id.contains(':')));
     let errors = diagnostics
         .iter()
         .filter(|d| d.severity == Severity::Error)
@@ -10100,9 +10129,39 @@ fn cmd_commit_msg_check(cli: &Cli, file: &std::path::Path) -> Result<bool> {
 
     // Parse artifact trailers
     let trailer_map: &BTreeMap<String, String> = &commits_cfg.trailers;
-    let (artifact_refs, _) =
+    let parsed =
         rivet_core::commits::parse_commit_message(message, trailer_map, &commits_cfg.skip_trailer);
 
+    // Malformed or typo'd trailers are hard errors (REQ-078): a botched
+    // artifact-ID token or a mistyped trailer key must not slip through
+    // as a silent orphan.
+    if !parsed.malformed_refs.is_empty() {
+        eprintln!("error: commit message has malformed artifact trailers:");
+        for m in &parsed.malformed_refs {
+            match m.kind {
+                rivet_core::commits::MalformedKind::Id => {
+                    eprintln!(
+                        "  '{}' under '{}:' is not a valid artifact ID",
+                        m.token, m.context
+                    );
+                }
+                rivet_core::commits::MalformedKind::Key => {
+                    eprintln!(
+                        "  '{}:' is not a known trailer key (did you mean '{}:'?)",
+                        m.token, m.context
+                    );
+                }
+            }
+        }
+        eprintln!();
+        eprintln!(
+            "Fix the trailer, or add '{}' to skip.",
+            commits_cfg.skip_trailer
+        );
+        return Ok(false);
+    }
+
+    let artifact_refs = &parsed.artifact_refs;
     let all_ids: Vec<String> = artifact_refs.values().flatten().cloned().collect();
 
     if all_ids.is_empty() {
@@ -10289,10 +10348,17 @@ fn cmd_commits(
             } else {
                 &br.hash
             };
-            println!(
-                "  {short} {}: unknown ID '{}' (trailer: {})",
-                br.subject, br.missing_id, br.link_type
-            );
+            if br.malformed {
+                println!(
+                    "  {short} {}: malformed trailer '{}' ({})",
+                    br.subject, br.missing_id, br.link_type
+                );
+            } else {
+                println!(
+                    "  {short} {}: unknown ID '{}' (trailer: {})",
+                    br.subject, br.missing_id, br.link_type
+                );
+            }
         }
     }
 
@@ -10339,12 +10405,18 @@ fn cmd_commits(
 }
 
 fn cmd_commits_json(analysis: &rivet_core::commits::CommitAnalysis, strict: bool) -> Result<bool> {
+    let malformed_count = analysis
+        .broken_refs
+        .iter()
+        .filter(|br| br.malformed)
+        .count();
     let json = serde_json::json!({
         "summary": {
             "linked": analysis.linked.len(),
             "orphans": analysis.orphans.len(),
             "exempt": analysis.exempt.len(),
             "broken_refs": analysis.broken_refs.len(),
+            "malformed_refs": malformed_count,
         },
         "broken_refs": analysis.broken_refs.iter().map(|br| {
             serde_json::json!({
@@ -10352,6 +10424,7 @@ fn cmd_commits_json(analysis: &rivet_core::commits::CommitAnalysis, strict: bool
                 "subject": br.subject,
                 "missing_id": br.missing_id,
                 "link_type": br.link_type,
+                "malformed": br.malformed,
             })
         }).collect::<Vec<_>>(),
         "orphans": analysis.orphans.iter().map(|c| {

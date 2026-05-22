@@ -583,8 +583,16 @@ jobs:
       # DeterminateSystems installer which supports a daemonless
       # single-user mode that does not need sudo.
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@main
+        # Pinned by SHA + `determinate: false`. The action's `determinate`
+        # input default flipped false->true between v17 and v22, so the
+        # former `@main` pin started installing Determinate Nix, whose
+        # `determinate-nixd` daemon ignores `init: none` and fails on
+        # no-sudo / NoNewPrivileges runners (missing daemon socket,
+        # root-owned store lock). `determinate: false` restores the plain
+        # upstream daemonless install this job was written for.
+        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
         with:
+          determinate: false
           init: none
           extra-conf: |
             experimental-features = nix-command flakes
@@ -631,8 +639,16 @@ jobs:
       # Same NoNewPrivileges constraint as the verus job above — use the
       # DeterminateSystems installer which works without sudo.
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@main
+        # Pinned by SHA + `determinate: false`. The action's `determinate`
+        # input default flipped false->true between v17 and v22, so the
+        # former `@main` pin started installing Determinate Nix, whose
+        # `determinate-nixd` daemon ignores `init: none` and fails on
+        # no-sudo / NoNewPrivileges runners (missing daemon socket,
+        # root-owned store lock). `determinate: false` restores the plain
+        # upstream daemonless install this job was written for.
+        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
         with:
+          determinate: false
           init: none
           extra-conf: |
             experimental-features = nix-command flakes
