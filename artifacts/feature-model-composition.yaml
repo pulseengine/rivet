@@ -91,3 +91,148 @@ artifacts:
         target: REQ-042
       - type: traces-to
         target: REQ-044
+
+  - id: REQ-085
+    type: requirement
+    title: "Cross-repo feature model composition — mounts resolve external sub-models against rivet.yaml externals, not git config in the binding"
+    status: draft
+    description: |
+      REQ-083 (shipped v0.12.0) composes feature-model files by path
+      relative to the binding file — same repository only. The next
+      step is composition across git repositories: a sub-model lives in
+      an external project, pinned by SHA, fetched by `rivet sync`,
+      mounted under a prefix.
+
+      Design (settled with the requester, 2026-05-22):
+
+      - The `feature-model-binding` file MUST NOT re-declare git
+        sources. `rivet.yaml` is already the single place external
+        repos are declared (git URL, rev, prefix) and synced (REQ-065).
+        Duplicating that in the binding would create a second source
+        of truth that drifts.
+      - A mount's `model:` field becomes either a local relative path
+        (today's behaviour) OR `<external-prefix>:<path-in-that-repo>`,
+        resolved against `rivet.yaml`'s `externals:`. The engine
+        resolves the path against the synced cache
+        (`.rivet/repos/<prefix>/`). No new fetch or sync machinery —
+        cross-repo composition rides the existing `rivet sync` plumbing
+        entirely.
+      - `FeatureModel::load_composed` is project-config agnostic today.
+        The clean split: add
+        `FeatureModel::load_composed_with_externals(binding,
+        externals_map)`; the CLI passes in what it already loads from
+        `rivet.yaml` via `ProjectContext`. Same core/CLI boundary
+        `validate` uses.
+      - All REQ-083 broken-mount semantics extend: a missing external
+        prefix, an unsynced external, or a path that doesn't exist
+        inside the resolved external repo each error loudly.
+
+      Acceptance:
+        - Given a consumer with `rivet.yaml` declaring external prefix
+          `acme-pwt` (git+rev) and a `feature-model-binding` whose
+          mount points `model: acme-pwt:powertrain.yaml`, after
+          `rivet sync` the composed tree includes the external's
+          features under the binding's mount prefix.
+        - The same binding without the consumer running `rivet sync`
+          first errors loudly (unsynced external), naming the missing
+          external.
+        - A mount referencing a prefix not declared in `rivet.yaml`
+          errors loudly, naming the prefix.
+        - The composition engine itself
+          (`load_composed_with_externals`) is project-config-agnostic
+          — it takes the resolved externals map; the CLI threads in
+          the project context.
+        - REQ-083's same-repo (relative-path) composition continues to
+          work unchanged.
+        - Regression tests in `rivet-core` (the engine variant) and
+          `rivet-cli` (the externals threading).
+    tags: [variant, ple, feature-model, composition, cross-repo, externals]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.13.0-track
+    links:
+      - type: derives-from
+        target: REQ-083
+      - type: traces-to
+        target: REQ-065
+
+  - id: REQ-086
+    type: requirement
+    title: "MC/DC coverage of the feature-model composition core via the witness tool — Rivet dogfoods its own coverage-evidence ecosystem"
+    status: draft
+    description: |
+      The pulseengine ecosystem ships `witness`
+      (https://github.com/pulseengine/witness): "MC/DC-style branch
+      coverage for WebAssembly components ... feed [it] into rivet as
+      requirement-to-test evidence." The composition core landed in
+      v0.12.0 (REQ-083) deserves MC/DC evidence — it is safety tooling;
+      the predicates inside `prefix_constraint`,
+      `flush_constraint_token`, `splice_into`, and the merge path of
+      `from_yaml_struct` are exactly the kind of branching logic MC/DC
+      was designed for — and yet today no Rivet code is reachable by
+      witness, because Rivet ships no Wasm component build of itself.
+
+      Two findings drive this requirement:
+
+      1. The straightforward native-Rust shortcut — `cargo llvm-cov
+         --mcdc` — is dead-ended on toolchain skew. A 2026-05 rolling
+         `nightly` removed `mcdc` from `-Z coverage-options` (only
+         `block | branch | condition` accepted); a 2025-06 dated
+         nightly that does accept `mcdc` is too old to compile current
+         dependencies (`smol_str` fails). This is exactly the rustc
+         coverage-flag churn witness's design argument calls out
+         ("post-rustc Wasm" is more stable than chasing nightly
+         `-Z coverage-options`).
+      2. The composition core is largely pure. `prefix_constraint`,
+         `flush_constraint_token`, `prefix_model_yaml`, `splice_into`,
+         and `from_yaml_struct` operate on `String` / `BTreeMap` /
+         `sexpr_eval` with no I/O. They compile to `wasm32` cleanly.
+         Only the file-loading wrappers (`load_composed`, `load`,
+         `load_and_splice`) touch `std::fs` — and witness does not
+         need those; the harness passes YAML strings in.
+
+      Design:
+
+      - A new small crate, `compose-witness`, built as a Wasm
+        component, exports a WIT interface — e.g.
+        `compose: func(binding: string,
+                       models: list<tuple<string, string>>)
+                  -> result<resolved-model, string>` — implemented by
+        calling the composition core with the YAML strings passed in.
+        Filesystem I/O is the harness's responsibility, not the
+        component's.
+      - A witness harness drives the component with the REQ-083
+        Acceptance fixtures (the same scenarios the 16 `compose_*`
+        tests exercise) plus the per-predicate flip pairs MC/DC
+        requires.
+      - Witness emits MC/DC truth tables + a signed coverage envelope.
+      - Rivet ingests the envelope as REQ-083 / REQ-086
+        requirement-to-test evidence — closing the witness->rivet loop
+        the pulseengine ecosystem was architected for.
+      - A CI job runs the harness on every PR touching the composition
+        core and uploads the coverage envelope as an artifact.
+
+      Acceptance:
+        - The `compose-witness` crate builds to a Wasm component
+          (`cargo component build`) with no `std::fs` dependency in
+          the component itself.
+        - The witness harness produces an MC/DC report covering every
+          predicate in `prefix_constraint`, `flush_constraint_token`,
+          `prefix_model_yaml`, `splice_into`, and the merge-validation
+          path of `from_yaml_struct`.
+        - The signed coverage envelope is ingestible by `rivet` as
+          requirement-to-test evidence linked to REQ-083 and REQ-086.
+        - A CI job runs the harness and uploads the envelope.
+        - REQ-083's 16 functional tests remain the source of truth for
+          behaviour; witness adds the per-condition MC/DC layer.
+    tags: [variant, ple, feature-model, mcdc, witness, coverage, evidence, tool-qualification]
+    fields:
+      priority: should
+      category: non-functional
+      baseline: v0.13.0-track
+    links:
+      - type: derives-from
+        target: REQ-083
+      - type: traces-to
+        target: REQ-065
