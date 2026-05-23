@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1779536447097,
+  "lastUpdate": 1779543483422,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "f198d3dc8e1d96aad8a7c56e5f68e9df87cbf089",
-          "message": "ci(release): wire wasi-sdk into build-test-evidence; drop continue-on-error (#274)\n\nFollow-up to #269/#271/#272. The spar wasm32-wasip2 build pulls in\nhighs-sys (a C++ solver); building C/C++ for that target needs a full\nWASI toolchain — a sysroot with libc/libc++/libc++abi plus\nlibclang_rt.builtins-wasm32.a, and a wasm linker. The runner image no\nlonger ships any of it, so even with `lld` (wasm-ld) and\nwasm-component-ld installed, wasm-ld errored on `crt1.o` / `-lc` /\n`-lc++`. #272 made the job continue-on-error so the release wasn't\nblocked (v0.9.0 shipped 8/9 assets, missing only test-evidence.tar.gz).\n\nThis installs wasi-sdk 25.0 to /opt/wasi-sdk, puts its bin/ on PATH (so\nwasm-component-ld finds wasm-ld and the cc/cmake build scripts pick up\nthe right clang), and pins CC_/CXX_/AR_wasm32_wasip2 + the wasip2\nsysroot via CFLAGS_/CXXFLAGS_wasm32_wasip2 — so both the CMake CXX-ABI\nprobe and the highs-sys compile resolve their headers/libs. `lld` stays\nas a belt-and-braces wasm-ld source. Drops `continue-on-error` — if\ntest-evidence breaks again it should block the release until fixed.\n\nNot verified locally (spar isn't checked out here); the wasip2 sysroot\nflags or the wasi-sdk version may need a tweak after the first CI run.\nAlternative for a hermetic toolchain (out of scope here): migrate the\nspar-wasm build to Bazel rules_wasm_component — a change in the spar repo.\n\nCo-authored-by: Claude Opus 4.7 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-05-15T08:33:46-05:00",
-          "tree_id": "9bf5a0bb8fda339cf76ad3e54fcb1f204414783b",
-          "url": "https://github.com/pulseengine/rivet/commit/f198d3dc8e1d96aad8a7c56e5f68e9df87cbf089"
-        },
-        "date": 1778852416122,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 79444,
-            "range": "± 1609",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 836638,
-            "range": "± 10985",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 13605122,
-            "range": "± 821441",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2190,
-            "range": "± 11",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 26159,
-            "range": "± 168",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 374955,
-            "range": "± 1233",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 95,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1226221,
-            "range": "± 65046",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 160066,
-            "range": "± 2111",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1902467,
-            "range": "± 6145",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 24748386,
-            "range": "± 2004880",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 138191,
-            "range": "± 4866",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 1217063,
-            "range": "± 18905",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 12833076,
-            "range": "± 463161",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4394,
-            "range": "± 29",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 59620,
-            "range": "± 260",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 797220,
-            "range": "± 1752",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 61437,
-            "range": "± 163",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 694440,
-            "range": "± 3194",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7742148,
-            "range": "± 329947",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 838,
-            "range": "± 33",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 7576,
-            "range": "± 54",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 114923,
-            "range": "± 813",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 24371,
-            "range": "± 193",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 178595,
-            "range": "± 1260",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1635034,
-            "range": "± 32897",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1486646,
             "range": "± 19835",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "78f001e23d595ba816f7a7be59282194dedfdc12",
+          "message": "feat(compose-witness): Wasm-component PoC for REQ-086 witness MC/DC (#315)\n\nFirst increment of REQ-086 (MC/DC coverage of the REQ-083 composition\ncore via the pulseengine `witness` tool).\n\n- New sibling cargo project `compose-witness/` (excluded from workspace\n  to keep `cargo test --all` clean of wasm-only crate-types). Builds\n  via `cargo component build --manifest-path compose-witness/Cargo.toml`\n  to a valid `wasm32-wasip1` component exporting\n  `pulseengine:compose-witness/compose@0.1.0` with a single\n  `prefix-features` function.\n- The pure prefixing functions (`prefix_model_yaml`,\n  `prefix_constraint`, `flush_constraint_token`) are inlined from\n  rivet-core/src/feature_model.rs because rivet-core itself uses\n  std::fs/salsa/rowan and won't compile to wasm32. A v2 extracts the\n  pure module into a shared crate.\n- MODULE.bazel adds `bazel_dep(name = \"rules_wasm_component\",\n  version = \"1.0.0\")`; `compose-witness/BUILD.bazel` sketches the\n  canonical Bazel pipeline (wit_library + rust_wasm_component_bindgen +\n  wasm_module_coverage) — pending live build verification (next\n  increment).\n\nImplements: REQ-086",
+          "timestamp": "2026-05-23T08:31:38-05:00",
+          "tree_id": "9ead196d2a3a98cfb9be6a1bb4f8704e41aa379b",
+          "url": "https://github.com/pulseengine/rivet/commit/78f001e23d595ba816f7a7be59282194dedfdc12"
+        },
+        "date": 1779543482691,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 85486,
+            "range": "± 2662",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 899090,
+            "range": "± 42420",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 13372960,
+            "range": "± 609392",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2180,
+            "range": "± 82",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25396,
+            "range": "± 445",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 375775,
+            "range": "± 16768",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 94,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1443650,
+            "range": "± 21043",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 165645,
+            "range": "± 521",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1868510,
+            "range": "± 99636",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 29398588,
+            "range": "± 2191750",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 130041,
+            "range": "± 7056",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1126567,
+            "range": "± 29257",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 12714592,
+            "range": "± 1456890",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4296,
+            "range": "± 730",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 61657,
+            "range": "± 531",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 801048,
+            "range": "± 2344",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 61929,
+            "range": "± 538",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 707654,
+            "range": "± 10068",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7851495,
+            "range": "± 333538",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 789,
+            "range": "± 17",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7286,
+            "range": "± 38",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 118120,
+            "range": "± 2892",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 23943,
+            "range": "± 768",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 169685,
+            "range": "± 1104",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1611989,
+            "range": "± 52729",
             "unit": "ns/iter"
           }
         ]
