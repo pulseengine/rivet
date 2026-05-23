@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1779536046489,
+  "lastUpdate": 1779536447097,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "8f71efeb8dff31c4786fd329a8f066d6eb9f06fc",
-          "message": "fix(schema): merge same-name types by union, not replace (#154) (#280)\n\n* fix(schema): merge same-name types by union, not replace (#154)\n\nBridge and overlay schemas that declared an artifact-type or link-type\nwith the same name as a base schema's silently lost the base's fields.\nThe merge was a plain HashMap::insert — later wins, parent fields gone.\n\nThis is the silent-correctness bug behind every bridge schema that\nre-declares a type to add a single safety attribute. A real reproducer\nin this repo: schemas/safety-case.yaml declares `safety-goal` with\nfields [claim, goal-type, asil, undeveloped] and link-field\nsub-goal-of; schemas/iso-26262.yaml re-declares `safety-goal` with\nfields [asil]. Loading [common, safety-case, iso-26262] previously\ngave a `safety-goal` with only [asil] — the GSN claim, goal-type, and\nsub-goal-of link-field were silently dropped. Every safety-case\nartifact in such a project then tripped \"field not defined\" diagnostics\nand zero declared link-fields broke cardinality enforcement.\n\nThe fix:\n\n- Add `ArtifactTypeDef::merge_in_place(&mut self, other: ArtifactTypeDef)`\n  with per-field union semantics:\n  * `description`: later wins when non-empty\n  * `fields`, `link_fields`: union by name; later wins on same-name\n    conflicts (so an overlay can change a field's `required` or\n    `field_type` deliberately, but cannot accidentally drop unrelated\n    fields)\n  * `shorthand_links`, `common_mistakes`: append/extend\n  * `yaml_sections`: union with dedup\n  * `aspice_process`, `example`, `yaml_section`, `yaml_section_suffix`:\n    later-Some wins\n- Add `LinkTypeDef::merge_in_place` with the same shape: scalar fields\n  take later-non-empty; `source_types` and `target_types` union with\n  dedup.\n- Free helper `merge_named_vec` does the union-by-name on Vec<T>\n  (used for both `fields` and `link_fields`).\n- `Schema::merge` switches from `insert` to `entry().{merge_in_place\n  | insert}` for both artifact_types and link_types.\n\nSix regression tests in `schema::tests`:\n\n  merge_same_name_artifact_type_unions_fields\n  merge_same_name_artifact_type_unions_link_fields\n  merge_preserves_shorthand_links_from_parent\n  merge_idempotent_with_same_file_twice\n  merge_order_independent_for_disjoint_additions\n  merge_same_name_link_type_unions_target_types\n\nThe shorthand-link preservation test guards the secondary symptom from\nparent's `controller: …` shorthand silently stopped expanding into a\n`links:` entry — because `Schema::merge` only populates\n`shorthand_links` from the type that survived the insert. With this\nfix, the parent's link-fields stay in place and the shorthand\nexpansion in `yaml_hir::extract_section_item` keeps working.\n\nBackward-compat: projects that relied on the replace behaviour were\nalready re-declaring every parent field (per the G.2 warning in\nrivet-cli/src/quickstart.md), so for them the union is a no-op —\nsame-name fields just stay identical. The new failure mode is\n\"deliberately removing a parent field\", which has no syntax today\n(no `remove-fields:` or `override: true` marker), so removing that\ncapability isn't a regression.\n\nFixes: #154\nImplements: REQ-010\nRefs: REQ-004\n\n* style: cargo fmt the new merge_in_place tests\n\nCI Format job flagged whitespace drift in the new #154 regression\ntests (long argument lists wrapping differently than rustfmt expects).\nPure formatting; no semantic change.",
-          "timestamp": "2026-05-15T01:21:24-05:00",
-          "tree_id": "8405d7eb35fe76a3359d9bbbf410a0362e2ef3aa",
-          "url": "https://github.com/pulseengine/rivet/commit/8f71efeb8dff31c4786fd329a8f066d6eb9f06fc"
-        },
-        "date": 1778826473060,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 79362,
-            "range": "± 812",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 848572,
-            "range": "± 15919",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 12292927,
-            "range": "± 6244463",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2157,
-            "range": "± 5",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 27018,
-            "range": "± 163",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 362191,
-            "range": "± 1143",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 96,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 96,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 96,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1247482,
-            "range": "± 18430",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 160250,
-            "range": "± 627",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1882355,
-            "range": "± 24985",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 23760230,
-            "range": "± 1314349",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 137509,
-            "range": "± 1531",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 1222693,
-            "range": "± 17439",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 12940359,
-            "range": "± 380595",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4349,
-            "range": "± 21",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 59569,
-            "range": "± 239",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 754703,
-            "range": "± 3655",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 60636,
-            "range": "± 507",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 686447,
-            "range": "± 8484",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7656457,
-            "range": "± 88146",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 847,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 7513,
-            "range": "± 23",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 116283,
-            "range": "± 3109",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 24622,
-            "range": "± 377",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 189241,
-            "range": "± 989",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1644842,
-            "range": "± 18389",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1617631,
             "range": "± 21511",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f88b23a90f6dc6e3457448652d8e1989352f722b",
+          "message": "build: bump rules_rocq_rust to e4660cc (hermetic rules_rust toolchain) (#314)\n\nBumps the rules_rocq_rust git pin in MODULE.bazel from 6a8da0b to\ne4660cc (current tip of pulseengine/rules_rocq_rust main), picking up\n#34 — \"build: migrate rocq-of-rust to a hermetic rules_rust toolchain\".\n\nNo-regression alignment with upstream main. The bump does NOT (yet)\nclear the Rocq CI job's Nix-derivation fetch failure (rocq_toolchains\nis still Nix-fetched and hits the daemonless-install store-lock\nconstraint) — that needs a further upstream change to move the Rocq\ntoolchain itself off Nix. Rocq remains continue-on-error.",
+          "timestamp": "2026-05-23T06:27:52-05:00",
+          "tree_id": "48f7ef0a2c74196bfbe6ac69d5a08deb7c76a70f",
+          "url": "https://github.com/pulseengine/rivet/commit/f88b23a90f6dc6e3457448652d8e1989352f722b"
+        },
+        "date": 1779536446565,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 84392,
+            "range": "± 2621",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 921974,
+            "range": "± 17836",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 14832494,
+            "range": "± 1393194",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1919,
+            "range": "± 12",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25056,
+            "range": "± 417",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 367862,
+            "range": "± 3983",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 97,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1433130,
+            "range": "± 27528",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 170077,
+            "range": "± 1036",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1963982,
+            "range": "± 30605",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 32355991,
+            "range": "± 3540738",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 126647,
+            "range": "± 2185",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1162025,
+            "range": "± 56387",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 17203245,
+            "range": "± 2274543",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4190,
+            "range": "± 12",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 44086,
+            "range": "± 584",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 769920,
+            "range": "± 18813",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 62705,
+            "range": "± 834",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 730689,
+            "range": "± 2080",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8291400,
+            "range": "± 1115903",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 733,
+            "range": "± 16",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 6862,
+            "range": "± 123",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 101608,
+            "range": "± 606",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 22463,
+            "range": "± 235",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 158063,
+            "range": "± 997",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1486646,
+            "range": "± 19835",
             "unit": "ns/iter"
           }
         ]
