@@ -5,6 +5,42 @@
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-05-22
+
+Theme: **multi-file feature models**. A product line can now be authored
+as a top-level feature model plus per-level sub-models in their own
+files — vehicle → powertrain → ECU — each file a valid, independently
+solvable model on its own. Minor version: new file kind and new
+`rivet variant` input behaviour, no breaking schema or CLI removal.
+
+### Added
+
+- **`feature-model-binding` files** (REQ-083) — a `kind:
+  feature-model-binding` file with a `compose:` list mounts standalone
+  sub-model files onto parent features. Each mount declares an explicit,
+  unique `prefix:` and the sub-model's features are namespaced under it
+  (`pwt:four-wheel`), mirroring the `externals: prefix:ID` model.
+  Composition is recursive (a sub-model may itself be a parent) and
+  resolves to one tree that `solve` / `check` / `explain` / `list`
+  operate on. `FeatureModel::load_composed` / `FeatureModel::load`.
+- Every `rivet variant` command accepts a binding file wherever it
+  accepts a plain model (`rivet variant list --model binding.yaml`) —
+  the file's `kind:` selects composition vs. single-file parsing.
+
+### Changed
+
+- The s-expression lexer accepts `:` inside a symbol, so a namespaced
+  feature reference (`prefix:feature`) lexes as one token — required for
+  cross-prefix constraints like `(implies car pwt:four-wheel)`.
+
+### Notes
+
+- Composition resolves sub-model files by path **relative to the binding
+  file, within one repository**; pulling a sub-model from another git
+  repo is not yet supported (tracked separately). A broken mount —
+  missing file, unknown or `leaf` mount point, duplicate prefix, cyclic
+  composition — is a hard error, never a silent skip.
+
 ## [0.11.1] — 2026-05-21
 
 Theme: **the Mythos silent-failure hunt**. A `scripts/mythos/`

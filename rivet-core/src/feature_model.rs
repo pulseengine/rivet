@@ -325,6 +325,192 @@ fn default_group() -> GroupType {
     GroupType::Leaf
 }
 
+// ── Feature-model composition (REQ-083) ────────────────────────────────
+
+/// On-disk YAML for a `feature-model-binding` file: declares how
+/// standalone feature-model files compose into one resolved tree.
+///
+/// Each `compose` entry names a parent model file and the sub-models
+/// mounted onto its features. A sub-model may itself appear as another
+/// entry's `parent`, giving arbitrary-depth composition.
+#[derive(Debug, Deserialize)]
+struct FeatureModelBindingYaml {
+    #[allow(dead_code)]
+    kind: Option<String>,
+    #[serde(default)]
+    compose: Vec<ComposeEntryYaml>,
+}
+
+/// One parent model plus the sub-models mounted onto its features.
+#[derive(Debug, Deserialize)]
+struct ComposeEntryYaml {
+    /// Path to the parent feature-model file, relative to the binding file.
+    parent: String,
+    /// Maps a feature name in the parent model (the mount point) to the
+    /// sub-model mounted there.
+    #[serde(default)]
+    mount: BTreeMap<String, MountYaml>,
+}
+
+/// A single mount: which sub-model file, under which prefix.
+#[derive(Debug, Deserialize)]
+struct MountYaml {
+    /// Path to the sub-model feature-model file, relative to the binding file.
+    model: String,
+    /// Prefix applied to every feature of the sub-model: the sub-model's
+    /// feature `f` becomes `prefix:f` in the composed tree, so one
+    /// sub-model can be mounted under several parents without collision.
+    prefix: String,
+}
+
+/// Load `model_path` (relative to `base_dir`) as raw YAML, then recursively
+/// splice in every sub-model the binding mounts onto it. `path` tracks the
+/// current recursion chain so a cyclic composition fails loudly instead of
+/// recursing forever.
+fn load_and_splice(
+    model_path: &str,
+    base_dir: &std::path::Path,
+    entries: &BTreeMap<&str, &ComposeEntryYaml>,
+    path: &mut BTreeSet<String>,
+) -> Result<FeatureModelYaml, Error> {
+    if !path.insert(model_path.to_string()) {
+        return Err(Error::Schema(format!(
+            "feature-model-binding: composition cycle through model `{model_path}`"
+        )));
+    }
+    let full = base_dir.join(model_path);
+    let src = std::fs::read_to_string(&full)
+        .map_err(|e| Error::Schema(format!("feature-model file `{}`: {e}", full.display())))?;
+    let mut raw: FeatureModelYaml = serde_yaml::from_str(&src)
+        .map_err(|e| Error::Schema(format!("feature-model file `{}`: {e}", full.display())))?;
+
+    if let Some(entry) = entries.get(model_path) {
+        for (mount_point, mount) in &entry.mount {
+            let sub = load_and_splice(&mount.model, base_dir, entries, path)?;
+            let prefixed = prefix_model_yaml(sub, &mount.prefix);
+            splice_into(&mut raw, mount_point, prefixed, model_path)?;
+        }
+    }
+    path.remove(model_path);
+    Ok(raw)
+}
+
+/// Splice a fully-composed, already-prefixed sub-model into `parent` at
+/// the mount-point feature `mount_point`.
+fn splice_into(
+    parent: &mut FeatureModelYaml,
+    mount_point: &str,
+    sub: FeatureModelYaml,
+    parent_path: &str,
+) -> Result<(), Error> {
+    let mp = parent.features.get_mut(mount_point).ok_or_else(|| {
+        Error::Schema(format!(
+            "feature-model-binding: mount point `{mount_point}` is not a feature \
+             in parent model `{parent_path}`"
+        ))
+    })?;
+    if mp.group == GroupType::Leaf {
+        return Err(Error::Schema(format!(
+            "feature-model-binding: mount point `{mount_point}` in `{parent_path}` is \
+             `group: leaf`; declare it `group: mandatory` (or optional/alternative/or) \
+             so the sub-model can attach"
+        )));
+    }
+    mp.children.push(sub.root.clone());
+
+    for (name, feat) in sub.features {
+        if parent.features.contains_key(&name) {
+            return Err(Error::Schema(format!(
+                "feature-model-binding: composed feature `{name}` collides with an \
+                 existing feature — a mount prefix is not unique enough"
+            )));
+        }
+        parent.features.insert(name, feat);
+    }
+    parent.constraints.extend(sub.constraints);
+    for (key, decl) in sub.attribute_schema {
+        if parent.attribute_schema.contains_key(&key) {
+            return Err(Error::Schema(format!(
+                "feature-model-binding: attribute-schema key `{key}` is declared by \
+                 more than one composed model"
+            )));
+        }
+        parent.attribute_schema.insert(key, decl);
+    }
+    Ok(())
+}
+
+/// Prefix every feature of a sub-model with `prefix:` — feature-map keys,
+/// child references, the root, and bare feature-name tokens inside
+/// constraint strings. Attribute-schema keys are attribute names, not
+/// feature names, and are left untouched.
+fn prefix_model_yaml(raw: FeatureModelYaml, prefix: &str) -> FeatureModelYaml {
+    // Only names defined by THIS model are rewritten inside constraints.
+    let mut names: BTreeSet<String> = raw.features.keys().cloned().collect();
+    names.insert(raw.root.clone());
+    let pfx = |n: &str| format!("{prefix}:{n}");
+
+    let features = raw
+        .features
+        .into_iter()
+        .map(|(name, mut fy)| {
+            fy.children = fy.children.iter().map(|c| pfx(c)).collect();
+            (pfx(&name), fy)
+        })
+        .collect();
+
+    let constraints = raw
+        .constraints
+        .iter()
+        .map(|c| prefix_constraint(c, prefix, &names))
+        .collect();
+
+    FeatureModelYaml {
+        kind: raw.kind,
+        root: pfx(&raw.root),
+        features,
+        constraints,
+        attribute_schema: raw.attribute_schema,
+    }
+}
+
+/// Rewrite every bare feature-name token in a constraint string to its
+/// prefixed form. Tokens are maximal runs of non-whitespace, non-paren
+/// characters; only tokens that exactly match a feature name of the
+/// sub-model being prefixed are rewritten, so operators (`implies`,
+/// `and`, ...) and parentheses pass through untouched.
+fn prefix_constraint(src: &str, prefix: &str, names: &BTreeSet<String>) -> String {
+    let mut out = String::new();
+    let mut tok = String::new();
+    for ch in src.chars() {
+        if ch.is_whitespace() || ch == '(' || ch == ')' {
+            flush_constraint_token(&mut tok, prefix, names, &mut out);
+            out.push(ch);
+        } else {
+            tok.push(ch);
+        }
+    }
+    flush_constraint_token(&mut tok, prefix, names, &mut out);
+    out
+}
+
+fn flush_constraint_token(
+    tok: &mut String,
+    prefix: &str,
+    names: &BTreeSet<String>,
+    out: &mut String,
+) {
+    if tok.is_empty() {
+        return;
+    }
+    if names.contains(tok.as_str()) {
+        out.push_str(prefix);
+        out.push(':');
+    }
+    out.push_str(tok);
+    tok.clear();
+}
+
 /// Build an `AttributeTypeDecl` from the YAML shape, applying narrow
 /// validation. Errors include the attribute key and the offending field
 /// for downstream debuggability.
@@ -590,7 +776,16 @@ impl FeatureModel {
     pub fn from_yaml(yaml: &str) -> Result<Self, Error> {
         let raw: FeatureModelYaml =
             serde_yaml::from_str(yaml).map_err(|e| Error::Schema(format!("feature model: {e}")))?;
+        Self::from_yaml_struct(raw)
+    }
 
+    /// Build a `FeatureModel` from an already-parsed `FeatureModelYaml`.
+    ///
+    /// Shared by `from_yaml` (single file) and `load_composed` (multi-file
+    /// composition, REQ-083). Composition is performed on the raw YAML
+    /// structs, so this construction + tree-validation logic runs exactly
+    /// once over the merged result.
+    fn from_yaml_struct(raw: FeatureModelYaml) -> Result<Self, Error> {
         let mut features = BTreeMap::new();
 
         // First pass: create features without parent links.
@@ -700,6 +895,118 @@ impl FeatureModel {
 
         model.validate_tree()?;
         Ok(model)
+    }
+
+    /// Load a feature model composed from multiple files via a
+    /// `feature-model-binding` file (REQ-083).
+    ///
+    /// Every model file the binding references is itself a valid
+    /// standalone feature model — `load_composed` is purely additive over
+    /// `from_yaml`. Composition splices each mounted sub-model into its
+    /// parent under an explicit, unique prefix (`prefix:feature`), then
+    /// runs the normal construction + tree validation once over the
+    /// merged result. A broken mount (missing file, absent or `leaf`
+    /// mount point, duplicate prefix, cyclic composition) is a hard
+    /// error, never a silent skip.
+    pub fn load_composed(binding_path: &std::path::Path) -> Result<Self, Error> {
+        let binding_src = std::fs::read_to_string(binding_path).map_err(|e| {
+            Error::Schema(format!(
+                "feature-model-binding `{}`: {e}",
+                binding_path.display()
+            ))
+        })?;
+        let binding: FeatureModelBindingYaml = serde_yaml::from_str(&binding_src).map_err(|e| {
+            Error::Schema(format!(
+                "feature-model-binding `{}`: {e}",
+                binding_path.display()
+            ))
+        })?;
+        if binding.compose.is_empty() {
+            return Err(Error::Schema(
+                "feature-model-binding: `compose:` is empty — nothing to compose".to_string(),
+            ));
+        }
+        let base_dir = binding_path
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."));
+
+        // Index compose entries by parent path; reject a parent listed twice.
+        let mut entries: BTreeMap<&str, &ComposeEntryYaml> = BTreeMap::new();
+        for entry in &binding.compose {
+            if entries.insert(entry.parent.as_str(), entry).is_some() {
+                return Err(Error::Schema(format!(
+                    "feature-model-binding: model `{}` is listed as `parent:` more than once",
+                    entry.parent
+                )));
+            }
+        }
+
+        // Every mount prefix must be unique across the whole composition.
+        let mut prefixes: BTreeSet<&str> = BTreeSet::new();
+        let mut mounted: BTreeSet<&str> = BTreeSet::new();
+        for entry in &binding.compose {
+            for mount in entry.mount.values() {
+                if !prefixes.insert(mount.prefix.as_str()) {
+                    return Err(Error::Schema(format!(
+                        "feature-model-binding: prefix `{}` is used by more than one mount \
+                         — prefixes must be unique",
+                        mount.prefix
+                    )));
+                }
+                mounted.insert(mount.model.as_str());
+            }
+        }
+
+        // The root model is the one `parent:` never itself mounted.
+        let roots: Vec<&str> = entries
+            .keys()
+            .copied()
+            .filter(|p| !mounted.contains(p))
+            .collect();
+        let root_model = match roots.as_slice() {
+            [one] => *one,
+            [] => {
+                return Err(Error::Schema(
+                    "feature-model-binding: every `parent:` is also mounted — \
+                     no root model (composition is cyclic)"
+                        .to_string(),
+                ));
+            }
+            many => {
+                return Err(Error::Schema(format!(
+                    "feature-model-binding: {} candidate root models are never mounted ({}) \
+                     — exactly one root expected",
+                    many.len(),
+                    many.join(", ")
+                )));
+            }
+        };
+
+        let merged = load_and_splice(root_model, base_dir, &entries, &mut BTreeSet::new())?;
+        Self::from_yaml_struct(merged)
+    }
+
+    /// Load a feature model from a file, dispatching on its `kind:`.
+    ///
+    /// A file declaring `kind: feature-model-binding` is composed via
+    /// [`load_composed`](Self::load_composed); any other file is parsed as
+    /// a single feature model via [`from_yaml`](Self::from_yaml). This is
+    /// the entry point CLI commands use, so a `--model` argument
+    /// transparently accepts either a plain model or a composition.
+    pub fn load(path: &std::path::Path) -> Result<Self, Error> {
+        let src = std::fs::read_to_string(path)
+            .map_err(|e| Error::Schema(format!("feature model `{}`: {e}", path.display())))?;
+        #[derive(Deserialize)]
+        struct KindProbe {
+            kind: Option<String>,
+        }
+        let probe: KindProbe = serde_yaml::from_str(&src)
+            .map_err(|e| Error::Schema(format!("feature model `{}`: {e}", path.display())))?;
+        if probe.kind.as_deref() == Some("feature-model-binding") {
+            Self::load_composed(path)
+        } else {
+            Self::from_yaml(&src)
+        }
     }
 
     /// Validate the feature tree: no cycles, all children referenced exist,
@@ -2056,5 +2363,813 @@ bindings:
         let err = load_variant_configs_from_dir(dir).unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("parsing variant config"), "got: {msg}");
+    }
+
+    // ── Feature-model composition (REQ-083) ────────────────────────────
+
+    const SUB_POWERTRAIN: &str = r#"
+kind: feature-model
+root: powertrain
+features:
+  powertrain:
+    group: alternative
+    children: [four-wheel, two-wheel]
+  four-wheel: { group: leaf }
+  two-wheel: { group: leaf }
+"#;
+
+    /// rivet: verifies REQ-083
+    #[test]
+    fn compose_two_files_namespaces_submodel() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        std::fs::write(dir.join("powertrain.yaml"), SUB_POWERTRAIN).unwrap();
+        std::fs::write(
+            dir.join("vehicle.yaml"),
+            r#"
+kind: feature-model
+root: vehicle
+features:
+  vehicle:
+    group: mandatory
+    children: [powertrain]
+  powertrain:
+    group: mandatory
+"#,
+        )
+        .unwrap();
+        let bpath = dir.join("binding.yaml");
+        std::fs::write(
+            &bpath,
+            r#"
+kind: feature-model-binding
+compose:
+  - parent: vehicle.yaml
+    mount:
+      powertrain:
+        model: powertrain.yaml
+        prefix: pwt
+"#,
+        )
+        .unwrap();
+
+        let model = FeatureModel::load_composed(&bpath).unwrap();
+        assert_eq!(model.root, "vehicle");
+        // Sub-model features are namespaced under the mount prefix.
+        assert!(model.features.contains_key("pwt:powertrain"));
+        assert!(model.features.contains_key("pwt:four-wheel"));
+        assert!(model.features.contains_key("pwt:two-wheel"));
+        // The mount-point feature gained the sub-model root as a child.
+        assert_eq!(
+            model.features["powertrain"].children,
+            vec!["pwt:powertrain".to_string()]
+        );
+        // The sub-model file is also a valid standalone model.
+        let standalone = FeatureModel::from_yaml(SUB_POWERTRAIN).unwrap();
+        assert_eq!(standalone.root, "powertrain");
+        assert!(standalone.features.contains_key("four-wheel"));
+    }
+
+    /// rivet: verifies REQ-083
+    #[test]
+    fn compose_three_files_recursive() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        std::fs::write(
+            dir.join("ecu.yaml"),
+            r#"
+kind: feature-model
+root: ecu-control
+features:
+  ecu-control:
+    group: or
+    children: [torque-vectoring, abs]
+  torque-vectoring: { group: leaf }
+  abs: { group: leaf }
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("powertrain.yaml"),
+            r#"
+kind: feature-model
+root: powertrain
+features:
+  powertrain:
+    group: mandatory
+    children: [wheels, ecu-control]
+  wheels: { group: leaf }
+  ecu-control:
+    group: mandatory
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("vehicle.yaml"),
+            r#"
+kind: feature-model
+root: vehicle
+features:
+  vehicle:
+    group: mandatory
+    children: [powertrain]
+  powertrain:
+    group: mandatory
+"#,
+        )
+        .unwrap();
+        let bpath = dir.join("binding.yaml");
+        std::fs::write(
+            &bpath,
+            r#"
+kind: feature-model-binding
+compose:
+  - parent: vehicle.yaml
+    mount:
+      powertrain:
+        model: powertrain.yaml
+        prefix: pwt
+  - parent: powertrain.yaml
+    mount:
+      ecu-control:
+        model: ecu.yaml
+        prefix: ecu
+"#,
+        )
+        .unwrap();
+
+        let model = FeatureModel::load_composed(&bpath).unwrap();
+        assert_eq!(model.root, "vehicle");
+        assert!(model.features.contains_key("pwt:powertrain"));
+        assert!(model.features.contains_key("pwt:wheels"));
+        // The deepest sub-model is mounted into powertrain, which is
+        // itself mounted — so its features carry both prefixes, namespaced
+        // by the full mount path.
+        assert!(model.features.contains_key("pwt:ecu:ecu-control"));
+        assert!(model.features.contains_key("pwt:ecu:torque-vectoring"));
+        assert!(model.features.contains_key("pwt:ecu:abs"));
+    }
+
+    /// rivet: verifies REQ-083
+    #[test]
+    fn compose_parent_constraint_references_prefixed_child() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        std::fs::write(dir.join("sub.yaml"), SUB_POWERTRAIN).unwrap();
+        std::fs::write(
+            dir.join("top.yaml"),
+            r#"
+kind: feature-model
+root: vehicle
+features:
+  vehicle:
+    group: mandatory
+    children: [body, powertrain]
+  body:
+    group: alternative
+    children: [car, motorcycle]
+  car: { group: leaf }
+  motorcycle: { group: leaf }
+  powertrain:
+    group: mandatory
+constraints:
+  - (implies car pwt:four-wheel)
+"#,
+        )
+        .unwrap();
+        let bpath = dir.join("binding.yaml");
+        std::fs::write(
+            &bpath,
+            r#"
+kind: feature-model-binding
+compose:
+  - parent: top.yaml
+    mount:
+      powertrain:
+        model: sub.yaml
+        prefix: pwt
+"#,
+        )
+        .unwrap();
+
+        // The top model's constraint references a prefixed child feature;
+        // it must parse against the composed feature set.
+        let model = FeatureModel::load_composed(&bpath).unwrap();
+        assert_eq!(model.constraints.len(), 1);
+        assert!(model.features.contains_key("pwt:four-wheel"));
+    }
+
+    /// rivet: verifies REQ-083
+    #[test]
+    fn compose_same_submodel_two_prefixes_no_collision() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        std::fs::write(
+            dir.join("axle.yaml"),
+            r#"
+kind: feature-model
+root: axle
+features:
+  axle:
+    group: alternative
+    children: [driven, free]
+  driven: { group: leaf }
+  free: { group: leaf }
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("car.yaml"),
+            r#"
+kind: feature-model
+root: car
+features:
+  car:
+    group: mandatory
+    children: [front-axle, rear-axle]
+  front-axle:
+    group: mandatory
+  rear-axle:
+    group: mandatory
+"#,
+        )
+        .unwrap();
+        let bpath = dir.join("binding.yaml");
+        std::fs::write(
+            &bpath,
+            r#"
+kind: feature-model-binding
+compose:
+  - parent: car.yaml
+    mount:
+      front-axle:
+        model: axle.yaml
+        prefix: front
+      rear-axle:
+        model: axle.yaml
+        prefix: rear
+"#,
+        )
+        .unwrap();
+
+        let model = FeatureModel::load_composed(&bpath).unwrap();
+        assert!(model.features.contains_key("front:axle"));
+        assert!(model.features.contains_key("front:driven"));
+        assert!(model.features.contains_key("rear:axle"));
+        assert!(model.features.contains_key("rear:driven"));
+    }
+
+    /// rivet: verifies REQ-083
+    #[test]
+    fn compose_missing_model_file_is_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        std::fs::write(
+            dir.join("top.yaml"),
+            r#"
+kind: feature-model
+root: vehicle
+features:
+  vehicle:
+    group: mandatory
+    children: [powertrain]
+  powertrain:
+    group: mandatory
+"#,
+        )
+        .unwrap();
+        let bpath = dir.join("binding.yaml");
+        std::fs::write(
+            &bpath,
+            r#"
+kind: feature-model-binding
+compose:
+  - parent: top.yaml
+    mount:
+      powertrain:
+        model: nonexistent.yaml
+        prefix: pwt
+"#,
+        )
+        .unwrap();
+        let err = FeatureModel::load_composed(&bpath).unwrap_err();
+        assert!(format!("{err}").contains("nonexistent.yaml"), "got: {err}");
+    }
+
+    /// rivet: verifies REQ-083
+    #[test]
+    fn compose_duplicate_prefix_is_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        std::fs::write(dir.join("sub.yaml"), SUB_POWERTRAIN).unwrap();
+        std::fs::write(
+            dir.join("car.yaml"),
+            r#"
+kind: feature-model
+root: car
+features:
+  car:
+    group: mandatory
+    children: [a, b]
+  a:
+    group: mandatory
+  b:
+    group: mandatory
+"#,
+        )
+        .unwrap();
+        let bpath = dir.join("binding.yaml");
+        std::fs::write(
+            &bpath,
+            r#"
+kind: feature-model-binding
+compose:
+  - parent: car.yaml
+    mount:
+      a:
+        model: sub.yaml
+        prefix: dup
+      b:
+        model: sub.yaml
+        prefix: dup
+"#,
+        )
+        .unwrap();
+        let err = FeatureModel::load_composed(&bpath).unwrap_err();
+        assert!(format!("{err}").contains("prefix"), "got: {err}");
+    }
+
+    /// rivet: verifies REQ-083
+    #[test]
+    fn compose_unknown_mount_point_is_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        std::fs::write(dir.join("sub.yaml"), SUB_POWERTRAIN).unwrap();
+        std::fs::write(
+            dir.join("top.yaml"),
+            r#"
+kind: feature-model
+root: vehicle
+features:
+  vehicle:
+    group: mandatory
+    children: [chassis]
+  chassis:
+    group: mandatory
+"#,
+        )
+        .unwrap();
+        let bpath = dir.join("binding.yaml");
+        std::fs::write(
+            &bpath,
+            r#"
+kind: feature-model-binding
+compose:
+  - parent: top.yaml
+    mount:
+      no-such-feature:
+        model: sub.yaml
+        prefix: pwt
+"#,
+        )
+        .unwrap();
+        let err = FeatureModel::load_composed(&bpath).unwrap_err();
+        assert!(
+            format!("{err}").contains("mount point")
+                && format!("{err}").contains("no-such-feature"),
+            "got: {err}"
+        );
+    }
+
+    /// rivet: verifies REQ-083
+    #[test]
+    fn compose_leaf_mount_point_is_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        std::fs::write(dir.join("sub.yaml"), SUB_POWERTRAIN).unwrap();
+        std::fs::write(
+            dir.join("top.yaml"),
+            r#"
+kind: feature-model
+root: vehicle
+features:
+  vehicle:
+    group: mandatory
+    children: [powertrain]
+  powertrain: { group: leaf }
+"#,
+        )
+        .unwrap();
+        let bpath = dir.join("binding.yaml");
+        std::fs::write(
+            &bpath,
+            r#"
+kind: feature-model-binding
+compose:
+  - parent: top.yaml
+    mount:
+      powertrain:
+        model: sub.yaml
+        prefix: pwt
+"#,
+        )
+        .unwrap();
+        let err = FeatureModel::load_composed(&bpath).unwrap_err();
+        assert!(format!("{err}").contains("leaf"), "got: {err}");
+    }
+
+    /// rivet: verifies REQ-083
+    #[test]
+    fn compose_empty_compose_is_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bpath = tmp.path().join("binding.yaml");
+        std::fs::write(&bpath, "kind: feature-model-binding\ncompose: []\n").unwrap();
+        let err = FeatureModel::load_composed(&bpath).unwrap_err();
+        assert!(format!("{err}").contains("empty"), "got: {err}");
+    }
+
+    /// rivet: verifies REQ-083
+    #[test]
+    fn compose_parent_listed_twice_is_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bpath = tmp.path().join("binding.yaml");
+        std::fs::write(
+            &bpath,
+            r#"kind: feature-model-binding
+compose:
+  - parent: vehicle.yaml
+    mount:
+      a:
+        model: sub.yaml
+        prefix: p1
+  - parent: vehicle.yaml
+    mount:
+      b:
+        model: sub.yaml
+        prefix: p2
+"#,
+        )
+        .unwrap();
+        let err = FeatureModel::load_composed(&bpath).unwrap_err();
+        assert!(format!("{err}").contains("more than once"), "got: {err}");
+    }
+
+    /// rivet: verifies REQ-083
+    #[test]
+    fn compose_multiple_roots_is_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bpath = tmp.path().join("binding.yaml");
+        // Two parents, neither mounted by the other — no single root.
+        std::fs::write(
+            &bpath,
+            r#"kind: feature-model-binding
+compose:
+  - parent: a.yaml
+    mount:
+      f:
+        model: x.yaml
+        prefix: p1
+  - parent: b.yaml
+    mount:
+      g:
+        model: y.yaml
+        prefix: p2
+"#,
+        )
+        .unwrap();
+        let err = FeatureModel::load_composed(&bpath).unwrap_err();
+        assert!(format!("{err}").contains("root"), "got: {err}");
+    }
+
+    /// rivet: verifies REQ-083
+    #[test]
+    fn compose_cyclic_binding_is_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bpath = tmp.path().join("binding.yaml");
+        // a mounts b, b mounts a — every parent is also mounted, no root.
+        std::fs::write(
+            &bpath,
+            r#"kind: feature-model-binding
+compose:
+  - parent: a.yaml
+    mount:
+      fa:
+        model: b.yaml
+        prefix: pb
+  - parent: b.yaml
+    mount:
+      fb:
+        model: a.yaml
+        prefix: pa
+"#,
+        )
+        .unwrap();
+        let err = FeatureModel::load_composed(&bpath).unwrap_err();
+        assert!(format!("{err}").contains("cyclic"), "got: {err}");
+    }
+
+    /// A composition cycle deeper than the root (root -> a -> b -> a) is
+    /// caught by the recursion-path guard, not root detection.
+    ///
+    /// rivet: verifies REQ-083
+    #[test]
+    fn compose_deep_cycle_is_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        let model = |root: &str, child: &str| {
+            format!(
+                "kind: feature-model\nroot: {root}\nfeatures:\n  {root}:\n    \
+                 group: mandatory\n    children: [{child}]\n  {child}:\n    \
+                 group: mandatory\n"
+            )
+        };
+        std::fs::write(dir.join("root.yaml"), model("r", "ma")).unwrap();
+        std::fs::write(dir.join("a.yaml"), model("a", "mb")).unwrap();
+        std::fs::write(dir.join("b.yaml"), model("b", "ma2")).unwrap();
+        let bpath = dir.join("binding.yaml");
+        std::fs::write(
+            &bpath,
+            r#"kind: feature-model-binding
+compose:
+  - parent: root.yaml
+    mount:
+      ma:
+        model: a.yaml
+        prefix: pa
+  - parent: a.yaml
+    mount:
+      mb:
+        model: b.yaml
+        prefix: pb
+  - parent: b.yaml
+    mount:
+      ma2:
+        model: a.yaml
+        prefix: pa2
+"#,
+        )
+        .unwrap();
+        let err = FeatureModel::load_composed(&bpath).unwrap_err();
+        assert!(format!("{err}").contains("cycle"), "got: {err}");
+    }
+
+    /// A sub-model's own constraints are prefixed during composition so
+    /// they keep referring to the right (now namespaced) features. Proven
+    /// end-to-end: the constraint must still fire under the solver.
+    ///
+    /// rivet: verifies REQ-083
+    #[test]
+    fn compose_prefixes_submodel_constraints() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        std::fs::write(
+            dir.join("powertrain.yaml"),
+            r#"kind: feature-model
+root: powertrain
+features:
+  powertrain:
+    group: mandatory
+    children: [drive, extras]
+  drive:
+    group: alternative
+    children: [four-wheel, two-wheel]
+  four-wheel: { group: leaf }
+  two-wheel: { group: leaf }
+  extras:
+    group: optional
+    children: [traction-control]
+  traction-control: { group: leaf }
+constraints:
+  - (implies four-wheel traction-control)
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("vehicle.yaml"),
+            r#"kind: feature-model
+root: vehicle
+features:
+  vehicle:
+    group: mandatory
+    children: [powertrain]
+  powertrain:
+    group: mandatory
+"#,
+        )
+        .unwrap();
+        let bpath = dir.join("binding.yaml");
+        std::fs::write(
+            &bpath,
+            r#"kind: feature-model-binding
+compose:
+  - parent: vehicle.yaml
+    mount:
+      powertrain:
+        model: powertrain.yaml
+        prefix: pwt
+"#,
+        )
+        .unwrap();
+
+        let model = FeatureModel::load_composed(&bpath).unwrap();
+        assert_eq!(model.constraints.len(), 1);
+
+        // If `four-wheel` in the sub-model's constraint was not rewritten
+        // to `pwt:four-wheel`, the implication would not fire for the
+        // prefixed selection. Solving proves the prefixing happened.
+        let vc = VariantConfig {
+            name: "t".to_string(),
+            selects: vec!["pwt:four-wheel".to_string()],
+        };
+        let resolved = solve(&model, &vc).unwrap();
+        assert!(
+            resolved.effective_features.contains("pwt:traction-control"),
+            "the sub-model constraint must be prefixed and still fire: {:?}",
+            resolved.effective_features
+        );
+    }
+
+    /// A sub-model's `attribute-schema` is carried into the composed model.
+    ///
+    /// rivet: verifies REQ-083
+    #[test]
+    fn compose_merges_submodel_attribute_schema() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        std::fs::write(
+            dir.join("powertrain.yaml"),
+            r#"kind: feature-model
+root: powertrain
+attribute-schema:
+  power-kw:
+    type: int
+features:
+  powertrain:
+    group: alternative
+    children: [four-wheel, two-wheel]
+  four-wheel:
+    group: leaf
+    attributes:
+      power-kw: 150
+  two-wheel:
+    group: leaf
+    attributes:
+      power-kw: 60
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("vehicle.yaml"),
+            r#"kind: feature-model
+root: vehicle
+features:
+  vehicle:
+    group: mandatory
+    children: [powertrain]
+  powertrain:
+    group: mandatory
+"#,
+        )
+        .unwrap();
+        let bpath = dir.join("binding.yaml");
+        std::fs::write(
+            &bpath,
+            r#"kind: feature-model-binding
+compose:
+  - parent: vehicle.yaml
+    mount:
+      powertrain:
+        model: powertrain.yaml
+        prefix: pwt
+"#,
+        )
+        .unwrap();
+
+        let model = FeatureModel::load_composed(&bpath).unwrap();
+        assert!(
+            model.attribute_schema.contains_key("power-kw"),
+            "the sub-model's attribute-schema must be carried into the \
+             composed model"
+        );
+    }
+
+    /// The same attribute-schema key declared by two composed models is a
+    /// hard error — composition must not silently pick one.
+    ///
+    /// rivet: verifies REQ-083
+    #[test]
+    fn compose_attribute_schema_collision_is_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        std::fs::write(
+            dir.join("powertrain.yaml"),
+            r#"kind: feature-model
+root: powertrain
+attribute-schema:
+  power-kw:
+    type: int
+features:
+  powertrain: { group: leaf }
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("vehicle.yaml"),
+            r#"kind: feature-model
+root: vehicle
+attribute-schema:
+  power-kw:
+    type: string
+features:
+  vehicle:
+    group: mandatory
+    children: [powertrain]
+  powertrain:
+    group: mandatory
+"#,
+        )
+        .unwrap();
+        let bpath = dir.join("binding.yaml");
+        std::fs::write(
+            &bpath,
+            r#"kind: feature-model-binding
+compose:
+  - parent: vehicle.yaml
+    mount:
+      powertrain:
+        model: powertrain.yaml
+        prefix: pwt
+"#,
+        )
+        .unwrap();
+
+        let err = FeatureModel::load_composed(&bpath).unwrap_err();
+        assert!(format!("{err}").contains("attribute-schema"), "got: {err}");
+    }
+
+    /// `FeatureModel::load` dispatches on `kind:` — a plain model file is
+    /// parsed directly, a `feature-model-binding` file is composed.
+    ///
+    /// rivet: verifies REQ-083
+    #[test]
+    fn load_dispatches_on_kind() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+
+        let plain = dir.join("plain.yaml");
+        std::fs::write(&plain, SUB_POWERTRAIN).unwrap();
+        let m = FeatureModel::load(&plain).unwrap();
+        assert_eq!(m.root, "powertrain");
+
+        std::fs::write(dir.join("powertrain.yaml"), SUB_POWERTRAIN).unwrap();
+        std::fs::write(
+            dir.join("vehicle.yaml"),
+            r#"kind: feature-model
+root: vehicle
+features:
+  vehicle:
+    group: mandatory
+    children: [powertrain]
+  powertrain:
+    group: mandatory
+"#,
+        )
+        .unwrap();
+        let bpath = dir.join("binding.yaml");
+        std::fs::write(
+            &bpath,
+            r#"kind: feature-model-binding
+compose:
+  - parent: vehicle.yaml
+    mount:
+      powertrain:
+        model: powertrain.yaml
+        prefix: pwt
+"#,
+        )
+        .unwrap();
+        let composed = FeatureModel::load(&bpath).unwrap();
+        assert_eq!(composed.root, "vehicle");
+        assert!(composed.features.contains_key("pwt:four-wheel"));
+    }
+
+    /// An unreadable or malformed binding file fails loudly, naming the
+    /// file — never a silent skip.
+    ///
+    /// rivet: verifies REQ-083
+    #[test]
+    fn compose_unreadable_binding_is_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Nonexistent binding path.
+        let missing = tmp.path().join("nope.yaml");
+        assert!(FeatureModel::load_composed(&missing).is_err());
+        // Malformed YAML.
+        let bad = tmp.path().join("bad.yaml");
+        std::fs::write(&bad, "kind: feature-model-binding\ncompose: [: : :\n").unwrap();
+        let err = FeatureModel::load_composed(&bad).unwrap_err();
+        assert!(
+            format!("{err}").contains("feature-model-binding"),
+            "got: {err}"
+        );
     }
 }
