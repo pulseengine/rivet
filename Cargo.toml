@@ -5,6 +5,14 @@ members = [
     "rivet-cli",
     "etch",
 ]
+# compose-witness is a sibling cargo project, NOT a workspace member: it
+# builds to a Wasm component (cdylib + wit-bindgen-rt) targeting
+# wasm32-wasip1, has its own lockfile, and is built by either
+# `cargo component build --manifest-path compose-witness/Cargo.toml` or
+# the Bazel `rules_wasm_component` pipeline (compose-witness/BUILD.bazel,
+# REQ-086). Excluding it keeps host `cargo --workspace` / `cargo test
+# --all` clean of wasm-only crate-types they cannot compile.
+exclude = ["compose-witness"]
 
 [workspace.package]
 version = "0.12.0"

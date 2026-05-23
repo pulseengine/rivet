@@ -79,3 +79,11 @@ rocq.toolchain(
 )
 use_repo(rocq, "rocq_toolchains", "rocq_stdlib")
 register_toolchains("@rocq_toolchains//:all")
+
+# ── rules_wasm_component (REQ-086 Wasm component + witness MC/DC) ──────
+#
+# Org-standard Bazel rules for WebAssembly Component Model builds.
+# Bundles the `witness` toolchain (toolchains/witness_toolchain.bzl) and
+# the `wasm_module_coverage` rule, which is how we produce MC/DC coverage
+# evidence on the feature-model composition core (REQ-086).
+bazel_dep(name = "rules_wasm_component", version = "1.0.0")

@@ -1,0 +1,56 @@
+# REQ-086 — Wasm component exposing the REQ-083 composition core's pure
+# constraint-prefixing path. The `witness` toolchain (bundled with
+# rules_wasm_component) instruments the resulting module and emits MC/DC
+# branch coverage; Rivet ingests the coverage envelope as REQ-083 /
+# REQ-086 requirement-to-test evidence.
+#
+# Canonical Bazel pipeline:
+#   wit_library  ──┐
+#                  ├─► rust_wasm_component_bindgen ──► wasm_module_coverage
+#   src/lib.rs   ──┘
+#
+# Cargo-component is supported in parallel (see compose-witness/Cargo.toml)
+# for local dev iteration, but the org-standard build path is this one —
+# it composes cleanly with the existing certification pipeline
+# (meld_fuse / wasm_attest / wasm_verify_chain) when we expand beyond a
+# single component.
+
+load("@rules_wasm_component//rust:defs.bzl", "rust_wasm_component_bindgen")
+load("@rules_wasm_component//wasm:defs.bzl", "wasm_module_coverage")
+load("@rules_wasm_component//wit:defs.bzl", "wit_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# 1. The WIT interface: a single `prefix-features` export.
+wit_library(
+    name = "compose_witness_interfaces",
+    srcs = ["wit/world.wit"],
+    package_name = "pulseengine:compose-witness",
+    world = "compose-witness",
+)
+
+# 2. The Rust component itself — calls the inlined pure prefixing path.
+rust_wasm_component_bindgen(
+    name = "compose_witness",
+    srcs = ["src/lib.rs"],
+    # debug profile keeps DWARF debug info so witness's LCOV report
+    # carries source-line records (otherwise it'd be structural only —
+    # see examples/witness_example/BUILD.bazel comment block).
+    profiles = ["debug"],
+    wit = ":compose_witness_interfaces",
+)
+
+# 3. The witness MC/DC pass. The harness drives the component's
+#    `prefix-features` export — every REQ-083 fixture scenario plus the
+#    per-condition flip pairs MC/DC requires — and witness emits the
+#    LCOV truth tables / signed coverage envelope.
+#
+# NOTE: `wasm_module_coverage` operates on core modules, not components,
+# per examples/witness_example/BUILD.bazel. For a single-component
+# subject this works directly; multi-component compositions go through
+# `meld_fuse` first.
+wasm_module_coverage(
+    name = "compose_witness_coverage",
+    module = ":compose_witness",
+    invoke = ["prefix-features"],
+)
