@@ -1505,3 +1505,179 @@ artifacts:
     links:
       - type: derives-from
         target: FEAT-135
+
+  - id: REQ-087
+    type: requirement
+    title: "rivet export --single-page and --filter must actually narrow output for large projects, not silently emit the full artifact set"
+    status: draft
+    description: |
+      Empirical observation on a 5120-artifact rivet project (2026-05-23):
+      `rivet export --html --single-page` still produces all per-artifact
+      pages instead of a single document, and `--filter '<s-expr>'`
+      emits the full artifact set rather than the filtered subset. The
+      flag help text claims semantics the implementation does not
+      deliver — the F2 silent-failure class catalogued by
+      REQ-078..082.
+
+      Verified plausible in the code: `--single-page` is wired through
+      `cmd_export` -> `cmd_export_html` (rivet-cli/src/main.rs:7976,
+      8000-8017, calling `rivet_core::export::render_single_page`); but
+      something in the path either ignores the flag for the multi-page
+      generator that also runs, or the renderer falls back to per-page
+      output for input sizes above a threshold. The user observed both
+      flags non-functional on the 5120-artifact project.
+
+      Acceptance:
+        - `rivet export --html --single-page --out single.html` on a
+          5000+ artifact project produces ONE HTML file at the given
+          path, not a directory tree of per-artifact pages.
+        - `rivet export --html --filter '<s-expr>' --out tree/` on a
+          5000+ artifact project produces only the artifacts that match
+          the s-expr (verified by counting files in `tree/artifacts/`).
+        - If a requested flag combination cannot be honoured on a given
+          input, the exporter errors loudly with a clear message — it
+          must not silently emit "default" output that contradicts the
+          user's flags.
+        - Regression test in `rivet-cli/tests/` driving the real binary
+          against a small fixture exercising both flags.
+    tags: [export, html, silent-failure, f2-family]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.13.0-track
+    links:
+      - type: derives-from
+        target: FEAT-135
+      - type: traces-to
+        target: REQ-078
+
+  - id: REQ-088
+    type: requirement
+    title: "rivet export HTML must not embed the full CSS/JS framework per page — extract to shared assets so large exports are usable"
+    status: draft
+    description: |
+      Each rendered per-artifact HTML page embeds the full CSS + JS
+      framework inline: `<style>{fonts_css}{css}</style>` and
+      `<script>{mermaid_js}</script>` (rivet-cli/src/main.rs:8142-8143),
+      with `MERMAID_JS = include_str!("../assets/mermaid.min.js")` —
+      mermaid.min.js alone is ~3MB. 4000+ artifact pages times ~3MB
+      = ~13 GB by construction; the user measured exactly that.
+
+      The fix is well-bounded: extract the framework into a single
+      `_assets/` directory under the export root and reference it from
+      each page via relative `<link rel="stylesheet" href="...">` /
+      `<script src="...">`. Per-page payload drops to ~50KB
+      (artifact-specific markup only); total export of a 5000-artifact
+      project should land at ~50-100 MB uncompressed.
+
+      Acceptance:
+        - `rivet export --html` on a 5000-artifact project produces
+          exactly one copy of every shared asset (mermaid.min.js, base
+          CSS, fonts) under `<out>/_assets/`, and per-artifact pages
+          reference them by relative URL.
+        - Total uncompressed export size on a 5000-artifact project
+          is ≤ 100 MB.
+        - A randomly-sampled per-artifact page renders correctly when
+          opened directly from disk (the relative paths resolve).
+        - Regression test asserts the per-page byte budget (e.g.
+          `assert!(per_page_bytes < 100_000)` for a representative
+          artifact).
+    tags: [export, html, performance, bloat, audit]
+    fields:
+      priority: should
+      category: non-functional
+      baseline: v0.13.0-track
+    links:
+      - type: traces-to
+        target: REQ-087
+
+  - id: REQ-089
+    type: requirement
+    title: "Diagnostics must be identical across the VSIX extension, `rivet serve`, and `rivet validate` — no per-frontend divergence"
+    status: draft
+    description: |
+      Empirical observation against v0.11.1: the VS Code extension
+      (vscode-rivet) surfaced different warnings than `rivet serve` or
+      `rivet validate` for the same project. There is no integration
+      test asserting the three rendering paths agree on the diagnostic
+      set. A user fixing what the VSIX shows may still have unsurfaced
+      `rivet validate` errors that gate CI — itself an F2-class
+      silent failure on the QA surface.
+
+      The structural fix: all three frontends consume the same
+      diagnostic-producing function (`validate::validate` and friends);
+      no frontend re-implements or filters diagnostics independently.
+      An integration test that runs the three paths over a fixture
+      project and diffs the diagnostic SET (rule, severity,
+      artifact_id, message-prefix) enforces this.
+
+      Acceptance:
+        - For a fixture project with a known mix of errors / warnings /
+          infos, an integration test extracts diagnostics from:
+          (a) `rivet validate --format json`,
+          (b) `rivet serve` and scraping the validate page, and
+          (c) the VSIX extension's published diagnostics (LSP-style
+          test or a headless VS Code extension test).
+          The three sets must match by (rule, severity, artifact_id,
+          message-prefix).
+        - Any per-frontend filtering (e.g. severity threshold display)
+          is explicit and documented in the diagnostic-emission API,
+          not buried in the frontend.
+        - The same shared diagnostic function powers all three.
+    tags: [vsix, serve, validate, silent-failure, f2-family, qa, consistency]
+    fields:
+      priority: should
+      category: non-functional
+      baseline: v0.13.0-track
+    links:
+      - type: derives-from
+        target: FEAT-135
+
+  - id: REQ-090
+    type: requirement
+    title: "GitHub Release attaches a compliance bundle (~51 MB: documents + coverage + matrix + validate + ReqIF), not the per-artifact HTML drilldown"
+    status: draft
+    description: |
+      The v0.12.0 GitHub Release attached HTML navigation shells
+      (~7 MB, useless without the per-artifact pages) and not the
+      rendered specifications + machine-importable ReqIF auditors
+      actually need. The audit content map for a 5120-artifact project:
+
+      - 51 MB bundle = `documents/` (44 rendered specs with resolved
+        artifact tables — ID/Type/Title/Status per reference) +
+        `coverage/` + `matrix/` + `validate/` + `stpa/` +
+        `eu-ai-act/` + `graph/` + `index.html` + `ReqIF` (XML, OMG
+        standard, importable into DOORS / Polarion / codeBeamer).
+        Auditors get full review material; fits a GitHub release
+        artifact.
+      - Per-artifact HTML drilldown (~13 GB once REQ-088's bloat is
+        fixed, ~50 MB) is overkill for compliance review — the doc
+        tables already show ID/Type/Title/Status for every
+        referenced artifact.
+
+      Acceptance:
+        - The release workflow produces a single bundled tarball
+          (e.g. `rivet-compliance-bundle-vX.Y.Z.tar.gz`) containing
+          documents/, coverage/, matrix/, validate/, stpa/,
+          eu-ai-act/, graph/, index.html, plus the project's
+          ReqIF + generic-yaml export.
+        - The tarball is attached to the GitHub Release.
+        - The per-artifact `artifacts/` HTML tree is NOT in the
+          tarball (until REQ-088's CSS/JS dedup lands, including it
+          balloons the bundle; even after REQ-088 it's still optional
+          drilldown, not compliance evidence).
+        - A README in the tarball documents what each directory is and
+          how to import the ReqIF.
+        - The release workflow change is gated on REQ-088 landing
+          first — until per-page assets are de-duplicated, the
+          per-artifact pages can't be cleanly included anyway.
+    tags: [release, packaging, compliance, audit, reqif]
+    fields:
+      priority: should
+      category: non-functional
+      baseline: v0.13.0-track
+    links:
+      - type: traces-to
+        target: REQ-088
+      - type: traces-to
+        target: REQ-005
