@@ -1,0 +1,25 @@
+[package]
+name = "compose-witness"
+version = "0.1.0"
+edition = "2024"
+authors = ["PulseEngine <https://github.com/pulseengine>"]
+license = "Apache-2.0"
+publish = false
+description = "Wasm-component PoC exposing the REQ-083 composition core's pure prefixing path so the pulseengine `witness` tool can measure MC/DC on it (REQ-086)."
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wit-bindgen-rt = { version = "0.44.0", features = ["bitflags"] }
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+
+[package.metadata.component]
+package = "pulseengine:compose-witness"
+
+[package.metadata.component.target]
+path = "wit"
+world = "compose-witness"
+
+[package.metadata.component.dependencies]

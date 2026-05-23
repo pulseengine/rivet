@@ -1,0 +1,25 @@
+// REQ-086 PoC: expose the REQ-083 feature-model composition core's pure
+// constraint-prefixing path as a witness-measurable Wasm component. The
+// harness passes a feature-model YAML and a prefix; the component applies
+// the prefix to feature names (map keys, child refs, root, bare feature
+// tokens in constraint strings) and returns the rewritten YAML.
+//
+// First increment is deliberately narrow: the constraint-prefixing path
+// (`prefix_model_yaml` / `prefix_constraint` / `flush_constraint_token`)
+// was the gap llvm-cov surfaced — composing it through a Wasm component is
+// the smallest piece that proves the witness->rivet pipeline end-to-end.
+
+package pulseengine:compose-witness@0.1.0;
+
+interface compose {
+    /// Apply `prefix:` to every feature name in `model-yaml` — feature-map
+    /// keys, child references, the root, and bare feature-name tokens
+    /// inside constraint strings — and return the rewritten YAML.
+    ///
+    /// Returns an error variant if the YAML cannot be parsed or emitted.
+    prefix-features: func(model-yaml: string, prefix: string) -> result<string, string>;
+}
+
+world compose-witness {
+    export compose;
+}
