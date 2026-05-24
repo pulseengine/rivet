@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1779614157589,
+  "lastUpdate": 1779617396284,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "ed4a4919463730d8ffa27845baa227735ad4e9d5",
-          "message": "feat(tcl): tool-qualification workstream A + AI session provenance (#127) (#289)\n\nCloses #127 (AI session provenance — schema half) and ships the smallest\nviable surface of TCL design workstream A (per\ndocs/design/tool-confidence-level.md §7.4).\n\n**Schema additions (schemas/common.yaml)**\n\n- `ai-session` artifact type — pins a Claude Code (or other AI) session\n  to a commit so the auditor can reconstruct *who/what* authored a\n  change. Fields: session-id, session-hash (SHA-256 of transcript),\n  model-id, tool-version, commit-sha, started-at, ended-at, invoker.\n- `ai-found-defect` artifact type (TCL A3) — typed defect record for\n  errors introduced by AI authoring that rivet's detection machinery\n  caught. Fields: severity, triage-status (open/accepted/rejected/\n  deduplicated), detected-by, discovered-at, triaged-at, triaged-by.\n- Link types: `defect-against` (defect → target), `corrects` (fix →\n  defect), `produced-by` (artifact → ai-session).\n\n**Schema additions (schemas/iso-26262.yaml)**\n\n- `tool-confidence` artifact type (TCL A2) — typed tool-qualification\n  claim per ISO 26262-8 §11.4.7. Fields: tool-id, ti (TI1/TI2), td\n  (TD1/TD2/TD3), tcl (TCL1/TCL2/TCL3), regime (iso-26262/do-178c/\n  do-330/en-50128/iec-61508/iec-62304/iso-21434/iso-pas-8800), claim-\n  status (self-claimed/qualified/conditional/target), scope. link-field\n  `qualification-evidence` points at the proofs / oracle runs that\n  defend the TD claim.\n\n**Dogfood (TCL A1)**\n\n- Fix inverted TCL/TQL convention in safety/stpa/tool-qualification.yaml\n  header (now follows ISO 26262 Table 3: TCL1 = lowest demand).\n- New typed claim `TQ-CONF-RIVET` at safety/tool-qualification/\n  rivet-tool-confidence.yaml — rivet's own TI2/TD1/TCL1 self-claim\n  links to the seven hazards in the dogfood STPA.\n- rivet.yaml: load `iso-26262` schema + scan\n  `safety/tool-qualification/` source path.\n\n**CLI (TCL A4, A5)**\n\n- `--qualification-mode` flag on the top-level Cli. Initial gate\n  refuses `rivet sync` (Phase 2 federation, out of scope per dossier\n  §4). Read-only commands stay allowed; the list is deliberately\n  narrow — better to expand than to silently block audit work.\n- `rivet stats --qualification` — JSON-only configuration baseline\n  manifest for the dossier. Lists rivet version, schemas in use,\n  every `tool-confidence` artifact with its claim, and `ai-found-\n  defect` aggregates (by severity, by triage-status, plus open-IDs).\n  This is the snapshot the safety manager pastes into the dossier.\n- `rivet docs tool-qualification` — renders the new dossier doc\n  (docs/design/tool-qualification-dossier.md) wired into the docs\n  topic registry.\n\n**Tests**\n\n- Integration: `stats_qualification_emits_baseline_manifest_for_dogfood`\n  validates the full JSON envelope contains TQ-CONF-RIVET at TCL1.\n- Integration: `qualification_mode_blocks_sync` asserts the gate\n  produces a non-zero exit with a discoverable error message.\n\n**Not in this PR**\n\n- `rivet check ai-defects-open` oracle (deferred — needs the agent-\n  pipelines wiring, which is a bigger refactor).\n- Phase 2 of #127 (commit hook to auto-stamp ai-session metadata,\n  `rivet audit` to enforce that every AI commit has a session record).\n- Independent assessment (claim-status stays self-claimed).\n\nImplements: REQ-002, REQ-007, REQ-010\nRefs: FEAT-001, #127\n\nCo-authored-by: Claude Opus 4.7 <noreply@anthropic.com>",
-          "timestamp": "2026-05-16T09:38:29-05:00",
-          "tree_id": "8c465602fd97b2076a40851703a391dcdba4fab0",
-          "url": "https://github.com/pulseengine/rivet/commit/ed4a4919463730d8ffa27845baa227735ad4e9d5"
-        },
-        "date": 1778942691749,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 80503,
-            "range": "± 503",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 845667,
-            "range": "± 3024",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 12549543,
-            "range": "± 825341",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2211,
-            "range": "± 19",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 27454,
-            "range": "± 658",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 377511,
-            "range": "± 1221",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 93,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1351260,
-            "range": "± 19098",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 162828,
-            "range": "± 1181",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1839384,
-            "range": "± 123043",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 24838551,
-            "range": "± 1245383",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 123170,
-            "range": "± 976",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 1058529,
-            "range": "± 18993",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 11712608,
-            "range": "± 667915",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4267,
-            "range": "± 39",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 60371,
-            "range": "± 558",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 748239,
-            "range": "± 3733",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 61865,
-            "range": "± 1272",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 693629,
-            "range": "± 5688",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 8013638,
-            "range": "± 368464",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 826,
-            "range": "± 138",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 7276,
-            "range": "± 55",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 116785,
-            "range": "± 3500",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 25312,
-            "range": "± 592",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 181499,
-            "range": "± 988",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1702050,
-            "range": "± 24704",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1821165,
             "range": "± 21273",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "75ce3fa3f6bef62320a35b118954eab07e6faf9a",
+          "message": "chore(schemas): align score schema with Eclipse S-CORE comparison (#320)\n\nCarries forward an out-of-band update from an Eclipse S-CORE comparison\nagent that aligned schemas/score.yaml with the upstream Eclipse S-CORE\nmetamodel (+453 lines, -14 lines — widens artifact-type vocabulary\nand field set).\n\nAlso adds examples/score-conversion/ — a worked sketch converting the\nEclipse S-CORE persistency::kvs slice into rivet's generic-YAML\nagainst the updated schema. README captures the end-to-end conversion\nshape and residual schema deltas flagged for follow-up. It's its own\nrivet project so it does not interact with the main repo's validation.\n\nAllowlists the literal `7.4.3` in rivet.yaml docs-check (the score\nschema's external-clause description carries `ISO 26262-6:7.4.3.2` —\na stable ISO standard-clause identifier the EmbeddedVersionLiterals\ninvariant catches as a 3-part version; same pattern the existing\nallowlist uses for ASPICE process IDs like 2.1.7, 2.2.4).\n\nVerified: `rivet validate` PASSes (144 warnings, baseline unchanged);\n`rivet docs check` PASSes locally.",
+          "timestamp": "2026-05-24T05:03:21-05:00",
+          "tree_id": "6a545c278a4e3ffef39d88dacbaa34cafc6ad6fb",
+          "url": "https://github.com/pulseengine/rivet/commit/75ce3fa3f6bef62320a35b118954eab07e6faf9a"
+        },
+        "date": 1779617394937,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 84988,
+            "range": "± 316",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 938607,
+            "range": "± 15223",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 15978420,
+            "range": "± 1536126",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1924,
+            "range": "± 19",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25035,
+            "range": "± 42",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 362491,
+            "range": "± 3441",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1444689,
+            "range": "± 22511",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 153326,
+            "range": "± 2948",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1801943,
+            "range": "± 32816",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 27915916,
+            "range": "± 958039",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 127116,
+            "range": "± 855",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1161375,
+            "range": "± 11925",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 14199985,
+            "range": "± 417847",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4123,
+            "range": "± 25",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 45376,
+            "range": "± 365",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 779388,
+            "range": "± 13178",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 64563,
+            "range": "± 521",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 736352,
+            "range": "± 27436",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8625277,
+            "range": "± 290488",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 856,
+            "range": "± 5",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 6963,
+            "range": "± 52",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 95025,
+            "range": "± 664",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 24230,
+            "range": "± 698",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 175269,
+            "range": "± 914",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1659950,
+            "range": "± 7733",
             "unit": "ns/iter"
           }
         ]
