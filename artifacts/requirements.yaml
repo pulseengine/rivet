@@ -1488,6 +1488,20 @@ artifacts:
       no installer, no daemon, no sudo, no unpinned-action drift
       surface.
 
+      Unblocker (2026-05-23): smithy runner9 is now podman-capable —
+      `podman_userns: true`, `NoNewPrivileges=0`,
+      `ProtectKernelTunables=false` deployed and verified live
+      (`podman run nixos/nix@sha256:fd7a5c67... nix --version` returns
+      `nix (Nix) 2.24.9`). GHA label set is
+      `[self-hosted, Linux, X64, hetzner, rust-cpu, podman]`. The
+      Verus job can switch `runs-on:` to include the `podman` label
+      and drive the Bazel/Nix work through rootless podman against
+      `docker.io/nixos/nix`; per the smithy note, "the flag is one
+      line per runner — trivial to expand" if contention on runner9
+      becomes a concern. The rivet implementation should follow the
+      `spar` validation of the same pattern (sequential, so we inherit
+      a tested approach rather than co-debug two repos in parallel).
+
       Acceptance:
         - The Verus CI job's `Verify Verus specs` step actually
           executes — assert it is not `skipped` in the job step list.
@@ -1497,6 +1511,10 @@ artifacts:
           never ran the verifier.
         - A completed Verus job's `verus-test-log` artifact contains a
           real Verus solver result.
+        - The Verus job's `runs-on:` targets the `podman` label
+          (scoped to a podman-capable runner) and Nix work runs inside
+          a `nixos/nix` rootless container — no `nix-installer-action`
+          and no host-installed Nix.
     tags: [ci, verus, silent-failure, f2-family, nix]
     fields:
       priority: should
