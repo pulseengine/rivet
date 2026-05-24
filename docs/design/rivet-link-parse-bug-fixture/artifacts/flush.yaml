@@ -1,0 +1,8 @@
+artifacts:
+- id: COMP_REQ__FLUSH__A
+  type: comp-req
+  title: Flush-left
+  status: approved
+  links:
+  - type: satisfies
+    target: FEAT_REQ__NOPE__DANGLE

@@ -1,0 +1,5 @@
+project:
+  name: t
+  version: "0.1.0"
+  schemas: [common, score]
+sources: [{path: artifacts, format: generic-yaml}]

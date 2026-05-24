@@ -1,0 +1,8 @@
+artifacts:
+  - id: COMP_REQ__INDENT__B
+    type: comp-req
+    title: Indented
+    status: approved
+    links:
+      - type: satisfies
+        target: FEAT_REQ__NOPE__DANGLE
