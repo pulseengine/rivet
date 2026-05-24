@@ -2150,3 +2150,93 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-051
+
+  - id: REQ-101
+    type: requirement
+    title: "Artifact-driven verification gate — `rivet verify` matches approved artifacts to convention-named tests"
+    status: draft
+    description: |
+      Land the artifact-driven verification-gate pattern that meld
+      already runs (`tools/post_verification_comment.py`, ~50 LoC)
+      as a first-class `rivet verify` subcommand.
+
+      The gate inverts the usual "run tests, check exit code" loop:
+      the artifact list is the worklist, the test is the evidence,
+      and the absence of a matching test is a discrete diagnostic
+      row (MISSING), not silence. Same traceability shape as
+      REQ-051 (commit trailer demands link) and the schema's
+      required-fields gates — the model demands a test, and CI
+      falsifies the obligation mechanically.
+
+      Pattern (per artifact A where A.status = approved and the
+      schema's `verification-template` is set on A's type):
+
+          glob  = expand(template, A.id)   # REQ-001 -> test_req_001_*
+          tests = discover(glob)           # via configured runner
+          if tests == []:        bucket(A) = MISSING
+          elif any(t.failed):    bucket(A) = FAILED
+          else:                  bucket(A) = PASSED
+
+      Schema extension (composes on existing `ArtifactTypeDef` per
+      the reuse-binding-patterns guidance, NOT a new directive):
+
+        - id: requirement
+          verification-template: "test_{id_lower_underscored}_*"
+
+      The field is optional; types without it are excluded from the
+      gate (e.g. decisions, features that have no executable
+      evidence).
+
+      Runner is shell-injectable via `rivet.yaml`
+      (default `cargo test --no-fail-fast`) so pytest / nextest /
+      bazel / ctest work without rivet learning each.
+
+      Outputs:
+        - `--format pr-comment` — markdown grouped by bucket with
+          source-of-truth footer (byte-comparable to meld);
+        - `--format json` — machine-readable, dashboard-ingestible;
+        - `--format yaml --out artifacts/results/` — written into the
+          existing `ResultStore` so `rivet results show` surfaces it
+          without modification.
+
+      Gate: exit code 1 if any artifact is FAILED or MISSING; 0
+      otherwise.
+
+      NOT an oracle in `rivet validate`: validate is read-only over
+      YAML. `verify` executes tests and belongs in its own command.
+
+      Acceptance:
+        - `rivet verify --help` lists the subcommand.
+        - Schema fixture with `verification-template:
+          "test_{id_lower_underscored}_*"` on the `requirement`
+          type + one approved REQ-X with a matching passing test
+          makes `rivet verify` exit 0 and report 1/1 PASSED.
+        - Removing the test makes `rivet verify` exit 1 with REQ-X
+          in the MISSING bucket — the absence is a row, not silence.
+        - Making the test fail makes `rivet verify` exit 1 with
+          REQ-X in the FAILED bucket.
+        - Types without `verification-template` (e.g. decisions) are
+          excluded from the worklist and not counted.
+        - `rivet verify --format pr-comment` emits markdown with
+          PASSED / FAILED / MISSING sections + a footer naming the
+          source-of-truth file(s) and the template — byte-comparable
+          to meld's reference output on the meld corpus.
+        - `rivet verify --format yaml --out artifacts/results/`
+          writes a `ResultStore`-loadable file consumed by
+          `rivet results show` without modification.
+        - Runner command is overridable via `rivet.yaml`
+          (`verify.runner`) — a pytest project sets it once, no
+          code change.
+        - Worked example under `examples/verify/` + GitHub Action
+          snippet under `docs/ci/` wrapping
+          `rivet verify --format pr-comment | gh pr comment`.
+    tags: [verification, gate, ci, mbse, traceability, meld-parity, new-capability]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.14.0-track
+    links:
+      - type: derives-from
+        target: REQ-051
+      - type: traces-to
+        target: REQ-004
