@@ -227,6 +227,17 @@ pub const FIELD_MAP: &[(&str, &str)] = &[
 /// Options sphinx-needs handles natively and that we don't re-emit.
 pub const NATIVE_OPTIONS: &[&str] = &["id", "status", "tags", "content", "title", "type"];
 
+/// IDs that ship as placeholder needs in `eclipse-score/module_template`
+/// and that downstream repos copy verbatim without renaming.  Globally
+/// skipping them avoids "declared in N repos" errors at corpus scale.
+/// This is an upstream-hygiene issue, not a converter limitation —
+/// sphinx-needs IDs are supposed to be globally unique but eclipse has
+/// `stkh_req__docgen_enabled__example` declared in 7+ sibling repos.
+///
+/// Compared lowercase since eclipse RST is lowercase by convention even
+/// though the rivet artifact IDs are uppercased on emission.
+pub const TEMPLATE_PLACEHOLDER_IDS: &[&str] = &["stkh_req__docgen_enabled__example"];
+
 fn type_map() -> HashMap<&'static str, &'static str> {
     TYPE_MAP.iter().copied().collect()
 }
@@ -450,15 +461,40 @@ pub fn parse_rst(content: &str, source: Option<&Path>) -> Vec<ParsedNeed> {
 
         // Belt-and-suspenders: skip RST template placeholders that escaped
         // the code-block filter. Template IDs and link targets use angle-
-        // bracketed slots like `<Title>`, `<ID from feature>`.
+        // bracketed slots like `<Title>`, `<ID from feature>`. Also drop
+        // cross-repo template-placeholder IDs that downstream eclipse
+        // repos copied verbatim from module_template.
         let id = need.id().to_owned();
-        if id.is_empty() || id.contains('<') || id.contains('>') {
+        let id_lower = id.to_lowercase();
+        if id.is_empty()
+            || id.contains('<')
+            || id.contains('>')
+            || TEMPLATE_PLACEHOLDER_IDS.contains(&id_lower.as_str())
+        {
             continue;
         }
         // Drop link targets that are template placeholders so they don't
-        // create spurious "target does not exist" diagnostics.
+        // create spurious "target does not exist" diagnostics. Covers
+        // both `<...>`-bracketed values AND link options whose targets
+        // are (or include) a known `TEMPLATE_PLACEHOLDER_IDS` member —
+        // those targets have been globally filtered out of the artifact
+        // set, so any link to them would dangle.
+        let link_target_split = Regex::new(r"[\s,;]+").expect("valid split regex");
         need.options.retain(|(k, v)| {
-            !(links.contains_key(k.as_str()) && (v.contains('<') || v.contains('>')))
+            if !links.contains_key(k.as_str()) {
+                return true;
+            }
+            if v.contains('<') || v.contains('>') {
+                return false;
+            }
+            // Drop the option entirely iff every target in it is a
+            // template placeholder; partial drops would silently lose
+            // valid targets, so we keep the option if any survive.
+            let any_real = link_target_split.split(v).any(|t| {
+                let t = t.trim();
+                !t.is_empty() && !TEMPLATE_PLACEHOLDER_IDS.contains(&t.to_lowercase().as_str())
+            });
+            any_real
         });
 
         needs.push(need);
@@ -977,6 +1013,67 @@ mod tests {
         assert!(
             needs.is_empty(),
             "template-placeholder id should drop: {needs:?}"
+        );
+    }
+
+    /// rivet: verifies REQ-025
+    ///
+    /// Known cross-repo placeholder IDs (eclipse `module_template` ships
+    /// `stkh_req__docgen_enabled__example`, which 7+ downstream repos
+    /// copy verbatim) must be dropped at parse time so the corpus oracle
+    /// doesn't see N duplicate declarations across N source paths.
+    /// Links pointing *at* such a placeholder ID are also dropped, so
+    /// no spurious "target does not exist" errors fire after the source
+    /// disappears.
+    #[test]
+    fn skips_known_cross_repo_template_id_and_dangling_link() {
+        let rst = "
+.. stkh_req:: Documentation Builds Are Possible Example
+   :id: stkh_req__docgen_enabled__example
+   :status: valid
+
+.. feat_req:: Something That Satisfies The Placeholder
+   :id: feat_req__downstream__one
+   :status: valid
+   :satisfies: stkh_req__docgen_enabled__example
+
+.. feat_req:: Mixed Satisfies (Placeholder + Real Target)
+   :id: feat_req__downstream__two
+   :status: valid
+   :satisfies: stkh_req__docgen_enabled__example, stkh_req__real__alpha
+";
+        let needs = parse_rst(rst, None);
+        assert_eq!(
+            needs.len(),
+            2,
+            "placeholder source need should be dropped, real reqs retained: {needs:?}"
+        );
+        let link_map_owned = link_map();
+
+        // First feat-req: its only satisfies target is the placeholder.
+        // The whole option must be dropped, so the need carries no links.
+        let downstream_one = &needs[0];
+        assert_eq!(downstream_one.id(), "feat_req__downstream__one");
+        assert!(
+            !downstream_one
+                .options
+                .iter()
+                .any(|(k, _)| link_map_owned.contains_key(k.as_str())),
+            "feat_req__downstream__one should have no link options after filtering: {:?}",
+            downstream_one.options
+        );
+
+        // Second feat-req: satisfies a placeholder AND a real target.
+        // The option must survive so the real target is not lost.
+        let downstream_two = &needs[1];
+        assert_eq!(downstream_two.id(), "feat_req__downstream__two");
+        assert!(
+            downstream_two
+                .options
+                .iter()
+                .any(|(k, v)| k == "satisfies" && v.contains("stkh_req__real__alpha")),
+            "feat_req__downstream__two must keep its real satisfies target: {:?}",
+            downstream_two.options
         );
     }
 
