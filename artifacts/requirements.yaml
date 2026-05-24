@@ -2095,3 +2095,58 @@ artifacts:
     links:
       - type: derives-from
         target: FEAT-010
+
+  - id: REQ-100
+    type: requirement
+    title: "`externals: kind: source` — track non-rivet upstreams (eclipse-score, sphinx-needs, DOORS exports, plain code repos) without the missing-rivet.yaml warning"
+    status: draft
+    description: |
+      Today every external in `rivet.yaml` is assumed to be a rivet
+      project, so `rivet sync` (and downstream loaders) try to read
+      the external's `rivet.yaml` and emit a WARN when it is absent.
+      A converter scenario like the eclipse-score import pulls 20+
+      upstream repos that are deliberately not rivet projects — by
+      design, they ship sphinx-needs / DOORS-exports / plain code,
+      not `rivet.yaml`. The current behaviour emits 58 WARN lines of
+      pure noise in that workflow.
+
+      Generalises beyond eclipse-score: any fork tracking a DOORS
+      export, a sphinx-needs project, or a plain source repo that
+      feeds a converter or a source-linker wants the same shape.
+
+      Design:
+        - Add an optional `kind:` field to each entry under
+          `externals:`. Two enum values:
+          - `rivet` (default — current behaviour: loads the
+            external's `rivet.yaml`, may emit
+            assumption-of-use / discharged-by reconciliation, etc.).
+          - `source` (NEW — `rivet sync` clones to the same on-disk
+            location but loaders skip the `rivet.yaml` read attempt;
+            no WARN; no rivet-project bookkeeping).
+        - Scope: ~20 LoC in `rivet-core/src` plus the schema entry.
+        - `rivet validate` rejects an unknown `kind:` value with a
+          named-enum error (no silent fallback to `rivet`).
+
+      Acceptance:
+        - Fixture: a `rivet.yaml` declaring `externals: foo:
+          { git: ..., kind: source }` syncs and validates cleanly,
+          with ZERO `missing rivet.yaml` warnings for `foo`.
+        - Fixture: omitting `kind:` defaults to `rivet` and
+          preserves today's behaviour exactly — a missing
+          `rivet.yaml` still surfaces (regression test).
+        - Fixture: an unknown `kind:` value (e.g. `kind: roboms`)
+          produces an ERROR diagnostic that names both the bad value
+          and the enum domain.
+        - Documented under `rivet docs externals`.
+
+      Note: the slot REQ-100 was deliberately left free earlier
+      after dropping the v1.0-readiness REQ proposal; this
+      orthogonal request happily reuses the number.
+    tags: [externals, sync, converter, non-rivet-upstream, ergonomics]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.13.x-track
+    links:
+      - type: traces-to
+        target: REQ-051
