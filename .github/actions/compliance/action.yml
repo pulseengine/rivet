@@ -91,6 +91,21 @@ inputs:
     required: false
     default: '.'
 
+  # ── Audit bundle additions (REQ-090) ───────────────────────────────
+  include-data-formats:
+    description: >
+      When true, the report directory also includes a ReqIF 1.2 export
+      (`requirements.reqif`, OMG standard importable into DOORS /
+      Polarion / codeBeamer) and a generic-yaml export (`artifacts.yaml`,
+      human-readable diff-friendly) plus a `README.md` documenting the
+      bundle layout. This is the v0.13.0 audit-bundle shape: rendered
+      docs + coverage + matrix + validate + machine-importable data
+      side-by-side — what compliance reviewers actually need.
+
+      Defaults to `false` so existing callers see no behaviour change.
+    required: false
+    default: 'false'
+
 outputs:
   report-dir:
     description: 'Path to the directory containing the generated HTML files.'
@@ -208,6 +223,62 @@ runs:
 
         eval rivet export $ARGS
         echo "report-dir=${REPORT_OUTPUT}" >> "$GITHUB_OUTPUT"
+
+    - name: Add ReqIF + generic-yaml + README (REQ-090 audit bundle)
+      if: inputs.include-data-formats == 'true'
+      shell: bash
+      working-directory: ${{ inputs.project-dir }}
+      env:
+        REPORT_OUTPUT: ${{ inputs.output }}
+        REPORT_LABEL: ${{ steps.label.outputs.value }}
+      run: |
+        set -euo pipefail
+        # ReqIF (OMG standard) — importable into DOORS, Polarion, codeBeamer.
+        rivet export --format reqif --output "${REPORT_OUTPUT}/requirements.reqif"
+        # generic-yaml — diff-friendly, machine-readable, complete.
+        rivet export --format generic-yaml --output "${REPORT_OUTPUT}/artifacts.yaml"
+        # Bundle README — tells the reviewer what each piece is.
+        cat > "${REPORT_OUTPUT}/README.md" <<EOF
+        # Rivet compliance bundle — ${REPORT_LABEL}
+
+        This tarball is the full audit-deliverable view of the rivet
+        project at this release. It is meant to be opened on disk
+        (no web server required) and to feed downstream tools.
+
+        ## What's here
+
+        | Path                  | What it is                                        |
+        |-----------------------|---------------------------------------------------|
+        | \`index.html\`        | Project overview + navigation entry point.        |
+        | \`documents/\`        | Rendered SRS / SDD / SAD / STPA / etc. specs with resolved artifact tables. |
+        | \`coverage/\`         | Coverage percentage per traceability rule.        |
+        | \`matrix/\`           | Traceability matrix (type × type).                |
+        | \`validate/\`         | Validation diagnostics — same set \`rivet validate\` emits. |
+        | \`graph/\`            | Artifact dependency graph view.                   |
+        | \`stpa/\`             | STPA hierarchy (losses → hazards → constraints → controls). |
+        | \`eu-ai-act/\`        | EU AI Act compliance view (when the schema is loaded). |
+        | \`help/\`             | Per-schema-type help pages.                       |
+        | \`artifacts/\`        | Per-artifact detail pages — drilldown only.       |
+        | \`_assets/\`          | Shared CSS + JS (one copy, referenced by every page — REQ-088). |
+        | \`requirements.reqif\` | OMG ReqIF 1.2 export — importable into DOORS / Polarion / codeBeamer. |
+        | \`artifacts.yaml\`    | generic-yaml export — diff-friendly, complete.    |
+
+        ## Importing into a requirements-management tool
+
+        \`requirements.reqif\` is the OMG-standard ReqIF 1.2 format. In
+        DOORS, Polarion, and codeBeamer it imports as a new module
+        carrying every artifact, link, and field. \`artifacts.yaml\` is
+        the same data in rivet's native YAML — useful for grep, diff,
+        and re-ingestion into another rivet project.
+
+        ## Provenance
+
+        Generated from rivet ${REPORT_LABEL} by
+        \`.github/actions/compliance\` with \`include-data-formats: true\`.
+        Asset deduplication via REQ-088. ReqIF/generic-yaml exports
+        per REQ-090.
+        EOF
+        echo "Audit bundle additions emitted to ${REPORT_OUTPUT}/"
 
     - name: Create archive
       id: archive
