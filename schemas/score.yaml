@@ -144,6 +144,16 @@ artifact-types:
         type: string
         required: false
         allowed-values: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
+      - name: security
+        type: string
+        required: false
+        allowed-values: [YES, NO]
+        description: Whether the requirement is security-relevant (eclipse `:security:`)
+      - name: req-type
+        type: string
+        required: false
+        allowed-values: [functional, non-functional, performance, interface, constraint, safety, process]
+        description: Requirement category (eclipse `:reqtype:`)
       - name: source
         type: string
         required: false
@@ -151,7 +161,11 @@ artifact-types:
       - name: rationale
         type: text
         required: false
-    link-fields: []
+    link-fields:
+      - name: complies
+        link-type: complies
+        cardinality: zero-or-many
+        description: Standards or regulations this stakeholder requirement complies with
 
   - name: feat-req
     description: >
@@ -170,10 +184,15 @@ artifact-types:
         type: string
         required: false
         allowed-values: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
+      - name: security
+        type: string
+        required: false
+        allowed-values: [YES, NO]
+        description: Whether the requirement is security-relevant (eclipse `:security:`)
       - name: req-type
         type: string
         required: false
-        allowed-values: [functional, performance, interface, constraint, safety]
+        allowed-values: [functional, non-functional, performance, interface, constraint, safety, process]
       - name: verification-criteria
         type: text
         required: false
@@ -183,6 +202,11 @@ artifact-types:
         target-types: [stkh-req]
         required: true
         cardinality: one-or-many
+      - name: covers
+        link-type: covers
+        target-types: [aou-req]
+        cardinality: zero-or-many
+        description: Requirement covers an assumption of use (eclipse `:covers:`)
 
   - name: comp-req
     description: >
@@ -201,10 +225,15 @@ artifact-types:
         type: string
         required: false
         allowed-values: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
+      - name: security
+        type: string
+        required: false
+        allowed-values: [YES, NO]
+        description: Whether the requirement is security-relevant (eclipse `:security:`)
       - name: req-type
         type: string
         required: false
-        allowed-values: [functional, performance, interface, constraint, safety]
+        allowed-values: [functional, non-functional, performance, interface, constraint, safety, process]
       - name: verification-criteria
         type: text
         required: false
@@ -214,6 +243,15 @@ artifact-types:
         target-types: [feat-req]
         required: true
         cardinality: one-or-many
+      - name: belongs-to
+        link-type: belongs-to
+        target-types: [comp]
+        cardinality: zero-or-many
+        description: Component requirement is allocated to a specific component (eclipse `:belongs_to:`)
+      - name: covers
+        link-type: covers
+        target-types: [aou-req]
+        cardinality: zero-or-many
 
   - name: aou-req
     description: >
@@ -229,6 +267,10 @@ artifact-types:
         type: string
         required: false
         allowed-values: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
+      - name: security
+        type: string
+        required: false
+        allowed-values: [YES, NO]
       - name: assumption-type
         type: string
         required: false
@@ -257,6 +299,10 @@ artifact-types:
         type: string
         required: false
         allowed-values: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
+      - name: security
+        type: string
+        required: false
+        allowed-values: [YES, NO]
       - name: interfaces
         type: structured
         required: false
@@ -266,6 +312,11 @@ artifact-types:
         link-type: satisfies
         target-types: [feat-req]
         cardinality: zero-or-many
+      - name: provides
+        link-type: provides
+        target-types: [logic-arc-int]
+        cardinality: zero-or-many
+        description: Feature provides a logical interface (eclipse `:provides:`)
 
   - name: comp
     description: >
@@ -280,6 +331,10 @@ artifact-types:
         type: string
         required: false
         allowed-values: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
+      - name: security
+        type: string
+        required: false
+        allowed-values: [YES, NO]
       - name: component-type
         type: string
         required: false
@@ -298,6 +353,16 @@ artifact-types:
         link-type: uses
         target-types: [comp]
         cardinality: zero-or-many
+      - name: implements
+        link-type: implements
+        target-types: [logic-arc-int]
+        cardinality: zero-or-many
+        description: Component implements a logical interface (eclipse `:implements:` on comp)
+      - name: belongs-to
+        link-type: belongs-to
+        target-types: [feat]
+        cardinality: zero-or-many
+        description: Component belongs to a feature (eclipse `:belongs_to:`)
 
   - name: mod
     description: >
@@ -464,10 +529,11 @@ artifact-types:
         link-type: belongs-to
         target-types: [comp, mod, feat]
         cardinality: zero-or-many
-      - name: mitigated-by
-        link-type: mitigated-by
-        target-types: [comp-req, dd-sta, dd-dyn, sw-unit]
+      - name: is-mitigated-by
+        link-type: is-mitigated-by
+        target-types: [comp-req, feat-req, aou-req, dd-sta, dd-dyn, sw-unit]
         cardinality: zero-or-many
+        description: Failure mode is mitigated by a requirement, design, or unit (eclipse `:mitigated_by:`)
       - name: violates
         link-type: violates
         target-types: [comp-req, feat-req]
@@ -504,10 +570,11 @@ artifact-types:
         link-type: belongs-to
         target-types: [comp, feat]
         cardinality: zero-or-many
-      - name: mitigated-by
-        link-type: mitigated-by
-        target-types: [comp-req, dd-sta, dd-dyn, sw-unit]
+      - name: is-mitigated-by
+        link-type: is-mitigated-by
+        target-types: [comp-req, feat-req, aou-req, dd-sta, dd-dyn, sw-unit]
         cardinality: zero-or-many
+        description: Failure mode is mitigated by a requirement, design, or unit (eclipse `:mitigated_by:`)
 
   # ── Verification ───────────────────────────────────────────────────────
 
@@ -739,6 +806,297 @@ artifact-types:
         target-types: [feat, comp]
         cardinality: zero-or-many
 
+  # ── Eclipse S-CORE additions (schema-deltas, 2026-05) ─────────────────
+  #
+  # New artifact types added to bring rivet's score schema in line with
+  # the actual eclipse-score metamodel (eclipse-score/docs-as-code:
+  # src/extensions/score_metamodel/metamodel.yaml).
+
+  # ── Architecture refinements ───────────────────────────────────────────
+
+  - name: feat-arc-sta
+    description: >
+      Static feature architecture — class/package-style view of a feature's
+      internal structure (eclipse `feat_arc_sta`).
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+      - name: safety-level
+        type: string
+        required: false
+        allowed-values: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
+      - name: security
+        type: string
+        required: false
+        allowed-values: [YES, NO]
+    link-fields:
+      - name: belongs-to
+        link-type: belongs-to
+        target-types: [feat]
+        cardinality: zero-or-many
+      - name: includes
+        link-type: includes
+        target-types: [logic-arc-int]
+        cardinality: zero-or-many
+      - name: fulfils
+        link-type: fulfils
+        target-types: [feat-req, aou-req]
+        cardinality: zero-or-many
+
+  - name: feat-arc-dyn
+    description: >
+      Dynamic feature architecture — sequence/state view of a feature's
+      runtime behaviour (eclipse `feat_arc_dyn`).
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+      - name: safety-level
+        type: string
+        required: false
+        allowed-values: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
+      - name: security
+        type: string
+        required: false
+        allowed-values: [YES, NO]
+    link-fields:
+      - name: belongs-to
+        link-type: belongs-to
+        target-types: [feat]
+        cardinality: zero-or-many
+      - name: fulfils
+        link-type: fulfils
+        target-types: [feat-req, aou-req]
+        cardinality: zero-or-many
+
+  - name: logic-arc-int
+    description: >
+      Logical architecture interface — the abstract, technology-neutral
+      contract exposed by a feature or component (eclipse `logic_arc_int`).
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+      - name: safety-level
+        type: string
+        required: false
+        allowed-values: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
+      - name: security
+        type: string
+        required: false
+        allowed-values: [YES, NO]
+    link-fields: []
+
+  - name: comp-arc-sta
+    description: >
+      Static component architecture — class/package-style view of a
+      component's internal structure (eclipse `comp_arc_sta`).
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+      - name: safety-level
+        type: string
+        required: false
+        allowed-values: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
+      - name: security
+        type: string
+        required: false
+        allowed-values: [YES, NO]
+    link-fields:
+      - name: belongs-to
+        link-type: belongs-to
+        target-types: [comp]
+        cardinality: zero-or-many
+      - name: fulfils
+        link-type: fulfils
+        target-types: [comp-req, aou-req]
+        cardinality: zero-or-many
+
+  - name: comp-arc-dyn
+    description: >
+      Dynamic component architecture — sequence/state view of a
+      component's runtime behaviour (eclipse `comp_arc_dyn`).
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+      - name: safety-level
+        type: string
+        required: false
+        allowed-values: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
+      - name: security
+        type: string
+        required: false
+        allowed-values: [YES, NO]
+    link-fields:
+      - name: belongs-to
+        link-type: belongs-to
+        target-types: [comp]
+        cardinality: zero-or-many
+      - name: fulfils
+        link-type: fulfils
+        target-types: [comp-req, aou-req]
+        cardinality: zero-or-many
+
+  - name: real-arc-int
+    description: >
+      Realised architecture interface — the concrete interface as
+      implemented in a specific technology (eclipse `real_arc_int`).
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+      - name: safety-level
+        type: string
+        required: false
+        allowed-values: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
+      - name: security
+        type: string
+        required: false
+        allowed-values: [YES, NO]
+    link-fields: []
+
+  - name: mod-view-sta
+    description: >
+      Static module view — module-scope structural diagram
+      (eclipse `mod_view_sta`).
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+      - name: safety-level
+        type: string
+        required: false
+        allowed-values: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
+    link-fields:
+      - name: belongs-to
+        link-type: belongs-to
+        target-types: [mod]
+        cardinality: zero-or-many
+
+  - name: mod-view-dyn
+    description: >
+      Dynamic module view — module-scope behavioural diagram
+      (eclipse `mod_view_dyn`).
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+      - name: safety-level
+        type: string
+        required: false
+        allowed-values: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
+    link-fields:
+      - name: belongs-to
+        link-type: belongs-to
+        target-types: [mod]
+        cardinality: zero-or-many
+
+  # ── Process layer ──────────────────────────────────────────────────────
+
+  - name: role
+    description: >
+      Process role (eclipse `role`) — a responsibility assigned to a
+      person or team in the development workflow.
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+    link-fields: []
+
+  - name: workproduct
+    description: >
+      Process work product (eclipse `workproduct`) — an artifact produced
+      or consumed by a workflow.
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+    link-fields:
+      - name: complies
+        link-type: complies
+        target-types: [std-wp]
+        cardinality: zero-or-many
+        description: Work product complies with a standard work-product definition
+
+  # ── Standards register ─────────────────────────────────────────────────
+
+  - name: std-req
+    description: >
+      Standards requirement (eclipse `std_req`) — a normative clause
+      extracted from an external standard (e.g. ISO 26262-6:7.4.3.2).
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+      - name: standard
+        type: string
+        required: false
+        description: Source standard identifier (e.g. ISO_26262, IEC_61508, EN_50128)
+      - name: clause
+        type: string
+        required: false
+        description: Clause / subclause reference within the standard
+    link-fields: []
+
+  - name: std-wp
+    description: >
+      Standards work product (eclipse `std_wp`) — a normative work-product
+      definition extracted from an external standard.
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+      - name: standard
+        type: string
+        required: false
+      - name: clause
+        type: string
+        required: false
+    link-fields: []
+
+  # ── Trustable framework ────────────────────────────────────────────────
+
+  - name: tenet
+    description: >
+      Trustable framework tenet (eclipse `tenet`) — a top-level principle
+      that the platform must uphold.
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+    link-fields: []
+
+  - name: assertion
+    description: >
+      Trustable framework assertion (eclipse `assertion`) — a falsifiable
+      claim derived from a tenet, demonstrated by evidence.
+    fields:
+      - name: status
+        type: string
+        required: false
+        allowed-values: [draft, valid, invalid, in_progress, obsolete]
+    link-fields:
+      - name: satisfies
+        link-type: satisfies
+        target-types: [tenet]
+        cardinality: zero-or-many
+
 # ──────────────────────────────────────────────────────────────────────────
 # SCORE-specific link types
 #
@@ -789,9 +1147,83 @@ link-types:
 
   - name: realizes
     inverse: realized-by
-    description: Source realizes the target (component realizes a feature)
-    source-types: [comp]
-    target-types: [feat]
+    description: Source realizes the target (component realizes a feature or document realizes a workproduct)
+    source-types: [comp, doc]
+    target-types: [feat, workproduct]
+
+  # ── Eclipse S-CORE additions (schema-deltas, 2026-05) ──────────────────
+
+  - name: is-mitigated-by
+    inverse: provides-mitigation-for
+    description: Source failure mode is mitigated by the target (FMEA/DFA → requirement/design/unit)
+    source-types: [fmea-entry, dfa-entry]
+    target-types: [comp-req, feat-req, aou-req, dd-sta, dd-dyn, sw-unit]
+
+  - name: provides
+    inverse: provided-by
+    description: Source provides the target interface (eclipse `:provides:`)
+    source-types: [feat, comp]
+    target-types: [logic-arc-int, real-arc-int]
+
+  - name: includes
+    inverse: included-by
+    description: Source architecture element includes a logical or real interface (eclipse `:includes:`)
+    source-types: [feat-arc-sta, comp-arc-sta]
+    target-types: [logic-arc-int, real-arc-int]
+
+  - name: covers
+    inverse: covered-by
+    description: Requirement covers an assumption of use (eclipse `:covers:`)
+    source-types: [feat-req, comp-req]
+    target-types: [aou-req]
+
+  - name: responsible
+    inverse: responsible-for
+    description: Workflow is the responsibility of a role (eclipse `:responsible:`)
+    source-types: [workflow]
+    target-types: [role]
+
+  - name: approved-by
+    inverse: approves
+    description: Workflow is approved by a role (eclipse `:approved_by:`)
+    source-types: [workflow]
+    target-types: [role]
+
+  - name: supported-by
+    inverse: supports
+    description: Workflow is supported by other roles (eclipse `:supported_by:`)
+    source-types: [workflow]
+    target-types: [role]
+
+  - name: input
+    inverse: input-to
+    description: Workflow consumes a workproduct as input (eclipse `:input:`)
+    source-types: [workflow]
+    target-types: [workproduct]
+
+  - name: output
+    inverse: output-of
+    description: Workflow produces a workproduct as output (eclipse `:output:`)
+    source-types: [workflow]
+    target-types: [workproduct]
+
+  - name: contains-guidance
+    inverse: guidance-of
+    description: Workflow contains guidance, templates, or checklists (eclipse `:contains:`)
+    source-types: [workflow]
+    target-types: [guidance, doc]
+
+  - name: has-document
+    inverse: document-of
+    description: Workflow has supporting concept / getting-started / tool documents (eclipse `:has:`)
+    source-types: [workflow]
+    target-types: [doc, guidance]
+
+  - name: fulfils-process-req
+    inverse: fulfilled-by-guidance
+    description: Guidance fulfils a process / tool requirement (eclipse `:satisfies:` on gd_req → workflow)
+    source-types: [guidance]
+    target-types: [workflow, tool-req]
 
 # ──────────────────────────────────────────────────────────────────────────
 # SCORE traceability rules
@@ -895,8 +1327,15 @@ traceability-rules:
   - name: fmea-has-mitigation
     description: Every FMEA entry should have at least one mitigation
     source-type: fmea-entry
-    required-link: mitigated-by
-    target-types: [comp-req, dd-sta, dd-dyn, sw-unit]
+    required-link: is-mitigated-by
+    target-types: [comp-req, feat-req, aou-req, dd-sta, dd-dyn, sw-unit]
+    severity: warning
+
+  - name: dfa-has-mitigation
+    description: Every DFA entry should have at least one mitigation
+    source-type: dfa-entry
+    required-link: is-mitigated-by
+    target-types: [comp-req, feat-req, aou-req, dd-sta, dd-dyn, sw-unit]
     severity: warning
 
   # ── Test verdict chain ─────────────────────────────────────────────────
