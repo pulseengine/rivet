@@ -5,6 +5,62 @@
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-05-24
+
+Theme: **cross-repo feature models + audit-deliverable releases**.
+v0.12.0's multi-file feature-model composition (REQ-083) now reaches
+across git repositories via the consumer's `rivet.yaml` `externals:`,
+and the GitHub Release ships the full audit bundle auditors actually
+use instead of navigation-shell HTML.
+
+### Added
+
+- **REQ-085 — cross-repo feature model composition.** A mount in a
+  `feature-model-binding` of the form `<external-prefix>:<inner-path>`
+  resolves through the consumer's `rivet.yaml` `externals:` — single
+  source of truth, no git config duplicated in the binding. Rides the
+  existing `rivet sync` plumbing entirely. Both the core API
+  (`FeatureModel::load_composed_with_externals` /
+  `FeatureModel::load_with_externals`) and the CLI (`rivet variant`,
+  `rivet validate --model`) are threaded; an unknown prefix is a hard
+  error, never a silent local-path fallback (REQ-083 F2 ethos).
+- **REQ-090 — audit-deliverable release bundle.** The GitHub Release
+  attaches the full ~50 MB compliance tarball — rendered specs with
+  resolved artifact tables + coverage + matrix + validate + ReqIF
+  (OMG, importable into DOORS / Polarion / codeBeamer) +
+  generic-yaml + README — instead of the previous 7 MB navigation
+  shell. The compliance action grows an opt-in
+  `include-data-formats` input (default false, backward-compatible);
+  release.yml flips `single-page: false` + `include-data-formats: true`.
+  Feasible at this size because v0.12.0's REQ-088 shared-assets
+  dedup landed.
+
+### Documented (no implementation in v0.13.0)
+
+- **REQ-091** — clean-room-verified finding:
+  `yaml_hir::extract_schema_driven` (the default rowan-yaml salsa
+  load path) silently drops flush-left artifacts. The original
+  parallel-agent attribution (`GenericYamlAdapter` /
+  `parse_generic_yaml`) was falsified by probe — those return the
+  expected 1 artifact + 1 link. Contributing factor:
+  `extract_links_via_serde` silently `Vec::new()`s on
+  `serde_yaml::from_str` parse error. Fix tracked for v0.13.1;
+  `rivet validate --direct` (legacy non-incremental) is the reliable
+  path in the meantime.
+- **REQ-092** — `rivet source-link` design: per-source-line
+  traceability (Eclipse S-CORE `score_source_code_linker` equivalent)
+  for projects converging S-CORE → rivet. v0.14.0-track.
+
+### Maintenance
+
+- `schemas/score.yaml` aligned with an Eclipse S-CORE comparison
+  (+453 lines, -14 lines); worked conversion sketch added under
+  `examples/score-conversion/`.
+- `rules_rocq_rust` bumped to `e4660cc` (hermetic rules_rust toolchain)
+  in the Bazel module config.
+- Test stabilisation: `server_pages_push_url` switched to a 15s
+  timeout + retry-on-status-0 to absorb the runner-load flake class.
+
 ## [0.12.0] — 2026-05-22
 
 Theme: **multi-file feature models**. A product line can now be authored
