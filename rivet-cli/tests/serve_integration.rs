@@ -223,7 +223,16 @@ fn assert_links_push_url(html: &str, page: &str) {
 fn server_pages_push_url() {
     let (mut child, port) = start_server();
 
-    // Test key pages that have navigational links
+    // Test key pages that have navigational links.
+    //
+    // Stability note: uses `fetch_page_with_retry` rather than the
+    // default-5s `fetch`. /verification and /coverage iterate the
+    // dogfood corpus and sit on the 5s timeout edge under CI runner
+    // load — the same flake class `fetch_with_timeout`'s doc-comment
+    // already calls out for /graph. Also retries once on `status == 0`
+    // (transient connection drop after the health probe passed).
+    // Observed failure mode: this test flapping red on PRs that did
+    // not touch serve code (e.g. artifact-only diffs).
     let pages = [
         "/",
         "/artifacts",
@@ -234,13 +243,28 @@ fn server_pages_push_url() {
     ];
 
     for page in &pages {
-        let (status, body, _headers) = fetch(port, page, true);
+        let (status, body, _headers) = fetch_page_with_retry(port, page);
         assert!(status == 200, "GET {page} returned {status}, expected 200");
         assert_links_push_url(&body, page);
     }
 
     child.kill().ok();
     child.wait().ok();
+}
+
+/// Fetch a page with a generous 15s read timeout and one retry on
+/// `status == 0` (transient connection drop after the server's health
+/// probe has already passed). Used by `server_pages_push_url` to absorb
+/// the CI runner-load flake class without weakening the test's
+/// assertions.
+fn fetch_page_with_retry(port: u16, page: &str) -> (u16, String, Vec<(String, String)>) {
+    let timeout = Duration::from_secs(15);
+    let first = fetch_with_timeout(port, page, true, timeout);
+    if first.0 != 0 {
+        return first;
+    }
+    std::thread::sleep(Duration::from_millis(200));
+    fetch_with_timeout(port, page, true, timeout)
 }
 
 #[test]
