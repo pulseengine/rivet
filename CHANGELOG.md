@@ -5,6 +5,61 @@
 
 ## [Unreleased]
 
+## [0.13.1] — 2026-05-24
+
+Theme: **silent-failure closeout + release-pipeline standardization**.
+Fixes a rowan-yaml CST bug that hid links from the salsa validate
+path for flush-left YAML (the format `serde_yaml::to_string` emits),
+adopts the cross-repo standardized release pattern (SBOM + SLSA +
+build-env), and pulls in the matured spar v0.10.0 toolchain.
+
+### Fixed
+
+- **REQ-091 — rowan-yaml flush-left link loss.** The salsa parser
+  used by default `rivet validate` silently dropped artifacts written
+  in YAML's zero-indent (flush-left) list style. `extract_schema_driven`
+  returned 0 artifacts + 0 diagnostics while `parse_generic_yaml`
+  (the `--direct` legacy path) returned them correctly — the link
+  graph the validator should grade was invisible. Fixed in two places:
+  - `yaml_cst::parse_mapping_entry` accepts `child_indent ==
+    entry_indent` when the next-line content is a `Dash` (YAML's
+    zero-indent block-sequence rule).
+  - `extract_links_via_serde` emits a parse diagnostic on
+    `serde_yaml::from_str` failure instead of silently returning an
+    empty link vec (F2 loud-fail).
+  Surfaced previously-silent cardinality errors in the
+  `apply_rewrites_dev_to_aspice` migration test — test updated to
+  document the migration's actual structural-only contract.
+
+### Changed
+
+- **Release pipeline standardized to the cross-repo synth pattern.**
+  Every release now ships a CycloneDX SBOM
+  (`rivet-X.Y.Z.cdx.json`), a SLSA v1 build-provenance attestation
+  (`gh attestation verify ... --repo pulseengine/rivet`), the
+  already-existing cosign-keyless-signed `SHA256SUMS.txt`, and a
+  `build-env.txt` capturing the rustc / cargo / cosign / runner
+  versions a release was produced with. Asset staging dir renamed
+  `release/` → `release-assets/` for cross-repo verification-script
+  parity.
+
+- **spar dependency bumped `84a7363` → tag.** Brings in hir-def fixes
+  (`applies_to` accepts feature paths per AADL v2.3, nested binding
+  path resolution 3+ levels), assertion-eval fixes (`has()`,
+  `count()`), and the v0.10.x EMV2 / NC tightness / mermaid /
+  trace-topology capabilities. AADL adapter
+  (`rivet-core/src/formats/aadl.rs`) compiles unchanged against the
+  bumped API surface.
+
+### Infrastructure
+
+- **`rules_wasm_component` pinned via `git_override` in `MODULE.bazel`.**
+  Earlier add of the `bazel_dep` without a matching override left
+  Rocq Proofs CI red on every PR because the Bazel Central Registry
+  has no `rules_wasm_component@1.0.0`. Pin to current
+  `rules_wasm_component@main` HEAD so Bazel's shallow git fetch on
+  self-hosted runners resolves the dep cleanly.
+
 ## [0.13.0] — 2026-05-24
 
 Theme: **cross-repo feature models + audit-deliverable releases**.
