@@ -363,14 +363,52 @@ struct MountYaml {
     prefix: String,
 }
 
-/// Load `model_path` (relative to `base_dir`) as raw YAML, then recursively
-/// splice in every sub-model the binding mounts onto it. `path` tracks the
-/// current recursion chain so a cyclic composition fails loudly instead of
-/// recursing forever.
+/// Resolve a mount's `model:` path (REQ-085).
+///
+/// - `<external-prefix>:<inner-path>` where `<external-prefix>` is a key
+///   in `externals` resolves to `externals[<external-prefix>].join(<inner-path>)`.
+///   This is how cross-repo composition rides the existing `rivet sync`
+///   plumbing: the consumer's `rivet.yaml` already declares + syncs the
+///   external repo, and the binding only names the prefix.
+/// - Any other path is `base_dir.join(model_path)` as before.
+/// - An unknown prefix (the `:` form, no match in `externals`, and
+///   `externals` is non-empty) is a hard error — the F2 silent-failure
+///   ethos: a typo'd or missing external must not silently fall back to
+///   a local path that won't exist.
+fn resolve_model_path(
+    model_path: &str,
+    base_dir: &std::path::Path,
+    externals: &BTreeMap<String, std::path::PathBuf>,
+) -> Result<std::path::PathBuf, Error> {
+    if let Some((prefix, rest)) = model_path.split_once(':') {
+        if let Some(root) = externals.get(prefix) {
+            return Ok(root.join(rest));
+        }
+        let prefix_is_external_shaped = !prefix.is_empty()
+            && prefix
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+        if !externals.is_empty() && prefix_is_external_shaped {
+            let declared: Vec<&str> = externals.keys().map(String::as_str).collect();
+            return Err(Error::Schema(format!(
+                "feature-model-binding: mount `{model_path}` references external prefix \
+                 `{prefix}` which is not declared (declared externals: [{}])",
+                declared.join(", ")
+            )));
+        }
+    }
+    Ok(base_dir.join(model_path))
+}
+
+/// Load `model_path` (resolved against `base_dir` or `externals`) as raw
+/// YAML, then recursively splice in every sub-model the binding mounts
+/// onto it. `path` tracks the current recursion chain so a cyclic
+/// composition fails loudly instead of recursing forever.
 fn load_and_splice(
     model_path: &str,
     base_dir: &std::path::Path,
     entries: &BTreeMap<&str, &ComposeEntryYaml>,
+    externals: &BTreeMap<String, std::path::PathBuf>,
     path: &mut BTreeSet<String>,
 ) -> Result<FeatureModelYaml, Error> {
     if !path.insert(model_path.to_string()) {
@@ -378,7 +416,7 @@ fn load_and_splice(
             "feature-model-binding: composition cycle through model `{model_path}`"
         )));
     }
-    let full = base_dir.join(model_path);
+    let full = resolve_model_path(model_path, base_dir, externals)?;
     let src = std::fs::read_to_string(&full)
         .map_err(|e| Error::Schema(format!("feature-model file `{}`: {e}", full.display())))?;
     let mut raw: FeatureModelYaml = serde_yaml::from_str(&src)
@@ -386,7 +424,7 @@ fn load_and_splice(
 
     if let Some(entry) = entries.get(model_path) {
         for (mount_point, mount) in &entry.mount {
-            let sub = load_and_splice(&mount.model, base_dir, entries, path)?;
+            let sub = load_and_splice(&mount.model, base_dir, entries, externals, path)?;
             let prefixed = prefix_model_yaml(sub, &mount.prefix);
             splice_into(&mut raw, mount_point, prefixed, model_path)?;
         }
@@ -909,6 +947,24 @@ impl FeatureModel {
     /// mount point, duplicate prefix, cyclic composition) is a hard
     /// error, never a silent skip.
     pub fn load_composed(binding_path: &std::path::Path) -> Result<Self, Error> {
+        Self::load_composed_with_externals(binding_path, &BTreeMap::new())
+    }
+
+    /// Like [`load_composed`](Self::load_composed) but lets the caller
+    /// supply a map of `<external-prefix> -> <synced-repo-root>` (REQ-085).
+    /// A mount whose `model:` field is of the form
+    /// `<external-prefix>:<inner-path>` resolves to
+    /// `<synced-repo-root>/<inner-path>`. Composition rides the existing
+    /// `rivet sync` plumbing this way: the consumer's `rivet.yaml` is the
+    /// single source of truth for which external repos exist, and the
+    /// binding only names the prefix.
+    ///
+    /// An unknown external prefix is a hard error (never a silent fall-back
+    /// to local path resolution).
+    pub fn load_composed_with_externals(
+        binding_path: &std::path::Path,
+        externals: &BTreeMap<String, std::path::PathBuf>,
+    ) -> Result<Self, Error> {
         let binding_src = std::fs::read_to_string(binding_path).map_err(|e| {
             Error::Schema(format!(
                 "feature-model-binding `{}`: {e}",
@@ -982,7 +1038,13 @@ impl FeatureModel {
             }
         };
 
-        let merged = load_and_splice(root_model, base_dir, &entries, &mut BTreeSet::new())?;
+        let merged = load_and_splice(
+            root_model,
+            base_dir,
+            &entries,
+            externals,
+            &mut BTreeSet::new(),
+        )?;
         Self::from_yaml_struct(merged)
     }
 
@@ -994,6 +1056,19 @@ impl FeatureModel {
     /// the entry point CLI commands use, so a `--model` argument
     /// transparently accepts either a plain model or a composition.
     pub fn load(path: &std::path::Path) -> Result<Self, Error> {
+        Self::load_with_externals(path, &BTreeMap::new())
+    }
+
+    /// Like [`load`](Self::load) but passes through an externals map for
+    /// the composition path (REQ-085). For a single-file model the
+    /// externals map is irrelevant; for a `feature-model-binding` it
+    /// resolves any `<external-prefix>:<inner-path>` mounts. The CLI is
+    /// the natural site to build this map from the project's
+    /// `rivet.yaml` externals.
+    pub fn load_with_externals(
+        path: &std::path::Path,
+        externals: &BTreeMap<String, std::path::PathBuf>,
+    ) -> Result<Self, Error> {
         let src = std::fs::read_to_string(path)
             .map_err(|e| Error::Schema(format!("feature model `{}`: {e}", path.display())))?;
         #[derive(Deserialize)]
@@ -1003,7 +1078,7 @@ impl FeatureModel {
         let probe: KindProbe = serde_yaml::from_str(&src)
             .map_err(|e| Error::Schema(format!("feature model `{}`: {e}", path.display())))?;
         if probe.kind.as_deref() == Some("feature-model-binding") {
-            Self::load_composed(path)
+            Self::load_composed_with_externals(path, externals)
         } else {
             Self::from_yaml(&src)
         }
@@ -3171,5 +3246,160 @@ compose:
             format!("{err}").contains("feature-model-binding"),
             "got: {err}"
         );
+    }
+
+    // ── Cross-repo composition (REQ-085) ────────────────────────────────
+
+    /// `load_composed_with_externals` resolves a mount whose `model:` is
+    /// of the form `<external-prefix>:<inner-path>` against the
+    /// externals map (the synced-repo-root for that prefix), exactly
+    /// matching how `rivet.yaml` `externals:` already work for
+    /// artifact cross-references.
+    ///
+    /// rivet: verifies REQ-085
+    #[test]
+    fn compose_with_externals_resolves_prefixed_mount() {
+        let tmp = tempfile::tempdir().unwrap();
+        let consumer = tmp.path().join("consumer");
+        let ext = tmp.path().join("externals").join("acme-pwt");
+        std::fs::create_dir_all(&consumer).unwrap();
+        std::fs::create_dir_all(&ext).unwrap();
+
+        // External repo (synced root): the powertrain sub-model.
+        std::fs::write(ext.join("powertrain.yaml"), SUB_POWERTRAIN).unwrap();
+
+        // Consumer: the top model + the binding.
+        std::fs::write(
+            consumer.join("vehicle.yaml"),
+            r#"kind: feature-model
+root: vehicle
+features:
+  vehicle:
+    group: mandatory
+    children: [powertrain]
+  powertrain:
+    group: mandatory
+"#,
+        )
+        .unwrap();
+        let bpath = consumer.join("binding.yaml");
+        std::fs::write(
+            &bpath,
+            r#"kind: feature-model-binding
+compose:
+  - parent: vehicle.yaml
+    mount:
+      powertrain:
+        model: acme-pwt:powertrain.yaml
+        prefix: pwt
+"#,
+        )
+        .unwrap();
+
+        let mut externals: BTreeMap<String, std::path::PathBuf> = BTreeMap::new();
+        externals.insert("acme-pwt".to_string(), ext.clone());
+
+        let model = FeatureModel::load_composed_with_externals(&bpath, &externals).unwrap();
+        assert_eq!(model.root, "vehicle");
+        // The external's features are mounted under the binding's prefix —
+        // proves the path resolved through the externals map, not through
+        // base_dir.
+        assert!(model.features.contains_key("pwt:powertrain"));
+        assert!(model.features.contains_key("pwt:four-wheel"));
+        assert!(model.features.contains_key("pwt:two-wheel"));
+    }
+
+    /// A mount that names an external prefix `rivet.yaml` does not
+    /// declare must fail loudly — never a silent fall-back to local
+    /// path resolution that won't find the file. Inherits REQ-083's
+    /// F2 ethos.
+    ///
+    /// rivet: verifies REQ-085
+    #[test]
+    fn compose_with_externals_unknown_prefix_is_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("vehicle.yaml"),
+            r#"kind: feature-model
+root: vehicle
+features:
+  vehicle:
+    group: mandatory
+    children: [powertrain]
+  powertrain:
+    group: mandatory
+"#,
+        )
+        .unwrap();
+        let bpath = tmp.path().join("binding.yaml");
+        std::fs::write(
+            &bpath,
+            r#"kind: feature-model-binding
+compose:
+  - parent: vehicle.yaml
+    mount:
+      powertrain:
+        model: typo-prefix:powertrain.yaml
+        prefix: pwt
+"#,
+        )
+        .unwrap();
+
+        // Externals declare `acme-pwt`, NOT `typo-prefix`.
+        let mut externals: BTreeMap<String, std::path::PathBuf> = BTreeMap::new();
+        externals.insert("acme-pwt".to_string(), tmp.path().to_path_buf());
+
+        let err = FeatureModel::load_composed_with_externals(&bpath, &externals).unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("typo-prefix") && msg.contains("declared"),
+            "unknown external prefix must error loudly naming the prefix and \
+             the declared set; got: {msg}"
+        );
+    }
+
+    /// Backward compat: `load_composed_with_externals` called with an
+    /// empty externals map behaves exactly like `load_composed` for
+    /// bindings that use only local relative paths — REQ-083's existing
+    /// composition is unchanged.
+    ///
+    /// rivet: verifies REQ-085
+    #[test]
+    fn compose_with_empty_externals_treats_paths_as_local() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        std::fs::write(dir.join("powertrain.yaml"), SUB_POWERTRAIN).unwrap();
+        std::fs::write(
+            dir.join("vehicle.yaml"),
+            r#"kind: feature-model
+root: vehicle
+features:
+  vehicle:
+    group: mandatory
+    children: [powertrain]
+  powertrain:
+    group: mandatory
+"#,
+        )
+        .unwrap();
+        let bpath = dir.join("binding.yaml");
+        std::fs::write(
+            &bpath,
+            r#"kind: feature-model-binding
+compose:
+  - parent: vehicle.yaml
+    mount:
+      powertrain:
+        model: powertrain.yaml
+        prefix: pwt
+"#,
+        )
+        .unwrap();
+
+        let externals: BTreeMap<String, std::path::PathBuf> = BTreeMap::new();
+        let model = FeatureModel::load_composed_with_externals(&bpath, &externals).unwrap();
+        assert_eq!(model.root, "vehicle");
+        assert!(model.features.contains_key("pwt:powertrain"));
+        assert!(model.features.contains_key("pwt:four-wheel"));
     }
 }
