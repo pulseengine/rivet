@@ -1,0 +1,20 @@
+# Worked example: Eclipse S-CORE persistency feature converted to rivet.
+#
+# Source: eclipse-score/score + eclipse-score/persistency, sphinx-needs RST
+#         filtered to the persistency::kvs slice.
+# Target: rivet generic-yaml against the `score` schema.
+#
+# Run: rivet --schemas ../../schemas validate
+project:
+  name: score-conversion-persistency
+  version: "0.1.0"
+  schemas:
+    - common
+    - score
+
+sources:
+  - path: artifacts
+    format: generic-yaml
+
+docs:
+  - docs

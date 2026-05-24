@@ -1,0 +1,316 @@
+# Eclipse S-CORE persistency::kvs slice, converted to rivet artifacts.
+#
+# Source RST (eclipse-score/score, eclipse-score/persistency):
+#   docs/requirements/stakeholder/index.rst
+#   docs/features/persistency/{requirements,architecture}/index.rst
+#   persistency/score/kvs/docs/requirements/index.rst
+#   process_description/process/roles/index.rst
+#   process_description/process/process_areas/safety_analysis/safety_analysis_workflow.rst
+#
+# Conversion rules applied (see ../README.md for the full table):
+#   sphinx-needs option         → rivet field
+#   ─────────────────────────   ──────────────────
+#   :id:                        → id
+#   :safety:                    → fields.safety-level (QM|ASIL_A..D)
+#   :security: YES|NO           → fields.security
+#   :reqtype:                   → fields.req-type (functional|non-functional|interface|performance|constraint|safety)
+#   :status: valid|draft        → status: approved|draft  (eclipse `valid` → rivet `approved`)
+#   :rationale:                 → fields.rationale
+#   :satisfies:                 → links: type=satisfies
+#   :belongs_to:                → links: type=belongs-to
+#   :implements:                → links: type=implements
+#   :provides: (architecture)   → links: type=provides         ← NEW link type, see schema-deltas
+#   :includes: / :fulfils:      → links: type=includes / fulfils
+#   :realizes: (document)       → links: type=realizes
+#   :violates: / :mitigated_by: → links: type=violates / mitigated-by
+#   :fully_verifies: etc.       → links: type=fully-verifies / partially-verifies
+
+artifacts:
+
+  # ── Stakeholder requirement ────────────────────────────────────────────
+  # Source: stkh_req__overall_goals__reuse_of_app_soft
+  - id: STKH-REQ-PERSIST-001
+    type: stkh-req
+    title: Reuse of application software via managed APIs
+    status: approved
+    description: >
+      The SW-platform shall enable the reuse of application software across
+      product generations through stable, managed APIs.
+    tags: [persistency, reuse, stakeholder]
+    fields:
+      req-type: non-functional   # eclipse `:reqtype: Non-Functional`
+      safety-level: QM
+      security: "NO"
+      rationale: >
+        Usability constraint needed for long maintenance support of the
+        platform across product generations.
+
+  - id: STKH-REQ-PERSIST-002
+    type: stkh-req
+    title: Support for persistent storage
+    status: approved
+    description: >
+      The SW-platform shall provide a persistent storage capability for
+      application data that survives power-cycles and software updates.
+    tags: [persistency, stakeholder]
+    fields:
+      req-type: functional
+      safety-level: ASIL_B
+      security: "NO"
+
+  # ── Feature requirements ───────────────────────────────────────────────
+  # Source: feat_req__persistency__dynamic_memory_alloc
+  - id: FEAT-REQ-PERSIST-001
+    type: feat-req
+    title: Dynamic memory allocation during runtime
+    status: approved
+    description: >
+      The persistency feature shall not perform dynamic memory allocation
+      after initialization (no malloc/free on the hot path).
+    tags: [persistency, memory]
+    fields:
+      req-type: non-functional
+      safety-level: ASIL_B
+      verification-criteria: >
+        Static analysis confirms no allocator calls on the post-init code
+        path; runtime check verifies sbrk delta is zero across N operations.
+    links:
+      - type: satisfies
+        target: STKH-REQ-PERSIST-001
+
+  - id: FEAT-REQ-PERSIST-002
+    type: feat-req
+    title: Store data
+    status: approved
+    description: The persistency feature shall accept a (key, value) pair and persist it durably.
+    tags: [persistency, kvs]
+    fields:
+      req-type: functional
+      safety-level: ASIL_B
+    links:
+      - type: satisfies
+        target: STKH-REQ-PERSIST-002
+
+  - id: FEAT-REQ-PERSIST-003
+    type: feat-req
+    title: Load data
+    status: approved
+    description: The persistency feature shall retrieve a value for a previously-stored key.
+    tags: [persistency, kvs]
+    fields:
+      req-type: functional
+      safety-level: ASIL_B
+    links:
+      - type: satisfies
+        target: STKH-REQ-PERSIST-002
+
+  # ── Component requirement (from satellite repo) ────────────────────────
+  # Source: comp_req__kvs__key_naming
+  - id: COMP-REQ-KVS-001
+    type: comp-req
+    title: Key Naming
+    status: approved
+    description: >
+      Keys shall be UTF-8 strings of length 1..255 containing only
+      [A-Za-z0-9_./-] and shall not start with '.'.
+    tags: [persistency, kvs, keys]
+    fields:
+      req-type: functional
+      safety-level: ASIL_B
+      verification-criteria: >
+        Unit tests cover the alphabet, length boundaries (0, 1, 255, 256),
+        and the leading-dot rejection.
+    links:
+      - type: satisfies
+        target: FEAT-REQ-PERSIST-002
+      - type: belongs-to
+        target: COMP-KVS
+
+  # ── Architecture: feature ──────────────────────────────────────────────
+  # Source: feat__persistency
+  # NOTE: eclipse `:provides: logic_arc_int__persistency__interface` —
+  # rivet's score.yaml does not yet have a `provides` link type or a
+  # `logic-arc-int` artifact type. See ../README.md "Schema deltas".
+  - id: FEAT-PERSISTENCY
+    type: feat
+    title: Persistency
+    status: approved
+    description: User-visible persistency feature exposed through a managed API.
+    tags: [persistency]
+    fields:
+      safety-level: ASIL_B
+    links:
+      - type: satisfies
+        target: FEAT-REQ-PERSIST-001
+      - type: satisfies
+        target: FEAT-REQ-PERSIST-002
+      - type: satisfies
+        target: FEAT-REQ-PERSIST-003
+
+  # ── Architecture: component ────────────────────────────────────────────
+  # Source: comp__persistency_kvs
+  - id: COMP-KVS
+    type: comp
+    title: persistency::kvs
+    status: approved
+    description: The key-value store implementation of the persistency feature.
+    tags: [persistency, kvs]
+    fields:
+      safety-level: ASIL_B
+      component-type: library
+    links:
+      - type: realizes
+        target: FEAT-PERSISTENCY
+
+  # ── Detailed design (static) ───────────────────────────────────────────
+  - id: DD-STA-KVS-001
+    type: dd-sta
+    title: KVS storage backend selection
+    status: approved
+    description: >
+      Static type model showing the strategy interface KvsBackend and its
+      two implementations (FileBackend, RocksDbBackend), plus the per-key
+      validator KeyValidator referenced by KvsService.
+    tags: [persistency, kvs, design]
+    fields:
+      safety-level: ASIL_B
+      view-type: class-diagram
+    links:
+      - type: implements
+        target: COMP-REQ-KVS-001
+      - type: belongs-to
+        target: COMP-KVS
+
+  # ── Software unit ──────────────────────────────────────────────────────
+  - id: SW-UNIT-KVS-VALIDATE
+    type: sw-unit
+    title: KVS key validator
+    status: approved
+    description: Source file implementing the key syntactic validator.
+    tags: [persistency, kvs, impl]
+    fields:
+      safety-level: ASIL_B
+      source-file: persistency/score/kvs/src/key_validator.rs
+      language: rust
+    links:
+      - type: implements
+        target: DD-STA-KVS-001
+      - type: belongs-to
+        target: COMP-KVS
+
+  # ── Test specification ─────────────────────────────────────────────────
+  - id: TEST-SPEC-KVS-VALIDATE
+    type: test-spec
+    title: KVS key validator unit tests
+    status: approved
+    description: Unit-level coverage of the key validator boundary cases.
+    tags: [persistency, kvs, test]
+    fields:
+      safety-level: ASIL_B
+      test-method: automated-test
+      expected-result: All boundary cases pass; invalid keys are rejected.
+      mutation-score-target: 0.85
+    links:
+      - type: fully-verifies
+        target: COMP-REQ-KVS-001
+      - type: belongs-to
+        target: COMP-KVS
+
+  # ── Safety analysis: FMEA entry ────────────────────────────────────────
+  # Source: comp_saf_fmea
+  - id: FMEA-KVS-001
+    type: fmea-entry
+    title: Silent corruption of stored value
+    status: approved
+    description: A power loss mid-write leaves a stored value in a torn state.
+    tags: [persistency, kvs, safety]
+    fields:
+      safety-level: ASIL_B
+      failure-mode: Stored value partially written after power loss
+      effect: Subsequent load returns a syntactically valid but stale or torn payload
+      cause: Buffered write interrupted before fsync completes
+      severity: "8"
+      occurrence: "3"
+      detection: "5"
+      rpn: "120"
+    links:
+      - type: belongs-to
+        target: COMP-KVS
+      - type: violates
+        target: COMP-REQ-KVS-001
+      - type: is-mitigated-by
+        target: DD-STA-KVS-001
+
+  # ── Decision record ────────────────────────────────────────────────────
+  # Source: dec_rec__infra__traceable_docs (template; not real persistency content)
+  - id: DR-KVS-001
+    type: decision-record
+    title: Choose RocksDB over LevelDB for the KVS backend
+    status: approved
+    description: Selection of the durable backend for the key-value store.
+    tags: [persistency, kvs, decision]
+    fields:
+      rationale: >
+        RocksDB ships ASIL-relevant write-ahead-logging defaults and an
+        active maintenance line; LevelDB upstream activity has stalled.
+      alternatives: >
+        LevelDB (rejected: stalled upstream), bespoke append-only log
+        (rejected: re-implements WAL crash-safety).
+      consequences: >
+        Increases binary size by ~1.8 MB; adds a C++ dependency we must
+        track in the SBOM.
+    links:
+      - type: satisfies
+        target: COMP-REQ-KVS-001
+      - type: belongs-to
+        target: COMP-KVS
+
+  # ── Process layer: workflow + roles + guidance ─────────────────────────
+  # Source: wf__analyse_platform_featarch (trimmed)
+  - id: ROLE-SAFETY-ENGINEER
+    type: role
+    title: Safety Engineer
+    status: approved
+    description: Eclipse S-CORE process role `rl__safety_engineer`.
+    tags: [process, role]
+
+  - id: ROLE-SAFETY-MANAGER
+    type: role
+    title: Safety Manager
+    status: approved
+    description: Eclipse S-CORE process role `rl__safety_manager`.
+    tags: [process, role]
+
+  - id: WP-REQUIREMENTS-FEAT
+    type: workproduct
+    title: Feature Requirements
+    status: approved
+    description: Eclipse work product `wp__requirements_feat` — the feature requirements deliverable.
+    tags: [process, workproduct]
+
+  - id: WP-PLATFORM-DFA
+    type: workproduct
+    title: Platform DFA
+    status: approved
+    description: Eclipse work product `wp__platform_dfa` — the dependent-failure-analysis deliverable.
+    tags: [process, workproduct]
+
+  - id: WORKFLOW-ANALYSE-PLAT-FEATARCH
+    type: workflow
+    title: Analyze Platform Feature Architecture
+    status: approved
+    description: Eclipse S-CORE workflow `wf__analyse_platform_featarch` — trimmed.
+    tags: [process, safety_analysis]
+    fields:
+      process-area: safety_analysis
+    links:
+      - type: responsible
+        target: ROLE-SAFETY-ENGINEER
+      - type: approved-by
+        target: ROLE-SAFETY-MANAGER
+      - type: supported-by
+        target: ROLE-SAFETY-ENGINEER
+      - type: input
+        target: WP-REQUIREMENTS-FEAT
+      - type: output
+        target: WP-PLATFORM-DFA

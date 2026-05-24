@@ -55,6 +55,10 @@ docs-check:
     # tool-qualification dossier §0 and schemas/common.yaml — "fix
     # landed in v0.10.0" prose, not a current-version claim.
     - "0.10.0"
+    # ISO 26262-6 clause reference (`ISO 26262-6:7.4.3.2`) in
+    # schemas/score.yaml's `external-clause` artifact description.
+    # Stable standard-clause identifier, not a version.
+    - "7.4.3"
 
 results: results
 
