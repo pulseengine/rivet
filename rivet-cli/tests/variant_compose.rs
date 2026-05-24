@@ -193,3 +193,106 @@ compose:
         "the error must name the missing file. stderr:\n{stderr}"
     );
 }
+
+/// REQ-085 v2: `rivet variant list --model <binding>` resolves mounts
+/// of the form `<external-prefix>:<inner-path>` against the consumer's
+/// `rivet.yaml` externals — so a cross-repo feature-model mount works
+/// end-to-end through the CLI, riding the existing `rivet sync` /
+/// `externals:` plumbing without any binding-side git config.
+///
+/// rivet: verifies REQ-085
+#[test]
+fn variant_list_resolves_cross_repo_mount_via_rivet_yaml_externals() {
+    let tmp = tempfile::tempdir().unwrap();
+    let consumer = tmp.path().join("consumer");
+    let ext = tmp.path().join("externals").join("pwt-fake");
+    std::fs::create_dir_all(consumer.join("artifacts")).unwrap();
+    std::fs::create_dir_all(&ext).unwrap();
+
+    // External: minimal rivet.yaml + the feature-model file that the
+    // consumer's binding will mount via the `pwt` prefix.
+    std::fs::write(
+        ext.join("rivet.yaml"),
+        r#"project:
+  name: pwt-external
+  version: "0.1.0"
+  schemas: [common]
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        ext.join("powertrain.yaml"),
+        r#"kind: feature-model
+root: powertrain
+features:
+  powertrain:
+    group: alternative
+    children: [four-wheel, two-wheel]
+  four-wheel: { group: leaf }
+  two-wheel: { group: leaf }
+"#,
+    )
+    .unwrap();
+
+    // Consumer: rivet.yaml declares the `pwt` external via `path:`,
+    // top model, and a binding mounting `pwt:powertrain.yaml`.
+    std::fs::write(
+        consumer.join("rivet.yaml"),
+        format!(
+            r#"project:
+  name: consumer
+  version: "0.1.0"
+  schemas: [common]
+sources: [{{ path: artifacts, format: generic-yaml }}]
+externals:
+  pwt:
+    path: {}
+    prefix: pwt
+"#,
+            ext.display()
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        consumer.join("vehicle.yaml"),
+        r#"kind: feature-model
+root: vehicle
+features:
+  vehicle:
+    group: mandatory
+    children: [powertrain]
+  powertrain:
+    group: mandatory
+"#,
+    )
+    .unwrap();
+    let binding = consumer.join("binding.yaml");
+    std::fs::write(
+        &binding,
+        r#"kind: feature-model-binding
+compose:
+  - parent: vehicle.yaml
+    mount:
+      powertrain:
+        model: pwt:powertrain.yaml
+        prefix: pwt
+"#,
+    )
+    .unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args(["variant", "list", "--model", binding.to_str().unwrap()])
+        .current_dir(&consumer)
+        .output()
+        .expect("rivet variant list");
+
+    assert!(
+        out.status.success(),
+        "list of a cross-repo binding must succeed. stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("pwt:powertrain"), "stdout:\n{stdout}");
+    assert!(stdout.contains("pwt:four-wheel"), "stdout:\n{stdout}");
+    assert!(stdout.contains("pwt:two-wheel"), "stdout:\n{stdout}");
+}

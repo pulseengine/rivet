@@ -4663,8 +4663,7 @@ fn cmd_validate(
     //   nothing : ordinary project validation.
     let (store, graph, variant_scope_name) = match (model_path, variant_path, binding_path) {
         (Some(mp), Some(vp), Some(bp)) => {
-            let fm = rivet_core::feature_model::FeatureModel::load(mp)
-                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            let fm = load_feature_model_via_project(mp)?;
 
             let variant_yaml = std::fs::read_to_string(vp)
                 .with_context(|| format!("reading variant config {}", vp.display()))?;
@@ -4708,8 +4707,7 @@ fn cmd_validate(
             // Model + binding, no variant: validate model/binding consistency
             // without resolving a specific variant. Unknown feature names in
             // the binding file are reported as errors.
-            let fm = rivet_core::feature_model::FeatureModel::load(mp)
-                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            let fm = load_feature_model_via_project(mp)?;
 
             let binding_yaml = std::fs::read_to_string(bp)
                 .with_context(|| format!("reading binding {}", bp.display()))?;
@@ -11453,6 +11451,62 @@ bindings:
     Ok(true)
 }
 
+/// Load a feature model with cross-repo composition support (REQ-085 v2).
+///
+/// Walks up from `model_path` to find the containing `rivet.yaml`,
+/// resolves its `externals:` via the already-synced cache
+/// (`.rivet/repos/<prefix>/`), and threads that map into
+/// `FeatureModel::load_with_externals`. A binding mount of the form
+/// `<external-prefix>:<inner-path>` then resolves via the external's
+/// synced root — closing the cross-repo loop without rivet-core having
+/// to know about project configuration.
+///
+/// Lenient: any failure to load `rivet.yaml`, missing `externals:`, or
+/// `rivet sync` not having run falls back to an empty externals map
+/// (REQ-083 local-only behaviour, unchanged). A binding that actually
+/// uses an unresolved prefix surfaces the loud error from
+/// `resolve_model_path` itself — no silent fallback there.
+fn load_feature_model_via_project(
+    model_path: &std::path::Path,
+) -> anyhow::Result<rivet_core::feature_model::FeatureModel> {
+    let externals = project_externals_map_for(model_path);
+    rivet_core::feature_model::FeatureModel::load_with_externals(model_path, &externals)
+        .map_err(|e| anyhow::anyhow!("{e}"))
+}
+
+/// Walk up from `model_path` looking for a `rivet.yaml`; if found, load
+/// it and resolve its `externals:` into a `prefix -> synced-root` map.
+/// Returns an empty map on any failure — see `load_feature_model_via_project`
+/// for the leniency rationale.
+fn project_externals_map_for(
+    model_path: &std::path::Path,
+) -> std::collections::BTreeMap<String, std::path::PathBuf> {
+    let mut dir = model_path.parent();
+    while let Some(d) = dir {
+        let cfg = d.join("rivet.yaml");
+        if cfg.exists() {
+            let Ok(config) = rivet_core::load_project_config(&cfg) else {
+                return std::collections::BTreeMap::new();
+            };
+            let Some(externals) = config.externals else {
+                return std::collections::BTreeMap::new();
+            };
+            if externals.is_empty() {
+                return std::collections::BTreeMap::new();
+            }
+            return match rivet_core::externals::load_all_externals(&externals, d) {
+                Ok(resolved) => resolved
+                    .into_iter()
+                    .map(|r| (r.prefix, r.project_dir))
+                    .collect(),
+                Err(_) => std::collections::BTreeMap::new(),
+            };
+        }
+        dir = d.parent();
+    }
+    std::collections::BTreeMap::new()
+}
+
 /// Check a variant configuration against a feature model.
 fn cmd_variant_check(
     model_path: &std::path::Path,
@@ -11461,8 +11515,7 @@ fn cmd_variant_check(
 ) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
 
-    let model = rivet_core::feature_model::FeatureModel::load(model_path)
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let model = load_feature_model_via_project(model_path)?;
 
     let variant_yaml = std::fs::read_to_string(variant_path)
         .with_context(|| format!("reading {}", variant_path.display()))?;
@@ -11523,8 +11576,7 @@ fn cmd_variant_check_all(
 ) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
 
-    let model = rivet_core::feature_model::FeatureModel::load(model_path)
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let model = load_feature_model_via_project(model_path)?;
 
     let binding_yaml = std::fs::read_to_string(binding_path)
         .with_context(|| format!("reading {}", binding_path.display()))?;
@@ -11599,8 +11651,7 @@ fn cmd_variant_check_all(
 fn cmd_variant_list(model_path: &std::path::Path, format: &str) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
 
-    let model = rivet_core::feature_model::FeatureModel::load(model_path)
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let model = load_feature_model_via_project(model_path)?;
 
     if format == "json" {
         let features: Vec<serde_json::Value> = model
@@ -11663,8 +11714,7 @@ fn cmd_variant_solve(
 ) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
 
-    let model = rivet_core::feature_model::FeatureModel::load(model_path)
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let model = load_feature_model_via_project(model_path)?;
 
     let variant_yaml = std::fs::read_to_string(variant_path)
         .with_context(|| format!("reading {}", variant_path.display()))?;
@@ -11796,8 +11846,7 @@ fn load_and_solve_variant(
     rivet_core::feature_model::FeatureModel,
     rivet_core::feature_model::ResolvedVariant,
 )> {
-    let model = rivet_core::feature_model::FeatureModel::load(model_path)
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let model = load_feature_model_via_project(model_path)?;
     let variant_yaml = std::fs::read_to_string(variant_path)
         .with_context(|| format!("reading {}", variant_path.display()))?;
     let variant: rivet_core::feature_model::VariantConfig =
@@ -12122,8 +12171,7 @@ fn cmd_variant_manifest(
 ) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
 
-    let model = rivet_core::feature_model::FeatureModel::load(model_path)
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let model = load_feature_model_via_project(model_path)?;
 
     let variant_yaml = std::fs::read_to_string(variant_path)
         .with_context(|| format!("reading {}", variant_path.display()))?;
@@ -12206,8 +12254,7 @@ fn cmd_variant_matrix(
         other => anyhow::bail!("unknown --wrap `{other}`: expected `fragment` or `job`"),
     };
 
-    let model = rivet_core::feature_model::FeatureModel::load(model_path)
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let model = load_feature_model_via_project(model_path)?;
 
     let binding_yaml = std::fs::read_to_string(binding_path)
         .with_context(|| format!("reading {}", binding_path.display()))?;
