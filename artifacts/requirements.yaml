@@ -1699,3 +1699,141 @@ artifacts:
         target: REQ-088
       - type: traces-to
         target: REQ-005
+
+  - id: REQ-091
+    type: requirement
+    title: "rowan-yaml salsa parser silently drops flush-left artifacts from the default validate path"
+    status: draft
+    description: |
+      Default `rivet validate` (the salsa-incremental path with the
+      `rowan-yaml` feature enabled, the default) drops artifacts
+      written in YAML's flush-left list style from its grading. The
+      artifact is loaded by other paths (`rivet list`, lifecycle
+      coverage, validate `--direct`) and the artifact file parses
+      cleanly via `parse_generic_yaml`, but the rowan parser
+      (`yaml_hir::extract_schema_driven`, the default salsa load
+      path) returns ZERO artifacts and ZERO diagnostics for the same
+      file. The link graph the validator should grade is invisible.
+
+      Discovered via clean-room verification of a parallel agent's
+      bug report (sphinx-needs importer corpus — Python tool 2507
+      warnings, Rust port 488 — the 2019 gap is exactly the lost
+      grading). The agent attributed the bug to
+      `GenericYamlAdapter::export` / `parse_generic_yaml`; probe
+      reproduced their fixture and FALSIFIED that attribution —
+      `parse_generic_yaml` returns 1 link for both fixtures,
+      identical link_type/target. The real failure is in
+      `yaml_hir::extract_schema_driven`:
+
+        Fixture (flush.yaml, 7 lines):
+          artifacts:
+          - id: COMP_REQ__FLUSH__A
+            type: comp-req
+            title: Flush-left
+            status: approved
+            links:
+            - type: satisfies
+              target: FEAT_REQ__NOPE__DANGLE
+
+        extract_schema_driven(...) -> artifacts: 0, diagnostics: 0   ← bug
+        parse_generic_yaml(...)    -> 1 artifact, 1 link             ← fine
+        rivet list                 -> 1 artifact, 1 link             ← fine
+        rivet validate (default)   -> no link errors for FLUSH       ← bug
+        rivet validate --direct    -> link errors for both           ← fine
+
+      A contributing factor: `extract_links_via_serde` (the rowan
+      parser's fallback) silently returns `Vec::new()` on
+      `serde_yaml::from_str` parse error — F2 silent-failure ethos
+      violation. Even the fallback can't surface "I tried to parse
+      links and couldn't."
+
+      Impact: any project using generic-yaml whose artifacts use
+      flush-left lists (which is exactly what serde_yaml's
+      `to_string` emits — so rivet's own
+      `GenericYamlAdapter::export` produces files rivet's default
+      validate cannot fully grade) silently loses link-graph
+      validation in CI.
+
+      Bug-doc + 2-file fixture authored by the parallel agent:
+      `docs/design/rivet-link-parse-bug.md` +
+      `docs/design/rivet-link-parse-bug-fixture/` (on the
+      `feat/import-results-sphinx-needs` branch). Description is
+      attribution-corrected here.
+
+      Acceptance:
+        - `yaml_hir::extract_schema_driven` returns 1 artifact + 1
+          link for the flush.yaml fixture (identical to indent.yaml).
+        - Default `rivet validate` (salsa + rowan-yaml) emits the
+          broken-link ERROR for COMP_REQ__FLUSH__A — same as
+          `rivet validate --direct` does today.
+        - `extract_links_via_serde`'s parse-error branch emits a
+          parse diagnostic instead of `Vec::new()` (loud-fail).
+        - Regression test in `rivet-core/tests/` driving
+          `extract_schema_driven` directly with both fixture shapes,
+          asserting identical artifact + link counts.
+        - The parallel agent's sphinx-needs port corpus, re-graded
+          after the fix, matches the Python reference's ~2500
+          warnings (the falsification gate the agent's handoff
+          described).
+    tags: [yaml, rowan, salsa, validate, silent-failure, f2-family]
+    fields:
+      priority: must
+      category: functional
+      baseline: v0.13.1-track
+    links:
+      - type: derives-from
+        target: FEAT-135
+
+  - id: REQ-092
+    type: requirement
+    title: "Per-source-line traceability linker — Eclipse S-CORE source_code_linker equivalent"
+    status: draft
+    description: |
+      Eclipse S-CORE ships `score_source_code_linker` — a tool that
+      scans source files for inline comments of the shape
+      `// req-Id: <id>` and emits per-line traceability records
+      linking that source location to the named requirement (need).
+      Rivet has `rivet commits` (REQ-051), which links per-commit via
+      trailers (`Implements:`, `Refs:`, `Fixes:`, `Verifies:`).
+      Different granularity: per-line vs per-commit; both auditable.
+
+      For projects converging from S-CORE → rivet (the Eclipse S-CORE
+      sphinx-needs importer landing in the parallel agent's PR is one
+      such case), a per-source-line linker closes the granularity gap
+      and lets one tool surface both kinds of evidence under the
+      existing traceability rules.
+
+      Proposed shape (subject to design):
+
+      - `rivet source-link` — new subcommand. Scans source paths
+        configured in `rivet.yaml` for `// rivet: <req-id>`
+        comments (marker configurable; default `// rivet:` to avoid
+        colliding with S-CORE's `// req-Id:` until a migration story
+        exists). Emits a per-line traceability artifact set: file,
+        line range, linked artifact-id, comment text.
+      - Output integrates with existing traceability — the per-line
+        evidence shows up in `rivet validate`'s coverage metrics and
+        the matrix view, indistinguishable from a per-commit link
+        once aggregated by target.
+      - Optional `--marker '// req-Id:'` switch lets a downstream
+        project consume S-CORE-style comments without migration.
+
+      Acceptance:
+        - `rivet source-link` on a project with `// rivet: <req-id>`
+          comments in tracked source files emits artifacts naming
+          file / line / linked artifact-id.
+        - `rivet validate` after `source-link` counts those per-line
+          links toward the same coverage metrics as commit-trailer
+          links (REQ-051 family).
+        - `--marker '// req-Id:'` ingests S-CORE-style comments.
+        - Malformed markers (`// rivet: NOTASHAPE`, missing ID,
+          duplicate per line) emit diagnostics — never silent skip.
+        - A worked example added under `examples/source-link/`.
+    tags: [traceability, source-link, eclipse-score, parity, new-capability]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.14.0-track
+    links:
+      - type: traces-to
+        target: REQ-051
