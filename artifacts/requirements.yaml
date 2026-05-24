@@ -1837,3 +1837,261 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-051
+
+  - id: REQ-093
+    type: requirement
+    title: "Implement the FUTURE oracles — asil-decomposition, coverage-threshold, method-table-compliance — turn the ISO 26262 narrative into mechanical checks"
+    status: draft
+    description: |
+      The schema declares three oracles today (`asil-decomposition`,
+      `coverage-threshold`, `method-table-compliance`) but their
+      evaluators are FUTURE stubs — `rivet validate` parses the
+      pipeline declaration and never fires. 10-persona review row A1
+      (Hess, ISO 26262 assessor): "your schema parses pipelines that
+      don't fire." Until they fire, the per-ASIL rigour rivet claims
+      is narrative, not mechanical.
+
+      Acceptance:
+        - `asil-decomposition` oracle: ISO 26262-9 decomposition
+          rules implemented and exercised. Fixture: an ASIL-D parent
+          decomposed into two children must satisfy the allowed
+          pairs (ASIL-B + ASIL-B, ASIL-A + ASIL-C, …). Non-conforming
+          pair -> ERROR; conforming pair -> silent.
+        - `coverage-threshold` oracle: per-rule coverage % computed
+          against a declared minimum; below-threshold -> ERROR
+          naming (rule, observed, required).
+        - `method-table-compliance` oracle: ISO 26262 Part 6
+          Tables 9 / 10 / 11 encoded; missing required method at the
+          declared ASIL -> ERROR.
+        - Each oracle has at least one passing fixture and one
+          failing fixture in `rivet-core/tests/`.
+        - `rivet docs schema/...` no longer renders these as FUTURE.
+    tags: [oracle, iso-26262, qualification, falsification, persona-review]
+    fields:
+      priority: must
+      category: functional
+      baseline: v0.14.0-track
+    links:
+      - type: derives-from
+        target: REQ-004
+
+  - id: REQ-094
+    type: requirement
+    title: "Reproducible-build oracle + sigstore-signed release verification — `rivet release-verify`"
+    status: draft
+    description: |
+      A tool whose output IS compliance evidence needs verifiable
+      releases. v0.10.x added sigstore-keyless signing of
+      `SHA256SUMS` via cosign — the production side is done. The
+      missing leg is the consumer side: `rivet release-verify <tag>`
+      rebuilds the release artifacts from a fresh checkout, hashes
+      the output, verifies the sigstore bundle against the GitHub
+      OIDC identity, and refuses if any step disagrees. 10-persona
+      row A4 — two of three rivet reviewers (Hess, Whittaker) flagged
+      release-channel integrity as the blocking gap.
+
+      Acceptance:
+        - `rivet release-verify v0.13.0` rebuilds, hashes, fetches
+          the sigstore bundle, runs `cosign verify-blob` with the
+          documented identity regex, and exits 0 iff every hash
+          matches and the signature verifies against the workflow's
+          OIDC identity.
+        - Tampered `SHA256SUMS`, missing signature, wrong identity,
+          or non-reproducible build each fail loudly with the named
+          mismatch.
+        - A CI job runs `release-verify` on the most-recent tag
+          periodically and gates merge to `main` if it fails.
+        - Documented via `rivet docs release-verify`.
+    tags: [release, sigstore, supply-chain, qualification, persona-review]
+    fields:
+      priority: must
+      category: non-functional
+      baseline: v0.14.0-track
+    links:
+      - type: derives-from
+        target: REQ-068
+
+  - id: REQ-095
+    type: requirement
+    title: "`cargo build` invokes `rivet validate` for crates declaring `rivet.yaml` — born-compliant at the compile step"
+    status: draft
+    description: |
+      Today `rivet validate` fires on commit (pre-commit hook + CI).
+      The MBSE-mandatory principle says the model drives the build,
+      not sits alongside it. Bringing validation INTO the build
+      closes the window between "edited an artifact" and "noticed
+      the artifact is broken": today that window is one commit;
+      tomorrow it is one `cargo build`. 10-persona row B1; Carrasco
+      named it as the biggest MBSE-philosophy win and the realisation
+      of the "born-compliant" framing.
+
+      Acceptance:
+        - A `build.rs` in `rivet-cli` (or a `cargo` subcommand
+          wrapper) detects `rivet.yaml` and runs `rivet validate`.
+        - Non-zero validate -> the build fails.
+        - Opt-out env var (`RIVET_SKIP_VALIDATE_ON_BUILD=1`) for
+          bootstrap / circular cases; default ON.
+        - Build-time validation result is cached by content hash so
+          incremental builds stay fast.
+        - Integration test: a project with a deliberately broken
+          artifact YAML fails `cargo build` with the validate
+          diagnostic; fixing the artifact unblocks the build.
+    tags: [mbse, build, cargo, validate, persona-review]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.14.0-track
+    links:
+      - type: derives-from
+        target: REQ-004
+
+  - id: REQ-096
+    type: requirement
+    title: "SACM 2.x typed safety-case schema with deductive-sufficiency mechanisation"
+    status: draft
+    description: |
+      Rivet ships a safety-case schema today but stops at *structural*
+      traceability — every workproduct has a chain of links — without
+      enforcing the *deductive sufficiency* obligations a safety case
+      claims. 10-persona row A2 (Dubois, safety researcher):
+      "compliance trace ≠ safety case." Promoting the schema to OMG
+      SACM 2.x's claim / argument / evidence shape + a mandatory
+      `supported_by` cardinality lets `rivet validate` enforce "every
+      hazard mitigated, every AoU discharged, every derived
+      requirement traced to its analysis origin."
+
+      Acceptance:
+        - `schemas/sacm.yaml` declares `claim`, `argument`,
+          `evidence` artifact types with the SACM 2.x link
+          vocabulary (`supported_by`, `in_context_of`,
+          `decomposed_into`, …).
+        - Traceability rule: every ASIL-B+ workproduct is reachable
+          from a `root_claim`-typed claim via `supported_by`.
+        - Traceability rule: every `hazard` has a `mitigated_by`
+          path to at least one `safety_requirement`.
+        - Traceability rule: every `assumption_of_use` has a
+          matching `discharged_by` link in the consumer's project
+          (cross-repo via the REQ-085 mechanism).
+        - Worked example under `examples/safety-case/` carrying a
+          minimal but non-trivial SACM tree.
+    tags: [sacm, safety-case, assurance, schema, persona-review]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.15.0-track
+    links:
+      - type: derives-from
+        target: REQ-002
+
+  - id: REQ-097
+    type: requirement
+    title: "DO-330 tool-qualification artifacts (TQP / TOR / TVCP / TCI / TAS) as a typed schema, dogfooded by rivet itself"
+    status: draft
+    description: |
+      10-persona row A6 (Whittaker, DO-178C/DO-330 reviewer): "rivet's
+      TCL-2 narrative is honest, but there is no DO-330 *shape* —
+      TQP / TOR / TVCP / TCI / TAS are absent." A TCL-2 *tool* has
+      those artifacts in typed form; a TCL-2 *narrative* does not.
+      Filing them in `schemas/do-178c.yaml` and dogfooding the tool's
+      own qualification dossier under that schema turns the TQL claim
+      from "asserted" to "a falsifiable graph state."
+
+      Acceptance:
+        - `schemas/do-178c.yaml` declares the five artifact types:
+          `tool_qualification_plan` (TQP),
+          `tool_operational_requirements` (TOR),
+          `tool_verification_cases_and_procedures` (TVCP),
+          `tool_configuration_index` (TCI),
+          `tool_accomplishment_summary` (TAS).
+        - Required link cardinalities encoded:
+          TQP -> TOR(+), TOR -> TVCP(+), TVCP -> TCI(1),
+          TAS -> TQP(1).
+        - `artifacts/qualification/` carries rivet's *own* TQP /
+          TOR / TVCP / TCI / TAS — dogfood demonstrates that the
+          tool's qualification artifacts validate cleanly under the
+          tool itself.
+        - `rivet docs do-178c` topic added with the layering
+          explanation.
+    tags: [do-178c, qualification, schema, dogfood, persona-review]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.14.0-track
+    links:
+      - type: derives-from
+        target: REQ-004
+
+  - id: REQ-098
+    type: requirement
+    title: "Independence-of-verification-layers oracle — refuse `product-of-miss-rates` claims when layers share too much code"
+    status: draft
+    description: |
+      The single most-repeated complaint of the 10-persona panel
+      (row A3, Hess + Whittaker): Kani, Verus, Rocq, proptest, and
+      `rivet validate` all share the `Artifact` model and the YAML
+      parser. The "product of miss rates" argument that justifies
+      claiming "TCL-2 because we have N independent verification
+      layers" collapses if the shared parser has a bug — common-mode
+      failure. The oracle: rivet declares each verification layer's
+      Rust dep graph, walks the intersection, and refuses to claim
+      "independent layer" when shared-code count exceeds a
+      configurable threshold.
+
+      Acceptance:
+        - `rivet validate --check-independence` reads a manifest of
+          declared verification layers (Kani / Verus / Rocq /
+          proptest / direct validate / salsa validate) and their
+          entry-point crates.
+        - Computes the transitive-dep intersection of any two
+          declared-as-independent layers.
+        - Emits ERROR if intersection exceeds the configured
+          threshold (default: 0 shared *parsing* code; small-N
+          shared *types* allowed and documented).
+        - The TCL dossier's independence claim links to the oracle's
+          last passing run as evidence.
+    tags: [independence, verification, qualification, oracle, persona-review]
+    fields:
+      priority: should
+      category: non-functional
+      baseline: v0.14.0-track
+    links:
+      - type: derives-from
+        target: REQ-051
+
+  - id: REQ-099
+    type: requirement
+    title: "`rivet_apply` MCP tool — idempotency keys + atomic transactions + auto-reload + post-state diagnostics"
+    status: draft
+    description: |
+      10-persona row A5 / C6 (Krishnamurthy, AI engineer): "MCP catalog
+      is small + typed + orthogonal — good. Mutation→reload is manual,
+      no batch, no idempotency = retry pain at scale." An agent fleet
+      replaying a failed batch today produces duplicates; an agent
+      without a reload tool sees stale state. `rivet_apply` is a
+      single mutator tool that takes a JSON-patch + idempotency key,
+      applies atomically, runs `rivet validate` on the post-state, and
+      returns both the diff and the diagnostics — so agents don't have
+      to coordinate three calls per mutation.
+
+      Acceptance:
+        - `rivet_apply(patch, idempotency_key)` MCP tool: replay with
+          the same key is a verified no-op (returns the same response
+          shape as the first call).
+        - Atomic: failure rolls the artifact back; the YAML file is
+          either fully-changed or untouched.
+        - Auto-reload: the MCP server's cached state is invalidated
+          on apply.
+        - Response includes the post-apply `rivet validate`
+          diagnostics — agents see the consequence of the change
+          without a follow-up call.
+        - `rivet validate` gains an audit-log check that detects
+          idempotency-key violations across past applies (REQ-082
+          F2 ethos extended to mutation).
+    tags: [mcp, agent, idempotency, mutation, persona-review]
+    fields:
+      priority: must
+      category: functional
+      baseline: v0.14.0-track
+    links:
+      - type: derives-from
+        target: FEAT-010
