@@ -118,8 +118,11 @@ artifact-types:
     link-fields:
       - name: satisfies
         link-type: satisfies
-        target-types: [stkh-req, feat-req]
+        target-types: [stkh-req, feat-req, guidance]
         cardinality: zero-or-many
+        description: >
+          Tool requirement satisfies an upstream requirement or a
+          guidance (gd_req — process-side requirement) entry.
       - name: complies
         link-type: complies
         cardinality: zero-or-many
@@ -200,8 +203,13 @@ artifact-types:
       - name: satisfies
         link-type: satisfies
         target-types: [stkh-req]
-        required: true
-        cardinality: one-or-many
+        cardinality: zero-or-many
+        description: >
+          Should ultimately satisfy a stakeholder requirement. Not
+          mechanically required at the link-field level so partial
+          eclipse imports validate; the traceability-rule
+          `feat-req-derives-from-stkh` still flags missing chains
+          (warning, not error).
       - name: covers
         link-type: covers
         target-types: [aou-req]
@@ -241,8 +249,10 @@ artifact-types:
       - name: satisfies
         link-type: satisfies
         target-types: [feat-req]
-        required: true
-        cardinality: one-or-many
+        cardinality: zero-or-many
+        description: >
+          Should ultimately satisfy a feature requirement. Not
+          mechanically required so partial eclipse imports validate.
       - name: belongs-to
         link-type: belongs-to
         target-types: [comp]
@@ -347,11 +357,14 @@ artifact-types:
       - name: realizes
         link-type: realizes
         target-types: [feat]
-        required: true
-        cardinality: one-or-many
+        cardinality: zero-or-many
+        description: >
+          Should realize at least one feature. Not mechanically required
+          so partial eclipse imports validate; the traceability-rule
+          `comp-realizes-feat` still flags the gap as a warning.
       - name: uses
         link-type: uses
-        target-types: [comp]
+        target-types: [comp, logic-arc-int, real-arc-int, tsf]
         cardinality: zero-or-many
       - name: implements
         link-type: implements
@@ -385,11 +398,10 @@ artifact-types:
       - name: belongs-to
         link-type: belongs-to
         target-types: [comp]
-        required: true
-        cardinality: one-or-many
+        cardinality: zero-or-many
       - name: uses
         link-type: uses
-        target-types: [mod]
+        target-types: [mod, comp, logic-arc-int, real-arc-int]
         cardinality: zero-or-many
 
   - name: dd-sta
@@ -498,8 +510,13 @@ artifact-types:
         allowed-values: [QM, ASIL_A, ASIL_B, ASIL_C, ASIL_D]
       - name: failure-mode
         type: text
-        required: true
-        description: Description of the potential failure mode
+        required: false
+        description: >
+          Description of the potential failure mode. Eclipse RST encodes
+          this via `:failure_id:` + `:failure_effect:` rather than a
+          single field — the converter composes them where present;
+          not mechanically required so partial / template-driven FMEAs
+          still validate.
       - name: effect
         type: text
         required: false
@@ -536,7 +553,17 @@ artifact-types:
         description: Failure mode is mitigated by a requirement, design, or unit (eclipse `:mitigated_by:`)
       - name: violates
         link-type: violates
-        target-types: [comp-req, feat-req]
+        target-types:
+          - comp-req
+          - feat-req
+          - feat
+          - comp
+          - feat-arc-sta
+          - feat-arc-dyn
+          - comp-arc-sta
+          - comp-arc-dyn
+          - logic-arc-int
+          - real-arc-int
         cardinality: zero-or-many
 
   - name: dfa-entry
@@ -559,8 +586,11 @@ artifact-types:
         description: Type of dependent failure
       - name: analysis
         type: text
-        required: true
-        description: Description of the dependent failure analysis
+        required: false
+        description: >
+          Description of the dependent failure analysis. Optional so
+          that eclipse-imported DFAs (which carry the narrative in the
+          body, not a dedicated field) validate cleanly.
       - name: coupling-factor
         type: text
         required: false
@@ -786,8 +816,8 @@ artifact-types:
         allowed-values: [draft, valid, invalid, in_progress, obsolete]
       - name: rationale
         type: text
-        required: true
-        description: Why this decision was made
+        required: false
+        description: Why this decision was made (eclipse populates via body text in many records)
       - name: alternatives
         type: text
         required: false
@@ -1027,9 +1057,12 @@ artifact-types:
     link-fields:
       - name: complies
         link-type: complies
-        target-types: [std-wp]
+        target-types: [std-wp, std-req]
         cardinality: zero-or-many
-        description: Work product complies with a standard work-product definition
+        description: >
+          Work product complies with a standard work-product definition
+          and/or directly with a clause of a standards requirement
+          (eclipse ASPICE work products often reference both).
 
   # ── Standards register ─────────────────────────────────────────────────
 
@@ -1126,12 +1159,28 @@ link-types:
   - name: uses
     inverse: used-by
     description: Source uses or depends on the target at runtime or build time
+    target-types: [comp, mod, logic-arc-int, real-arc-int, feat, tsf, guidance]
 
   - name: violates
     inverse: violated-by
-    description: Source violates the target (failure mode contradicts a requirement)
-    source-types: [fmea-entry]
-    target-types: [comp-req, feat-req]
+    description: >
+      Source violates the target (failure mode contradicts a requirement
+      or violates an architecture element). Eclipse safety analyses
+      (`feat_saf_fmea`, `comp_saf_fmea`, `*_saf_dfa`) `:violates:` the
+      architecture element whose property the failure breaks — usually
+      a dynamic arch view — so target-types must cover the arch layer.
+    source-types: [fmea-entry, dfa-entry]
+    target-types:
+      - comp-req
+      - feat-req
+      - feat
+      - comp
+      - feat-arc-sta
+      - feat-arc-dyn
+      - comp-arc-sta
+      - comp-arc-dyn
+      - logic-arc-int
+      - real-arc-int
 
   - name: fully-verifies
     inverse: fully-verified-by
@@ -1243,11 +1292,11 @@ traceability-rules:
     severity: warning
 
   - name: feat-req-derives-from-stkh
-    description: Every feature requirement must satisfy at least one stakeholder requirement
+    description: Every feature requirement should satisfy at least one stakeholder requirement
     source-type: feat-req
     required-link: satisfies
     target-types: [stkh-req]
-    severity: error
+    severity: warning
 
   - name: feat-req-has-comp-req
     description: Every feature requirement must be satisfied by at least one component requirement
@@ -1257,11 +1306,11 @@ traceability-rules:
     severity: warning
 
   - name: comp-req-derives-from-feat
-    description: Every component requirement must satisfy at least one feature requirement
+    description: Every component requirement should satisfy at least one feature requirement
     source-type: comp-req
     required-link: satisfies
     target-types: [feat-req]
-    severity: error
+    severity: warning
 
   # ── Design implementation ──────────────────────────────────────────────
 
@@ -1282,11 +1331,11 @@ traceability-rules:
     severity: warning
 
   - name: comp-realizes-feat
-    description: Every component must realize at least one feature
+    description: Every component should realize at least one feature
     source-type: comp
     required-link: realizes
     target-types: [feat]
-    severity: error
+    severity: warning
 
   # ── Verification coverage ──────────────────────────────────────────────
 
@@ -1316,11 +1365,11 @@ traceability-rules:
   # ── Module containment ─────────────────────────────────────────────────
 
   - name: mod-belongs-to-comp
-    description: Every module must belong to at least one component
+    description: Every module should belong to at least one component
     source-type: mod
     required-link: belongs-to
     target-types: [comp]
-    severity: error
+    severity: warning
 
   # ── Safety analysis ────────────────────────────────────────────────────
 
