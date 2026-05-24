@@ -119,5 +119,5 @@ pulldown-cmark = { version = "0.12", default-features = false, features = ["html
 criterion = { version = "0.5", features = ["html_reports"] }
 
 # AADL (spar) — parser, HIR, analysis
-spar-hir = { git = "https://github.com/pulseengine/spar.git", rev = "84a7363" }
-spar-analysis = { git = "https://github.com/pulseengine/spar.git", rev = "84a7363" }
+spar-hir = { git = "https://github.com/pulseengine/spar.git", tag = "v0.10.0" }
+spar-analysis = { git = "https://github.com/pulseengine/spar.git", tag = "v0.10.0" }
