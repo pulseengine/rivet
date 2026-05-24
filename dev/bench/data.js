@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1779602541665,
+  "lastUpdate": 1779602947349,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "225ec492c2029cb98394260225872d1e01070289",
-          "message": "feat(variant): fields-per-variant on Artifact + resolver (#255) (#285)\n\nMVP for the variant-aware properties track (docs/design/variant-aware-properties.md):\n\n- `Artifact::fields_per_variant: BTreeMap<variant_name, BTreeMap<field, value>>`\n  serialized as `fields-per-variant:` (kebab-case) at the artifact level.\n- `Artifact::fields_for_variant(Option<&str>) -> Cow<'_, BTreeMap<...>>`\n  resolves the effective fields map for a variant. Zero-alloc `Borrowed`\n  fallback when no overlay applies (None, unknown variant, empty overlay).\n  Allocates only when a known variant has overrides.\n- `#[derive(Default)]` on `Artifact` so tests can use the struct-update\n  pattern instead of carrying every new field forward at each call site.\n\nWired through:\n- yaml_hir schema-driven parser recognizes `fields-per-variant` and unpacks\n  the nested mapping into the typed field (does NOT fall through to the\n  generic `fields` smuggler).\n- generic-yaml adapter round-trips through a typed `fields_per_variant`\n  on `GenericArtifact`.\n- Resolution semantics per design doc §5.2: overlay merge — variant keys\n  override default keys; default keys not mentioned in the variant carry\n  through. Unknown variants silently inherit default fields (graceful\n  degradation when variant configs aren't loaded).\n\nTests cover:\n- Resolver: None / unknown / known / overlay-only-some-keys / new-keys.\n- Parser: nested mapping extraction populates the typed field, not the\n  generic `fields` map; both variants present after parse.\n\nImplements: REQ-010, REQ-028, REQ-029\nRefs: FEAT-001\n\nCo-authored-by: Claude Opus 4.7 <noreply@anthropic.com>",
-          "timestamp": "2026-05-16T03:31:04-05:00",
-          "tree_id": "77f3668a43b316c63121859d0d4e6fb3bd60648a",
-          "url": "https://github.com/pulseengine/rivet/commit/225ec492c2029cb98394260225872d1e01070289"
-        },
-        "date": 1778920690082,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 65004,
-            "range": "± 199",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 684104,
-            "range": "± 2728",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 10199749,
-            "range": "± 414992",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1499,
-            "range": "± 4",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 18550,
-            "range": "± 72",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 274939,
-            "range": "± 1244",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 75,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 75,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 75,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 962954,
-            "range": "± 3245",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 115599,
-            "range": "± 583",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1359391,
-            "range": "± 20069",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 19057723,
-            "range": "± 267738",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 99819,
-            "range": "± 1257",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 920395,
-            "range": "± 2183",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 10971696,
-            "range": "± 212289",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 3237,
-            "range": "± 78",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 33927,
-            "range": "± 257",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 568565,
-            "range": "± 4103",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 49865,
-            "range": "± 331",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 524179,
-            "range": "± 2614",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 6012076,
-            "range": "± 33050",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 556,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 5031,
-            "range": "± 12",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 68545,
-            "range": "± 185",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 17477,
-            "range": "± 157",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 124660,
-            "range": "± 683",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1166651,
-            "range": "± 16300",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1482780,
             "range": "± 30240",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6d72f037c0f4d7e82217cea36140e8705e137d6e",
+          "message": "feat(export): extract CSS/JS to shared _assets/ + thread --filter (REQ-087, REQ-088) (#319)\n\nREQ-088 — HTML exporter no longer embeds the full CSS/JS framework\ninto every page. Previously `<style>{fonts_css}{css}</style>\n<script>{mermaid_js}</script>` per page with MERMAID_JS =\ninclude_str!(\"../assets/mermaid.min.js\") (~3MB), so 5000-artifact\nprojects produced ~13 GB of mostly-identical bytes. Now writes one\nshared <out>/_assets/styles.css + _assets/mermaid.min.js and each page\nemits <link rel=\"stylesheet\" href=\"...\"> + <script src=\"...\">.\nVerified: 871-page rivet export = 9.7 MB total, ~7-10 KB per page.\n\nThe wrap_page closure takes the page's rel_path and computes a\ndepth-adjusted prefix (\"\", \"../\", \"../../\") so root / depth-1 /\ndepth-2 pages all resolve assets and nav hrefs correctly — also\nclears latent nav-relativity bugs in the previous fixed \"../path\"\nstrings.\n\nREQ-087 — cmd_export accepted --filter for HTML but never threaded\nit into cmd_export_html. F2-class silent failure. Now threaded and\napplied at the per-artifact loop using the existing\nsexpr_eval::matches_filter_with_store.\n\nAdds rivet-cli/tests/export_html.rs with two integration tests\nasserting _assets/ exists, pages reference it, no inline mermaid\nsignature, per-page < 100KB; and that --filter strictly narrows\nfrom the unfiltered baseline.\n\nImplements: REQ-087, REQ-088\nVerifies: REQ-087, REQ-088",
+          "timestamp": "2026-05-24T00:55:44-05:00",
+          "tree_id": "d4faeded5d3edf74ab3279f3f74e8cc31493a087",
+          "url": "https://github.com/pulseengine/rivet/commit/6d72f037c0f4d7e82217cea36140e8705e137d6e"
+        },
+        "date": 1779602946135,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 86331,
+            "range": "± 1457",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 908573,
+            "range": "± 6239",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 16601180,
+            "range": "± 1433602",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2181,
+            "range": "± 13",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25688,
+            "range": "± 99",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 375876,
+            "range": "± 2450",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 95,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 95,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1441302,
+            "range": "± 53939",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 167087,
+            "range": "± 1957",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1983259,
+            "range": "± 14103",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 31434189,
+            "range": "± 1705384",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 131846,
+            "range": "± 2267",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1170559,
+            "range": "± 20768",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 18173622,
+            "range": "± 1432049",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4374,
+            "range": "± 101",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 65285,
+            "range": "± 600",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 756137,
+            "range": "± 8250",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 62282,
+            "range": "± 398",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 709779,
+            "range": "± 3098",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 9578731,
+            "range": "± 724993",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 779,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7124,
+            "range": "± 114",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 115094,
+            "range": "± 1200",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 23843,
+            "range": "± 209",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 168673,
+            "range": "± 749",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1604057,
+            "range": "± 21116",
             "unit": "ns/iter"
           }
         ]
