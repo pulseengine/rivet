@@ -44,12 +44,13 @@ use instead of navigation-shell HTML.
   `parse_generic_yaml`) was falsified by probe — those return the
   expected 1 artifact + 1 link. Contributing factor:
   `extract_links_via_serde` silently `Vec::new()`s on
-  `serde_yaml::from_str` parse error. Fix tracked for v0.13.1;
-  `rivet validate --direct` (legacy non-incremental) is the reliable
-  path in the meantime.
-- **REQ-092** — `rivet source-link` design: per-source-line
-  traceability (Eclipse S-CORE `score_source_code_linker` equivalent)
-  for projects converging S-CORE → rivet. v0.14.0-track.
+  `serde_yaml::from_str` parse error. Fix tracked for the next patch
+  release; `rivet validate --direct` (legacy non-incremental) is the
+  reliable path in the meantime.
+- **REQ-092** — design for a future per-source-line traceability
+  subcommand (Eclipse S-CORE `score_source_code_linker` equivalent)
+  to ease S-CORE → rivet migration. Tracked for a later minor
+  release.
 
 ### Maintenance
 
