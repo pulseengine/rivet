@@ -149,18 +149,16 @@ artifacts:
     let f = extract_schema_driven(flush, &schema, None);
     let i = extract_schema_driven(indent, &schema, None);
 
-    assert_eq!(f.artifacts.len(), i.artifacts.len(), "artifact count mismatch");
+    assert_eq!(
+        f.artifacts.len(),
+        i.artifacts.len(),
+        "artifact count mismatch"
+    );
     assert_eq!(
         f.artifacts[0].artifact.links.len(),
         i.artifacts[0].artifact.links.len(),
         "link count mismatch (REQ-091)"
     );
-    assert_eq!(
-        f.artifacts[0].artifact.id,
-        i.artifacts[0].artifact.id
-    );
-    assert_eq!(
-        f.artifacts[0].artifact.title,
-        i.artifacts[0].artifact.title
-    );
+    assert_eq!(f.artifacts[0].artifact.id, i.artifacts[0].artifact.id);
+    assert_eq!(f.artifacts[0].artifact.title, i.artifacts[0].artifact.title);
 }
