@@ -870,16 +870,37 @@ enum Command {
 
     /// Import test results or artifacts from external formats
     ImportResults {
-        /// Input format: "junit" (JUnit XML) or "needs-json" (sphinx-needs)
+        /// Input format: "junit" (JUnit XML), "needs-json" (sphinx-needs JSON
+        /// export), or "sphinx-needs" (Eclipse S-CORE RST tree or needs.json
+        /// — uses TYPE_MAP / LINK_MAP from `rivet_core::formats::sphinx_needs`).
         #[arg(long)]
         format: String,
 
-        /// Input file path
-        file: PathBuf,
+        /// Input file path (for "junit" / "needs-json", or single needs.json
+        /// for "sphinx-needs"). Mutually exclusive with --input-dir.
+        file: Option<PathBuf>,
 
-        /// Output directory for YAML files (default: results/)
+        /// Output directory for YAML files (junit / needs-json formats).
+        /// Default: `results/`.
         #[arg(long, default_value = "results")]
         output: PathBuf,
+
+        /// Scan this RST tree (sphinx-needs format only). Recursive walk
+        /// over `.rst` files; replaces the per-file `file` argument.
+        #[arg(long)]
+        input_dir: Option<PathBuf>,
+
+        /// sphinx-needs format only: write a single combined YAML file to
+        /// this path (instead of the `output/` directory layout used by
+        /// JUnit). The parent directory is created if missing.
+        #[arg(long = "out")]
+        out: Option<PathBuf>,
+
+        /// sphinx-needs format only: emit a markdown coverage report
+        /// listing files scanned, needs converted, unknown types / options,
+        /// and per-type counts.
+        #[arg(long)]
+        report: Option<PathBuf>,
     },
 
     /// Print the next available ID for a given artifact type or prefix
@@ -2236,7 +2257,18 @@ fn run(cli: Cli) -> Result<bool> {
             format,
             file,
             output,
-        } => cmd_import_results(&cli, format, file, output),
+            input_dir,
+            out,
+            report,
+        } => cmd_import_results(
+            &cli,
+            format,
+            file.as_deref(),
+            output,
+            input_dir.as_deref(),
+            out.as_deref(),
+            report.as_deref(),
+        ),
         Command::NextId {
             r#type,
             prefix,
@@ -12961,14 +12993,32 @@ fn cmd_import(
 fn cmd_import_results(
     cli: &Cli,
     format: &str,
-    file: &std::path::Path,
+    file: Option<&std::path::Path>,
     output: &std::path::Path,
+    input_dir: Option<&std::path::Path>,
+    out: Option<&std::path::Path>,
+    report: Option<&std::path::Path>,
 ) -> Result<bool> {
     match format {
-        "junit" => cmd_import_results_junit(cli, file, output),
-        "needs-json" => cmd_import_results_needs_json(file, output),
+        "junit" => {
+            let f = file.ok_or_else(|| {
+                anyhow::anyhow!("--format junit requires a positional input file path")
+            })?;
+            cmd_import_results_junit(cli, f, output)
+        }
+        "needs-json" => {
+            let f = file.ok_or_else(|| {
+                anyhow::anyhow!("--format needs-json requires a positional input file path")
+            })?;
+            cmd_import_results_needs_json(f, output)
+        }
+        "sphinx-needs" => {
+            cmd_import_results_sphinx_needs(file, input_dir, out, report)
+        }
         other => {
-            anyhow::bail!("unknown import format: '{other}' (supported: junit, needs-json)")
+            anyhow::bail!(
+                "unknown import format: '{other}' (supported: junit, needs-json, sphinx-needs)"
+            )
         }
     }
 }
@@ -13115,6 +13165,128 @@ fn cmd_import_results_needs_json(file: &std::path::Path, output: &std::path::Pat
             "Run 'rivet validate' after adding to your project to check against existing artifacts."
         );
     }
+
+    Ok(true)
+}
+
+/// Import Eclipse S-CORE sphinx-needs RST (or `needs.json`) into rivet
+/// generic-yaml.
+///
+/// This is the Rust port of the `eclipse-score-fork/tools/score_import.py`
+/// converter — same TYPE_MAP / LINK_MAP / STATUS_MAP / FIELD_MAP, same
+/// parser fixes that the eclipse-corpus oracle drove the Python converter
+/// through to reach `Result: PASS (2289 warnings, 0 errors)` over 2752
+/// artifacts.  See `rivet-core/src/formats/sphinx_needs.rs` for the
+/// mappings and the falsification-journey README in the fork workspace.
+fn cmd_import_results_sphinx_needs(
+    file: Option<&std::path::Path>,
+    input_dir: Option<&std::path::Path>,
+    out: Option<&std::path::Path>,
+    report: Option<&std::path::Path>,
+) -> Result<bool> {
+    use rivet_core::formats::sphinx_needs::{
+        CoverageStats, convert_directory, convert_needs_json, render_report,
+    };
+
+    let mut stats = CoverageStats::default();
+    let (artifacts, label): (Vec<rivet_core::model::Artifact>, String) = match (file, input_dir) {
+        (None, Some(dir)) => {
+            let arts = convert_directory(dir, &mut stats).with_context(|| {
+                format!("scanning RST tree {}", dir.display())
+            })?;
+            (arts, dir.display().to_string())
+        }
+        (Some(f), None) => {
+            // `--input` mode: single file. Treat `.json` as a sphinx-needs
+            // export and anything else as an RST file.
+            let content = std::fs::read_to_string(f)
+                .with_context(|| format!("failed to read {}", f.display()))?;
+            let arts = if f.extension().is_some_and(|e| e == "json") {
+                convert_needs_json(&content, &mut stats)
+                    .with_context(|| format!("parsing {}", f.display()))?
+            } else {
+                // Single-file RST path.
+                let needs = rivet_core::formats::sphinx_needs::parse_rst(&content, Some(f));
+                stats.files_scanned += 1;
+                let mut arts: Vec<rivet_core::model::Artifact> = Vec::new();
+                let mut seen: std::collections::HashSet<String> =
+                    std::collections::HashSet::new();
+                for n in &needs {
+                    if let Some(a) =
+                        rivet_core::formats::sphinx_needs::convert_need(n, &mut stats)
+                    {
+                        if seen.insert(a.id.clone()) {
+                            arts.push(a);
+                        }
+                    }
+                }
+                arts
+            };
+            (arts, f.display().to_string())
+        }
+        (None, None) => {
+            anyhow::bail!(
+                "--format sphinx-needs requires either a positional input file or --input-dir"
+            );
+        }
+        (Some(_), Some(_)) => {
+            anyhow::bail!(
+                "--format sphinx-needs: pass either a positional input file OR --input-dir, not both"
+            );
+        }
+    };
+
+    // Where does the YAML land?
+    //
+    // The Python tool only knew the explicit `<out>` shape, which is what
+    // the falsification-oracle script invokes.  Keep that as the primary
+    // surface (--out <yaml>); if absent, default to
+    // `output/sphinx-needs-import.yaml` for parity with the other formats.
+    let yaml_path = match out {
+        Some(p) => p.to_path_buf(),
+        None => std::path::PathBuf::from("results/sphinx-needs-import.yaml"),
+    };
+    if let Some(parent) = yaml_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("creating {}", parent.display()))?;
+        }
+    }
+
+    // Export via the same GenericYamlAdapter the needs-json path uses, so
+    // downstream `rivet validate` sees the canonical `artifacts:` layout.
+    let adapter = rivet_core::formats::generic::GenericYamlAdapter::new();
+    let yaml = rivet_core::adapter::Adapter::export(
+        &adapter,
+        &artifacts,
+        &rivet_core::adapter::AdapterConfig::default(),
+    )
+    .context("serializing artifacts to generic YAML")?;
+    std::fs::write(&yaml_path, &yaml)
+        .with_context(|| format!("writing {}", yaml_path.display()))?;
+
+    if let Some(report_path) = report {
+        if let Some(parent) = report_path.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent)
+                    .with_context(|| format!("creating {}", parent.display()))?;
+            }
+        }
+        let rendered = render_report(&label, &stats, artifacts.len());
+        std::fs::write(report_path, rendered)
+            .with_context(|| format!("writing {}", report_path.display()))?;
+    }
+
+    let unknown_types: usize = stats.skipped_unknown_type.len();
+    let unknown_options: usize = stats.unknown_options.len();
+    println!(
+        "scanned {} RST files, converted {} needs ({} unknown types, {} unknown options) → {}",
+        stats.files_scanned,
+        stats.converted,
+        unknown_types,
+        unknown_options,
+        yaml_path.display(),
+    );
 
     Ok(true)
 }

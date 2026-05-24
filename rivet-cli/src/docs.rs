@@ -587,7 +587,12 @@ rivet next-id --type TYPE             Next available ID for a type
 ## Import Commands
 
 ```
-rivet import-results --format junit FILE  Import JUnit XML test results
+rivet import-results --format junit FILE          Import JUnit XML test results
+rivet import-results --format needs-json FILE     Import sphinx-needs JSON export
+rivet import-results --format sphinx-needs        Import Eclipse S-CORE RST tree
+        --input-dir <dir> --out <yaml> [--report <md>]
+        # Or a single file:
+        --input <file.rst | needs.json> --out <yaml>
 ```
 
 ## Global Flags
