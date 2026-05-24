@@ -710,14 +710,22 @@ impl<'src> Parser<'src> {
                 }
                 if !self.at_eof() {
                     let child_indent = self.current_indent();
-                    if child_indent > entry_indent {
-                        if self.at(SyntaxKind::Dash) {
-                            self.parse_block_sequence(child_indent);
-                        } else {
-                            self.parse_block_mapping(child_indent);
-                        }
+                    if self.at(SyntaxKind::Dash) && child_indent >= entry_indent {
+                        // YAML "zero-indent" block sequence (flush-left under
+                        // a mapping key): a `- item` line at the same column
+                        // as the parent key is a child sequence of that key.
+                        // Required for documents like
+                        //     artifacts:
+                        //     - id: A
+                        // where `artifacts:` is at indent 0 and the sequence
+                        // items cannot indent further. Without this branch
+                        // the value silently becomes empty and the link graph
+                        // disappears from the salsa validate path (REQ-091).
+                        self.parse_block_sequence(child_indent);
+                    } else if child_indent > entry_indent {
+                        self.parse_block_mapping(child_indent);
                     }
-                    // If child_indent <= entry_indent, empty value
+                    // Else: empty value.
                 }
             }
             // Empty value or EOF

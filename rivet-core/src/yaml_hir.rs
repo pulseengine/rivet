@@ -669,7 +669,7 @@ fn extract_section_item(
                 field_spans.insert("tags".into(), value_span);
             }
             "links" => {
-                links.extend(extract_links(&value_node));
+                links.extend(extract_links(&value_node, &mut result.diagnostics));
                 field_spans.insert("links".into(), value_span);
             }
             "provenance" => {
@@ -885,7 +885,7 @@ fn extract_artifact_from_item(item: &SyntaxNode, result: &mut ParsedYamlFile) {
                 field_spans.insert("tags".into(), value_span);
             }
             "links" => {
-                links = extract_links(&value_node);
+                links = extract_links(&value_node, &mut result.diagnostics);
                 field_spans.insert("links".into(), value_span);
             }
             "provenance" => {
@@ -1011,7 +1011,7 @@ fn extract_artifact_from_item(item: &SyntaxNode, result: &mut ParsedYamlFile) {
 
 // ── Link extraction ────────────────────────────────────────────────────
 
-fn extract_links(value_node: &SyntaxNode) -> Vec<Link> {
+fn extract_links(value_node: &SyntaxNode, diagnostics: &mut Vec<ParseDiagnostic>) -> Vec<Link> {
     let mut links = Vec::new();
 
     // Links is a Sequence of Mappings: each with "type" + "target".
@@ -1022,7 +1022,7 @@ fn extract_links(value_node: &SyntaxNode) -> Vec<Link> {
     // and block styles produce identical links and prevents silent
     // under-counting by the cardinality validator.
     let Some(seq) = child_of_kind(value_node, SyntaxKind::Sequence) else {
-        return extract_links_via_serde(value_node);
+        return extract_links_via_serde(value_node, diagnostics);
     };
 
     for item in seq.children() {
@@ -1108,27 +1108,48 @@ fn extract_links(value_node: &SyntaxNode) -> Vec<Link> {
     links
 }
 
-/// Fallback parser for `links:` values the CST didn't recognise as a block
-/// `Sequence` — most importantly flow-style `[{type: X, target: Y}, ...]`.
-/// Re-parses the value text via serde_yaml and converts `type` + `target`
-/// into `Link`s. Unknown shapes and parse errors silently produce no
-/// links (matching the permissive behaviour of the primary path).
+/// Fallback parser for `links:` values the CST didn't recognise as a
+/// block `Sequence` — most importantly flow-style
+/// `[{type: X, target: Y}, ...]`. Re-parses the value text via
+/// `serde_yaml` and converts `type` + `target` into `Link`s.
+///
+/// Loud-fail on parse error (REQ-091): if `serde_yaml::from_str`
+/// rejects the value text, push a parse diagnostic naming the
+/// underlying error and return an empty link list. The previous
+/// behaviour silently returned `Vec::new()`, which an outer
+/// cardinality validator then read as "links field present but empty"
+/// — an F2-class silent failure that hid malformed `links:` blocks
+/// from CI grading.
 ///
 /// Accepts both the flat-string and the structured `target:` mapping
 /// shapes (issue #288) by delegating directly to `Link`'s
 /// `Deserialize` impl.
-fn extract_links_via_serde(value_node: &SyntaxNode) -> Vec<Link> {
+fn extract_links_via_serde(
+    value_node: &SyntaxNode,
+    diagnostics: &mut Vec<ParseDiagnostic>,
+) -> Vec<Link> {
     let text = value_node.text().to_string();
     let trimmed = text.trim();
     if trimmed.is_empty() {
         return Vec::new();
     }
-    let Ok(raws) = serde_yaml::from_str::<Vec<Link>>(trimmed) else {
-        return Vec::new();
-    };
-    raws.into_iter()
-        .filter(|l| !l.link_type.is_empty() && !l.target.is_empty())
-        .collect()
+    match serde_yaml::from_str::<Vec<Link>>(trimmed) {
+        Ok(raws) => raws
+            .into_iter()
+            .filter(|l| !l.link_type.is_empty() && !l.target.is_empty())
+            .collect(),
+        Err(err) => {
+            diagnostics.push(ParseDiagnostic {
+                span: Span::from_text_range(value_node.text_range()),
+                message: format!(
+                    "failed to parse `links:` value as a sequence of {{type, target}} \
+                     entries: {err}"
+                ),
+                severity: Severity::Error,
+            });
+            Vec::new()
+        }
+    }
 }
 
 /// Strip the minimum common leading-whitespace prefix from every
@@ -1850,6 +1871,41 @@ artifacts:
         let hir = extract_generic_artifacts(source);
         assert!(hir.artifacts.is_empty());
         assert!(hir.diagnostics.is_empty());
+    }
+
+    /// REQ-091 Acceptance #3 — F2 loud-fail: when the `links:` value is
+    /// not a Sequence the parser recognises AND `serde_yaml` cannot
+    /// reparse it as a `Vec<Link>`, emit a parse diagnostic instead of
+    /// silently returning an empty link list. Previously this branch
+    /// returned `Vec::new()` with no signal, which the cardinality
+    /// validator then graded as "links field present but empty."
+    #[test]
+    fn extract_links_via_serde_emits_diagnostic_on_parse_error() {
+        let source = "\
+artifacts:
+  - id: A-1
+    type: req
+    title: Malformed links value
+    links: not a list, just a string
+";
+        let hir = extract_generic_artifacts(source);
+        assert_eq!(
+            hir.artifacts.len(),
+            1,
+            "the artifact itself must still extract"
+        );
+        assert!(
+            hir.artifacts[0].artifact.links.is_empty(),
+            "no parseable links → empty link vec"
+        );
+        assert!(
+            hir.diagnostics
+                .iter()
+                .any(|d| d.message.contains("`links:`")),
+            "expected a loud-fail diagnostic naming the `links:` field; \
+             got: {:?}",
+            hir.diagnostics
+        );
     }
 
     /// 7. Missing id → ParseDiagnostic error.
