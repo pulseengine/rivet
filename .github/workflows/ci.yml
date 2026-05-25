@@ -640,24 +640,18 @@ jobs:
           bazelisk-cache: true
           disk-cache: ${{ github.workflow }}
           repository-cache: true
-      # Same NoNewPrivileges constraint as the verus job above — use the
-      # DeterminateSystems installer which works without sudo.
+      # `ubuntu-latest` is GitHub-hosted (full sudo, no NoNewPrivileges) so
+      # the standard cachix multi-user installer works here — matches the
+      # green `synth` pattern (`pulseengine/synth/.github/workflows/ci.yml`,
+      # `bazel` job). The DeterminateSystems daemonless variant we used
+      # before emitted `unknown setting 'build-provenance-tags'` and then
+      # failed with `Permission denied` on `/nix/var/nix/db/big-lock` —
+      # that constraint was copied from the self-hosted verus job (which
+      # IS NoNewPrivileges) and never applied to this `ubuntu-latest` job.
       - name: Install Nix
-        # Pinned by SHA + `determinate: false`. The action's `determinate`
-        # input default flipped false->true between v17 and v22, so the
-        # former `@main` pin started installing Determinate Nix, whose
-        # `determinate-nixd` daemon ignores `init: none` and fails on
-        # no-sudo / NoNewPrivileges runners (missing daemon socket,
-        # root-owned store lock). `determinate: false` restores the plain
-        # upstream daemonless install this job was written for.
-        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+        uses: cachix/install-nix-action@v30
         with:
-          determinate: false
-          init: none
-          extra-conf: |
-            experimental-features = nix-command flakes
-      - name: Add Nix to PATH
-        run: echo "$HOME/.nix-profile/bin" >> "$GITHUB_PATH"
+          nix_path: nixpkgs=channel:nixos-unstable
       - name: Verify Rocq proofs
         run: bazel test //proofs/rocq:rivet_metamodel_test
 
