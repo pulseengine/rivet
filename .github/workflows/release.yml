@@ -20,6 +20,11 @@ permissions:
   # consumers verify via the issuer + identity (no long-lived keys to
   # rotate). See `Sign release assets with cosign` step below.
   id-token: write
+  # Required for actions/attest-build-provenance@v2: writes the in-toto
+  # SLSA v1 provenance statement to GitHub's attestation store so a
+  # consumer can `gh attestation verify <asset> --repo pulseengine/rivet`.
+  # Mirrors the synth/sigil/spar/witness release pattern.
+  attestations: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -353,15 +358,60 @@ jobs:
 
       - name: Collect assets
         run: |
-          mkdir -p release
-          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.vsix" \) -exec mv {} release/ \;
-          ls -la release/
+          set -euo pipefail
+          mkdir -p release-assets
+          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.vsix" \) -exec mv {} release-assets/ \;
+          ls -la release-assets/
+
+      # ── Toolchain SBOM (CycloneDX) ─────────────────────────────────────
+      # Phase 6 of the synth/spar/sigil/witness shared release pattern.
+      # The SBOM is generated *before* SHA256SUMS so its digest is
+      # captured in the checksum manifest; the cosign signature over
+      # SHA256SUMS.txt therefore transitively covers the SBOM.
+      - name: Install cargo-cyclonedx
+        run: cargo install --locked cargo-cyclonedx
+
+      - name: Generate toolchain SBOM (CycloneDX)
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF#refs/tags/}"
+          BARE="${VERSION#v}"
+          # cargo-cyclonedx doesn't proxy cargo's `-p` package-selection
+          # flag (caught the hard way on synth's first v0.6.0 attempt);
+          # use --manifest-path to target rivet-cli's Cargo.toml directly.
+          # The generated SBOM lands next to that Cargo.toml.
+          cargo cyclonedx \
+            --manifest-path rivet-cli/Cargo.toml \
+            --format json \
+            --spec-version 1.5
+          SBOM_SRC="rivet-cli/rivet-cli.cdx.json"
+          if [ ! -f "$SBOM_SRC" ]; then
+            SBOM_SRC=$(find rivet-cli -maxdepth 2 -name '*.cdx.json' | head -1)
+          fi
+          test -n "$SBOM_SRC" && test -f "$SBOM_SRC"
+          cp "$SBOM_SRC" "release-assets/rivet-${BARE}.cdx.json"
+          echo "::notice::Toolchain SBOM written to release-assets/rivet-${BARE}.cdx.json"
+          ls -la release-assets/
 
       - name: Generate checksums
         run: |
-          cd release
-          sha256sum * > SHA256SUMS.txt
+          set -euo pipefail
+          cd release-assets
+          sha256sum ./* > SHA256SUMS.txt
           cat SHA256SUMS.txt
+
+      # ── SLSA build provenance (GitHub-native) ──────────────────────────
+      # actions/attest-build-provenance generates an in-toto SLSA v1
+      # provenance statement for every binary archive, signs it keyless
+      # via Sigstore (Fulcio cert bound to this workflow's OIDC identity),
+      # and records it in the Rekor transparency log. Consumers verify
+      # with `gh attestation verify <file> --repo pulseengine/rivet`.
+      # GitHub-native attestation (not the standalone SLSA generator)
+      # keeps the workflow self-contained — mirrors synth's pattern.
+      - name: Generate SLSA build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "release-assets/*.tar.gz"
 
       # ── Sigstore keyless signing (Supply-Chain-Pentester finding) ──
       # Closes the gap called out in the v0.10.0 adversarial review:
@@ -371,9 +421,10 @@ jobs:
       # OIDC identity (workflow ref + commit SHA + actor); no long-lived
       # keys to rotate. Verification:
       #   cosign verify-blob \
-      #     --certificate-identity-regexp "https://github.com/pulseengine/rivet/.github/workflows/release.yml@.*" \
-      #     --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-      #     --signature SHA256SUMS.txt.sig \
+      #     --certificate-identity-regexp \
+      #       'https://github.com/pulseengine/rivet/.github/workflows/release.yml@.*' \
+      #     --certificate-oidc-issuer \
+      #       'https://token.actions.githubusercontent.com' \
       #     --bundle SHA256SUMS.txt.cosign.bundle \
       #     SHA256SUMS.txt
       - name: Install cosign
@@ -383,7 +434,8 @@ jobs:
 
       - name: Sign SHA256SUMS with cosign (keyless OIDC)
         run: |
-          cd release
+          set -euo pipefail
+          cd release-assets
           cosign sign-blob \
             --yes \
             --bundle SHA256SUMS.txt.cosign.bundle \
@@ -394,10 +446,28 @@ jobs:
           echo "::notice::Bundle: SHA256SUMS.txt.cosign.bundle (verifier-friendly)."
           echo "::notice::Detached: SHA256SUMS.txt.sig + SHA256SUMS.txt.pem."
 
+      # ── Build-environment record ───────────────────────────────────────
+      # Captures the toolchain versions every release was actually
+      # produced with. Belongs alongside the binaries so a consumer
+      # reproducing a release can pin the same rustc/cargo/cosign — a
+      # cheap reproducibility-aid and a prerequisite for REQ-094
+      # (`rivet release-verify`).
+      - name: Capture build environment
+        run: |
+          set -euo pipefail
+          {
+            echo "rustc: $(rustc --version)"
+            echo "cargo: $(cargo --version)"
+            echo "cosign: $(cosign version 2>&1 | head -1)"
+            echo "runner: $(uname -srm)"
+          } > release-assets/build-env.txt
+          cat release-assets/build-env.txt
+
       - name: Create or update Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           VERSION="${GITHUB_REF#refs/tags/}"
           # Idempotent: if a release already exists for this tag (e.g.
           # the maintainer ran `gh release create` manually after pushing
@@ -407,13 +477,13 @@ jobs:
           # uploaded.
           if gh release view "$VERSION" >/dev/null 2>&1; then
             echo "::notice::Release $VERSION already exists; uploading assets"
-            gh release upload "$VERSION" --clobber release/*
+            gh release upload "$VERSION" --clobber release-assets/*
           else
             echo "::notice::Creating Release $VERSION with assets"
             gh release create "$VERSION" \
               --title "Rivet $VERSION" \
               --generate-notes \
-              release/*
+              release-assets/*
           fi
 
   # ── Publish VS Code Extension to Marketplace ──────────────────────────
