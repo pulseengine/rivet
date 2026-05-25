@@ -156,7 +156,7 @@ fn plan_dev_to_aspice_writes_plan_and_manifest() {
 }
 
 #[test]
-fn apply_rewrites_dev_to_aspice_and_validate_passes() {
+fn apply_rewrites_dev_to_aspice_and_validate_reports_expected_link_gaps() {
     let (_tmp, dir) = make_dev_project();
     // Plan first.
     let plan = run_rivet(&dir, &["schema", "migrate", "aspice"]);
@@ -206,20 +206,47 @@ fn apply_rewrites_dev_to_aspice_and_validate_passes() {
     );
 
     // Migration doesn't update rivet.yaml in Phase 1 — the user is
-    // expected to do that separately. For the test we patch
-    // rivet.yaml to load aspice schemas, then assert `rivet validate`
-    // exits 0 on the migrated tree.
+    // expected to do that separately. Patch rivet.yaml to load aspice
+    // schemas, then check `rivet validate` behaviour.
     let cfg = dir.join("rivet.yaml");
     let cfg_text = std::fs::read_to_string(&cfg).unwrap();
     let patched = cfg_text.replace("- dev", "- aspice");
     std::fs::write(&cfg, patched).unwrap();
 
+    // The dev preset's sample artifacts (REQ-001, FEAT-001) carry no
+    // upstream system-level link, so once they are renamed to
+    // sw-req / sw-arch-component the aspice schema's cardinality
+    // rules (`derives-from`, `allocated-from`) cannot be satisfied
+    // without the user manually attaching links to system-level
+    // artifacts. The migration is intentionally structural-only — it
+    // renames types in place, it does not invent semantic links — so
+    // validate is *expected* to fail with exactly those two cardinality
+    // errors and nothing else. This documents the migration's
+    // contract: post-migration, the user attaches semantic links;
+    // until they do, `rivet validate` names exactly what is missing.
+    //
+    // Pre-REQ-091: the rowan-yaml CST silently dropped flush-left
+    // sequences (which is the format serde_yaml::to_string emits),
+    // so validate read zero artifacts from the migrated files and
+    // exited 0 — the test "passed" by hiding the gap. After REQ-091
+    // the validator sees the artifacts and surfaces the real link
+    // obligations.
     let val = run_rivet(&dir, &["validate"]);
     assert!(
-        val.status.success(),
-        "post-migration validate failed:\nstderr={}\nstdout={}",
-        String::from_utf8_lossy(&val.stderr),
-        String::from_utf8_lossy(&val.stdout)
+        !val.status.success(),
+        "post-migration validate should report missing aspice links \
+         (the migration renames types but cannot invent links)"
+    );
+    let stdout = String::from_utf8_lossy(&val.stdout);
+    assert!(
+        stdout.contains("derives-from"),
+        "expected a 'derives-from' cardinality error for the migrated \
+         sw-req artifact; got stdout:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("allocated-from"),
+        "expected an 'allocated-from' cardinality error for the migrated \
+         sw-arch-component artifact; got stdout:\n{stdout}"
     );
 }
 
