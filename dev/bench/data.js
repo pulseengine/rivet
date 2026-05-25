@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1779683225643,
+  "lastUpdate": 1779686798580,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "fc44838d813df9c5d4f02fb5ae35f1bd6d0eb984",
-          "message": "feat(audit): rivet audit — AI-session/commit traceability gate (#127 P2) (#297)\n\nCloses the loop opened by v0.10.0's ai-session schema (#127 Phase 1).\nNew top-level read-only subcommand `rivet audit` walks the current\nbranch's git history and enforces two gates:\n\n**Gate 1 — AI-authored commit needs a session.**\nFor every commit detected as AI-authored (`Co-Authored-By:` containing\n`noreply@anthropic.com`, OR `Generated-With:`/`Created-By:` trailer\nmatching `^(ai|ai-assisted)`), require an `ai-session` artifact in the\nproject with `fields.commit-sha` matching the commit SHA (prefix\nmatch either direction, ≥7 chars).\n\n**Gate 2 — session must point at a real reachable commit.**\nFor every `ai-session` artifact with `commit-sha` set, verify the\ncommit exists (`git cat-file -e`) AND is reachable from `--until`\n(`git merge-base --is-ancestor`). Catches drift after rebase / force-\npush as well as fabricated sessions pointing at vanished commits.\n\nCLI: `rivet audit [--since <ref>] [--until <ref>] [--format text|json] [--strict]`\n- `--since` defaults to `git merge-base origin/main HEAD`, falling\n  back to `HEAD~50`.\n- `--strict` exits non-zero on violations (CI mode).\n- JSON envelope per spec: `command`, `passed`, `since`, `until`,\n  `ai_commits_scanned`, `ai_sessions_in_project`,\n  `violations.{ai_commits_without_session,sessions_with_missing_commit}`,\n  `summary.total_violations`.\n\nRead-only. Shells out to `git` (no new deps). Composes with\n`rivet check ai-defects-open` (PR #295) — together they cover the\ntwo operational TD1 loops the dossier §3 layer 5 names.\n\nTests (4 integration tests, all green):\n- audit_passes_when_ai_commits_have_matching_sessions\n- audit_fails_when_ai_commit_has_no_session\n- audit_fails_when_session_points_at_missing_commit\n- audit_json_envelope_shape_on_failure\n\nDocs: new `audit` topic in `rivet-cli/src/docs.rs` (~105 lines).\n\nOUT OF SCOPE (deferred):\n- Auto-stamping sessions from `~/.claude/projects/*.jsonl` (Phase 2.5).\n- session-hash verification (Phase 2.5).\n- pre-commit / commit-msg hook installation (Phase 3).\n- DPIA-link enforcement on `invoker`-bearing sessions.\n\nImplements: REQ-002, REQ-007\nRefs: FEAT-001, #127\n\nCo-authored-by: Claude Opus 4.7 <noreply@anthropic.com>",
-          "timestamp": "2026-05-18T00:31:46-05:00",
-          "tree_id": "4e95c7ca5ad22d0ff761569aa5b27ed429c42365",
-          "url": "https://github.com/pulseengine/rivet/commit/fc44838d813df9c5d4f02fb5ae35f1bd6d0eb984"
-        },
-        "date": 1779082697783,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 82833,
-            "range": "± 639",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 910241,
-            "range": "± 33299",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 17652602,
-            "range": "± 1281048",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1966,
-            "range": "± 5",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 23109,
-            "range": "± 144",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 345122,
-            "range": "± 8615",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1423771,
-            "range": "± 40092",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 169830,
-            "range": "± 769",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1995591,
-            "range": "± 6629",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 44208469,
-            "range": "± 5257354",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 121995,
-            "range": "± 2649",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 1110498,
-            "range": "± 20525",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 21546028,
-            "range": "± 1372076",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4196,
-            "range": "± 23",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 46078,
-            "range": "± 279",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 791904,
-            "range": "± 25835",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 65286,
-            "range": "± 235",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 718312,
-            "range": "± 16936",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 9788617,
-            "range": "± 866137",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 736,
-            "range": "± 4",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 6600,
-            "range": "± 418",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 91967,
-            "range": "± 2655",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 23717,
-            "range": "± 540",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 172382,
-            "range": "± 1059",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1593309,
-            "range": "± 26538",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1606533,
             "range": "± 76352",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "cfe0cdf10b8ef5d28322752e957c4267649182bb",
+          "message": "fix(ci): switch Rocq Proofs job to cachix Nix installer (match working synth pattern) (#332)\n\nThe Rocq Proofs job's `Install Nix` step has been failing on every PR\nwith:\n\n  warning: unknown setting 'build-provenance-tags'\n  error: opening lock file \"/nix/var/nix/db/big-lock\": Permission denied\n  ERROR: ... fetch of repository 'rules_rocq_rust++rocq+rocq_toolchains'\n\nRoot cause: the job uses DeterminateSystems/nix-installer-action@v22\nwith `determinate: false` + `init: none`, a config copied from the\nself-hosted verus job (which IS `NoNewPrivileges=true` and needs the\ndaemonless path). The rocq job runs on `ubuntu-latest`, which is\nGitHub-hosted with full sudo — the NoNewPrivileges constraint never\napplied here. The daemonless DeterminateSystems variant trips on\n`build-provenance-tags` (a Determinate-Nix-specific setting) and\nthen fails to acquire the store lock.\n\nThe sibling pulseengine repo `synth` runs the same Rocq-of-Rust /\nBazel / Nix chain on `ubuntu-latest` with the standard\n`cachix/install-nix-action@v30` + `nix_path:\nnixpkgs=channel:nixos-unstable`, and its `Bazel Build & Proofs` job\nhas been green on every recent main commit (run e.g.\n26369114819). Adopt that pattern verbatim.\n\nChanges:\n- Replace `DeterminateSystems/nix-installer-action@v22` (+\n  `determinate: false`, `init: none`, `extra-conf`) with\n  `cachix/install-nix-action@v30` (+ `nix_path:\n  nixpkgs=channel:nixos-unstable`).\n- Drop the manual `Add Nix to PATH` step — cachix v30 handles PATH\n  itself.\n- Rewrite the comment to capture the actual reason this works on\n  `ubuntu-latest` (and why the prior NoNewPrivileges framing was\n  inapplicable).\n- Verus job intentionally NOT changed — it runs on\n  `[self-hosted, linux, x64, lean-mem]` which IS\n  `NoNewPrivileges=true`, so the DeterminateSystems daemonless path\n  stays correct there.\n\nIf after this change the Rocq toolchain still hits the\n`rules_rocq_rust++rocq+rocq_toolchains` repo-name shape (Nix-store\ndouble-tilde collision) that synth defuses with\n`patches/rules_rocq_rust_nix_name.patch` + a newer pin, we'll do\nthat as a follow-up; the installer was the upstream failure mode.\n\nCo-authored-by: Claude Opus 4.7 <noreply@anthropic.com>",
+          "timestamp": "2026-05-25T00:20:08-05:00",
+          "tree_id": "fe84aafaf7da5a6d8508dff5310bdb480a4b3555",
+          "url": "https://github.com/pulseengine/rivet/commit/cfe0cdf10b8ef5d28322752e957c4267649182bb"
+        },
+        "date": 1779686797241,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 86943,
+            "range": "± 862",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 903963,
+            "range": "± 11449",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 13754166,
+            "range": "± 376068",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2247,
+            "range": "± 13",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 24876,
+            "range": "± 226",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 379814,
+            "range": "± 2154",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 93,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 93,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 93,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1473033,
+            "range": "± 113687",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 152672,
+            "range": "± 482",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1761556,
+            "range": "± 10435",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 23164440,
+            "range": "± 1106025",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 129723,
+            "range": "± 1797",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1136627,
+            "range": "± 16912",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 12574742,
+            "range": "± 634955",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4214,
+            "range": "± 16",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 61482,
+            "range": "± 264",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 775772,
+            "range": "± 2681",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 63774,
+            "range": "± 550",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 728345,
+            "range": "± 12045",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8530800,
+            "range": "± 672855",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 803,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7431,
+            "range": "± 27",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 115345,
+            "range": "± 796",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 25835,
+            "range": "± 294",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 186914,
+            "range": "± 3532",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1761193,
+            "range": "± 23438",
             "unit": "ns/iter"
           }
         ]
