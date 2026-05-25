@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1779708016826,
+  "lastUpdate": 1779715932153,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "0a21a570c8f206c82ac188112e516dc4c490e1be",
-          "message": "fix(import): junit import — stop overwriting + restore test→artifact link (#302)\n\nUser-reported regressions against `rivet import-results --format junit`:\n\n**Bug #1: silent overwrite on re-import.** `suite_to_run` built\n`run_id = format!(\"junit-{safe_name}\")` from the testsuite name only,\nso two CI runs of the same suite produced identical filenames and the\nsecond import wiped the first.\n\nFix: append a disambiguator to the run_id. When the JUnit\n`<testsuite timestamp=\"...\">` attribute is present (most CI tooling\nemits it), slugify it: `2026-05-17T06-35-44Z`. When absent, hash the\nsuite's case list (name, classname, outcome variant) and append as\n16-hex DefaultHasher digest. Identical re-imports of the same artefact\nremain idempotent (same hash → same filename → no churn); different\ncontent distinguishes itself.\n\n**Bug #2: test→artifact link dropped on cargo-nextest output.**\n`artifact_id_for` has 4 heuristics; the fallback emits a literal\n`\"classname.name\"` concatenation that the test-coverage report cannot\njoin back to any artifact. cargo-nextest doesn't bracket\n`[REQ-NNN]` or use the artifact ID as classname, so most rivet-on-rust\nprojects hit the fallback.\n\nFix: hook the JUnit importer into `test_scanner`. New public\n`parse_junit_xml_with_markers(xml, markers)` adds a 5th heuristic —\nwhen the existing fallback fires, look up a marker whose `test_name`\nmatches the case name (exact or suffix with separator). The CLI\n(`cmd_import_results_junit`) scans the project's `src/`+`tests/` for\n`// rivet: verifies REQ-NNN` markers before parsing the XML, then\npasses them to the new function. Bracketed and direct-classname IDs\nare preserved (they short-circuit before the marker lookup).\n\nExisting `parse_junit_xml` kept working unchanged (delegates to the\nnew path with an empty marker slice). No schema changes.\n\nTests added (6):\n- run_id_includes_timestamp_when_present\n- run_id_stable_hash_when_no_timestamp\n- run_id_different_hash_when_content_differs\n- marker_lookup_supplies_artifact_id_when_fallback_concat\n- marker_lookup_does_not_override_explicit_bracket\n- marker_lookup_returns_fallback_when_no_match\n\nWorkspace: 1003 lib tests pass (was 996, +7). Clippy clean. Format clean.\n\nTrace: skip\n\nCo-authored-by: Claude Opus 4.7 <noreply@anthropic.com>",
-          "timestamp": "2026-05-18T15:27:04-05:00",
-          "tree_id": "3b8503610152cc384f7648e68f9a3792ed14b9dd",
-          "url": "https://github.com/pulseengine/rivet/commit/0a21a570c8f206c82ac188112e516dc4c490e1be"
-        },
-        "date": 1779136416537,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 83398,
-            "range": "± 323",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 868012,
-            "range": "± 34264",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 11611794,
-            "range": "± 871767",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2173,
-            "range": "± 61",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 27437,
-            "range": "± 451",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 376022,
-            "range": "± 1610",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 95,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 95,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1437602,
-            "range": "± 16716",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 160245,
-            "range": "± 1687",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1846682,
-            "range": "± 11758",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 23604917,
-            "range": "± 294202",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 125405,
-            "range": "± 3931",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 1103442,
-            "range": "± 27128",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 12053769,
-            "range": "± 925410",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4307,
-            "range": "± 191",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 58741,
-            "range": "± 358",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 746241,
-            "range": "± 8195",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 60733,
-            "range": "± 758",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 672387,
-            "range": "± 15381",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7428942,
-            "range": "± 45704",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 811,
-            "range": "± 12",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 7251,
-            "range": "± 128",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 113538,
-            "range": "± 1249",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 24106,
-            "range": "± 143",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 171485,
-            "range": "± 1673",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1594975,
-            "range": "± 15940",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1626616,
             "range": "± 94501",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "fce5dffcfd4c77a4e15d7693531725def8e4d19e",
+          "message": "chore(release): align release pipeline with the synth reference (SBOM + SLSA + build-env) (#330)\n\nAdopts the standardized pulseengine release pattern (per the\n\"per-repo Claude agent\" brief): every release ships a CycloneDX SBOM,\na SLSA v1 build-provenance attestation, a signed SHA256SUMS, and a\nbuild-env record naming the toolchain it was produced with.\n\nRivet already had cosign-keyless SHA256SUMS signing; the missing legs\nwere the SBOM (must precede the sums so its digest is captured in the\nmanifest), the SLSA provenance step, the build-env record, and the\n`attestations: write` permission needed by attest-build-provenance.\n\nChanges\n-------\n\n1. Top-level permissions: add `attestations: write` alongside the\n   existing `contents: write` + `id-token: write`. Required by\n   actions/attest-build-provenance@v2.\n\n2. Asset staging directory: rename `release/` → `release-assets/`\n   to match the synth/spar/sigil/witness shared name. Pure cosmetic\n   (file paths are scoped to this job), but it makes the verification\n   one-liner in release notes copy-pasteable across repos.\n\n3. New step \"Install cargo-cyclonedx\" + \"Generate toolchain SBOM\n   (CycloneDX)\" — inserted BEFORE the SHA256SUMS step so the SBOM's\n   digest enters the manifest and the cosign signature transitively\n   covers it. Emits `release-assets/rivet-<bare-version>.cdx.json`\n   (no `v` prefix on the version per the brief).\n\n4. New step \"Generate SLSA build provenance\"\n   (actions/attest-build-provenance@v2) — runs AFTER the sums file\n   exists, attests every `release-assets/*.tar.gz` to GitHub's\n   attestation store. Consumers verify with:\n       gh attestation verify rivet-vX.Y.Z-<triple>.tar.gz \\\\\n         --repo pulseengine/rivet\n\n5. New step \"Capture build environment\" — emits\n   `release-assets/build-env.txt` with rustc, cargo, cosign, and\n   runner versions. Prerequisite for REQ-094 (`rivet release-verify`).\n\nFinal release-asset shape\n-------------------------\n\n    rivet-vX.Y.Z-<triple>.{tar.gz|zip}\n    rivet-X.Y.Z.cdx.json\n    SHA256SUMS.txt\n    SHA256SUMS.txt.sig\n    SHA256SUMS.txt.pem\n    SHA256SUMS.txt.cosign.bundle\n    build-env.txt\n    (plus VSIX + compliance bundle from existing jobs)\n\nVerification one-liners (paste into release notes)\n--------------------------------------------------\n\n    cosign verify-blob \\\\\n      --certificate-identity-regexp \\\\\n        'https://github.com/pulseengine/rivet/.github/workflows/release.yml@.*' \\\\\n      --certificate-oidc-issuer \\\\\n        'https://token.actions.githubusercontent.com' \\\\\n      --bundle SHA256SUMS.txt.cosign.bundle SHA256SUMS.txt\n\n    gh attestation verify rivet-vX.Y.Z-<triple>.tar.gz \\\\\n      --repo pulseengine/rivet\n\nRefs: REQ-068, REQ-094\n\nCo-authored-by: Claude Opus 4.7 <noreply@anthropic.com>",
+          "timestamp": "2026-05-25T08:25:42-05:00",
+          "tree_id": "6fc8b9f8ad2e4697e92d652fc5cf4d144705bfd7",
+          "url": "https://github.com/pulseengine/rivet/commit/fce5dffcfd4c77a4e15d7693531725def8e4d19e"
+        },
+        "date": 1779715931621,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 84929,
+            "range": "± 652",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 917511,
+            "range": "± 21621",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 15655075,
+            "range": "± 981015",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1957,
+            "range": "± 24",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25451,
+            "range": "± 111",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 361748,
+            "range": "± 1502",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1465386,
+            "range": "± 39105",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 169675,
+            "range": "± 4733",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1939074,
+            "range": "± 16287",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 27552219,
+            "range": "± 1885336",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 127180,
+            "range": "± 2975",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1182558,
+            "range": "± 20131",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 13419892,
+            "range": "± 138543",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4104,
+            "range": "± 8",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 43970,
+            "range": "± 164",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 764670,
+            "range": "± 17231",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 65702,
+            "range": "± 102",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 716231,
+            "range": "± 2778",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8331905,
+            "range": "± 299545",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 746,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 6571,
+            "range": "± 32",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 97545,
+            "range": "± 289",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 22260,
+            "range": "± 676",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 157270,
+            "range": "± 1128",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1486791,
+            "range": "± 62916",
             "unit": "ns/iter"
           }
         ]
