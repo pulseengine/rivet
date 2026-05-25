@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1779702664395,
+  "lastUpdate": 1779708016826,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "b4ad938eac5adba852fdc6f9b175c5982e688841",
-          "message": "feat(variant): Phase 2 — thread fields_per_variant through validate (#287) (#298)\n\nCloses #287. v0.10.0 (PR #285) shipped `Artifact::fields_per_variant`\nand the `fields_for_variant(Option<&str>) -> Cow<'_, BTreeMap<...>>`\nresolver as a building block but nothing consumed variant overlays\nduring validate. This PR wires the resolver through the validation\nengine.\n\n**rivet-core/src/schema.rs** — variant-aware helpers (additive):\n- `get_field_value_for_variant(artifact, field, variant)` resolves\n  through `Artifact::fields_for_variant` when `variant` is `Some(_)`,\n  delegates to the existing borrowed-Cow path when `None` (zero\n  allocations on the no-variant path).\n- `Condition::matches_artifact_for_variant_with(...)`.\n- `Requirement::check_for_variant(...)` for `RequiredFields`. Per\n  design §6 Phase 2 scope (\"fields only\"), `RequiredLinks` stays\n  variant-flat — links aren't overlayed.\n\n**rivet-core/src/validate.rs** — additive wrappers + threading:\n- New public APIs: `validate_with_variant`,\n  `validate_with_externals_and_variant`,\n  `validate_structural_with_variant`,\n  `validate_structural_with_externals_and_variant`.\n- Existing `validate*` functions thin-wrap the variant-aware version\n  with `variant: None`. No breaking signature changes.\n- Required-fields and allowed-values reads now go through\n  `artifact.fields_for_variant(variant)` (resolved once per artifact\n  as `effective_fields`).\n- Conditional rules (phase 8) use\n  `cond.matches_artifact_for_variant_with` +\n  `rule.then.check_for_variant`.\n\n**rivet-cli/src/main.rs cmd_validate** — threads the active variant:\n- When `--variant <name>` is set, falls through to the direct path\n  (salsa doesn't yet take variant as a tracked input) and calls\n  `validate_with_externals_and_variant(..., active_variant)`.\n- Baseline-only / no-variant / `--direct` paths preserved.\n\nTests added (rivet-core/src/validate.rs, mod tests):\n1. `conditional_rule_respects_variant_field_overlay` — artifact has\n   `fields.priority=must` and `fields-per-variant.automotive.priority=\n   should`. Conditional rule fires on `priority==must`. Without\n   variant: rule fires. With `Some(\"automotive\")`: doesn't fire.\n   With unknown variant: behaves like no variant (1 diag).\n2. `required_field_satisfied_by_variant_overlay` — required field\n   `asil` absent from `fields` but present in\n   `fields-per-variant.automotive.asil=D`. Without variant: 1\n   required-field error. With `Some(\"automotive\")`: 0 errors.\n\nNOT in this PR (deliberately):\n- `rivet list --variant <name>` filtering.\n- `rivet coverage --variant <name>` scoping.\n- Variant-aware s-expr validation rules (phase 9 in validate.rs).\n- Salsa-tracked variant input (direct-path fallback for now).\n- Cross-product multi-axis variants.\n- `when:` clause on external-anchor.\n\nImplements: REQ-004, REQ-007\nRefs: FEAT-001, #287\n\nCo-authored-by: Claude Opus 4.7 <noreply@anthropic.com>",
-          "timestamp": "2026-05-18T01:48:12-05:00",
-          "tree_id": "1b5ded13f4a171454da8b2da6c66da4fd1bacee2",
-          "url": "https://github.com/pulseengine/rivet/commit/b4ad938eac5adba852fdc6f9b175c5982e688841"
-        },
-        "date": 1779087274525,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 80868,
-            "range": "± 428",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 867037,
-            "range": "± 14798",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 17319687,
-            "range": "± 1312336",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1935,
-            "range": "± 33",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 24935,
-            "range": "± 73",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 378233,
-            "range": "± 4047",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 97,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1452514,
-            "range": "± 45664",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 167915,
-            "range": "± 591",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 2040898,
-            "range": "± 49472",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 51247349,
-            "range": "± 3016791",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 120394,
-            "range": "± 2768",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 1110692,
-            "range": "± 15665",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 26014425,
-            "range": "± 2551020",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4172,
-            "range": "± 23",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 45249,
-            "range": "± 153",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 759386,
-            "range": "± 6974",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 64110,
-            "range": "± 144",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 719886,
-            "range": "± 10868",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 11231376,
-            "range": "± 179665",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 811,
-            "range": "± 8",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 7243,
-            "range": "± 14",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 91616,
-            "range": "± 816",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 23288,
-            "range": "± 139",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 169670,
-            "range": "± 663",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1578266,
-            "range": "± 22711",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1665198,
             "range": "± 23125",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "669a8ecb52eae52381eae84c9ddeff5464dfeb9d",
+          "message": "chore(deps): bump spar pin 84a7363 → v0.10.0 tag (#327)\n\nPromote from the pre-v0.9.0 dev sha to the signed v0.10.0 tag\n(afd5da2). API surface used by rivet-core/src/formats/aadl.rs\n(25 spar-analysis registrations + spar-hir Database) compiles\ncleanly and the AADL adapter tests pass against v0.10.0 unchanged.\n\nRelevant fixes inherited by rivet via this bump:\n  - hir-def: applies_to accepts feature paths (AADL v2.3, #219)\n  - hir-def: nested binding path resolution, 3+ levels (#214)\n  - assertion-eval: has() matches features (#217)\n  - assertion-eval: count() comparisons evaluate correctly (#218)\n  - classifier-match: same-direction delegation bus access (#216)\n  - codegen: --format wit emits only WIT, not workspace (#232)\n\nNew v0.10.x capabilities now available to rivet (used by aadl.rs\nonly as we surface them):\n  - emv2: error-propagation traversal across connection graph\n  - nc: piecewise-affine arrival curves; PMOO/LUDB via good_lp\n  - mermaid: classDiagram + requirementDiagram emitters\n  - trace-topology: Spar_Identity property set + PCAPNG/LLDP/gPTP\n    FrameSource / TopologySource / PtpTimeSource\n\nCargo.toml: pin tag = \"v0.10.0\" (was rev = \"84a7363\").\nCargo.lock: refreshed spar-hir, spar-analysis, spar-base-db,\nspar-hir-def, spar-network, spar-annex to v0.10.0.\n\nValidated:\n  - cargo check -p rivet-core: PASS\n  - cargo test -p rivet-core aadl: PASS (3 aadl_* + 2 schema tests)\n  - cargo test --workspace: PASS (1 spurious failure in\n    query_ids_format_matches_list_filter caused by simultaneous\n    branch-switching, re-ran cleanly in isolation: PASS)\n\nRefs: REQ-051\n\nCo-authored-by: Claude Opus 4.7 <noreply@anthropic.com>",
+          "timestamp": "2026-05-25T06:11:40-05:00",
+          "tree_id": "90dd46ec8f750ecc788a6f85ca613881be554cf7",
+          "url": "https://github.com/pulseengine/rivet/commit/669a8ecb52eae52381eae84c9ddeff5464dfeb9d"
+        },
+        "date": 1779708016024,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 84200,
+            "range": "± 287",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 892344,
+            "range": "± 8038",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 15996182,
+            "range": "± 1212194",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2167,
+            "range": "± 10",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 26744,
+            "range": "± 861",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 354565,
+            "range": "± 8463",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 96,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1489954,
+            "range": "± 11774",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 165094,
+            "range": "± 4313",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1969377,
+            "range": "± 16649",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 37806948,
+            "range": "± 2847088",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 131910,
+            "range": "± 1836",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1151377,
+            "range": "± 26580",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 16880949,
+            "range": "± 1574845",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4326,
+            "range": "± 9",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 60808,
+            "range": "± 361",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 760798,
+            "range": "± 16630",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 60526,
+            "range": "± 446",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 701068,
+            "range": "± 10903",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 11453976,
+            "range": "± 299078",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 750,
+            "range": "± 22",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 6765,
+            "range": "± 46",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 119349,
+            "range": "± 8018",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 24446,
+            "range": "± 733",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 171092,
+            "range": "± 5166",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1626616,
+            "range": "± 94501",
             "unit": "ns/iter"
           }
         ]
