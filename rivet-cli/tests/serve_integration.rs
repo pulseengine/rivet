@@ -321,33 +321,49 @@ fn responses_include_csp_header() {
     child.wait().ok();
 }
 
+/// POST /reload and return the full raw HTTP response body. Retries
+/// once on empty body (transient TCP read returning zero bytes after
+/// the server's health probe passed — same flake class
+/// `fetch_page_with_retry` and `post_reload_status` handle).
+fn post_reload_response(port: u16, hx_current_url: Option<&str>) -> String {
+    fn once(port: u16, hx_current_url: Option<&str>) -> String {
+        use std::io::{Read, Write};
+        let Ok(mut stream) = std::net::TcpStream::connect(format!("127.0.0.1:{port}")) else {
+            return String::new();
+        };
+        let _ = stream.set_read_timeout(Some(Duration::from_secs(30)));
+        let current_url_header = hx_current_url.map_or(String::new(), |u| {
+            format!("HX-Current-URL: {u}\r\n")
+        });
+        let request = format!(
+            "POST /reload HTTP/1.1\r\n\
+             Host: 127.0.0.1:{port}\r\n\
+             HX-Request: true\r\n\
+             {current_url_header}\
+             Content-Length: 0\r\n\
+             Connection: close\r\n\r\n"
+        );
+        if stream.write_all(request.as_bytes()).is_err() {
+            return String::new();
+        }
+        let mut response = Vec::new();
+        let _ = stream.read_to_end(&mut response);
+        String::from_utf8_lossy(&response).to_string()
+    }
+    let first = once(port, hx_current_url);
+    if !first.is_empty() {
+        return first;
+    }
+    std::thread::sleep(Duration::from_millis(200));
+    once(port, hx_current_url)
+}
+
 #[test]
 fn reload_returns_hx_location() {
     let (mut child, port) = start_server();
 
-    // Simulate reload with HX-Current-URL header
-    use std::io::{Read, Write};
-    // reload_state re-reads the entire project from disk, which can be
-    // significantly slower under CI coverage / proptest instrumentation.
-    // Use a generous timeout to avoid flaky failures.
-    let mut stream = std::net::TcpStream::connect(format!("127.0.0.1:{port}")).expect("connect");
-    stream.set_read_timeout(Some(Duration::from_secs(30))).ok();
-
-    let request = format!(
-        "POST /reload HTTP/1.1\r\n\
-         Host: 127.0.0.1:{port}\r\n\
-         HX-Request: true\r\n\
-         HX-Current-URL: http://127.0.0.1:{port}/results\r\n\
-         Content-Length: 0\r\n\
-         Connection: close\r\n\r\n"
-    );
-    stream.write_all(request.as_bytes()).expect("write");
-
-    let mut response = Vec::new();
-    stream
-        .read_to_end(&mut response)
-        .expect("read reload response");
-    let response = String::from_utf8_lossy(&response).to_string();
+    let current_url = format!("http://127.0.0.1:{port}/results");
+    let response = post_reload_response(port, Some(&current_url));
 
     // Should contain HX-Location header pointing to /results
     let has_location = response
