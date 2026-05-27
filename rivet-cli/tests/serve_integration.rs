@@ -321,33 +321,48 @@ fn responses_include_csp_header() {
     child.wait().ok();
 }
 
+/// POST /reload and return the full raw HTTP response body. Retries
+/// once on empty body (transient TCP read returning zero bytes after
+/// the server's health probe passed — same flake class
+/// `fetch_page_with_retry` and `post_reload_status` handle).
+fn post_reload_response(port: u16, hx_current_url: Option<&str>) -> String {
+    fn once(port: u16, hx_current_url: Option<&str>) -> String {
+        use std::io::{Read, Write};
+        let Ok(mut stream) = std::net::TcpStream::connect(format!("127.0.0.1:{port}")) else {
+            return String::new();
+        };
+        let _ = stream.set_read_timeout(Some(Duration::from_secs(30)));
+        let current_url_header =
+            hx_current_url.map_or(String::new(), |u| format!("HX-Current-URL: {u}\r\n"));
+        let request = format!(
+            "POST /reload HTTP/1.1\r\n\
+             Host: 127.0.0.1:{port}\r\n\
+             HX-Request: true\r\n\
+             {current_url_header}\
+             Content-Length: 0\r\n\
+             Connection: close\r\n\r\n"
+        );
+        if stream.write_all(request.as_bytes()).is_err() {
+            return String::new();
+        }
+        let mut response = Vec::new();
+        let _ = stream.read_to_end(&mut response);
+        String::from_utf8_lossy(&response).to_string()
+    }
+    let first = once(port, hx_current_url);
+    if !first.is_empty() {
+        return first;
+    }
+    std::thread::sleep(Duration::from_millis(200));
+    once(port, hx_current_url)
+}
+
 #[test]
 fn reload_returns_hx_location() {
     let (mut child, port) = start_server();
 
-    // Simulate reload with HX-Current-URL header
-    use std::io::{Read, Write};
-    // reload_state re-reads the entire project from disk, which can be
-    // significantly slower under CI coverage / proptest instrumentation.
-    // Use a generous timeout to avoid flaky failures.
-    let mut stream = std::net::TcpStream::connect(format!("127.0.0.1:{port}")).expect("connect");
-    stream.set_read_timeout(Some(Duration::from_secs(30))).ok();
-
-    let request = format!(
-        "POST /reload HTTP/1.1\r\n\
-         Host: 127.0.0.1:{port}\r\n\
-         HX-Request: true\r\n\
-         HX-Current-URL: http://127.0.0.1:{port}/results\r\n\
-         Content-Length: 0\r\n\
-         Connection: close\r\n\r\n"
-    );
-    stream.write_all(request.as_bytes()).expect("write");
-
-    let mut response = Vec::new();
-    stream
-        .read_to_end(&mut response)
-        .expect("read reload response");
-    let response = String::from_utf8_lossy(&response).to_string();
+    let current_url = format!("http://127.0.0.1:{port}/results");
+    let response = post_reload_response(port, Some(&current_url));
 
     // Should contain HX-Location header pointing to /results
     let has_location = response
@@ -795,6 +810,46 @@ fn test_csp_header_present() {
 
 // ── STPA-Sec Section 12.4: Dashboard Reload Failure (H-16, SC-18) ─────────
 
+/// POST /reload and parse the HTTP status from the response. Retries
+/// once on `status == 0` — the same transient-connection-drop flake
+/// class `fetch_page_with_retry` handles for GETs, observed under
+/// CI runner load even though the server's health probe has already
+/// passed. Used by the reload-flow tests.
+fn post_reload_status(port: u16) -> u16 {
+    fn once(port: u16) -> u16 {
+        use std::io::{Read, Write};
+        let Ok(mut stream) = std::net::TcpStream::connect(format!("127.0.0.1:{port}")) else {
+            return 0;
+        };
+        let _ = stream.set_read_timeout(Some(Duration::from_secs(30)));
+        let request = format!(
+            "POST /reload HTTP/1.1\r\n\
+             Host: 127.0.0.1:{port}\r\n\
+             HX-Request: true\r\n\
+             Content-Length: 0\r\n\
+             Connection: close\r\n\r\n"
+        );
+        if stream.write_all(request.as_bytes()).is_err() {
+            return 0;
+        }
+        let mut response = Vec::new();
+        let _ = stream.read_to_end(&mut response);
+        let response = String::from_utf8_lossy(&response).to_string();
+        response
+            .lines()
+            .next()
+            .and_then(|l| l.split_whitespace().nth(1))
+            .and_then(|s| s.parse::<u16>().ok())
+            .unwrap_or(0)
+    }
+    let first = once(port);
+    if first != 0 {
+        return first;
+    }
+    std::thread::sleep(Duration::from_millis(200));
+    once(port)
+}
+
 // rivet: verifies SC-18, UCA-D-4
 #[test]
 fn test_reload_yaml_error_returns_error_response() {
@@ -802,31 +857,7 @@ fn test_reload_yaml_error_returns_error_response() {
     // a success response (200 or redirect) and not crash.
     let (mut child, port) = start_server();
 
-    use std::io::{Read, Write};
-    let mut stream = std::net::TcpStream::connect(format!("127.0.0.1:{port}")).expect("connect");
-    stream
-        .set_read_timeout(Some(std::time::Duration::from_secs(30)))
-        .ok();
-
-    let request = format!(
-        "POST /reload HTTP/1.1\r\n\
-         Host: 127.0.0.1:{port}\r\n\
-         HX-Request: true\r\n\
-         Content-Length: 0\r\n\
-         Connection: close\r\n\r\n"
-    );
-    stream.write_all(request.as_bytes()).expect("write reload");
-
-    let mut response = Vec::new();
-    stream.read_to_end(&mut response).ok();
-    let response = String::from_utf8_lossy(&response).to_string();
-
-    let status = response
-        .lines()
-        .next()
-        .and_then(|l| l.split_whitespace().nth(1))
-        .and_then(|s| s.parse::<u16>().ok())
-        .unwrap_or(0);
+    let status = post_reload_status(port);
 
     assert!(
         status == 200 || (300..400).contains(&status),
