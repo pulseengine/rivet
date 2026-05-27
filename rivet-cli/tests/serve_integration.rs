@@ -332,9 +332,8 @@ fn post_reload_response(port: u16, hx_current_url: Option<&str>) -> String {
             return String::new();
         };
         let _ = stream.set_read_timeout(Some(Duration::from_secs(30)));
-        let current_url_header = hx_current_url.map_or(String::new(), |u| {
-            format!("HX-Current-URL: {u}\r\n")
-        });
+        let current_url_header =
+            hx_current_url.map_or(String::new(), |u| format!("HX-Current-URL: {u}\r\n"));
         let request = format!(
             "POST /reload HTTP/1.1\r\n\
              Host: 127.0.0.1:{port}\r\n\
