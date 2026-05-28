@@ -175,6 +175,14 @@ pub struct ReqIfContent {
 
     #[serde(rename = "SPEC-RELATIONS", default)]
     pub spec_relations: SpecRelations,
+
+    /// `<SPECIFICATIONS>` — the document-tree view. ReqIF importers
+    /// (DOORS, Polarion, codeBeamer) render the SPEC-HIERARCHY under a
+    /// SPECIFICATION as the navigable outline; without it, a consumer
+    /// sees a flat object pool or rejects the file. `default` so older
+    /// payloads that omit it still parse.
+    #[serde(rename = "SPECIFICATIONS", default)]
+    pub specifications: Specifications,
 }
 
 // ── DATATYPES ───────────────────────────────────────────────────────────
@@ -495,11 +503,72 @@ pub struct SpecRelationEnd {
     pub spec_object_ref: String,
 }
 
+// ── SPECIFICATIONS (document-tree view) ─────────────────────────────────
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename = "SPECIFICATIONS")]
+pub struct Specifications {
+    #[serde(rename = "SPECIFICATION", default)]
+    pub specifications: Vec<Specification>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename = "SPECIFICATION")]
+pub struct Specification {
+    #[serde(rename = "@IDENTIFIER")]
+    pub identifier: String,
+
+    #[serde(
+        rename = "@LONG-NAME",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub long_name: Option<String>,
+
+    #[serde(rename = "TYPE", default, skip_serializing_if = "Option::is_none")]
+    pub spec_type_ref: Option<SpecificationTypeRef>,
+
+    #[serde(rename = "CHILDREN", default, skip_serializing_if = "Option::is_none")]
+    pub children: Option<SpecHierarchyChildren>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename = "TYPE")]
+pub struct SpecificationTypeRef {
+    #[serde(rename = "SPECIFICATION-TYPE-REF")]
+    pub specification_type_ref: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename = "CHILDREN")]
+pub struct SpecHierarchyChildren {
+    #[serde(rename = "SPEC-HIERARCHY", default)]
+    pub children: Vec<SpecHierarchy>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename = "SPEC-HIERARCHY")]
+pub struct SpecHierarchy {
+    #[serde(rename = "@IDENTIFIER")]
+    pub identifier: String,
+
+    #[serde(rename = "OBJECT")]
+    pub object: SpecHierarchyObjectRef,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename = "OBJECT")]
+pub struct SpecHierarchyObjectRef {
+    #[serde(rename = "SPEC-OBJECT-REF")]
+    pub spec_object_ref: String,
+}
+
 // ── Constants ───────────────────────────────────────────────────────────
 
 pub const REQIF_NAMESPACE: &str = "http://www.omg.org/spec/ReqIF/20110401/reqif.xsd";
 
 const DATATYPE_STRING_ID: &str = "DT-STRING";
+const SPECIFICATION_TYPE_ID: &str = "SPECTYPE-rivet";
 const ATTR_DEF_STATUS: &str = "ATTR-STATUS";
 const ATTR_DEF_TAGS: &str = "ATTR-TAGS";
 const ATTR_DEF_ARTIFACT_TYPE: &str = "ATTR-ARTIFACT-TYPE";
@@ -1356,6 +1425,35 @@ pub fn build_reqif_with_schema(artifacts: &[Artifact], schema: Option<&Schema>) 
         }
     }
 
+    // Build the SPECIFICATION document tree: one SPEC-HIERARCHY entry per
+    // SPEC-OBJECT, in store order, under a single SPECIFICATION. ReqIF
+    // importers (DOORS / Polarion / codeBeamer) render this as the
+    // navigable outline; without it the file is a flat object pool.
+    let hierarchy_children: Vec<SpecHierarchy> = objects
+        .iter()
+        .enumerate()
+        .map(|(i, obj)| SpecHierarchy {
+            identifier: format!("SH-{}", i + 1),
+            object: SpecHierarchyObjectRef {
+                spec_object_ref: obj.identifier.clone(),
+            },
+        })
+        .collect();
+    let specification = Specification {
+        identifier: "SPEC-rivet".into(),
+        long_name: Some("Rivet Artifacts".into()),
+        spec_type_ref: Some(SpecificationTypeRef {
+            specification_type_ref: SPECIFICATION_TYPE_ID.into(),
+        }),
+        children: Some(SpecHierarchyChildren {
+            children: hierarchy_children,
+        }),
+    };
+    let specification_type = SpecificationType {
+        identifier: SPECIFICATION_TYPE_ID.into(),
+        long_name: Some("Rivet Specification".into()),
+    };
+
     ReqIfRoot {
         xmlns: REQIF_NAMESPACE.into(),
         the_header: TheHeader {
@@ -1376,10 +1474,13 @@ pub fn build_reqif_with_schema(artifacts: &[Artifact], schema: Option<&Schema>) 
                 spec_types: SpecTypes {
                     object_types,
                     relation_types,
-                    specification_types: vec![],
+                    specification_types: vec![specification_type],
                 },
                 spec_objects: SpecObjects { objects },
                 spec_relations: SpecRelations { relations },
+                specifications: Specifications {
+                    specifications: vec![specification],
+                },
             },
         },
     }
@@ -2934,5 +3035,131 @@ mod tests {
         // skipped.  Mutant `==`→`!=` on either leg would skip a real
         // file (count != 2).
         assert_eq!(ids, vec!["R-1".to_string(), "R-2".to_string()]);
+    }
+
+    /// Finding #3 (REQ-104): the export must emit a SPECIFICATION whose
+    /// SPEC-HIERARCHY lists one entry per SPEC-OBJECT, in store order, plus
+    /// a SPECIFICATION-TYPE the SPECIFICATION references. Without this the
+    /// ReqIF is a flat object pool that DOORS / Polarion render with no
+    /// outline.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_export_emits_specification_hierarchy() {
+        let arts = vec![
+            Artifact {
+                id: "REQ-1".into(),
+                artifact_type: "requirement".into(),
+                title: "R1".into(),
+                description: None,
+                status: None,
+                tags: vec![],
+                links: vec![],
+                fields: BTreeMap::new(),
+                fields_per_variant: Default::default(),
+                provenance: None,
+                source_file: None,
+            },
+            Artifact {
+                id: "REQ-2".into(),
+                artifact_type: "requirement".into(),
+                title: "R2".into(),
+                description: None,
+                status: None,
+                tags: vec![],
+                links: vec![],
+                fields: BTreeMap::new(),
+                fields_per_variant: Default::default(),
+                provenance: None,
+                source_file: None,
+            },
+        ];
+
+        let root = build_reqif_with_schema(&arts, None);
+        let content = &root.core_content.req_if_content;
+
+        // Exactly one SPECIFICATION.
+        assert_eq!(content.specifications.specifications.len(), 1);
+        let spec = &content.specifications.specifications[0];
+
+        // It references a SPECIFICATION-TYPE that actually exists.
+        let type_ref = spec
+            .spec_type_ref
+            .as_ref()
+            .expect("SPECIFICATION must reference a type");
+        assert!(
+            content
+                .spec_types
+                .specification_types
+                .iter()
+                .any(|t| t.identifier == type_ref.specification_type_ref),
+            "SPECIFICATION-TYPE-REF must resolve to a declared SPECIFICATION-TYPE",
+        );
+
+        // One SPEC-HIERARCHY per SPEC-OBJECT, in store order, each pointing
+        // at the matching SPEC-OBJECT-REF.
+        let children = &spec.children.as_ref().expect("CHILDREN").children;
+        assert_eq!(children.len(), 2, "one SPEC-HIERARCHY per artifact");
+        assert_eq!(children[0].object.spec_object_ref, "REQ-1");
+        assert_eq!(children[1].object.spec_object_ref, "REQ-2");
+    }
+
+    /// Finding #2 + #3 (REQ-103, REQ-104): exporting to ReqIF then parsing
+    /// the result back must preserve every artifact and every link — the
+    /// round-trip the DOORS / Polarion handoff relies on. The SPECIFICATION
+    /// addition must not perturb the object/relation payload.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_reqif_roundtrip_preserves_artifacts_and_links() {
+        let arts = vec![
+            Artifact {
+                id: "REQ-1".into(),
+                artifact_type: "requirement".into(),
+                title: "R1".into(),
+                description: Some("first".into()),
+                status: Some("approved".into()),
+                tags: vec![],
+                links: vec![Link {
+                    link_type: "verifies".into(),
+                    target: "REQ-2".into(),
+                    external: None,
+                }],
+                fields: BTreeMap::new(),
+                fields_per_variant: Default::default(),
+                provenance: None,
+                source_file: None,
+            },
+            Artifact {
+                id: "REQ-2".into(),
+                artifact_type: "requirement".into(),
+                title: "R2".into(),
+                description: None,
+                status: None,
+                tags: vec![],
+                links: vec![],
+                fields: BTreeMap::new(),
+                fields_per_variant: Default::default(),
+                provenance: None,
+                source_file: None,
+            },
+        ];
+
+        let adapter = ReqIfAdapter::new();
+        let bytes = adapter
+            .export(&arts, &crate::adapter::AdapterConfig::default())
+            .expect("export");
+        let xml = String::from_utf8(bytes).expect("utf8");
+
+        let reparsed = parse_reqif(&xml, &HashMap::new()).expect("reparse");
+        assert_eq!(reparsed.len(), 2, "all artifacts survive the round-trip");
+
+        let total_links: usize = reparsed.iter().map(|a| a.links.len()).sum();
+        assert_eq!(total_links, 1, "the single link survives the round-trip");
+
+        let r1 = reparsed
+            .iter()
+            .find(|a| a.id == "REQ-1")
+            .expect("REQ-1 present");
+        assert_eq!(r1.links[0].link_type, "verifies");
+        assert_eq!(r1.links[0].target, "REQ-2");
     }
 }

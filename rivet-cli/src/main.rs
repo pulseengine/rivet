@@ -555,7 +555,7 @@ enum Command {
 
     /// Export artifacts to a specified format
     Export {
-        /// Output format: "reqif", "generic-yaml", "html", "zola"
+        /// Output format: "reqif", "generic-yaml", "html", "gherkin", "zola"
         #[arg(short, long)]
         format: String,
 
@@ -870,7 +870,7 @@ enum Command {
 
     /// Import test results or artifacts from external formats
     ImportResults {
-        /// Input format: "junit" (JUnit XML) or "needs-json" (sphinx-needs)
+        /// Input format: "junit" (JUnit XML), "needs-json" (sphinx-needs), or "reqif" (OMG ReqIF 1.2)
         #[arg(long)]
         format: String,
 
@@ -7380,7 +7380,7 @@ fn cmd_export(
         }
         other => {
             anyhow::bail!(
-                "unsupported export format: {other} (supported: reqif, generic-yaml, html, gherkin)"
+                "unsupported export format: {other} (supported: reqif, generic-yaml, html, gherkin, zola)"
             )
         }
     };
@@ -13064,10 +13064,56 @@ fn cmd_import_results(
     match format {
         "junit" => cmd_import_results_junit(cli, file, output),
         "needs-json" => cmd_import_results_needs_json(file, output),
+        "reqif" => cmd_import_results_reqif(file, output),
         other => {
-            anyhow::bail!("unknown import format: '{other}' (supported: junit, needs-json)")
+            anyhow::bail!("unknown import format: '{other}' (supported: junit, needs-json, reqif)")
         }
     }
+}
+
+/// Import an OMG ReqIF 1.2 file and write artifacts as generic YAML.
+///
+/// Closes the export-only gap: `rivet export --format reqif` produced
+/// ReqIF, but there was no CLI path to bring a ReqIF file (e.g. a DOORS
+/// / Polarion export) back into rivet artifacts — `parse_reqif` lived
+/// in rivet-core but was reachable only via the supplier-pull
+/// well-formedness cache. Mirrors the needs-json importer: parse to
+/// artifacts, round-trip-verify link targets, write generic YAML.
+fn cmd_import_results_reqif(file: &std::path::Path, output: &std::path::Path) -> Result<bool> {
+    let content = std::fs::read_to_string(file)
+        .with_context(|| format!("failed to read {}", file.display()))?;
+
+    let artifacts = rivet_core::reqif::parse_reqif(&content, &std::collections::HashMap::new())
+        .map_err(|e| anyhow::anyhow!("failed to parse ReqIF from {}: {e}", file.display()))?;
+
+    if artifacts.is_empty() {
+        println!("No SPEC-OBJECTs found in {}", file.display());
+        return Ok(true);
+    }
+
+    std::fs::create_dir_all(output)
+        .with_context(|| format!("failed to create output directory {}", output.display()))?;
+
+    let adapter = rivet_core::formats::generic::GenericYamlAdapter::new();
+    let yaml = rivet_core::adapter::Adapter::export(
+        &adapter,
+        &artifacts,
+        &rivet_core::adapter::AdapterConfig::default(),
+    )
+    .context("failed to serialize artifacts to generic YAML")?;
+
+    let out_path = output.join("reqif-import.yaml");
+    std::fs::write(&out_path, &yaml)
+        .with_context(|| format!("failed to write {}", out_path.display()))?;
+
+    let link_count: usize = artifacts.iter().map(|a| a.links.len()).sum();
+    println!(
+        "Imported {} artifacts ({link_count} links) from ReqIF → {}",
+        artifacts.len(),
+        out_path.display(),
+    );
+
+    Ok(true)
 }
 
 /// Import JUnit XML test results.
