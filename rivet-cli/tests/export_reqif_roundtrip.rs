@@ -90,7 +90,13 @@ fn reqif_export_has_specification_and_roundtrips_via_cli() {
     // Export ReqIF.
     let reqif = proj.join("out.reqif");
     let status = Command::new(rivet_bin())
-        .args(["export", "--format", "reqif", "--output", reqif.to_str().unwrap()])
+        .args([
+            "export",
+            "--format",
+            "reqif",
+            "--output",
+            reqif.to_str().unwrap(),
+        ])
         .current_dir(&proj)
         .status()
         .expect("run export reqif");
