@@ -57,7 +57,7 @@
     clippy::print_stderr
 )]
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use rivet_core::feature_model::{
@@ -75,8 +75,14 @@ pub(crate) struct ProjectVariants {
     pub(crate) model: Option<FeatureModel>,
     /// Path to the binding file (for display only).
     pub(crate) binding_path: Option<PathBuf>,
-    /// Parsed feature-binding, if present.
+    /// Parsed project-level feature-binding (`bindings.yaml`), if present.
     pub(crate) binding: Option<FeatureBinding>,
+    /// Per-variant bindings embedded in the variant file itself
+    /// (`bindings:` section alongside the variant's `name:`/`selects:`),
+    /// keyed by variant name. Preferred over the project-level binding
+    /// when resolving scope, so a self-contained variant file resolves
+    /// without a separate `bindings.yaml`. REQ-106.
+    pub(crate) variant_bindings: BTreeMap<String, FeatureBinding>,
     /// All discovered variants, sorted by name.
     pub(crate) variants: Vec<VariantConfig>,
 }
@@ -132,6 +138,7 @@ impl ProjectVariants {
             .unwrap_or((None, None));
 
         let mut variants: Vec<VariantConfig> = Vec::new();
+        let mut variant_bindings: BTreeMap<String, FeatureBinding> = BTreeMap::new();
         for root in &roots {
             let vdir = root.join("variants");
             if !vdir.is_dir() {
@@ -154,6 +161,16 @@ impl ProjectVariants {
                     if let Ok(vc) = serde_yaml::from_str::<VariantConfig>(&yaml) {
                         // dedup by name — first hit wins
                         if !variants.iter().any(|v| v.name == vc.name) {
+                            // REQ-106: a variant file may embed its own
+                            // `bindings:` section (it IS its own binding
+                            // model). Capture it so scope resolves without
+                            // a separate bindings.yaml — mirrors the CLI's
+                            // `variant solve --binding <variant-file>`.
+                            if let Ok(fb) = serde_yaml::from_str::<FeatureBinding>(&yaml) {
+                                if !fb.bindings.is_empty() {
+                                    variant_bindings.insert(vc.name.clone(), fb);
+                                }
+                            }
                             variants.push(vc);
                         }
                     }
@@ -167,8 +184,16 @@ impl ProjectVariants {
             model,
             binding_path,
             binding,
+            variant_bindings,
             variants,
         }
+    }
+
+    /// The binding to use when resolving `name`: the variant's own
+    /// embedded `bindings:` if present (REQ-106), else the project-level
+    /// `bindings.yaml`.
+    fn binding_for(&self, name: &str) -> Option<&FeatureBinding> {
+        self.variant_bindings.get(name).or(self.binding.as_ref())
     }
 
     /// Whether a feature model was discovered (dashboard dropdown is
@@ -207,7 +232,7 @@ impl ProjectVariants {
             let msgs: Vec<String> = errs.iter().map(|e| format!("{e:?}")).collect();
             format!("variant '{}': {}", name, msgs.join("; "))
         })?;
-        let artifact_ids = collect_bound_ids(&resolved, self.binding.as_ref());
+        let artifact_ids = collect_bound_ids(&resolved, self.binding_for(name));
         Ok(ResolvedScope {
             resolved,
             artifact_ids,
@@ -226,7 +251,7 @@ impl ProjectVariants {
         };
         match solve(model, vc) {
             Ok(r) => {
-                let ids = collect_bound_ids(&r, self.binding.as_ref());
+                let ids = collect_bound_ids(&r, self.binding_for(name));
                 VariantStatus::Pass {
                     feature_count: r.effective_features.len(),
                     artifact_count: ids.len(),
@@ -373,5 +398,56 @@ mod tests {
         let dir = tmpdir();
         let pv = ProjectVariants::discover(dir.path(), &empty_cfg());
         assert!(pv.resolve("anything").is_err());
+    }
+
+    /// REQ-106: a variant file that embeds its own `bindings:` section
+    /// resolves to the correct bound artifacts even with NO separate
+    /// `bindings.yaml`. Before the fix the dashboard reported
+    /// `bound_artifact_count: 0` for such self-contained variant files
+    /// (it only consulted a project-level binding).
+    #[test]
+    fn resolve_uses_binding_embedded_in_variant_file() {
+        let dir = tmpdir();
+        write(&dir.path().join("artifacts/feature-model.yaml"), FM);
+        // NO artifacts/bindings.yaml — the binding is embedded in the
+        // variant file itself, alongside name/selects.
+        let embedded = "name: only-b\nselects: [b]\nbindings:\n  b:\n    artifacts: [B-1, B-2]\n";
+        write(&dir.path().join("artifacts/variants/only-b.yaml"), embedded);
+        let pv = ProjectVariants::discover(dir.path(), &empty_cfg());
+        assert!(
+            pv.binding.is_none(),
+            "no project-level bindings.yaml exists"
+        );
+
+        let scope = pv.resolve("only-b").expect("solve");
+        assert_eq!(
+            scope.artifact_ids.len(),
+            2,
+            "embedded binding must resolve bound artifacts (REQ-106)"
+        );
+        assert!(scope.artifact_ids.contains("B-1"));
+        assert!(scope.artifact_ids.contains("B-2"));
+
+        // validation_status (the /variants overview path) must agree.
+        match pv.validation_status("only-b") {
+            VariantStatus::Pass { artifact_count, .. } => {
+                assert_eq!(artifact_count, 2, "overview count must match resolve()");
+            }
+            other => panic!("expected Pass, got {other:?}"),
+        }
+    }
+
+    /// REQ-106: a project-level `bindings.yaml` still works (and an
+    /// embedded binding takes precedence when both exist).
+    #[test]
+    fn project_binding_still_used_when_no_embedded() {
+        let dir = tmpdir();
+        write(&dir.path().join("artifacts/feature-model.yaml"), FM);
+        write(&dir.path().join("artifacts/bindings.yaml"), BIND);
+        write(&dir.path().join("artifacts/variants/only-a.yaml"), VAR_A);
+        let pv = ProjectVariants::discover(dir.path(), &empty_cfg());
+        let scope = pv.resolve("only-a").expect("solve");
+        assert_eq!(scope.artifact_ids.len(), 1);
+        assert!(scope.artifact_ids.contains("A-1"));
     }
 }
