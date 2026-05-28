@@ -91,7 +91,43 @@ fn seed(dir: &Path) -> PathBuf {
     source
 }
 
+/// "Now" as an ISO-8601 UTC timestamp, computed at test time.
+///
+/// The cited-source staleness gate compares `last-checked` against the
+/// current date with a 30-day threshold, so a hardcoded date is a
+/// time-bomb — the fixture goes stale once the literal is >30 days in
+/// the past and the "clean fixture passes" assertions start failing.
+/// Generate a fresh timestamp so the clean fixture is always recent.
+/// Uses the proleptic-Gregorian civil-date algorithm (no chrono/jiff
+/// dep, matching rivet-core's own approach).
+fn now_iso8601() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock after epoch")
+        .as_secs();
+    let days = (secs / 86_400) as i64;
+    let secs_of_day = secs % 86_400;
+    // days_from_civil inverse (Howard Hinnant).
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = if m <= 2 { y + 1 } else { y };
+    format!(
+        "{year:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z",
+        secs_of_day / 3600,
+        (secs_of_day % 3600) / 60,
+        secs_of_day % 60,
+    )
+}
+
 fn write_artifact(dir: &Path, sha: &str) {
+    let last_checked = now_iso8601();
     let yaml = format!(
         r#"artifacts:
   - id: REQ-001
@@ -103,7 +139,7 @@ fn write_artifact(dir: &Path, sha: &str) {
         uri: ./testdata/source.txt
         kind: file
         sha256: {sha}
-        last-checked: 2026-04-27T00:00:00Z
+        last-checked: {last_checked}
 "#
     );
     std::fs::write(dir.join("artifacts").join("req.yaml"), yaml).unwrap();

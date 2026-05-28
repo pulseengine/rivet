@@ -1837,3 +1837,261 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-051
+
+  - id: REQ-102
+    type: requirement
+    title: "`gherkin` export format advertised in `rivet export --help`"
+    status: approved
+    description: |
+      `rivet export` accepts `--format gherkin` (validate_format allows
+      it, cmd_export_gherkin handles it) but the clap `--format` help
+      listed only reqif / generic-yaml / html / zola. Surfaced by the
+      v0.13.1 export-format end-to-end test. Help text + the
+      unsupported-format error message now both list gherkin (and zola).
+
+      Acceptance:
+        - `rivet export --help` output contains "gherkin".
+    tags: [export, gherkin, docs, cli]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.13.2
+    links:
+      - type: traces-to
+        target: REQ-007
+
+  - id: REQ-103
+    type: requirement
+    title: "ReqIF import reachable from the CLI (`import-results --format reqif`)"
+    status: approved
+    description: |
+      `rivet export --format reqif` produced ReqIF, but there was no
+      CLI path to bring a ReqIF file (e.g. a DOORS / Polarion export)
+      back into rivet artifacts — `parse_reqif` lived in rivet-core but
+      was reachable only via the supplier-pull well-formedness cache.
+      The DOORS/Polarion round-trip was therefore export-only. Adds
+      `import-results --format reqif <file>`: parse to artifacts, write
+      generic YAML, report artifact + link counts.
+
+      Acceptance:
+        - `rivet import-results --format reqif <file> --output <dir>`
+          writes `reqif-import.yaml` containing the parsed artifacts.
+        - Round-trip: `export --format reqif` then
+          `import-results --format reqif` preserves artifact + link
+          counts (verified in rivet-core lib + a rivet-cli integration
+          test).
+    tags: [reqif, import, interchange, doors, polarion, round-trip]
+    fields:
+      priority: should
+      category: interface
+      baseline: v0.13.2
+    links:
+      - type: traces-to
+        target: REQ-005
+
+  - id: REQ-104
+    type: requirement
+    title: "ReqIF export emits a SPECIFICATION + SPEC-HIERARCHY document tree"
+    status: approved
+    description: |
+      The ReqIF export carried SPEC-OBJECTs + SPEC-RELATIONs +
+      SPEC-OBJECT-TYPEs but no SPECIFICATION / SPEC-HIERARCHY, so
+      importers (DOORS / Polarion / codeBeamer) rendered a flat object
+      pool with no navigable outline (some reject a hierarchy-less file
+      outright). Export now emits one SPECIFICATION referencing a
+      SPECIFICATION-TYPE, with one SPEC-HIERARCHY entry per SPEC-OBJECT
+      in store order. The object/relation payload is unchanged (no
+      regression: still 797 objects + 1551 relations on the rivet
+      corpus).
+
+      Acceptance:
+        - Exported ReqIF contains exactly one SPECIFICATION, one
+          SPECIFICATION-TYPE it references, and one SPEC-HIERARCHY per
+          SPEC-OBJECT.
+        - The SPECIFICATION addition does not change SPEC-OBJECT or
+          SPEC-RELATION counts (round-trip preserved).
+    tags: [reqif, export, interchange, doors, polarion, completeness]
+    fields:
+      priority: should
+      category: interface
+      baseline: v0.13.2
+    links:
+      - type: traces-to
+        target: REQ-005
+
+  - id: REQ-105
+    type: requirement
+    title: "HTML export: relative internal links + decouple from the serve module"
+    status: draft
+    description: |
+      Two coupled findings from the v0.13.1 export-format review:
+
+      1. `cmd_export_html` reuses the `rivet serve` dashboard rendering
+         (`serve::reload_state`, `serve::components`) verbatim. It does
+         NOT spin up a server (reload_state is a pure offline loader),
+         but the rendered pages inherit the dashboard's **absolute
+         server-route** links: `href="/artifacts/CD-001"`,
+         `href="/coverage"`, etc. — with no `.html` extension.
+
+      2. As static files, those links are broken: from
+         `file:///…/html/index.html`, `/artifacts/CD-001` resolves to
+         the filesystem root, and the actual file is
+         `artifacts/CD-001.html`. So the multi-page HTML export's
+         internal navigation does not work when opened as files or
+         hosted at a non-root base path. (Content is all present; only
+         the inter-page links are wrong.)
+
+      Fix direction (needs care — regression-risk, hence not in v0.13.2):
+        - Either a `--base-path` option written into the links, OR
+        - rewrite links to relative + `.html` on export (the export
+          already computes a depth-adjusted `"../".repeat(depth)`
+          prefix for `_assets/`; extend that to artifact/report links),
+          AND
+        - longer-term, decouple export rendering from the `serve`
+          module so `rivet export --format html` doesn't transitively
+          depend on axum / the dashboard handlers.
+
+      Acceptance:
+        - Opening the exported `index.html` via `file://` and clicking
+          any artifact / coverage / matrix / graph link lands on the
+          correct local `.html` page (no absolute `/…` routes remain).
+        - Hosting the export under a sub-path (e.g. `/v0.13.2/`) keeps
+          all internal links working.
+        - `rivet export --format html` builds without linking the axum
+          server stack (decoupling milestone).
+    tags: [export, html, serve-coupling, relative-links, regression-risk]
+    fields:
+      priority: must
+      category: functional
+      baseline: v0.14.0-track
+    links:
+      - type: traces-to
+        target: REQ-007
+
+  - id: REQ-106
+    type: requirement
+    title: "serve dashboard: variant scope resolves embedded bindings (self-reference --binding)"
+    status: draft
+    description: |
+      User-reported (Ford variant corpus). The CLI resolves variant
+      bindings correctly:
+
+          rivet variant solve --model feature-model.yaml \
+            --variant variants/ford-demo-full.yaml \
+            --binding variants/ford-demo-full.yaml
+
+      …reports the right bound-artifact counts (16 / 13 / 17). But the
+      `rivet serve` dashboard calls the solver WITHOUT passing
+      `--binding`, so it reports `bound_artifact_count: 0` for every
+      variant. The dashboard should self-reference each variant file as
+      its own binding model when the `bindings:` section is embedded in
+      the variant config.
+
+      Acceptance:
+        - The serve dashboard variant view shows the same non-zero
+          bound-artifact counts as the CLI `variant solve --binding`
+          for variants whose binding is embedded in the variant file.
+        - A serve_integration test asserts a known variant's
+          bound-artifact count matches the CLI.
+    tags: [serve, variant, binding, dashboard, user-reported, bug]
+    fields:
+      priority: must
+      category: functional
+      baseline: v0.14.0-track
+    links:
+      - type: traces-to
+        target: REQ-007
+
+  - id: REQ-107
+    type: requirement
+    title: "Render sequence/mapping field values, not Rust Debug output"
+    status: draft
+    description: |
+      User-reported. A field whose value is a sequence of mappings
+      renders as the Rust `Debug` form:
+
+          Sequence [Mapping {"kind": String("e"), "page_id":
+          String("e"), "version": Number(2), "section": String("eee")}]
+
+      …instead of a readable list/table. Affects serve and likely the
+      HTML export (shared rendering). Field values that are sequences
+      or mappings must render as structured HTML (nested list / small
+      table), never `format!("{:?}", value)`.
+
+      Acceptance:
+        - An artifact with a sequence-of-mappings field renders as a
+          readable nested structure in both serve and HTML export.
+        - No `Sequence [`, `Mapping {`, `String(`, `Number(` debug
+          tokens appear in rendered output.
+    tags: [serve, export, rendering, field-values, user-reported, bug]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.14.0-track
+    links:
+      - type: traces-to
+        target: REQ-007
+
+  - id: REQ-108
+    type: requirement
+    title: "serve: external-artifact navigation as prefix:ID + visible shortcut-link contrast"
+    status: draft
+    description: |
+      User-reported, three coupled serve-dashboard issues for
+      cross-repo (`prefix:ID`) artifacts:
+
+      1. Clicking an externally-defined artifact navigates to
+         `externals/<prefix>` rather than the
+         `artifacts/<prefix>:<artifact>` detail view.
+      2. On an `artifacts/<prefix>:<artifact>` page, the external's own
+         references are shown but NOT as followable
+         `<prefix>:<reference>` links — so the cross-repo chain can't be
+         traversed (and would recurse for externals-of-externals).
+      3. That same page does not show the linkage back into the
+         consumer's internal artifacts.
+      4. The shortcut-link color against the white background is barely
+         visible (contrast/accessibility).
+
+      Acceptance:
+        - Clicking an external artifact lands on its
+          `artifacts/<prefix>:<id>` detail view.
+        - External references render as followable `prefix:ref` links,
+          recursively.
+        - The detail view shows inbound links from internal artifacts.
+        - Shortcut links meet a visible contrast ratio on the light
+          background.
+    tags: [serve, externals, cross-repo, navigation, accessibility, user-reported, bug]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.14.0-track
+    links:
+      - type: traces-to
+        target: REQ-085
+
+  - id: REQ-109
+    type: requirement
+    title: "Variant scoping for documents (in/out-of-scope per variant)"
+    status: draft
+    description: |
+      User question: a variant can scope which artifacts are in/out of
+      scope (via `out-of-scope-for:` / binding), but there is no
+      equivalent control for *documents* — a variant cannot currently
+      declare which documents are in or out of scope. Assess whether
+      document-level variant scoping is wanted, and if so design it on
+      the existing variant-scope mechanism (not a new directive), so a
+      variant's exported/served document set narrows with the variant.
+
+      Acceptance:
+        - Decision recorded: do documents get per-variant scoping?
+        - If yes: a variant can mark a document out-of-scope, and
+          serve / export under that variant omit it; `rivet validate`
+          still sees the full set.
+    tags: [variant, documents, scoping, design-question, user-reported]
+    fields:
+      priority: could
+      category: functional
+      baseline: v0.14.0-track
+    links:
+      - type: traces-to
+        target: REQ-083

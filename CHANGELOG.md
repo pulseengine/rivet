@@ -5,6 +5,59 @@
 
 ## [Unreleased]
 
+## [0.13.2] — 2026-05-28
+
+Theme: **ReqIF interchange completeness + export polish**. The
+v0.13.1 export-format end-to-end test surfaced four findings; this
+release ships the three that are contained, low-risk fixes and tracks
+the rest (HTML link decoupling, serve-dashboard bugs) as REQs.
+
+### Added
+
+- **REQ-103 — ReqIF import reachable from the CLI.**
+  `rivet import-results --format reqif <file>` parses an OMG ReqIF 1.2
+  file (e.g. a DOORS / Polarion export) into rivet artifacts and writes
+  generic YAML. `parse_reqif` already lived in rivet-core but was
+  reachable only via the supplier-pull cache, so the DOORS/Polarion
+  round-trip was export-only. Round-trip (`export --format reqif` →
+  `import-results --format reqif`) preserves artifact + link counts.
+
+### Fixed
+
+- **REQ-104 — ReqIF export emits a SPECIFICATION + SPEC-HIERARCHY.**
+  The export carried SPEC-OBJECTs + SPEC-RELATIONs + SPEC-OBJECT-TYPEs
+  but no document tree, so importers rendered a flat object pool (some
+  reject a hierarchy-less file). Export now emits one SPECIFICATION
+  referencing a SPECIFICATION-TYPE, with one SPEC-HIERARCHY entry per
+  SPEC-OBJECT in store order. Object/relation payload unchanged (797
+  objects + 1551 relations on the rivet corpus — round-trip preserved).
+- **REQ-102 — `gherkin` advertised in `rivet export --help`.** The
+  format was accepted but undocumented; help text + the
+  unsupported-format error now list it (and zola).
+- **Test stabilisation: cited-source staleness fixture.** The
+  `check_sources_strict_audit_gate` integration test hardcoded a
+  `last-checked` date that aged past the 30-day staleness threshold,
+  failing the "clean fixture passes" assertion once >30 days elapsed.
+  The fixture now generates a fresh timestamp at test time.
+
+### Documented (tracked, not implemented in v0.13.2)
+
+- **REQ-105** — HTML export emits absolute server-route links
+  (`href="/artifacts/X"`, no `.html`) inherited from the reused serve
+  rendering, so static/file or sub-path hosting has broken internal
+  navigation. Fix (relative links / `--base-path` + decouple export
+  from the serve module) is regression-risky; deferred to the next
+  minor release.
+- **REQ-106** — serve dashboard reports `bound_artifact_count: 0`
+  because the variant view calls the solver without self-referencing
+  the variant file as its `--binding`. User-reported.
+- **REQ-107** — sequence/mapping field values render as Rust `Debug`
+  output instead of structured HTML. User-reported.
+- **REQ-108** — serve external-artifact navigation (prefix:ID detail
+  view, followable cross-repo references, inbound internal links) +
+  shortcut-link contrast on the light background. User-reported.
+- **REQ-109** — variant scoping for documents (design question).
+
 ## [0.13.1] — 2026-05-24
 
 Theme: **silent-failure closeout + release-pipeline standardization**.
