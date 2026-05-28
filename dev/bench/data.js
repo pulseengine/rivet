@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1779904331571,
+  "lastUpdate": 1779998445182,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "bfebc592baab78fc8b752713bc5d56bd3171e332",
-          "message": "feat(supplier): Phase 2 — federation handshake + FederationProvenance (#288) (#292)\n\n* feat(supplier): derives-from-external structured target + FederationProvenance (#288)\n\nItems 1 and 4 of issue #288 (Phase 2 federation handshake). Lays the\ndata-model foundation for cross-org link semantics and the provenance\nblock that `rivet supplier pull` will stamp on imported artifacts.\n\n- `Link.external: Option<ExternalLinkTarget>` — when YAML `target:` is\n  a mapping (the cross-org `*-external` link types), `Link.target`\n  mirrors the mapping's `anchor:` field for graph navigation while the\n  full `{org, contract, doc-id, last-synced, sha256, anchor}` payload\n  flows into `Link.external`. Existing flat-string targets round-trip\n  unchanged via a custom serde impl that emits whichever shape the\n  link carries.\n\n- `derives-from-external` link type in `schemas/common.yaml`. Companion\n  inverse: `derived-into-external`.\n\n- `FederationProvenance` block on `Provenance` for federated artifacts:\n  `{source-org, source-tool, source-id, anchor, fetched-at,\n  source-hash, mapping-recipe}`. Optional — first-party / AI / human\n  artifacts continue to serialise without the block.\n\n- `yaml_hir.rs` CST link extractor handles the structured-target shape\n  by dedenting the raw value text and round-tripping through\n  serde_yaml. Regression-tested against the previous behaviour, which\n  silently mis-targeted the link at the first key (\"org\") of the\n  mapping value.\n\n- Mechanical: every `Link { link_type, target }` initialiser across\n  core + cli + tests now includes `external: None`, and the same\n  pattern is added to a handful of stub Provenance constructions for\n  the new `federation: None` field.\n\nTests (oracle-gated, fail without the change):\n- `model::tests::link_flat_target_yaml_roundtrip`\n- `model::tests::link_structured_target_yaml_parse`\n- `model::tests::link_structured_target_yaml_serialize_then_parse`\n- `model::tests::link_structured_target_requires_anchor`\n- `model::tests::federation_provenance_yaml_roundtrip`\n- `model::tests::provenance_federation_block_is_optional`\n- `yaml_hir::tests::links_extraction_structured_external_target`\n\nPhase 2 cited-source ReqIF backend and `rivet supplier pull` ship in\nfollow-up commits on the same branch.\n\nImplements: REQ-010\nRefs: REQ-020, FEAT-001\n\nhttps://claude.ai/code/session_01Ms4nZDTtdfzvzTu8m3ghSj\n\n* feat(cited-source): kind: reqif backend with sha + XML well-formedness gate (#288)\n\nItem 2 of issue #288 (Phase 2 federation handshake). Promotes ReqIF\nfrom \"round-trip only\" to a first-class local-file backend alongside\n`kind: file`.\n\n- `CitedSourceKind::is_local_phase2()` admits `Reqif` in addition to\n  `File`.\n- `resolve_reqif_uri()` handles `reqif://`, `file://`, and bare-path\n  forms — all degrade to local-file semantics. HTTP(S) ReqIF endpoints\n  remain Phase 3+ (auth / fetch backend out of scope here).\n- `check_cited_source` for `kind: reqif`: read bytes, sha256, verify\n  against stamped hash → `Match` / `Drift` / `MissingHash`. Plus a\n  ReqIF XML well-formedness check via `reqif::parse_reqif` so a\n  malformed supplier delivery surfaces as a typed `FileError` at\n  `rivet validate` time rather than poisoning the supplier cache at\n  pull time.\n\nTests (oracle-gated, fail without the change):\n- `cited_source::tests::check_cited_source_reqif_match_when_hash_agrees`\n- `cited_source::tests::check_cited_source_reqif_drift_when_hash_differs`\n- `cited_source::tests::check_cited_source_reqif_missing_hash_returns_computed`\n- `cited_source::tests::check_cited_source_reqif_rejects_malformed_xml`\n- `cited_source::tests::resolve_reqif_uri_handles_scheme_and_relative`\n\nFixes: REQ-004\nRefs: REQ-020, FEAT-001\n\nhttps://claude.ai/code/session_01Ms4nZDTtdfzvzTu8m3ghSj\n\n* feat(supplier): rivet supplier pull <anchor> — federation handshake (#288)\n\nItem 3 of issue #288 (Phase 2 federation handshake). Wires the\n`external-anchor` artifact's `cited-source` to a local supplier cache\nunder `.rivet/supplier-cache/<org>/<contract>/`. Phase 2 backends:\n`kind: file` and `kind: reqif`; both are read-only on the source side\nand idempotent on the cache side.\n\n- New CLI subcommand: `rivet supplier pull <anchor> [--format text|json]`.\n- Looks up the anchor by ID, validates it's `external-anchor`-typed,\n  parses its `cited-source` field, fetches the local payload, and\n  cross-checks the stamped sha256 against the wire bytes. Refuses to\n  write a poisoned cache entry when the stamped hash drifts — the\n  auditor must re-stamp the anchor and retry.\n- For ReqIF, runs `reqif::parse_reqif` to verify XML well-formedness\n  before caching.\n- Writes payload as `<anchor>.<ext>` (`.reqif` for reqif kind,\n  inherits source extension for file kind) and a sibling\n  `<anchor>.manifest.yaml` carrying the `FederationProvenance` block\n  + cache metadata.\n- Idempotent: a re-pull with identical bytes refreshes the manifest's\n  `fetched-at` but leaves the payload untouched (the JSON output\n  reports `bytes_unchanged: true`).\n- `sanitize_path_component()` clamps `<org>` / `<contract>` to ASCII\n  alphanum + `-_.` so an injected path separator can't escape the\n  cache root.\n\nMade `check::sources::current_iso8601_utc()` crate-public for reuse\nas the fetch-timestamp source.\n\nTests (oracle-gated, fail without the change):\n- `cli_commands::supplier_pull_kind_file_writes_cache_and_manifest`\n- `cli_commands::supplier_pull_refuses_on_sha256_drift`\n- `cli_commands::supplier_pull_idempotent_on_re_run`\n- `cli_commands::supplier_pull_kind_reqif_writes_reqif_extension`\n- `cli_commands::supplier_pull_unknown_anchor_errors`\n\nImplements: REQ-007\nRefs: REQ-020, FEAT-001\n\nhttps://claude.ai/code/session_01Ms4nZDTtdfzvzTu8m3ghSj\n\n---------\n\nCo-authored-by: Claude <noreply@anthropic.com>",
-          "timestamp": "2026-05-19T10:46:52-05:00",
-          "tree_id": "92eb60c79f406bcc25fff673528b964d49652d40",
-          "url": "https://github.com/pulseengine/rivet/commit/bfebc592baab78fc8b752713bc5d56bd3171e332"
-        },
-        "date": 1779206042187,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 84103,
-            "range": "± 456",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 894847,
-            "range": "± 5546",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 14218636,
-            "range": "± 626699",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2188,
-            "range": "± 12",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 25505,
-            "range": "± 406",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 367284,
-            "range": "± 2857",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 93,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 93,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 93,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1453169,
-            "range": "± 25833",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 151042,
-            "range": "± 9613",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1751427,
-            "range": "± 17740",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 26747394,
-            "range": "± 1171881",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 130156,
-            "range": "± 1398",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 1137316,
-            "range": "± 24356",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 14481483,
-            "range": "± 1071664",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4305,
-            "range": "± 37",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 61694,
-            "range": "± 1361",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 804261,
-            "range": "± 7310",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 61214,
-            "range": "± 202",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 691955,
-            "range": "± 3633",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 8193007,
-            "range": "± 288658",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 734,
-            "range": "± 9",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 7537,
-            "range": "± 73",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 115541,
-            "range": "± 840",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 25553,
-            "range": "± 391",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 185462,
-            "range": "± 2799",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1738470,
-            "range": "± 25607",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1525906,
             "range": "± 31324",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0d5c308d7c346e65cec39e26d0f0d704acc1281b",
+          "message": "release(v0.13.2): ReqIF interchange completeness + export polish (#334)\n\n* release(v0.13.2): ReqIF interchange completeness + export polish\n\nShips the three contained findings from the v0.13.1 export-format\nend-to-end test, fixes a pre-existing date-bomb test, and files the\nremaining findings as tracked REQs.\n\nImplemented (REQ-102/103/104):\n- ReqIF export now emits a SPECIFICATION + SPEC-HIERARCHY document\n  tree (one SPEC-HIERARCHY per SPEC-OBJECT, referencing a\n  SPECIFICATION-TYPE). Importers (DOORS/Polarion/codeBeamer) need this\n  to render a navigable outline; some reject a hierarchy-less file.\n  Object/relation payload unchanged — round-trip preserved.\n- `rivet import-results --format reqif <file>` brings a ReqIF file\n  back into rivet artifacts (DOORS/Polarion round-trip was\n  export-only; parse_reqif existed but was reachable only via the\n  supplier-pull cache). Reports artifact + link counts.\n- `gherkin` now advertised in `rivet export --help` + the\n  unsupported-format error message (was accepted but undocumented).\n\nTest stabilisation:\n- cited_source_integration::check_sources_strict_audit_gate hardcoded\n  a `last-checked` date that aged past the 30-day staleness threshold,\n  flipping the \"clean fixture passes\" assertion to fail once >30 days\n  elapsed. The fixture now generates a fresh ISO-8601 timestamp at\n  test time (inline civil-date algorithm, no chrono/jiff dep).\n\nTests added (regression guards):\n- rivet-core: test_export_emits_specification_hierarchy,\n  test_reqif_roundtrip_preserves_artifacts_and_links.\n- rivet-cli: export_reqif_roundtrip.rs — export --help lists gherkin;\n  export reqif has SPECIFICATION + SPEC-HIERARCHY; import-results\n  --format reqif round-trips artifacts + links via the binary.\n\nFiled for the next minor (not implemented here — regression-risk /\ndifferent subsystem):\n- REQ-105 HTML export absolute-link decoupling from the serve module.\n- REQ-106 serve variant view passes --binding (bound_artifact_count: 0).\n- REQ-107 sequence/mapping field values render as Debug output.\n- REQ-108 serve external-artifact navigation + shortcut-link contrast.\n- REQ-109 variant scoping for documents (design question).\n\nFull workspace test suite green.\n\nImplements: REQ-102, REQ-103, REQ-104\nRefs: REQ-005, REQ-007\nVerifies: REQ-102, REQ-103, REQ-104\n\nCo-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>\n\n* chore(fmt): rustfmt the export_reqif_roundtrip test args\n\n---------\n\nCo-authored-by: Claude Opus 4.7 <noreply@anthropic.com>",
+          "timestamp": "2026-05-28T14:51:00-05:00",
+          "tree_id": "c038d162758105fa246134d60381d945df7a3c89",
+          "url": "https://github.com/pulseengine/rivet/commit/0d5c308d7c346e65cec39e26d0f0d704acc1281b"
+        },
+        "date": 1779998444587,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 85120,
+            "range": "± 420",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 920548,
+            "range": "± 12526",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 16715456,
+            "range": "± 812911",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1934,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 24819,
+            "range": "± 1107",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 362322,
+            "range": "± 13462",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 97,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1435998,
+            "range": "± 23580",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 168569,
+            "range": "± 9132",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1986621,
+            "range": "± 15254",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 38700761,
+            "range": "± 5744995",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 124247,
+            "range": "± 2682",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1173861,
+            "range": "± 23466",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 16904734,
+            "range": "± 1617253",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4237,
+            "range": "± 20",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 45419,
+            "range": "± 360",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 771060,
+            "range": "± 25439",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 63668,
+            "range": "± 252",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 725604,
+            "range": "± 8120",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8484928,
+            "range": "± 1067808",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 777,
+            "range": "± 17",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 6585,
+            "range": "± 27",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 99507,
+            "range": "± 426",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 21256,
+            "range": "± 189",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 147237,
+            "range": "± 777",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1357297,
+            "range": "± 22701",
             "unit": "ns/iter"
           }
         ]
