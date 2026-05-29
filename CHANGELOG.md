@@ -5,6 +5,42 @@
 
 ## [Unreleased]
 
+## [0.13.3] — 2026-05-29
+
+Theme: **serve dashboard correctness — three user-reported fixes**.
+All three surfaced from real cross-repo / variant usage; each ships
+with a regression test.
+
+### Fixed
+
+- **REQ-106 — variant scope resolves bindings embedded in the variant
+  file.** The serve dashboard reported `bound_artifact_count: 0` for
+  every variant while the CLI (`variant solve --binding <variant-file>`)
+  reported the correct counts. `ProjectVariants::discover` only loaded a
+  separate project-level `bindings.yaml`; when the `bindings:` section is
+  embedded in the variant file itself (the variant IS its own binding
+  model) the dashboard saw no binding. Discovery now also parses each
+  variant file as a `FeatureBinding`, and scope resolution prefers the
+  variant's own embedded binding (falling back to the project-level
+  one) — mirroring the CLI's `--binding <variant-file>` self-reference.
+- **REQ-108 — external artifact links route to the artifact detail.**
+  An artifact's outgoing link to a cross-repo `prefix:id` target linked
+  to `/externals/<prefix>` (the project-list page) instead of
+  `/artifacts/<prefix>:<id>` (the external artifact's own detail view,
+  which already resolves against the synced external's store). You could
+  reach an external artifact by typing the URL but never by clicking a
+  link. Now links to the detail view, keeping the prefix badge. A
+  Playwright guard asserts external references never route to
+  `/externals/`. (Not a regression — present since the LSP-WebView
+  rendering landed — but a real navigation gap now that cross-repo
+  externals are in active use.)
+- **REQ-107 — sequence / mapping field values render structurally.**
+  A field whose value was a sequence of mappings rendered as the Rust
+  `Debug` form (`Sequence [Mapping {"kind": String("e"), …}]`). Added a
+  recursive `render_field_value` that renders scalars as text,
+  sequences as `<ul>`, and mappings as nested `<dl>` — no Debug tokens
+  reach the page.
+
 ## [0.13.2] — 2026-05-28
 
 Theme: **ReqIF interchange completeness + export polish**. The
