@@ -74,6 +74,58 @@ test.describe("External Projects", () => {
     expect(body!.length).toBeGreaterThan(50);
   });
 
+  // REQ-108: an artifact's outgoing link to a cross-repo (prefix:id)
+  // target must point at the external artifact's OWN detail view
+  // (/artifacts/<prefix>:<id>, which render_artifact_detail resolves
+  // against the synced external store), NOT the /externals/<prefix>
+  // project-list page. Conditional on the project having a synced
+  // external link present (skips cleanly when none — a deterministic
+  // synced-external Playwright fixture is tracked as a follow-up).
+  test("external artifact links target the artifact detail, not the externals list", async ({
+    page,
+  }) => {
+    await page.goto("/artifacts");
+    await waitForHtmx(page);
+    // Collect a sample of artifact detail hrefs to walk.
+    const hrefs = await page
+      .locator('#content a[href^="/artifacts/"]')
+      .evaluateAll((els) =>
+        els
+          .map((e) => (e as HTMLAnchorElement).getAttribute("href"))
+          .filter((h): h is string => !!h)
+          .slice(0, 25),
+      );
+    let sawExternalLink = false;
+    for (const href of hrefs) {
+      const resp = await page.goto(href);
+      if (resp?.status() !== 200) continue;
+      await waitForHtmx(page);
+      // A cross-repo outgoing link renders as an <a> wrapping a
+      // badge-info prefix chip. Whenever one exists it must route to
+      // /artifacts/<prefix>:<id>, never the /externals/<prefix> list.
+      const extToArtifact = await page
+        .locator('a[href*="/artifacts/"]:has(span.badge-info)')
+        .count();
+      const extToList = await page
+        .locator('a[href^="/externals/"]:has(span.badge-info)')
+        .count();
+      if (extToArtifact > 0) {
+        sawExternalLink = true;
+      }
+      // The REQ-108 regression: external refs linking to /externals/.
+      expect(extToList).toBe(0);
+    }
+    if (!sawExternalLink) {
+      test
+        .info()
+        .annotations.push({
+          type: "note",
+          description:
+            "no synced external artifact links present to assert against",
+        });
+    }
+  });
+
   test("unknown external prefix returns 200 with not-found message", async ({
     page,
   }) => {

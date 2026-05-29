@@ -595,9 +595,16 @@ pub(crate) fn render_artifact_detail(ctx: &RenderContext, id: &str) -> RenderRes
                             .iter()
                             .any(|e| e.prefix == *prefix && e.synced && e.store.contains(id));
                         if ext_exists {
+                            // REQ-108: link to the cross-repo artifact's
+                            // own detail view (`/artifacts/<prefix>:<id>`,
+                            // which render_artifact_detail resolves against
+                            // the synced external's store), NOT the
+                            // `/externals/<prefix>` project-list page. The
+                            // badge keeps the external origin visible.
                             format!(
-                                "<a hx-get=\"/externals/{ext_prefix}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/externals/{ext_prefix}\">\
+                                "<a hx-get=\"/artifacts/{tgt}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{tgt}\">\
                                  <span class=\"badge badge-info\" style=\"margin-right:.35rem\">{ext_prefix}</span>{ext_id}</a>",
+                                tgt = html_escape(&link.target),
                                 ext_prefix = html_escape(prefix),
                                 ext_id = html_escape(id),
                             )
