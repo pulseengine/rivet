@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780031094546,
+  "lastUpdate": 1780074890343,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "4848961a88ef3658729c889b631df7d1c6d72b29",
-          "message": "fix(validate): surface skipped artifact files as Errors, not stderr-only WARNs (REQ-062) (#305)\n\nThe P0 from the cross-git investigation (FEAT-135 / REQ-062). `rivet\nvalidate` reported `Result: PASS (0 warnings)` when artifact files\nfailed to parse — the skip was swallowed to a stderr `log::warn!` in\n`formats::generic::import_generic_directory` and never reached the\ndiagnostics. A user who wrote an artifact file with the wrong shape\ngot a green PASS over an empty load. The textbook Cederqvist cliff:\ntextual success over a semantically-failed operation.\n\n── classification: F2a (error) vs F2b (legitimate skip) ──\n\nNot every YAML file under a `generic-yaml` source path is an artifact\nfile. `artifacts/bindings.yaml`, `artifacts/feature-model.yaml`, and\n`artifacts/variants/*.yaml` legitimately live there. Promoting every\nskip to an error would make rivet's own repo fail validate. New\n`classify_skip` (rivet-core/src/formats/generic.rs) re-parses a\nfailed file as generic YAML and decides:\n\n  1. not valid YAML at all                 -> ParseError   (F2a)\n  2. top-level mapping has an `artifacts:`  -> ParseError   (malformed list)\n  3. top-level mapping has `id` AND `type`  -> ParseError   (artifact\n       written without the `artifacts:` wrapper — the F2a reproducer)\n  4. anything else                         -> NotArtifactFile (F2b — skip)\n\n── plumbing: non-breaking ──\n\n`load_artifacts`'s signature is unchanged (the repo has a semver gate\non the rivet-core public API). New `load_artifacts_with_skips` returns\n`(Vec<Artifact>, Vec<SkippedFile>)`; `SkipKind`/`SkippedFile` are\nre-exported from the crate root. `cmd_validate` calls it, collects the\n`ParseError` skips, and pushes one `artifact-parse-error` Error\ndiagnostic per skip into the diagnostics vec — flowing into `errors`,\nthe text/JSON output, and the exit code. `NotArtifactFile` skips stay\nsilent.\n\nThe validate `--format json` diagnostic serializer also gained a\n`rule` field (it previously emitted only `severity`/`artifact_id`/\n`message`) — REQ-062's acceptance requires `rule: artifact-parse-error`\nto be visible to a JSON consumer.\n\n── tests ──\n\n  rivet-core: scan_skipped_files_classifies_malformed_vs_non_artifact,\n              classify_skip_treats_corrupt_yaml_as_parse_error\n  rivet-cli:  validate_surfaces_parse_error_on_malformed_artifact_file\n              — oracle-gated: one good + one malformed artifact file\n              -> exit non-zero, result FAIL, errors>=1, an\n              artifact-parse-error diagnostic naming the file; plus an\n              F2b assertion that a bindings.yaml adds no error.\n\nVerified green: cargo build --workspace, clippy -D warnings (exit 0),\nthe three tests above, and test_dogfood_validate (the F2b regression\nguard — rivet's own bindings/feature-model/variant files must not\nerror).\n\nImplements: REQ-004\nVerifies: REQ-062\nRefs: FEAT-135\n\nCo-authored-by: Claude Opus 4.7 <noreply@anthropic.com>",
-          "timestamp": "2026-05-20T12:50:41-05:00",
-          "tree_id": "73837d7dfd68c1edf60973bcddc8d59c1a0b83dd",
-          "url": "https://github.com/pulseengine/rivet/commit/4848961a88ef3658729c889b631df7d1c6d72b29"
-        },
-        "date": 1779299832426,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 83848,
-            "range": "± 2116",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 885756,
-            "range": "± 6357",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 13224942,
-            "range": "± 920409",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2183,
-            "range": "± 27",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 25974,
-            "range": "± 355",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 393070,
-            "range": "± 1496",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1434742,
-            "range": "± 15149",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 168037,
-            "range": "± 1079",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1924431,
-            "range": "± 13160",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 26205192,
-            "range": "± 1155283",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 129569,
-            "range": "± 2200",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 1141730,
-            "range": "± 9259",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 12870019,
-            "range": "± 542203",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4345,
-            "range": "± 13",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 62072,
-            "range": "± 232",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 806686,
-            "range": "± 2392",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 63782,
-            "range": "± 440",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 723135,
-            "range": "± 3051",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7964315,
-            "range": "± 365914",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 753,
-            "range": "± 4",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 6999,
-            "range": "± 30",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 117658,
-            "range": "± 588",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 26057,
-            "range": "± 191",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 184842,
-            "range": "± 673",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1742238,
-            "range": "± 14675",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1357802,
             "range": "± 18434",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e3e198b9605d25176c14757d82ff149fbd61cca2",
+          "message": "fix(serve): render sequence/mapping field values structurally, not Rust Debug (REQ-107) (#338)\n\nUser-reported: an artifact field whose value is a sequence of mappings\nrendered as the Rust Debug form —\n  Sequence [Mapping {\"kind\": String(\"e\"), \"page_id\": String(\"e\"),\n  \"version\": Number(2), \"section\": String(\"eee\")}]\n— because the field-rendering catch-all arm did\n`html_escape(format!(\"{other:?}\"))`.\n\nAdd `render_field_value(&serde_yaml::Value) -> String`: scalars as\nplain text, sequences as `<ul class=\"field-seq\">`, mappings as nested\n`<dl class=\"field-map\">`. Recursive, so a sequence-of-mappings (the\nreported shape) renders as a readable list of key/value blocks. Used\nby the artifact-detail extra-fields loop in place of the Debug\nfallback; the String arm keeps its linkify-source-refs behaviour.\n\nTests:\n- sequence_of_mappings_renders_structurally_not_debug — asserts the\n  structured markup AND that no `Sequence [` / `Mapping {` / `String(`\n  / `Number(` debug tokens leak.\n- scalar_field_values_render_plainly — bool/number/null.\n\nFixes: REQ-107\nRefs: REQ-007\nVerifies: REQ-107\n\nCo-authored-by: Claude Opus 4.7 <noreply@anthropic.com>",
+          "timestamp": "2026-05-29T12:08:15-05:00",
+          "tree_id": "27becebb8c6ef440fac03eadadf167eb9306e542",
+          "url": "https://github.com/pulseengine/rivet/commit/e3e198b9605d25176c14757d82ff149fbd61cca2"
+        },
+        "date": 1780074889398,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 82709,
+            "range": "± 914",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 876747,
+            "range": "± 12266",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 12987742,
+            "range": "± 1297227",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2124,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25611,
+            "range": "± 140",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 380179,
+            "range": "± 2865",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1475535,
+            "range": "± 25412",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 166821,
+            "range": "± 1403",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1933945,
+            "range": "± 25612",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 28395760,
+            "range": "± 3985254",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 127866,
+            "range": "± 2490",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1124466,
+            "range": "± 16742",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 13031153,
+            "range": "± 2050909",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4330,
+            "range": "± 31",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 63298,
+            "range": "± 278",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 825170,
+            "range": "± 9080",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 62069,
+            "range": "± 307",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 683899,
+            "range": "± 5888",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8253201,
+            "range": "± 783999",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 766,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7316,
+            "range": "± 98",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 115060,
+            "range": "± 862",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 22672,
+            "range": "± 99",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 159978,
+            "range": "± 742",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1504556,
+            "range": "± 18105",
             "unit": "ns/iter"
           }
         ]
