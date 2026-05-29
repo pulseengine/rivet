@@ -1003,3 +1003,47 @@ pub(crate) fn build_artifact_info(
         backlinks,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::rewrite_image_paths;
+
+    /// A relative image `src` in documentation is rewritten to the
+    /// `/docs-asset/` route the serve dashboard serves from the doc
+    /// directories — so `![diagram](diagram.svg)` renders a real image.
+    /// This is the serve-side mechanism behind "reference PNG/SVG from
+    /// documentation"; the static export does NOT yet bundle these
+    /// assets (tracked in REQ-105).
+    #[test]
+    fn relative_image_src_rewritten_to_docs_asset() {
+        let html = r#"<p><img src="diagrams/arch.svg" alt="arch"></p>"#;
+        let out = rewrite_image_paths(html);
+        assert!(
+            out.contains(r#"src="/docs-asset/diagrams/arch.svg""#),
+            "relative src must route through /docs-asset/: {out}"
+        );
+    }
+
+    #[test]
+    fn relative_png_src_rewritten() {
+        let out = rewrite_image_paths(r#"<img src="pic.png">"#);
+        assert!(out.contains(r#"src="/docs-asset/pic.png""#), "{out}");
+    }
+
+    /// Absolute and remote srcs pass through untouched — only relative
+    /// doc-local paths are rerouted.
+    #[test]
+    fn absolute_and_remote_src_pass_through() {
+        for src in [
+            r#"<img src="/already/absolute.svg">"#,
+            r#"<img src="https://example.com/x.png">"#,
+            r#"<img src="//cdn/x.png">"#,
+        ] {
+            let out = rewrite_image_paths(src);
+            assert!(
+                !out.contains("/docs-asset/"),
+                "absolute/remote src must not be rewritten: {out}"
+            );
+        }
+    }
+}
