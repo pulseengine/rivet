@@ -1,0 +1,7 @@
+# Generated artifacts — never commit large media.
+out/
+# Downloaded TTS voice models (large binaries, license-bound).
+voices/
+# Node deps for the standalone capture.
+node_modules/
+package-lock.json
