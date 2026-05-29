@@ -412,6 +412,57 @@ pub(crate) fn render_artifact_preview(ctx: &RenderContext, id: &str) -> String {
 
 // ── Artifact detail ───────────────────────────────────────────────────────
 
+/// Render a non-string artifact field value as readable HTML.
+///
+/// REQ-107: previously the catch-all arm emitted the Rust `Debug` form
+/// (`Sequence [Mapping {"kind": String("e"), ...}]`), which is unreadable
+/// in the dashboard. Render structurally instead: scalars as text,
+/// sequences as `<ul>`, mappings as a nested `<dl>`. Recursive so a
+/// sequence-of-mappings (the reported shape) renders as a real list of
+/// key/value blocks.
+fn render_field_value(value: &serde_yaml::Value) -> String {
+    match value {
+        serde_yaml::Value::Null => "<em>null</em>".to_string(),
+        serde_yaml::Value::Bool(b) => html_escape(&b.to_string()),
+        serde_yaml::Value::Number(n) => html_escape(&n.to_string()),
+        serde_yaml::Value::String(s) => linkify_source_refs(&html_escape(s)),
+        serde_yaml::Value::Sequence(items) => {
+            if items.is_empty() {
+                return "<em>(empty list)</em>".to_string();
+            }
+            let mut out = String::from("<ul class=\"field-seq\">");
+            for item in items {
+                out.push_str("<li>");
+                out.push_str(&render_field_value(item));
+                out.push_str("</li>");
+            }
+            out.push_str("</ul>");
+            out
+        }
+        serde_yaml::Value::Mapping(map) => {
+            if map.is_empty() {
+                return "<em>(empty)</em>".to_string();
+            }
+            let mut out = String::from("<dl class=\"field-map\">");
+            for (k, v) in map {
+                let key_str = match k {
+                    serde_yaml::Value::String(s) => s.clone(),
+                    other => format!("{other:?}"),
+                };
+                out.push_str(&format!(
+                    "<dt>{}</dt><dd>{}</dd>",
+                    html_escape(&key_str),
+                    render_field_value(v)
+                ));
+            }
+            out.push_str("</dl>");
+            out
+        }
+        // Tagged values are rare in rivet artifacts; show the inner value.
+        serde_yaml::Value::Tagged(t) => render_field_value(&t.value),
+    }
+}
+
 pub(crate) fn render_artifact_detail(ctx: &RenderContext, id: &str) -> RenderResult {
     let store = ctx.store;
     let graph = ctx.graph;
@@ -539,7 +590,7 @@ pub(crate) fn render_artifact_detail(ctx: &RenderContext, id: &str) -> RenderRes
         }
         let val = match value {
             serde_yaml::Value::String(s) => linkify_source_refs(&html_escape(s)),
-            other => html_escape(&format!("{other:?}")),
+            other => render_field_value(other),
         };
         html.push_str(&format!("<dt>{}</dt><dd>{}</dd>", html_escape(key), val));
     }
@@ -901,6 +952,40 @@ mod tests {
     fn no_mermaid_means_no_change() {
         let html = "<p>plain description with <code>foo</code></p>";
         assert_eq!(wrap_markdown_mermaid_in_svg_viewer(html), html);
+    }
+
+    // REQ-107: a sequence-of-mappings field value must render as
+    // structured HTML (nested list + key/value), never the Rust Debug
+    // form `Sequence [Mapping {"kind": String("e"), ...}]`.
+    // rivet: verifies REQ-107
+    #[test]
+    fn sequence_of_mappings_renders_structurally_not_debug() {
+        let yaml = "- kind: e\n  page_id: e\n  version: 2\n  section: eee\n";
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let out = render_field_value(&value);
+        // Structured markup, readable values.
+        assert!(out.contains("<ul class=\"field-seq\">"), "{out}");
+        assert!(out.contains("<dl class=\"field-map\">"), "{out}");
+        assert!(out.contains("<dt>kind</dt>"), "{out}");
+        assert!(out.contains("<dd>e</dd>"), "{out}");
+        assert!(out.contains("<dt>version</dt>"), "{out}");
+        assert!(out.contains("<dd>2</dd>"), "{out}");
+        // No Rust Debug tokens leak through.
+        for tok in ["Sequence [", "Mapping {", "String(", "Number("] {
+            assert!(!out.contains(tok), "debug token {tok:?} leaked: {out}");
+        }
+    }
+
+    // rivet: verifies REQ-107
+    #[test]
+    fn scalar_field_values_render_plainly() {
+        use serde_yaml::Value;
+        assert_eq!(render_field_value(&Value::Bool(true)), "true");
+        assert_eq!(
+            render_field_value(&serde_yaml::from_str::<Value>("42").unwrap()),
+            "42"
+        );
+        assert_eq!(render_field_value(&Value::Null), "<em>null</em>");
     }
 
     // rivet: verifies REQ-007
