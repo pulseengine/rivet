@@ -7963,6 +7963,28 @@ fn cmd_export_gherkin(
 }
 
 /// Export to a static HTML site using the dashboard render module.
+/// Whether a `/docs-asset/<rel>` path is a safe relative subpath to copy.
+///
+/// Artifact/document content can come from UNTRUSTED cross-repo externals
+/// (REQ-085 externals / supplier pull), so a crafted `src="/docs-asset/…"`
+/// must not be able to read or write outside the export's `_assets/docs/`.
+/// `rel.contains("..")` alone is insufficient: an absolute path makes
+/// `Path::join` discard the base (`docs_out.join("/etc/passwd")` ==
+/// `/etc/passwd`). Require every path component to be a plain `Normal`
+/// segment (which excludes `..`, `.`, root, and Windows prefixes), reject
+/// backslashes (a Unix `rel` should never contain them), and cap length.
+fn is_safe_doc_asset_path(rel: &str) -> bool {
+    use std::path::{Component, Path};
+    if rel.is_empty() || rel.len() > 1024 || rel.contains('\\') || rel.contains('\0') {
+        return false;
+    }
+    let p = Path::new(rel);
+    if p.is_absolute() {
+        return false;
+    }
+    p.components().all(|c| matches!(c, Component::Normal(_)))
+}
+
 /// Map a `rivet serve` route to the static export's file path, relative
 /// to the export root (no leading slash). REQ-105: the export reuses the
 /// serve dashboard's HTML, whose links are absolute server routes
@@ -8049,8 +8071,15 @@ fn rewrite_static_links(
             url.to_string()
         } else if let Some(asset) = url.strip_prefix("/docs-asset/") {
             // Image/asset from a docs directory → copy under _assets/docs/.
-            docs_assets.insert(asset.to_string());
-            format!("{prefix}_assets/docs/{asset}")
+            // Only record + rewrite paths that are safe relative subpaths
+            // (untrusted cross-repo content could craft a traversal). An
+            // unsafe path is left as-is (a dead link), never copied.
+            if is_safe_doc_asset_path(asset) {
+                docs_assets.insert(asset.to_string());
+                format!("{prefix}_assets/docs/{asset}")
+            } else {
+                url.to_string()
+            }
         } else if attr == "src=\"" {
             // Other absolute src (rare) — leave as-is.
             url.to_string()
@@ -8448,24 +8477,46 @@ document.addEventListener('DOMContentLoaded',function(){{
     let wanted: Vec<String> = docs_assets.borrow().iter().cloned().collect();
     if !wanted.is_empty() {
         let docs_out = assets_dir.join("docs");
+        std::fs::create_dir_all(&docs_out)
+            .with_context(|| format!("creating {}", docs_out.display()))?;
+        // Canonical export-assets root: every copy destination must stay
+        // inside it (defence-in-depth against traversal from untrusted
+        // cross-repo content, on top of is_safe_doc_asset_path).
+        let docs_out_canon = docs_out.canonicalize().unwrap_or_else(|_| docs_out.clone());
         let mut copied = 0usize;
         for rel in &wanted {
-            // Reject path traversal in the recorded asset path.
-            if rel.contains("..") {
-                eprintln!("warning: skipping docs-asset with '..' in path: {rel}");
+            // Belt-and-braces: the rewriter already filtered, but re-check
+            // before any filesystem op.
+            if !is_safe_doc_asset_path(rel) {
+                eprintln!("warning: skipping unsafe docs-asset path: {rel}");
                 continue;
             }
-            let src = state
-                .doc_dirs
-                .iter()
-                .map(|d| d.join(rel))
-                .find(|p| p.is_file());
+            // Resolve src only to a file that genuinely lives inside one of
+            // the doc directories (reject symlink escapes).
+            let src = state.doc_dirs.iter().find_map(|d| {
+                let cand = d.join(rel);
+                if !cand.is_file() {
+                    return None;
+                }
+                let d_canon = d.canonicalize().ok()?;
+                let cand_canon = cand.canonicalize().ok()?;
+                cand_canon.starts_with(&d_canon).then_some(cand_canon)
+            });
             match src {
                 Some(src) => {
                     let dest = docs_out.join(rel);
                     if let Some(parent) = dest.parent() {
                         std::fs::create_dir_all(parent)
                             .with_context(|| format!("creating {}", parent.display()))?;
+                    }
+                    // Verify the resolved destination is still inside docs_out.
+                    let dest_ok = dest
+                        .parent()
+                        .and_then(|p| p.canonicalize().ok())
+                        .is_some_and(|p| p.starts_with(&docs_out_canon));
+                    if !dest_ok {
+                        eprintln!("warning: skipping docs-asset escaping _assets/docs: {rel}");
+                        continue;
                     }
                     std::fs::copy(&src, &dest)
                         .with_context(|| format!("copying docs-asset {}", src.display()))?;
@@ -16743,5 +16794,28 @@ mod export_static_links_tests {
             "{out}"
         );
         assert!(a.contains("diagrams/arch.svg"));
+    }
+
+    /// Untrusted cross-repo content must not traverse out of `_assets/docs/`.
+    /// A crafted `/docs-asset/` path that is absolute or uses `..` is
+    /// neither recorded for copy nor rewritten to the assets dir.
+    #[test]
+    fn docs_asset_traversal_is_rejected() {
+        use super::is_safe_doc_asset_path;
+        assert!(is_safe_doc_asset_path("img/a.png"));
+        assert!(is_safe_doc_asset_path("a.svg"));
+        assert!(!is_safe_doc_asset_path("../../../etc/passwd"));
+        assert!(!is_safe_doc_asset_path("/etc/passwd"));
+        assert!(!is_safe_doc_asset_path("a/../../b"));
+        assert!(!is_safe_doc_asset_path(""));
+        assert!(!is_safe_doc_asset_path("a\\..\\b"));
+
+        let mut a = BTreeSet::new();
+        let html =
+            r#"<img src="/docs-asset/../../../etc/passwd"> <img src="/docs-asset//etc/shadow">"#;
+        let out = rewrite_static_links(html, "../", &mut a);
+        assert!(a.is_empty(), "unsafe paths must not be recorded: {a:?}");
+        assert!(!out.contains("_assets/docs/.."), "{out}");
+        assert!(!out.contains("_assets/docs//etc"), "{out}");
     }
 }
