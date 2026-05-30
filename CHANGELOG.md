@@ -5,6 +5,21 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **REQ-110 / REQ-111 — coverage "totals" no longer masquerade as artifact
+  counts.** The dashboard overview rendered `{covered} / {total} artifacts
+  covered` and the `coverage --format json` `overall` object exposed
+  `total`/`covered`, but both aggregate *per-rule* denominators — an artifact
+  satisfying N traceability rules is counted N times — which is a different
+  cardinality from the distinct-artifact `total` the `stats` command reports
+  under the same key. The numbers are unchanged (per the relabel decision);
+  the label is now honest: the HTML reads "coverage checks" and the JSON
+  `overall` exposes `checks_covered` / `checks_total` (the ambiguous
+  `total`/`covered` keys are removed from the `overall` object — a JSON
+  consumer change). Per-rule `entries[]` keep `covered`/`total`, which are
+  correct at rule scope.
+
 ## [0.13.3] — 2026-05-29
 
 Theme: **serve dashboard correctness — three user-reported fixes**.
