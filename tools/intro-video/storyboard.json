@@ -1,0 +1,54 @@
+{
+  "$comment": "Single source of truth for the rivet intro video. Each scene drives BOTH the Playwright capture pacing (capture.spec.ts reads `scenes[].hold_ms` and `scenes[].action`) AND the TTS narration (generate.sh reads `scenes[].narration`). Keep narration tight: total target 30-60s, ~80-150 words. Edit narration here, never in a generated artifact. Timings are nominal; actual A/V sync is done at mux time by laying each narration clip at its scene's cumulative offset (see generate.sh).",
+  "meta": {
+    "title": "rivet — bind traceability to your code",
+    "target_seconds": 52,
+    "voice_guide_ref": "README.md#voice-guide",
+    "viewport": { "width": 1280, "height": 720 },
+    "base_url": "http://localhost:3003"
+  },
+  "scenes": [
+    {
+      "id": "intro",
+      "action": "title_card",
+      "hold_ms": 5000,
+      "narration": "AI writes the code in minutes. What it does not do is prove why that code exists. rivet binds that proof to the repository."
+    },
+    {
+      "id": "cli-help",
+      "action": "show_cli_help",
+      "hold_ms": 6000,
+      "narration": "rivet is a command-line tool. One help screen lists every command — validate, coverage, link, audit. It runs in CI on every push."
+    },
+    {
+      "id": "dashboard",
+      "action": "open_dashboard",
+      "hold_ms": 5000,
+      "narration": "rivet serve opens a dashboard over the same artifacts — no separate database, no drift."
+    },
+    {
+      "id": "artifacts-list",
+      "action": "browse_artifacts",
+      "hold_ms": 6000,
+      "narration": "Requirements, hazards, design decisions, and test specs all live as files in the repo, validated the same way the code is."
+    },
+    {
+      "id": "artifact-detail",
+      "action": "open_artifact",
+      "hold_ms": 6000,
+      "narration": "Open one requirement and you see its links — what it satisfies, what verifies it. The chain is explicit, not reconstructed after the fact."
+    },
+    {
+      "id": "coverage",
+      "action": "show_coverage",
+      "hold_ms": 6000,
+      "narration": "Coverage reports show every gap. If a link is missing, validation fails the build. The traceability model can not silently drift from the code."
+    },
+    {
+      "id": "outro",
+      "action": "outro_card",
+      "hold_ms": 5000,
+      "narration": "rivet. Open source, built in Rust. Because agents don't remember why — so the repository has to."
+    }
+  ]
+}
