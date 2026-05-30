@@ -76,6 +76,23 @@ jobs:
           node-version: "20"
           registry-url: "https://registry.npmjs.org"
 
+      # Preflight: fail loud + early if NPM_TOKEN can't authenticate, instead
+      # of letting each per-package `npm publish` crash with a cryptic E404
+      # (expired/no-access) or EOTP (a classic *Publish* token, which the
+      # org's 2FA-on-publish rejects in CI). npm publish needs a classic
+      # *Automation* token or a granular token with read-write on
+      # @pulseengine/*. This turns a silently-frozen npm channel (it sat at
+      # 0.10.1 for ~6 releases) into an immediate, labeled failure.
+      - name: Preflight — verify npm auth
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if ! who=$(npm whoami 2>/dev/null); then
+            echo "::error title=npm auth failed::NPM_TOKEN is invalid, expired, or the wrong type. npm publish needs a classic *Automation* token (or a granular token with read-write on @pulseengine/*); a classic *Publish* token fails under 2FA with EOTP. Regenerate at npmjs.com -> Access Tokens and update the NPM_TOKEN secret."
+            exit 1
+          fi
+          echo "npm auth OK as: $who"
+
       - name: Resolve version
         id: version
         env:
@@ -152,6 +169,23 @@ jobs:
         with:
           node-version: "20"
           registry-url: "https://registry.npmjs.org"
+
+      # Preflight: fail loud + early if NPM_TOKEN can't authenticate, instead
+      # of letting each per-package `npm publish` crash with a cryptic E404
+      # (expired/no-access) or EOTP (a classic *Publish* token, which the
+      # org's 2FA-on-publish rejects in CI). npm publish needs a classic
+      # *Automation* token or a granular token with read-write on
+      # @pulseengine/*. This turns a silently-frozen npm channel (it sat at
+      # 0.10.1 for ~6 releases) into an immediate, labeled failure.
+      - name: Preflight — verify npm auth
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if ! who=$(npm whoami 2>/dev/null); then
+            echo "::error title=npm auth failed::NPM_TOKEN is invalid, expired, or the wrong type. npm publish needs a classic *Automation* token (or a granular token with read-write on @pulseengine/*); a classic *Publish* token fails under 2FA with EOTP. Regenerate at npmjs.com -> Access Tokens and update the NPM_TOKEN secret."
+            exit 1
+          fi
+          echo "npm auth OK as: $who"
 
       - name: Resolve version
         id: version
