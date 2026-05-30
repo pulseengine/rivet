@@ -149,8 +149,11 @@ test.describe("HTML Export", () => {
     // Should contain a table with artifact rows (paginated, so just check structure)
     expect(html).toContain("<table");
     expect(html).toContain("<tbody");
-    // Should contain at least one artifact link pattern (root-relative hrefs)
-    expect(html).toMatch(/href="\/artifacts\/[A-Z]/);
+    // REQ-105: artifact links are RELATIVE + .html (self-contained static
+    // export), e.g. href="../artifacts/REQ-1.html" — NOT absolute server
+    // routes (href="/artifacts/REQ-1"), which 404 as static files.
+    expect(html).toMatch(/href="(\.\.\/)?artifacts\/[A-Za-z][^"]*\.html"/);
+    expect(html).not.toMatch(/href="\/artifacts\//);
   });
 
   test("coverage/index.html contains coverage content", async () => {
