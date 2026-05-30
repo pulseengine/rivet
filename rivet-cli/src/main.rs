@@ -4524,7 +4524,7 @@ fn cmd_stpa(
     let graph = LinkGraph::build(&store, &schema);
     let diagnostics = validate::validate(&store, &schema, &graph);
 
-    print_diagnostics(&diagnostics);
+    print_diagnostics_with_remediation(&diagnostics, Some((&store, &schema)));
 
     let errors = diagnostics
         .iter()
@@ -5091,12 +5091,20 @@ fn cmd_validate(
         let diag_json: Vec<serde_json::Value> = diagnostics
             .iter()
             .map(|d| {
-                serde_json::json!({
+                // REQ-124: attach structured, agent-actionable remediation
+                // (fix options + `rivet docs diagnostics/<rule>` topic) when the
+                // rule has guidance, re-derived from the live schema + store.
+                let mut obj = serde_json::json!({
                     "severity": format!("{:?}", d.severity).to_lowercase(),
                     "artifact_id": d.artifact_id,
                     "rule": d.rule,
                     "message": d.message,
-                })
+                });
+                if let Some(rem) = rivet_core::remediation::remediation_for(d, &schema, &store) {
+                    obj["remediation"] =
+                        serde_json::to_value(&rem).unwrap_or(serde_json::Value::Null);
+                }
+                obj
             })
             .collect();
         let cross_json: Vec<serde_json::Value> = cross_repo_broken
@@ -5201,7 +5209,7 @@ fn cmd_validate(
             );
         }
 
-        print_diagnostics(&diagnostics);
+        print_diagnostics_with_remediation(&diagnostics, Some((&store, &schema)));
 
         if !cross_repo_broken.is_empty() {
             println!();
@@ -15501,7 +15509,14 @@ fn substitute_prev(s: &str, prev: &Option<String>) -> String {
     }
 }
 
-fn print_diagnostics(diagnostics: &[validate::Diagnostic]) {
+/// Print diagnostics grouped by severity. When `ctx` (the live store + schema)
+/// is supplied, each diagnostic whose rule has guidance is followed by a
+/// rustc-style `help:` block — agent-actionable fix options plus a
+/// `rivet docs diagnostics/<rule>` pointer (REQ-124).
+fn print_diagnostics_with_remediation(
+    diagnostics: &[validate::Diagnostic],
+    ctx: Option<(&Store, &rivet_core::schema::Schema)>,
+) {
     if diagnostics.is_empty() {
         println!("\nNo issues found.");
         return;
@@ -15520,14 +15535,23 @@ fn print_diagnostics(diagnostics: &[validate::Diagnostic]) {
         }
     }
 
-    for d in &errors {
+    let print_one = |d: &validate::Diagnostic| {
         println!("{d}");
+        if let Some((store, schema)) = ctx {
+            if let Some(rem) = rivet_core::remediation::remediation_for(d, schema, store) {
+                println!("{}", rem.to_help_text("    "));
+            }
+        }
+    };
+
+    for d in &errors {
+        print_one(d);
     }
     for d in &warnings {
-        println!("{d}");
+        print_one(d);
     }
     for d in &infos {
-        println!("{d}");
+        print_one(d);
     }
 }
 

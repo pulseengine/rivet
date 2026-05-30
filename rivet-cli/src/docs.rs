@@ -127,6 +127,55 @@ const TOPICS: &[DocTopic] = &[
         category: "Reference",
         content: MUTATION_DOC,
     },
+    // ── Diagnostics (rule-keyed remediation; REQ-124) ──────────────────
+    DocTopic {
+        slug: "diagnostics/link-target-type",
+        title: "Diagnostic: link-target-type — link points to a disallowed type",
+        category: "Diagnostics",
+        content: DIAG_LINK_TARGET_TYPE_DOC,
+    },
+    DocTopic {
+        slug: "diagnostics/broken-link",
+        title: "Diagnostic: broken-link — link targets a non-existent id",
+        category: "Diagnostics",
+        content: DIAG_BROKEN_LINK_DOC,
+    },
+    DocTopic {
+        slug: "diagnostics/unknown-link-type",
+        title: "Diagnostic: unknown-link-type — link type not declared in the schema",
+        category: "Diagnostics",
+        content: DIAG_UNKNOWN_LINK_TYPE_DOC,
+    },
+    DocTopic {
+        slug: "diagnostics/required-field",
+        title: "Diagnostic: required-field — a mandatory field is missing",
+        category: "Diagnostics",
+        content: DIAG_REQUIRED_FIELD_DOC,
+    },
+    DocTopic {
+        slug: "diagnostics/allowed-values",
+        title: "Diagnostic: allowed-values — field value outside the allowed set",
+        category: "Diagnostics",
+        content: DIAG_ALLOWED_VALUES_DOC,
+    },
+    DocTopic {
+        slug: "diagnostics/cardinality",
+        title: "Diagnostic: cardinality — wrong number of links for a field",
+        category: "Diagnostics",
+        content: DIAG_CARDINALITY_DOC,
+    },
+    DocTopic {
+        slug: "diagnostics/unknown-field",
+        title: "Diagnostic: unknown-field — field not declared in the schema",
+        category: "Diagnostics",
+        content: DIAG_UNKNOWN_FIELD_DOC,
+    },
+    DocTopic {
+        slug: "diagnostics/known-type",
+        title: "Diagnostic: known-type — artifact type not declared in any schema",
+        category: "Diagnostics",
+        content: DIAG_KNOWN_TYPE_DOC,
+    },
     DocTopic {
         slug: "conditional-rules",
         title: "Conditional validation rules (when/then)",
@@ -2055,6 +2104,353 @@ regardless — reload state does not affect the audit trail.
 - Mutation semantics: `rivet docs mutation`
 
 Related: [[FEAT-010]], [[REQ-007]], [[REQ-047]]
+"#;
+
+// ── Diagnostics topics (rule-keyed; REQ-124) ────────────────────────────
+
+const DIAG_LINK_TARGET_TYPE_DOC: &str = r#"# Diagnostic: link-target-type
+
+```
+ERROR: [TE-008] link 'traces-to' targets 'FEAT-019' (type 'feature'),
+       allowed target types: ["requirement", "design-decision"]
+```
+
+## What it means
+
+A link on the artifact points at a target whose **artifact type** is not in
+the `target-types` allow-list the schema declares for that link field. The link
+*resolves* (the target exists) — it just points at the wrong *kind* of thing.
+
+In the example: `TE-008` has a `traces-to` link to `FEAT-019`, but `FEAT-019`
+is a `feature`, while the schema only allows `traces-to` to reach a
+`requirement` or a `design-decision`.
+
+## How to fix it — pick the RIGHT fix, do not just silence the error
+
+There are two genuine fixes. **The artifact is wrong far more often than the
+schema.** Decide which is true here before changing anything.
+
+### A. Fix the artifact (usual)
+
+Repoint the link to an artifact of an allowed type, or remove it:
+
+```bash
+# repoint to a real requirement/design-decision
+rivet unlink TE-008 --type traces-to --target FEAT-019
+rivet link   TE-008 --type traces-to --target REQ-042
+
+# or, if the trace was simply wrong, just drop it
+rivet unlink TE-008 --type traces-to --target FEAT-019
+```
+
+> Anti-pattern (observed in the wild): do **NOT** "fix forward" by adding
+> `traces-to` links onto *other* artifacts to make the graph look balanced.
+> That converts one honest error into several, and corrupts traceability.
+> Each `link-target-type` error is local to the one link named in it.
+
+### B. Adjust the schema (rare)
+
+Only if a `feature` really *is* a legitimate `traces-to` target in your
+methodology, widen the link field in your schema:
+
+```yaml
+# in your schema's artifact-type definition for TE's type
+link-fields:
+  - name: traces-to
+    link-type: traces-to
+    target-types: [requirement, design-decision, feature]   # added: feature
+```
+
+This relaxes the rule for **every** artifact of that type — so prefer fixing
+the link unless the schema is genuinely too narrow for your process.
+
+## Why rivet enforces this
+
+`target-types` is what makes a trace *mean* something: "this test traces to a
+requirement" is a verifiable claim; "this test traces to anything" is not. The
+allow-list is how a safety/SDLC reviewer (and the coverage math) can trust that
+a `verifies` edge lands on a verifiable artifact, not a folder label.
+"#;
+
+const DIAG_BROKEN_LINK_DOC: &str = r#"# Diagnostic: broken-link
+
+```
+ERROR: [REQ-007] link 'satisfies' targets 'REQ-999' which does not exist
+```
+
+## What it means
+
+A link points at an id that is **not present in the store**. Unlike
+`link-target-type` (wrong *kind* of existing target), here the target cannot be
+found at all — a typo, a deleted artifact, or an unresolved cross-repo id.
+
+## How to fix it — always artifact-side, never the schema
+
+### A. Fix or remove the link
+
+```bash
+# typo: correct the target id
+rivet unlink REQ-007 --type satisfies --target REQ-999
+rivet link   REQ-007 --type satisfies --target REQ-099
+
+# genuinely missing: create it
+rivet add requirement REQ-099 --title "..."
+
+# obsolete: drop the link
+rivet unlink REQ-007 --type satisfies --target REQ-999
+```
+
+### B. Cross-repo target — declare the external
+
+If the target lives in another repository, it must be reachable as a
+`prefix:ID` external, not treated as a local id:
+
+```yaml
+# rivet.yaml
+externals:
+  - prefix: platform
+    repo: https://github.com/acme/platform
+    rev: <pinned-sha>
+```
+
+```bash
+rivet sync          # fetch + pin the external
+# then link with the prefixed id
+rivet link REQ-007 --type satisfies --target platform:REQ-099
+```
+
+There is **no schema fix** for a broken link — a schema change cannot conjure a
+missing target. If validate reports `broken-link`, the data (or the externals
+config) is what needs to change.
+"#;
+
+const DIAG_UNKNOWN_LINK_TYPE_DOC: &str = r#"# Diagnostic: unknown-link-type
+
+```
+ERROR: [DD-002] link type 'satisfies' is not defined in the schema
+       — declare it in link-types: or remove the link
+```
+
+## What it means
+
+A link uses a `type:` that the schema never declares under `link-types:`.
+Unlike `broken-link` (the *target* is missing) or `link-target-type` (the
+target is the wrong *kind*), here the **relationship itself** is unknown to the
+schema. Both the artifact and the schema are plausibly at fault.
+
+## How to fix it — both surfaces are legitimate
+
+### A. Fix the artifact (typo / wrong relationship)
+
+```bash
+# switch to a declared link type
+rivet unlink DD-002 --type satisfies --target REQ-001
+rivet link   DD-002 --type derives-from --target REQ-001
+
+# or drop it
+rivet unlink DD-002 --type satisfies --target REQ-001
+```
+
+`rivet docs links` (or the validate error itself) lists the declared link
+types for your schema.
+
+### B. Declare the link type in the schema
+
+If `satisfies` is a real relationship your methodology needs, add it under
+`link-types:` (with its inverse, so backlinks resolve):
+
+```yaml
+link-types:
+  - name: satisfies
+    inverse: satisfied-by
+    description: This artifact satisfies the target.
+```
+
+Then every artifact may use it. Prefer this only when the relationship is
+genuinely part of your process — not just to silence one link.
+
+## Why rivet enforces this
+
+An undeclared link type is invisible to traceability rules, coverage, and the
+graph — it would silently *not* count. Forcing every relationship to be
+declared is what keeps "satisfies" meaning one fixed, queryable thing across
+the whole project.
+"#;
+
+const DIAG_REQUIRED_FIELD_DOC: &str = r#"# Diagnostic: required-field
+
+```
+ERROR: [DD-001] missing required field 'rationale' for type 'design-decision'
+```
+
+## What it means
+
+The schema marks a field `required: true` for this artifact type, and the
+artifact does not have it. (The base fields `description` and `status` count if
+present.)
+
+## How to fix it
+
+### A. Add the field to the artifact (usual)
+
+```bash
+rivet modify DD-001 --field rationale="We chose X because ..."
+# or edit the YAML directly
+```
+
+### B. Make the field optional (if it should not be mandatory)
+
+Only if `rationale` genuinely should not be required for this type, set
+`required: false` on that field in the schema. This relaxes it for **all**
+artifacts of the type — prefer filling the field in.
+
+```yaml
+fields:
+  - name: rationale
+    type: text
+    required: false   # was true
+```
+"#;
+
+const DIAG_ALLOWED_VALUES_DOC: &str = r#"# Diagnostic: allowed-values
+
+```
+WARN: [REQ-001] field 'priority' has value 'urgent', allowed: ["must", "should", "could", "wont"]
+```
+
+## What it means
+
+The field declares an `allowed-values` set and the artifact's value is not in
+it. A controlled vocabulary keeps the value queryable and comparable across the
+project.
+
+## How to fix it
+
+### A. Use an allowed value (usual)
+
+```bash
+rivet modify REQ-001 --field priority=must
+```
+
+### B. Extend the vocabulary (if the value is legitimate)
+
+Only if `urgent` is genuinely a valid member, add it to the field's
+`allowed-values` in the schema — this changes the vocabulary for every artifact
+of the type:
+
+```yaml
+fields:
+  - name: priority
+    type: string
+    allowed-values: [must, should, could, wont, urgent]
+```
+"#;
+
+const DIAG_CARDINALITY_DOC: &str = r#"# Diagnostic: cardinality
+
+```
+ERROR: [DD-001] link 'satisfies' requires at least 1 target, found 0
+ERROR: [X] link 'owns' requires exactly 1 target, found 2
+WARN:  [X] link 'parent' allows at most 1 target, found 3
+```
+
+## What it means
+
+A link field declares how many links of its type an artifact may have
+(`exactly-one`, `one-or-many`, `zero-or-one`, `zero-or-many`), and the artifact
+violates it.
+
+## How to fix it — both surfaces are legitimate
+
+### A. Fix the links
+
+```bash
+# too few — add one
+rivet link DD-001 --type satisfies --target REQ-042
+# too many — remove the extras
+rivet unlink X --type owns --target SECONDARY
+```
+
+### B. Change the cardinality (if the rule is wrong)
+
+If the constraint itself is wrong for this type, change the link field's
+`cardinality` in the schema:
+
+```yaml
+link-fields:
+  - name: satisfies
+    link-type: satisfies
+    cardinality: zero-or-many   # was one-or-many
+```
+"#;
+
+const DIAG_UNKNOWN_FIELD_DOC: &str = r#"# Diagnostic: unknown-field
+
+```
+INFO: [REQ-001] field 'piority' is not defined in schema for type 'requirement'
+```
+
+## What it means
+
+The artifact carries a field the schema does not declare for its type. Often a
+typo (`piority` → `priority`); sometimes a genuinely new field the schema has
+not caught up with. It is INFO, not ERROR — unknown fields are preserved, not
+dropped — but they are invisible to schema-aware queries and rendering.
+
+## How to fix it
+
+### A. Remove or rename (typo / stray field)
+
+```bash
+# rename to the intended field, or drop it
+rivet modify REQ-001 --field priority=must
+# then remove the stray one by editing the YAML
+```
+
+### B. Declare the field (if it is real)
+
+If the field is a real attribute for this type, declare it under the type's
+`fields:` so it validates and renders:
+
+```yaml
+fields:
+  - name: priority
+    type: string
+```
+"#;
+
+const DIAG_KNOWN_TYPE_DOC: &str = r#"# Diagnostic: known-type
+
+```
+ERROR: [REQ-001] unknown artifact type 'requirment'
+```
+
+## What it means
+
+The artifact's `type:` is not declared in any loaded schema. Either the type is
+misspelled (`requirment` → `requirement`), or the schema that defines it is not
+loaded.
+
+## How to fix it
+
+### A. Fix the type on the artifact (typo / wrong type)
+
+```bash
+rivet modify REQ-001 --type requirement
+# or edit `type:` in the YAML
+```
+
+### B. Load or extend the schema
+
+If the type is real but undeclared:
+
+- add it to your schema's `artifact-types:`, or
+- add the schema that defines it to `project.schemas` in `rivet.yaml`:
+
+```yaml
+project:
+  schemas: [dev, my-custom-schema]
+```
 "#;
 
 // ── Phase 3 documentation topics ────────────────────────────────────────

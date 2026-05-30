@@ -2523,3 +2523,63 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-083
+
+  - id: REQ-124
+    type: requirement
+    title: "Agent-actionable diagnostic remediation (fix-options + docs link)"
+    status: approved
+    description: |
+      User-reported. A validation error such as
+
+        ERROR: [TE-008] link 'traces-to' targets 'FEAT-019' (type 'feature'),
+               allowed target types: ["requirement", "design-decision"]
+
+      states *what* is wrong but not *what to do* about it, nor which of the
+      competing fixes is correct. The witnessed failure: an AI agent "fixed
+      forward" by inventing type-invalid `traces-to` links on sibling
+      artifacts — turning 26 warnings into 8 errors — because the message
+      gave no remedy and no trade-off (fix the artifact vs. widen the schema).
+
+      Goal: least-friction remediation for an AI agent. Each remediable
+      diagnostic carries structured, ordered fix options (artifact-fix first,
+      schema-fix second), each tagged so a tool can tell "edit the artifact"
+      from "edit the schema", plus a pointer to a per-rule explanation doc.
+
+      Design (REQ-106 register: build on existing patterns, no new directive):
+      remediation is a post-construction pass keyed by `Diagnostic.rule`
+      (`rivet_core::remediation::remediation_for(diag, schema, store)`),
+      re-deriving specifics from the live schema + store the renderer already
+      holds — NOT a field threaded through the ~70 Diagnostic construction
+      sites, keeping the hot validation path untouched. Rendered as a
+      rustc-style `help:` block in text and a `remediation` object in
+      `--format json`; the doc is `rivet docs diagnostics/<rule>`. Rules
+      covered (8): `link-target-type` (the witnessed case), `broken-link`,
+      `unknown-link-type`, `required-field`, `allowed-values`, `cardinality`,
+      `unknown-field`, `known-type`. Each re-derives its specifics (offending
+      link/field/value, the schema menu of allowed alternatives) faithfully
+      from schema+store, matching the validator's own logic. Traceability
+      forward/backlink diagnostics key on the dynamic `rule.id` (not a fixed
+      string) and are a follow-up increment.
+
+      Acceptance:
+        - `rivet validate` text output on a type-invalid link shows a
+          `help:` block with an artifact-fix and a schema-fix, ending with
+          `see:  rivet docs diagnostics/link-target-type`.
+        - `rivet validate --format json` carries a `remediation` object with
+          `summary`, ordered `fix_options[].kind` (`fix-artifact` |
+          `adjust-schema`), `targets`, and `doc_topic` on the offending
+          diagnostic.
+        - `rivet docs diagnostics/<rule>` resolves for all 8 covered rules.
+        - For menu-bearing rules (unknown-link-type, allowed-values,
+          unknown-field, known-type) the artifact-fix lists exactly the
+          schema's declared alternatives (matching the validator's own
+          known-set), and the schema-fix names the offending value/type.
+        - Diagnostics for rules without guidance render unchanged (bare).
+    tags: [validate, diagnostics, remediation, agent-ux, user-reported, dx]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.14.0-track
+    links:
+      - type: traces-to
+        target: REQ-004
