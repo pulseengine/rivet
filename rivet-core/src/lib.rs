@@ -72,6 +72,7 @@ pub mod mutate;
 pub mod oslc;
 pub mod ownership;
 pub mod query;
+pub mod remediation;
 pub mod reqif;
 pub mod results;
 pub mod rivet_version;
