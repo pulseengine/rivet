@@ -2765,3 +2765,86 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-007
+
+  - id: REQ-129
+    type: requirement
+    title: "validate --review-candidates: report the unclassifiable without accepting it"
+    status: draft
+    description: |
+      Sourced from garrytan/gbrain's `src/core/schema-pack/candidate-audit.ts`
+      (when a page's type isn't in the active pack, gbrain neither silently
+      accepts nor silently drops it — it appends a SHA-redacted record to a
+      rotating audit and surfaces `schema review-candidates`). The adaptation
+      keeps gbrain's CAUTION and drops its ACCEPTANCE.
+
+      rivet must NOT accept unknown types — that stays a hard validation error
+      (loud-fail default preserved). But a structured "what did validation see
+      that it could not classify" REPORT is legitimately useful for schema
+      evolution: unknown-type artifacts, fields not in any loaded schema, and
+      unresolved `externals` `prefix:ID` references. This is a reporting view,
+      never an ingest/accept path.
+
+      SAFETY CONSTRAINT (must be designed in): the redaction must be genuinely
+      one-way (e.g. SHA of content, names of frontmatter keys but never their
+      values) and the report must NOT become a side channel that leaks
+      artifact content past the classification boundary. For most rivet
+      content this is moot, but if any artifact carries a constraint that must
+      never be named publicly, the candidate report is a place that constraint
+      has to hold. Cheap to get right, expensive to get wrong.
+
+      Acceptance:
+        - `rivet validate --review-candidates` prints a deterministic report
+          of unknown-type artifacts, unknown fields, and unresolved externals
+          refs — WITHOUT changing exit status semantics (unknown type is still
+          an error; the report is additive).
+        - The report emits only redacted identifiers (hashes / key names), never
+          field values or descriptions; a test asserts no artifact body content
+          appears in the output.
+        - Default behavior is unchanged (loud-fail); the report is opt-in.
+    tags: [validate, schema-evolution, audit, redaction, fail-closed, gbrain-derived]
+    fields:
+      priority: could
+      category: functional
+      baseline: v0.14.0-track
+    links:
+      - type: traces-to
+        target: REQ-004
+
+  - id: REQ-130
+    type: requirement
+    title: "Supersession as an additive typed link that preserves the node (not deletion)"
+    status: draft
+    description: |
+      Sourced from garrytan/gbrain's `src/core/facts-fence.ts` (supersession is
+      an explicit, in-record, reasoned act that survives in git — `~~claim~~`
+      + `superseded by #N`), reshaped onto an existing rivet pattern rather
+      than a new directive or a markdown fence parser.
+
+      Standardize a `superseded-by:` + `superseded-reason:` field convention on
+      the requirement schema (via schema `extends`), validated deterministically.
+
+      SAFETY CONSTRAINT (the whole point): in a safety domain supersession is
+      NOT deletion. A requirement that was live for three release cycles and is
+      then superseded is part of the certification evidence trail, not garbage
+      to hide. gbrain's git-delete -> soft-delete model is WRONG here.
+      `superseded-by` MUST be an additive typed graph edge that PRESERVES the
+      node — the superseded artifact stays in the store and in coverage, just
+      marked. It is never a soft-delete and never drops the node from the
+      traceability graph.
+
+      Acceptance:
+        - `superseded-by: REQ-NNN` + `superseded-reason:` validate
+          deterministically: target must exist; an artifact cannot supersede
+          itself; reason is required when `superseded-by` is present.
+        - A superseded artifact remains in the store, the link graph, and
+          coverage reporting (marked superseded, not removed).
+        - Built on schema `extends` + existing id-resolution (`prefix:ID`),
+          introducing no new config surface or directive.
+    tags: [schema, lifecycle, supersession, traceability, safety, gbrain-derived]
+    fields:
+      priority: could
+      category: functional
+      baseline: v0.14.0-track
+    links:
+      - type: traces-to
+        target: REQ-010
