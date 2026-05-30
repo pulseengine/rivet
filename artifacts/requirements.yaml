@@ -1921,45 +1921,70 @@ artifacts:
 
   - id: REQ-105
     type: requirement
-    title: "HTML export: relative internal links + decouple from the serve module"
+    title: "HTML export must be a self-contained static site (bundle the serve-only assets)"
     status: draft
     description: |
-      Two coupled findings from the v0.13.1 export-format review:
+      `cmd_export_html` reuses the `rivet serve` dashboard rendering
+      (`serve::reload_state`, `serve::components`) verbatim. It does NOT
+      spin up a server (reload_state is a pure offline loader), but the
+      rendered HTML references serve-ONLY routes and JS that the static
+      export does not bundle. Three confirmed gaps, all the same root
+      cause — "export reuses serve's HTML but ships none of serve's
+      runtime assets":
 
-      1. `cmd_export_html` reuses the `rivet serve` dashboard rendering
-         (`serve::reload_state`, `serve::components`) verbatim. It does
-         NOT spin up a server (reload_state is a pure offline loader),
-         but the rendered pages inherit the dashboard's **absolute
-         server-route** links: `href="/artifacts/CD-001"`,
-         `href="/coverage"`, etc. — with no `.html` extension.
-
-      2. As static files, those links are broken: from
+      1. **Absolute server-route links.** Pages link
+         `href="/artifacts/CD-001"`, `href="/coverage"`, … with no
+         `.html` extension. As static files these break: from
          `file:///…/html/index.html`, `/artifacts/CD-001` resolves to
-         the filesystem root, and the actual file is
-         `artifacts/CD-001.html`. So the multi-page HTML export's
-         internal navigation does not work when opened as files or
-         hosted at a non-root base path. (Content is all present; only
-         the inter-page links are wrong.)
+         the filesystem root; the real file is `artifacts/CD-001.html`.
+         Hosting under a sub-path breaks identically. (Content is all
+         present; only the inter-page links are wrong.)
 
-      Fix direction (needs care — regression-risk, hence not in v0.13.2):
-        - Either a `--base-path` option written into the links, OR
-        - rewrite links to relative + `.html` on export (the export
-          already computes a depth-adjusted `"../".repeat(depth)`
-          prefix for `_assets/`; extend that to artifact/report links),
-          AND
-        - longer-term, decouple export rendering from the `serve`
-          module so `rivet export --format html` doesn't transitively
-          depend on axum / the dashboard handlers.
+      2. **SVG-viewer toolbar JS not bundled.** The mermaid / graph
+         toolbar buttons (`svgZoomFit`, `svgFullscreen`, `svgPopout`)
+         render in the exported HTML (the `svg-viewer-toolbar` markup
+         is there) but are DEAD — their handlers live in serve's
+         `js.rs`, and the export's `_assets/` ships only
+         `mermaid.min.js` + `styles.css`. So a static export shows
+         non-functional zoom/fullscreen/popout buttons. (In `rivet
+         serve` they work and are Playwright-tested.)
+
+      3. **`/docs-asset/` images not copied.** Documentation can
+         reference PNG/SVG/jpg/gif/webp/pdf images; `render::source.rs
+         ::rewrite_image_paths` rewrites a relative `src` to
+         `/docs-asset/<path>`, which the serve `/docs-asset/{*path}`
+         route serves from the doc directories. The static export
+         neither rewrites those to a relative file path nor copies the
+         referenced image files, so `<img src="/docs-asset/…">` 404s in
+         an exported site. (Serve path verified by unit test
+         `render::source::tests::relative_image_src_rewritten_to_docs_asset`.)
+
+      Fix direction (regression-risk — own focused cycle, not a patch):
+        - Rewrite internal links to relative + `.html` on export (the
+          export already computes a depth-adjusted `"../".repeat(depth)`
+          prefix for `_assets/`; extend it to artifact/report links and
+          to image `src`), OR add a `--base-path` option.
+        - Bundle the svg-viewer toolbar JS into `_assets/` (extract the
+          handlers from `js.rs` into a shared file both serve and export
+          emit).
+        - Copy `/docs-asset/`-referenced images into the export tree and
+          rewrite their `src` to the relative copied path.
+        - Longer-term: decouple export rendering from the `serve` module
+          so `rivet export --format html` doesn't transitively depend on
+          axum / the dashboard handlers.
 
       Acceptance:
         - Opening the exported `index.html` via `file://` and clicking
           any artifact / coverage / matrix / graph link lands on the
           correct local `.html` page (no absolute `/…` routes remain).
-        - Hosting the export under a sub-path (e.g. `/v0.13.2/`) keeps
-          all internal links working.
+        - Hosting the export under a sub-path keeps all links working.
+        - The mermaid / graph zoom-fit / fullscreen / popout buttons
+          function in the exported static HTML (handler JS bundled).
+        - A doc that references a relative PNG/SVG renders that image in
+          the exported site (image copied + `src` relative).
         - `rivet export --format html` builds without linking the axum
           server stack (decoupling milestone).
-    tags: [export, html, serve-coupling, relative-links, regression-risk]
+    tags: [export, html, serve-coupling, relative-links, assets, mermaid, docs-images, regression-risk]
     fields:
       priority: must
       category: functional
