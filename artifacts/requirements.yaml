@@ -2510,12 +2510,41 @@ artifacts:
       the existing variant-scope mechanism (not a new directive), so a
       variant's exported/served document set narrows with the variant.
 
+      DESIGN DECISION (recorded 2026-05-30):
+      YES — documents should get optional per-variant scoping, designed
+      on the EXISTING binding mechanism rather than a new directive
+      (per the reuse-binding-patterns principle). Mechanism:
+
+        - A feature-binding entry's per-feature payload, today
+          `{feature: {artifacts: [...]}}`, gains an optional sibling
+          `documents: [DOC-ID, ...]`. A document bound to a feature is
+          in-scope exactly when that feature is effective in the active
+          variant — identical to how `collect_bound_ids` resolves
+          artifacts (rivet-cli/src/serve/variant.rs). No new file kind,
+          no new top-level directive.
+
+        - DEFAULT POLICY: opt-in narrowing, NOT opt-out. A document
+          NOT bound to any feature stays in scope for EVERY variant.
+          Rationale: most documents (README, getting-started, glossary)
+          are variant-agnostic; mirroring artifacts (which require an
+          explicit binding to be scoped) keeps the model consistent and
+          avoids silently hiding global docs.
+
+        - `rivet validate` always sees the full document set (scoping is
+          a serve/export view concern, never a validation gate) — same
+          contract as artifact variant scope.
+
+      Implementation is a follow-up (priority `could`); this REQ records
+      the decision + mechanism so the build has no open product question.
+
       Acceptance:
-        - Decision recorded: do documents get per-variant scoping?
-        - If yes: a variant can mark a document out-of-scope, and
-          serve / export under that variant omit it; `rivet validate`
-          still sees the full set.
-    tags: [variant, documents, scoping, design-question, user-reported]
+        - [DONE] Decision recorded: documents DO get per-variant scoping,
+          opt-in via the binding's `documents:` list, default-in for
+          unbound docs.
+        - [follow-up] A variant binding with a `documents:` list narrows
+          the served/exported document set under that variant; unbound
+          docs remain; `rivet validate` still sees the full set.
+    tags: [variant, documents, scoping, design-question, user-reported, decision-recorded]
     fields:
       priority: could
       category: functional
@@ -2523,3 +2552,588 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-083
+
+  - id: REQ-110
+    type: requirement
+    title: "Coverage HTML display counts per-rule totals, not distinct artifacts, mislabeled as 'artifacts covered'"
+    status: draft
+    description: |
+      Bug-hunt finding (cross-command-consistency, 3/3 lens-
+      confirmed).
+      
+      The line '{total_covered} / {total_items} artifacts covered
+      across {} rules' uses per-rule sums (line 238: `e.covered`
+      summed, line 238: `e.total` summed). When the same artifact
+      appears in multiple traceability rules, the HTML overview counts
+      it multiple times. This differs fundamentally from the
+      'Artifacts' stat card (line 115) which shows store.len() — each
+      artifact counted once.
+      
+      Evidence: Lines 237-238 sum coverage entry counts: `let
+      total_covered: usize = cov_report.entries.iter().map(|e|
+      e.covered).sum(); let total_items: usize =
+      cov_report.entries.iter().map(|e| e.total).sum();`. Each
+      CoverageEntry.total is computed per-rule from store.by_type(),
+      so an artifact satisfying multiple rules increments total_items
+      multiple times. But the label on line 252 implies these are
+      artifact counts: '{total_covered} / {total_items} artifacts
+      covered'. By contrast, rivet stats (lines 5919-5923) sums per-
+      type counts ensuring each artifact is counted once.
+      
+      Location: /Users/r/git/pulseengine/rivet/rivet-
+      cli/src/render/stats.rs:237-252
+      
+      Acceptance:
+        - In a project where an artifact type appears in 2+
+      traceability rules, run `rivet serve` and view the overview
+      card. The 'N/M artifacts covered' denominator (M) will not match
+      the total artifacts count when rules overlap on source type.
+      Compare against `rivet coverage` text output (line 6172) which
+      shows only rule-level totals, not distinct artifacts.
+        - the inconsistency/incorrectness above is resolved and a
+      regression test pins the corrected behaviour.
+    tags: [bug-hunt, report-consistency, cross-command-consistency, oracle-verified]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.14.0-track
+    links:
+      - type: traces-to
+        target: REQ-004
+
+  - id: REQ-111
+    type: requirement
+    title: "Coverage JSON 'total' field aggregates per-rule denominators, not distinct artifacts, creating semantic ambiguity with stats 'total'"
+    status: draft
+    description: |
+      Bug-hunt finding (cross-command-consistency, 3/3 lens-
+      confirmed).
+      
+      The 'overall.total' in coverage JSON (line 6094: `let total:
+      usize = report.entries.iter().map(|e| e.total).sum();`) sums
+      per-rule source-type totals, which can count the same artifact
+      multiple times if it appears in multiple rules. By contrast,
+      stats JSON (line 5867: `"total": stats.total`) uses the sum of
+      per-type store counts (line 5923), ensuring each artifact is
+      counted exactly once. The same JSON key 'total' has two
+      different cardinality semantics.
+      
+      Evidence: Lines 6094-6106: coverage JSON includes `"total":
+      total` where total is the sum of rule-level totals (line 6094).
+      Lines 5867-5875: stats JSON includes `"total": stats.total`
+      where stats.total is sum(store.count_by_type()) (line 5923). A
+      10-artifact project where all artifacts satisfy both of 2 rules
+      would report coverage total=20, stats total=10.
+      
+      Location: /Users/r/git/pulseengine/rivet/rivet-
+      cli/src/main.rs:6094
+      
+      Acceptance:
+        - Run `rivet coverage --format json` and `rivet stats --format
+      json` on a project where artifact types overlap in multiple
+      traceability rules. Compare the 'total' field —
+      coverage.overall.total will exceed stats.total.
+        - the inconsistency/incorrectness above is resolved and a
+      regression test pins the corrected behaviour.
+    tags: [bug-hunt, report-consistency, cross-command-consistency, oracle-verified]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.14.0-track
+    links:
+      - type: traces-to
+        target: REQ-004
+
+  - id: REQ-112
+    type: requirement
+    title: "cmd_commits excludes externals while cmd_validate includes them, creating inconsistent artifact counts"
+    status: draft
+    description: |
+      Bug-hunt finding (git-remote-semantics, 3/3 lens-confirmed).
+      
+      cmd_commits loads ONLY local artifacts from config.sources and
+      does not load externals, while cmd_validate (via ProjectContext)
+      loads both local and external artifacts when configured. This
+      means artifact counts, link validation, and unimplemented/orphan
+      classification differ between `rivet commits` and `rivet
+      validate` for projects with externals.
+      
+      Evidence: cmd_commits (line 10329-10335): loops through
+      config.sources ONLY and builds store with local artifacts. Does
+      not call load_all_externals() like cmd_validate does (line 4965,
+      5029, 5498). The known_ids set (line 10337) thus excludes all
+      cross-repo prefix:ID artifacts, so any commit referencing those
+      IDs will be classified as 'broken' by commits but valid by
+      validate.
+      
+      Location: /Users/r/git/pulseengine/rivet/rivet-
+      cli/src/main.rs:10328-10335
+      
+      Acceptance:
+        - In a project with externals declared in rivet.yaml: (1) Run
+      `rivet commits` on a range where commits reference `prefix:ID`
+      artifacts from externals. (2) Commits will report these as
+      'broken refs' because the externals were never loaded. (3) Run
+      `rivet validate` on the same source—it loads externals and
+      validates the same cross-repo references successfully. The two
+      commands count differently.
+        - the inconsistency/incorrectness above is resolved and a
+      regression test pins the corrected behaviour.
+    tags: [bug-hunt, report-consistency, git-remote-semantics, oracle-verified]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.14.0-track
+    links:
+      - type: traces-to
+        target: REQ-004
+
+  - id: REQ-113
+    type: requirement
+    title: "resolve_external_dir returns unsynced cache_dir path for git externals without checking if sync has been performed"
+    status: draft
+    description: |
+      Bug-hunt finding (git-remote-semantics, 3/3 lens-confirmed).
+      
+      resolve_external_dir returns cache_dir/<prefix> for git
+      externals (line 315) without verifying the directory has been
+      synced (i.e., .git exists). If sync has not been run, code that
+      calls resolve_external_dir will silently use a non-existent
+      path. Additionally, when --local is used during sync (setting
+      use_path=true, line 104), the symlink/copy at cache_dir is
+      created, but resolve_external_dir has no way to know if --local
+      was used, so downstream code cannot distinguish between a git
+      clone (current HEAD) vs a local symlink (working-tree state).
+      
+      Evidence: Line 315 returns cache_dir.join(&ext.prefix)
+      unconditionally for git externals. No check for .git or error if
+      the path doesn't exist. Compare to verify_baseline() (line 778)
+      which explicitly checks ext_dir.exists() before proceeding.
+      Additionally, sync_external with use_path=true (line 106)
+      creates a symlink or copy, but the SEMANTICS are never
+      recorded—downstream code using resolve_external_dir cannot tell
+      if it's looking at a cached clone or an uncommitted working
+      tree.
+      
+      Location: /Users/r/git/pulseengine/rivet/rivet-
+      core/src/externals.rs:302-317
+      
+      Acceptance:
+        - (1) Declare a git external without running `rivet sync`. (2)
+      Call any code that uses resolve_external_dir, e.g.,
+      detect_version_conflicts (line 660). It will return a cache_dir
+      path that doesn't exist. (3) Try to read an artifact from that
+      path—fails with ENOENT or similar. Additionally: (1) Run `rivet
+      sync --local` to use a local path external. (2) Later, code
+      calls resolve_external_dir—it returns the same symlink target
+      regardless of whether --local was used. (3) The resolved path
+      points to a working tree (uncommitted changes visible) but this
+      semantic is not exposed to callers, so they don't know if the
+      artifacts they loaded include unstaged changes.
+        - the inconsistency/incorrectness above is resolved and a
+      regression test pins the corrected behaviour.
+    tags: [bug-hunt, report-consistency, git-remote-semantics, oracle-verified]
+    fields:
+      priority: could
+      category: functional
+      baseline: v0.14.0-track
+    links:
+      - type: traces-to
+        target: REQ-004
+
+  - id: REQ-114
+    type: requirement
+    title: "sync_external uses --local heuristic (use_path = ext.path.is_some() && local_only) but remote-sourced code ignores local_only context, reporting state inconsistently"
+    status: draft
+    description: |
+      Bug-hunt finding (git-remote-semantics, 2/3 lens-confirmed).
+      
+      sync_external silently prefers ext.path over ext.git when
+      local_only=true (line 104), skipping the git fetch/clone
+      entirely. But the lockfile (rivet.lock) records the git URL and
+      commit SHA for all externals, regardless of whether they were
+      synced locally. This means rivet.lock may claim an external is
+      at commit ABC, but it was actually synced from a local --local
+      path that is ahead/behind ABC. The dashboard/audit sees what's
+      in rivet.lock (git SHAs) and reports that as the truth, not
+      realizing the resolved directory may have diverged.
+      
+      Evidence: Line 104: use_path = ext.path.is_some() && (local_only
+      || ext.git.is_none()). When true, git fetch/clone is skipped
+      entirely (lines 168-291 are not executed). But generate_lockfile
+      (line 579) always calls git_head_sha on the resolved directory,
+      which for a --local-synced path points to a symlink/copy—if the
+      underlying working tree has unpushed commits, the lockfile
+      records a local-only SHA, not the remote upstream. Then any tool
+      reading rivet.lock thinks that SHA is canonical, when really
+      it's just the working tree state.
+      
+      Location: /Users/r/git/pulseengine/rivet/rivet-
+      core/src/externals.rs:104 + rivet-cli/src/main.rs:10934
+      
+      Acceptance:
+        - (1) Have a git external with
+      ext.git='https://github.com/org/repo' and ext.path='../local-
+      checkout'. (2) Make a commit in ../local-checkout that's not
+      pushed. (3) Run `rivet sync --local`. (4) Run `rivet lock` (or
+      sync records it)—it captures the local-only commit SHA into
+      rivet.lock. (5) Clone the repo elsewhere; run `rivet sync`
+      without --local—it fetches from the remote, which doesn't have
+      that local commit. Now the two clones have different SHAs in
+      their lockfiles for the same external, both created by the same
+      rivet workflow.
+        - the inconsistency/incorrectness above is resolved and a
+      regression test pins the corrected behaviour.
+    tags: [bug-hunt, report-consistency, git-remote-semantics, oracle-verified]
+    fields:
+      priority: could
+      category: functional
+      baseline: v0.14.0-track
+    links:
+      - type: traces-to
+        target: REQ-004
+
+  - id: REQ-115
+    type: requirement
+    title: "Zola export emits absolute artifact links that break in subdirectories"
+    status: draft
+    description: |
+      Bug-hunt finding (path-url-leakage, 3/3 lens-confirmed).
+      
+      Artifact links in Zola markdown export begin with `/` which
+      assumes root-level deployment. In a subdirectory (e.g.,
+      /docs/rivet), these links resolve to wrong paths.
+      
+      Evidence: Line 7543 formats artifact links as: `format!("-
+      **{}** → [{}](/{prefix}/artifacts/{target_slug}/)\n",
+      l.link_type, l.target)`. The leading `/` makes the link absolute
+      to site root, not relative to current page.
+      
+      Location: /Users/r/git/pulseengine/rivet/rivet-
+      cli/src/main.rs:7543
+      
+      Acceptance:
+        - Run `rivet export --format zola --output /tmp/site --prefix
+      myproject`. Then deploy the site to a subdirectory (e.g.,
+      server.com/docs/myproject/) and click an artifact link. It
+      resolves to server.com/myproject/artifacts instead of
+      server.com/docs/myproject/artifacts.
+        - the inconsistency/incorrectness above is resolved and a
+      regression test pins the corrected behaviour.
+    tags: [bug-hunt, report-consistency, path-url-leakage, oracle-verified]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.14.0-track
+    links:
+      - type: traces-to
+        target: REQ-004
+
+  - id: REQ-116
+    type: requirement
+    title: "Zola export shortcode emits absolute href in artifact card links"
+    status: draft
+    description: |
+      Bug-hunt finding (path-url-leakage, 3/3 lens-confirmed).
+      
+      The rivet_artifact shortcode template emits `href="/{{ prefix
+      }}/artifacts/..."` which is an absolute link to site root,
+      breaking if Zola site is deployed in a subdirectory.
+      
+      Evidence: Line 7713 in the shortcode writes: `<strong><a
+      href="/{{ prefix }}/artifacts/{{ art.id | lower |
+      replace(from=".", to="-") }}/">`. The leading `/` makes this
+      absolute.
+      
+      Location: /Users/r/git/pulseengine/rivet/rivet-
+      cli/src/main.rs:7713
+      
+      Acceptance:
+        - Export with shortcodes enabled, deploy to
+      server.com/docs/rivet/, and use the shortcode. The artifact card
+      link will resolve to server.com/artifacts instead of
+      server.com/docs/rivet/artifacts.
+        - the inconsistency/incorrectness above is resolved and a
+      regression test pins the corrected behaviour.
+    tags: [bug-hunt, report-consistency, path-url-leakage, oracle-verified]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.14.0-track
+    links:
+      - type: traces-to
+        target: REQ-004
+
+  - id: REQ-117
+    type: requirement
+    title: "HTML export embeds hardcoded localhost in oEmbed discovery tag"
+    status: draft
+    description: |
+      Bug-hunt finding (path-url-leakage, 3/3 lens-confirmed).
+      
+      The oEmbed discovery link references http://localhost:{port}
+      unconditionally, even when rendering HTML export which is static
+      and has no server running. The tag becomes broken metadata in
+      exported HTML.
+      
+      Evidence: Lines 540-546 format: `http://localhost:{port}/oembed?
+      url=http://localhost:{port}/artifacts/...` using
+      ctx.context.port. This tag appears in every artifact page's
+      <head> regardless of whether it's served or exported.
+      
+      Location: /Users/r/git/pulseengine/rivet/rivet-
+      cli/src/render/artifacts.rs:540-546
+      
+      Acceptance:
+        - Run `rivet export --format html --output /tmp/dist`. Open
+      any artifact HTML file, inspect <head>, and find the oEmbed link
+      pointing to http://localhost:8080. This breaks any tool trying
+      to use oEmbed for embeds, and is invalid in static exports.
+        - the inconsistency/incorrectness above is resolved and a
+      regression test pins the corrected behaviour.
+    tags: [bug-hunt, report-consistency, path-url-leakage, oracle-verified]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.14.0-track
+    links:
+      - type: traces-to
+        target: REQ-004
+
+  - id: REQ-118
+    type: requirement
+    title: "Document wiki-link and artifact-ref resolution emits absolute paths in exported markdown"
+    status: draft
+    description: |
+      Bug-hunt finding (path-url-leakage, 2/3 lens-confirmed).
+      
+      Wiki-link replacement in Zola export (lines 7774-7785 in
+      main.rs) calls into document processing which converts [[ID]] to
+      Markdown links with absolute paths. Zola export document wiki-
+      links also use absolute `/` prefixes in line 7780.
+      
+      Evidence: Line 1131-1135 in document.rs format artifact refs as:
+      `<a ... href="/artifacts/{id}" ...>` and `<a ...
+      href="/documents/{id}" ...>`. These render in exported documents
+      and have absolute paths. Line 7780 in main.rs also shows:
+      `format!("[{id}](/{prefix}/artifacts/{target_slug}/)")` for Zola
+      doc links.
+      
+      Location: /Users/r/git/pulseengine/rivet/rivet-
+      core/src/document.rs:1131,1135
+      
+      Acceptance:
+        - Create a document with [[REQ-001]] wiki-link. Export with
+      `rivet export --format zola`. Check the generated markdown in
+      content/docs/. The link will be rendered as
+      `[REQ-001](/{prefix}/artifacts/req-001/)` (absolute). Or export
+      to HTML and inspect embedded artifact cards in docs — they will
+      have hx-get="/artifacts/{id}" which are absolute HTMX routes.
+        - the inconsistency/incorrectness above is resolved and a
+      regression test pins the corrected behaviour.
+    tags: [bug-hunt, report-consistency, path-url-leakage, oracle-verified]
+    fields:
+      priority: could
+      category: functional
+      baseline: v0.14.0-track
+    links:
+      - type: traces-to
+        target: REQ-004
+
+  - id: REQ-119
+    type: requirement
+    title: "ReqIF enumeration value resolution silently drops unresolved references"
+    status: draft
+    description: |
+      Bug-hunt finding (f2-silent-failure, 3/3 lens-confirmed).
+      
+      When importing ReqIF ATTRIBUTE-VALUE-ENUMERATION elements, the
+      code silently filters out enum-value references that don't exist
+      in the enum_value_names lookup, producing an incomplete/degraded
+      field value without warning.
+      
+      Evidence: Line 915 uses `.filter_map(|r|
+      enum_value_names.get(r.as_str()).copied())` which drops any
+      references not found; if an ENUM-VALUE-REF points to an
+      undefined identifier, it vanishes silently. Line 920 then joins
+      the resolved set, but a user has no diagnostic showing that some
+      original values were omitted. Example: a STATUS field with refs
+      [val-1, val-2, val-3] where val-2 is undefined produces
+      status="val-1, val-3" with no error or warning.
+      
+      Location: /Users/r/git/pulseengine/rivet/rivet-
+      core/src/reqif.rs:909-918
+      
+      Acceptance:
+        - Create a ReqIF file with SPEC-OBJECT/VALUES/ATTRIBUTE-VALUE-
+      ENUMERATION pointing to an ENUM-VALUE-REF that doesn't match any
+      DATATYPE-DEFINITION-ENUMERATION/SPECIFIED-VALUES/ENUM-
+      VALUE/@IDENTIFIER. Import it; the field will be silently
+      incomplete.
+        - the inconsistency/incorrectness above is resolved and a
+      regression test pins the corrected behaviour.
+    tags: [bug-hunt, report-consistency, f2-silent-failure, oracle-verified]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.14.0-track
+    links:
+      - type: traces-to
+        target: REQ-004
+
+  - id: REQ-120
+    type: requirement
+    title: "ReqIF directory import swallows parse errors to log::warn; no count/report of failures"
+    status: draft
+    description: |
+      Bug-hunt finding (f2-silent-failure, 3/3 lens-confirmed).
+      
+      import_reqif_directory silently skips malformed ReqIF files (XML
+      parse errors, invalid structure) to stderr via log::warn. No
+      count of skipped files is returned, and no mechanism signals to
+      the caller how many files failed to parse.
+      
+      Evidence: Line 703-705: `match parse_reqif(&content, type_map) {
+      Ok(arts) => artifacts.extend(arts), Err(e) =>
+      log::warn!("skipping {}: {e}", path.display()), }` — errors are
+      swallowed and logged; the caller receives only a successful Vec
+      with whatever was parsed. If 10 out of 20 files fail, the report
+      shows a total equal to only the 10 that succeeded.
+      
+      Location: /Users/r/git/pulseengine/rivet/rivet-
+      core/src/reqif.rs:700-706
+      
+      Acceptance:
+        - Place a corrupted ReqIF file alongside valid ones in a
+      directory, run import_reqif_directory. Check that total artifact
+      count doesn't include the corrupted file, and only a stderr log
+      message is produced—no diagnostic in the return value.
+        - the inconsistency/incorrectness above is resolved and a
+      regression test pins the corrected behaviour.
+    tags: [bug-hunt, report-consistency, f2-silent-failure, oracle-verified]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.14.0-track
+    links:
+      - type: traces-to
+        target: REQ-004
+
+  - id: REQ-121
+    type: requirement
+    title: "Git checkout failure in external sync is silently ignored on fallback attempt"
+    status: draft
+    description: |
+      Bug-hunt finding (f2-silent-failure, 3/3 lens-confirmed).
+      
+      When syncing an existing git external, if checkout of the
+      requested git_ref fails, the code attempts a fallback checkout
+      as origin/{git_ref} but silently swallows the error with .ok()
+      without verifying the fallback succeeded.
+      
+      Evidence: Lines 204-209: Initial checkout is error-checked (`if
+      !output.status.success() { ... }`); but lines 212-217 show the
+      fallback checkout wrapped in `.output().ok()` — any failure is
+      discarded. If both checkouts fail, the external symlink points
+      to a git repo in an unknown/inconsistent state, but no error is
+      returned to the caller.
+      
+      Location: /Users/r/git/pulseengine/rivet/rivet-
+      core/src/externals.rs:210-217
+      
+      Acceptance:
+        - Create an external with git_ref pointing to a ref that
+      doesn't exist locally or on origin (e.g. 'nonexistent-branch').
+      First checkout fails, fallback to 'origin/nonexistent-branch'
+      also fails. The function returns Ok(dest) pointing to a repo in
+      an inconsistent state.
+        - the inconsistency/incorrectness above is resolved and a
+      regression test pins the corrected behaviour.
+    tags: [bug-hunt, report-consistency, f2-silent-failure, oracle-verified]
+    fields:
+      priority: could
+      category: functional
+      baseline: v0.14.0-track
+    links:
+      - type: traces-to
+        target: REQ-004
+
+  - id: REQ-122
+    type: requirement
+    title: "External symlink/directory removal failures are silently ignored"
+    status: draft
+    description: |
+      Bug-hunt finding (f2-silent-failure, 2/3 lens-confirmed).
+      
+      When removing an existing destination symlink or directory
+      before creating a new one, removal errors are silently swallowed
+      with .ok(). If removal fails (permissions, in-use file), the
+      code proceeds to create the new external, potentially creating a
+      mixed/corrupted state.
+      
+      Evidence: Lines 148 and 150 use `.ok()` on remove_file and
+      remove_dir_all respectively. If either fails (e.g., permission
+      denied, file in use), the subsequent symlink() or
+      copy_dir_recursive() call may fail or create a
+      partial/inconsistent state without the original cleanup issue
+      being surfaced to the caller.
+      
+      Location: /Users/r/git/pulseengine/rivet/rivet-
+      core/src/externals.rs:147-151
+      
+      Acceptance:
+        - Create an external with path pointing to a directory. Create
+      a subdirectory in that external's destination with a file held
+      open by another process. Re-run sync_external. The
+      remove_dir_all will fail and be swallowed; the subsequent
+      symlink/copy may fail cryptically or silently produce a
+      corrupted state.
+        - the inconsistency/incorrectness above is resolved and a
+      regression test pins the corrected behaviour.
+    tags: [bug-hunt, report-consistency, f2-silent-failure, oracle-verified]
+    fields:
+      priority: could
+      category: functional
+      baseline: v0.14.0-track
+    links:
+      - type: traces-to
+        target: REQ-004
+
+  - id: REQ-123
+    type: requirement
+    title: "ReqIF title/description default fallbacks mask missing required fields"
+    status: draft
+    description: |
+      Bug-hunt finding (f2-silent-failure, 3/3 lens-confirmed).
+      
+      When constructing a Rivet artifact from a ReqIF SPEC-OBJECT,
+      title and description are populated with fallbacks
+      (unwrap_or_default, or_else chains) that mask the absence of
+      required fields, reporting an artifact with empty title rather
+      than raising an error.
+      
+      Evidence: Line 943: `let title = reqif_name.or_else(||
+      obj.long_name.clone()).unwrap_or_default()` — if both reqif_name
+      and obj.long_name are None, title becomes an empty string. A
+      Rivet artifact with an empty title is semantically invalid
+      (required field), but no validation error is raised during
+      import.
+      
+      Location: /Users/r/git/pulseengine/rivet/rivet-
+      core/src/reqif.rs:939-945
+      
+      Acceptance:
+        - Create a ReqIF SPEC-OBJECT without @LONG-NAME and no
+      ReqIF.Name attribute value. The imported artifact will have an
+      empty title field. This violates the Rivet schema (title is
+      required) but is not detected during ReqIF import.
+        - the inconsistency/incorrectness above is resolved and a
+      regression test pins the corrected behaviour.
+    tags: [bug-hunt, report-consistency, f2-silent-failure, oracle-verified]
+    fields:
+      priority: could
+      category: functional
+      baseline: v0.14.0-track
+    links:
+      - type: traces-to
+        target: REQ-004
