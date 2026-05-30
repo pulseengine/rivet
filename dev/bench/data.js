@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780114371159,
+  "lastUpdate": 1780119106387,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "ef5a855c2d7386c7701ba18245400a0e686cb973",
-          "message": "Wave 2: five P1 cross-git fixes (REQ-063/064/068/075/076) (#309)\n\n* fix(init): safety-critical presets must produce validating projects (REQ-063)\n\nThe do-178c/en-50128/iec-61508/iec-62304 presets named schemas that\nwere never embedded in the binary; rivet init relies entirely on the\ninclude_str! embedded-schema registry and never writes schemas to disk,\nso the next rivet validate failed. Embed all four schemas alongside the\nworking five. iec-61508 and iec-62304 also carried an unsupported\n`condition:` field inside traceability-rules (no such parser feature\nexists); replace it with the project-level-concern comment pattern that\nen-50128 already uses, so the schemas parse and fresh projects validate.\n\nImplements: REQ-007\nVerifies: REQ-063\nRefs: FEAT-135\n\n* fix(validate): derives-from-external satisfies a required derives-from link-field (REQ-064)\n\nThe cross-git investigation's S4 finding misdiagnosed this as \"the\nstructured target is silently parsed as derives-from with no target\".\nReproduction shows the link parses correctly — `rivet get` reports\n`type: derives-from-external, target: ANCHOR-X`. The real bug is in\nthe validator's link-field cardinality check\n(`validate.rs` phase 4): it counted only links whose type *exactly*\nequalled the required link-field type. A `sw-req` carrying a\n`derives-from-external` link to satisfy its required `derives-from`\nlink-field therefore counted 0 and failed with a spurious\n`link 'derives-from' requires at least 1 target, found 0` Error.\n\nFix: new `link_satisfies_field(actual, required)` — a `<base>-external`\nlink is the cross-organizational variant of `<base>` (it terminates at\nan `external-anchor` rather than an in-house artifact, but the\nderivation still happened, it just crossed an org boundary), so it\nsatisfies a required `<base>` link-field. The cardinality count uses\nit. The target-type check deliberately does NOT: a `derives-from-external`\nlink legitimately points at an `external-anchor`, which is not in the\nbase field's target-type list, and the existing exact-match filter\ncorrectly skips it there.\n\nRegression test: validate_accepts_derives_from_external_structured_target.\nVerified: test_dogfood_validate still green; clippy -D warnings exit 0.\n\nImplements: REQ-004\nVerifies: REQ-064\nRefs: FEAT-135\n\n* fix(supplier): rivet supplier pull refuses on sha256 drift; --accept-drift to override (REQ-068)\n\n`rivet supplier pull` was the only side of the federation handshake that\nsilently accepted changed supplier bytes — overwriting the cache and\nexiting 0 with no DRIFT header — while `rivet validate` correctly refused\nthe same drift. A fetch was thus granting the supplier authority to revise\na delivered artifact with no audit trail.\n\nPull is now the authorisation point: it compares the new payload's sha256\nagainst the prior recorded hash (the prior cache manifest's source-hash,\nfalling back to the anchor's stamped cited-source.sha256). On mismatch it\nrefuses — exit non-zero, naming the prior hash, the new hash, and the\nsupplier identity (org + contract) — and leaves the cache untouched. The\nnew --accept-drift flag is the explicit auditor authorisation path: it\noverwrites the cache and re-stamps the anchor's cited-source. First pulls\nand idempotent re-pulls of identical bytes are unaffected.\n\nImplements: REQ-007\nVerifies: REQ-068\nRefs: FEAT-135\n\n* fix(validate): detect duplicate artifact IDs + surface orphans (REQ-075, REQ-076)\n\nREQ-075: two artifacts declaring the same `id` collapsed silently —\n`Store::upsert` is last-write-wins, so by the time `validate::validate`\nruns only the survivor exists and the validator is structurally blind to\nthe collision. Extend the REQ-062 load-report channel: add a `LoadReport`\nstruct and `load_artifacts_with_report` that, alongside skipped files,\nreturns `DuplicateId` records detected at LOAD time where both copies are\nstill visible. `cmd_validate` loads every source, runs a project-wide\nduplicate pass (`detect_duplicate_ids_for_validate`), and emits one Error\ndiagnostic per collision with `rule: duplicate-artifact-id` naming both\nsource files and the colliding ID. `load_artifacts`'s signature is\nunchanged (rivet-core public API semver gate).\n\nREQ-076: orphan artifacts (no inbound and no outbound links) were visible\nto `rivet stats` but never to `rivet validate`. `cmd_validate` now reuses\n`LinkGraph::orphans` — the exact computation behind `rivet stats` — and\nemits one `rule: orphan-artifact` diagnostic per orphan. Severity is\nWarning by default (a hard-error default would break Rivet's own dogfood,\nwhich carries orphans) and is promoted to Error by a new `--strict-orphans`\nflag, wired exactly like `--strict-cited-sources`.\n\n`cmd_stats` now mirrors both rules into its diagnostic counts so `stats`\nand `validate` stay consistent (`stats_json_counts_match_validate`). Both\nnew rules surface in the `--format json` `rule` field automatically.\n\nRegression tests: `validate_detects_duplicate_artifact_ids` (two files\nand twice-in-one-file) and `validate_reports_orphans_as_warnings`\n(Warning default, Error under `--strict-orphans`).\n\nImplements: REQ-004\nVerifies: REQ-075, REQ-076\nRefs: FEAT-135\n\nCo-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>\n\n* fix(artifacts): resolve the real REQ-060 duplicate surfaced by REQ-075\n\nREQ-075's new duplicate-artifact-id detection (in this same Wave-2\nbranch) immediately surfaced a genuine, pre-existing collision in\nrivet's own artifacts/: `REQ-060` was declared twice —\n  - artifacts/v040-verification.yaml:471 \"Cross-platform binary support\"\n  - artifacts/v042-artifacts.yaml:393  \"Every embed option must validate\n                                        before the embed renders\"\ntwo unrelated requirements sharing one ID. Until now `Store::upsert`'s\nlast-write-wins silently kept only one and `rivet validate` reported\nPASS — exactly the F2 silent-data-loss the cross-git investigation is\nabout. With REQ-075 shipped, `rivet validate` on the rivet repo itself\n(pre-commit hook + CI) would FAIL on this collision.\n\nResolved by renaming the v042 entry to REQ-077 (the next free id). It\nwas the safe one to rename: zero inbound links anywhere in artifacts/,\nzero mentions in docs/. The v040 REQ-060 keeps its id — its two inbound\nlinks (v040-verification.yaml:125, :453) stay valid. The renamed\nartifact's own outgoing links (verifies REQ-010, satisfies REQ-004) are\nunchanged.\n\nAlso folds in `cargo fmt` of the cherry-pick-integrated cli_commands.rs\ntest block.\n\nImplements: REQ-010\nRefs: FEAT-135, REQ-075\n\nCo-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.7 <noreply@anthropic.com>",
-          "timestamp": "2026-05-20T23:31:51-05:00",
-          "tree_id": "ab100591c9bac2a1e1bc51bfa82f34cde6e4eb76",
-          "url": "https://github.com/pulseengine/rivet/commit/ef5a855c2d7386c7701ba18245400a0e686cb973"
-        },
-        "date": 1779338326123,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 85840,
-            "range": "± 456",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 929685,
-            "range": "± 10074",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 16086985,
-            "range": "± 1427686",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1943,
-            "range": "± 44",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 24826,
-            "range": "± 285",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 370119,
-            "range": "± 1999",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 97,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1440758,
-            "range": "± 34473",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 152079,
-            "range": "± 815",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1795842,
-            "range": "± 50694",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 29035517,
-            "range": "± 2178741",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 122812,
-            "range": "± 5044",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 1127854,
-            "range": "± 18895",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 17413782,
-            "range": "± 1924243",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4158,
-            "range": "± 13",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 44042,
-            "range": "± 220",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 801019,
-            "range": "± 7852",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 65113,
-            "range": "± 377",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 755828,
-            "range": "± 2583",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 8599758,
-            "range": "± 371200",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 772,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 6910,
-            "range": "± 69",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 98628,
-            "range": "± 927",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 23443,
-            "range": "± 82",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 172844,
-            "range": "± 531",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1577260,
-            "range": "± 20373",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1354639,
             "range": "± 29448",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "197134debfb5ab7af037f9217e7ff42059bdacd8",
+          "message": "ci(release-npm): preflight npm-auth check (loud-fail on bad/expired token) (#342)\n\nThe npm channel silently froze at 0.10.1 for ~6 releases because\nNPM_TOKEN expired, then was replaced with a classic *Publish* token\nthat fails under the org's 2FA-on-publish with EOTP — and the only\nsignal was a per-package `npm publish` E404/EOTP crash deep in the job.\n\nAdd a `npm whoami` preflight right after setup-node in both publish\njobs. A bad/expired/wrong-type token now fails immediately with a\nlabeled ::error:: telling the maintainer exactly what to do\n(Automation or granular read-write token), instead of a cryptic\nper-platform publish failure. F2 loud-fail-over-silent-success ethos —\nthe same principle rivet's own validators enforce.\n\nRefs: REQ-068",
+          "timestamp": "2026-05-30T00:24:22-05:00",
+          "tree_id": "c02792d311b03d65bce3a76c26eef98f815fe302",
+          "url": "https://github.com/pulseengine/rivet/commit/197134debfb5ab7af037f9217e7ff42059bdacd8"
+        },
+        "date": 1780119104980,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 85847,
+            "range": "± 366",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 920803,
+            "range": "± 3909",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 15431206,
+            "range": "± 1001728",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1979,
+            "range": "± 63",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 24910,
+            "range": "± 784",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 346273,
+            "range": "± 8531",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 97,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1421370,
+            "range": "± 10317",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 164511,
+            "range": "± 643",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1933934,
+            "range": "± 18966",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 40719149,
+            "range": "± 6154192",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 127147,
+            "range": "± 452",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1173783,
+            "range": "± 17417",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 17332794,
+            "range": "± 1198429",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4102,
+            "range": "± 113",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 46066,
+            "range": "± 126",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 775140,
+            "range": "± 19277",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 56053,
+            "range": "± 712",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 699132,
+            "range": "± 4275",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8455384,
+            "range": "± 330811",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 741,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 6849,
+            "range": "± 53",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 99474,
+            "range": "± 321",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 21098,
+            "range": "± 89",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 146921,
+            "range": "± 3426",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1358005,
+            "range": "± 8753",
             "unit": "ns/iter"
           }
         ]
