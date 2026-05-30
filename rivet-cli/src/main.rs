@@ -8049,7 +8049,7 @@ fn rewrite_static_links(
         let mut best: Option<(usize, &str)> = None;
         for a in ATTRS {
             if let Some(i) = rest.find(a) {
-                if best.map_or(true, |(b, _)| i < b) {
+                if best.is_none_or(|(b, _)| i < b) {
                     best = Some((i, a));
                 }
             }
