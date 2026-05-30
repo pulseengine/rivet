@@ -2583,3 +2583,268 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-004
+
+  - id: REQ-125
+    type: requirement
+    title: "validate/coverage --explain: the oracle teaches its own reasoning on every fire"
+    status: draft
+    description: |
+      Sourced from a source-level study of garrytan/gbrain
+      (`src/core/search/explain-formatter.ts` — every ranking decision is
+      stamped onto the result and `--explain` replays the derivation),
+      reshaped to rivet's deterministic register. The transferable asset is
+      the discipline, not gbrain's fuzzy core: make the mechanical verdict
+      legible.
+
+      rivet has the analogous OPACITY problem with none of gbrain's
+      fuzziness: when `rivet validate` emits a diagnostic, or
+      `{{coverage}}`/`{{matrix}}` reports a number, or a traceability rule
+      marks an artifact uncovered, the *why* is implicit. The gate fires red
+      and a human (or agent) must INFER the reason. `--explain` closes that
+      loop: the oracle stops being a wall you bump into and becomes a wall
+      that says why it is there — CI-as-curriculum made explicit, and the
+      key to handing the gate to a junior or an agent.
+
+      Crucially this is a pure FORMATTER over data `validate::Diagnostic`
+      and `coverage` already compute: which traceability rule fired, which
+      `required-link`/`required-backlink` it checked, which `LinkGraph`
+      edges were consulted, which condition failed. No new computed value,
+      no scoring, no heuristic, no new failure surface — it surfaces
+      computation already trusted.
+
+      Acceptance:
+        - `rivet validate --explain <ID>` prints, per diagnostic on <ID>,
+          the rule id + the specific schema constraint + the edges/fields
+          that produced the verdict; deterministic (same input -> byte-
+          identical output, diff-checkable against a fixture).
+        - `rivet coverage --explain <RULE>` shows why each artifact got its
+          covered/uncovered classification.
+        - `--explain` introduces NO new number; an automated check asserts
+          the explained values equal the un-explained `Diagnostic`/coverage
+          output.
+    tags: [validate, coverage, explainability, audit, ci-as-curriculum, gbrain-derived]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.14.0-track
+    links:
+      - type: traces-to
+        target: REQ-004
+
+  - id: REQ-126
+    type: requirement
+    title: "Baseline-snapshot drift gate — with rebaselining as a gated, trailer-carrying act"
+    status: draft
+    description: |
+      Sourced from garrytan/gbrain's two-gate eval harness
+      (`src/commands/eval-gate.ts`: regression-baseline + correctness gate,
+      both fail-CLOSED on any throw), reshaped to rivet's deterministic,
+      non-probabilistic register. It is the general form of the
+      staleness/drift problem: artifacts silently ceasing to match reality
+      between releases. rivet runs `rivet validate`/`rivet commits` in CI but
+      has no committed *baseline snapshot* check, so a refactor that changes
+      coverage %, matrix coverage, or diagnostic counts is not caught
+      mechanically. The primitive exists (`snapshot.rs`, `delta=NAME` in
+      `embed.rs`); this formalizes it on existing patterns.
+
+      THE TRAP (must be designed in, not bolted on): the baseline file is
+      itself an artifact that can rot. If `.rivet/baseline.json` is
+      regenerated carelessly ("tests were red, I rebaselined to green") the
+      gate launders drift and reintroduces the green-because-unobserved
+      failure mode. Therefore rebaselining MUST be a gated, reviewed,
+      rationale-carrying act — never a convenience. The word doing the work
+      is UNEXPLAINED: drift accompanied by a commit trailer/rationale is
+      acceptable; drift without one fails closed. Updating the baseline must
+      be harder than fixing the drift, or the gate trains people to launder
+      drift into the baseline.
+
+      Acceptance:
+        - `rivet snapshot baseline` emits a deterministic JSON snapshot
+          (artifact count by type, coverage %, per-rule coverage, diagnostic
+          counts by severity, matrix coverage); byte-identical for identical
+          input.
+        - `rivet check --baseline <file>` exits non-zero on any delta,
+          printing the changed metric(s); exits 0 when unchanged.
+        - Fail-closed: any error computing the snapshot makes the check FAIL,
+          never silently pass.
+        - Rebaselining is gated: a baseline update is only accepted with an
+          explicit rationale (commit trailer or `--reason`), and CI can
+          distinguish an explained rebaseline from an unexplained one.
+    tags: [validate, snapshot, regression-gate, ci, fail-closed, anti-laundering, gbrain-derived]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.14.0-track
+    links:
+      - type: traces-to
+        target: REQ-101
+
+  - id: REQ-127
+    type: requirement
+    title: "MCP fail-closed invariant: lock that no tool can override schema/externals resolution"
+    status: draft
+    description: |
+      Sourced from garrytan/gbrain's `src/core/schema-pack/op-trust-gate.ts`
+      (a remote caller is refused a per-call schema override unless the
+      context is explicitly trusted — fail-closed). gbrain needed this
+      because multi-user/remote callers forced it; rivet has not been forced
+      yet because it has been single-operator.
+
+      AUDIT (performed 2026-05-30 against rivet-cli/src/mcp.rs): the hole
+      does NOT exist today. Schema/store/graph are resolved ONCE at
+      `RivetServer::new -> load_project(project_dir)` and held in an RwLock;
+      `project_dir` is a fixed `Arc<PathBuf>`. `rivet_validate` takes no
+      params. Every `*Params` struct carries only data fields (ids, filters,
+      titles, query strings) — NONE exposes a schema, externals, path,
+      project, or config override. `rivet_reload` re-runs `load_project` on
+      the SAME fixed dir. So rivet's MCP gate is currently fail-closed —
+      but BY OMISSION, not by an explicit, tested invariant.
+
+      The risk is latent: the day someone adds a convenience param (e.g.
+      "validate against this schema" / "use this externals set") to an MCP
+      tool, the hole opens silently with no guard. This REQ LOCKS the
+      property as an explicit invariant + regression test, so the gate can
+      never be told to look the other way by whoever drives the agent.
+      Directly reinforces REQ-051 ("only CI enforcement provides
+      traceability assurance"). Scope: hardening, not an urgent fix.
+
+      Acceptance:
+        - A documented invariant: no MCP tool parameter may alter schema or
+          externals resolution for a validate/query/coverage/get operation.
+        - A regression test asserts that an MCP-context validate cannot be
+          pointed at an alternate schema/externals to suppress a diagnostic
+          the default resolution emits (the test fails if such a param is
+          ever introduced).
+        - If a per-call override is ever genuinely needed, it is gated to
+          trusted/local context with a fail-closed default (untrusted unless
+          explicitly local), mirroring gbrain's `ctx.remote ?? true`.
+    tags: [mcp, security, fail-closed, validate, audited, REQ-051, gbrain-derived]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.14.0-track
+    links:
+      - type: traces-to
+        target: REQ-051
+
+  - id: REQ-128
+    type: requirement
+    title: "rivet list --orphans: mechanical detection of asserted-but-unanchored claims"
+    status: draft
+    description: |
+      Sourced from garrytan/gbrain's `src/core/search/graph-signals.ts`
+      (inbound-link / cross-source signals), taking ONLY the deterministic
+      structural-graph part and rejecting the ML/boost layer entirely.
+
+      In rivet's domain an orphan is not a lonely note — it is a requirement
+      with no verifying test, a design decision linked to no hazard, a
+      safety-case node nothing traces to: an asserted-but-unjustified claim,
+      the exact knowledge-graph failure mode rivet's epistemics exist to
+      prevent. So `--orphans` is not a nice-to-have report; it is the
+      standing query that answers "does the graph contain any claim that
+      isn't anchored?" — mechanical enforcement of the thing the toolchain
+      rests on. rivet already computes the signal
+      (`links::LinkGraph::backlinks_to`, `reachable-from`/`reachable-to` in
+      `sexpr_eval.rs`); the gap is surfacing it. No scoring, no fuzziness —
+      ordering is by exact integer link counts only.
+
+      Acceptance:
+        - `rivet list --orphans` lists artifacts with no inbound AND no
+          outbound links (the existing orphan diagnostic as a queryable
+          view).
+        - A structural report (CLI and/or a `{{group:backlinks}}` embed)
+          ranks artifacts by inbound-link count using `LinkGraph`,
+          deterministic and reproducible.
+        - No relevance/semantic ranking is introduced; ordering is exact
+          integer counts only.
+    tags: [query, graph, backlinks, orphans, epistemics, gbrain-derived]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.14.0-track
+    links:
+      - type: traces-to
+        target: REQ-007
+
+  - id: REQ-129
+    type: requirement
+    title: "validate --review-candidates: report the unclassifiable without accepting it"
+    status: draft
+    description: |
+      Sourced from garrytan/gbrain's `src/core/schema-pack/candidate-audit.ts`
+      (when a page's type isn't in the active pack, gbrain neither silently
+      accepts nor silently drops it — it appends a SHA-redacted record to a
+      rotating audit and surfaces `schema review-candidates`). The adaptation
+      keeps gbrain's CAUTION and drops its ACCEPTANCE.
+
+      rivet must NOT accept unknown types — that stays a hard validation error
+      (loud-fail default preserved). But a structured "what did validation see
+      that it could not classify" REPORT is legitimately useful for schema
+      evolution: unknown-type artifacts, fields not in any loaded schema, and
+      unresolved `externals` `prefix:ID` references. This is a reporting view,
+      never an ingest/accept path.
+
+      SAFETY CONSTRAINT (must be designed in): the redaction must be genuinely
+      one-way (e.g. SHA of content, names of frontmatter keys but never their
+      values) and the report must NOT become a side channel that leaks
+      artifact content past the classification boundary. For most rivet
+      content this is moot, but if any artifact carries a constraint that must
+      never be named publicly, the candidate report is a place that constraint
+      has to hold. Cheap to get right, expensive to get wrong.
+
+      Acceptance:
+        - `rivet validate --review-candidates` prints a deterministic report
+          of unknown-type artifacts, unknown fields, and unresolved externals
+          refs — WITHOUT changing exit status semantics (unknown type is still
+          an error; the report is additive).
+        - The report emits only redacted identifiers (hashes / key names), never
+          field values or descriptions; a test asserts no artifact body content
+          appears in the output.
+        - Default behavior is unchanged (loud-fail); the report is opt-in.
+    tags: [validate, schema-evolution, audit, redaction, fail-closed, gbrain-derived]
+    fields:
+      priority: could
+      category: functional
+      baseline: v0.14.0-track
+    links:
+      - type: traces-to
+        target: REQ-004
+
+  - id: REQ-130
+    type: requirement
+    title: "Supersession as an additive typed link that preserves the node (not deletion)"
+    status: draft
+    description: |
+      Sourced from garrytan/gbrain's `src/core/facts-fence.ts` (supersession is
+      an explicit, in-record, reasoned act that survives in git — `~~claim~~`
+      + `superseded by #N`), reshaped onto an existing rivet pattern rather
+      than a new directive or a markdown fence parser.
+
+      Standardize a `superseded-by:` + `superseded-reason:` field convention on
+      the requirement schema (via schema `extends`), validated deterministically.
+
+      SAFETY CONSTRAINT (the whole point): in a safety domain supersession is
+      NOT deletion. A requirement that was live for three release cycles and is
+      then superseded is part of the certification evidence trail, not garbage
+      to hide. gbrain's git-delete -> soft-delete model is WRONG here.
+      `superseded-by` MUST be an additive typed graph edge that PRESERVES the
+      node — the superseded artifact stays in the store and in coverage, just
+      marked. It is never a soft-delete and never drops the node from the
+      traceability graph.
+
+      Acceptance:
+        - `superseded-by: REQ-NNN` + `superseded-reason:` validate
+          deterministically: target must exist; an artifact cannot supersede
+          itself; reason is required when `superseded-by` is present.
+        - A superseded artifact remains in the store, the link graph, and
+          coverage reporting (marked superseded, not removed).
+        - Built on schema `extends` + existing id-resolution (`prefix:ID`),
+          introducing no new config surface or directive.
+    tags: [schema, lifecycle, supersession, traceability, safety, gbrain-derived]
+    fields:
+      priority: could
+      category: functional
+      baseline: v0.14.0-track
+    links:
+      - type: traces-to
+        target: REQ-010
