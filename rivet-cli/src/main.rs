@@ -4524,7 +4524,7 @@ fn cmd_stpa(
     let graph = LinkGraph::build(&store, &schema);
     let diagnostics = validate::validate(&store, &schema, &graph);
 
-    print_diagnostics(&diagnostics);
+    print_diagnostics_with_remediation(&diagnostics, Some((&store, &schema)));
 
     let errors = diagnostics
         .iter()
@@ -5091,12 +5091,20 @@ fn cmd_validate(
         let diag_json: Vec<serde_json::Value> = diagnostics
             .iter()
             .map(|d| {
-                serde_json::json!({
+                // REQ-124: attach structured, agent-actionable remediation
+                // (fix options + `rivet docs diagnostics/<rule>` topic) when the
+                // rule has guidance, re-derived from the live schema + store.
+                let mut obj = serde_json::json!({
                     "severity": format!("{:?}", d.severity).to_lowercase(),
                     "artifact_id": d.artifact_id,
                     "rule": d.rule,
                     "message": d.message,
-                })
+                });
+                if let Some(rem) = rivet_core::remediation::remediation_for(d, &schema, &store) {
+                    obj["remediation"] =
+                        serde_json::to_value(&rem).unwrap_or(serde_json::Value::Null);
+                }
+                obj
             })
             .collect();
         let cross_json: Vec<serde_json::Value> = cross_repo_broken
@@ -5201,7 +5209,7 @@ fn cmd_validate(
             );
         }
 
-        print_diagnostics(&diagnostics);
+        print_diagnostics_with_remediation(&diagnostics, Some((&store, &schema)));
 
         if !cross_repo_broken.is_empty() {
             println!();
@@ -7963,7 +7971,135 @@ fn cmd_export_gherkin(
 }
 
 /// Export to a static HTML site using the dashboard render module.
+/// Whether a `/docs-asset/<rel>` path is a safe relative subpath to copy.
 ///
+/// Artifact/document content can come from UNTRUSTED cross-repo externals
+/// (REQ-085 externals / supplier pull), so a crafted `src="/docs-asset/…"`
+/// must not be able to read or write outside the export's `_assets/docs/`.
+/// `rel.contains("..")` alone is insufficient: an absolute path makes
+/// `Path::join` discard the base (`docs_out.join("/etc/passwd")` ==
+/// `/etc/passwd`). Require every path component to be a plain `Normal`
+/// segment (which excludes `..`, `.`, root, and Windows prefixes), reject
+/// backslashes (a Unix `rel` should never contain them), and cap length.
+fn is_safe_doc_asset_path(rel: &str) -> bool {
+    use std::path::{Component, Path};
+    if rel.is_empty() || rel.len() > 1024 || rel.contains('\\') || rel.contains('\0') {
+        return false;
+    }
+    let p = Path::new(rel);
+    if p.is_absolute() {
+        return false;
+    }
+    p.components().all(|c| matches!(c, Component::Normal(_)))
+}
+
+/// Map a `rivet serve` route to the static export's file path, relative
+/// to the export root (no leading slash). REQ-105: the export reuses the
+/// serve dashboard's HTML, whose links are absolute server routes
+/// (`/artifacts/REQ-1`, `/coverage`) — which 404 as static files. This
+/// returns the on-disk page the export actually wrote for that route, so
+/// links can be rewritten to a working relative path.
+///
+/// Mirrors the route→file layout in `cmd_export_html`'s `write_page`
+/// calls; keep the two in sync.
+fn static_file_for_route(route: &str) -> String {
+    // Strip query string / fragment, then split into non-empty segments.
+    let path = route.split(['?', '#']).next().unwrap_or(route);
+    let segs: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    match segs.as_slice() {
+        // Overview is written as index.html (route "/" or "/stats").
+        [] | ["stats"] => "index.html".to_string(),
+        ["artifacts"] => "artifacts/index.html".to_string(),
+        // /artifacts/{id} and sub-routes (/artifacts/{id}/graph, …, which
+        // the static export does not render) both resolve to the detail page.
+        ["artifacts", id, ..] => format!("artifacts/{id}.html"),
+        ["documents"] => "documents/index.html".to_string(),
+        ["documents", id, ..] => format!("documents/{id}.html"),
+        ["help"] => "help/index.html".to_string(),
+        ["help", "schema"] => "help/schema/index.html".to_string(),
+        ["help", "schema", name, ..] => format!("help/schema/{name}.html"),
+        ["help", "links"] => "help/links.html".to_string(),
+        ["help", "rules"] => "help/rules.html".to_string(),
+        // Section roots exported as <section>/index.html.
+        [sec]
+            if matches!(
+                *sec,
+                "validate" | "matrix" | "coverage" | "graph" | "stpa" | "eu-ai-act"
+            ) =>
+        {
+            format!("{sec}/index.html")
+        }
+        // Unknown route: best-effort to its section index so a link never
+        // points at the filesystem root.
+        [first, ..] => format!("{first}/index.html"),
+    }
+}
+
+/// Rewrite absolute serve-route links + `/docs-asset/` image srcs in a
+/// page's rendered content so the static export is self-navigable
+/// (REQ-105). `prefix` is the page's depth-adjusted `../` chain.
+/// `href`/`hx-get` routes become `{prefix}<static-file>`; `/docs-asset/`
+/// image srcs become `{prefix}_assets/docs/<path>` and the referenced
+/// path is recorded in `docs_assets` so the caller can copy the image.
+/// External (http/https/`//`), in-page anchors (`#…`), and already-relative
+/// links are left untouched.
+fn rewrite_static_links(
+    content: &str,
+    prefix: &str,
+    docs_assets: &mut std::collections::BTreeSet<String>,
+) -> String {
+    let mut out = String::with_capacity(content.len() + 64);
+    let mut rest = content;
+    // Attribute openers whose value is a URL we may need to rewrite.
+    const ATTRS: &[&str] = &["href=\"", "hx-get=\"", "src=\""];
+    'outer: loop {
+        // Find the earliest next attribute opener.
+        let mut best: Option<(usize, &str)> = None;
+        for a in ATTRS {
+            if let Some(i) = rest.find(a) {
+                if best.is_none_or(|(b, _)| i < b) {
+                    best = Some((i, a));
+                }
+            }
+        }
+        let Some((idx, attr)) = best else {
+            out.push_str(rest);
+            break 'outer;
+        };
+        let val_start = idx + attr.len();
+        out.push_str(&rest[..val_start]);
+        let after = &rest[val_start..];
+        let Some(end) = after.find('"') else {
+            out.push_str(after);
+            break 'outer;
+        };
+        let url = &after[..end];
+        // Only absolute same-origin paths (start with a single '/').
+        let rewritten = if url.starts_with("//") || !url.starts_with('/') {
+            url.to_string()
+        } else if let Some(asset) = url.strip_prefix("/docs-asset/") {
+            // Image/asset from a docs directory → copy under _assets/docs/.
+            // Only record + rewrite paths that are safe relative subpaths
+            // (untrusted cross-repo content could craft a traversal). An
+            // unsafe path is left as-is (a dead link), never copied.
+            if is_safe_doc_asset_path(asset) {
+                docs_assets.insert(asset.to_string());
+                format!("{prefix}_assets/docs/{asset}")
+            } else {
+                url.to_string()
+            }
+        } else if attr == "src=\"" {
+            // Other absolute src (rare) — leave as-is.
+            url.to_string()
+        } else {
+            format!("{prefix}{}", static_file_for_route(url))
+        };
+        out.push_str(&rewritten);
+        rest = &after[end..];
+    }
+    out
+}
+
 /// This generates one standalone `.html` file per view, using the same
 /// render functions as `rivet serve`. No HTMX is included — all links
 /// are plain `<a href="...">` anchors that work in any static file server
@@ -8067,6 +8203,14 @@ fn cmd_export_html(
 
     // ── Mermaid JS (inlined so the site works offline) ──────────────
     const MERMAID_JS: &str = include_str!("../assets/mermaid.min.js");
+    // REQ-105: the svg-viewer toolbar handlers (zoom-fit / fullscreen /
+    // popout). serve delivers these inline via serve/js.rs; the static
+    // export must bundle them or the toolbar buttons are dead.
+    const SVG_VIEWER_JS: &str = include_str!("../assets/svg-viewer.js");
+
+    // REQ-105: `/docs-asset/<path>` image references collected across all
+    // pages during rewrite, copied into `_assets/docs/` after rendering.
+    let docs_assets = std::cell::RefCell::new(std::collections::BTreeSet::<String>::new());
 
     // ── Static layout wrapper ────────────────────────────────────────
     // Produces a full HTML document with CSS + Mermaid, a nav sidebar
@@ -8148,6 +8292,7 @@ fn cmd_export_html(
 <title>{title} — {project_name} — Rivet</title>
 <link rel="stylesheet" href="{prefix}_assets/styles.css">
 <script src="{prefix}_assets/mermaid.min.js"></script>
+<script src="{prefix}_assets/svg-viewer.js"></script>
 <script>
 mermaid.initialize({{startOnLoad:false,theme:'neutral',securityLevel:'strict'}});
 document.addEventListener('DOMContentLoaded',function(){{
@@ -8211,6 +8356,8 @@ document.addEventListener('DOMContentLoaded',function(){{
     .with_context(|| format!("writing {}", assets_dir.join("styles.css").display()))?;
     std::fs::write(assets_dir.join("mermaid.min.js"), MERMAID_JS)
         .with_context(|| format!("writing {}", assets_dir.join("mermaid.min.js").display()))?;
+    std::fs::write(assets_dir.join("svg-viewer.js"), SVG_VIEWER_JS)
+        .with_context(|| format!("writing {}", assets_dir.join("svg-viewer.js").display()))?;
 
     let mut page_count = 0usize;
 
@@ -8220,7 +8367,14 @@ document.addEventListener('DOMContentLoaded',function(){{
     let write_page =
         |rel_path: &str, page: &str, title: &str, out_dir: &std::path::Path| -> Result<()> {
             let result = render::render_page(&ctx, page, &params);
-            let html = wrap_page(title, &result.html, rel_path);
+            // REQ-105: rewrite the rendered content's absolute serve-route
+            // links + /docs-asset image srcs to working relative paths
+            // before wrapping, so the static export is self-navigable.
+            let depth = rel_path.matches('/').count();
+            let prefix: String = "../".repeat(depth);
+            let content =
+                rewrite_static_links(&result.html, &prefix, &mut docs_assets.borrow_mut());
+            let html = wrap_page(title, &content, rel_path);
             let dest = out_dir.join(rel_path);
             if let Some(parent) = dest.parent() {
                 std::fs::create_dir_all(parent)
@@ -8320,6 +8474,71 @@ document.addEventListener('DOMContentLoaded',function(){{
         let page = format!("/documents/{id}");
         write_page(&rel, &page, id, out_dir)?;
         page_count += 1;
+    }
+
+    // ── Copy referenced docs-asset images (REQ-105) ──────────────────
+    // Documentation can reference relative images (`![](diagram.svg)`),
+    // rendered with src="/docs-asset/<path>" and rewritten above to
+    // "_assets/docs/<path>". Copy each referenced file from the doc
+    // directories into the export so the <img> resolves offline. Missing
+    // files warn loudly rather than silently producing a broken image.
+    let wanted: Vec<String> = docs_assets.borrow().iter().cloned().collect();
+    if !wanted.is_empty() {
+        let docs_out = assets_dir.join("docs");
+        std::fs::create_dir_all(&docs_out)
+            .with_context(|| format!("creating {}", docs_out.display()))?;
+        // Canonical export-assets root: every copy destination must stay
+        // inside it (defence-in-depth against traversal from untrusted
+        // cross-repo content, on top of is_safe_doc_asset_path).
+        let docs_out_canon = docs_out.canonicalize().unwrap_or_else(|_| docs_out.clone());
+        let mut copied = 0usize;
+        for rel in &wanted {
+            // Belt-and-braces: the rewriter already filtered, but re-check
+            // before any filesystem op.
+            if !is_safe_doc_asset_path(rel) {
+                eprintln!("warning: skipping unsafe docs-asset path: {rel}");
+                continue;
+            }
+            // Resolve src only to a file that genuinely lives inside one of
+            // the doc directories (reject symlink escapes).
+            let src = state.doc_dirs.iter().find_map(|d| {
+                let cand = d.join(rel);
+                if !cand.is_file() {
+                    return None;
+                }
+                let d_canon = d.canonicalize().ok()?;
+                let cand_canon = cand.canonicalize().ok()?;
+                cand_canon.starts_with(&d_canon).then_some(cand_canon)
+            });
+            match src {
+                Some(src) => {
+                    let dest = docs_out.join(rel);
+                    if let Some(parent) = dest.parent() {
+                        std::fs::create_dir_all(parent)
+                            .with_context(|| format!("creating {}", parent.display()))?;
+                    }
+                    // Verify the resolved destination is still inside docs_out.
+                    let dest_ok = dest
+                        .parent()
+                        .and_then(|p| p.canonicalize().ok())
+                        .is_some_and(|p| p.starts_with(&docs_out_canon));
+                    if !dest_ok {
+                        eprintln!("warning: skipping docs-asset escaping _assets/docs: {rel}");
+                        continue;
+                    }
+                    std::fs::copy(&src, &dest)
+                        .with_context(|| format!("copying docs-asset {}", src.display()))?;
+                    copied += 1;
+                }
+                None => eprintln!(
+                    "warning: doc references image '{rel}' not found in any docs directory — \
+                     exported <img> will be broken"
+                ),
+            }
+        }
+        if copied > 0 {
+            eprintln!("Copied {copied} docs-asset image(s) to _assets/docs/");
+        }
     }
 
     eprintln!("Exported {page_count} pages to {}/", out_dir.display());
@@ -15501,7 +15720,14 @@ fn substitute_prev(s: &str, prev: &Option<String>) -> String {
     }
 }
 
-fn print_diagnostics(diagnostics: &[validate::Diagnostic]) {
+/// Print diagnostics grouped by severity. When `ctx` (the live store + schema)
+/// is supplied, each diagnostic whose rule has guidance is followed by a
+/// rustc-style `help:` block — agent-actionable fix options plus a
+/// `rivet docs diagnostics/<rule>` pointer (REQ-124).
+fn print_diagnostics_with_remediation(
+    diagnostics: &[validate::Diagnostic],
+    ctx: Option<(&Store, &rivet_core::schema::Schema)>,
+) {
     if diagnostics.is_empty() {
         println!("\nNo issues found.");
         return;
@@ -15520,14 +15746,23 @@ fn print_diagnostics(diagnostics: &[validate::Diagnostic]) {
         }
     }
 
-    for d in &errors {
+    let print_one = |d: &validate::Diagnostic| {
         println!("{d}");
+        if let Some((store, schema)) = ctx {
+            if let Some(rem) = rivet_core::remediation::remediation_for(d, schema, store) {
+                println!("{}", rem.to_help_text("    "));
+            }
+        }
+    };
+
+    for d in &errors {
+        print_one(d);
     }
     for d in &warnings {
-        println!("{d}");
+        print_one(d);
     }
     for d in &infos {
-        println!("{d}");
+        print_one(d);
     }
 }
 
@@ -16501,5 +16736,110 @@ mod coverage_gate_tests {
                 "COVERAGE_TOPIC_MAP entry ({name}, {slug}) points at a non-existent topic"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod export_static_links_tests {
+    use super::{rewrite_static_links, static_file_for_route};
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn route_to_static_file_map() {
+        assert_eq!(static_file_for_route("/"), "index.html");
+        assert_eq!(static_file_for_route("/stats"), "index.html");
+        assert_eq!(static_file_for_route("/artifacts"), "artifacts/index.html");
+        assert_eq!(
+            static_file_for_route("/artifacts/REQ-1"),
+            "artifacts/REQ-1.html"
+        );
+        // sub-routes the static export doesn't render fall back to the detail page
+        assert_eq!(
+            static_file_for_route("/artifacts/REQ-1/graph"),
+            "artifacts/REQ-1.html"
+        );
+        assert_eq!(
+            static_file_for_route("/documents/DOC-1"),
+            "documents/DOC-1.html"
+        );
+        assert_eq!(static_file_for_route("/coverage"), "coverage/index.html");
+        assert_eq!(static_file_for_route("/matrix"), "matrix/index.html");
+        assert_eq!(static_file_for_route("/help"), "help/index.html");
+        assert_eq!(
+            static_file_for_route("/help/schema"),
+            "help/schema/index.html"
+        );
+        assert_eq!(
+            static_file_for_route("/help/schema/requirement"),
+            "help/schema/requirement.html"
+        );
+        assert_eq!(static_file_for_route("/help/links"), "help/links.html");
+        assert_eq!(static_file_for_route("/help/rules"), "help/rules.html");
+        // query string ignored
+        assert_eq!(
+            static_file_for_route("/artifacts/REQ-1?x=1"),
+            "artifacts/REQ-1.html"
+        );
+    }
+
+    #[test]
+    fn rewrites_absolute_links_with_depth_prefix() {
+        let mut a = BTreeSet::new();
+        // a depth-1 page (artifacts/REQ-1.html) → prefix "../"
+        let html = r#"<a hx-get="/artifacts/REQ-2" href="/artifacts/REQ-2">REQ-2</a> <a href="/coverage">cov</a>"#;
+        let out = rewrite_static_links(html, "../", &mut a);
+        assert!(out.contains(r#"href="../artifacts/REQ-2.html""#), "{out}");
+        assert!(out.contains(r#"hx-get="../artifacts/REQ-2.html""#), "{out}");
+        assert!(out.contains(r#"href="../coverage/index.html""#), "{out}");
+        // no absolute server routes remain
+        assert!(!out.contains(r#"href="/artifacts"#), "{out}");
+        assert!(!out.contains(r#"href="/coverage"#), "{out}");
+    }
+
+    #[test]
+    fn leaves_external_and_anchor_links_untouched() {
+        let mut a = BTreeSet::new();
+        let html = r##"<a href="https://x.com/y">ext</a> <a href="//cdn/z">proto</a> <a href="#section">anchor</a> <a href="relative.html">rel</a>"##;
+        let out = rewrite_static_links(html, "../", &mut a);
+        assert!(out.contains(r#"href="https://x.com/y""#), "{out}");
+        assert!(out.contains(r#"href="//cdn/z""#), "{out}");
+        assert!(out.contains(r##"href="#section""##), "{out}");
+        assert!(out.contains(r#"href="relative.html""#), "{out}");
+        assert!(a.is_empty());
+    }
+
+    #[test]
+    fn rewrites_docs_asset_images_and_records_them() {
+        let mut a = BTreeSet::new();
+        let html = r#"<img src="/docs-asset/diagrams/arch.svg" alt="arch">"#;
+        let out = rewrite_static_links(html, "", &mut a);
+        assert!(
+            out.contains(r#"src="_assets/docs/diagrams/arch.svg""#),
+            "{out}"
+        );
+        assert!(a.contains("diagrams/arch.svg"));
+    }
+
+    /// Untrusted cross-repo content must not traverse out of `_assets/docs/`.
+    /// A crafted `/docs-asset/` path that is absolute or uses `..` is
+    /// neither recorded for copy nor rewritten to the assets dir.
+    #[test]
+    fn docs_asset_traversal_is_rejected() {
+        use super::is_safe_doc_asset_path;
+        assert!(is_safe_doc_asset_path("img/a.png"));
+        assert!(is_safe_doc_asset_path("a.svg"));
+        assert!(!is_safe_doc_asset_path("../../../etc/passwd"));
+        assert!(!is_safe_doc_asset_path("/etc/passwd"));
+        assert!(!is_safe_doc_asset_path("a/../../b"));
+        assert!(!is_safe_doc_asset_path(""));
+        assert!(!is_safe_doc_asset_path("a\\..\\b"));
+
+        let mut a = BTreeSet::new();
+        let html =
+            r#"<img src="/docs-asset/../../../etc/passwd"> <img src="/docs-asset//etc/shadow">"#;
+        let out = rewrite_static_links(html, "../", &mut a);
+        assert!(a.is_empty(), "unsafe paths must not be recorded: {a:?}");
+        assert!(!out.contains("_assets/docs/.."), "{out}");
+        assert!(!out.contains("_assets/docs//etc"), "{out}");
     }
 }
