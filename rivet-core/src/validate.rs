@@ -901,15 +901,32 @@ pub fn validate_structural_with_externals_and_variant(
 
             // Backlink check (coverage). Empty `from_types` means "match any"
             // — same convention as `coverage::compute_coverage`.
+            //
+            // Schemas write `required-backlink` as either the forward
+            // link-type name (e.g. `satisfies` in `dev.yaml`) or the
+            // inverse name (e.g. `supported-by` in `safety-case.yaml`).
+            // Accept either so both conventions validate correctly —
+            // matching only `bl.link_type` would miss the inverse-name case.
+            // `alternate-backlinks` provides additional acceptable shapes
+            // for the same rule (e.g. a safety-goal supported via
+            // `supported-by` OR decomposed via `decomposed-by`).
             if let Some(required_backlink) = &rule.required_backlink {
-                let has_backlink = graph.backlinks_to(id).iter().any(|bl| {
-                    bl.link_type == *required_backlink
-                        && (rule.from_types.is_empty()
-                            || store
-                                .get(&bl.source)
-                                .is_some_and(|s| rule.from_types.contains(&s.artifact_type)))
-                });
-                if !has_backlink {
+                let backlinks = graph.backlinks_to(id);
+                let matches = |link_name: &str, from_types: &[String]| {
+                    backlinks.iter().any(|bl| {
+                        (bl.link_type == link_name || bl.inverse_type.as_deref() == Some(link_name))
+                            && (from_types.is_empty()
+                                || store
+                                    .get(&bl.source)
+                                    .is_some_and(|s| from_types.contains(&s.artifact_type)))
+                    })
+                };
+                let primary = matches(required_backlink, &rule.from_types);
+                let alternate = rule
+                    .alternate_backlinks
+                    .iter()
+                    .any(|alt| matches(&alt.link_type, &alt.from_types));
+                if !primary && !alternate {
                     diagnostics.push(Diagnostic {
                         source_file: None,
                         line: None,
@@ -2437,6 +2454,134 @@ then:
             validate_says_covered, coverage_says_covered,
             "validate and coverage must agree (validate_covered={}, coverage={}/{})",
             validate_says_covered, entry.covered, entry.total
+        );
+    }
+
+    /// Issue #349: `required-backlink` written as the INVERSE link-type
+    /// name (e.g. `supported-by`, the convention used by
+    /// `schemas/safety-case.yaml`) was never matched against the stored
+    /// `Backlink.link_type` (the FORWARD name, e.g. `supports`). The
+    /// goal-has-support rule fired for every goal even when a solution
+    /// was correctly linked. Accept either spelling.
+    ///
+    /// rivet: fixes REQ-004
+    #[test]
+    fn required_backlink_inverse_name_is_satisfied_by_forward_link() {
+        use crate::schema::LinkTypeDef;
+        let mut file = minimal_schema("test");
+        file.link_types.push(LinkTypeDef {
+            name: "supports".into(),
+            inverse: Some("supported-by".into()),
+            description: "Solution supports goal".into(),
+            source_types: vec!["safety-solution".into()],
+            target_types: vec!["safety-goal".into()],
+        });
+        file.traceability_rules = vec![TraceabilityRule {
+            name: "goal-has-support".into(),
+            description: "Every safety goal must be supported".into(),
+            source_type: "safety-goal".into(),
+            required_link: None,
+            // Inverse-name convention from safety-case.yaml.
+            required_backlink: Some("supported-by".into()),
+            target_types: vec![],
+            from_types: vec!["safety-solution".into()],
+            severity: Severity::Error,
+            alternate_backlinks: vec![],
+        }];
+        let schema = Schema::merge(&[file]);
+
+        let mut store = Store::new();
+        let mut goal = minimal_artifact("SG-1", "safety-goal");
+        goal.status = Some("approved".to_string());
+        store.insert(goal).unwrap();
+        let mut sol = minimal_artifact("SOL-1", "safety-solution");
+        sol.status = Some("approved".to_string());
+        sol.links = vec![Link {
+            link_type: "supports".to_string(),
+            target: "SG-1".to_string(),
+            external: None,
+        }];
+        store.insert(sol).unwrap();
+
+        let graph = LinkGraph::build(&store, &schema);
+        let diags = validate_structural(&store, &schema, &graph);
+        let rule_diags: Vec<_> = diags
+            .iter()
+            .filter(|d| d.rule == "goal-has-support")
+            .collect();
+        assert!(
+            rule_diags.is_empty(),
+            "SG-1 has a supported-by backlink (from SOL-1's forward `supports` link); \
+             the rule must not fire. Got diagnostics: {:?}",
+            rule_diags.iter().map(|d| &d.message).collect::<Vec<_>>()
+        );
+    }
+
+    /// Issue #349 secondary: `validate.rs` never evaluated
+    /// `rule.alternate_backlinks`. A safety-goal satisfied only via
+    /// an alternate (e.g. `decomposed-by` instead of `supported-by`)
+    /// still erroneously fired the rule.
+    ///
+    /// rivet: fixes REQ-004
+    #[test]
+    fn validate_honours_alternate_backlinks() {
+        use crate::schema::{AlternateBacklink, LinkTypeDef};
+        let mut file = minimal_schema("test");
+        file.link_types.push(LinkTypeDef {
+            name: "supports".into(),
+            inverse: Some("supported-by".into()),
+            description: "Solution supports goal".into(),
+            source_types: vec!["safety-solution".into()],
+            target_types: vec!["safety-goal".into()],
+        });
+        file.link_types.push(LinkTypeDef {
+            name: "decomposes".into(),
+            inverse: Some("decomposed-by".into()),
+            description: "Strategy decomposes a goal".into(),
+            source_types: vec!["safety-strategy".into()],
+            target_types: vec!["safety-goal".into()],
+        });
+        file.traceability_rules = vec![TraceabilityRule {
+            name: "goal-supported-or-decomposed".into(),
+            description: "Every goal supported OR decomposed".into(),
+            source_type: "safety-goal".into(),
+            required_link: None,
+            required_backlink: Some("supported-by".into()),
+            target_types: vec![],
+            from_types: vec!["safety-solution".into()],
+            alternate_backlinks: vec![AlternateBacklink {
+                link_type: "decomposed-by".into(),
+                from_types: vec!["safety-strategy".into()],
+            }],
+            severity: Severity::Error,
+        }];
+        let schema = Schema::merge(&[file]);
+
+        let mut store = Store::new();
+        let mut goal = minimal_artifact("SG-A", "safety-goal");
+        goal.status = Some("approved".to_string());
+        store.insert(goal).unwrap();
+        // Strategy decomposes SG-A. No solution at all.
+        let mut strat = minimal_artifact("STRAT-1", "safety-strategy");
+        strat.status = Some("approved".to_string());
+        strat.links = vec![Link {
+            link_type: "decomposes".to_string(),
+            target: "SG-A".to_string(),
+            external: None,
+        }];
+        store.insert(strat).unwrap();
+
+        let graph = LinkGraph::build(&store, &schema);
+        let diags = validate_structural(&store, &schema, &graph);
+        let rule_diags: Vec<_> = diags
+            .iter()
+            .filter(|d| d.rule == "goal-supported-or-decomposed")
+            .collect();
+        assert!(
+            rule_diags.is_empty(),
+            "SG-A is satisfied via the alternate `decomposed-by` backlink; \
+             the rule must not fire. Got: {:?}",
+            rule_diags.iter().map(|d| &d.message).collect::<Vec<_>>()
         );
     }
 

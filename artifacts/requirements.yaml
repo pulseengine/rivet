@@ -3463,6 +3463,115 @@ artifacts:
       - type: traces-to
         target: REQ-010
 
+  - id: REQ-132
+    type: requirement
+    title: "Completeness diagnostics name the required chain, not just the terminal artifact"
+    status: draft
+    description: |
+      User-reported via GitHub issue #350 (pulseengine/synth, aspice
+      schema). Flipping a `sw-req` to `status: implemented` produces
+      `missing: unit-verification, sw-integration-verification`, which
+      names the TERMINAL artifacts but not the required intermediate
+      CHAIN (`sw-req -> sw-arch-component -> sw-detail-design ->
+      {unit,integration}-verification`), and does not say a verification
+      cannot link a sw-req directly. The reporter only discovered the
+      layered model by trying a direct `verifies` link and reading the
+      target-type rejection — the wrong message taught the right thing.
+
+      This is the traceability/completeness-rule analogue of REQ-124
+      (which covers link-target-type / broken-link / etc. but
+      deliberately deferred the traceability rules, since those key on a
+      dynamic `rule.id`). Extend the remediation pass to completeness/
+      traceability diagnostics: emit a "how to satisfy" line naming the
+      intermediate artifact chain and the link types that connect it,
+      derived deterministically from the schema's link-fields +
+      traceability rules.
+
+      Acceptance:
+        - The completeness diagnostic for an implemented req whose
+          required terminal verification cannot link directly includes a
+          help line naming the intermediate chain (e.g. "needs a
+          sw-detail-design that `satisfies` <id>, verified by a
+          unit-verification").
+        - Derivation is deterministic from the schema (no hardcoded
+          ASPICE knowledge); `rivet docs diagnostics/<rule>` resolves.
+    tags: [validate, diagnostics, remediation, agent-ux, user-reported, issue-350]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.15.0-track
+    links:
+      - type: traces-to
+        target: REQ-004
+
+  - id: REQ-133
+    type: requirement
+    title: "rivet implement/scaffold-verification: guided stubs for the verification chain"
+    status: draft
+    description: |
+      User-reported via GitHub issue #350. Marking shipped work as
+      `implemented` + verified currently means hand-authoring the full
+      ASPICE chain (`sw-arch-component`, `sw-detail-design`, the
+      verification artifacts) wired with exactly the right link types —
+      reverse-engineered from link-target-type rejections. There is no
+      shortcut for "this requirement is implemented and here are the
+      tests that cover it."
+
+      Provide a guided command (e.g. `rivet implement <id>` /
+      `rivet scaffold-verification <id>`) that, from the schema's
+      traceability rules, stubs the minimal intermediate + verification
+      artifacts wired with the correct link types and prints what it
+      created, so marking shipped work implemented is a guided step. Built
+      on the existing mutation/add path; the scaffold must itself pass
+      `rivet validate`.
+
+      Acceptance:
+        - `rivet implement <req-id>` (name TBD) creates the minimal chain
+          of artifacts the schema requires to mark <req-id> verified,
+          wired with correct link types, and the result validates clean.
+        - A dry-run mode prints the plan without writing.
+    tags: [cli, mutation, scaffold, agent-ux, user-reported, issue-350]
+    fields:
+      priority: could
+      category: functional
+      baseline: v0.15.0-track
+    links:
+      - type: traces-to
+        target: REQ-007
+
+  - id: REQ-134
+    type: requirement
+    title: "Per-project field extension for built-in schema types (without forking the schema)"
+    status: draft
+    description: |
+      User-reported via GitHub issue #350. A project's `sw-req` artifacts
+      carry a `crate:` field the built-in aspice `sw-req` schema does not
+      declare, producing 37+ `INFO: field 'crate' is not defined in
+      schema` diagnostics on every `rivet validate` — drowning the
+      actionable errors. There is currently no easy, documented way to
+      add a project-specific field to a built-in type without forking the
+      whole schema.
+
+      Provide a documented per-project field extension that builds on the
+      existing schema `extends` mechanism (REQ-106 register: reuse, don't
+      invent a directive): a project schema declares additional fields on
+      a built-in type, and validate treats them as known. This both
+      silences the noise and keeps the field schema-validated.
+
+      Acceptance:
+        - A project can declare extra fields on a built-in artifact type
+          via `extends` (or equivalent) so those fields no longer raise
+          `unknown-field`, without copying the upstream schema.
+        - Documented in `rivet docs` with a copy-pasteable example.
+    tags: [schema, extends, validate, dx, user-reported, issue-350]
+    fields:
+      priority: could
+      category: functional
+      baseline: v0.15.0-track
+    links:
+      - type: traces-to
+        target: REQ-010
+
   - id: REQ-135
     type: requirement
     title: "Validate and enforce the status enum (typo'd statuses must not pass silently)"

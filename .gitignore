@@ -39,3 +39,4 @@ mutants.out*/
 # external declared in rivet.yaml. Per-developer working tree, never
 # committed. (Tracked .rivet/ files like agent-context.md stay tracked.)
 .rivet/repos/
+.claude/scheduled_tasks.lock

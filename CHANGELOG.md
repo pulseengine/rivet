@@ -5,6 +5,86 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Issue #349 — `required-backlink` rules now match the inverse-name
+  convention.** Schemas (e.g. `safety-case.yaml`) declare
+  `required-backlink: supported-by` — the *inverse* of the forward
+  `supports` link — and both `rivet validate` and `rivet coverage`
+  compared that name against the stored `Backlink.link_type`, which
+  holds the *forward* name. Result: GSN safety-case rules like
+  `goal-has-support` fired (and counted as uncovered) for every
+  artifact, even when the supporting solution was correctly linked.
+  Match now accepts either the forward or the inverse name, so
+  both conventions (`dev.yaml` uses forward, `safety-case.yaml` uses
+  inverse) validate consistently. Same fix path additionally evaluates
+  `alternate-backlinks` in both engines — previously a goal satisfied
+  only via an alternate (e.g. `decomposed-by` instead of
+  `supported-by`) was reported as missing.
+- **REQ-110 / REQ-111 — coverage "totals" no longer masquerade as artifact
+  counts.** The dashboard overview rendered `{covered} / {total} artifacts
+  covered` and the `coverage --format json` `overall` object exposed
+  `total`/`covered`, but both aggregate *per-rule* denominators — an artifact
+  satisfying N traceability rules is counted N times — which is a different
+  cardinality from the distinct-artifact `total` the `stats` command reports
+  under the same key. The numbers are unchanged (per the relabel decision);
+  the label is now honest: the HTML reads "coverage checks" and the JSON
+  `overall` exposes `checks_covered` / `checks_total` (the ambiguous
+  `total`/`covered` keys are removed from the `overall` object — a JSON
+  consumer change). Per-rule `entries[]` keep `covered`/`total`, which are
+  correct at rule scope.
+## [0.14.0] — 2026-05-30
+
+Theme: **agent-actionable validation + self-contained export**. Two
+user-facing features: the validator now tells an agent *what to do* about a
+diagnostic (not just what is wrong), and `export --format html` produces a
+genuinely portable static site.
+
+### Added
+
+- **REQ-124 — agent-actionable diagnostic remediation.** A validation error
+  stated *what* was wrong but not *what to do*, nor which of the competing
+  fixes was right. The witnessed failure: an agent saw a `link-target-type`
+  error and "fixed forward" by inventing type-invalid links on sibling
+  artifacts, turning 26 warnings into 8 errors. The new
+  `rivet-core::remediation` module re-derives a structured `Remediation`
+  from the diagnostic plus the live schema + store — a post-construction
+  pass keyed by `Diagnostic.rule`, so the ~70 diagnostic construction sites
+  and the hot validation path are untouched. Each remediable diagnostic now
+  renders a rustc-style `help:` block (artifact-fix first, schema-fix
+  second, each tagged so a tool can tell the surfaces apart) in text, a
+  `remediation` object in `--format json`, and a
+  `rivet docs diagnostics/<rule>` explanation topic. Eight rules covered:
+  `link-target-type`, `broken-link`, `unknown-link-type`, `required-field`,
+  `allowed-values`, `cardinality`, `unknown-field`, `known-type`. Each
+  re-derives the offending link/field/value and the schema menu of allowed
+  alternatives faithfully — matching the validator's own known-set. The
+  `link-target-type` doc explicitly warns against the fix-forward-onto-
+  siblings anti-pattern. 12 unit tests.
+
+### Fixed
+
+- **REQ-105 — HTML export is self-contained.** `export --format html`
+  reused the serve dashboard's rendering but shipped none of serve's runtime
+  assets, so the static site was broken in three ways: absolute `/artifacts/X`
+  links that only resolve under a live server, an unbundled `svg-viewer.js`,
+  and uncopied `/docs-asset/` images. Export now rewrites route links to
+  relative `.html` paths (depth-aware), bundles a standalone `svg-viewer.js`
+  into `_assets/`, and copies referenced doc images into `_assets/docs/`
+  with path-traversal hardening (component-based safe-path check +
+  canonicalize containment, rejecting symlink/absolute escape). Verified on a
+  real export: 0 absolute routes, all links resolve. Playwright `export.spec`
+  updated to assert relative links.
+
+### Roadmap
+
+- Filed (draft, not yet implemented): REQ-110..123 (oracle-verified bug-hunt
+  findings across cross-command reporting, git/remote semantics, path/URL
+  leakage, and F2 silent-failure), and REQ-125..130 (gbrain-derived
+  deterministic-armor backlog: `validate/coverage --explain`,
+  `list --orphans`, baseline-snapshot drift gate, MCP fail-closed invariant,
+  `--review-candidates`, and supersession-as-additive-link).
+
 ## [0.13.3] — 2026-05-29
 
 Theme: **serve dashboard correctness — three user-reported fixes**.

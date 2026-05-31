@@ -6099,17 +6099,21 @@ fn cmd_coverage(
                 })
             })
             .collect();
-        let total: usize = report.entries.iter().map(|e| e.total).sum();
-        let covered: usize = report.entries.iter().map(|e| e.covered).sum();
+        // REQ-111: these aggregate per-RULE denominators (an artifact satisfying
+        // N rules is counted N times) — NOT the distinct-artifact `total` that
+        // `stats` JSON reports. Emit under `checks_*` keys so the same key name
+        // `total` never carries two different cardinalities across commands.
+        let checks_total: usize = report.entries.iter().map(|e| e.total).sum();
+        let checks_covered: usize = report.entries.iter().map(|e| e.covered).sum();
         let external_boundary: usize = report.entries.iter().map(|e| e.external_boundary).sum();
         let overall_pct = (report.overall_coverage() * 10.0).round() / 10.0;
         let mut output = serde_json::json!({
             "command": "coverage",
             "rules": rules_json,
             "overall": {
-                "covered": covered,
+                "checks_covered": checks_covered,
                 "external_boundary": external_boundary,
-                "total": total,
+                "checks_total": checks_total,
                 "percentage": overall_pct,
             },
         });
