@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780261249443,
+  "lastUpdate": 1780265773063,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "3dfdd50242302227434c21378ed2c1764e9b02f6",
-          "message": "test(serve): stabilize test_reload_yaml_error flake (status==0 → retry) (#331)\n\n* test(serve): stabilize test_reload_yaml_error_returns_error_response\n\nSame transient-connection-drop flake class that landed in\nfetch_page_with_retry (PR-train preceding v0.13.0). The raw\nTcpStream POST + read_to_end occasionally returns empty data on\nself-hosted-runner contention, leaving the HTTP status parsed as 0\nand the assertion failing with \"got status 0\" — observed on PR #328\n(no serve-code change in the PR, the failure was the test, not the\nproduction code).\n\nExtract a `post_reload_status` helper that retries once on\n`status == 0` after a 200 ms backoff (mirroring fetch_page_with_retry\nexactly), and use it from test_reload_yaml_error_returns_error_response.\nThe other reload tests already work fine via fetch_with_timeout so\nthey don't need the helper yet.\n\nCo-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>\n\n* test(serve): extend retry-on-empty-body to reload_returns_hx_location\n\nSame TCP-read flake observed on PR #333's Proptest (extended) job —\n`reload_returns_hx_location` panicked with an empty response body, the\nexact same flake class `post_reload_status` was added to handle for\nthe sibling `test_reload_yaml_error` test in this PR's prior commit.\n\nExtract `post_reload_response` (full response body, with optional\n`HX-Current-URL:` header) that retries once on empty body after a\n200 ms backoff. Rewrite `reload_returns_hx_location` to use it.\n\nThe two helpers (`post_reload_status` returning status, the new\n`post_reload_response` returning the full body) cover the two\ndistinct shape of POST-and-inspect-result the reload tests need.\n\nCo-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>\n\n* chore(fmt): rustfmt collapses map_or closure to single line\n\n---------\n\nCo-authored-by: Claude Opus 4.7 <noreply@anthropic.com>",
-          "timestamp": "2026-05-26T23:10:17-05:00",
-          "tree_id": "55341e811d590bc311071558b8f5c538d122e5ad",
-          "url": "https://github.com/pulseengine/rivet/commit/3dfdd50242302227434c21378ed2c1764e9b02f6"
-        },
-        "date": 1779855509467,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 83910,
-            "range": "± 805",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 908672,
-            "range": "± 5047",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 14108713,
-            "range": "± 491529",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1921,
-            "range": "± 19",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 23585,
-            "range": "± 685",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 353070,
-            "range": "± 8077",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 97,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 96,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1465572,
-            "range": "± 29525",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 165124,
-            "range": "± 870",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1923819,
-            "range": "± 26368",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 28314052,
-            "range": "± 2021693",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 126008,
-            "range": "± 1353",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 1181299,
-            "range": "± 24481",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 16955011,
-            "range": "± 1151782",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4895,
-            "range": "± 15",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 43520,
-            "range": "± 494",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 734239,
-            "range": "± 89811",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 60235,
-            "range": "± 376",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 735155,
-            "range": "± 7503",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 8574315,
-            "range": "± 463769",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 750,
-            "range": "± 12",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 6601,
-            "range": "± 100",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 97757,
-            "range": "± 636",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 22447,
-            "range": "± 252",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 158583,
-            "range": "± 1941",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1477191,
-            "range": "± 10283",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1501714,
             "range": "± 15956",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "fc91f968129985bc6d4497fe58c16eac77918863",
+          "message": "fix(reqif): import fails on an unresolved ENUM-VALUE-REF (REQ-119, F2) (#375)\n\nBug-hunt finding (f2-silent-failure, 3/3 lens-confirmed). An ENUM-VALUE-REF\nmatching no ENUM-VALUE @IDENTIFIER in any enumeration datatype was silently\ndropped by `.filter_map(|r| enum_value_names.get(...))`, producing a degraded /\nincomplete enum field value with no signal — an internally-inconsistent ReqIF\nimported as if clean.\n\nThe resolver now separates resolved from unresolved refs and returns an Err\nnaming the unresolved one(s), so the inconsistency surfaces instead of\ncorrupting the imported value. Regression test\n`parse_reqif_fails_on_unresolved_enum_value_ref`; all 45 reqif tests green.\n\nImplements: REQ-119\nVerifies: REQ-119\nRefs: REQ-004\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-05-31T17:09:37-05:00",
+          "tree_id": "d365a47efca951b9cb8fb0951b05dce3058eb83b",
+          "url": "https://github.com/pulseengine/rivet/commit/fc91f968129985bc6d4497fe58c16eac77918863"
+        },
+        "date": 1780265772522,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 83042,
+            "range": "± 849",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 883448,
+            "range": "± 13400",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 17081595,
+            "range": "± 1456756",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2185,
+            "range": "± 10",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 26862,
+            "range": "± 176",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 351725,
+            "range": "± 3133",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1491507,
+            "range": "± 15860",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 165937,
+            "range": "± 7568",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1947172,
+            "range": "± 32874",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 36073061,
+            "range": "± 4430204",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 134789,
+            "range": "± 1008",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1153585,
+            "range": "± 21063",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 22798603,
+            "range": "± 2995950",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4404,
+            "range": "± 35",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 64281,
+            "range": "± 527",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 779654,
+            "range": "± 18122",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 58808,
+            "range": "± 267",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 701633,
+            "range": "± 4320",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 9314492,
+            "range": "± 1051016",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 772,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7134,
+            "range": "± 54",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 113037,
+            "range": "± 591",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 23259,
+            "range": "± 280",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 156731,
+            "range": "± 2096",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1478935,
+            "range": "± 18475",
             "unit": "ns/iter"
           }
         ]
