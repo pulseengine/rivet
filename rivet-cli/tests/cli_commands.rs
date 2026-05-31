@@ -1755,6 +1755,34 @@ fn validate_explain_shows_rule_status() {
     );
 }
 
+/// REQ-128: `rivet list --orphans` lists only artifacts disconnected from
+/// the graph. Its count must be a subset of the full list.
+#[test]
+fn list_orphans_is_subset() {
+    let root = project_root();
+    let root_str = root.to_str().unwrap();
+    let run = |orphans: bool| {
+        let mut args = vec!["--project", root_str, "list", "--format", "json"];
+        if orphans {
+            args.push("--orphans");
+        }
+        let out = Command::new(rivet_bin())
+            .args(&args)
+            .output()
+            .expect("rivet list failed");
+        assert!(out.status.success(), "list must exit 0");
+        let v: serde_json::Value =
+            serde_json::from_str(&String::from_utf8_lossy(&out.stdout)).expect("valid JSON");
+        v["count"].as_u64().expect("count field")
+    };
+    let all = run(false);
+    let orphans = run(true);
+    assert!(
+        orphans <= all,
+        "orphans ({orphans}) must be a subset of all artifacts ({all})"
+    );
+}
+
 /// `rivet get REQ-001 --format yaml` produces YAML output.
 #[test]
 fn get_yaml_produces_valid_output() {
