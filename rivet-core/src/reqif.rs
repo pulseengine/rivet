@@ -922,17 +922,30 @@ pub fn parse_reqif(xml: &str, type_map: &HashMap<String, String>) -> Result<Vec<
                     .copied()
                     .unwrap_or(&ev.definition.attr_def_ref);
 
-                // Resolve enum value refs to their LONG-NAME
-                let resolved: Vec<&str> = ev
-                    .values
-                    .as_ref()
-                    .map(|v| {
-                        v.refs
-                            .iter()
-                            .filter_map(|r| enum_value_names.get(r.as_str()).copied())
-                            .collect()
-                    })
-                    .unwrap_or_default();
+                // Resolve enum value refs to their LONG-NAME. REQ-119
+                // (F2 silent-failure): an ENUM-VALUE-REF that matches no
+                // ENUM-VALUE @IDENTIFIER used to be silently dropped via
+                // `filter_map`, yielding a degraded/incomplete field value with
+                // no signal — an internally-inconsistent ReqIF imported as if
+                // clean. Surface unresolved refs loudly instead.
+                let mut resolved: Vec<&str> = Vec::new();
+                let mut unresolved: Vec<&str> = Vec::new();
+                if let Some(v) = ev.values.as_ref() {
+                    for r in &v.refs {
+                        match enum_value_names.get(r.as_str()).copied() {
+                            Some(name) => resolved.push(name),
+                            None => unresolved.push(r.as_str()),
+                        }
+                    }
+                }
+                if !unresolved.is_empty() {
+                    return Err(Error::Adapter(format!(
+                        "ReqIF attribute '{attr_name}': enum value ref(s) [{}] match no \
+                         ENUM-VALUE identifier in any enumeration datatype — the ReqIF is \
+                         internally inconsistent and would import an incomplete value",
+                        unresolved.join(", "),
+                    )));
+                }
 
                 let value = resolved.join(", ");
                 if !value.is_empty() {
@@ -2857,6 +2870,60 @@ mod tests {
             !arts[0].fields.contains_key("status"),
             "status leaked into fields: {:?}",
             arts[0].fields,
+        );
+    }
+
+    /// REQ-119 (F2 silent-failure): an ENUM-VALUE-REF that matches no defined
+    /// ENUM-VALUE identifier must make the parse FAIL (naming the bad ref),
+    /// not silently produce an incomplete value.
+    // rivet: verifies REQ-119
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn parse_reqif_fails_on_unresolved_enum_value_ref() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<REQ-IF xmlns="http://www.omg.org/spec/ReqIF/20110401/reqif.xsd">
+  <THE-HEADER><REQ-IF-HEADER IDENTIFIER="enum-unresolved"/></THE-HEADER>
+  <CORE-CONTENT>
+    <REQ-IF-CONTENT>
+      <DATATYPES>
+        <DATATYPE-DEFINITION-ENUMERATION IDENTIFIER="DT-STATUS" LONG-NAME="StatusEnum">
+          <SPECIFIED-VALUES>
+            <ENUM-VALUE IDENTIFIER="EV-DRAFT" LONG-NAME="draft"/>
+          </SPECIFIED-VALUES>
+        </DATATYPE-DEFINITION-ENUMERATION>
+      </DATATYPES>
+      <SPEC-TYPES>
+        <SPEC-OBJECT-TYPE IDENTIFIER="SOT-req" LONG-NAME="requirement">
+          <SPEC-ATTRIBUTES>
+            <ATTRIBUTE-DEFINITION-ENUMERATION IDENTIFIER="ATTR-STAT" LONG-NAME="status">
+              <TYPE><DATATYPE-DEFINITION-ENUMERATION-REF>DT-STATUS</DATATYPE-DEFINITION-ENUMERATION-REF></TYPE>
+            </ATTRIBUTE-DEFINITION-ENUMERATION>
+          </SPEC-ATTRIBUTES>
+        </SPEC-OBJECT-TYPE>
+      </SPEC-TYPES>
+      <SPEC-OBJECTS>
+        <SPEC-OBJECT IDENTIFIER="R-1" LONG-NAME="A req">
+          <TYPE><SPEC-OBJECT-TYPE-REF>SOT-req</SPEC-OBJECT-TYPE-REF></TYPE>
+          <VALUES>
+            <ATTRIBUTE-VALUE-ENUMERATION>
+              <DEFINITION><ATTRIBUTE-DEFINITION-ENUMERATION-REF>ATTR-STAT</ATTRIBUTE-DEFINITION-ENUMERATION-REF></DEFINITION>
+              <VALUES>
+                <ENUM-VALUE-REF>EV-MISSING</ENUM-VALUE-REF>
+              </VALUES>
+            </ATTRIBUTE-VALUE-ENUMERATION>
+          </VALUES>
+        </SPEC-OBJECT>
+      </SPEC-OBJECTS>
+      <SPEC-RELATIONS/>
+    </REQ-IF-CONTENT>
+  </CORE-CONTENT>
+</REQ-IF>"#;
+        let err = parse_reqif(xml, &HashMap::new())
+            .expect_err("an unresolved ENUM-VALUE-REF must fail the parse, not be dropped");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("EV-MISSING"),
+            "the error must name the unresolved ref; got: {msg}"
         );
     }
 

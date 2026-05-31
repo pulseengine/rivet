@@ -65,6 +65,13 @@
 
 ### Fixed
 
+- **REQ-119 (F2 silent-failure) — ReqIF import fails on an unresolved enum
+  ref.** An `ENUM-VALUE-REF` matching no defined `ENUM-VALUE` identifier was
+  silently dropped via `filter_map`, yielding a degraded/incomplete field
+  value with no signal — an internally-inconsistent ReqIF imported as if
+  clean. Import now returns an `Err` naming the unresolved ref(s). Regression
+  test.
+
 - **REQ-120 (F2 silent-failure) — ReqIF directory import fails loudly on a
   corrupt file.** `import_reqif_directory` used to skip a malformed `.reqif`
   with only a (often-suppressed) `log::warn!`, silently importing partial
