@@ -688,6 +688,12 @@ fn import_reqif_directory(
     type_map: &HashMap<String, String>,
 ) -> Result<Vec<Artifact>, Error> {
     let mut artifacts = Vec::new();
+    // REQ-120 (F2 silent-failure): a malformed ReqIF file used to be skipped
+    // with only a `log::warn!` (often suppressed) and no signal to the caller —
+    // a silent partial import of interchange data. Collect every parse failure
+    // and fail loudly at the end, naming each file, rather than silently
+    // dropping it.
+    let mut failed: Vec<String> = Vec::new();
     let entries =
         std::fs::read_dir(dir).map_err(|e| Error::Io(format!("{}: {e}", dir.display())))?;
 
@@ -702,11 +708,22 @@ fn import_reqif_directory(
                 .map_err(|e| Error::Io(format!("{}: {e}", path.display())))?;
             match parse_reqif(&content, type_map) {
                 Ok(arts) => artifacts.extend(arts),
-                Err(e) => log::warn!("skipping {}: {e}", path.display()),
+                Err(e) => {
+                    log::warn!("ReqIF parse failed for {}: {e}", path.display());
+                    failed.push(format!("{}: {e}", path.display()));
+                }
             }
         } else if path.is_dir() {
             artifacts.extend(import_reqif_directory(&path, type_map)?);
         }
+    }
+
+    if !failed.is_empty() {
+        return Err(Error::Adapter(format!(
+            "ReqIF import: {} file(s) failed to parse and were NOT imported:\n  - {}",
+            failed.len(),
+            failed.join("\n  - "),
+        )));
     }
 
     Ok(artifacts)
@@ -3036,6 +3053,49 @@ mod tests {
         // skipped.  Mutant `==`→`!=` on either leg would skip a real
         // file (count != 2).
         assert_eq!(ids, vec!["R-1".to_string(), "R-2".to_string()]);
+    }
+
+    /// REQ-120 (F2 silent-failure): a corrupted ReqIF file alongside valid
+    /// ones must make `import_reqif_directory` fail LOUDLY (Err naming the bad
+    /// file), not silently drop it with only a log::warn.
+    // rivet: verifies REQ-120
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn import_reqif_directory_fails_loudly_on_corrupt_file() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+
+        // One valid ReqIF.
+        let valid = r#"<?xml version="1.0" encoding="UTF-8"?>
+<REQ-IF xmlns="http://www.omg.org/spec/ReqIF/20110401/reqif.xsd">
+  <THE-HEADER><REQ-IF-HEADER IDENTIFIER="hdr"/></THE-HEADER>
+  <CORE-CONTENT><REQ-IF-CONTENT>
+    <DATATYPES/>
+    <SPEC-TYPES><SPEC-OBJECT-TYPE IDENTIFIER="SOT-req" LONG-NAME="requirement"/></SPEC-TYPES>
+    <SPEC-OBJECTS><SPEC-OBJECT IDENTIFIER="R-1" LONG-NAME="ok">
+      <TYPE><SPEC-OBJECT-TYPE-REF>SOT-req</SPEC-OBJECT-TYPE-REF></TYPE>
+    </SPEC-OBJECT></SPEC-OBJECTS>
+    <SPEC-RELATIONS/>
+  </REQ-IF-CONTENT></CORE-CONTENT>
+</REQ-IF>"#;
+        std::fs::File::create(dir.path().join("good.reqif"))
+            .unwrap()
+            .write_all(valid.as_bytes())
+            .unwrap();
+
+        // One corrupted ReqIF (malformed XML).
+        std::fs::File::create(dir.path().join("bad.reqif"))
+            .unwrap()
+            .write_all(b"<REQ-IF><not-closed>")
+            .unwrap();
+
+        let result = import_reqif_directory(dir.path(), &HashMap::new());
+        let err = result.expect_err("a corrupt file must make the import fail, not be dropped");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("bad.reqif") && msg.contains("failed to parse"),
+            "the error must name the corrupted file; got: {msg}"
+        );
     }
 
     /// Finding #3 (REQ-104): the export must emit a SPECIFICATION whose
