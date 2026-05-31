@@ -7,6 +7,12 @@
 
 ### Added
 
+- **REQ-135 / #354 — `rivet modify`/`add` reject a status outside the enum.**
+  Building on the retained `base-fields`, `validate_add` and `validate_modify`
+  now reject a `status` value outside the `status` base-field's declared
+  `allowed-values` *at mutation time* (so a typo never reaches a file), with
+  the allowed set named. Inert when no enum is declared.
+
 - **REQ-135 — status enum can now be enforced (the mechanism).** The merged
   `Schema` dropped `base-fields` entirely, so `status` (a base field) could
   never be enum-validated — the root cause behind a 4-issue cluster

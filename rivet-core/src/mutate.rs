@@ -179,8 +179,12 @@ pub fn validate_add(artifact: &Artifact, store: &Store, schema: &Schema) -> Resu
         }
     }
 
-    // Check status allowed values (if schema defines them via base-fields)
-    // Status is a base field and generally freeform, but we'll accept it
+    // Check status against the declared enum (REQ-135). `status` is a base
+    // field; when the schema declares `allowed-values` on it, reject values
+    // outside the set at mutation time (so a typo never reaches a file).
+    if let Some(status) = artifact.status.as_deref() {
+        check_status_allowed(status, schema)?;
+    }
 
     // Validate link types
     for link in &artifact.links {
@@ -382,6 +386,30 @@ pub fn validate_modify(
         }
     }
 
+    // REQ-135: a `--set-status` value must be in the declared status enum.
+    if let Some(status) = params.set_status.as_deref() {
+        check_status_allowed(status, schema)?;
+    }
+
+    Ok(())
+}
+
+/// REQ-135: reject a status outside the `status` base-field's declared
+/// `allowed-values`. Inert (Ok) when no enum is declared — keeps status
+/// free-form for schemas that don't opt in.
+fn check_status_allowed(status: &str, schema: &Schema) -> Result<(), Error> {
+    if let Some(allowed) = schema
+        .base_fields
+        .iter()
+        .find(|f| f.name == "status")
+        .and_then(|f| f.allowed_values.as_ref())
+    {
+        if !allowed.is_empty() && !allowed.iter().any(|a| a == status) {
+            return Err(Error::Validation(format!(
+                "status '{status}' is not an allowed value, allowed: {allowed:?}"
+            )));
+        }
+    }
     Ok(())
 }
 
@@ -652,6 +680,50 @@ mod tests {
         assert_eq!(prefix_for_type("requirement", &store), "REQUIREMENT");
         assert_eq!(prefix_for_type("design-decision", &store), "DESIGNDECISION");
         assert_eq!(prefix_for_type("sw-req", &store), "SWREQ");
+    }
+
+    /// REQ-135 (#354): `modify --set-status` rejects a value outside the
+    /// declared status enum; accepts a valid one; inert when no enum declared.
+    // rivet: verifies REQ-135
+    #[test]
+    fn validate_modify_rejects_status_outside_enum() {
+        let mut sf = minimal_schema("test");
+        sf.artifact_types = vec![ArtifactTypeDef {
+            name: "requirement".to_string(),
+            ..Default::default()
+        }];
+        sf.base_fields = vec![FieldDef {
+            name: "status".to_string(),
+            field_type: "enum".to_string(),
+            allowed_values: Some(vec![
+                "draft".to_string(),
+                "approved".to_string(),
+                "implemented".to_string(),
+            ]),
+            ..Default::default()
+        }];
+        let schema = Schema::merge(&[sf]);
+
+        let mut store = Store::new();
+        let mut a = minimal_artifact("REQ-1", "requirement");
+        a.status = Some("draft".to_string());
+        store.insert(a).unwrap();
+
+        let bad = ModifyParams {
+            set_status: Some("implmented".to_string()), // typo
+            ..Default::default()
+        };
+        let err = validate_modify("REQ-1", &bad, &store, &schema).unwrap_err();
+        assert!(
+            err.to_string().contains("implmented") && err.to_string().contains("allowed"),
+            "must reject the typo'd status; got {err}"
+        );
+
+        let good = ModifyParams {
+            set_status: Some("implemented".to_string()),
+            ..Default::default()
+        };
+        assert!(validate_modify("REQ-1", &good, &store, &schema).is_ok());
     }
 
     // rivet: verifies REQ-031
