@@ -1730,7 +1730,10 @@ fn coverage_json() {
     // would collide semantically with the stats command.
     let overall = &parsed["overall"];
     assert!(
-        overall.get("checks_total").and_then(|v| v.as_u64()).is_some(),
+        overall
+            .get("checks_total")
+            .and_then(|v| v.as_u64())
+            .is_some(),
         "coverage overall must expose 'checks_total'"
     );
     assert!(
