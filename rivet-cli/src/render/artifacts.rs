@@ -536,15 +536,23 @@ pub(crate) fn render_artifact_detail(ctx: &RenderContext, id: &str) -> RenderRes
     };
 
     // oEmbed discovery tag — allows Notion/Confluence to auto-discover the embed
-    let oembed_discovery = format!(
-        r#"<link rel="alternate" type="application/json+oembed" href="http://localhost:{port}/oembed?url={encoded_url}&amp;format=json" title="{title}" />"#,
-        port = ctx.context.port,
-        encoded_url = urlencoding::encode(&format!(
-            "http://localhost:{}/artifacts/{}",
-            ctx.context.port, artifact.id
-        )),
-        title = html_escape(&format!("{}: {}", artifact.id, artifact.title)),
-    );
+    // from a LIVE server. REQ-117 (#117): static `export --format html` has no
+    // server, so `port` is 0 there; emitting a `http://localhost:0/...` tag
+    // produces broken metadata in every exported page. Only emit when served
+    // (a real, non-zero port).
+    let oembed_discovery = if ctx.context.port == 0 {
+        String::new()
+    } else {
+        format!(
+            r#"<link rel="alternate" type="application/json+oembed" href="http://localhost:{port}/oembed?url={encoded_url}&amp;format=json" title="{title}" />"#,
+            port = ctx.context.port,
+            encoded_url = urlencoding::encode(&format!(
+                "http://localhost:{}/artifacts/{}",
+                ctx.context.port, artifact.id
+            )),
+            title = html_escape(&format!("{}: {}", artifact.id, artifact.title)),
+        )
+    };
 
     let mut html = format!(
         "{oembed_discovery}<h2>{}{}</h2><p class=\"meta\">{}</p>",

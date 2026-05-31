@@ -34,6 +34,12 @@
 
 ### Fixed
 
+- **REQ-117 — static export no longer emits a `localhost` oEmbed tag.** Every
+  exported artifact page carried an oEmbed discovery `<link>` pointing at
+  `http://localhost:<port>`, meaningless (and broken metadata) in a static
+  `export --format html` that has no server. The tag is now emitted only when
+  served (a real, non-zero port).
+
 - **Issue #349 — `required-backlink` rules now match the inverse-name
   convention.** Schemas (e.g. `safety-case.yaml`) declare
   `required-backlink: supported-by` — the *inverse* of the forward
