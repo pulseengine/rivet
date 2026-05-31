@@ -1695,6 +1695,34 @@ fn get_nonexistent_returns_error() {
     );
 }
 
+/// issue #357: `rivet validate --min-severity error` only DISPLAYS
+/// error-level diagnostics (filtering the low-signal warning/info noise),
+/// while leaving counts/exit untouched. rivet's own repo has 0 errors, so
+/// the filtered output must contain no `WARN:`/`INFO:` lines and must note
+/// what it suppressed.
+#[test]
+fn validate_min_severity_filters_display() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "validate",
+            "--min-severity",
+            "error",
+        ])
+        .output()
+        .expect("failed to execute rivet validate --min-severity error");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains("WARN:") && !stdout.contains("INFO:"),
+        "--min-severity error must suppress WARN/INFO lines. Got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("at or above 'error'"),
+        "must note that lower-severity diagnostics were suppressed. Got:\n{stdout}"
+    );
+}
+
 /// `rivet get REQ-001 --format yaml` produces YAML output.
 #[test]
 fn get_yaml_produces_valid_output() {

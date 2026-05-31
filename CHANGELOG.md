@@ -7,6 +7,13 @@
 
 ### Added
 
+- **Issue #357 — `validate --min-severity` filters display noise.** `rivet
+  validate` printed every diagnostic; on a clean repo that is ~160 advisory
+  warnings for 0 errors, burying the actionable ones. `rivet validate
+  --min-severity error` (or `warning`/`info`) now shows only diagnostics at
+  or above the floor, with a one-line note of how many were suppressed.
+  Counts and exit code are unchanged (display-only).
+
 - **Issues #359 / #360 — `rivet modify --set-description` + clearer usage.**
   `description` is a top-level base field, but the CLI exposed no
   `--set-description` flag — so updating a description forced

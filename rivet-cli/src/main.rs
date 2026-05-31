@@ -333,6 +333,13 @@ enum Command {
         #[arg(long, default_value = "error")]
         fail_on: String,
 
+        /// Only DISPLAY diagnostics at or above this severity (text output).
+        /// Values: "error", "warning", "info". Default shows all. Cuts the
+        /// low-signal advisory noise (e.g. `--min-severity error` shows only
+        /// what you must act on); does not affect counts or exit code.
+        #[arg(long = "min-severity")]
+        min_severity: Option<String>,
+
         /// Promote `cited-source-drift` warnings to errors. See
         /// `rivet docs schema-cited-sources` for the field shape.
         #[arg(long = "strict-cited-sources")]
@@ -1898,6 +1905,7 @@ fn run(cli: Cli) -> Result<bool> {
             binding,
             strict_variants,
             fail_on,
+            min_severity,
             strict_cited_sources,
             strict_cited_source_stale,
             check_remote_sources,
@@ -1915,6 +1923,7 @@ fn run(cli: Cli) -> Result<bool> {
             binding.as_deref(),
             *strict_variants,
             fail_on,
+            min_severity.as_deref(),
             *strict_cited_sources,
             *strict_cited_source_stale,
             *check_remote_sources,
@@ -4582,6 +4591,7 @@ fn cmd_validate(
     binding_path: Option<&std::path::Path>,
     strict_variants: bool,
     fail_on: &str,
+    min_severity: Option<&str>,
     strict_cited_sources: bool,
     strict_cited_source_stale: bool,
     check_remote_sources: bool,
@@ -4590,6 +4600,9 @@ fn cmd_validate(
 ) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
     let fail_on_threshold = parse_fail_on(fail_on)?;
+    // #357: optional DISPLAY floor — only print diagnostics at/above this
+    // severity. Reuses the same parser as --fail-on. None = show all.
+    let display_floor = min_severity.map(parse_fail_on).transpose()?;
     check_for_updates();
 
     let ctx = ProjectContext::load_with_docs(cli)?;
@@ -5229,7 +5242,31 @@ fn cmd_validate(
             );
         }
 
-        print_diagnostics_with_remediation(&diagnostics, Some((&store, &schema)));
+        // #357: when --min-severity is set, display only diagnostics at/above
+        // the floor (counts + exit code are unaffected — they were computed
+        // above from the full set). Severity rank: Error > Warning > Info.
+        let rank = |s: Severity| match s {
+            Severity::Error => 2u8,
+            Severity::Warning => 1,
+            Severity::Info => 0,
+        };
+        let shown: Vec<validate::Diagnostic> = match display_floor {
+            Some(floor) => diagnostics
+                .iter()
+                .filter(|d| rank(d.severity) >= rank(floor))
+                .cloned()
+                .collect(),
+            None => diagnostics.clone(),
+        };
+        if display_floor.is_some() && shown.len() != diagnostics.len() {
+            println!(
+                "(showing {} of {} diagnostics at or above '{}'; counts above are the full set)",
+                shown.len(),
+                diagnostics.len(),
+                min_severity.unwrap_or("info"),
+            );
+        }
+        print_diagnostics_with_remediation(&shown, Some((&store, &schema)));
 
         if !cross_repo_broken.is_empty() {
             println!();
@@ -8640,6 +8677,7 @@ fn cmd_diff(
                     binding: None,
                     strict_variants: false,
                     fail_on: "error".to_string(),
+                    min_severity: None,
                     strict_cited_sources: false,
                     strict_cited_source_stale: false,
                     check_remote_sources: false,
@@ -8663,6 +8701,7 @@ fn cmd_diff(
                     binding: None,
                     strict_variants: false,
                     fail_on: "error".to_string(),
+                    min_severity: None,
                     strict_cited_sources: false,
                     strict_cited_source_stale: false,
                     check_remote_sources: false,
