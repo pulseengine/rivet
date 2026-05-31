@@ -1724,8 +1724,8 @@ fn validate_min_severity_filters_display() {
 }
 
 /// REQ-125 (#349/#350/#358): `rivet validate --explain <ID>` explains a
-/// single artifact — its applicable traceability rules (satisfied/missing
-/// + via which link) and its links. REQ-001 is widely satisfied in rivet's
+/// single artifact — its applicable traceability rules (satisfied or missing,
+/// and via which link) plus its links. REQ-001 is widely satisfied in rivet's
 /// own repo, so its rule must read "satisfied".
 #[test]
 fn validate_explain_shows_rule_status() {
