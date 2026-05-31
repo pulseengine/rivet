@@ -7,6 +7,15 @@
 
 ### Added
 
+- **Issues #359 / #360 — `rivet modify --set-description` + clearer usage.**
+  `description` is a top-level base field, but the CLI exposed no
+  `--set-description` flag — so updating a description forced
+  `--set-field description=...`, which `mutate` then *rejected* with a hint
+  pointing at a `--set-description` flag that did not exist. The flag is now
+  wired (the core `ModifyParams.set_description` + `yaml_edit` already
+  supported it). `rivet modify --help` now shows `--set-*` examples and a
+  note that positionals (`modify <ID> status approved`) are not valid.
+
 - **Issue #358 — incoming links are visible from `get` and `list`.** The
   single most common traceability question — "what verifies / satisfies X?"
   — lives on the backlink side, but `rivet get <ID>` only showed outbound

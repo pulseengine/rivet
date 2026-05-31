@@ -961,6 +961,19 @@ enum Command {
     },
 
     /// Modify an existing artifact
+    /// Modify an existing artifact (status, title, description, tags, fields)
+    ///
+    /// Use the `--set-*` flags, not positionals. Examples:
+    ///   rivet modify REQ-001 --set-status approved
+    ///   rivet modify REQ-001 --set-description "Updated rationale"
+    ///   rivet modify REQ-001 --set-field priority=must
+    #[command(after_help = "Examples:\n  \
+        rivet modify <ID> --set-status approved\n  \
+        rivet modify <ID> --set-description \"text\"\n  \
+        rivet modify <ID> --set-title \"New title\"\n  \
+        rivet modify <ID> --set-field key=value\n\n\
+        Note: use --set-* flags, not positionals \
+        (`modify <ID> status approved` is not valid).")]
     Modify {
         /// Artifact ID to modify
         id: String,
@@ -972,6 +985,11 @@ enum Command {
         /// Set the title
         #[arg(long)]
         set_title: Option<String>,
+
+        /// Set the description (a top-level base field — use this rather
+        /// than `--set-field description=...`)
+        #[arg(long)]
+        set_description: Option<String>,
 
         /// Add a tag
         #[arg(long)]
@@ -2276,6 +2294,7 @@ fn run(cli: Cli) -> Result<bool> {
             id,
             set_status,
             set_title,
+            set_description,
             add_tag,
             remove_tag,
             set_fields,
@@ -2284,6 +2303,7 @@ fn run(cli: Cli) -> Result<bool> {
             id,
             set_status.as_deref(),
             set_title.as_deref(),
+            set_description.as_deref(),
             add_tag,
             remove_tag,
             set_fields,
@@ -13708,11 +13728,13 @@ fn cmd_unlink(cli: &Cli, source_id: &str, link_type: &str, target_id: &str) -> R
 }
 
 /// Modify an existing artifact.
+#[allow(clippy::too_many_arguments)] // one parameter per CLI `--set-*` flag
 fn cmd_modify(
     cli: &Cli,
     id: &str,
     set_status: Option<&str>,
     set_title: Option<&str>,
+    set_description: Option<&str>,
     add_tags: &[String],
     remove_tags: &[String],
     set_fields: &[(String, String)],
@@ -13725,7 +13747,7 @@ fn cmd_modify(
     let params = ModifyParams {
         set_status: set_status.map(|s| s.to_string()),
         set_title: set_title.map(|s| s.to_string()),
-        set_description: None,
+        set_description: set_description.map(|s| s.to_string()),
         add_tags: add_tags.to_vec(),
         remove_tags: remove_tags.to_vec(),
         set_fields: set_fields.to_vec(),

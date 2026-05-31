@@ -1514,4 +1514,30 @@ artifacts:
             Some("`rivet validate` is handy")
         );
     }
+
+    /// issue #360: `ModifyParams.set_description` (wired to the CLI
+    /// `--set-description` flag) writes the top-level `description` field.
+    #[test]
+    fn modify_applies_set_description_param() {
+        let content = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: First
+    status: draft";
+        let params = crate::mutate::ModifyParams {
+            set_description: Some("Updated via --set-description".to_string()),
+            ..Default::default()
+        };
+        let store = crate::store::Store::new();
+        let out =
+            modify_artifact_yaml(content, "REQ-001", &params, &store).expect("modify must succeed");
+        let parsed: serde_yaml::Value =
+            serde_yaml::from_str(&out).expect("output must parse as YAML");
+        assert_eq!(
+            parsed["artifacts"][0]["description"].as_str(),
+            Some("Updated via --set-description"),
+            "set_description must write the top-level description"
+        );
+    }
 }
