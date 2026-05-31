@@ -2943,7 +2943,7 @@ artifacts:
   - id: REQ-119
     type: requirement
     title: "ReqIF enumeration value resolution silently drops unresolved references"
-    status: draft
+    status: implemented
     description: |
       Bug-hunt finding (f2-silent-failure, 3/3 lens-confirmed).
 
