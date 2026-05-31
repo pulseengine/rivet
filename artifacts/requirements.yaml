@@ -3696,3 +3696,37 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-004
+
+  - id: REQ-137
+    type: requirement
+    title: "validate --min-severity: filter displayed diagnostics to cut advisory noise"
+    status: implemented
+    description: |
+      Self-reported via GitHub issue #357 (dogfooding). `rivet validate`
+      prints every diagnostic regardless of severity — on rivet's own repo
+      that is ~160 warnings (lifecycle aspirations, prose-mention notes)
+      for 0 errors, burying any actionable diagnostic. `--fail-on`
+      controls the exit-code threshold but still prints everything; there
+      was no way to say "show me only what I must act on."
+
+      Add `rivet validate --min-severity <error|warning|info>` (text
+      output) that DISPLAYS only diagnostics at or above the floor. Counts
+      and exit code are unchanged (computed from the full set); when the
+      filter hides anything, a one-line note reports how many of how many
+      were shown, so nothing is silently dropped (loud-fail register).
+      Reuses the existing `--fail-on` severity parser.
+
+      Acceptance:
+        - `rivet validate --min-severity error` on a warning-only repo
+          prints no `WARN:`/`INFO:` lines and notes "(showing N of M …
+          at or above 'error')".
+        - Exit code and the summary counts are identical with and without
+          `--min-severity` (display-only).
+    tags: [validate, diagnostics, dx, agent-ux, signal-to-noise, user-reported, issue-357]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.15.0-track
+    links:
+      - type: traces-to
+        target: REQ-004
