@@ -65,6 +65,13 @@
 
 ### Fixed
 
+- **REQ-123 (F2 silent-failure) — ReqIF import fails on a title-less
+  SPEC-OBJECT.** A SPEC-OBJECT with neither a `ReqIF.Name` attribute nor a
+  `@LONG-NAME` used to import as an artifact with an empty `title` (a required
+  base field) via `unwrap_or_default()` — a silently-invalid artifact. Import
+  now returns an `Err` naming the object. Completes the ReqIF F2 sweep
+  (REQ-119, REQ-120, REQ-123). Regression test.
+
 - **REQ-119 (F2 silent-failure) — ReqIF import fails on an unresolved enum
   ref.** An `ENUM-VALUE-REF` matching no defined `ENUM-VALUE` identifier was
   silently dropped via `filter_map`, yielding a degraded/incomplete field

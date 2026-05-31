@@ -971,6 +971,17 @@ pub fn parse_reqif(xml: &str, type_map: &HashMap<String, String>) -> Result<Vec<
         let title = reqif_name
             .or_else(|| obj.long_name.clone())
             .unwrap_or_default();
+        // REQ-123 (F2 silent-failure): a SPEC-OBJECT with neither a ReqIF.Name
+        // attribute nor a @LONG-NAME used to import as an artifact with an EMPTY
+        // `title` (a required base field) via `unwrap_or_default()` — a
+        // silently-invalid artifact. Fail loudly, naming the object, instead.
+        if title.trim().is_empty() {
+            return Err(Error::Adapter(format!(
+                "ReqIF SPEC-OBJECT '{}' has neither a ReqIF.Name attribute nor a @LONG-NAME — \
+                 cannot derive the required `title` field",
+                obj.identifier,
+            )));
+        }
         // Use ReqIF.Text or @DESC as description
         let description = reqif_text.or_else(|| obj.desc.clone());
 
@@ -2806,6 +2817,38 @@ mod tests {
         // falls back to IDENTIFIER ("R-1"). Mutant would set
         // reqif_foreign_id = Some("") → id = "" → broken artifact.
         assert_eq!(arts[0].id, "R-1");
+    }
+
+    /// REQ-123 (F2 silent-failure): a SPEC-OBJECT with neither a ReqIF.Name
+    /// attribute nor a @LONG-NAME must FAIL the parse (naming the object), not
+    /// import an artifact with an empty required `title`.
+    // rivet: verifies REQ-123
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn parse_reqif_fails_on_titleless_spec_object() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<REQ-IF xmlns="http://www.omg.org/spec/ReqIF/20110401/reqif.xsd">
+  <THE-HEADER><REQ-IF-HEADER IDENTIFIER="titleless"/></THE-HEADER>
+  <CORE-CONTENT>
+    <REQ-IF-CONTENT>
+      <DATATYPES/>
+      <SPEC-TYPES><SPEC-OBJECT-TYPE IDENTIFIER="SOT-req" LONG-NAME="requirement"/></SPEC-TYPES>
+      <SPEC-OBJECTS>
+        <SPEC-OBJECT IDENTIFIER="R-NO-TITLE">
+          <TYPE><SPEC-OBJECT-TYPE-REF>SOT-req</SPEC-OBJECT-TYPE-REF></TYPE>
+        </SPEC-OBJECT>
+      </SPEC-OBJECTS>
+      <SPEC-RELATIONS/>
+    </REQ-IF-CONTENT>
+  </CORE-CONTENT>
+</REQ-IF>"#;
+        let err = parse_reqif(xml, &HashMap::new())
+            .expect_err("a SPEC-OBJECT with no name/LONG-NAME must fail the parse");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("R-NO-TITLE") && msg.contains("title"),
+            "the error must name the object and the missing title; got: {msg}"
+        );
     }
 
     /// `status` and `tags` recognition through both UPPER and lowercase

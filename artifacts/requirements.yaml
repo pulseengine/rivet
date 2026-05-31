@@ -3102,7 +3102,7 @@ artifacts:
   - id: REQ-123
     type: requirement
     title: "ReqIF title/description default fallbacks mask missing required fields"
-    status: draft
+    status: implemented
     description: |
       Bug-hunt finding (f2-silent-failure, 3/3 lens-confirmed).
 
