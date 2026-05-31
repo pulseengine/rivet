@@ -1722,6 +1722,35 @@ fn coverage_json() {
         parsed.get("rules").and_then(|v| v.as_array()).is_some(),
         "coverage JSON must contain 'rules' array"
     );
+
+    // REQ-111: the overall aggregate sums per-rule denominators (an artifact in
+    // N rules counts N times), a different cardinality from `stats` JSON's
+    // distinct-artifact `total`. It must be exposed under disambiguated
+    // `checks_*` keys and must NOT reuse the bare `total`/`covered` names that
+    // would collide semantically with the stats command.
+    let overall = &parsed["overall"];
+    assert!(
+        overall
+            .get("checks_total")
+            .and_then(|v| v.as_u64())
+            .is_some(),
+        "coverage overall must expose 'checks_total'"
+    );
+    assert!(
+        overall
+            .get("checks_covered")
+            .and_then(|v| v.as_u64())
+            .is_some(),
+        "coverage overall must expose 'checks_covered'"
+    );
+    assert!(
+        overall.get("total").is_none(),
+        "coverage overall must NOT use the ambiguous key 'total' (REQ-111)"
+    );
+    assert!(
+        overall.get("covered").is_none(),
+        "coverage overall must NOT use the ambiguous key 'covered' (REQ-111)"
+    );
 }
 
 // ── rivet matrix ───────────────────────────────────────────────────────
