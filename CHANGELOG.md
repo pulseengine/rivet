@@ -7,6 +7,13 @@
 
 ### Added
 
+- **REQ-128 / #358 — `rivet list --orphans`.** Lists only artifacts with no
+  inbound and no outbound links — disconnected from the traceability graph,
+  i.e. an asserted-but-unanchored claim (a requirement no test verifies, a
+  decision no hazard drives). Combine with `--type`. Built on the existing
+  `LinkGraph::orphans`; works in text and `--format json`. (The
+  inbound-link-count ranking report remains a follow-up.)
+
 - **REQ-125 / #349 / #350 / #358 — `rivet validate --explain <ID>`.** Explains
   one artifact: which traceability rules target its type and whether each is
   satisfied (and via which incoming/outgoing link, or what's missing — e.g.

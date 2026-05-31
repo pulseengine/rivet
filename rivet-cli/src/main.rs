@@ -441,6 +441,12 @@ enum Command {
         /// artifact's merged `fields:` view for the variant.
         #[arg(long, value_name = "NAME_OR_PATH")]
         variant: Option<String>,
+
+        /// Only list ORPHANS — artifacts with no inbound and no outbound
+        /// links, disconnected from the traceability graph (an
+        /// asserted-but-unanchored claim). Combine with `--type` to scope.
+        #[arg(long)]
+        orphans: bool,
     },
 
     /// Show artifact summary statistics
@@ -1953,6 +1959,7 @@ fn run(cli: Cli) -> Result<bool> {
             format,
             baseline,
             variant,
+            orphans,
         } => cmd_list(
             &cli,
             r#type.as_deref(),
@@ -1961,6 +1968,7 @@ fn run(cli: Cli) -> Result<bool> {
             format,
             baseline.as_deref(),
             variant.as_deref(),
+            *orphans,
         ),
         Command::Get { id, format } => cmd_get(&cli, id, format),
         Command::Bundle { id, depth, format } => cmd_bundle(&cli, id, *depth, format),
@@ -5924,6 +5932,7 @@ fn cmd_bundle(cli: &Cli, id: &str, depth: usize, format: &str) -> Result<bool> {
 }
 
 /// List artifacts.
+#[allow(clippy::too_many_arguments)] // one parameter per CLI list filter
 fn cmd_list(
     cli: &Cli,
     type_filter: Option<&str>,
@@ -5932,6 +5941,7 @@ fn cmd_list(
     format: &str,
     baseline_name: Option<&str>,
     variant_arg: Option<&str>,
+    orphans_only: bool,
 ) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
     let ctx = ProjectContext::load(cli)?;
@@ -5961,6 +5971,15 @@ fn cmd_list(
         results.retain(|a| {
             rivet_core::sexpr_eval::matches_filter_with_store(&expr, a, &graph, &store)
         });
+    }
+
+    // REQ-128: `--orphans` keeps only artifacts with no inbound and no
+    // outbound links (disconnected from the traceability graph).
+    if orphans_only {
+        let graph = rivet_core::links::LinkGraph::build(&store, &ctx.schema);
+        let orphan_ids: std::collections::HashSet<&str> =
+            graph.orphans(&store).iter().map(|id| id.as_str()).collect();
+        results.retain(|a| orphan_ids.contains(a.id.as_str()));
     }
 
     if format == "json" {
