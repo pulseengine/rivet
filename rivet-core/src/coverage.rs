@@ -191,22 +191,40 @@ pub fn compute_coverage(store: &Store, schema: &Schema, graph: &LinkGraph) -> Co
                                 .is_some_and(|a| target_types.contains(&a.artifact_type))
                         }
                     }),
-                CoverageDirection::Backward => graph
-                    .backlinks_to(id)
-                    .iter()
-                    // Same reasoning as forward: a backlink from the artifact
-                    // to itself (self-referential link) cannot count as
-                    // "satisfied by a different artifact."
-                    .filter(|bl| bl.link_type == link_type && bl.source != *id)
-                    .any(|bl| {
-                        if target_types.is_empty() {
-                            true
-                        } else {
-                            store
-                                .get(&bl.source)
-                                .is_some_and(|a| target_types.contains(&a.artifact_type))
-                        }
-                    }),
+                CoverageDirection::Backward => {
+                    // Schemas write the backlink name as either the forward
+                    // link-type (e.g. `satisfies`) or the inverse
+                    // (e.g. `supported-by`); accept either. `alternate-backlinks`
+                    // adds further acceptable shapes (e.g. a safety-goal that
+                    // is `supported-by` OR `decomposed-by` OR `has-sub-goal`).
+                    let backlinks = graph.backlinks_to(id);
+                    let backlink_matches = |link_name: &str, from_types: &[String]| {
+                        backlinks
+                            .iter()
+                            // Same reasoning as forward: a backlink from the
+                            // artifact to itself (self-referential link) cannot
+                            // count as "satisfied by a different artifact."
+                            .filter(|bl| bl.source != *id)
+                            .filter(|bl| {
+                                bl.link_type == link_name
+                                    || bl.inverse_type.as_deref() == Some(link_name)
+                            })
+                            .any(|bl| {
+                                if from_types.is_empty() {
+                                    true
+                                } else {
+                                    store
+                                        .get(&bl.source)
+                                        .is_some_and(|a| from_types.contains(&a.artifact_type))
+                                }
+                            })
+                    };
+                    backlink_matches(&link_type, &target_types)
+                        || rule
+                            .alternate_backlinks
+                            .iter()
+                            .any(|alt| backlink_matches(&alt.link_type, &alt.from_types))
+                }
             };
 
             if has_match {
@@ -643,5 +661,141 @@ mod tests {
             "self-backlink must not count REQ-001 as covered"
         );
         assert_eq!(entry.total, 1);
+    }
+
+    /// Issue #349: schemas write `required-backlink` as either the forward
+    /// link-type name (`supports`) or its inverse name (`supported-by`).
+    /// safety-case.yaml uses the inverse-name convention. With the bug,
+    /// no artifact was ever counted as covered for such rules because the
+    /// stored `Backlink.link_type` is the forward name. This regression
+    /// test pins the fix: both conventions must produce identical coverage.
+    ///
+    /// rivet: fixes REQ-004
+    #[test]
+    fn required_backlink_matches_inverse_link_type_name() {
+        use crate::schema::LinkTypeDef;
+        let mut file = minimal_schema("test");
+        // Declare the link type with its inverse — mirrors safety-case.yaml.
+        file.link_types.push(LinkTypeDef {
+            name: "supports".into(),
+            inverse: Some("supported-by".into()),
+            description: "Solution supports goal".into(),
+            source_types: vec!["safety-solution".into()],
+            target_types: vec!["safety-goal".into()],
+        });
+        file.traceability_rules = vec![TraceabilityRule {
+            name: "goal-has-support".into(),
+            description: "Every safety goal must be supported by evidence".into(),
+            source_type: "safety-goal".into(),
+            required_link: None,
+            // INVERSE name — the case that was silently broken.
+            required_backlink: Some("supported-by".into()),
+            target_types: vec![],
+            from_types: vec!["safety-solution".into()],
+            severity: Severity::Error,
+            alternate_backlinks: vec![],
+        }];
+        let schema = Schema::merge(&[file]);
+
+        let mut store = Store::new();
+        store
+            .insert(minimal_artifact("SG-1", "safety-goal"))
+            .unwrap();
+        // SOL-1 has the FORWARD link `supports → SG-1`. The auto-computed
+        // backlink to SG-1 stores `link_type = "supports"` and
+        // `inverse_type = Some("supported-by")`.
+        store
+            .insert(artifact_with_links(
+                "SOL-1",
+                "safety-solution",
+                &[("supports", "SG-1")],
+            ))
+            .unwrap();
+
+        let graph = LinkGraph::build(&store, &schema);
+        let report = compute_coverage(&store, &schema, &graph);
+        let entry = report
+            .entries
+            .iter()
+            .find(|e| e.rule_name == "goal-has-support")
+            .expect("rule should produce a coverage entry");
+
+        assert_eq!(
+            entry.covered, 1,
+            "SG-1 is supported-by SOL-1 (via the forward `supports` link); \
+             coverage must count it even though the rule names the inverse"
+        );
+        assert!(entry.uncovered_ids.is_empty(), "no goals are uncovered");
+    }
+
+    /// Issue #349 secondary: `alternate-backlinks` were never evaluated.
+    /// Safety-case schemas express "supported-by OR decomposed-by OR
+    /// has-sub-goal" via this field; an artifact satisfied only via an
+    /// alternate must still count as covered.
+    ///
+    /// rivet: fixes REQ-004
+    #[test]
+    fn coverage_honours_alternate_backlinks() {
+        use crate::schema::{AlternateBacklink, LinkTypeDef};
+        let mut file = minimal_schema("test");
+        file.link_types.push(LinkTypeDef {
+            name: "supports".into(),
+            inverse: Some("supported-by".into()),
+            description: "Solution supports goal".into(),
+            source_types: vec!["safety-solution".into()],
+            target_types: vec!["safety-goal".into()],
+        });
+        file.link_types.push(LinkTypeDef {
+            name: "decomposes".into(),
+            inverse: Some("decomposed-by".into()),
+            description: "Strategy decomposes a goal".into(),
+            source_types: vec!["safety-strategy".into()],
+            target_types: vec!["safety-goal".into()],
+        });
+        file.traceability_rules = vec![TraceabilityRule {
+            name: "goal-has-support".into(),
+            description: "Every goal supported OR decomposed".into(),
+            source_type: "safety-goal".into(),
+            required_link: None,
+            required_backlink: Some("supported-by".into()),
+            target_types: vec![],
+            from_types: vec!["safety-solution".into()],
+            alternate_backlinks: vec![AlternateBacklink {
+                link_type: "decomposed-by".into(),
+                from_types: vec!["safety-strategy".into()],
+            }],
+            severity: Severity::Error,
+        }];
+        let schema = Schema::merge(&[file]);
+
+        let mut store = Store::new();
+        // SG-A is decomposed (alternate) — no `supports` backlink. Must
+        // still count as covered.
+        store
+            .insert(minimal_artifact("SG-A", "safety-goal"))
+            .unwrap();
+        store
+            .insert(artifact_with_links(
+                "STRAT-1",
+                "safety-strategy",
+                &[("decomposes", "SG-A")],
+            ))
+            .unwrap();
+        // SG-B has neither — uncovered.
+        store
+            .insert(minimal_artifact("SG-B", "safety-goal"))
+            .unwrap();
+
+        let graph = LinkGraph::build(&store, &schema);
+        let report = compute_coverage(&store, &schema, &graph);
+        let entry = report
+            .entries
+            .iter()
+            .find(|e| e.rule_name == "goal-has-support")
+            .expect("rule should produce a coverage entry");
+
+        assert_eq!(entry.covered, 1, "SG-A covered via alternate backlink");
+        assert_eq!(entry.uncovered_ids, vec!["SG-B"]);
+        assert_eq!(entry.total, 2);
     }
 }

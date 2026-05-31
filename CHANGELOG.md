@@ -5,6 +5,23 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Issue #349 — `required-backlink` rules now match the inverse-name
+  convention.** Schemas (e.g. `safety-case.yaml`) declare
+  `required-backlink: supported-by` — the *inverse* of the forward
+  `supports` link — and both `rivet validate` and `rivet coverage`
+  compared that name against the stored `Backlink.link_type`, which
+  holds the *forward* name. Result: GSN safety-case rules like
+  `goal-has-support` fired (and counted as uncovered) for every
+  artifact, even when the supporting solution was correctly linked.
+  Match now accepts either the forward or the inverse name, so
+  both conventions (`dev.yaml` uses forward, `safety-case.yaml` uses
+  inverse) validate consistently. Same fix path additionally evaluates
+  `alternate-backlinks` in both engines — previously a goal satisfied
+  only via an alternate (e.g. `decomposed-by` instead of
+  `supported-by`) was reported as missing.
+
 ## [0.13.3] — 2026-05-29
 
 Theme: **serve dashboard correctness — three user-reported fixes**.
