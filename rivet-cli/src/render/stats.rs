@@ -234,8 +234,12 @@ pub(crate) fn render_stats(ctx: &RenderContext) -> String {
         } else {
             "#c62828"
         };
-        let total_covered: usize = cov_report.entries.iter().map(|e| e.covered).sum();
-        let total_items: usize = cov_report.entries.iter().map(|e| e.total).sum();
+        // REQ-110: these are per-RULE check sums (an artifact in N rules counts
+        // N times), NOT distinct artifacts. The store-artifact total lives on the
+        // "Artifacts" stat card. Label them "coverage checks" so the two
+        // different "totals" are not conflated.
+        let checks_covered: usize = cov_report.entries.iter().map(|e| e.covered).sum();
+        let checks_total: usize = cov_report.entries.iter().map(|e| e.total).sum();
         let cov_delta = bl.map_or(String::new(), |s| {
             delta_pct_badge(overall, s.coverage.overall)
         });
@@ -249,7 +253,7 @@ pub(crate) fn render_stats(ctx: &RenderContext) -> String {
                    <div class=\"status-bar-fill\" style=\"background:{cov_color};width:{overall:.1}%\"></div>\
                  </div>\
                  <div style=\"color:var(--text-secondary);font-size:.8rem;margin-top:.35rem\">\
-                   {total_covered} / {total_items} artifacts covered across {} rules\
+                   {checks_covered} / {checks_total} coverage checks across {} rules\
                  </div>\
                </div>\
              </div>\
