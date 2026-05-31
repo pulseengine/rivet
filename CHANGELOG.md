@@ -7,6 +7,14 @@
 
 ### Added
 
+- **REQ-125 / #349 / #350 / #358 — `rivet validate --explain <ID>`.** Explains
+  one artifact: which traceability rules target its type and whether each is
+  satisfied (and via which incoming/outgoing link, or what's missing — e.g.
+  "needs an incoming 'satisfies' from one of [design-decision, feature]"), its
+  links both directions, and its own diagnostics with remediation. Answers the
+  "why is <ID> reported (un)covered?" question three agents independently
+  asked for.
+
 - **REQ-135 / #354 — `rivet modify`/`add` reject a status outside the enum.**
   Building on the retained `base-fields`, `validate_add` and `validate_modify`
   now reject a `status` value outside the `status` base-field's declared

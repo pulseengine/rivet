@@ -3201,7 +3201,7 @@ artifacts:
   - id: REQ-125
     type: requirement
     title: "validate/coverage --explain: the oracle teaches its own reasoning on every fire"
-    status: draft
+    status: implemented
     description: |
       Sourced from a source-level study of garrytan/gbrain
       (`src/core/search/explain-formatter.ts` — every ranking decision is
