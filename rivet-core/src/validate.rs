@@ -752,6 +752,36 @@ pub fn validate_structural_with_externals_and_variant(
             }
         }
 
+        // 3b. REQ-135: validate the `status` base field against its declared
+        // enum. `status` is a schema base-field (not a per-type field) and
+        // lives in `artifact.status` (top-level), so the per-type
+        // allowed-values loop above never sees it. When the schema declares
+        // `allowed-values` on the `status` base-field, enforce it here; with
+        // no values declared the check is inert (backward compatible).
+        if let Some(status) = artifact.status.as_deref() {
+            if let Some(allowed) = schema
+                .base_fields
+                .iter()
+                .find(|f| f.name == "status")
+                .and_then(|f| f.allowed_values.as_ref())
+            {
+                if !allowed.is_empty() && !allowed.iter().any(|a| a == status) {
+                    diagnostics.push(Diagnostic {
+                        source_file: None,
+                        line: None,
+                        column: None,
+                        severity: Severity::Error,
+                        artifact_id: Some(artifact.id.clone()),
+                        rule: "status-allowed-values".to_string(),
+                        message: format!(
+                            "status '{}' is not an allowed value, allowed: {:?}",
+                            status, allowed
+                        ),
+                    });
+                }
+            }
+        }
+
         // 4. Check link field cardinality
         for link_field in &type_def.link_fields {
             let count = artifact
@@ -2582,6 +2612,85 @@ then:
             "SG-A is satisfied via the alternate `decomposed-by` backlink; \
              the rule must not fire. Got: {:?}",
             rule_diags.iter().map(|d| &d.message).collect::<Vec<_>>()
+        );
+    }
+
+    // REQ-135: when a schema declares `allowed-values` on the `status`
+    // base-field, validate enforces it (a typo'd status flags), reading the
+    // top-level `artifact.status`. The base-field must survive `Schema::merge`.
+    // rivet: verifies REQ-135
+    #[test]
+    fn status_enum_is_enforced_when_declared() {
+        let mut file = minimal_schema("requirement");
+        file.artifact_types = vec![ArtifactTypeDef {
+            name: "requirement".into(),
+            ..Default::default()
+        }];
+        file.base_fields = vec![FieldDef {
+            name: "status".into(),
+            field_type: "enum".into(),
+            allowed_values: Some(vec![
+                "draft".into(),
+                "approved".into(),
+                "implemented".into(),
+            ]),
+            ..Default::default()
+        }];
+        let schema = Schema::merge(&[file]);
+        assert!(
+            !schema.base_fields.is_empty(),
+            "merge must retain base_fields"
+        );
+
+        let mut store = Store::new();
+        let mut good = minimal_artifact("REQ-1", "requirement");
+        good.status = Some("approved".to_string());
+        store.insert(good).unwrap();
+        let mut bad = minimal_artifact("REQ-2", "requirement");
+        bad.status = Some("implmented".to_string()); // typo
+        store.insert(bad).unwrap();
+
+        let graph = LinkGraph::build(&store, &schema);
+        let diags = validate_structural(&store, &schema, &graph);
+        let status_diags: Vec<_> = diags
+            .iter()
+            .filter(|d| d.rule == "status-allowed-values")
+            .collect();
+        assert_eq!(
+            status_diags.len(),
+            1,
+            "only the typo'd status should flag; got {status_diags:?}"
+        );
+        assert_eq!(status_diags[0].artifact_id.as_deref(), Some("REQ-2"));
+        assert!(status_diags[0].message.contains("implmented"));
+    }
+
+    // Backward-compatibility: with no `allowed-values` declared on `status`
+    // (today's common.yaml), the check is inert — any status passes.
+    // rivet: verifies REQ-135
+    #[test]
+    fn status_enum_inert_when_no_values_declared() {
+        let mut file = minimal_schema("requirement");
+        file.artifact_types = vec![ArtifactTypeDef {
+            name: "requirement".into(),
+            ..Default::default()
+        }];
+        file.base_fields = vec![FieldDef {
+            name: "status".into(),
+            field_type: "enum".into(),
+            ..Default::default() // no allowed_values
+        }];
+        let schema = Schema::merge(&[file]);
+
+        let mut store = Store::new();
+        let mut a = minimal_artifact("REQ-1", "requirement");
+        a.status = Some("anything-goes".to_string());
+        store.insert(a).unwrap();
+        let graph = LinkGraph::build(&store, &schema);
+        let diags = validate_structural(&store, &schema, &graph);
+        assert!(
+            !diags.iter().any(|d| d.rule == "status-allowed-values"),
+            "no enum declared → no status enforcement"
         );
     }
 

@@ -7,6 +7,16 @@
 
 ### Added
 
+- **REQ-135 — status enum can now be enforced (the mechanism).** The merged
+  `Schema` dropped `base-fields` entirely, so `status` (a base field) could
+  never be enum-validated — the root cause behind a 4-issue cluster
+  (#352/#354/#355/#353). `Schema::merge` now retains `base_fields`, and
+  `validate` checks `artifact.status` against the `status` base-field's
+  `allowed-values` when declared (rule `status-allowed-values`, with REQ-124
+  remediation: "set to one of […]" / "widen the schema"). Non-breaking: with
+  no `allowed-values` declared (today's `common.yaml`) the check is inert.
+  Declaring the canonical lifecycle set activates enforcement.
+
 - **Issue #357 — `validate --min-severity` filters display noise.** `rivet
   validate` printed every diagnostic; on a clean repo that is ~160 advisory
   warnings for 0 errors, burying the actionable ones. `rivet validate

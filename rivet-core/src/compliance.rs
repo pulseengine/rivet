@@ -262,6 +262,7 @@ mod tests {
             traceability_rules: Vec::new(),
             conditional_rules: Vec::new(),
             validation_rules: Vec::new(),
+            base_fields: Vec::new(),
         }
     }
 

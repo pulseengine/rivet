@@ -119,8 +119,50 @@ pub fn remediation_for(diag: &Diagnostic, schema: &Schema, store: &Store) -> Opt
         "cardinality" => cardinality(diag, schema, store),
         "unknown-field" => unknown_field(diag, schema, store),
         "known-type" => known_type(diag, schema, store),
+        "status-allowed-values" => status_allowed_values(diag, schema, store),
         _ => None,
     }
+}
+
+/// `status-allowed-values` (REQ-135): the artifact's `status` is outside the
+/// `allowed-values` declared on the schema's `status` base-field.
+///   A. set status to a declared lifecycle value (usual — a typo);
+///   B. add the value to the schema if it is a legitimate new state.
+fn status_allowed_values(diag: &Diagnostic, schema: &Schema, store: &Store) -> Option<Remediation> {
+    let source_id = diag.artifact_id.as_deref()?;
+    let artifact = store.get(source_id)?;
+    let status = artifact.status.as_deref()?;
+    let allowed = schema
+        .base_fields
+        .iter()
+        .find(|f| f.name == "status")
+        .and_then(|f| f.allowed_values.as_ref())?;
+    let allowed_list = allowed.join(", ");
+    Some(Remediation {
+        summary: format!(
+            "status '{status}' on '{source_id}' is not a declared lifecycle value \
+             [{allowed_list}]. Usually a typo; widen the schema only if it is a real state."
+        ),
+        fix_options: vec![
+            FixOption {
+                kind: FixKind::FixArtifact,
+                detail: format!(
+                    "Set '{source_id}' to one of [{allowed_list}] \
+                     (e.g. `rivet modify {source_id} --set-status <value>`)."
+                ),
+                targets: allowed.clone(),
+            },
+            FixOption {
+                kind: FixKind::AdjustSchema,
+                detail: format!(
+                    "If '{status}' is a legitimate lifecycle state, add it to the `status` \
+                     base-field's `allowed-values` in the schema."
+                ),
+                targets: vec![status.to_string()],
+            },
+        ],
+        doc_topic: "diagnostics/allowed-values".to_string(),
+    })
 }
 
 /// `required-field`: a field the schema marks `required: true` is absent.

@@ -1451,6 +1451,7 @@ mod tests {
             traceability_rules: vec![],
             conditional_rules: vec![],
             validation_rules: vec![],
+            base_fields: Vec::new(),
         };
         let sw_req = crate::schema::ArtifactTypeDef {
             name: "sw-req".into(),
@@ -1645,6 +1646,7 @@ mod tests {
             traceability_rules: vec![],
             conditional_rules: vec![],
             validation_rules: vec![],
+            base_fields: Vec::new(),
         };
         let sw_req = crate::schema::ArtifactTypeDef {
             name: "sw-req".into(),
@@ -1709,6 +1711,7 @@ mod tests {
             traceability_rules: vec![],
             conditional_rules: vec![],
             validation_rules: vec![],
+            base_fields: Vec::new(),
         };
         let sw_req = crate::schema::ArtifactTypeDef {
             name: "sw-req".into(),

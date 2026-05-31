@@ -2140,6 +2140,7 @@ mod tests {
             traceability_rules: vec![],
             validation_rules: vec![],
             conditional_rules: vec![],
+            base_fields: vec![],
         };
 
         let mut fields: BTreeMap<String, serde_yaml::Value> = BTreeMap::new();

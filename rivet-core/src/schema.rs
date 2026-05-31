@@ -1040,6 +1040,11 @@ pub struct Schema {
     pub traceability_rules: Vec<TraceabilityRule>,
     pub conditional_rules: Vec<ConditionalRule>,
     pub validation_rules: Vec<ValidationRule>,
+    /// Schema-wide base fields (`base-fields:`) applied to every artifact —
+    /// `id`, `title`, `status`, `tags`, … Retained on the merged schema
+    /// (REQ-135) so the validator can enforce e.g. a `status` enum; before
+    /// this they were parsed onto `SchemaFile` and dropped by `merge`.
+    pub base_fields: Vec<FieldDef>,
 }
 
 impl Schema {
@@ -1062,8 +1067,18 @@ impl Schema {
         let mut traceability_rules = Vec::new();
         let mut conditional_rules = Vec::new();
         let mut validation_rules = Vec::new();
+        // REQ-135: union base-fields across files by name (later-wins on the
+        // scalar attributes, mirroring artifact-type field merging).
+        let mut base_fields: Vec<FieldDef> = Vec::new();
 
         for file in files {
+            for bf in &file.base_fields {
+                if let Some(existing) = base_fields.iter_mut().find(|f| f.name == bf.name) {
+                    *existing = bf.clone();
+                } else {
+                    base_fields.push(bf.clone());
+                }
+            }
             for at in &file.artifact_types {
                 let mut at = at.clone();
                 // Populate shorthand_links from link_fields so the YAML
@@ -1123,6 +1138,7 @@ impl Schema {
             traceability_rules,
             conditional_rules,
             validation_rules,
+            base_fields,
         }
     }
 
