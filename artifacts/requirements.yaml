@@ -2984,7 +2984,7 @@ artifacts:
   - id: REQ-120
     type: requirement
     title: "ReqIF directory import swallows parse errors to log::warn; no count/report of failures"
-    status: draft
+    status: implemented
     description: |
       Bug-hunt finding (f2-silent-failure, 3/3 lens-confirmed).
 

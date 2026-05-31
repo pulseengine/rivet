@@ -65,6 +65,12 @@
 
 ### Fixed
 
+- **REQ-120 (F2 silent-failure) — ReqIF directory import fails loudly on a
+  corrupt file.** `import_reqif_directory` used to skip a malformed `.reqif`
+  with only a (often-suppressed) `log::warn!`, silently importing partial
+  interchange data with no signal to the caller. It now collects every parse
+  failure and returns an `Err` naming each un-imported file. Regression test.
+
 - **REQ-117 — static export no longer emits a `localhost` oEmbed tag.** Every
   exported artifact page carried an oEmbed discovery `<link>` pointing at
   `http://localhost:<port>`, meaningless (and broken metadata) in a static
