@@ -3571,3 +3571,87 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-010
+
+  - id: REQ-135
+    type: requirement
+    title: "Validate and enforce the status enum (typo'd statuses must not pass silently)"
+    status: draft
+    description: |
+      User-reported cluster: GitHub issues #352, #354, #355, #353
+      (multiple downstream projects: relay/falcon, sigil, meld). Verified
+      against source.
+
+      Three converging root causes:
+      1. `common.yaml` declares the `status` base-field as `type: enum`
+         but with NO `allowed-values` — an empty enum, so there is
+         nothing to validate against and nothing for `schema show` to
+         list.
+      2. `validate` never checks `status` at all: the allowed-values
+         pass iterates `artifact.fields`, but `status` is the top-level
+         `artifact.status`, so even a declared enum would be ignored.
+      3. `mutate.rs` explicitly accepts any status string
+         ("generally freeform, but we'll accept it").
+
+      Live dogfood evidence (rivet's OWN repo): `grep status: artifacts/`
+      yields 246 approved, 140 draft, 20 implemented — plus 4 `accepted`,
+      2 `active`, 1 `proposed`, 1 `partial`: ad-hoc statuses passing
+      validate with no diagnostic. A fat-fingered status silently drops
+      an artifact out of every status-based query/gate — the silent-error
+      class that erodes trace trust.
+
+      DESIGN DECISION (maintainer): the canonical lifecycle value set.
+      De-facto is `draft -> approved -> implemented` (+ `obsolete`). The
+      built-in `accepted`/`active`/`proposed`/`partial` are drift to
+      reconcile.
+
+      Acceptance:
+        - The `status` base-field in `common.yaml` declares
+          `allowed-values` (the canonical lifecycle).
+        - `rivet validate` flags a status outside the enum
+          (loud-fail, with REQ-124 remediation: "did you mean
+          'implemented'?"); a shell test sets a typo'd status and asserts
+          a diagnostic.
+        - `rivet modify --set-status <bad>` rejects or warns on values
+          outside the enum.
+        - `rivet schema show <type>` lists the allowed `status` values.
+        - rivet's own artifacts are reconciled to the canonical set so
+          validate stays green.
+    tags: [validate, schema, status, lifecycle, enum, bug, user-reported, cluster]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.15.0-track
+    links:
+      - type: traces-to
+        target: REQ-004
+
+  - id: REQ-136
+    type: requirement
+    title: "rivet modify ergonomics: --set-description flag + positional-status hint"
+    status: draft
+    description: |
+      User-reported via GitHub issues #359 and #360 (status-audit work on
+      multiple projects). Two small `rivet modify` friction points:
+
+      - #360: there is no `--set-description` flag; updating a
+        description requires `--set-field description=...`, which is
+        non-obvious (description is a top-level base field, not a
+        domain field). The documented path does not match the field's
+        first-class status.
+      - #359: the positional form `rivet modify <ID> status <value>`
+        fails with a bare clap error and no hint that the flag is
+        `--set-status`. The error should guide toward the flag.
+
+      Acceptance:
+        - `rivet modify <ID> --set-description "<text>"` works (and
+          `--set-title` for symmetry if not already present).
+        - Misusing a positional where a `--set-*` flag is expected
+          produces an error that names the correct flag.
+    tags: [cli, modify, dx, agent-ux, user-reported]
+    fields:
+      priority: could
+      category: functional
+      baseline: v0.15.0-track
+    links:
+      - type: traces-to
+        target: REQ-007
