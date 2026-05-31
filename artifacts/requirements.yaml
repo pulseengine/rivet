@@ -2867,7 +2867,7 @@ artifacts:
   - id: REQ-117
     type: requirement
     title: "HTML export embeds hardcoded localhost in oEmbed discovery tag"
-    status: draft
+    status: implemented
     description: |
       Bug-hunt finding (path-url-leakage, 3/3 lens-confirmed).
 

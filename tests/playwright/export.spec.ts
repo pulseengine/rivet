@@ -261,4 +261,31 @@ test.describe("HTML Export", () => {
       expect(content, `Panic found in ${f}`).not.toContain(panicPattern);
     }
   });
+
+  // issue #117 (REQ-117): static export has no live server, so the oEmbed
+  // discovery <link> (which points at http://localhost:<port>) must not be
+  // emitted — otherwise every page carries broken metadata.
+  test("no exported page emits a localhost oEmbed discovery tag", async () => {
+    const walk = (dir: string): string[] => {
+      const files: string[] = [];
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) files.push(...walk(full));
+        else if (e.name.endsWith(".html")) files.push(full);
+      }
+      return files;
+    };
+    for (const f of walk(EXPORT_DIR)) {
+      const content = fs.readFileSync(f, "utf8");
+      // The oEmbed discovery <link> tag (the leak) — distinct from any
+      // artifact prose that merely mentions "oembed"/"localhost".
+      expect(
+        content,
+        `oEmbed discovery tag leaked into export at ${f}`,
+      ).not.toMatch(/rel="alternate"[^>]*json\+oembed/);
+      expect(content, `localhost:0 leaked into export at ${f}`).not.toContain(
+        "localhost:0",
+      );
+    }
+  });
 });
