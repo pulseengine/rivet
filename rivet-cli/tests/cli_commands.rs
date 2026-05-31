@@ -1723,6 +1723,38 @@ fn validate_min_severity_filters_display() {
     );
 }
 
+/// REQ-125 (#349/#350/#358): `rivet validate --explain <ID>` explains a
+/// single artifact — its applicable traceability rules (satisfied/missing
+/// + via which link) and its links. REQ-001 is widely satisfied in rivet's
+/// own repo, so its rule must read "satisfied".
+#[test]
+fn validate_explain_shows_rule_status() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "validate",
+            "--explain",
+            "REQ-001",
+        ])
+        .output()
+        .expect("failed to execute rivet validate --explain REQ-001");
+    assert!(output.status.success(), "explain must exit 0");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Traceability rules for type 'requirement'"),
+        "must list applicable traceability rules. Got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("satisfied"),
+        "REQ-001 is satisfied; the rule status must say so. Got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("Incoming links:"),
+        "explain must show incoming links. Got:\n{stdout}"
+    );
+}
+
 /// `rivet get REQ-001 --format yaml` produces YAML output.
 #[test]
 fn get_yaml_produces_valid_output() {

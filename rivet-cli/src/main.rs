@@ -340,6 +340,13 @@ enum Command {
         #[arg(long = "min-severity")]
         min_severity: Option<String>,
 
+        /// Explain ONE artifact: which traceability rules apply to it,
+        /// whether each is satisfied (and via which link/backlink), its
+        /// incoming/outgoing links, and its own diagnostics with
+        /// remediation. Answers "why is <ID> reported (un)covered?".
+        #[arg(long, value_name = "ID")]
+        explain: Option<String>,
+
         /// Promote `cited-source-drift` warnings to errors. See
         /// `rivet docs schema-cited-sources` for the field shape.
         #[arg(long = "strict-cited-sources")]
@@ -1906,30 +1913,39 @@ fn run(cli: Cli) -> Result<bool> {
             strict_variants,
             fail_on,
             min_severity,
+            explain,
             strict_cited_sources,
             strict_cited_source_stale,
             check_remote_sources,
             strict_orphans,
             with_externals_validate,
-        } => cmd_validate(
-            &cli,
-            format,
-            *direct,
-            *skip_external_validation,
-            baseline.as_deref(),
-            *track_convergence,
-            model.as_deref(),
-            variant.as_deref(),
-            binding.as_deref(),
-            *strict_variants,
-            fail_on,
-            min_severity.as_deref(),
-            *strict_cited_sources,
-            *strict_cited_source_stale,
-            *check_remote_sources,
-            *strict_orphans,
-            *with_externals_validate,
-        ),
+        } => {
+            // REQ-125: `--explain <ID>` is a focused single-artifact view,
+            // not a full validate run.
+            if let Some(id) = explain {
+                cmd_explain(&cli, id)
+            } else {
+                cmd_validate(
+                    &cli,
+                    format,
+                    *direct,
+                    *skip_external_validation,
+                    baseline.as_deref(),
+                    *track_convergence,
+                    model.as_deref(),
+                    variant.as_deref(),
+                    binding.as_deref(),
+                    *strict_variants,
+                    fail_on,
+                    min_severity.as_deref(),
+                    *strict_cited_sources,
+                    *strict_cited_source_stale,
+                    *check_remote_sources,
+                    *strict_orphans,
+                    *with_externals_validate,
+                )
+            }
+        }
         Command::List {
             r#type,
             status,
@@ -5618,6 +5634,159 @@ fn run_salsa_validation(cli: &Cli, config: &ProjectConfig) -> Result<Vec<validat
 }
 
 /// Show a single artifact by ID.
+/// REQ-125: explain ONE artifact — which traceability rules apply and whether
+/// each is satisfied (and via which link), its incoming/outgoing links, and
+/// its own diagnostics with remediation. Answers "why is <ID> (un)covered?".
+fn cmd_explain(cli: &Cli, id: &str) -> Result<bool> {
+    let ctx = ProjectContext::load_with_docs(cli)?;
+    let Some(artifact) = ctx.store.get(id) else {
+        eprintln!("error: artifact '{id}' not found");
+        return Ok(false);
+    };
+
+    println!(
+        "{} ({})  [{}]\n  {}",
+        artifact.id,
+        artifact.artifact_type,
+        artifact.status.as_deref().unwrap_or("-"),
+        artifact.title,
+    );
+
+    let applicable: Vec<&rivet_core::schema::TraceabilityRule> = ctx
+        .schema
+        .traceability_rules
+        .iter()
+        .filter(|r| r.source_type == artifact.artifact_type)
+        .collect();
+    println!(
+        "\nTraceability rules for type '{}':",
+        artifact.artifact_type
+    );
+    if applicable.is_empty() {
+        println!("  (none target this type)");
+    }
+    for rule in &applicable {
+        let (ok, detail) = explain_rule(rule, id, &ctx.store, &ctx.graph);
+        println!(
+            "  [{}] {}",
+            if ok { "satisfied" } else { "MISSING  " },
+            rule.description
+        );
+        println!("            {detail}");
+    }
+
+    if !artifact.links.is_empty() {
+        println!("\nOutgoing links:");
+        for l in &artifact.links {
+            println!("  {} -> {}", l.link_type, l.target);
+        }
+    }
+    let incoming = ctx.graph.backlinks_to(id);
+    if !incoming.is_empty() {
+        println!("\nIncoming links:");
+        for bl in incoming {
+            match &bl.inverse_type {
+                Some(inv) => println!("  {} <- {} ({})", inv, bl.source, bl.link_type),
+                None => println!("  {} <- {}", bl.link_type, bl.source),
+            }
+        }
+    }
+
+    let diagnostics = rivet_core::validate::validate(&ctx.store, &ctx.schema, &ctx.graph);
+    let mine: Vec<&validate::Diagnostic> = diagnostics
+        .iter()
+        .filter(|d| d.artifact_id.as_deref() == Some(id))
+        .collect();
+    if mine.is_empty() {
+        println!("\nDiagnostics: none for {id}.");
+    } else {
+        println!("\nDiagnostics:");
+        for d in &mine {
+            println!("{d}");
+            if let Some(rem) = rivet_core::remediation::remediation_for(d, &ctx.schema, &ctx.store)
+            {
+                println!("{}", rem.to_help_text("    "));
+            }
+        }
+    }
+
+    Ok(true)
+}
+
+/// Evaluate one traceability rule for one artifact; return (satisfied, detail).
+fn explain_rule(
+    rule: &rivet_core::schema::TraceabilityRule,
+    id: &str,
+    store: &Store,
+    graph: &LinkGraph,
+) -> (bool, String) {
+    if let Some(req) = &rule.required_link {
+        // Forward: this artifact must link OUT via `req` to an allowed type.
+        if let Some(a) = store.get(id) {
+            for l in &a.links {
+                if &l.link_type == req && l.target.as_str() != id {
+                    let type_ok = rule.target_types.is_empty()
+                        || store
+                            .get(&l.target)
+                            .is_some_and(|t| rule.target_types.contains(&t.artifact_type));
+                    if type_ok {
+                        return (
+                            true,
+                            format!("satisfied by outgoing '{req}' -> {}", l.target),
+                        );
+                    }
+                }
+            }
+        }
+        (
+            false,
+            format!(
+                "needs an outgoing '{req}' link to one of {:?}",
+                rule.target_types
+            ),
+        )
+    } else if let Some(req) = &rule.required_backlink {
+        // Backward: some artifact must link IN via `req` (or its inverse, or an
+        // alternate backlink) from an allowed from-type.
+        let bls = graph.backlinks_to(id);
+        let find = |name: &str, froms: &[String]| -> Option<String> {
+            bls.iter()
+                .filter(|bl| bl.source.as_str() != id)
+                .filter(|bl| bl.link_type == name || bl.inverse_type.as_deref() == Some(name))
+                .find(|bl| {
+                    froms.is_empty()
+                        || store
+                            .get(&bl.source)
+                            .is_some_and(|s| froms.contains(&s.artifact_type))
+                })
+                .map(|bl| bl.source.clone())
+        };
+        if let Some(src) = find(req, &rule.from_types) {
+            return (true, format!("satisfied by incoming '{req}' from {src}"));
+        }
+        for alt in &rule.alternate_backlinks {
+            if let Some(src) = find(&alt.link_type, &alt.from_types) {
+                return (
+                    true,
+                    format!(
+                        "satisfied by alternate incoming '{}' from {src}",
+                        alt.link_type
+                    ),
+                );
+            }
+        }
+        (
+            false,
+            format!(
+                "needs an incoming '{req}' from one of {:?}",
+                rule.from_types
+            ),
+        )
+    } else {
+        (true, "no link requirement".to_string())
+    }
+}
+
 fn cmd_get(cli: &Cli, id: &str, format: &str) -> Result<bool> {
     validate_format(format, &["text", "json", "yaml"])?;
     let ctx = ProjectContext::load(cli)?;
@@ -8678,6 +8847,7 @@ fn cmd_diff(
                     strict_variants: false,
                     fail_on: "error".to_string(),
                     min_severity: None,
+                    explain: None,
                     strict_cited_sources: false,
                     strict_cited_source_stale: false,
                     check_remote_sources: false,
@@ -8702,6 +8872,7 @@ fn cmd_diff(
                     strict_variants: false,
                     fail_on: "error".to_string(),
                     min_severity: None,
+                    explain: None,
                     strict_cited_sources: false,
                     strict_cited_source_stale: false,
                     check_remote_sources: false,
