@@ -3628,7 +3628,7 @@ artifacts:
   - id: REQ-136
     type: requirement
     title: "rivet modify ergonomics: --set-description flag + positional-status hint"
-    status: draft
+    status: implemented
     description: |
       User-reported via GitHub issues #359 and #360 (status-audit work on
       multiple projects). Two small `rivet modify` friction points:
