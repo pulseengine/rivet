@@ -3599,6 +3599,23 @@ artifacts:
       an artifact out of every status-based query/gate — the silent-error
       class that erodes trace trust.
 
+      ROOT CAUSE (found iter-8, verified): the merged `Schema` struct
+      (schema.rs) does NOT retain `base-fields` at all — they are parsed
+      onto `SchemaFile` and dropped by `Schema::merge`, and `.base_fields`
+      is read nowhere outside parsing. So `status` (a base field) can never
+      be enum-validated: the validator never has its definition, regardless
+      of whether `allowed-values` is declared. The mechanism fix is
+      therefore two-part and NON-breaking:
+        (a) retain `base_fields: Vec<FieldDef>` on the merged `Schema`
+            (populate in `Schema::merge`; ~10 explicit constructors need a
+            `base_fields: Vec::new()`);
+        (b) in validate, check `artifact.status` against the `status`
+            base-field's `allowed-values` when declared (with REQ-124
+            remediation). With no values declared, behavior is unchanged.
+      Only AFTER the mechanism lands does declaring the canonical set in
+      common.yaml activate enforcement — keeping the taxonomy a separate,
+      explicit maintainer act.
+
       DESIGN DECISION (maintainer): the canonical lifecycle value set.
       De-facto is `draft -> approved -> implemented` (+ `obsolete`). The
       built-in `accepted`/`active`/`proposed`/`partial` are drift to
