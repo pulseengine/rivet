@@ -1631,6 +1631,45 @@ fn get_json_produces_valid_output() {
     );
 }
 
+/// issue #358: `rivet get <ID> --format json` exposes INCOMING links
+/// (what links to the artifact), not just outbound `links`. REQ-004 is
+/// heavily traced-to in rivet's own repo, so it must have incoming links.
+#[test]
+fn get_json_includes_incoming_links() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "get",
+            "REQ-004",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("failed to execute rivet get REQ-004 --format json");
+    assert!(output.status.success(), "rivet get must exit 0");
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&output.stdout)).expect("valid JSON");
+    let incoming = parsed
+        .get("incoming_links")
+        .and_then(|v| v.as_array())
+        .expect("get JSON must expose an 'incoming_links' array");
+    assert!(
+        !incoming.is_empty(),
+        "REQ-004 is widely traced-to; incoming_links must be non-empty"
+    );
+    let first = &incoming[0];
+    assert!(
+        first.get("type").and_then(|v| v.as_str()).is_some(),
+        "each incoming link has the source's forward 'type'"
+    );
+    assert!(
+        first.get("source").and_then(|v| v.as_str()).is_some(),
+        "each incoming link names its 'source' artifact"
+    );
+}
+
 /// `rivet get NONEXISTENT` returns non-zero exit code and prints an error.
 #[test]
 fn get_nonexistent_returns_error() {

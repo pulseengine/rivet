@@ -5,6 +5,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Issue #358 — incoming links are visible from `get` and `list`.** The
+  single most common traceability question — "what verifies / satisfies X?"
+  — lives on the backlink side, but `rivet get <ID>` only showed outbound
+  `links` and `rivet list --format json` collapsed links to an integer
+  count. Now `rivet get` emits an `incoming_links` array (`{type, source,
+  inverse}`) in JSON and an `Incoming:` section in text, and `list
+  --format json` emits the real link objects (matching `get`) instead of a
+  count. Built on the existing `LinkGraph::backlinks_to`. (REQ-128.)
+
 ### Fixed
 
 - **Issue #349 — `required-backlink` rules now match the inverse-name

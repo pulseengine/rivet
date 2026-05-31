@@ -5591,6 +5591,22 @@ fn cmd_get(cli: &Cli, id: &str, format: &str) -> Result<bool> {
                 })
                 .collect::<serde_json::Map<String, serde_json::Value>>()
                 .into();
+            // issue #358: expose INCOMING links (what links to this artifact),
+            // not just outbound. The single most common traceability question —
+            // "what verifies/satisfies X?" — lives on the backlink side. `type`
+            // is the source's forward link type; `inverse` its schema inverse.
+            let incoming_json: Vec<serde_json::Value> = ctx
+                .graph
+                .backlinks_to(id)
+                .iter()
+                .map(|bl| {
+                    serde_json::json!({
+                        "type": bl.link_type,
+                        "source": bl.source,
+                        "inverse": bl.inverse_type,
+                    })
+                })
+                .collect();
             let output = serde_json::json!({
                 "command": "get",
                 "id": artifact.id,
@@ -5600,6 +5616,7 @@ fn cmd_get(cli: &Cli, id: &str, format: &str) -> Result<bool> {
                 "description": artifact.description.as_deref().unwrap_or(""),
                 "tags": artifact.tags,
                 "links": links_json,
+                "incoming_links": incoming_json,
                 "fields": fields_json,
             });
             println!("{}", serde_json::to_string_pretty(&output).unwrap());
@@ -5639,6 +5656,17 @@ fn cmd_get(cli: &Cli, id: &str, format: &str) -> Result<bool> {
                 println!("Links:");
                 for link in &artifact.links {
                     println!("  {} -> {}", link.link_type, link.target);
+                }
+            }
+            // issue #358: incoming links (what links TO this artifact).
+            let incoming = ctx.graph.backlinks_to(id);
+            if !incoming.is_empty() {
+                println!("Incoming:");
+                for bl in incoming {
+                    match &bl.inverse_type {
+                        Some(inv) => println!("  {} <- {} ({})", inv, bl.source, bl.link_type),
+                        None => println!("  {} <- {}", bl.link_type, bl.source),
+                    }
                 }
             }
         }
@@ -5718,7 +5746,13 @@ fn cmd_list(
                     "type": a.artifact_type,
                     "title": a.title,
                     "status": a.status.as_deref().unwrap_or("-"),
-                    "links": a.links.len(),
+                    // issue #358: emit the real link objects (matching `get`), not
+                    // an opaque count, so the graph is inspectable from `list`.
+                    // The count is recoverable as `.links | length`.
+                    "links": a.links.iter().map(|l| serde_json::json!({
+                        "type": l.link_type,
+                        "target": l.target,
+                    })).collect::<Vec<_>>(),
                 });
                 if let Some(ref name) = variant_name {
                     // Emit the merged fields view so downstream tooling
