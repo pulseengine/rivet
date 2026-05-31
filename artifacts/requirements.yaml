@@ -2325,7 +2325,7 @@ artifacts:
   - id: REQ-105
     type: requirement
     title: "HTML export must be a self-contained static site (bundle the serve-only assets)"
-    status: draft
+    status: implemented
     description: |
       `cmd_export_html` reuses the `rivet serve` dashboard rendering
       (`serve::reload_state`, `serve::components`) verbatim. It does NOT
@@ -2556,7 +2556,7 @@ artifacts:
   - id: REQ-110
     type: requirement
     title: "Coverage HTML display counts per-rule totals, not distinct artifacts, mislabeled as 'artifacts covered'"
-    status: draft
+    status: implemented
     description: |
       Bug-hunt finding (cross-command-consistency, 3/3 lens-
       confirmed).
@@ -2604,7 +2604,7 @@ artifacts:
   - id: REQ-111
     type: requirement
     title: "Coverage JSON 'total' field aggregates per-rule denominators, not distinct artifacts, creating semantic ambiguity with stats 'total'"
-    status: draft
+    status: implemented
     description: |
       Bug-hunt finding (cross-command-consistency, 3/3 lens-
       confirmed).
@@ -3141,7 +3141,7 @@ artifacts:
   - id: REQ-124
     type: requirement
     title: "Agent-actionable diagnostic remediation (fix-options + docs link)"
-    status: approved
+    status: implemented
     description: |
       User-reported. A validation error such as
 
@@ -3655,3 +3655,44 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-007
+
+  - id: REQ-131
+    type: requirement
+    title: "required-backlink rules must match the inverse link-type name"
+    status: implemented
+    description: |
+      User-reported via GitHub issue #349 (found on rivet 0.13.3 while
+      bringing pulseengine/loom's safety case green; verified against
+      source before fixing). Any traceability rule using
+      `required-backlink` (e.g. a GSN `goal-has-support` rule whose
+      `required-backlink: supported-by`) failed for EVERY artifact even
+      when the supporting link was correctly present.
+
+      Root cause: `Backlink.link_type` holds the FORWARD link name and
+      `Backlink.inverse_type` the inverse, but `validate.rs` and
+      `coverage.rs` compared the schema's `required-backlink` value (the
+      INVERSE name) against `Backlink.link_type` (the FORWARD name) — they
+      never matched: a false-positive error, the worst class for a
+      traceability tool.
+
+      Fixed in PR #351: match on EITHER name at both sites; the same fix
+      additionally evaluates `rule.alternate_backlinks` in both engines
+      (previously a goal satisfied only via an alternate backlink still
+      errored). Regression test `required_backlink_matches_inverse_name`.
+
+      (Re-filed: this REQ artifact was dropped when #351 was reworked to
+      add alternate-backlink support; the code shipped without it.)
+
+      Acceptance:
+        - A `required-backlink` rule whose value is the INVERSE link name
+          is satisfied by a forward link of the corresponding type.
+        - validate and coverage agree on the same data; the forward-name
+          convention still passes.
+    tags: [validate, coverage, traceability, backlink, bug, user-reported, issue-349]
+    fields:
+      priority: must
+      category: functional
+      baseline: v0.14.0-track
+    links:
+      - type: traces-to
+        target: REQ-004
