@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780244628450,
+  "lastUpdate": 1780252965206,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "c362795d5518eb8c2c87e7e4fa4b755c5d2ae5d3",
-          "message": "fix(yaml): rowan parser handles flush-left block sequences + links loud-fail (REQ-091, v0.13.1) (#329)\n\n* fix(yaml): rowan parser handles flush-left block sequences + links loud-fail (REQ-091)\n\nTwo REQ-091 fixes that together close the F2 silent-failure where the\ndefault `rivet validate` (salsa + rowan-yaml) silently graded zero\nlinks for artifacts written in YAML's flush-left list style.\n\n## The CST bug — flush-left sequences silently dropped\n\n`yaml_cst::parse_mapping_entry` required `child_indent > entry_indent`\nwhen descending into a same-line `value` of a mapping. YAML allows the\n\"zero-indent\" block sequence form where the dashed list sits at the\nsame column as the parent key:\n\n    artifacts:\n    - id: A           <- dash at column 0, same as `artifacts:`\n      type: req\n\nFor this shape the parser silently treated the value as empty and\ndropped the entire sequence from the tree. `extract_schema_driven` then\nreturned 0 artifacts + 0 diagnostics, but `rivet list` (which routes\nthrough `parse_generic_yaml`) returned the artifact correctly — the\nlink graph the validator should grade was invisible.\n\nThe fix: when the next-line content is a Dash, accept\n`child_indent >= entry_indent`. This is YAML 1.2's zero-indent\nblock-sequence rule (the parser already handled `child_indent >\nentry_indent` for the indented form; the equal-indent case is\nnecessary at the document root where there is no shallower indent to\ngo to).\n\nCST probe before vs after — both shapes now produce identical trees:\n`Mapping → MappingEntry → Value → Sequence → SequenceItem → Mapping`.\n\n## The F2 silent-failure — `extract_links_via_serde` returned empty without signal\n\n`extract_links_via_serde` (the fallback for `links:` values the CST\ndoesn't recognise as a block Sequence — most importantly flow-style\n`links: [{type:X, target:Y}]`) silently returned `Vec::new()` when\n`serde_yaml::from_str` rejected the value text. The outer cardinality\nvalidator then graded that as \"links field present but empty\" — the\nF2 ethos violation REQ-091 calls out.\n\nThe fix: thread `&mut Vec<ParseDiagnostic>` through `extract_links`\nand `extract_links_via_serde`. On serde parse error, emit an ERROR\ndiagnostic naming the underlying `serde_yaml` error and the value's\nspan. The two call sites (`extract_section_item`,\n`extract_artifact_from_item`) both have `result: &mut ParsedYamlFile`\nin scope, so they pass `&mut result.diagnostics` — no surface API\nchange beyond these internal helpers.\n\n## Tests\n\n- `rivet-core/tests/req_091_flush_left_yaml.rs` — REQ-091 Acceptance\n  #1 + #4: drives `extract_schema_driven` directly with both fixture\n  shapes, asserts 1 artifact + 1 link parity. Also a structural-parity\n  test across multi-link inputs.\n- `rivet-core/src/yaml_hir.rs::tests::extract_links_via_serde_emits_diagnostic_on_parse_error`\n  — REQ-091 Acceptance #3: a malformed `links:` value produces a\n  diagnostic naming the field, not a silent empty list.\n\nAll rivet-core tests pass (1068 lib + 83 yaml-test-suite + 2 new\nintegration tests). `rivet validate` on the in-tree corpus: PASS.\n\n## What this does NOT do\n\nAcceptance #5 — re-grading the parallel agent's sphinx-needs port\ncorpus against the Python reference's ~2500 warnings — requires\ntheir `feat/import-results-sphinx-needs` branch and runs outside\nthis PR. Once this lands they can rebase and re-grade.\n\nFixes: REQ-091\nRefs: REQ-051, REQ-082\n\nCo-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>\n\n* chore(fmt): apply rustfmt to req_091_flush_left_yaml.rs\n\nPure cosmetic — assert_eq! macros expand onto one line where rustfmt\nprefers and the test's two-line assertion on artifact.id/title is\njoined back to one line.\n\nRefs: REQ-091\n\n* test(migrate): document expected aspice link gaps after dev → aspice rename\n\nREQ-091 fixed the rowan-yaml CST so the salsa validate path now sees\nartifacts written in flush-left list style — which is exactly what\nthe dev → aspice migration emits via serde_yaml::to_string. The\nexisting test `apply_rewrites_dev_to_aspice_and_validate_passes` was\ngreen only because the validator could not see the migrated artifacts\nat all; with REQ-091 fixed, validate correctly reports that the\nmigrated REQ-001 / FEAT-001 have no `derives-from` / `allocated-from`\nlinks — exactly the cardinality obligations the aspice schema\ndeclares.\n\nThe migration is intentionally structural-only: it renames types in\nplace, it does not invent semantic links to system-level artifacts\nthe dev preset doesn't ship. The right test contract is therefore\nthat validate FAILS with exactly those two cardinality errors —\ndocumenting the migration's actual behaviour rather than hiding it.\n\nRename the test to `apply_rewrites_dev_to_aspice_and_validate_reports_expected_link_gaps`,\nassert `!val.status.success()`, and pin both expected error strings\n(`derives-from` for the migrated sw-req, `allocated-from` for the\nmigrated sw-arch-component). Add a comment block tying this back to\nthe pre-REQ-091 silent-success it replaces.\n\nRefs: REQ-091\n\nCo-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.7 <noreply@anthropic.com>",
-          "timestamp": "2026-05-25T04:14:54-05:00",
-          "tree_id": "04f03049e3b71670536d3f4eecf5aa3f3ad8d60b",
-          "url": "https://github.com/pulseengine/rivet/commit/c362795d5518eb8c2c87e7e4fa4b755c5d2ae5d3"
-        },
-        "date": 1779702663761,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 84080,
-            "range": "± 1876",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 892618,
-            "range": "± 14003",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 16373351,
-            "range": "± 768009",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2225,
-            "range": "± 47",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 25781,
-            "range": "± 121",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 378372,
-            "range": "± 2106",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 94,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1459817,
-            "range": "± 33385",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 147731,
-            "range": "± 758",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1734027,
-            "range": "± 30920",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 32791164,
-            "range": "± 2602690",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 133145,
-            "range": "± 1910",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 1129806,
-            "range": "± 29058",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 16954175,
-            "range": "± 849957",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4387,
-            "range": "± 8",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 57881,
-            "range": "± 294",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 843100,
-            "range": "± 6196",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 61310,
-            "range": "± 1479",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 700789,
-            "range": "± 7126",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 9268518,
-            "range": "± 640218",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 765,
-            "range": "± 3",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 7309,
-            "range": "± 177",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 130912,
-            "range": "± 1631",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 24595,
-            "range": "± 83",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 178025,
-            "range": "± 1283",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1665198,
-            "range": "± 23125",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1352639,
             "range": "± 21218",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ef5455733c6d421b6fa3cde059bc7ed6a7feb53f",
+          "message": "feat(validate): --explain <ID> — per-artifact traceability explanation (REQ-125) (#372)\n\n* feat(validate): --explain <ID> — per-artifact traceability explanation (REQ-125)\n\nDemanded independently by #349, #350, #358 (\"why is X (un)covered?\", \"rivet why\n<id> <rule>\"). `rivet validate --explain <ID>` shows, for one artifact: which\ntraceability rules target its type and whether each is satisfied — and HOW\n(e.g. \"satisfied by incoming 'satisfies' from FEAT-019\") or what's missing\n(\"needs an incoming 'satisfies' from one of [design-decision, feature]\") —\nplus its outgoing/incoming links and its own diagnostics with remediation.\n\nA focused single-artifact view: dispatch branches to `cmd_explain` before the\nfull validate run (no new param threaded through cmd_validate's 16). Reuses the\nsame forward/backward + inverse-name + alternate-backlink matching the coverage\nengine uses, so it agrees with `rivet coverage`. Verified end-to-end (a\nsatisfied and a missing artifact) + regression test.\n\nREQ-125 (the `coverage --explain <RULE>` surface remains a follow-up).\n\nImplements: REQ-125\nVerifies: REQ-125\nRefs: REQ-004\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* style(test): fix clippy::doc_lazy_continuation on the --explain test doc\n\nA '+'-prefixed continuation line read as a list bullet; reworded. (Only\nsurfaces under clippy --all-targets, which CI runs but a plain -p check skips.)\n\nTrace: skip\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-05-31T13:36:06-05:00",
+          "tree_id": "b5252ac38a978a1cdf94a11ca7668f1d3e4f4f65",
+          "url": "https://github.com/pulseengine/rivet/commit/ef5455733c6d421b6fa3cde059bc7ed6a7feb53f"
+        },
+        "date": 1780252964637,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 85842,
+            "range": "± 890",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 914160,
+            "range": "± 3994",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 14486905,
+            "range": "± 386848",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1940,
+            "range": "± 7",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 23165,
+            "range": "± 853",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 345355,
+            "range": "± 1524",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1459404,
+            "range": "± 73186",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 167166,
+            "range": "± 687",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1907597,
+            "range": "± 40590",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 28400179,
+            "range": "± 1245473",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 122913,
+            "range": "± 921",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1130972,
+            "range": "± 22671",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 14274377,
+            "range": "± 344600",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4193,
+            "range": "± 7",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 43199,
+            "range": "± 149",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 752036,
+            "range": "± 3745",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 63966,
+            "range": "± 448",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 716742,
+            "range": "± 4414",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8236493,
+            "range": "± 439666",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 769,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7085,
+            "range": "± 38",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 98076,
+            "range": "± 1205",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 21190,
+            "range": "± 230",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 144711,
+            "range": "± 824",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1345724,
+            "range": "± 18465",
             "unit": "ns/iter"
           }
         ]
