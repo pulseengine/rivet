@@ -2796,7 +2796,7 @@ artifacts:
   - id: REQ-115
     type: requirement
     title: "Zola export emits absolute artifact links that break in subdirectories"
-    status: draft
+    status: implemented
     description: |
       Bug-hunt finding (path-url-leakage, 3/3 lens-confirmed).
 
@@ -2832,7 +2832,7 @@ artifacts:
   - id: REQ-116
     type: requirement
     title: "Zola export shortcode emits absolute href in artifact card links"
-    status: draft
+    status: implemented
     description: |
       Bug-hunt finding (path-url-leakage, 3/3 lens-confirmed).
 
@@ -2903,7 +2903,7 @@ artifacts:
   - id: REQ-118
     type: requirement
     title: "Document wiki-link and artifact-ref resolution emits absolute paths in exported markdown"
-    status: draft
+    status: implemented
     description: |
       Bug-hunt finding (path-url-leakage, 2/3 lens-confirmed).
 

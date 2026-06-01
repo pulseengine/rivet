@@ -65,6 +65,20 @@
 
 ### Fixed
 
+- **REQ-115 / REQ-116 / REQ-118 — Zola export links survive a sub-directory
+  deploy.** Artifact cross-links, document `[[ID]]` wiki-links, and the
+  `rivet_artifact` shortcode card all emitted absolute `/<prefix>/artifacts/…`
+  paths, which drop the deploy sub-path and 404 on a GitHub-Pages-style project
+  site served under `/<repo>/`. Markdown links now use Zola internal links
+  (`@/<prefix>/artifacts/<slug>.md`) and the shortcode uses `get_url(…)` — both
+  resolved against `base_url`. A wiki-/cross-link whose target isn't in the
+  export degrades to plain text rather than leak an absolute path or break the
+  downstream `zola build` with a dangling internal link. Verified end-to-end
+  with a real `zola build` under a sub-directory `base_url` (504 links rewritten,
+  0 absolute, 0 dangling); regression test (`export_zola.rs`) pins the generated
+  link forms. (The HTML-export half of REQ-118 was already covered by REQ-105's
+  `rewrite_static_links`, which rewrites `href`/`hx-get`/`src`.)
+
 - **REQ-123 (F2 silent-failure) — ReqIF import fails on a title-less
   SPEC-OBJECT.** A SPEC-OBJECT with neither a `ReqIF.Name` attribute nor a
   `@LONG-NAME` used to import as an artifact with an empty `title` (a required
