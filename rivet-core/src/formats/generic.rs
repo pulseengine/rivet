@@ -223,7 +223,24 @@ fn import_generic_directory(dir: &Path) -> Result<Vec<Artifact>, Error> {
         {
             match import_generic_file(&path) {
                 Ok(arts) => artifacts.extend(arts),
-                Err(e) => log::warn!("skipping {}: {}", path.display(), e),
+                Err(e) => {
+                    // REQ-062 / #353: only a *malformed artifact file*
+                    // (SkipKind::ParseError) is a real problem worth a
+                    // per-command WARN. Legitimate non-artifact YAML living
+                    // under the source path — bindings.yaml,
+                    // feature-model.yaml, variants/*.yaml — classifies as
+                    // NotArtifactFile and is skipped silently; warning on it
+                    // every single command is pure noise that buries the
+                    // signal. `rivet validate` still re-scans and surfaces the
+                    // ParseError case as a hard `artifact-parse-error`
+                    // diagnostic, so suppressing the noisy case loses nothing.
+                    let is_parse_error = std::fs::read_to_string(&path)
+                        .map(|c| classify_skip(&c) == SkipKind::ParseError)
+                        .unwrap_or(true); // unreadable -> surface it
+                    if is_parse_error {
+                        log::warn!("skipping {}: {}", path.display(), e);
+                    }
+                }
             }
         } else if path.is_dir() {
             artifacts.extend(import_generic_directory(&path)?);
@@ -502,6 +519,56 @@ Artifacts:
         assert!(
             !skipped.iter().any(|s| s.path == good),
             "a well-formed `artifacts:` file must produce no skip entry"
+        );
+    }
+
+    /// #353: a directory import must load the well-formed artifact files and
+    /// skip BOTH a legitimate non-artifact file (`bindings.yaml`,
+    /// NotArtifactFile — skipped silently, no WARN) and a malformed artifact
+    /// file (ParseError — skipped here, but surfaced by `validate`'s re-scan)
+    /// without erroring the whole load. This pins the load-path classification
+    /// that gates the per-command WARN: only ParseError warrants a WARN; the
+    /// NotArtifactFile case is expected and silent.
+    ///
+    /// rivet: verifies REQ-062
+    #[test]
+    fn import_directory_loads_valid_and_skips_both_skip_kinds() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("requirements.yaml"),
+            "artifacts:\n  - id: REQ-1\n    type: requirement\n    title: Valid\n",
+        )
+        .unwrap();
+        // NotArtifactFile — must be classified as such (silent skip).
+        let bindings = dir.path().join("bindings.yaml");
+        std::fs::write(&bindings, "bindings:\n  - core\n").unwrap();
+        // ParseError — `artifacts:` plus an unknown sibling top-level key.
+        let trace = dir.path().join("traceability.yaml");
+        std::fs::write(
+            &trace,
+            "loss-coverage:\n  - loss: L-1\nartifacts:\n  - id: REQ-2\n    type: requirement\n    title: Dropped\n",
+        )
+        .unwrap();
+
+        let arts = import_generic_directory(dir.path()).expect("directory import must not error");
+        let ids: Vec<&str> = arts.iter().map(|a| a.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec!["REQ-1"],
+            "only the well-formed artifact file loads; both skipped files are excluded"
+        );
+
+        // The two skipped files classify into the two distinct kinds — the
+        // load-path WARN suppression keys off exactly this distinction.
+        assert_eq!(
+            classify_skip(&std::fs::read_to_string(&bindings).unwrap()),
+            SkipKind::NotArtifactFile,
+            "bindings.yaml is expected non-artifact YAML — silent skip"
+        );
+        assert_eq!(
+            classify_skip(&std::fs::read_to_string(&trace).unwrap()),
+            SkipKind::ParseError,
+            "an `artifacts:` file with an unknown sibling key is a malformed artifact file"
         );
     }
 }
