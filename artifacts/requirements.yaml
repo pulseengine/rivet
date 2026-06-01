@@ -3787,3 +3787,85 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-115
+
+  - id: REQ-139
+    type: requirement
+    title: "Directory import: only warn on malformed artifact files, stay silent for legitimate non-artifact YAML"
+    status: implemented
+    description: |
+      Self-reported via GitHub issue #353 part 4 (dogfooding meld). The
+      generic-YAML directory import warned `[WARN] skipping <file>: …` for
+      EVERY file it declined to load — including legitimate non-artifact YAML
+      that lives under the artifacts source path (bindings.yaml,
+      feature-model.yaml, variants/*.yaml). On a real project that is a WARN
+      line on every single command, burying the signal (loud-fail register:
+      noise that cries wolf is as bad as silence).
+
+      The REQ-062 `SkipKind` classification already distinguishes a malformed
+      artifact file (`ParseError`) from expected non-artifact YAML
+      (`NotArtifactFile`), but the load-path WARN ignored it. Gate the WARN
+      on `classify_skip(...) == ParseError`: a real problem still warns (and
+      `validate` still surfaces it as a hard `artifact-parse-error`); the
+      expected case is silent.
+
+      Acceptance:
+        - `rivet list` on a project whose artifacts/ dir contains
+          bindings.yaml / variants/*.yaml prints no `skipping …` WARN lines.
+        - A genuinely malformed artifact file (e.g. `id:`+`type:` at top
+          level, or `artifacts:` plus an unknown sibling key) still prints a
+          `skipping …` WARN at load and a `artifact-parse-error` ERROR under
+          `rivet validate`.
+    tags: [dx, agent-ux, signal-to-noise, loud-fail, user-reported, issue-353]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.15.0-track
+    links:
+      - type: traces-to
+        target: REQ-062
+
+  - id: REQ-140
+    type: requirement
+    title: "Generic-YAML load is inconsistent across commands: validate loads a file that list/get/export silently drop"
+    status: draft
+    description: |
+      Surfaced while verifying issue #353 against current `main` (the silent
+      file-skip of #353 part 1 is already fixed by REQ-062). A file with an
+      `artifacts:` list AND an unknown sibling top-level key (the reporter's
+      `traceability.yaml` with `loss-coverage:`) is handled inconsistently:
+
+        * `rivet list` / `get` / `export` build the store via the strict
+          `load_artifacts` adapter (serde `deny_unknown_fields`) and DROP the
+          whole file — its artifacts are invisible to these commands.
+        * `rivet validate` builds its store via the lenient
+          `yaml_hir::extract_schema_driven` path, which tolerates the unknown
+          key and LOADS the artifacts — then ALSO reports the same file as
+          `artifact-parse-error` "failed to parse".
+
+      So the same project yields different artifact sets depending on the
+      command, and `validate` simultaneously validates an artifact (REQ-2)
+      and declares its file unparseable — a contradictory signal. Verified
+      empirically: `rivet list` shows only REQ-1; `rivet validate` shows
+      REQ-2 as a loaded (mis-typed) artifact plus the parse-error.
+
+      This is a design decision (which parser is canonical, and is the
+      tolerant behaviour intended?) — flagging for the maintainer rather than
+      unilaterally picking. The fix should make every command agree, on the
+      loud-fail side: a file that can't be cleanly parsed as artifacts should
+      be treated identically everywhere (either all load-and-warn, or all
+      drop-and-error), never load in one command and vanish in another.
+
+      Acceptance:
+        - For a fixture file with `artifacts:` + an unknown sibling key,
+          `rivet list --format json` and the set `rivet validate` type-checks
+          contain the SAME artifact IDs.
+        - `rivet validate` does not both load an artifact and report its
+          source file as failed-to-parse.
+    tags: [bug, consistency, loud-fail, parser, user-reported, issue-353, needs-maintainer-decision]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.15.0-track
+    links:
+      - type: traces-to
+        target: REQ-062

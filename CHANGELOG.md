@@ -65,6 +65,17 @@
 
 ### Fixed
 
+- **REQ-139 — directory import no longer warns on legitimate non-artifact
+  YAML.** The generic-YAML directory load warned `[WARN] skipping <file>` for
+  *every* file it declined to load — including expected non-artifact YAML
+  under the source path (`bindings.yaml`, `feature-model.yaml`,
+  `variants/*.yaml`). On a real project that put a WARN line in front of every
+  command, burying the signal (reported in #353). The load-path WARN now keys
+  off the existing REQ-062 `SkipKind`: it fires only for a genuinely malformed
+  *artifact* file (`ParseError`) and stays silent for `NotArtifactFile`.
+  `rivet validate` still re-scans and surfaces the malformed case as a hard
+  `artifact-parse-error` Error, so nothing is lost. Regression test.
+
 - **REQ-115 / REQ-116 / REQ-118 — Zola export links survive a sub-directory
   deploy.** Artifact cross-links, document `[[ID]]` wiki-links, and the
   `rivet_artifact` shortcode card all emitted absolute `/<prefix>/artifacts/…`
