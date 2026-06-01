@@ -7,6 +7,17 @@
 
 ### Added
 
+- **REQ-141 / #353 — `rivet modify --where '<s-expr>'`: query-driven bulk
+  modify.** Select every artifact matching the same s-expression filter
+  `rivet query` uses and apply any `--set-*` change in a single in-process
+  pass — load once, validate all targets up front (all-or-nothing), write each
+  affected file once. Because it never re-spawns a subprocess per ID, it can't
+  race the way a shell loop of per-ID `rivet modify` calls can (the friction
+  reported in #353). `--where` is mutually exclusive with a positional `<ID>`;
+  `--dry-run` previews the match set without writing; an empty match set is a
+  loud no-op (`no artifacts match the --where filter`). E.g. `rivet modify
+  --where '(= status "draft")' --set-status implemented`. Integration tests.
+
 - **REQ-128 / #358 — `rivet list --orphans`.** Lists only artifacts with no
   inbound and no outbound links — disconnected from the traceability graph,
   i.e. an asserted-but-unanchored claim (a requirement no test verifies, a

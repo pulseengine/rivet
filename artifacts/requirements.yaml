@@ -3869,3 +3869,43 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-062
+
+  - id: REQ-141
+    type: requirement
+    title: "rivet modify --where <filter>: query-driven bulk status/field set in one race-free pass"
+    status: implemented
+    description: |
+      Feature ask from GitHub issue #353 (dogfooding meld). Bringing a real
+      project's requirement statuses in line with shipped code meant a bulk
+      `draft`/`planned` -> `implemented` flip, and the only tool was a shell
+      loop of per-ID `rivet modify` invocations — which the reporter found
+      silently no-op'd under redirection (a suspected reload/rewrite race
+      between rapid-succession subprocesses).
+
+      Add `rivet modify --where '<s-expr>' --set-status … ` (and any other
+      `--set-*`): select every artifact matching the same s-expression filter
+      `rivet query` uses, and apply the change in a SINGLE in-process pass —
+      load once, validate every target up front (all-or-nothing), then write
+      each affected file once. Because it never re-spawns a subprocess per ID,
+      it cannot race the way the shell loop could. `--where` is mutually
+      exclusive with a positional `<ID>` (clap-enforced). `--dry-run` previews
+      the match set without writing. An empty match set is a loud no-op
+      ("no artifacts match the --where filter") so silence is never read as
+      success. Reuses the existing `sexpr_eval` engine (design on existing
+      patterns, not a new filter dialect).
+
+      Acceptance:
+        - `rivet modify --where '(= status "draft")' --set-status implemented
+          --dry-run` lists the matching IDs and leaves every file byte-identical.
+        - Without `--dry-run` the same command flips exactly the matching
+          artifacts (non-matches untouched) and prints "modified N artifacts".
+        - `rivet modify <ID> --where '…'` is rejected (mutually exclusive).
+        - A `--where` matching nothing prints "no artifacts match" and exits 0.
+    tags: [cli, modify, bulk, agent-ux, dx, loud-fail, user-reported, issue-353]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.15.0-track
+    links:
+      - type: traces-to
+        target: REQ-007
