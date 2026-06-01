@@ -7726,6 +7726,17 @@ fn cmd_export_zola(
         store.iter().collect()
     };
 
+    // Slugs of the artifacts that actually get a page in this export. Used to
+    // decide whether a cross-link / wiki-link can be emitted as a Zola internal
+    // link (`@/…md`, which Zola resolves against `base_url` so it survives a
+    // sub-directory deploy) — or, when the target is absent, degraded to plain
+    // text so it neither leaks an absolute path nor breaks the downstream
+    // `zola build` with a dangling internal link. (REQ-115, REQ-118)
+    let exported_slugs: std::collections::HashSet<String> = artifacts
+        .iter()
+        .map(|a| a.id.to_lowercase().replace('.', "-"))
+        .collect();
+
     let site_dir = output
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| std::path::PathBuf::from("."));
@@ -7830,10 +7841,17 @@ sort_by = \"title\"
             .iter()
             .map(|l| {
                 let target_slug = l.target.to_lowercase().replace('.', "-");
-                format!(
-                    "- **{}** → [{}](/{prefix}/artifacts/{target_slug}/)\n",
-                    l.link_type, l.target
-                )
+                if exported_slugs.contains(&target_slug) {
+                    // Zola internal link: resolved against `base_url`, so it
+                    // survives a sub-directory deploy (REQ-115).
+                    format!(
+                        "- **{}** → [{}](@/{prefix}/artifacts/{target_slug}.md)\n",
+                        l.link_type, l.target
+                    )
+                } else {
+                    // Target not in this export — emit text, not a dead link.
+                    format!("- **{}** → {}\n", l.link_type, l.target)
+                }
             })
             .collect();
 
@@ -7996,12 +8014,13 @@ links_count = {links_count}
 {% set matches = data.artifacts | filter(attribute="id", value=id) %}
 {% if matches | length > 0 %}
 {% set art = matches | first %}
+{% set slug = art.id | lower | replace(from=".", to="-") %}
 <div class="rivet-artifact-card" style="border:1px solid #444; border-radius:6px; padding:12px; margin:8px 0;">
   <div>
     <span style="background:#2563eb;color:#fff;padding:2px 8px;border-radius:3px;font-size:0.85em;">{{ art.type }}</span>
     <span style="background:#059669;color:#fff;padding:2px 8px;border-radius:3px;font-size:0.85em;">{{ art.status }}</span>
   </div>
-  <strong><a href="/{{ prefix }}/artifacts/{{ art.id | lower | replace(from=".", to="-") }}/">{{ art.id }}</a></strong>: {{ art.title }}
+  <strong><a href="{{ get_url(path=prefix ~ '/artifacts/' ~ slug ~ '/') }}">{{ art.id }}</a></strong>: {{ art.title }}
   {% if art.description %}<p style="margin:4px 0;font-size:0.9em;">{{ art.description | truncate(length=200) }}</p>{% endif %}
 </div>
 {% else %}
@@ -8062,14 +8081,25 @@ sort_by = \"title\"
                 .collect();
             let status = doc.status.as_deref().unwrap_or("unset");
 
-            // Resolve [[ID]] wiki-links to Zola internal links.
+            // Resolve [[ID]] wiki-links. Emit a Zola internal link (`@/…md`,
+            // resolved against `base_url` so it survives a sub-directory
+            // deploy) when the target is in this export; otherwise degrade to
+            // the bare ID text rather than leak an absolute path or break the
+            // downstream `zola build` with a dangling internal link (REQ-118).
             let mut body = doc.body.clone();
-            while let Some(start) = body.find("[[") {
+            let mut scan_from = 0;
+            while let Some(rel) = body[scan_from..].find("[[") {
+                let start = scan_from + rel;
                 if let Some(end) = body[start + 2..].find("]]") {
-                    let id = &body[start + 2..start + 2 + end];
+                    let id = body[start + 2..start + 2 + end].to_string();
                     let target_slug = id.to_lowercase().replace('.', "-");
-                    let replacement = format!("[{id}](/{prefix}/artifacts/{target_slug}/)");
+                    let replacement = if exported_slugs.contains(&target_slug) {
+                        format!("[{id}](@/{prefix}/artifacts/{target_slug}.md)")
+                    } else {
+                        id.clone()
+                    };
                     body.replace_range(start..start + 2 + end + 2, &replacement);
+                    scan_from = start + replacement.len();
                 } else {
                     break;
                 }
