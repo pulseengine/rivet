@@ -3747,3 +3747,43 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-004
+
+  - id: REQ-138
+    type: requirement
+    title: "Zola export must produce a buildable site — end-to-end build smoke check"
+    status: draft
+    description: |
+      Self-reported via GitHub issue #378 (dogfooding). The Zola export
+      tests assert on generated *strings*, so a whole class of bug ships
+      undetected: the export exits 0 but the output is broken downstream —
+      absolute links that 404 on a sub-directory deploy (REQ-115/116/118),
+      a dangling `@/` internal link that aborts `zola build`, a missing
+      shortcode template, a missing taxonomy. "Export succeeded" does not
+      today imply "the site is usable" (loud-fail register).
+
+      Two complementary mechanisms:
+        1. An optional CI smoke job (gated on `zola` availability, like the
+           continue-on-error Kani/Verus jobs): export the dogfood corpus,
+           run `zola build` under a sub-directory `base_url`, fail on a
+           build error or on any generated link that drops the sub-path.
+        2. A documented one-command repro recipe — or `rivet export
+           --format zola --scaffold` emitting a minimal *buildable*
+           config.toml + required templates — so verifying export
+           correctness does not require hand-rolling a Zola site.
+
+      Acceptance:
+        - A script (committed under e.g. scripts/ or a gated CI job) runs
+          `rivet export --format zola --shortcodes` into a scaffolded site
+          with a sub-directory `base_url`, runs `zola build`, and exits
+          non-zero if the build fails OR if `grep -r 'href="/<prefix>/'`
+          finds any generated absolute artifact link in the built HTML.
+        - The check passes on the current dogfood corpus (post-#377) and
+          would have failed on the pre-#377 absolute-link export.
+    tags: [export, zola, ci, loud-fail, self-validation, dogfooding, issue-378]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.15.0-track
+    links:
+      - type: traces-to
+        target: REQ-115
