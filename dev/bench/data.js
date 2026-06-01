@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780269754343,
+  "lastUpdate": 1780277544373,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "0d5c308d7c346e65cec39e26d0f0d704acc1281b",
-          "message": "release(v0.13.2): ReqIF interchange completeness + export polish (#334)\n\n* release(v0.13.2): ReqIF interchange completeness + export polish\n\nShips the three contained findings from the v0.13.1 export-format\nend-to-end test, fixes a pre-existing date-bomb test, and files the\nremaining findings as tracked REQs.\n\nImplemented (REQ-102/103/104):\n- ReqIF export now emits a SPECIFICATION + SPEC-HIERARCHY document\n  tree (one SPEC-HIERARCHY per SPEC-OBJECT, referencing a\n  SPECIFICATION-TYPE). Importers (DOORS/Polarion/codeBeamer) need this\n  to render a navigable outline; some reject a hierarchy-less file.\n  Object/relation payload unchanged — round-trip preserved.\n- `rivet import-results --format reqif <file>` brings a ReqIF file\n  back into rivet artifacts (DOORS/Polarion round-trip was\n  export-only; parse_reqif existed but was reachable only via the\n  supplier-pull cache). Reports artifact + link counts.\n- `gherkin` now advertised in `rivet export --help` + the\n  unsupported-format error message (was accepted but undocumented).\n\nTest stabilisation:\n- cited_source_integration::check_sources_strict_audit_gate hardcoded\n  a `last-checked` date that aged past the 30-day staleness threshold,\n  flipping the \"clean fixture passes\" assertion to fail once >30 days\n  elapsed. The fixture now generates a fresh ISO-8601 timestamp at\n  test time (inline civil-date algorithm, no chrono/jiff dep).\n\nTests added (regression guards):\n- rivet-core: test_export_emits_specification_hierarchy,\n  test_reqif_roundtrip_preserves_artifacts_and_links.\n- rivet-cli: export_reqif_roundtrip.rs — export --help lists gherkin;\n  export reqif has SPECIFICATION + SPEC-HIERARCHY; import-results\n  --format reqif round-trips artifacts + links via the binary.\n\nFiled for the next minor (not implemented here — regression-risk /\ndifferent subsystem):\n- REQ-105 HTML export absolute-link decoupling from the serve module.\n- REQ-106 serve variant view passes --binding (bound_artifact_count: 0).\n- REQ-107 sequence/mapping field values render as Debug output.\n- REQ-108 serve external-artifact navigation + shortcut-link contrast.\n- REQ-109 variant scoping for documents (design question).\n\nFull workspace test suite green.\n\nImplements: REQ-102, REQ-103, REQ-104\nRefs: REQ-005, REQ-007\nVerifies: REQ-102, REQ-103, REQ-104\n\nCo-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>\n\n* chore(fmt): rustfmt the export_reqif_roundtrip test args\n\n---------\n\nCo-authored-by: Claude Opus 4.7 <noreply@anthropic.com>",
-          "timestamp": "2026-05-28T14:51:00-05:00",
-          "tree_id": "c038d162758105fa246134d60381d945df7a3c89",
-          "url": "https://github.com/pulseengine/rivet/commit/0d5c308d7c346e65cec39e26d0f0d704acc1281b"
-        },
-        "date": 1779998444587,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 85120,
-            "range": "± 420",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 920548,
-            "range": "± 12526",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 16715456,
-            "range": "± 812911",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1934,
-            "range": "± 6",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 24819,
-            "range": "± 1107",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 362322,
-            "range": "± 13462",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 97,
-            "range": "± 6",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1435998,
-            "range": "± 23580",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 168569,
-            "range": "± 9132",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1986621,
-            "range": "± 15254",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 38700761,
-            "range": "± 5744995",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 124247,
-            "range": "± 2682",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 1173861,
-            "range": "± 23466",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 16904734,
-            "range": "± 1617253",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4237,
-            "range": "± 20",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 45419,
-            "range": "± 360",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 771060,
-            "range": "± 25439",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 63668,
-            "range": "± 252",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 725604,
-            "range": "± 8120",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 8484928,
-            "range": "± 1067808",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 777,
-            "range": "± 17",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 6585,
-            "range": "± 27",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 99507,
-            "range": "± 426",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 21256,
-            "range": "± 189",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 147237,
-            "range": "± 777",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1357297,
-            "range": "± 22701",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1336008,
             "range": "± 12337",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a8167b1a11f92c7e9d0e08fdbf915653e06dc00e",
+          "message": "fix(export): Zola links survive a sub-directory deploy (REQ-115/116/118) (#377)\n\n* fix(export): Zola links survive a sub-directory deploy (REQ-115/116/118)\n\nArtifact cross-links, document `[[ID]]` wiki-links, and the\n`rivet_artifact` shortcode card all emitted absolute\n`/<prefix>/artifacts/<slug>/` paths. On a GitHub-Pages-style project\nsite served under `/<repo>/`, an absolute path drops the deploy\nsub-path and 404s in the browser.\n\n- Markdown links (cross-links + wiki-links) now use Zola internal\n  links `@/<prefix>/artifacts/<slug>.md`, which Zola resolves against\n  `base_url`. A target not present in the export degrades to plain\n  text — never an absolute path leak, never a dangling `@/` link that\n  would abort `zola build`. The build-failure relocates to a precise\n  rivet-side membership check instead of an opaque downstream error.\n- The `rivet_artifact` shortcode card link uses `get_url(path=…)`,\n  which honours `base_url`.\n\nVerified end-to-end with a real `zola build` under a sub-directory\n`base_url`: 504 links rewritten, 0 absolute, 0 dangling, clean build.\nNew `export_zola.rs` integration test pins the generated link forms\n(asserts on content, not a live build, since CI has no `zola`).\n\nThe HTML-export half of REQ-118 was already covered by REQ-105's\n`rewrite_static_links` (rewrites `href`/`hx-get`/`src`), verified by\ninspecting exported document pages (0 absolute links).\n\nFixes: REQ-115, REQ-116, REQ-118\nVerifies: REQ-115, REQ-116, REQ-118\nRefs: REQ-004, REQ-105\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* docs(artifacts): file REQ-138 — Zola export build smoke check (issue #378)\n\nDogfood-filed follow-up to the REQ-115/116/118 fix: the Zola export\ntests assert on generated strings, so \"export succeeded\" doesn't imply\n\"the site builds.\" Captures the product half of the friction reported\nin #378 — an optional `zola build` smoke job + a buildable-scaffold\nrecipe. Draft; traces-to REQ-115.\n\nRefs: REQ-115, REQ-004\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-05-31T20:25:45-05:00",
+          "tree_id": "cce3b8ba4a83d4657f0fe0451d1e04af834bc59b",
+          "url": "https://github.com/pulseengine/rivet/commit/a8167b1a11f92c7e9d0e08fdbf915653e06dc00e"
+        },
+        "date": 1780277543475,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 84464,
+            "range": "± 692",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 880088,
+            "range": "± 5491",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 15086868,
+            "range": "± 1059538",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2204,
+            "range": "± 68",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25920,
+            "range": "± 171",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 381657,
+            "range": "± 1021",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1460802,
+            "range": "± 8887",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 160236,
+            "range": "± 485",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1900994,
+            "range": "± 10027",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 27405006,
+            "range": "± 1225606",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 134465,
+            "range": "± 2528",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1154543,
+            "range": "± 9508",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 14460957,
+            "range": "± 949415",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4248,
+            "range": "± 69",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 62376,
+            "range": "± 279",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 769249,
+            "range": "± 3475",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 60851,
+            "range": "± 227",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 692208,
+            "range": "± 8165",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7721933,
+            "range": "± 327787",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 753,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7049,
+            "range": "± 34",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 116519,
+            "range": "± 1161",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 23671,
+            "range": "± 392",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 164632,
+            "range": "± 550",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1473851,
+            "range": "± 31879",
             "unit": "ns/iter"
           }
         ]
