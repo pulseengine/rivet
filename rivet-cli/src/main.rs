@@ -447,6 +447,14 @@ enum Command {
         /// asserted-but-unanchored claim). Combine with `--type` to scope.
         #[arg(long)]
         orphans: bool,
+
+        /// Rank by inbound-link count (descending) — the most
+        /// depended-upon artifacts first, i.e. the highest-impact-if-changed
+        /// nodes. The complement of `--orphans`. Adds an inbound-count column
+        /// (text) / `inbound_links` field (JSON). Deterministic; ties break
+        /// by id.
+        #[arg(long)]
+        rank_by_backlinks: bool,
     },
 
     /// Show artifact summary statistics
@@ -1977,6 +1985,7 @@ fn run(cli: Cli) -> Result<bool> {
             baseline,
             variant,
             orphans,
+            rank_by_backlinks,
         } => cmd_list(
             &cli,
             r#type.as_deref(),
@@ -1986,6 +1995,7 @@ fn run(cli: Cli) -> Result<bool> {
             baseline.as_deref(),
             variant.as_deref(),
             *orphans,
+            *rank_by_backlinks,
         ),
         Command::Get { id, format } => cmd_get(&cli, id, format),
         Command::Bundle { id, depth, format } => cmd_bundle(&cli, id, *depth, format),
@@ -5974,6 +5984,7 @@ fn cmd_list(
     baseline_name: Option<&str>,
     variant_arg: Option<&str>,
     orphans_only: bool,
+    rank_by_backlinks: bool,
 ) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
     let ctx = ProjectContext::load(cli)?;
@@ -6014,6 +6025,26 @@ fn cmd_list(
         results.retain(|a| orphan_ids.contains(a.id.as_str()));
     }
 
+    // REQ-128: `--rank-by-backlinks` orders the listing by inbound-link count
+    // (descending) — the most depended-upon artifacts first — and surfaces the
+    // count. Built on `LinkGraph::backlinks_to`; deterministic (ties break by
+    // id). The complement of `--orphans`.
+    let inbound_counts: std::collections::HashMap<String, usize> = if rank_by_backlinks {
+        let graph = rivet_core::links::LinkGraph::build(&store, &ctx.schema);
+        let counts: std::collections::HashMap<String, usize> = results
+            .iter()
+            .map(|a| (a.id.clone(), graph.backlinks_to(&a.id).len()))
+            .collect();
+        results.sort_by(|a, b| {
+            let ca = counts.get(&a.id).copied().unwrap_or(0);
+            let cb = counts.get(&b.id).copied().unwrap_or(0);
+            cb.cmp(&ca).then_with(|| a.id.cmp(&b.id))
+        });
+        counts
+    } else {
+        std::collections::HashMap::new()
+    };
+
     if format == "json" {
         let artifacts_json: Vec<serde_json::Value> = results
             .iter()
@@ -6031,6 +6062,12 @@ fn cmd_list(
                         "target": l.target,
                     })).collect::<Vec<_>>(),
                 });
+                if rank_by_backlinks {
+                    if let serde_json::Value::Object(ref mut map) = entry {
+                        let n = inbound_counts.get(&a.id).copied().unwrap_or(0);
+                        map.insert("inbound_links".into(), serde_json::json!(n));
+                    }
+                }
                 if let Some(ref name) = variant_name {
                     // Emit the merged fields view so downstream tooling
                     // can see the variant-resolved values without a
@@ -6064,10 +6101,18 @@ fn cmd_list(
         for artifact in &results {
             let status = artifact.status.as_deref().unwrap_or("-");
             let links = artifact.links.len();
-            println!(
-                "  {:20} {:25} {:12} {:3} links  {}",
-                artifact.id, artifact.artifact_type, status, links, artifact.title
-            );
+            if rank_by_backlinks {
+                let inbound = inbound_counts.get(&artifact.id).copied().unwrap_or(0);
+                println!(
+                    "  {:4} in  {:20} {:25} {:12} {:3} out  {}",
+                    inbound, artifact.id, artifact.artifact_type, status, links, artifact.title
+                );
+            } else {
+                println!(
+                    "  {:20} {:25} {:12} {:3} links  {}",
+                    artifact.id, artifact.artifact_type, status, links, artifact.title
+                );
+            }
         }
         println!("\n{} artifacts", results.len());
     }

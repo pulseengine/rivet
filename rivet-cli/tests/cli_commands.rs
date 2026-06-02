@@ -1783,6 +1783,53 @@ fn list_orphans_is_subset() {
     );
 }
 
+/// REQ-128: `rivet list --rank-by-backlinks` orders by inbound-link count
+/// (descending) and emits an `inbound_links` field on each artifact.
+#[test]
+fn list_rank_by_backlinks_orders_descending() {
+    let root = project_root();
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            root.to_str().unwrap(),
+            "list",
+            "--rank-by-backlinks",
+            "--type",
+            "requirement",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("rivet list --rank-by-backlinks failed");
+    assert!(out.status.success(), "list must exit 0");
+    let v: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&out.stdout)).expect("valid JSON");
+    let arts = v["artifacts"].as_array().expect("artifacts array");
+    assert!(arts.len() > 1, "need several requirements to rank");
+
+    // Every entry carries the inbound count, and the sequence is
+    // non-increasing (most depended-upon first).
+    let mut prev: Option<u64> = None;
+    for a in arts {
+        let n = a["inbound_links"]
+            .as_u64()
+            .expect("each artifact must carry inbound_links under --rank-by-backlinks");
+        if let Some(p) = prev {
+            assert!(
+                n <= p,
+                "ranking must be descending by inbound count: saw {n} after {p}"
+            );
+        }
+        prev = Some(n);
+    }
+    // The most depended-upon requirement should have a non-trivial fan-in
+    // on the dogfood corpus (sanity that counts are real, not all zero).
+    assert!(
+        arts[0]["inbound_links"].as_u64().unwrap() > 0,
+        "top-ranked artifact must have inbound links"
+    );
+}
+
 /// `rivet get REQ-001 --format yaml` produces YAML output.
 #[test]
 fn get_yaml_produces_valid_output() {
