@@ -1111,7 +1111,18 @@ fn graph_type_filter_renders_when_under_budget() {
     let (mut child, port) = start_server();
 
     let start = std::time::Instant::now();
-    let (status, body, _) = fetch(port, "/graph?types=requirement", true);
+    // The type-filtered graph still does a BFS + layout over the dogfood
+    // corpus, which can brush past the default 5s read timeout on a loaded CI
+    // runner — the same chronic flake the focus-graph tests hit, where a
+    // timeout surfaces as status=0 and fails the `== 200` assertion. Give it
+    // the same generous budget the other graph endpoints use; this test
+    // asserts on the response, not on a hard latency bound.
+    let (status, body, _) = fetch_with_timeout(
+        port,
+        "/graph?types=requirement",
+        true,
+        Duration::from_secs(15),
+    );
     let elapsed = start.elapsed();
     let has_svg = body.contains("<svg");
     let has_budget = body.contains("budget");
