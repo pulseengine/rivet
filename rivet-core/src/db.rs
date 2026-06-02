@@ -421,6 +421,9 @@ pub fn evaluate_conditional_rules(
     diagnostics.extend(crate::schema::check_conditional_consistency(
         &schema.conditional_rules,
     ));
+    // Coverage-rule consistency (REQ-148 / #350) — kept on the salsa path too
+    // so it never diverges from `validate --direct` (cf. REQ-146).
+    diagnostics.extend(schema.check_coverage_rule_consistency());
 
     // Evaluate each conditional rule against each artifact (pre-compile regexes)
     for rule in &schema.conditional_rules {
@@ -461,6 +464,9 @@ pub fn evaluate_conditional_rules_with_extras(
     diagnostics.extend(crate::schema::check_conditional_consistency(
         &schema.conditional_rules,
     ));
+    // Coverage-rule consistency (REQ-148 / #350) — kept on the salsa path too
+    // so it never diverges from `validate --direct` (cf. REQ-146).
+    diagnostics.extend(schema.check_coverage_rule_consistency());
 
     // Evaluate each conditional rule against each artifact (pre-compile regexes)
     for rule in &schema.conditional_rules {
