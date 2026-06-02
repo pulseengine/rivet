@@ -829,6 +829,26 @@ fn highlight_toml_value(s: &str) -> String {
     format!("<span class=\"hl-punct\">=</span> {}", html_escape(trimmed))
 }
 
+/// True if `id` occurs in `line` as a whole token — bounded on both sides by
+/// a character that cannot be part of an artifact id. Artifact ids are
+/// `[A-Za-z0-9-]`, so a hyphen is part of the token, NOT a boundary. This is
+/// what stops `SWR-001` from matching inside `SDV-BCM-SWR-001` and producing a
+/// phantom trace link (REQ-144). Ids are ASCII, so byte-boundary checks align
+/// with char boundaries; a non-ASCII neighbour byte counts as a boundary.
+fn line_contains_id_token(line: &str, id: &str) -> bool {
+    if id.is_empty() {
+        return false;
+    }
+    let is_id_byte = |b: u8| b.is_ascii_alphanumeric() || b == b'-';
+    let bytes = line.as_bytes();
+    line.match_indices(id).any(|(pos, _)| {
+        let before_ok = pos == 0 || !is_id_byte(bytes[pos - 1]);
+        let end = pos + id.len();
+        let after_ok = end >= bytes.len() || !is_id_byte(bytes[end]);
+        before_ok && after_ok
+    })
+}
+
 pub(crate) fn render_code_block(
     content: &str,
     artifact_ids: &std::collections::HashSet<String>,
@@ -838,7 +858,9 @@ pub(crate) fn render_code_block(
     html.push_str("<div class=\"card source-viewer\"><table>");
     for (i, line) in content.lines().enumerate() {
         let line_num = i + 1;
-        let has_artifact = artifact_ids.iter().any(|id| line.contains(id.as_str()));
+        let has_artifact = artifact_ids
+            .iter()
+            .any(|id| line_contains_id_token(line, id.as_str()));
         let row_class = if has_artifact {
             "source-line source-line-highlight"
         } else {
@@ -853,7 +875,7 @@ pub(crate) fn render_code_block(
             let mut result = highlighted;
             let mut ids: Vec<&String> = artifact_ids
                 .iter()
-                .filter(|id| line.contains(id.as_str()))
+                .filter(|id| line_contains_id_token(line, id.as_str()))
                 .collect();
             ids.sort_by_key(|b| std::cmp::Reverse(b.len()));
             for id in ids {
@@ -1006,7 +1028,33 @@ pub(crate) fn build_artifact_info(
 
 #[cfg(test)]
 mod tests {
-    use super::rewrite_image_paths;
+    use super::{line_contains_id_token, rewrite_image_paths};
+
+    /// REQ-144: an id must match as a whole token, not a substring of a
+    /// longer id. The reported bug: `SWR-001` was linked inside
+    /// `SDV-BCM-SWR-001`, creating a phantom trace edge.
+    #[test]
+    fn id_token_match_is_whole_token_not_substring() {
+        // The substring case must NOT match.
+        assert!(
+            !line_contains_id_token("see SDV-BCM-SWR-001 here", "SWR-001"),
+            "SWR-001 must not match inside SDV-BCM-SWR-001"
+        );
+        // The longer id itself matches.
+        assert!(line_contains_id_token(
+            "see SDV-BCM-SWR-001 here",
+            "SDV-BCM-SWR-001"
+        ));
+        // An exact, delimited occurrence still matches (whitespace, punctuation,
+        // string boundaries).
+        assert!(line_contains_id_token("REQ-001 done", "REQ-001"));
+        assert!(line_contains_id_token("(SWR-001)", "SWR-001"));
+        assert!(line_contains_id_token("SWR-001", "SWR-001"));
+        assert!(line_contains_id_token("ref: SWR-001, next", "SWR-001"));
+        // A trailing alphanumeric/hyphen means it's part of a longer token.
+        assert!(!line_contains_id_token("SWR-0011", "SWR-001"));
+        assert!(!line_contains_id_token("xSWR-001", "SWR-001"));
+    }
 
     /// A relative image `src` in documentation is rewritten to the
     /// `/docs-asset/` route the serve dashboard serves from the doc
