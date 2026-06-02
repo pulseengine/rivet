@@ -3751,7 +3751,7 @@ artifacts:
   - id: REQ-138
     type: requirement
     title: "Zola export must produce a buildable site — end-to-end build smoke check"
-    status: draft
+    status: implemented
     description: |
       Self-reported via GitHub issue #378 (dogfooding). The Zola export
       tests assert on generated *strings*, so a whole class of bug ships
