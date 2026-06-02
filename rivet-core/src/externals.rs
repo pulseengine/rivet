@@ -59,11 +59,21 @@ pub enum ArtifactRef {
 ///
 /// - `"REQ-001"` → `ArtifactRef::Local("REQ-001")`
 /// - `"rivet:REQ-001"` → `ArtifactRef::External { prefix: "rivet", id: "REQ-001" }`
+/// - `"linc-mesh:A-AVTP-STREAM"` → `ArtifactRef::External { prefix: "linc-mesh", id: "A-AVTP-STREAM" }`
 pub fn parse_artifact_ref(s: &str) -> ArtifactRef {
-    // Only split on first colon. The prefix must be purely alphabetic
-    // (no digits, hyphens, or dots) to avoid confusion with IDs like "H-1.2".
+    // Split on the first colon. The prefix must be a kebab-case project slug:
+    // it starts with a lowercase letter and is otherwise lowercase letters,
+    // digits, or hyphens. This matches the external `prefix:` declared in
+    // rivet.yaml (e.g. `linc-mesh`, `spar`) and round-trips the stored
+    // `<prefix>:<id>` form. Requiring a leading letter keeps an ordinary
+    // local ID (which never starts a colon-delimited segment with a letter
+    // slug) from being misread as a cross-repo reference.
     if let Some((prefix, id)) = s.split_once(':') {
-        if !prefix.is_empty() && prefix.chars().all(|c| c.is_ascii_lowercase()) && !id.is_empty() {
+        let valid_prefix = prefix.starts_with(|c: char| c.is_ascii_lowercase())
+            && prefix
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+        if valid_prefix && !id.is_empty() {
             return ArtifactRef::External {
                 prefix: prefix.to_string(),
                 id: id.to_string(),
@@ -1001,6 +1011,46 @@ mod tests {
                 prefix: "meld".into(),
                 id: "UCA-C-1".into(),
             }
+        );
+    }
+
+    // A kebab-case external prefix (a hyphen in the project slug) must
+    // round-trip. Regression for the serve/document 404 where
+    // `linc-mesh:A-AVTP-STREAM` was misread as a local id because the prefix
+    // check rejected the hyphen. (REQ-143)
+    // rivet: verifies REQ-020
+    #[test]
+    fn external_prefix_with_hyphen() {
+        assert_eq!(
+            parse_artifact_ref("linc-mesh:A-AVTP-STREAM"),
+            ArtifactRef::External {
+                prefix: "linc-mesh".into(),
+                id: "A-AVTP-STREAM".into(),
+            }
+        );
+        // A digit in the slug is fine too (e.g. `linc2`).
+        assert_eq!(
+            parse_artifact_ref("linc2:REQ-1"),
+            ArtifactRef::External {
+                prefix: "linc2".into(),
+                id: "REQ-1".into(),
+            }
+        );
+    }
+
+    // A prefix that does not start with a lowercase letter is NOT a project
+    // slug, so the ref stays local (guards an uppercase-led id with a colon
+    // from being misread as cross-repo). (REQ-143)
+    // rivet: verifies REQ-020
+    #[test]
+    fn non_slug_prefix_stays_local() {
+        assert_eq!(
+            parse_artifact_ref("H-1:2"),
+            ArtifactRef::Local("H-1:2".into())
+        );
+        assert_eq!(
+            parse_artifact_ref("-bad:REQ-1"),
+            ArtifactRef::Local("-bad:REQ-1".into())
         );
     }
 
