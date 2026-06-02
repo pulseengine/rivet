@@ -7,6 +7,17 @@
 
 ### Added
 
+- **REQ-138 / #378 — Zola export build smoke check (`scripts/zola-export-smoke.sh`).**
+  Exports the corpus into a scaffolded Zola site whose `base_url` is a
+  sub-directory deploy, runs a real `zola build`, and fails on a build error
+  OR on any built-HTML artifact/document link that drops the deploy sub-path.
+  This is the end-to-end gate the string-asserting unit tests can't give —
+  "export succeeded" now provably implies "the site builds and its links
+  resolve under a sub-directory." It catches the REQ-115/REQ-116/REQ-118 link
+  class. Skips cleanly when `zola` isn't installed (so it can gate on
+  availability). Verified: passes on the current corpus; the leak detector
+  fires on the pre-fix absolute-link pattern.
+
 - **REQ-145 / #386 — test-results import honors a `rivet_tc_id` testcase
   property.** A JUnit `<testcase>` may now declare its artifact id explicitly
   with `<property name="rivet_tc_id" value="…"/>`; that value becomes the
