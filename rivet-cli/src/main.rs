@@ -205,6 +205,13 @@ struct Cli {
     #[arg(short, long, action = clap::ArgAction::Count)]
     verbose: u8,
 
+    /// Quiet: suppress the WARN-level log preamble (e.g. the externals
+    /// "could not load" / skipped-file notices), emitting only ERROR-level
+    /// logs. Leaves a command's own stdout untouched, so it pairs with
+    /// `--format json` for clean machine-consumable output (#353).
+    #[arg(short = 'q', long, conflicts_with = "verbose")]
+    quiet: bool,
+
     /// Restrict rivet to the qualified-for-safety-use feature set
     /// (TCL design A5).
     ///
@@ -1811,10 +1818,16 @@ enum CheckAction {
 fn main() -> ExitCode {
     let cli = Cli::parse();
 
-    let log_level = match cli.verbose {
-        0 => "warn",
-        1 => "info",
-        _ => "debug",
+    let log_level = if cli.quiet {
+        // Below the default `warn` — only hard errors. Suppresses the
+        // WARN preamble that noises up agent/scripted use (#353).
+        "error"
+    } else {
+        match cli.verbose {
+            0 => "warn",
+            1 => "info",
+            _ => "debug",
+        }
     };
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(log_level))
         .format_timestamp(None)
@@ -8960,6 +8973,7 @@ fn cmd_diff(
                 project: bp.to_path_buf(),
                 schemas: cli.schemas.clone(),
                 verbose: cli.verbose,
+                quiet: cli.quiet,
                 qualification_mode: cli.qualification_mode,
                 command: Command::Validate {
                     format: "text".to_string(),
@@ -8985,6 +8999,7 @@ fn cmd_diff(
                 project: hp.to_path_buf(),
                 schemas: cli.schemas.clone(),
                 verbose: cli.verbose,
+                quiet: cli.quiet,
                 qualification_mode: cli.qualification_mode,
                 command: Command::Validate {
                     format: "text".to_string(),

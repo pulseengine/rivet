@@ -5170,3 +5170,59 @@ fn supplier_pull_unknown_anchor_errors() {
         "error must name the missing anchor, got: {stderr}"
     );
 }
+
+/// #353: `--quiet` suppresses the WARN-level log preamble (e.g. the externals
+/// "could not load" notice) while leaving the command's stdout and
+/// hard-error reporting intact.
+#[test]
+fn quiet_suppresses_warn_preamble() {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let root = tmp.path();
+    std::fs::create_dir_all(root.join("artifacts")).unwrap();
+    // A bad external path triggers a deterministic WARN ("could not load
+    // externals: …") at default log level.
+    std::fs::write(
+        root.join("rivet.yaml"),
+        "project:\n  name: t\n  version: \"0.1.0\"\n  schemas:\n    - common\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n\
+         externals:\n  missing:\n    path: /nonexistent/path/xyz\n    prefix: missing\n",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("artifacts").join("reqs.yaml"),
+        "artifacts:\n  - id: REQ-1\n    type: requirement\n    title: A\n    status: draft\n",
+    )
+    .unwrap();
+
+    let run = |quiet: bool| {
+        let mut args = vec!["--project", root.to_str().unwrap()];
+        if quiet {
+            args.push("--quiet");
+        }
+        args.push("list");
+        Command::new(rivet_bin())
+            .args(&args)
+            .output()
+            .expect("rivet list")
+    };
+
+    let default = run(false);
+    let quiet = run(true);
+    assert!(default.status.success() && quiet.status.success());
+
+    let default_err = String::from_utf8_lossy(&default.stderr);
+    let quiet_err = String::from_utf8_lossy(&quiet.stderr);
+    assert!(
+        default_err.contains("WARN"),
+        "default run should emit the WARN preamble; got: {default_err}"
+    );
+    assert!(
+        !quiet_err.contains("WARN"),
+        "--quiet must suppress WARN-level logs; got: {quiet_err}"
+    );
+    // stdout is unaffected — the artifact still lists.
+    assert!(
+        String::from_utf8_lossy(&quiet.stdout).contains("REQ-1"),
+        "--quiet must not alter stdout"
+    );
+}
