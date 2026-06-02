@@ -7,6 +7,21 @@
 
 ### Fixed
 
+- **REQ-148 / #350 — new `coverage-rule-consistency` schema check flags a
+  `required-backlink` rule that advertises an unsatisfiable satisfier.** When a
+  coverage rule lists a `from-type` in `from-types` that the schema's own
+  link-target rules can never let form the backlink (aspice
+  `swe1-has-verification` lists `unit-verification`, whose `verifies`
+  link-field targets only `sw-detail-design`, not `sw-req`), authors hit a
+  confusing wall: the rule says "add a `verifies` from a unit-verification" but
+  authoring that link is rejected by `link-target-type`. `validate` now emits a
+  schema-level warning naming the rule, the unreachable from-type, what its
+  link-field actually targets, and the fix (widen the target-types or drop the
+  from-type). Runs on both the salsa and `--direct` paths (no divergence, cf.
+  REQ-146); conservative (only flags a *declared* link-field that demonstrably
+  excludes the target). Unit tests `coverage_rule_flags_unsatisfiable_from_type`
+  / `coverage_rule_silent_when_all_from_types_linkable`. Whether the aspice
+  `from-types` themselves are right is a separate compliance call (#350/#355).
 - **REQ-155 / #353 — `prose-mention-without-typed-link` no longer fires an
   unactionable warning (or pressures a false trace).** When an artifact's
   prose names an id-shaped token that resolves to an artifact its own type

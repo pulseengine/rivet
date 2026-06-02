@@ -355,6 +355,10 @@ pub fn validate_with_externals_and_variant(
         &schema.conditional_rules,
     ));
 
+    // 0b. Check coverage-rule consistency (REQ-148 / #350): a required-backlink
+    // rule whose from-types include a type that can never form the backlink.
+    diagnostics.extend(schema.check_coverage_rule_consistency());
+
     // 8. Check conditional rules (pre-compile regexes to avoid re-compilation per artifact).
     //
     // When a variant is active, `matches_artifact_for_variant_with` and

@@ -1198,6 +1198,109 @@ impl Schema {
         issues
     }
 
+    /// REQ-148 / #350: flag a `required-backlink` coverage rule that
+    /// advertises a `from-type` the schema's own link rules can never let
+    /// form the backlink — the "advertises an unsatisfiable satisfier" class.
+    ///
+    /// A `required-backlink: <RB>` rule on `source-type: <ST>` with
+    /// `from-types: [F, …]` claims an artifact of type `F` satisfies the rule
+    /// by forming an outgoing `<RB>` link to the `<ST>` artifact. But if `F`'s
+    /// type declares an `<RB>` link-field whose `target-types` excludes `<ST>`,
+    /// the `link-target-type` rule rejects that very link, so `F` can never
+    /// satisfy the rule. (aspice `swe1-has-verification` lists
+    /// `unit-verification`, whose `verifies` link-field targets only
+    /// `sw-detail-design`, not `sw-req` — exactly the detour reported on #350.)
+    ///
+    /// Conservative — prefers false-negatives. Only flags when `F` *declares*
+    /// an `<RB>` link-field whose targets demonstrably exclude `<ST>`. If `F`
+    /// declares no `<RB>` link-field at all the link is target-unconstrained
+    /// (the `link-target-type` rule never fires), so it is not flagged.
+    /// Whether the right fix is to widen the link-field or drop the from-type
+    /// is a schema-author decision; this check only surfaces the contradiction.
+    /// `alternate-backlinks` are checked against their own link type.
+    pub fn check_coverage_rule_consistency(&self) -> Vec<crate::validate::Diagnostic> {
+        let mut diagnostics = Vec::new();
+        for rule in &self.traceability_rules {
+            let Some(backlink) = rule.required_backlink.as_deref() else {
+                continue;
+            };
+            let st = rule.source_type.as_str();
+            // (link-type, from-types) pairs: the primary backlink + alternates.
+            let mut checks: Vec<(&str, &[String])> = vec![(backlink, rule.from_types.as_slice())];
+            for alt in &rule.alternate_backlinks {
+                checks.push((alt.link_type.as_str(), alt.from_types.as_slice()));
+            }
+            for (link_type, from_types) in checks {
+                for from in from_types {
+                    if let Some(allowed) = self.unsatisfiable_backlink_targets(from, link_type, st)
+                    {
+                        diagnostics.push(crate::validate::Diagnostic {
+                            source_file: None,
+                            line: None,
+                            column: None,
+                            severity: Severity::Warning,
+                            artifact_id: None,
+                            rule: "coverage-rule-consistency".to_string(),
+                            message: format!(
+                                "coverage rule '{}' lists from-type '{}' as a '{}' satisfier for \
+                                 '{}', but '{}'s '{}' link-field only targets {:?} — it can never \
+                                 form '{}' --{}--> '{}', so that satisfier is unreachable (widen \
+                                 the link-field's target-types or drop the from-type)",
+                                rule.name,
+                                from,
+                                link_type,
+                                st,
+                                from,
+                                link_type,
+                                allowed,
+                                from,
+                                link_type,
+                                st
+                            ),
+                        });
+                    }
+                }
+            }
+        }
+        diagnostics
+    }
+
+    /// Helper for [`Self::check_coverage_rule_consistency`]. Returns
+    /// `Some(allowed_targets)` when type `from` declares a `link_type`
+    /// link-field that demonstrably cannot target `to` (backlink
+    /// unsatisfiable); `None` when it can, is unconstrained, or `from`
+    /// declares no such link-field.
+    fn unsatisfiable_backlink_targets(
+        &self,
+        from: &str,
+        link_type: &str,
+        to: &str,
+    ) -> Option<Vec<String>> {
+        let td = self.artifact_types.get(from)?;
+        let matching: Vec<&LinkFieldDef> = td
+            .link_fields
+            .iter()
+            .filter(|lf| lf.link_type == link_type)
+            .collect();
+        if matching.is_empty() {
+            // No declared link-field for this link type -> target-unconstrained.
+            return None;
+        }
+        let satisfiable = matching
+            .iter()
+            .any(|lf| lf.target_types.is_empty() || lf.target_types.iter().any(|t| t == to));
+        if satisfiable {
+            return None;
+        }
+        let mut allowed: Vec<String> = matching
+            .iter()
+            .flat_map(|lf| lf.target_types.iter().cloned())
+            .collect();
+        allowed.sort();
+        allowed.dedup();
+        Some(allowed)
+    }
+
     /// Look up an artifact type definition by name.
     #[inline]
     pub fn artifact_type(&self, name: &str) -> Option<&ArtifactTypeDef> {
@@ -2022,6 +2125,109 @@ mod tests {
             lt.inverse,
             Some("derived-into".into()),
             "base inverse survives when overlay doesn't redeclare it"
+        );
+    }
+
+    // ── coverage-rule consistency (REQ-148 / #350) ──────────────────────────
+
+    /// Helper: an artifact type whose `verifies` link-field targets exactly
+    /// `targets` (empty = any).
+    fn verifier_type(name: &str, targets: &[&str]) -> ArtifactTypeDef {
+        let mut td = mk_type(name, vec![], vec![]);
+        td.link_fields = vec![LinkFieldDef {
+            name: "verifies".into(),
+            link_type: "verifies".into(),
+            target_types: targets.iter().map(|s| (*s).into()).collect(),
+            required: false,
+            cardinality: Cardinality::ZeroOrMany,
+            description: None,
+        }];
+        td
+    }
+
+    #[test]
+    fn coverage_rule_flags_unsatisfiable_from_type() {
+        // Mirrors aspice `swe1-has-verification`: sw-req needs an incoming
+        // `verifies` from [sw-verification, unit-verification], but
+        // unit-verification's `verifies` link-field only targets
+        // sw-detail-design — it can never verifies a sw-req.
+        let mut file = mk_schema_file(
+            "aspice-mini",
+            vec![
+                mk_type("sw-req", vec![], vec![]),
+                mk_type("sw-detail-design", vec![], vec![]),
+                verifier_type("sw-verification", &["sw-req"]),
+                verifier_type("unit-verification", &["sw-detail-design"]),
+            ],
+        );
+        file.link_types.push(LinkTypeDef {
+            name: "verifies".into(),
+            inverse: None,
+            description: "verifies".into(),
+            source_types: vec![],
+            target_types: vec![],
+        });
+        file.traceability_rules.push(TraceabilityRule {
+            name: "swe1-has-verification".into(),
+            description: "every sw-req is verified".into(),
+            source_type: "sw-req".into(),
+            required_link: None,
+            required_backlink: Some("verifies".into()),
+            target_types: vec![],
+            from_types: vec!["sw-verification".into(), "unit-verification".into()],
+            severity: Severity::Warning,
+            alternate_backlinks: vec![],
+        });
+        let schema = Schema::merge(&[file]);
+
+        let diags = schema.check_coverage_rule_consistency();
+        assert_eq!(
+            diags.len(),
+            1,
+            "exactly one unsatisfiable satisfier (unit-verification), got: {:#?}",
+            diags.iter().map(|d| &d.message).collect::<Vec<_>>()
+        );
+        assert_eq!(diags[0].rule, "coverage-rule-consistency");
+        let msg = &diags[0].message;
+        assert!(
+            msg.contains("unit-verification") && !msg.contains("'sw-verification'"),
+            "must flag unit-verification (the unreachable one), not sw-verification: {msg}"
+        );
+    }
+
+    #[test]
+    fn coverage_rule_silent_when_all_from_types_linkable() {
+        // Both verifiers can target sw-req -> no diagnostic.
+        let mut file = mk_schema_file(
+            "aspice-ok",
+            vec![
+                mk_type("sw-req", vec![], vec![]),
+                verifier_type("sw-verification", &["sw-req"]),
+                verifier_type("alt-verification", &[]), // empty = any target
+            ],
+        );
+        file.link_types.push(LinkTypeDef {
+            name: "verifies".into(),
+            inverse: None,
+            description: "verifies".into(),
+            source_types: vec![],
+            target_types: vec![],
+        });
+        file.traceability_rules.push(TraceabilityRule {
+            name: "swe1-has-verification".into(),
+            description: "every sw-req is verified".into(),
+            source_type: "sw-req".into(),
+            required_link: None,
+            required_backlink: Some("verifies".into()),
+            target_types: vec![],
+            from_types: vec!["sw-verification".into(), "alt-verification".into()],
+            severity: Severity::Warning,
+            alternate_backlinks: vec![],
+        });
+        let schema = Schema::merge(&[file]);
+        assert!(
+            schema.check_coverage_rule_consistency().is_empty(),
+            "all from-types can form the backlink -> no diagnostic"
         );
     }
 }

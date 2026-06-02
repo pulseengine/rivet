@@ -4143,7 +4143,7 @@ artifacts:
   - id: REQ-148
     type: requirement
     title: "Schema-consistency check: flag a required-backlink rule whose from-types cannot form the link"
-    status: draft
+    status: implemented
     description: |
       Surfaced verifying #350 against the aspice schema. The coverage rule
       `swe1-has-verification` declares `source-type: sw-req`,
