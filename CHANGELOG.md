@@ -5,6 +5,16 @@
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-06-02
+
+Self-contained & sub-directory-safe exports, agent-ergonomic CLI, and
+validation-parity fixes. **Headline:** the Zola/HTML export no longer emits
+absolute `/<prefix>/artifacts/…` links that 404 on a sub-directory deploy
+(REQ-115/116/118) — the fix that missed the v0.14.0 cutoff. Plus query-driven
+bulk `modify --where`, `list --rank-by-backlinks`, a global `--quiet`,
+`validate --explain`/`--min-severity`, a salsa status-gate soundness fix, and
+external `prefix:ID` resolution for hyphenated project slugs.
+
 ### Added
 
 - **REQ-151 / #353 — global `-q`/`--quiet` flag.** Suppresses the WARN-level
