@@ -414,7 +414,11 @@ pub fn validate_with_externals_and_variant(
 /// when the rule opts in via `draft-downgrade: true` — the default is to
 /// fire at full severity (status-gate rules typically gate *by* status,
 /// so the rule's `when` clause already filters drafts).
-fn evaluate_validation_rules(store: &Store, schema: &Schema, graph: &LinkGraph) -> Vec<Diagnostic> {
+pub(crate) fn evaluate_validation_rules(
+    store: &Store,
+    schema: &Schema,
+    graph: &LinkGraph,
+) -> Vec<Diagnostic> {
     use crate::sexpr_eval;
 
     let mut out = Vec::new();

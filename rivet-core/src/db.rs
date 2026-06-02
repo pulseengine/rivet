@@ -328,6 +328,16 @@ pub fn validate_all(
     // invalidation granularity.
     diagnostics.extend(evaluate_conditional_rules(db, source_set, schema_set));
 
+    // Status-gate / cross-artifact validation rules (phase 9). The direct
+    // `validate::validate*` path evaluates these; the salsa path omitted them,
+    // so the default `rivet validate` silently passed a project that
+    // `rivet check gaps-json` / `validate --direct` failed on a status-gate
+    // violation (issue #355). Evaluate them here against the same materialized
+    // store/schema/graph so every validation surface agrees.
+    diagnostics.extend(crate::validate::evaluate_validation_rules(
+        &store, &schema, &graph,
+    ));
+
     diagnostics
 }
 
@@ -369,6 +379,13 @@ pub fn validate_all_with_extras(
     // invalidation granularity.
     diagnostics.extend(evaluate_conditional_rules_with_extras(
         db, source_set, schema_set, extra_set,
+    ));
+
+    // Status-gate / cross-artifact validation rules (phase 9) — see the note
+    // in `validate_all`; the extras-aware store includes adapter-loaded
+    // artifacts so cross-format status gates resolve too (issue #355).
+    diagnostics.extend(crate::validate::evaluate_validation_rules(
+        &store, &schema, &graph,
     ));
 
     diagnostics
@@ -1426,6 +1443,78 @@ artifacts:
         assert!(
             !conditional.is_empty(),
             "expected conditional approved-needs-desc error in composed diagnostics"
+        );
+    }
+
+    /// #355: the salsa `validate_all` path must evaluate status-gate
+    /// `validation-rules` (phase 9), not only structural + conditional rules.
+    /// Regression for the divergence where the default `rivet validate`
+    /// (salsa) silently passed a status-gate violation that
+    /// `rivet validate --direct` / `rivet check gaps-json` correctly failed.
+    // rivet: verifies REQ-029
+    #[test]
+    fn validation_rules_evaluated_in_validate_all() {
+        let db = RivetDatabase::new();
+        let schema = r#"
+schema:
+  name: test-vrule
+  version: "0.1.0"
+artifact-types:
+  - name: requirement
+    description: A requirement
+    fields: []
+    link-fields: []
+  - name: verification
+    description: A verification
+    fields: []
+    link-fields:
+      - name: verifies
+        link-type: verifies
+        target-types: [requirement]
+        required: false
+        cardinality: zero-or-many
+link-types:
+  - name: verifies
+    description: Verification verifies a requirement
+    inverse: verified-by
+    source-types: [verification]
+    target-types: [requirement]
+validation-rules:
+  - id: verification-needs-approved-req
+    description: An approved verification must verify only approved requirements.
+    rule: |
+      (implies
+        (and (= type "verification") (= status "approved"))
+        (forall-linked "verifies" (= status "approved")))
+    severity: error
+    message: "{id} is approved but verifies a requirement that is not approved."
+"#;
+        // VER-1 is approved but verifies a draft requirement → gate violated.
+        let source = r#"
+artifacts:
+  - id: REQ-1
+    type: requirement
+    title: A requirement
+    status: draft
+  - id: VER-1
+    type: verification
+    title: Verifies REQ-1
+    status: approved
+    links:
+      - type: verifies
+        target: REQ-1
+"#;
+        let sources = db.load_sources(&[("a.yaml", source)]);
+        let schemas = db.load_schemas(&[("test", schema)]);
+        let diags = db.diagnostics(sources, schemas);
+        let gate: Vec<_> = diags
+            .iter()
+            .filter(|d| d.rule == "verification-needs-approved-req")
+            .collect();
+        assert!(
+            !gate.is_empty(),
+            "salsa validate_all must surface the status-gate validation-rule; got rules: {:?}",
+            diags.iter().map(|d| &d.rule).collect::<Vec<_>>()
         );
     }
 
