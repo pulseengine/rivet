@@ -1975,6 +1975,58 @@ fn matrix_json() {
     );
 }
 
+/// An all-empty matrix must not silently read as "no traceability": when the
+/// chosen direction yields zero links but the opposite direction would, the
+/// command emits an actionable `--direction` hint on stderr. A matrix that
+/// does have links emits no such hint.
+#[test]
+fn matrix_empty_emits_direction_hint() {
+    let root = project_root();
+    let run = |args: &[&str]| {
+        let mut a = vec!["--project", root.to_str().unwrap(), "matrix"];
+        a.extend_from_slice(args);
+        Command::new(rivet_bin())
+            .args(&a)
+            .output()
+            .expect("rivet matrix")
+    };
+
+    // design-decision --satisfies--> requirement is a FORWARD link; the
+    // default `--direction backward` therefore yields an empty matrix.
+    let empty = run(&[
+        "--from",
+        "design-decision",
+        "--to",
+        "requirement",
+        "--link",
+        "satisfies",
+    ]);
+    assert!(empty.status.success());
+    let err = String::from_utf8_lossy(&empty.stderr);
+    assert!(
+        err.contains("--direction forward") && err.contains("runs the other way"),
+        "all-empty matrix must hint at the correct direction; stderr: {err}"
+    );
+
+    // The correct direction has links and must NOT emit the hint.
+    let ok = run(&[
+        "--from",
+        "design-decision",
+        "--to",
+        "requirement",
+        "--link",
+        "satisfies",
+        "--direction",
+        "forward",
+    ]);
+    assert!(ok.status.success());
+    let ok_err = String::from_utf8_lossy(&ok.stderr);
+    assert!(
+        !ok_err.contains("runs the other way"),
+        "a matrix with links must not emit the empty-direction hint; stderr: {ok_err}"
+    );
+}
+
 // ── rivet next-id ──────────────────────────────────────────────────────
 
 /// `rivet next-id --type requirement --format json` produces valid JSON.

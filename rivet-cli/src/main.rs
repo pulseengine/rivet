@@ -7678,6 +7678,38 @@ fn cmd_matrix(
         );
     }
 
+    // An all-empty matrix (sources exist, none link to any target) is a
+    // dangerous false signal for a traceability tool — it reads as "no
+    // traceability" when usually the link runs the other way or a different
+    // link type connects the pair. Never let it pass silently: emit an
+    // actionable hint (stderr, so text/JSON stdout stays clean). If flipping
+    // the direction would surface links, say so precisely.
+    if result.covered == 0 && result.total > 0 {
+        let opp = match dir {
+            Direction::Forward => Direction::Backward,
+            Direction::Backward => Direction::Forward,
+        };
+        let opp_name = match opp {
+            Direction::Forward => "forward",
+            Direction::Backward => "backward",
+        };
+        let opp_result = matrix::compute_matrix(&store, &graph, from, to, link, opp);
+        if opp_result.covered > 0 {
+            eprintln!(
+                "note: 0 of {} {from} link to any {to} via '{link}' ({direction}), \
+                 but {} do with `--direction {opp_name}`. The relationship runs the \
+                 other way — re-run with `--direction {opp_name}`.",
+                result.total, opp_result.covered,
+            );
+        } else {
+            eprintln!(
+                "note: no '{link}' links between {from} and {to} in either direction. \
+                 Check the link type — `rivet schema show {from}` lists its link \
+                 fields — and pass `--link <type>` (e.g. satisfies, verifies, derives-from).",
+            );
+        }
+    }
+
     Ok(true)
 }
 

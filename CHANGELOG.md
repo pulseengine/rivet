@@ -5,6 +5,19 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **REQ-152 — `rivet matrix` no longer silently renders an all-empty matrix as
+  "no traceability".** The matrix defaults (`--direction backward`, auto-detected
+  link) produced an all-`(none)` result for a forward relationship like
+  `design-decision --satisfies--> requirement` — a dangerous false-negative for
+  a traceability tool. When the matrix is all-empty (sources exist, zero links),
+  it now emits an actionable stderr hint, naming the opposite `--direction` when
+  that would surface links (e.g. "0 via 'satisfies' (backward), but 67 do with
+  `--direction forward`") or pointing at `rivet schema show <from>` / `--link`
+  otherwise. Matrices with links are unchanged. (Inferring direction from the
+  link's source/target so the default just works is a tracked follow-up.)
+
 ## [0.15.0] - 2026-06-02
 
 Self-contained & sub-directory-safe exports, agent-ergonomic CLI, and

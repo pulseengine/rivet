@@ -4300,3 +4300,49 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-007
+
+  - id: REQ-152
+    type: requirement
+    title: "rivet matrix must not silently render an all-empty matrix as 'no traceability'"
+    status: implemented
+    description: |
+      Self-found while dogfooding. `rivet matrix --from <X> --to <Y>` defaults
+      to `--direction backward` and auto-detects the link type
+      (backward→`verifies`). For a FORWARD relationship like
+      `design-decision --satisfies--> requirement`, the defaults produce an
+      all-`(none)` matrix — falsely reading as "no traceability" — even though
+      every design-decision satisfies a requirement. For a traceability tool,
+      a silent empty matrix that contradicts reality is a dangerous
+      false-negative (loud-fail register).
+
+      Verified: `matrix --from design-decision --to requirement` (defaults)
+      shows every row `(none)`; `--link satisfies --direction forward` shows
+      the real `DD-001 -> REQ-006` … links.
+
+      Fix (additive, no behaviour change to valid matrices): when the matrix
+      is all-empty (sources exist, zero links), emit an actionable hint on
+      stderr. If the opposite direction would surface links, name it
+      precisely ("… 0 via 'satisfies' (backward), but 67 do with
+      `--direction forward` — the relationship runs the other way"); otherwise
+      point at `rivet schema show <from>` / `--link`. A matrix with links
+      emits no hint.
+
+      Acceptance:
+        - `rivet matrix --from design-decision --to requirement --link
+          satisfies` (default backward) prints a stderr hint naming
+          `--direction forward`.
+        - The same with `--direction forward` (which has links) prints no hint.
+        - `cargo test -p rivet-cli --test cli_commands
+          matrix_empty_emits_direction_hint` passes.
+
+      Follow-up (filed separately): inferring the direction from the link
+      type's declared source/target so the default just works, rather than
+      hinting after an empty result.
+    tags: [cli, matrix, traceability, loud-fail, dx, dogfooding, self-found]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.15.0-track
+    links:
+      - type: traces-to
+        target: REQ-007
