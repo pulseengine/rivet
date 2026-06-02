@@ -4346,3 +4346,51 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-007
+
+  - id: REQ-153
+    type: requirement
+    title: "rivet impact --since must load the baseline through the canonical loader (not a bespoke parser)"
+    status: implemented
+    description: |
+      Self-found while dogfooding (GitHub issue #403). `rivet impact --since
+      HEAD~5` on the rivet repo reported 503 changed + 354 added (1207 total)
+      when the only real change was ~7 new REQs in requirements.yaml — the
+      output was misleading to the point of useless.
+
+      Root cause: `load_baseline_from_git` reconstructed the baseline with a
+      bespoke per-file parser (`parse_yaml_content` + `GenericYamlWrapper`)
+      that (a) only handled a couple of source formats and silently skipped
+      the rest (→ spurious "added") and (b) represented artifacts differently
+      from the live `load_artifacts` adapter, so `impact::content_hash`
+      differed for unchanged artifacts (→ every loaded baseline artifact
+      "changed"). A third, inconsistent parse path — the REQ-140 family.
+
+      Fix: materialise the ref's tracked tree via `git archive <ref> | tar`
+      into a temp dir and load it through `rivet_core::load_project_full`
+      (the SAME `load_artifacts`-per-source path the live store uses), then
+      diff. The bespoke `parse_yaml_content` / `git_show_file` /
+      `git_ls_tree_files` helpers + `GenericYamlWrapper` were deleted.
+
+      Verified: `impact --since HEAD~5` now reports 3 changed (the real
+      requirements.yaml edits) + 7 added (3 new REQs + 4 externals) instead
+      of 503/354.
+
+      Acceptance:
+        - On a 2-commit fixture (one artifact edited, one added, one
+          untouched), `rivet impact --since HEAD~1 --format json` reports
+          exactly the edited id under `changed` and the new id under `added`;
+          the untouched artifact appears in neither.
+        - `cargo test -p rivet-cli --test cli_commands
+          impact_since_reports_only_real_changes` passes.
+
+      Residual (separate, smaller): externals are in the live store but not
+      loaded into the baseline by `load_project_full`, so external `prefix:id`
+      artifacts still show as "added". Tracked for follow-up.
+    tags: [bug, impact, parser-consistency, loud-fail, dogfooding, self-found, issue-403]
+    fields:
+      priority: must
+      category: functional
+      baseline: v0.15.0-track
+    links:
+      - type: traces-to
+        target: REQ-140

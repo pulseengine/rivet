@@ -7,6 +7,16 @@
 
 ### Fixed
 
+- **REQ-153 / #403 — `rivet impact --since` no longer massively over-reports.**
+  The baseline was reconstructed with a bespoke per-file parser inconsistent
+  with the live loader, so `impact --since` flagged hundreds of unchanged
+  artifacts as added/changed (503 changed + 354 added on the rivet repo when
+  only ~7 REQs actually changed). The baseline now materialises the git ref's
+  tree (`git archive`) and loads it through the same `load_project_full` /
+  `load_artifacts` path the live store uses, so only genuine changes surface
+  (3 changed + 7 added on that same diff). The bespoke parse helpers were
+  removed. Regression test on a 2-commit fixture.
+
 - **REQ-152 — `rivet matrix` no longer silently renders an all-empty matrix as
   "no traceability".** The matrix defaults (`--direction backward`, auto-detected
   link) produced an all-`(none)` result for a forward relationship like
