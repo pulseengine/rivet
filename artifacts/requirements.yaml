@@ -4173,3 +4173,42 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-004
+
+  - id: REQ-149
+    type: requirement
+    title: "Document the recipe for extending a built-in artifact type with project fields"
+    status: implemented
+    description: |
+      User-reported via #350 (suggestion 4): a project's artifacts carried a
+      `crate:` field the built-in ASPICE `sw-req` doesn't declare, producing
+      37+ `INFO: field 'crate' is not defined in schema` advisories that
+      drowned the actionable diagnostics. The reporter asked for "an easy
+      per-project field extension... without forking the schema."
+
+      Verified the mechanism already exists: `Schema::merge` /
+      `ArtifactTypeDef::merge_in_place` union `fields` by name across schemas
+      sharing a type name, so a project-local schema re-declaring the built-in
+      type with only the extra field — registered AFTER the built-in in
+      `rivet.yaml` `project.schemas` — adds the field without forking.
+      Confirmed empirically: with such an extension the `crate` INFO
+      disappears; without it the INFO is present. It was simply undocumented.
+
+      Documented in docs/schemas.md ("Extending a built-in artifact type with
+      project fields"), with the copy-pasteable recipe and the
+      `--min-severity warning` alternative; also corrected the
+      "Schema merging behavior" note (artifact types merge fields by name,
+      they don't replace wholesale).
+
+      Acceptance:
+        - docs/schemas.md contains the "Extending a built-in artifact type"
+          recipe (project-local schema re-declaring the type + registering it
+          after the built-in).
+        - `rivet docs check` PASS.
+    tags: [docs, dx, schema, user-reported, issue-350]
+    fields:
+      priority: should
+      category: documentation
+      baseline: v0.15.0-track
+    links:
+      - type: traces-to
+        target: REQ-010
