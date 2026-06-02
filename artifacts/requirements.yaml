@@ -3344,7 +3344,7 @@ artifacts:
   - id: REQ-128
     type: requirement
     title: "rivet list --orphans: mechanical detection of asserted-but-unanchored claims"
-    status: draft
+    status: implemented
     description: |
       Sourced from garrytan/gbrain's `src/core/search/graph-signals.ts`
       (inbound-link / cross-source signals), taking ONLY the deterministic

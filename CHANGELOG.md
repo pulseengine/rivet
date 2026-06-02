@@ -7,6 +7,14 @@
 
 ### Added
 
+- **REQ-128 — `rivet list --rank-by-backlinks`.** Orders the listing by
+  inbound-link count (descending) — the most depended-upon artifacts first,
+  i.e. the highest-impact-if-changed nodes — and surfaces the count (an
+  inbound-count column in text, an `inbound_links` field in JSON). The
+  complement of `--orphans`: where `--orphans` finds asserted-but-unanchored
+  claims, this finds the load-bearing hubs. Built on `LinkGraph::backlinks_to`;
+  exact integer counts, deterministic (ties break by id). Completes REQ-128.
+
 - **REQ-138 / #378 — Zola export build smoke check (`scripts/zola-export-smoke.sh`).**
   Exports the corpus into a scaffolded Zola site whose `base_url` is a
   sub-directory deploy, runs a real `zola build`, and fails on a build error
