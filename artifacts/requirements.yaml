@@ -3542,7 +3542,7 @@ artifacts:
   - id: REQ-134
     type: requirement
     title: "Per-project field extension for built-in schema types (without forking the schema)"
-    status: draft
+    status: implemented
     description: |
       User-reported via GitHub issue #350. A project's `sw-req` artifacts
       carry a `crate:` field the built-in aspice `sw-req` schema does not
@@ -3557,6 +3557,17 @@ artifacts:
       invent a directive): a project schema declares additional fields on
       a built-in type, and validate treats them as known. This both
       silences the noise and keeps the field schema-validated.
+
+      RESOLUTION: the mechanism already exists — `Schema::merge` /
+      `ArtifactTypeDef::merge_in_place` union `fields` by name across
+      schemas that share a type name, so a project-local schema
+      re-declaring the built-in type with the extra field (registered
+      after the built-in in `project.schemas`) adds it without forking.
+      Verified empirically (the `crate` INFO disappears with the
+      extension, is present without it) and documented in
+      docs/schemas.md via REQ-149 / PR #395 — which was an accidental
+      duplicate of this REQ (filed before noticing REQ-134; see the
+      duplicate-on-add friction filed this iteration).
 
       Acceptance:
         - A project can declare extra fields on a built-in artifact type
@@ -4204,7 +4215,7 @@ artifacts:
           recipe (project-local schema re-declaring the type + registering it
           after the built-in).
         - `rivet docs check` PASS.
-    tags: [docs, dx, schema, user-reported, issue-350]
+    tags: [docs, dx, schema, user-reported, issue-350, duplicate-of-req-134]
     fields:
       priority: should
       category: documentation
@@ -4212,3 +4223,47 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-010
+      - type: traces-to
+        target: REQ-134
+
+  - id: REQ-150
+    type: requirement
+    title: "rivet add should warn when a new artifact closely duplicates an existing one"
+    status: draft
+    description: |
+      Self-found while dogfooding (this loop). `mutate::validate_add`
+      rejects a duplicate `id` but does nothing about a duplicate
+      *intent*: an author can file a requirement whose title/description
+      restates an existing one and rivet accepts it silently. I did
+      exactly this — REQ-149 ("Document the recipe for extending a
+      built-in artifact type…") duplicated the pre-existing REQ-134
+      ("Per-project field extension for built-in schema types…"); only an
+      `rivet list` audit a day later surfaced it. For an agent-driven
+      workflow (the explicit use case — agents file findings as
+      artifacts) this is a recurring trap: the backlog silently accretes
+      near-duplicates.
+
+      Add a discovery aid at add time (and/or a `validate` advisory): when
+      a new artifact's title/keywords strongly overlap an existing
+      artifact of the same type, surface it — "similar to REQ-134: '…'
+      — file anyway?" / an INFO diagnostic listing near-duplicate pairs.
+      Design questions to settle: the similarity signal (shared title
+      tokens vs an edit-distance threshold — must avoid noise on
+      legitimately-distinct short titles), advisory vs blocking, and
+      whether it runs in `add`, `validate`, or both. Conservative default:
+      non-blocking advisory; never reject.
+
+      Acceptance:
+        - Filing an artifact whose title shares a high fraction of
+          significant tokens with an existing same-type artifact prints a
+          "similar to <ID>" advisory (non-blocking).
+        - Distinct artifacts (low token overlap) produce no advisory.
+        - A unit test covers the duplicate-detected and distinct cases.
+    tags: [dx, agent-ux, mutate, duplicate-detection, dogfooding, self-found]
+    fields:
+      priority: could
+      category: functional
+      baseline: v0.15.0-track
+    links:
+      - type: traces-to
+        target: REQ-007
