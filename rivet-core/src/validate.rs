@@ -1137,6 +1137,27 @@ pub fn validate_structural_with_externals_and_variant(
                 if linked_targets.contains(mentioned) {
                     continue;
                 }
+                // sigil finding B (#353): suppress when the schema permits NO
+                // link type between the mentioning artifact's type and the
+                // mentioned artifact's type. The only remediation this rule
+                // offers is "add a link in `links:`" — impossible when no such
+                // link type exists, and nagging the author to link an
+                // id-shaped token that resolves to an *unrelated* artifact
+                // (a coincidental id collision) pressures a FALSE trace.
+                // A link type with empty `source-types`/`target-types` means
+                // "any -> any", so permissive schemas are unaffected; only
+                // fully-constrained schemas (every link type names its source
+                // and target) ever trigger the suppression.
+                let from_type = artifact.artifact_type.as_str();
+                let to_type = store.get(mentioned).map(|a| a.artifact_type.as_str());
+                let link_type_exists = schema.link_types.values().any(|lt| {
+                    (lt.source_types.is_empty() || lt.source_types.iter().any(|s| s == from_type))
+                        && (lt.target_types.is_empty()
+                            || to_type.is_some_and(|t| lt.target_types.iter().any(|x| x == t)))
+                });
+                if !link_type_exists {
+                    continue;
+                }
                 if !warned.insert(mentioned.to_string()) {
                     continue;
                 }
@@ -3190,9 +3211,21 @@ then:
         a_fields: Vec<(&str, &str)>,
         a_links: Vec<Link>,
     ) -> Vec<Diagnostic> {
+        use crate::schema::LinkTypeDef;
         use crate::store::Store;
 
-        let schema_file = minimal_schema("test");
+        // A `relates` link type that permits test -> test, so that for these
+        // same-type fixtures a typed link *is* possible — otherwise the
+        // prose-mention rule now (correctly) suppresses when no link type
+        // could connect the two artifact types (sigil finding B, #353).
+        let mut schema_file = minimal_schema("test");
+        schema_file.link_types.push(LinkTypeDef {
+            name: "relates".into(),
+            inverse: None,
+            description: "test relation".into(),
+            source_types: vec!["test".into()],
+            target_types: vec!["test".into()],
+        });
         let schema = Schema::merge(&[schema_file]);
 
         let a = make_artifact("A-1", "test", None, description_of_a, a_fields, a_links);
@@ -3252,6 +3285,65 @@ then:
         assert!(
             diags.is_empty(),
             "self-id mention must not warn, got {diags:?}"
+        );
+    }
+
+    // rivet: verifies REQ-155
+    #[test]
+    fn prose_mention_suppressed_when_no_schema_valid_link_type() {
+        // sigil finding B (#353): a `design` artifact mentions a `uca`
+        // artifact, but the schema's only link type connects design ->
+        // requirement. There is NO link type that could connect design ->
+        // uca, so "add a link in `links:`" is impossible — the warning must
+        // be suppressed rather than pressure a false trace. The control
+        // (mentioning a `requirement`, which design CAN link to) still warns.
+        use crate::schema::LinkTypeDef;
+        use crate::store::Store;
+
+        let mut schema_file = minimal_schema("test");
+        schema_file.link_types.push(LinkTypeDef {
+            name: "satisfies".into(),
+            inverse: None,
+            description: "design satisfies a requirement".into(),
+            source_types: vec!["design".into()],
+            target_types: vec!["requirement".into()],
+        });
+        let schema = Schema::merge(&[schema_file]);
+
+        // A design that mentions both an unrelatable `uca` and a linkable
+        // `requirement` in its prose, with no typed links of its own.
+        let a = make_artifact(
+            "DD-1",
+            "design",
+            None,
+            Some("Mitigates UCA-1; satisfies REQ-1."),
+            vec![],
+            vec![],
+        );
+        let uca = make_artifact("UCA-1", "uca", None, None, vec![], vec![]);
+        let req = make_artifact("REQ-1", "requirement", None, None, vec![], vec![]);
+
+        let mut store = Store::new();
+        store.insert(a).unwrap();
+        store.insert(uca).unwrap();
+        store.insert(req).unwrap();
+        let graph = LinkGraph::build(&store, &schema);
+
+        let diags: Vec<_> = crate::validate::validate(&store, &schema, &graph)
+            .into_iter()
+            .filter(|d| d.rule == "prose-mention-without-typed-link")
+            .collect();
+
+        // Exactly one warning — for REQ-1 (linkable), NOT for UCA-1.
+        assert_eq!(
+            diags.len(),
+            1,
+            "expected exactly one prose-mention warning (REQ-1 only), got {diags:?}"
+        );
+        let msg = &diags[0].message;
+        assert!(
+            msg.contains("REQ-1") && !msg.contains("UCA-1"),
+            "warning must be for the linkable REQ-1, not the unrelatable UCA-1: {msg}"
         );
     }
 
