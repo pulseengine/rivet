@@ -5377,3 +5377,67 @@ fn impact_since_reports_only_real_changes() {
         "unchanged REQ-2 must not appear"
     );
 }
+
+/// REQ-154 / #353: a `generic-yaml` source file with a valid `artifacts:`
+/// list plus one unknown top-level key is dropped whole. `rivet list` (and
+/// `stats`) must then print a loud "source(s) skipped" block to stderr
+/// instead of silently returning a smaller graph — while a clean project
+/// emits no such block.
+#[test]
+fn list_reports_parse_error_skipped_sources() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        "project:\n  name: t\n  version: \"0.1.0\"\n  schemas: [common, dev]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    let reqs = dir.join("artifacts").join("reqs.yaml");
+
+    // A stray top-level key alongside a valid `artifacts:` list — the whole
+    // file is dropped from the graph.
+    std::fs::write(
+        &reqs,
+        "loss-coverage:\n  - foo\nartifacts:\n  - id: REQ-1\n    type: requirement\n    \
+         title: One\n    status: draft\n",
+    )
+    .unwrap();
+
+    let run = |sub: &str| {
+        Command::new(rivet_bin())
+            .args(["--project", dir.to_str().unwrap(), sub])
+            .output()
+            .expect("rivet")
+    };
+
+    let list = run("list");
+    assert!(list.status.success(), "list must still exit 0");
+    let list_err = String::from_utf8_lossy(&list.stderr);
+    assert!(
+        list_err.contains("source(s) skipped") && list_err.contains("reqs.yaml"),
+        "list must loudly name the dropped source; stderr: {list_err}"
+    );
+
+    let stats = run("stats");
+    let stats_err = String::from_utf8_lossy(&stats.stderr);
+    assert!(
+        stats_err.contains("source(s) skipped") && stats_err.contains("reqs.yaml"),
+        "stats must loudly name the dropped source; stderr: {stats_err}"
+    );
+
+    // Clean case: a well-formed file emits no skip block.
+    std::fs::write(
+        &reqs,
+        "artifacts:\n  - id: REQ-1\n    type: requirement\n    title: One\n    status: draft\n",
+    )
+    .unwrap();
+    let clean = run("list");
+    assert!(clean.status.success());
+    let clean_err = String::from_utf8_lossy(&clean.stderr);
+    assert!(
+        !clean_err.contains("source(s) skipped"),
+        "a clean project must not emit a skip block; stderr: {clean_err}"
+    );
+}

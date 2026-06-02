@@ -6001,6 +6001,9 @@ fn cmd_list(
 ) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
     let ctx = ProjectContext::load(cli)?;
+    // REQ-154 / #353: loudly flag any source dropped by a parse error so a
+    // smaller-than-expected listing isn't mistaken for an empty/complete one.
+    ctx.warn_parse_error_skips(cli);
     let store = apply_baseline_scope(ctx.store, baseline_name, &ctx.config);
 
     // Resolve `--variant` once for display + per-artifact field merge.
@@ -6142,6 +6145,9 @@ fn cmd_stats(
 ) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
     let ctx = ProjectContext::load(cli)?;
+    // REQ-154 / #353: loudly flag any source dropped by a parse error so the
+    // reported counts aren't silently computed over a partial graph.
+    ctx.warn_parse_error_skips(cli);
     let mut store = apply_baseline_scope(ctx.store, baseline_name, &ctx.config);
     let mut graph = if baseline_name.is_some() {
         LinkGraph::build(&store, &ctx.schema)
@@ -13239,6 +13245,49 @@ struct ProjectContext {
 }
 
 impl ProjectContext {
+    /// REQ-154 / #353: enumeration commands must loudly flag artifact sources
+    /// dropped by a parse error. `rivet validate` already surfaces these as
+    /// hard `artifact-parse-error` ERROR diagnostics, but read commands like
+    /// `list`/`stats` would otherwise return a silently-smaller graph — a
+    /// single stray top-level key drops a whole file (valid `artifacts:` and
+    /// all), and the only signal is a `log::warn!` preamble an agent may pipe
+    /// away. This re-scans the `generic` sources for `SkipKind::ParseError`
+    /// skips (the existing REQ-062 channel) and prints a concise loud block to
+    /// stderr pointing at `rivet validate`. No-op when nothing was skipped;
+    /// emitted regardless of log level because it signals data loss.
+    fn warn_parse_error_skips(&self, cli: &Cli) {
+        // Re-walk each `generic` source's directory and classify failed files
+        // via `scan_skipped_files` directly (rather than
+        // `load_artifacts_with_skips`, which would re-run `load_artifacts` and
+        // re-emit its per-file `log::warn!`). This adds the consolidated
+        // summary without doubling the existing warning noise.
+        let mut skips: Vec<rivet_core::SkippedFile> = Vec::new();
+        for source in &self.config.sources {
+            if !matches!(source.format.as_str(), "generic" | "generic-yaml") {
+                continue;
+            }
+            let path = cli.project.join(&source.path);
+            if path.is_dir() {
+                skips.extend(
+                    rivet_core::formats::generic::scan_skipped_files(&path)
+                        .into_iter()
+                        .filter(|s| s.kind == rivet_core::SkipKind::ParseError),
+                );
+            }
+        }
+        if skips.is_empty() {
+            return;
+        }
+        eprintln!(
+            "warning: {} artifact source(s) skipped due to parse errors — \
+             those artifacts are NOT loaded. Run `rivet validate` for details:",
+            skips.len()
+        );
+        for s in &skips {
+            eprintln!("  - {}: {}", s.path.display(), s.reason);
+        }
+    }
+
     /// Load project with artifacts, schema, and link graph.
     fn load(cli: &Cli) -> Result<Self> {
         let config_path = cli.project.join("rivet.yaml");

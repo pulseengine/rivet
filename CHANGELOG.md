@@ -7,6 +7,16 @@
 
 ### Fixed
 
+- **REQ-154 / #353 — `rivet list` and `rivet stats` now loudly flag artifact
+  sources dropped by a parse error.** A single stray top-level key (e.g.
+  `unknown field 'loss-coverage', expected 'artifacts'`) drops a whole file —
+  including its valid `artifacts:` list — from the graph. `rivet validate`
+  already surfaced this as a hard `artifact-parse-error` ERROR, but `list`/
+  `stats` returned a silently-smaller graph whose only signal was a `WARN`
+  preamble line an agent could pipe away. They now print a consolidated
+  "N artifact source(s) skipped due to parse errors" block to stderr naming
+  each dropped file and pointing at `rivet validate`. Clean projects emit
+  nothing new. Regression test (`list_reports_parse_error_skipped_sources`).
 - **REQ-153 / #403 — `rivet impact --since` no longer massively over-reports.**
   The baseline was reconstructed with a bespoke per-file parser inconsistent
   with the live loader, so `impact --since` flagged hundreds of unchanged
