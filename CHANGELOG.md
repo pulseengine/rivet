@@ -98,6 +98,16 @@
 
 ### Fixed
 
+- **REQ-146 / #355 — default `rivet validate` now evaluates status-gate
+  validation-rules (parity with `--direct` / `gaps-json`).** The incremental
+  salsa path (`db::validate_all`) ran structural (phases 1-7) and conditional
+  (phase 8) rules but silently skipped the status-gate `validation-rules`
+  (phase 9 — the V-model promotion gates). So the default `rivet validate`
+  PASSED a project that `rivet check gaps-json` and `rivet validate --direct`
+  FAILED on a gate violation — a soundness gap in the default surface. Both
+  salsa entry points now evaluate `validation_rules` against the same
+  store/schema/graph; all validation surfaces agree. Regression test.
+
 - **REQ-144 — source view no longer links an id that is a substring of a
   longer id.** The source viewer matched artifact ids into code/doc lines with
   `str::contains`, so a short id was linked when it appeared only as a

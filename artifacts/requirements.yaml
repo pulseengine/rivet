@@ -4053,3 +4053,39 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-101
+
+  - id: REQ-146
+    type: requirement
+    title: "Salsa validate path must evaluate status-gate validation-rules (parity with the direct path)"
+    status: implemented
+    description: |
+      Surfaced verifying issue #355 Finding 3 ("rivet validate and rivet check
+      gaps-json disagree"). `rivet validate` runs the incremental salsa path
+      (`db::validate_all`), which evaluated structural rules (phases 1-7) and
+      conditional rules (phase 8) but NOT the status-gate `validation-rules`
+      (phase 9 — the `(implies …)` V-model promotion gates). The direct
+      `validate::validate*` path (used by `rivet check gaps-json` and
+      `rivet validate --direct`) DID evaluate them. Result: the default
+      `rivet validate` silently PASSED a project with a status-gate violation
+      that `gaps-json`/`--direct` correctly FAILED — a validation soundness
+      gap, since the default surface under-reported.
+
+      Fix: `db::validate_all` and `validate_all_with_extras` now also call
+      `validate::evaluate_validation_rules` against the same materialized
+      store/schema/graph, so every validation surface agrees.
+
+      Acceptance:
+        - On a project whose schema declares a `validation-rules` status gate
+          that an artifact violates, `rivet validate` (default/salsa) and
+          `rivet validate --direct` report the SAME error count, both
+          including the gate diagnostic.
+        - `cargo test -p rivet-core --lib
+          db::tests::validation_rules_evaluated_in_validate_all` passes.
+    tags: [bug, validation, salsa, soundness, consistency, issue-355]
+    fields:
+      priority: must
+      category: functional
+      baseline: v0.15.0-track
+    links:
+      - type: traces-to
+        target: REQ-029
