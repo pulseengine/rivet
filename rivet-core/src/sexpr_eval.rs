@@ -794,8 +794,11 @@ fn classify_filter_error(source: &str, message: &str) -> Option<String> {
         let mut heads: Vec<&str> = HEADS.to_vec();
         heads.sort_unstable();
         return Some(format!(
-            "unknown head symbol; see docs/getting-started.md \
-             for the supported forms ({})",
+            "unknown head symbol — the head is an operator, not a field name. \
+             For field equality use `(= <field> \"<value>\")`, e.g. \
+             `(= status \"draft\")` or `(and (= type \"requirement\") \
+             (has-tag \"safety\"))`. See docs/getting-started.md for all \
+             supported forms ({})",
             heads.join("/")
         ));
     }
@@ -2090,6 +2093,12 @@ mod tests {
         for op in ["and", "or", "not", "has-tag", "linked-via"] {
             assert!(note.contains(op), "note should list `{op}`; got: {note}");
         }
+        // #381: the note must show the common field-equality form so an
+        // author who guessed `(status "draft")` is corrected to `(= status …)`.
+        assert!(
+            note.contains("(= status \"draft\")"),
+            "note should show the `(= field \"value\")` example; got: {note}"
+        );
     }
 
     /// Valid s-expression input must not carry a note — classification

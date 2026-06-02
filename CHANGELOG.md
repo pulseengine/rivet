@@ -76,6 +76,16 @@
 
 ### Fixed
 
+- **REQ-142 / #381 — s-expr filter parse error now shows the field-equality
+  form.** The filter dialect (shared by `query`, `list --filter`,
+  `export --filter`, `modify --where`) puts an operator in head position, but
+  the common first attempt `(status "draft")` (field name in head) failed with
+  only a list of head forms and no example. The `unknown head symbol` note now
+  states the head is an operator and shows `(= status "draft")` /
+  `(and (= type "requirement") (has-tag "safety"))` inline — reaching every
+  command that parses a filter, since the note is generated once in
+  `sexpr_eval`. `export --filter` help also gained an example.
+
 - **REQ-139 — directory import no longer warns on legitimate non-artifact
   YAML.** The generic-YAML directory load warned `[WARN] skipping <file>` for
   *every* file it declined to load — including expected non-artifact YAML

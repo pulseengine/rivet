@@ -615,7 +615,8 @@ enum Command {
         #[arg(long, default_value = "rivet")]
         prefix: String,
 
-        /// S-expression filter to select artifact subset for export
+        /// S-expression filter to select artifact subset for export,
+        /// e.g. '(= type "requirement")' or '(and (= type "requirement") (= status "implemented"))'
         #[arg(long)]
         filter: Option<String>,
 

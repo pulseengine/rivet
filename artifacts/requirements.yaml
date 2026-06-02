@@ -3909,3 +3909,39 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-007
+
+  - id: REQ-142
+    type: requirement
+    title: "s-expr filter parse error shows the common field-equality example"
+    status: implemented
+    description: |
+      Self-reported via GitHub issue #381 (dogfooding). The s-expression
+      filter dialect (shared by `query`, `list --filter`, `export --filter`,
+      `modify --where`) puts an OPERATOR in head position, but the single most
+      common first attempt is `(status "draft")` — field name in head — which
+      fails with `unknown form 'status'`. The error listed every supported
+      head form but showed no example of the correct `(= field "value")`
+      shape, costing every first-time author (human or agent) a failed
+      round-trip + a grep through the test files to discover it.
+
+      The `unknown head symbol` note now states the head is an operator (not a
+      field name) and shows the field-equality form inline:
+      `(= status "draft")` / `(and (= type "requirement") (has-tag "safety"))`.
+      Because the note is generated once in `sexpr_eval`, the improvement
+      reaches every command that parses a filter. The `export --filter` help
+      also gained an example (it previously had none, unlike `list`/`query`).
+
+      Acceptance:
+        - `rivet list --filter '(status "draft")'` (or any command) prints a
+          note containing `(= status "draft")`.
+        - `cargo test -p rivet-core --lib
+          sexpr_eval::tests::parse_error_unknown_head_surfaces_note` passes
+          (asserts the example is present).
+    tags: [dx, agent-ux, discoverability, sexpr, user-reported, issue-381]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.15.0-track
+    links:
+      - type: traces-to
+        target: REQ-007
