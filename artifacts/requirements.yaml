@@ -3989,7 +3989,7 @@ artifacts:
   - id: REQ-144
     type: requirement
     title: "Source-view artifact-id linking must match whole tokens, not substrings"
-    status: draft
+    status: implemented
     description: |
       User-reported. In the source view, an artifact id that is a SUBSTRING of
       another id gets wrongly linked. Example: a doc carrying

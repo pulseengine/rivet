@@ -76,6 +76,14 @@
 
 ### Fixed
 
+- **REQ-144 — source view no longer links an id that is a substring of a
+  longer id.** The source viewer matched artifact ids into code/doc lines with
+  `str::contains`, so a short id was linked when it appeared only as a
+  substring of a longer, fully-qualified id (a base id nested inside a
+  prefixed one) — a phantom trace edge. Matching is now whole-token: an id only
+  matches when bounded by a non-`[A-Za-z0-9-]` character (hyphen is part of the
+  id, not a delimiter). Regression test. (User-reported.)
+
 - **REQ-143 — external artifact refs with a hyphenated prefix now resolve
   (were 404).** Browsing `/artifacts/linc-mesh:A-AVTP-STREAM` in serve returned
   "Artifact does not exist", and external `prefix:ID` refs with a kebab-case
