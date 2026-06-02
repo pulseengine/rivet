@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780393799443,
+  "lastUpdate": 1780397179180,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "6c66af5c251115d5127db2862d23c590b76e17da",
-          "message": "docs(artifacts): file REQ-125..128 — gbrain-derived deterministic-armor backlog (#346)\n\n* docs(artifacts): file REQ-125..128 — gbrain-derived deterministic armor\n\nA source-level study of garrytan/gbrain (not its README) surfaced four\nideas worth adopting — chosen because they are the *defensive disciplines*\ngbrain grew to guard a fuzzy core, which are domain-portable while the fuzz\nis not. rivet's core is already deterministic, so the armor is pure upside.\n\n- REQ-125  validate/coverage --explain: pure formatter replaying the rule\n           chain validate::Diagnostic + coverage already compute — makes the\n           oracle's reasoning legible (CI-as-curriculum, agent-friendly).\n- REQ-126  baseline-snapshot drift gate, with rebaselining gated as a\n           trailer-carrying reviewed act so the baseline can't launder drift\n           (the green-because-unobserved trap).\n- REQ-127  MCP fail-closed invariant. AUDITED 2026-05-30: no MCP tool param\n           can override schema/externals today (fail-closed by omission);\n           this LOCKS it as an explicit, tested invariant. Hardening, not a\n           live fix. Reinforces REQ-051.\n- REQ-128  rivet list --orphans: the standing query for asserted-but-\n           unanchored claims (requirement with no test, decision with no\n           hazard) — deterministic, exact-count ordering only.\n\nExplicitly REJECTED from gbrain (would corrupt rivet's determinism): LLM\nfact-extraction, hybrid vector/RRF/reranker as canonical query, cosine\ndedup, LLM extractable handlers, fail-open ranking.\n\nRefs: REQ-125, REQ-126, REQ-127, REQ-128\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* docs(artifacts): file REQ-129..130 — slower-lane gbrain adaptations\n\nTwo ADAPT items from the gbrain source study, each carrying the safety-domain\nconstraint that makes the adaptation legitimate (keep gbrain's caution, drop\nits acceptance):\n\n- REQ-129  validate --review-candidates: REPORT the unclassifiable (unknown\n           types, unknown fields, unresolved externals) without ACCEPTING it.\n           Unknown type stays a hard error; report is additive, opt-in,\n           loud-fail preserved. Redaction must be one-way and must not become\n           a side channel that leaks artifact content past the classification\n           boundary.\n- REQ-130  superseded-by/superseded-reason as an ADDITIVE typed link that\n           PRESERVES the node. In a safety domain supersession is not deletion\n           — the superseded requirement stays in the store, graph, and\n           coverage (marked), because it is certification evidence. Explicitly\n           rejects gbrain's git-delete -> soft-delete model. Built on schema\n           extends + prefix:ID resolution, no new directive.\n\nRefs: REQ-129, REQ-130\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-05-30T10:07:58-05:00",
-          "tree_id": "b167b9ab9e9a78c58ce9dd9346d6c753c1c7c7e3",
-          "url": "https://github.com/pulseengine/rivet/commit/6c66af5c251115d5127db2862d23c590b76e17da"
-        },
-        "date": 1780154079809,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 85707,
-            "range": "± 724",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 932363,
-            "range": "± 24861",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 17028102,
-            "range": "± 2074732",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1955,
-            "range": "± 14",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 24947,
-            "range": "± 46",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 359783,
-            "range": "± 2539",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 96,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1437972,
-            "range": "± 15413",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 150648,
-            "range": "± 1322",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1807362,
-            "range": "± 24087",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 26954952,
-            "range": "± 1437352",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 126718,
-            "range": "± 2333",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 1153667,
-            "range": "± 22906",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 15014467,
-            "range": "± 542013",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4171,
-            "range": "± 71",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 44612,
-            "range": "± 650",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 781067,
-            "range": "± 6298",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 61307,
-            "range": "± 146",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 708863,
-            "range": "± 2618",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 8423609,
-            "range": "± 411831",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 806,
-            "range": "± 4",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 6853,
-            "range": "± 23",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 96358,
-            "range": "± 1919",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 21032,
-            "range": "± 47",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 142759,
-            "range": "± 4880",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1339829,
-            "range": "± 17994",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1475639,
             "range": "± 42095",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b097e49ea7b523d5ba4c627770ed05ae25c4ec2a",
+          "message": "fix(validate): coverage diagnostics name the link + satisfier types (REQ-147, #350) (#394)\n\nMarking a sw-req `implemented` then running `rivet validate` produced\ncoverage diagnostics that said WHAT was missing but not HOW to satisfy\nit; the reporter reverse-engineered the required shape from an unrelated\nlink-target rejection (\"a whole detour\").\n\nTwo schema-agnostic guidance improvements (no rule semantics changed):\n- The `required-backlink` coverage diagnostic now appends the incoming\n  link type and allowed source types, e.g. \"… — needs an incoming\n  `verifies` link from one of [sw-verification, unit-verification,\n  sw-integration-verification]\".\n- The `Lifecycle coverage gaps` summary now points at\n  `rivet validate --explain <ID>`, which lists each rule's\n  satisfied/MISSING state with the exact incoming link + source types\n  (and alternates) — verified the pointer resolves to that breakdown.\n\nAlso files REQ-148 (draft): a generic `coverage-rule-consistency`\nmeta-check to flag a `required-backlink` rule whose `from-types` include\ntypes no link rule permits to form the backlink (the aspice\n`swe1-has-verification` lists unit/integration-verification as sw-req\nsatisfiers, but only sw-verification can `verifies`→sw-req). Deferred —\nneeds conservative implementation to avoid false positives; the aspice\nfrom-types intent itself is a maintainer/compliance call (#350/#355).\n\nAll 74 validate tests pass; clippy --all-targets + fmt clean; rivet\nvalidate + docs check PASS.\n\nImplements: REQ-147\nRefs: REQ-125, REQ-148\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-06-02T05:39:32-05:00",
+          "tree_id": "3a025daaac0dfff2f81c3f05930f2922418d82e9",
+          "url": "https://github.com/pulseengine/rivet/commit/b097e49ea7b523d5ba4c627770ed05ae25c4ec2a"
+        },
+        "date": 1780397178636,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 86314,
+            "range": "± 286",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 949508,
+            "range": "± 10870",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 15556394,
+            "range": "± 713216",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1954,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 24973,
+            "range": "± 110",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 362926,
+            "range": "± 1991",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1430609,
+            "range": "± 14947",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 167345,
+            "range": "± 817",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1948494,
+            "range": "± 15784",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 42245995,
+            "range": "± 5885746",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 137009,
+            "range": "± 4351",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1271303,
+            "range": "± 14161",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 19561737,
+            "range": "± 4260572",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4177,
+            "range": "± 7",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 44599,
+            "range": "± 1060",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 757531,
+            "range": "± 7019",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 66103,
+            "range": "± 346",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 754610,
+            "range": "± 11864",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8311482,
+            "range": "± 473848",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 765,
+            "range": "± 51",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 6536,
+            "range": "± 82",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 95635,
+            "range": "± 615",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 21259,
+            "range": "± 273",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 146018,
+            "range": "± 799",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1360606,
+            "range": "± 17449",
             "unit": "ns/iter"
           }
         ]
