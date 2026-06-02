@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780430143698,
+  "lastUpdate": 1780435543281,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "bcc6d697b376889cb74a69443213742121f38862",
-          "message": "feat(modify): wire --set-description flag + clearer modify usage (#359, #360) (#365)\n\nAgent-reported. `description` is a top-level base field but the CLI exposed no\n`--set-description` flag, so updating it forced `--set-field description=...`,\nwhich mutate then REJECTED with a hint pointing at a `--set-description` flag\nthat did not exist — a dead-end loop. The core (`ModifyParams.set_description`,\n`yaml_edit`) already applied it; only the clap wiring was missing.\n\n- `rivet modify <ID> --set-description \"<text>\"` now works (#360).\n- `rivet modify --help` shows `--set-*` examples + a note that positionals\n  (`modify <ID> status approved`) are not valid (#359; the bare clap error\n  still directs to --help, which now teaches the pattern).\n\nRegression test modify_applies_set_description_param. Verified end-to-end.\n\nImplements: REQ-136\nVerifies: REQ-136\nRefs: REQ-007\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-05-31T06:15:32-05:00",
-          "tree_id": "d1cc4f36fd2c4f982dc6bd4c450198f343771d52",
-          "url": "https://github.com/pulseengine/rivet/commit/bcc6d697b376889cb74a69443213742121f38862"
-        },
-        "date": 1780226542267,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 84248,
-            "range": "± 413",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 886953,
-            "range": "± 12169",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 14258448,
-            "range": "± 784308",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2257,
-            "range": "± 5",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 25514,
-            "range": "± 130",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 351090,
-            "range": "± 3331",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1462215,
-            "range": "± 44436",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 161081,
-            "range": "± 1370",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1918253,
-            "range": "± 17961",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 28915607,
-            "range": "± 1394277",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 132804,
-            "range": "± 2138",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 1155333,
-            "range": "± 27794",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 16039868,
-            "range": "± 1436505",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4324,
-            "range": "± 21",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 62750,
-            "range": "± 752",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 851732,
-            "range": "± 16544",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 64053,
-            "range": "± 2774",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 728476,
-            "range": "± 3595",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 11629230,
-            "range": "± 738575",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 751,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 7097,
-            "range": "± 64",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 117759,
-            "range": "± 742",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 23196,
-            "range": "± 622",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 163941,
-            "range": "± 1521",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1523616,
-            "range": "± 32403",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1346469,
             "range": "± 21250",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "489f6c7f7ecf914dda1b6727cceb8c63cb71a746",
+          "message": "fix(impact): load --since baseline via the canonical loader (REQ-153, #403) (#404)\n\nSelf-found dogfooding: `rivet impact --since HEAD~5` reported 503 changed\n+ 354 added (1207 total) when only ~7 REQs in requirements.yaml actually\nchanged — useless output for a change-impact tool.\n\nRoot cause: `load_baseline_from_git` rebuilt the baseline with a bespoke\nper-file parser (`parse_yaml_content` + `GenericYamlWrapper`) that (a)\nonly handled a couple of source formats and skipped the rest (spurious\n\"added\") and (b) represented artifacts differently from the live\n`load_artifacts` adapter, so `content_hash` differed for unchanged\nartifacts (every one \"changed\"). A third inconsistent parse path\n(REQ-140 family).\n\nFix: materialise the ref's tracked tree with `git archive <ref> | tar`\ninto a temp dir (Drop-guarded cleanup) and load it through\n`rivet_core::load_project_full` — the SAME load_artifacts-per-source path\nthe live store uses — then diff. Deleted the now-dead bespoke helpers\n(`parse_yaml_content`, `git_show_file`, `git_ls_tree_files`,\n`GenericYamlWrapper`/`RawArtifact`/`RawLink`).\n\nVerified: `impact --since HEAD~5` now reports 3 changed (the real\nrequirements.yaml edits) + 7 added, not 503/354. New\n`impact_since_reports_only_real_changes` integration test (2-commit\nfixture: one edit, one add, one untouched → exactly that). clippy\n--all-targets + fmt clean; rivet validate + docs check PASS.\n\nKnown residual (separate, smaller): externals aren't loaded into the\nbaseline, so external prefix:id artifacts still show as \"added\".\n\nFixes: REQ-153\nRefs: REQ-140\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-06-02T16:19:01-05:00",
+          "tree_id": "5396b7e02b28d6c18646e11326f9f4ba8f1069a4",
+          "url": "https://github.com/pulseengine/rivet/commit/489f6c7f7ecf914dda1b6727cceb8c63cb71a746"
+        },
+        "date": 1780435541800,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 83767,
+            "range": "± 358",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 892741,
+            "range": "± 3681",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 14662888,
+            "range": "± 874035",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2237,
+            "range": "± 7",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25286,
+            "range": "± 77",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 379520,
+            "range": "± 13620",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 95,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 95,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1455655,
+            "range": "± 28223",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 166058,
+            "range": "± 3044",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1889809,
+            "range": "± 17727",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 30543205,
+            "range": "± 2716384",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 137681,
+            "range": "± 1008",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1191787,
+            "range": "± 13421",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 14830949,
+            "range": "± 1475255",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4312,
+            "range": "± 67",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 62062,
+            "range": "± 288",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 825499,
+            "range": "± 4157",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 60871,
+            "range": "± 372",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 701372,
+            "range": "± 10216",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7816417,
+            "range": "± 242515",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 792,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7247,
+            "range": "± 25",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 130752,
+            "range": "± 794",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 23183,
+            "range": "± 442",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 159766,
+            "range": "± 1835",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1508629,
+            "range": "± 17126",
             "unit": "ns/iter"
           }
         ]
