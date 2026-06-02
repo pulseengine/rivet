@@ -9427,209 +9427,65 @@ fn cmd_impact(
 
 /// Load a baseline store from a git ref by extracting artifact files at that ref.
 fn load_baseline_from_git(cli: &Cli, git_ref: &str) -> Result<Store> {
-    let config_path = cli.project.join("rivet.yaml");
-
-    // Read rivet.yaml at the git ref
-    let config_content = git_show_file(&cli.project, git_ref, "rivet.yaml")
-        .with_context(|| format!("reading rivet.yaml at ref '{git_ref}'"))?;
-
-    let config: rivet_core::model::ProjectConfig = serde_yaml::from_str(&config_content)
-        .with_context(|| format!("parsing rivet.yaml at ref '{git_ref}'"))?;
-
-    // We need the current schemas to parse — load them from the working tree
-    let schemas_dir = resolve_schemas_dir(cli);
-    let _schema = rivet_core::load_schemas(&config.project.schemas, &schemas_dir)
-        .context("loading schemas")?;
-
-    // For each source, list files at the git ref and parse them
-    let mut store = Store::new();
-
-    for source in &config.sources {
-        let source_path = &source.path;
-
-        // List files in the source directory at the given ref
-        let files = git_ls_tree_files(&cli.project, git_ref, source_path)
-            .with_context(|| format!("listing files in '{source_path}' at ref '{git_ref}'"))?;
-
-        for file_path in &files {
-            // Only process YAML files
-            if !file_path.ends_with(".yaml") && !file_path.ends_with(".yml") {
-                continue;
-            }
-
-            let content = match git_show_file(&cli.project, git_ref, file_path) {
-                Ok(c) => c,
-                Err(e) => {
-                    log::warn!("could not read {file_path} at {git_ref}: {e}");
-                    continue;
-                }
-            };
-
-            // Parse using the appropriate adapter
-            let artifacts = match parse_yaml_content(&content, &source.format, file_path) {
-                Ok(a) => a,
-                Err(e) => {
-                    log::warn!("could not parse {file_path} at {git_ref}: {e}");
-                    continue;
-                }
-            };
-
-            for artifact in artifacts {
-                store.upsert(artifact);
-            }
+    // Materialize the ref's tracked tree into a temp dir and load it through
+    // the SAME canonical loader the live store uses
+    // (`load_project_full` -> `load_artifacts` per source). Earlier this used a
+    // bespoke per-file parser (`parse_yaml_content`) that handled only a couple
+    // of formats and represented artifacts differently from the live adapter —
+    // so `impact --since` reported hundreds of spurious added/changed artifacts
+    // (issue #403). Reusing the real loader makes the baseline exactly what the
+    // working tree would have produced at <ref>, so only genuine changes show.
+    let tmp = std::env::temp_dir().join(format!(
+        "rivet-baseline-{}-{}",
+        std::process::id(),
+        git_ref.replace(['/', '~', '^', ':', ' '], "_")
+    ));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp)
+        .with_context(|| format!("creating temp baseline dir {}", tmp.display()))?;
+    // Best-effort cleanup of the temp checkout on every exit path.
+    struct Cleanup(std::path::PathBuf);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
         }
     }
+    let _guard = Cleanup(tmp.clone());
 
-    // Also try to load artifacts from the current config if the baseline
-    // config path doesn't exist at git ref (fallback for comparison)
-    if store.is_empty() && config_path.exists() {
-        log::warn!("no artifacts loaded from git ref '{git_ref}', baseline may be empty");
-    }
-
-    Ok(store)
-}
-
-/// Run `git show <ref>:<path>` to get file contents at a git ref.
-fn git_show_file(repo_dir: &std::path::Path, git_ref: &str, path: &str) -> Result<String> {
-    let output = std::process::Command::new("git")
-        .args(["show", &format!("{git_ref}:{path}")])
-        .current_dir(repo_dir)
+    // `git archive <ref> -o <tarball>` then extract — captures the exact tracked
+    // tree at the ref (gitignored build artifacts are not in the tree).
+    let tarball = tmp.join(".rivet-baseline.tar");
+    let archive = std::process::Command::new("git")
+        .args(["archive", "--format=tar", "-o"])
+        .arg(&tarball)
+        .arg(git_ref)
+        .current_dir(&cli.project)
         .output()
-        .context("running git show")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("git show {git_ref}:{path} failed: {stderr}");
+        .context("running git archive for baseline")?;
+    if !archive.status.success() {
+        anyhow::bail!(
+            "git archive '{git_ref}' failed: {}",
+            String::from_utf8_lossy(&archive.stderr)
+        );
     }
-
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
-}
-
-/// Run `git ls-tree` to list files in a directory at a git ref.
-fn git_ls_tree_files(
-    repo_dir: &std::path::Path,
-    git_ref: &str,
-    dir_path: &str,
-) -> Result<Vec<String>> {
-    let output = std::process::Command::new("git")
-        .args(["ls-tree", "-r", "--name-only", git_ref, dir_path])
-        .current_dir(repo_dir)
+    let untar = std::process::Command::new("tar")
+        .arg("-xf")
+        .arg(&tarball)
+        .arg("-C")
+        .arg(&tmp)
         .output()
-        .context("running git ls-tree")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("git ls-tree failed: {stderr}");
+        .context("extracting baseline archive")?;
+    if !untar.status.success() {
+        anyhow::bail!(
+            "extracting baseline archive failed: {}",
+            String::from_utf8_lossy(&untar.stderr)
+        );
     }
+    let _ = std::fs::remove_file(&tarball);
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let files: Vec<String> = stdout.lines().map(|l| l.to_string()).collect();
-    Ok(files)
-}
-
-/// Parse YAML content into artifacts using the specified format adapter.
-fn parse_yaml_content(
-    content: &str,
-    format: &str,
-    file_path: &str,
-) -> Result<Vec<rivet_core::model::Artifact>> {
-    match format {
-        "generic" | "generic-yaml" => {
-            // Parse as generic YAML artifacts
-            let wrapper: GenericYamlWrapper =
-                serde_yaml::from_str(content).with_context(|| format!("parsing {file_path}"))?;
-            let artifacts = wrapper
-                .artifacts
-                .into_iter()
-                .map(|raw| rivet_core::model::Artifact {
-                    id: raw.id,
-                    artifact_type: raw.r#type,
-                    title: raw.title,
-                    description: raw.description,
-                    status: raw.status,
-                    tags: raw.tags,
-                    links: raw
-                        .links
-                        .into_iter()
-                        .map(|l| rivet_core::model::Link {
-                            link_type: l.r#type,
-                            target: l.target,
-                            external: None,
-                        })
-                        .collect(),
-                    fields: raw.fields,
-                    fields_per_variant: Default::default(),
-                    provenance: None,
-                    source_file: Some(std::path::PathBuf::from(file_path)),
-                })
-                .collect();
-            Ok(artifacts)
-        }
-        "stpa-yaml" => {
-            // For STPA, fall back to generic parsing of the YAML structure
-            let wrapper: GenericYamlWrapper =
-                serde_yaml::from_str(content).with_context(|| format!("parsing {file_path}"))?;
-            let artifacts = wrapper
-                .artifacts
-                .into_iter()
-                .map(|raw| rivet_core::model::Artifact {
-                    id: raw.id,
-                    artifact_type: raw.r#type,
-                    title: raw.title,
-                    description: raw.description,
-                    status: raw.status,
-                    tags: raw.tags,
-                    links: raw
-                        .links
-                        .into_iter()
-                        .map(|l| rivet_core::model::Link {
-                            link_type: l.r#type,
-                            target: l.target,
-                            external: None,
-                        })
-                        .collect(),
-                    fields: raw.fields,
-                    fields_per_variant: Default::default(),
-                    provenance: None,
-                    source_file: Some(std::path::PathBuf::from(file_path)),
-                })
-                .collect();
-            Ok(artifacts)
-        }
-        other => anyhow::bail!("unsupported format for git baseline: {other}"),
-    }
-}
-
-/// Raw YAML structure for parsing artifact files from git show output.
-#[derive(serde::Deserialize)]
-struct GenericYamlWrapper {
-    #[serde(default)]
-    artifacts: Vec<RawArtifact>,
-}
-
-#[derive(serde::Deserialize)]
-struct RawArtifact {
-    id: String,
-    #[serde(rename = "type")]
-    r#type: String,
-    title: String,
-    #[serde(default)]
-    description: Option<String>,
-    #[serde(default)]
-    status: Option<String>,
-    #[serde(default)]
-    tags: Vec<String>,
-    #[serde(default)]
-    links: Vec<RawLink>,
-    #[serde(default, flatten)]
-    fields: std::collections::BTreeMap<String, serde_yaml::Value>,
-}
-
-#[derive(serde::Deserialize)]
-struct RawLink {
-    #[serde(rename = "type")]
-    r#type: String,
-    target: String,
+    let loaded = rivet_core::load_project_full(&tmp)
+        .with_context(|| format!("loading baseline project at git ref '{git_ref}'"))?;
+    Ok(loaded.store)
 }
 
 /// Show built-in docs (no project load needed).

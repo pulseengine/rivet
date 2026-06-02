@@ -5278,3 +5278,102 @@ fn quiet_suppresses_warn_preamble() {
         "--quiet must not alter stdout"
     );
 }
+
+/// #403: `rivet impact --since <ref>` must report only genuinely-changed
+/// artifacts, not the whole corpus. Regression for the bespoke baseline parser
+/// that diverged from the live loader and flagged hundreds of unchanged
+/// artifacts as added/changed. Here REQ-2 is untouched and must NOT appear.
+#[test]
+fn impact_since_reports_only_real_changes() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let git = |args: &[&str]| {
+        let o = Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .expect("git");
+        assert!(
+            o.status.success(),
+            "git {:?}: {}",
+            args,
+            String::from_utf8_lossy(&o.stderr)
+        );
+    };
+    git(&["init", "-q", "-b", "main"]);
+    git(&["config", "user.email", "t@example.com"]);
+    git(&["config", "user.name", "T"]);
+    git(&["config", "commit.gpgsign", "false"]);
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        "project:\n  name: t\n  version: \"0.1.0\"\n  schemas: [common, dev]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    let reqs = dir.join("artifacts").join("reqs.yaml");
+    // Baseline: REQ-1, REQ-2.
+    std::fs::write(
+        &reqs,
+        "artifacts:\n  - id: REQ-1\n    type: requirement\n    title: One\n    status: draft\n  \
+         - id: REQ-2\n    type: requirement\n    title: Two\n    status: draft\n",
+    )
+    .unwrap();
+    git(&["add", "-A"]);
+    git(&["commit", "-q", "-m", "baseline"]);
+
+    // Change: REQ-1 title edited, REQ-3 added; REQ-2 untouched.
+    std::fs::write(
+        &reqs,
+        "artifacts:\n  - id: REQ-1\n    type: requirement\n    title: One CHANGED\n    status: draft\n  \
+         - id: REQ-2\n    type: requirement\n    title: Two\n    status: draft\n  \
+         - id: REQ-3\n    type: requirement\n    title: Three\n    status: draft\n",
+    )
+    .unwrap();
+    git(&["add", "-A"]);
+    git(&["commit", "-q", "-m", "change"]);
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir.to_str().unwrap(),
+            "impact",
+            "--since",
+            "HEAD~1",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("rivet impact");
+    assert!(
+        out.status.success(),
+        "impact exit: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let v: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&out.stdout)).expect("impact JSON");
+
+    let changed: Vec<&str> = v["changed"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|c| c["id"].as_str())
+        .collect();
+    let added: Vec<&str> = v["added"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|a| a.as_str())
+        .collect();
+    // Exactly the real edit + the real add — and the untouched REQ-2 absent.
+    assert_eq!(
+        changed,
+        vec!["REQ-1"],
+        "only REQ-1 changed; got {changed:?}"
+    );
+    assert_eq!(added, vec!["REQ-3"], "only REQ-3 added; got {added:?}");
+    assert!(
+        !changed.contains(&"REQ-2") && !added.contains(&"REQ-2"),
+        "unchanged REQ-2 must not appear"
+    );
+}
