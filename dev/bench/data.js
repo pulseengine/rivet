@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780389586446,
+  "lastUpdate": 1780393799443,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "6e315792ac334b48b98d0c3f1630d8e465df022b",
-          "message": "feat(export): HTML export self-contained — relative links + bundled JS + copied images (REQ-105) (#343)\n\n* feat(export): make HTML export self-contained — relative links + bundled JS + copied images (REQ-105)\n\nThe static HTML export reused the serve dashboard's rendered HTML but\nshipped none of serve's runtime assets, leaving three gaps (all the\nsame root cause). This closes them so `rivet export --format html`\nproduces a site that actually works offline / under any base path.\n\n1. Absolute server-route links → relative + .html.\n   render_page() content carried `href=\"/artifacts/X\"`, `/coverage`,\n   etc. — which 404 as static files. New `static_file_for_route()`\n   maps each serve route to the file the export actually wrote\n   (artifacts/X.html, coverage/index.html, …), and\n   `rewrite_static_links()` rewrites href/hx-get to a depth-relative\n   path before wrapping. External / `//` / `#anchor` / already-relative\n   links are left untouched. Verified on a full export: 0 absolute\n   server-route links remain; sampled links resolve 20/20 to real files.\n\n2. svg-viewer toolbar JS bundled.\n   The zoom-fit / fullscreen / popout buttons rendered but were dead\n   (handlers lived only in serve/js.rs). Added a standalone\n   assets/svg-viewer.js (the three window.svg* handlers + Escape),\n   written to _assets/svg-viewer.js and referenced from every page.\n\n3. /docs-asset images copied.\n   A doc that references a relative image rendered as\n   src=\"/docs-asset/<path>\"; the export now rewrites that to\n   _assets/docs/<path> AND copies the referenced file from the doc\n   directories. A referenced-but-missing image warns loudly (F2\n   ethos) instead of silently producing a broken <img>; path-traversal\n   ('..') in the asset path is rejected.\n\nTests: export_static_links_tests (route map, depth-prefix rewrite,\nexternal/anchor pass-through, docs-asset record). Existing export_html\n+ export_reqif_roundtrip integration tests still green.\n\nKnown cosmetic edge: prose that literally mentions a `/docs-asset/...`\npath (e.g. REQ-105's own description) gets rewritten + warned — the\nwarning is technically correct (no such image), the \"reference\" is\njust illustrative text.\n\nFixes: REQ-105\nRefs: REQ-007\nVerifies: REQ-105\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix(export): harden docs-asset copy against path traversal (REQ-105)\n\nAutomated security review flagged the docs-asset copy. The original\n`rel.contains(\"..\")` guard is insufficient: artifact/document content\ncan come from UNTRUSTED cross-repo externals (REQ-085 externals /\nsupplier pull), and an absolute path defeats it entirely —\n`Path::join` discards the base, so `docs_out.join(\"/etc/passwd\")`\n== `/etc/passwd`.\n\nAdd `is_safe_doc_asset_path`: requires every path component to be a\nplain Normal segment (excludes `..`, `.`, root, Windows prefixes),\nrejects absolute paths, backslashes, NULs, and over-long paths. Applied\nat BOTH sites:\n- rewrite_static_links: an unsafe /docs-asset path is neither recorded\n  for copy nor rewritten — left as-is (a dead link), never used in a\n  filesystem op.\n- the copy loop: re-checks the predicate, resolves src only to a file\n  genuinely inside a doc dir (canonicalize + starts_with — rejects\n  symlink escapes), and verifies the destination stays inside the\n  canonical _assets/docs/ root before writing.\n\nTest docs_asset_traversal_is_rejected covers the predicate (absolute,\n../, mixed, backslash, empty) and that the rewriter records/rewrites\nnothing for crafted traversal srcs.\n\nRefs: REQ-105, REQ-051\n\n* fix(export): clippy is_none_or + update export test to REQ-105 relative-link contract\n\n- clippy (1.96): best.map_or(true, ..) → best.is_none_or(..) in\n  rewrite_static_links (unnecessary_map_or, -D warnings).\n- export.spec.ts \"artifacts/index.html lists artifacts\" asserted the\n  OLD absolute-route links (`href=\"/artifacts/X\"`, comment even said\n  \"root-relative hrefs\") — the exact broken behaviour REQ-105 fixes.\n  Update it to the new contract: artifact links are relative + .html\n  (`../artifacts/X.html`) and NO absolute `/artifacts/` route remains.\n\nRefs: REQ-105\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-05-30T08:01:07-05:00",
-          "tree_id": "7356dbe6376561cd010c6b6acf5ef78b3e8bf9ca",
-          "url": "https://github.com/pulseengine/rivet/commit/6e315792ac334b48b98d0c3f1630d8e465df022b"
-        },
-        "date": 1780146567334,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 84519,
-            "range": "± 588",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 926354,
-            "range": "± 9066",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 18577359,
-            "range": "± 1490618",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1943,
-            "range": "± 7",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 24956,
-            "range": "± 55",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 371499,
-            "range": "± 1333",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1433578,
-            "range": "± 22717",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 154282,
-            "range": "± 369",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1797526,
-            "range": "± 19361",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 38692025,
-            "range": "± 3483853",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 126187,
-            "range": "± 788",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 1163463,
-            "range": "± 28493",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 15626890,
-            "range": "± 1631219",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4150,
-            "range": "± 13",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 45426,
-            "range": "± 268",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 755989,
-            "range": "± 4596",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 62823,
-            "range": "± 281",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 701906,
-            "range": "± 8064",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7968283,
-            "range": "± 182238",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 802,
-            "range": "± 3",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 7135,
-            "range": "± 136",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 98975,
-            "range": "± 1753",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 20783,
-            "range": "± 146",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 144300,
-            "range": "± 406",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1341489,
-            "range": "± 33314",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1466195,
             "range": "± 19725",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7a41f0d2655bc7ecad45759b51315b9adda52ce6",
+          "message": "fix(validate): salsa path evaluates status-gate validation-rules (REQ-146, #355) (#393)\n\n`rivet validate` runs the incremental salsa path (`db::validate_all`),\nwhich evaluated structural rules (phases 1-7) and conditional rules\n(phase 8) but NOT the status-gate `validation-rules` (phase 9 — the\n`(implies …)` V-model promotion gates). The direct `validate::validate*`\npath (used by `rivet check gaps-json` and `rivet validate --direct`) DID\nevaluate them. So the default `rivet validate` silently PASSED a project\nwith a status-gate violation that gaps-json / --direct correctly FAILED\n— the divergence reported in #355 Finding 3, and a soundness gap since\nthe default validation surface under-reported.\n\nFix: `db::validate_all` and `validate_all_with_extras` now also call\n`validate::evaluate_validation_rules` against the same materialized\nstore/schema/graph, so every validation surface agrees.\n\nReproduced + verified: a project with an aspice `validation-rules` gate\n(an approved sys-verification verifying a draft system-req) previously\ngave salsa `FAIL (1 error)` vs direct `FAIL (2 errors)`; now both report\n2 including the gate. rivet's own corpus still PASS (181→ unchanged) on\nboth paths. New regression test\n`db::tests::validation_rules_evaluated_in_validate_all`; rivet-core db\n(24) + validation_rule (3) tests pass; clippy --all-targets + fmt clean;\nrivet validate + docs check PASS.\n\nFixes: REQ-146\nRefs: REQ-029, REQ-004\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-06-02T04:43:07-05:00",
+          "tree_id": "21286356b785b9859c0da9d58a121391bde2e72e",
+          "url": "https://github.com/pulseengine/rivet/commit/7a41f0d2655bc7ecad45759b51315b9adda52ce6"
+        },
+        "date": 1780393798112,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 83525,
+            "range": "± 310",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 900312,
+            "range": "± 25882",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 16620328,
+            "range": "± 1512508",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2219,
+            "range": "± 44",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 26775,
+            "range": "± 332",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 353876,
+            "range": "± 5369",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 94,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1444891,
+            "range": "± 20746",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 163861,
+            "range": "± 2396",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1921167,
+            "range": "± 22633",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 33166952,
+            "range": "± 4043120",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 131454,
+            "range": "± 4619",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1148634,
+            "range": "± 30451",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 18635963,
+            "range": "± 1894118",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4488,
+            "range": "± 12",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 62279,
+            "range": "± 972",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 741233,
+            "range": "± 5587",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 62814,
+            "range": "± 1037",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 703553,
+            "range": "± 11893",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 10270186,
+            "range": "± 863184",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 772,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7349,
+            "range": "± 56",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 139414,
+            "range": "± 1007",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 22600,
+            "range": "± 85",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 156887,
+            "range": "± 1133",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1475639,
+            "range": "± 42095",
             "unit": "ns/iter"
           }
         ]
