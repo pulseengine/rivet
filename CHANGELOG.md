@@ -7,6 +7,17 @@
 
 ### Added
 
+- **REQ-145 / #386 — test-results import honors a `rivet_tc_id` testcase
+  property.** A JUnit `<testcase>` may now declare its artifact id explicitly
+  with `<property name="rivet_tc_id" value="…"/>`; that value becomes the
+  imported result's artifact id, overriding every classname/name heuristic and
+  the marker fallback. Previously the id was derived from `classname` + `name`,
+  which rarely matched a real artifact, so the result linked to nothing. The
+  parser now reads `<property>` children of a testcase (suite-level and
+  unrelated properties are ignored); absent the property, behaviour is
+  unchanged. Tests cover property-present, property-overrides-classname-id, and
+  property-absent.
+
 - **REQ-141 / #353 — `rivet modify --where '<s-expr>'`: query-driven bulk
   modify.** Select every artifact matching the same s-expression filter
   `rivet query` uses and apply any `--set-*` change in a single in-process
