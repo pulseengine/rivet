@@ -991,12 +991,28 @@ enum Command {
         rivet modify <ID> --set-status approved\n  \
         rivet modify <ID> --set-description \"text\"\n  \
         rivet modify <ID> --set-title \"New title\"\n  \
-        rivet modify <ID> --set-field key=value\n\n\
+        rivet modify <ID> --set-field key=value\n  \
+        rivet modify --where '(and (type \"requirement\") (status \"draft\"))' --set-status implemented\n  \
+        rivet modify --where '(status \"draft\")' --set-status implemented --dry-run\n\n\
         Note: use --set-* flags, not positionals \
-        (`modify <ID> status approved` is not valid).")]
+        (`modify <ID> status approved` is not valid). Pass exactly one of \
+        <ID> or --where.")]
     Modify {
-        /// Artifact ID to modify
-        id: String,
+        /// Artifact ID to modify (omit when using --where)
+        id: Option<String>,
+
+        /// Apply the modification to every artifact matching an s-expression
+        /// filter (same syntax as `rivet query`), in a single pass. Mutually
+        /// exclusive with a positional <ID>. Loads once and writes each
+        /// affected file once, so it never races the way a shell loop of
+        /// per-ID `rivet modify` subprocesses can.
+        #[arg(long = "where", conflicts_with = "id")]
+        where_filter: Option<String>,
+
+        /// Preview which artifacts a --where modification would touch without
+        /// writing anything.
+        #[arg(long)]
+        dry_run: bool,
 
         /// Set the lifecycle status
         #[arg(long)]
@@ -2325,6 +2341,8 @@ fn run(cli: Cli) -> Result<bool> {
         } => cmd_unlink(&cli, source, link_type, target),
         Command::Modify {
             id,
+            where_filter,
+            dry_run,
             set_status,
             set_title,
             set_description,
@@ -2333,7 +2351,9 @@ fn run(cli: Cli) -> Result<bool> {
             set_fields,
         } => cmd_modify(
             &cli,
-            id,
+            id.as_deref(),
+            where_filter.as_deref(),
+            *dry_run,
             set_status.as_deref(),
             set_title.as_deref(),
             set_description.as_deref(),
@@ -13990,7 +14010,9 @@ fn cmd_unlink(cli: &Cli, source_id: &str, link_type: &str, target_id: &str) -> R
 #[allow(clippy::too_many_arguments)] // one parameter per CLI `--set-*` flag
 fn cmd_modify(
     cli: &Cli,
-    id: &str,
+    id: Option<&str>,
+    where_filter: Option<&str>,
+    dry_run: bool,
     set_status: Option<&str>,
     set_title: Option<&str>,
     set_description: Option<&str>,
@@ -14001,7 +14023,7 @@ fn cmd_modify(
     use rivet_core::mutate::{self, ModifyParams};
 
     let ctx = ProjectContext::load(cli)?;
-    let (store, schema) = (ctx.store, ctx.schema);
+    let (store, schema, graph) = (ctx.store, ctx.schema, ctx.graph);
 
     let params = ModifyParams {
         set_status: set_status.map(|s| s.to_string()),
@@ -14012,16 +14034,78 @@ fn cmd_modify(
         set_fields: set_fields.to_vec(),
     };
 
-    // Validate before writing (DD-028)
-    mutate::validate_modify(id, &params, &store, &schema).context("validation failed")?;
+    // Resolve the target ID set: either a single positional <ID> or every
+    // artifact matching a --where s-expression filter. clap enforces the two
+    // are mutually exclusive; require exactly one.
+    let target_ids: Vec<String> = match (id, where_filter) {
+        (Some(one), None) => vec![one.to_string()],
+        (None, Some(filter_src)) => {
+            let expr = rivet_core::sexpr_eval::parse_filter(filter_src).map_err(|errs| {
+                let msgs: Vec<String> = errs.iter().map(|e| e.to_string()).collect();
+                anyhow::anyhow!("invalid --where filter: {}", msgs.join("; "))
+            })?;
+            let mut ids: Vec<String> = store
+                .iter()
+                .filter(|a| {
+                    rivet_core::sexpr_eval::matches_filter_with_store(&expr, a, &graph, &store)
+                })
+                .map(|a| a.id.clone())
+                .collect();
+            ids.sort();
+            ids
+        }
+        (None, None) => {
+            anyhow::bail!("provide an artifact <ID> or a --where filter to select what to modify")
+        }
+        // Unreachable: clap's `conflicts_with` rejects ID + --where together.
+        (Some(_), Some(_)) => anyhow::bail!("pass either an <ID> or --where, not both"),
+    };
 
-    let source_file = mutate::find_source_file(id, &store)
-        .ok_or_else(|| anyhow::anyhow!("cannot determine source file for '{id}'"))?;
+    if target_ids.is_empty() {
+        // A --where that matches nothing is a no-op worth surfacing loudly so
+        // an agent doesn't read silence as success.
+        println!("no artifacts match the --where filter; nothing modified");
+        return Ok(true);
+    }
 
-    mutate::modify_artifact_in_file(id, &params, &source_file, &store)
-        .with_context(|| format!("updating {}", source_file.display()))?;
+    // --dry-run: show exactly what would change, write nothing.
+    if dry_run {
+        println!(
+            "dry run: {} artifact(s) would be modified:",
+            target_ids.len()
+        );
+        for tid in &target_ids {
+            println!("  {tid}");
+        }
+        return Ok(true);
+    }
 
-    println!("modified {id}");
+    // Validate every target BEFORE writing anything, so a bulk modify is
+    // all-or-nothing on validation rather than leaving a half-applied set
+    // (DD-028). A single invalid target aborts the whole batch.
+    for tid in &target_ids {
+        mutate::validate_modify(tid, &params, &store, &schema)
+            .with_context(|| format!("validation failed for '{tid}'"))?;
+    }
+
+    // Apply in a single in-process pass: load once (above), write each
+    // affected file once here. No subprocess re-spawn, so this cannot race
+    // the way a shell loop of per-ID `rivet modify` invocations can (#353).
+    for tid in &target_ids {
+        let source_file = mutate::find_source_file(tid, &store)
+            .ok_or_else(|| anyhow::anyhow!("cannot determine source file for '{tid}'"))?;
+        mutate::modify_artifact_in_file(tid, &params, &source_file, &store)
+            .with_context(|| format!("updating {}", source_file.display()))?;
+    }
+
+    if target_ids.len() == 1 {
+        println!("modified {}", target_ids[0]);
+    } else {
+        println!("modified {} artifacts:", target_ids.len());
+        for tid in &target_ids {
+            println!("  {tid}");
+        }
+    }
 
     Ok(true)
 }
