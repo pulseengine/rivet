@@ -4394,3 +4394,47 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-140
+
+  - id: REQ-154
+    type: requirement
+    title: "Enumeration commands (list/stats) must loudly report sources skipped by parse errors, not silently return fewer artifacts"
+    status: implemented
+    description: |
+      Self-found while triaging GitHub issue #353 (an agent driving rivet on
+      the `meld` project). A single stray top-level key in an artifact file
+      (`unknown field 'loss-coverage', expected 'artifacts'`) causes the
+      ENTIRE file — including its valid `artifacts:` list — to be dropped from
+      the graph, and the only signal is a `log::warn!` preamble line.
+
+      `rivet validate` already handles this correctly: it surfaces the file as
+      a hard `artifact-parse-error` ERROR diagnostic (verified). The gap is the
+      enumeration commands: `rivet list` prints "0 artifacts" and `rivet stats`
+      its counts with NO indication that a whole source was dropped. An agent
+      that pipes the WARN preamble to /dev/null (or runs under a future
+      `--quiet`) silently operates on a partial graph — a loud-fail (F2)
+      violation for the read path. Issue #353 explicitly asks to "surface
+      skipped sources in the validate/stats summary (e.g. '1 source skipped')".
+
+      Fix: after loading, `list` and `stats` re-scan sources for
+      `SkipKind::ParseError` skips (the existing REQ-062
+      `load_artifacts_with_skips` channel) and, if any, print a concise loud
+      block to stderr naming each dropped file + the parse error and pointing
+      at `rivet validate`. Emitted regardless of log level (it signals data
+      loss, not noise).
+
+      Acceptance:
+        - In a project whose `generic-yaml` source contains a file with a
+          valid `artifacts:` list plus one unknown top-level key, `rivet list`
+          exits 0 but prints to stderr a line matching
+          `source(s) skipped` naming that file; `rivet stats` does likewise.
+        - A project with no skipped sources prints no such block (no
+          regression in the clean case).
+        - `cargo test -p rivet-cli --test cli_commands
+          list_reports_parse_error_skipped_sources` passes.
+    tags: [bug, loud-fail, ux, dogfooding, self-found, issue-353]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-062
