@@ -992,8 +992,8 @@ enum Command {
         rivet modify <ID> --set-description \"text\"\n  \
         rivet modify <ID> --set-title \"New title\"\n  \
         rivet modify <ID> --set-field key=value\n  \
-        rivet modify --where '(and (type \"requirement\") (status \"draft\"))' --set-status implemented\n  \
-        rivet modify --where '(status \"draft\")' --set-status implemented --dry-run\n\n\
+        rivet modify --where '(= status \"draft\")' --set-status implemented\n  \
+        rivet modify --where '(and (= type \"requirement\") (= status \"draft\"))' --set-status implemented --dry-run\n\n\
         Note: use --set-* flags, not positionals \
         (`modify <ID> status approved` is not valid). Pass exactly one of \
         <ID> or --where.")]
