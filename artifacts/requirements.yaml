@@ -4267,3 +4267,36 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-007
+
+  - id: REQ-151
+    type: requirement
+    title: "Global --quiet flag: suppress the WARN log preamble for scripted/agent use"
+    status: implemented
+    description: |
+      User-reported via #353 (feature ask): every rivet invocation can emit
+      WARN-level log lines before a command's real output (e.g. "could not
+      load externals: …", and previously per-file skip notices), which is
+      noise for scripted/agent consumption — especially combined with
+      `--format json`. There was a `-v/--verbose` flag to raise the log
+      level but no way to lower it below the default `warn`.
+
+      Add a global `-q/--quiet` flag (mutually exclusive with `--verbose`)
+      that sets the log filter to `error`, suppressing the WARN preamble
+      while leaving a command's own stdout and hard-error reporting intact.
+      Pairs with `--format json` for clean machine-consumable output.
+
+      Acceptance:
+        - `rivet --quiet <cmd>` emits no `WARN`-level log lines on stderr for
+          a project that otherwise would (e.g. a misconfigured external),
+          while the command's stdout is unchanged.
+        - Hard errors (e.g. an unparseable rivet.yaml) are still reported
+          under `--quiet`.
+        - `cargo test -p rivet-cli --test cli_commands quiet_suppresses` passes.
+    tags: [cli, dx, agent-ux, logging, quiet, user-reported, issue-353]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.15.0-track
+    links:
+      - type: traces-to
+        target: REQ-007

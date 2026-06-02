@@ -7,6 +7,13 @@
 
 ### Added
 
+- **REQ-151 / #353 — global `-q`/`--quiet` flag.** Suppresses the WARN-level
+  log preamble (e.g. "could not load externals: …") that otherwise prefixes a
+  command's output, emitting only ERROR-level logs. A command's own stdout and
+  hard-error reporting are untouched, so it pairs with `--format json` for
+  clean machine-consumable output. Complements `-v/--verbose` (mutually
+  exclusive). Closes the `--quiet` half of #353's agent-ergonomics asks.
+
 - **REQ-128 — `rivet list --rank-by-backlinks`.** Orders the listing by
   inbound-link count (descending) — the most depended-upon artifacts first,
   i.e. the highest-impact-if-changed nodes — and surfaces the count (an
