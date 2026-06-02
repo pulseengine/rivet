@@ -4021,7 +4021,7 @@ artifacts:
   - id: REQ-145
     type: requirement
     title: "Test-results import: honor a rivet_tc_id property for the testcase artifact id"
-    status: draft
+    status: implemented
     description: |
       User-reported. When importing JUnit-style test results, rivet derives
       the testcase artifact id from `classname` + `name` (the

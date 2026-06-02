@@ -145,6 +145,10 @@ struct ParsedCase {
     outcome: Outcome,
     /// Text body of <failure> or <error>, used as fallback message.
     body: Option<String>,
+    /// Explicit artifact id declared by the testcase via
+    /// `<property name="rivet_tc_id" value="..."/>`. When present it wins over
+    /// every classname/name heuristic (REQ-145).
+    rivet_tc_id: Option<String>,
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -290,8 +294,25 @@ fn parse_suites(xml: &str) -> Result<Vec<ParsedSuite>, Error> {
                             time: attrs.get("time").cloned(),
                             outcome: Outcome::Pass,
                             body: None,
+                            rivet_tc_id: None,
                         });
                         text_ctx = TextContext::None;
+                    }
+                    "property" => {
+                        // `<property name="rivet_tc_id" value="SYS-VER-058"/>`
+                        // on a testcase declares the artifact id explicitly
+                        // (REQ-145). Only honour it inside a testcase; a
+                        // suite-level property of the same name is ignored.
+                        if let Some(ref mut c) = current_case {
+                            if attrs.get("name").map(String::as_str) == Some("rivet_tc_id") {
+                                if let Some(value) = attrs.get("value") {
+                                    let trimmed = value.trim();
+                                    if !trimmed.is_empty() {
+                                        c.rivet_tc_id = Some(trimmed.to_string());
+                                    }
+                                }
+                            }
+                        }
                     }
                     "failure" => {
                         if let Some(ref mut c) = current_case {
@@ -528,19 +549,28 @@ fn case_to_result_with_markers(
     c: ParsedCase,
     markers: &[crate::test_scanner::TestMarker],
 ) -> TestResult {
-    let mut artifact = artifact_id_for(&c.name, &c.classname);
-    // Marker fallback: when artifact_id_for returned the "classname.name"
-    // fallback (a string with "::" or ".", not a recognised artifact ID) and
-    // we have markers, try to find one whose test_name matches the JUnit case
-    // name. Bracketed and direct-classname IDs are preserved because
-    // `is_artifact_id` is true.
-    let looks_like_fallback_concat =
-        !is_artifact_id(&artifact) && (artifact.contains("::") || artifact.contains('.'));
-    if !markers.is_empty() && looks_like_fallback_concat {
-        if let Some(m) = find_marker_for_case(&c.name, markers) {
-            artifact = m.target_id.clone();
+    // An explicit `rivet_tc_id` property is authoritative — it wins over every
+    // classname/name heuristic and the marker fallback (REQ-145).
+    let artifact = match &c.rivet_tc_id {
+        Some(id) => id.clone(),
+        None => {
+            let mut a = artifact_id_for(&c.name, &c.classname);
+            // Marker fallback: when artifact_id_for returned the
+            // "classname.name" fallback (a string with "::" or ".", not a
+            // recognised artifact ID) and we have markers, try to find one
+            // whose test_name matches the JUnit case name. Bracketed and
+            // direct-classname IDs are preserved because `is_artifact_id` is
+            // true.
+            let looks_like_fallback_concat =
+                !is_artifact_id(&a) && (a.contains("::") || a.contains('.'));
+            if !markers.is_empty() && looks_like_fallback_concat {
+                if let Some(m) = find_marker_for_case(&c.name, markers) {
+                    a = m.target_id.clone();
+                }
+            }
+            a
         }
-    }
+    };
     let duration = c.time.map(|t| format!("{t}s"));
 
     // Prefer the `message` attribute; fall back to element text body.
@@ -707,6 +737,52 @@ mod tests {
         assert_eq!(r.status, TestStatus::Pass);
         assert_eq!(r.duration, Some("0.1s".to_string()));
         assert!(r.message.is_none());
+    }
+
+    /// REQ-145: an explicit `<property name="rivet_tc_id" value="...">` on a
+    /// testcase is the artifact id, overriding the classname/name heuristic.
+    #[test]
+    fn test_rivet_tc_id_property_wins() {
+        let xml = r#"<?xml version="1.0"?>
+<testsuite name="s" timestamp="2026-01-01T00:00:00Z">
+  <testcase classname="com.example.MyTest" name="test_foo" time="0.2">
+    <property name="rivet_tc_id" value="SYS-VER-058"/>
+  </testcase>
+</testsuite>"#;
+        let runs = parse_junit_xml(xml).expect("parse failed");
+        let r = &runs[0].results[0];
+        // Without the property this would be "com.example.MyTest.test_foo".
+        assert_eq!(r.artifact, "SYS-VER-058");
+        assert_eq!(r.status, TestStatus::Pass);
+    }
+
+    /// REQ-145: the property overrides even a classname that is itself a valid
+    /// artifact id — it is authoritative.
+    #[test]
+    fn test_rivet_tc_id_property_overrides_classname_id() {
+        let xml = r#"<?xml version="1.0"?>
+<testsuite name="s">
+  <testcase classname="REQ-001" name="t">
+    <property name="rivet_tc_id" value="SYS-VER-099"/>
+  </testcase>
+</testsuite>"#;
+        let runs = parse_junit_xml(xml).expect("parse failed");
+        assert_eq!(runs[0].results[0].artifact, "SYS-VER-099");
+    }
+
+    /// REQ-145 (back-compat): with no such property the classname/name
+    /// behaviour is unchanged, and an unrelated suite-level/other property is
+    /// ignored.
+    #[test]
+    fn test_no_rivet_tc_id_property_keeps_classname_name() {
+        let xml = r#"<?xml version="1.0"?>
+<testsuite name="s">
+  <testcase classname="com.example.MyTest" name="test_foo">
+    <property name="some_other" value="ignored"/>
+  </testcase>
+</testsuite>"#;
+        let runs = parse_junit_xml(xml).expect("parse failed");
+        assert_eq!(runs[0].results[0].artifact, "com.example.MyTest.test_foo");
     }
 
     #[test]
