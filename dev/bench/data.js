@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780435543281,
+  "lastUpdate": 1780436879797,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "68bc025ea866af9213bac2cabde1256bcacafc5f",
-          "message": "feat(validate): --min-severity display filter to cut advisory noise (#357) (#366)\n\nSelf-reported dogfooding finding. `rivet validate` printed every diagnostic\nregardless of severity — on rivet's own repo ~160 advisory warnings for 0\nerrors, burying anything actionable. `--fail-on` gates the exit code but still\nprints everything.\n\nNew `rivet validate --min-severity <error|warning|info>` displays only\ndiagnostics at or above the floor (text output). Counts + exit code are\nunchanged (computed from the full set); when the filter hides anything, a\none-line note reports \"showing N of M … at or above '<level>'\" so nothing is\nsilently dropped. Reuses the existing --fail-on severity parser.\n\nRegression test validate_min_severity_filters_display. Filed as REQ-137\n(implemented).\n\nImplements: REQ-137\nVerifies: REQ-137\nRefs: REQ-004\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-05-31T07:16:19-05:00",
-          "tree_id": "a92621927d24a74a021179368d65d514e3435120",
-          "url": "https://github.com/pulseengine/rivet/commit/68bc025ea866af9213bac2cabde1256bcacafc5f"
-        },
-        "date": 1780230202020,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 76571,
-            "range": "± 419",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 955932,
-            "range": "± 10369",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 15035134,
-            "range": "± 876874",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1660,
-            "range": "± 3",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 19535,
-            "range": "± 508",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 369524,
-            "range": "± 2094",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 85,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 85,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 85,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1353415,
-            "range": "± 13228",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 158359,
-            "range": "± 382",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1874034,
-            "range": "± 22568",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 41595777,
-            "range": "± 2129837",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 120959,
-            "range": "± 886",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 1208130,
-            "range": "± 17144",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 20709722,
-            "range": "± 1456426",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 3904,
-            "range": "± 7",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 41047,
-            "range": "± 92",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 801407,
-            "range": "± 7236",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 54771,
-            "range": "± 140",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 604179,
-            "range": "± 3115",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 9962829,
-            "range": "± 380668",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 631,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 5292,
-            "range": "± 27",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 153275,
-            "range": "± 773",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 21240,
-            "range": "± 68",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 152275,
-            "range": "± 337",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1412298,
-            "range": "± 9149",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1508629,
             "range": "± 17126",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "eaa4a485a2124095909d691e5279461bd180c367",
+          "message": "fix(list,stats): loudly report sources skipped by parse errors (REQ-154, #353) (#405)\n\nTriaged from issue #353 (an agent driving rivet on the meld project). A\nsingle stray top-level key in an artifact file (`unknown field\n'loss-coverage', expected 'artifacts'`) drops the ENTIRE file — valid\n`artifacts:` list and all — from the graph, with only a `log::warn!`\npreamble as the signal.\n\n`rivet validate` already handles this correctly (hard\n`artifact-parse-error` ERROR diagnostic, verified). The gap was the\nenumeration commands: `rivet list` printed \"0 artifacts\" and `rivet\nstats` its counts with no indication a whole source was dropped — an\nagent that pipes the WARN preamble to /dev/null silently operates on a\npartial graph (an F2 loud-fail violation on the read path). #353 asked\nexplicitly to \"surface skipped sources in the validate/stats summary\".\n\n`list` and `stats` now re-scan `generic`/`generic-yaml` sources for\n`SkipKind::ParseError` skips via the existing REQ-062\n`scan_skipped_files` channel (chosen over `load_artifacts_with_skips` so\nwe don't re-run `load_artifacts` and double its per-file WARN) and print\na consolidated \"N artifact source(s) skipped due to parse errors\" block\nto stderr naming each file + error, pointing at `rivet validate`.\nEmitted regardless of log level (it signals data loss); no-op on clean\nprojects.\n\nVerified on the #353 repro and with a new integration test\n(`list_reports_parse_error_skipped_sources`): parse-error project →\nboth commands name the dropped file on stderr; clean project → no block.\nclippy --all-targets + fmt clean; rivet validate PASS (195), docs check\nPASS.\n\nImplements: REQ-154\nRefs: REQ-062\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-06-02T16:41:13-05:00",
+          "tree_id": "40f9c7746997d24572065db837973d111e517bc3",
+          "url": "https://github.com/pulseengine/rivet/commit/eaa4a485a2124095909d691e5279461bd180c367"
+        },
+        "date": 1780436878261,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 84182,
+            "range": "± 996",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 923665,
+            "range": "± 3677",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 17128213,
+            "range": "± 1498831",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1966,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25183,
+            "range": "± 244",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 369044,
+            "range": "± 2356",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 99,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 99,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 99,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1427560,
+            "range": "± 18821",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 168674,
+            "range": "± 2332",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1947323,
+            "range": "± 19875",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 34099392,
+            "range": "± 3566506",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 131359,
+            "range": "± 5899",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 1225620,
+            "range": "± 11137",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 19217405,
+            "range": "± 2415399",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4223,
+            "range": "± 7",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 45307,
+            "range": "± 109",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 763608,
+            "range": "± 12427",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 60709,
+            "range": "± 218",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 711414,
+            "range": "± 11147",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 9325449,
+            "range": "± 680668",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 742,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 6527,
+            "range": "± 64",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 96060,
+            "range": "± 326",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 20964,
+            "range": "± 48",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 146221,
+            "range": "± 426",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1355832,
+            "range": "± 17717",
             "unit": "ns/iter"
           }
         ]
