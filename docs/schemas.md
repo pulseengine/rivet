@@ -675,11 +675,54 @@ Place `my-domain.yaml` in the `schemas/` directory alongside `common.yaml`.
 
 When multiple schemas are loaded, Rivet merges them:
 
-- **Artifact types** are unioned. If two schemas define the same type name, the later
-  schema's definition takes precedence.
+- **Artifact types** are unioned **by name**. When two schemas define the same
+  type name, their `fields` and `link-fields` are merged by field name (later
+  wins on a name conflict) — so a later schema *adds* fields to an existing
+  type rather than replacing it wholesale.
 - **Link types** are unioned by name. Duplicates are deduplicated.
 - **Traceability rules** are concatenated. All rules from all schemas apply.
 - **Base fields** are defined by `common` and always present.
 
 This allows composition: load `common` + `aspice` + `cybersecurity` to get V-model
 traceability and SEC process coverage in a single project.
+
+### Extending a built-in artifact type with project fields
+
+Because same-named artifact types **merge their fields**, you can add
+project-specific fields to a built-in type without forking its schema. This is
+the supported fix for the `INFO: field '<x>' is not defined in schema for type
+'<t>'` advisories you get when your artifacts carry a field the built-in schema
+doesn't declare (e.g. a `crate:` field on an ASPICE `sw-req`).
+
+1. Add a small project-local schema file (e.g. `project-ext.yaml`) under your
+   project's `schemas/` directory that re-declares the built-in type name with
+   only the extra field(s):
+
+   ```yaml
+   # project-ext.yaml  (place it in your project's schemas/ directory)
+   schema:
+     name: project-ext
+     version: "0.1.0"
+   artifact-types:
+     - name: sw-req            # same name as the built-in ASPICE type
+       description: "Project extension: add the crate field to sw-req"
+       fields:
+         - name: crate
+           type: string
+           required: false
+   ```
+
+2. Register it **after** the built-in schema in `rivet.yaml` so the field
+   unions onto the built-in type:
+
+   ```yaml
+   project:
+     schemas: [common, aspice, project-ext]
+   ```
+
+`rivet validate` then accepts `crate:` on a `sw-req` with no `field not defined`
+diagnostic, and you keep every built-in field, link, and rule. You only declare
+the delta — the built-in type definition is untouched.
+
+(Alternatively, `rivet validate --min-severity warning` hides the INFO-level
+`field not defined` advisories without changing the schema.)
