@@ -4089,3 +4089,87 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-029
+
+  - id: REQ-147
+    type: requirement
+    title: "Coverage diagnostics say HOW to satisfy a missing backlink, not just what's missing"
+    status: implemented
+    description: |
+      User-reported via #350. Marking a sw-req `implemented` then running
+      `rivet validate` produced "should be verified..." / "missing:
+      <types>" diagnostics that named WHAT was missing but not HOW to satisfy
+      it — which link type connects the artifacts, and that the listed types
+      attach via a specific incoming link. The reporter reverse-engineered the
+      required shape from an unrelated link-target rejection ("a whole
+      detour").
+
+      Two complementary, schema-agnostic improvements:
+        1. The `required-backlink` coverage diagnostic now appends the
+           incoming link type and the allowed source types, e.g. "… — needs an
+           incoming `verifies` link from one of [sw-verification,
+           unit-verification, sw-integration-verification]".
+        2. The `Lifecycle coverage gaps` summary now points at
+           `rivet validate --explain <ID>`, which lists each rule's
+           satisfied/MISSING state with the exact incoming link + source types
+           (and any alternates).
+
+      Acceptance:
+        - On a sw-req with no verification backlink, `rivet validate` output
+          for the coverage rule contains "needs an incoming `verifies` link
+          from one of [...]".
+        - When lifecycle gaps are present, the validate output prints a
+          "run `rivet validate --explain <ID>`" pointer.
+        - `cargo test -p rivet-core --lib validate::tests` passes.
+    tags: [dx, agent-ux, diagnostics, guidance, traceability, user-reported, issue-350]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.15.0-track
+    links:
+      - type: traces-to
+        target: REQ-125
+
+  - id: REQ-148
+    type: requirement
+    title: "Schema-consistency check: flag a required-backlink rule whose from-types cannot form the link"
+    status: draft
+    description: |
+      Surfaced verifying #350 against the aspice schema. The coverage rule
+      `swe1-has-verification` declares `source-type: sw-req`,
+      `required-backlink: verifies`, `from-types: [sw-verification,
+      unit-verification, sw-integration-verification]` — but the link-target
+      rules only permit `sw-verification` to `verifies` a `sw-req`
+      (unit-verification verifies sw-detail-design; sw-integration-verification
+      verifies sw-arch-component/sw-detail-design). So two of the three
+      advertised satisfiers can never actually form the backlink, which is
+      exactly why the reporter authored a forbidden unit-verification→sw-req
+      link and got rejected.
+
+      Add a schema-consistency meta-check (sibling of
+      `conditional-rule-consistency`) that flags a `required-backlink` rule
+      whose `from-types` include an artifact type that no link-type / rule
+      permits to form `<required_backlink>` to the rule's `source-type`. This
+      catches the "advertises an unsatisfiable satisfier" class in ANY schema.
+      Care needed: target constraints live in both link-type defs and per-type
+      link-fields, and the inverse-name convention applies — implement
+      conservatively to avoid false positives (prefer false-negatives).
+
+      Note: whether the aspice `from-types` is itself wrong (ASPICE intent:
+      SWE.6 sw-verification verifies sw-reqs; unit/integration verify design
+      layers) is a maintainer/compliance-semantics call, tracked on #350/#355,
+      separate from this generic check.
+
+      Acceptance:
+        - A schema with a `required-backlink` rule listing a from-type that
+          cannot form the link emits a `coverage-rule-consistency` diagnostic
+          naming the rule, the unsatisfiable from-type, and the link.
+        - A schema whose from-types are all linkable emits no such diagnostic.
+        - Unit test covers both cases.
+    tags: [validation, schema-consistency, meta-check, dx, issue-350, issue-355]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.15.0-track
+    links:
+      - type: traces-to
+        target: REQ-004
