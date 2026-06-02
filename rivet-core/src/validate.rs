@@ -961,6 +961,23 @@ pub fn validate_structural_with_externals_and_variant(
                     .iter()
                     .any(|alt| matches(&alt.link_type, &alt.from_types));
                 if !primary && !alternate {
+                    // Tell the author HOW to satisfy this, not just that it's
+                    // unsatisfied (issue #350). Name the incoming link type and
+                    // the artifact types that may form it, so they don't have
+                    // to reverse-engineer the required shape from a link-target
+                    // rejection. `rivet validate --explain <ID>` shows the full
+                    // breakdown including any alternate backlinks.
+                    let mut message = rule.description.clone();
+                    if !rule.from_types.is_empty() {
+                        message.push_str(&format!(
+                            " — needs an incoming `{}` link from one of [{}]",
+                            required_backlink,
+                            rule.from_types.join(", ")
+                        ));
+                    } else {
+                        message
+                            .push_str(&format!(" — needs an incoming `{required_backlink}` link"));
+                    }
                     diagnostics.push(Diagnostic {
                         source_file: None,
                         line: None,
@@ -968,7 +985,7 @@ pub fn validate_structural_with_externals_and_variant(
                         severity: effective_severity,
                         artifact_id: Some(id.clone()),
                         rule: rule.name.clone(),
-                        message: rule.description.clone(),
+                        message,
                     });
                 }
             }

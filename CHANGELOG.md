@@ -98,6 +98,15 @@
 
 ### Fixed
 
+- **REQ-147 / #350 — coverage diagnostics now say HOW to satisfy a missing
+  backlink.** A `required-backlink` coverage miss used to print only the rule
+  description ("… should be verified …"), leaving the author to
+  reverse-engineer which link type and source types satisfy it. The diagnostic
+  now appends "— needs an incoming `<link>` link from one of [<types>]", and
+  the `Lifecycle coverage gaps` summary points at `rivet validate --explain
+  <ID>` for the full per-rule breakdown (incoming link + source types +
+  alternates). Schema-agnostic; no rule semantics changed.
+
 - **REQ-146 / #355 — default `rivet validate` now evaluates status-gate
   validation-rules (parity with `--direct` / `gaps-json`).** The incremental
   salsa path (`db::validate_all`) ran structural (phases 1-7) and conditional

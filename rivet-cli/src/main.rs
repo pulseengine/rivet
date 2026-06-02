@@ -5369,6 +5369,17 @@ fn cmd_validate(
                     gap.missing.join(", "),
                 );
             }
+            // The bare "missing: <types>" list says what, not how — which link
+            // type connects them, and that some listed types may only attach
+            // further down the chain (issue #350). Point at the per-artifact
+            // explainer, which names the exact incoming link + allowed source
+            // types (and any alternates) for each gap.
+            if let Some(first) = lifecycle_gaps.first() {
+                println!(
+                    "  → run `rivet validate --explain {}` to see which link type and source types satisfy a gap",
+                    first.artifact_id
+                );
+            }
         }
 
         if with_externals_validate && !cross_repo_diagnostics.is_empty() {
