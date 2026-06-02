@@ -7,6 +7,18 @@
 
 ### Fixed
 
+- **REQ-155 / #353 — `prose-mention-without-typed-link` no longer fires an
+  unactionable warning (or pressures a false trace).** When an artifact's
+  prose names an id-shaped token that resolves to an artifact its own type
+  cannot link to under the schema, `validate` used to advise "add a link in
+  `links:`" — impossible when no such link type exists, and dangerous when
+  the token is a coincidental id collision (following the advice fabricates a
+  wrong trace; reported on the `sigil` project). The diagnostic is now
+  suppressed when the schema permits no link type connecting the mentioning
+  type to the mentioned type. Link types with empty `source-types`/
+  `target-types` ("any → any") are unaffected, so only fully-constrained
+  schemas change behaviour. Unit test
+  `prose_mention_suppressed_when_no_schema_valid_link_type`.
 - **REQ-154 / #353 — `rivet list` and `rivet stats` now loudly flag artifact
   sources dropped by a parse error.** A single stray top-level key (e.g.
   `unknown field 'loss-coverage', expected 'artifacts'`) drops a whole file —

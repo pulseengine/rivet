@@ -4438,3 +4438,52 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-062
+
+  - id: REQ-155
+    type: requirement
+    title: "prose-mention-without-typed-link must suppress when no schema-valid link type connects the two artifact types"
+    status: implemented
+    description: |
+      From a cross-project agent report on issue #353 (the `sigil` project,
+      "finding B"). After an agent edited a `cybersecurity-design` artifact's
+      description to mention "UCA-4" as rationale, `rivet validate` raised:
+
+        WARN: [CD-22] prose mentions 'UCA-4' but no typed link to it;
+              add a link in `links:` or remove the mention
+
+      Two defects:
+        1. Unactionable remediation. `cybersecurity-design` only permits
+           `satisfies -> cybersecurity-req`; the schema defines NO link type
+           that could connect a design to a `uca`. The advised fix ("add a
+           link in `links:`") is therefore impossible — the warning can only
+           ever be cleared by rewording prose.
+        2. False-trace pressure. The prose "UCA-4" referred to a local STPA
+           report's numbering, but `UCA-4` happens to resolve to an
+           unrelated artifact. Following the warning's advice would have
+           created a wrong, fabricated trace link.
+
+      Fix: in the prose-mention pass, suppress the diagnostic when the
+      project schema permits no link type whose `source-types` allows the
+      mentioning artifact's type AND whose `target-types` allows the
+      mentioned artifact's type. A link type with empty `source-types` /
+      `target-types` means "any -> any", so permissive schemas are
+      unaffected; only fully-constrained schemas ever trigger suppression.
+      When a link IS schema-valid, the warning fires unchanged.
+
+      Acceptance:
+        - In a schema whose only link type is `design -> requirement`, a
+          `design` artifact whose prose mentions both a `uca` (unlinkable)
+          and a `requirement` (linkable) yields exactly ONE
+          prose-mention-without-typed-link warning — for the requirement,
+          not the uca.
+        - `cargo test -p rivet-core --lib
+          prose_mention_suppressed_when_no_schema_valid_link_type` passes,
+          and the existing `prose_mention_*` tests still pass.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [bug, diagnostics, false-positive, ux, dogfooding, issue-353]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-004
