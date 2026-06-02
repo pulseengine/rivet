@@ -3945,3 +3945,111 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-007
+
+  - id: REQ-143
+    type: requirement
+    title: "External artifact refs with a hyphenated prefix (kebab project slug) must resolve, not 404"
+    status: implemented
+    description: |
+      User-reported (0.14.0). Browsing `/artifacts/linc-mesh:A-AVTP-STREAM` in
+      serve returned "Artifact does not exist", and external `prefix:ID` refs
+      with a hyphenated prefix were unresolved in document rendering, even
+      though the artifact existed in the external project.
+
+      Root cause: `externals::parse_artifact_ref` required the prefix to be
+      PURELY `is_ascii_lowercase()` — no hyphens. A kebab-case project slug
+      like `linc-mesh` failed the check, so the ref fell through to
+      `ArtifactRef::Local("linc-mesh:A-AVTP-STREAM")` and was looked up as a
+      local id (404). But externals are stored as `<prefix>:<id>` with that
+      same hyphenated prefix, so the parse no longer round-tripped its own
+      stored form. Every external whose prefix contained a hyphen was
+      unreachable in serve detail view and in document link resolution.
+
+      Fix: accept a kebab-case slug prefix — starts with a lowercase letter,
+      then lowercase letters / digits / hyphens. `parse_artifact_ref` is the
+      single shared gate (serve detail handler + document link rendering both
+      delegate to it), so one fix restores both surfaces. The Kani
+      round-trip proof was updated to the new contract.
+
+      Acceptance:
+        - `parse_artifact_ref("linc-mesh:A-AVTP-STREAM")` returns
+          `External { prefix: "linc-mesh", id: "A-AVTP-STREAM" }`.
+        - A ref whose prefix does not start with a lowercase letter (e.g.
+          `H-1:2`) stays `Local`.
+        - `cargo test -p rivet-core --lib externals::tests` passes.
+    tags: [bug, externals, serve, regression, user-reported, v0.14.0]
+    fields:
+      priority: must
+      category: functional
+      baseline: v0.15.0-track
+    links:
+      - type: traces-to
+        target: REQ-085
+
+  - id: REQ-144
+    type: requirement
+    title: "Source-view artifact-id linking must match whole tokens, not substrings"
+    status: draft
+    description: |
+      User-reported. In the source view, an artifact id that is a SUBSTRING of
+      another id gets wrongly linked. Example: a doc carrying
+      `doc-id: SDV-BCM-SWR-001` also has an artifact `SWR-001` in the store;
+      because matching uses `str::contains`, `SWR-001` is detected inside
+      `SDV-BCM-SWR-001`, producing a spurious link. For a traceability tool
+      this is a correctness bug — a phantom trace edge.
+
+      Location: `rivet-cli/src/render/source.rs` lines ~841 and ~856 use
+      `line.contains(id.as_str())`. The fix is a whole-token match: an id only
+      matches when it is delimited by non-`[A-Za-z0-9-]` characters (ids
+      contain hyphens, so hyphen is part of the token, not a delimiter).
+
+      Acceptance:
+        - A source line containing `SDV-BCM-SWR-001` does NOT produce a link
+          to a shorter artifact `SWR-001` that is merely a substring.
+        - A line containing the exact id `SWR-001` (surrounded by whitespace /
+          punctuation) still links to it.
+        - Regression test in source.rs covers the substring vs whole-token case.
+    tags: [bug, source-view, traceability, correctness, user-reported]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.15.0-track
+    links:
+      - type: traces-to
+        target: REQ-092
+
+  - id: REQ-145
+    type: requirement
+    title: "Test-results import: honor a rivet_tc_id property for the testcase artifact id"
+    status: draft
+    description: |
+      User-reported. When importing JUnit-style test results, rivet derives
+      the testcase artifact id from `classname` + `name` (the
+      `format!("{}.{}", classname, name)` fallback in
+      `rivet-core/src/junit.rs::artifact_id_for`), so the link to the intended
+      artifact does not resolve. The user records an explicit id per testcase:
+      a `rivet_tc_id` property (e.g. value `SYS-VER-058`) and wants rivet to
+      use it.
+
+      The JUnit parser does not currently read `<property>` children of
+      `<testcase>` (the `ParsedCase` struct has no properties field; the
+      element is silently ignored). Add: parse `<property>` children, and in
+      `artifact_id_for` add a highest-priority tier that returns the
+      `rivet_tc_id` property value when present, before the existing
+      classname/name heuristics.
+
+      Acceptance:
+        - A testcase (classname `com.x.Y`, name `t`) carrying a `rivet_tc_id`
+          property of `SYS-VER-058` imports with artifact id `SYS-VER-058`,
+          not `com.x.Y.t`.
+        - A testcase with no such property keeps the current classname/name
+          behaviour (back-compatible).
+        - Parser test covers the property-present and property-absent cases.
+    tags: [feature, test-results, junit, import, traceability, user-reported]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.15.0-track
+    links:
+      - type: traces-to
+        target: REQ-101

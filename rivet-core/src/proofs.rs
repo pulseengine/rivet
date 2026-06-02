@@ -117,9 +117,18 @@ mod proofs {
                     // prefix:id must reconstruct the original
                     kani::assert(!prefix.is_empty(), "External prefix must be non-empty");
                     kani::assert(!id.is_empty(), "External id must be non-empty");
+                    // A valid prefix is a kebab-case project slug: starts with
+                    // a lowercase letter, then lowercase letters / digits /
+                    // hyphens (REQ-143).
                     kani::assert(
-                        prefix.chars().all(|c| c.is_ascii_lowercase()),
-                        "External prefix must be all lowercase ASCII",
+                        prefix.starts_with(|c: char| c.is_ascii_lowercase()),
+                        "External prefix must start with a lowercase ASCII letter",
+                    );
+                    kani::assert(
+                        prefix
+                            .chars()
+                            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'),
+                        "External prefix must be lowercase ASCII, digits, or hyphens",
                     );
                 }
             }

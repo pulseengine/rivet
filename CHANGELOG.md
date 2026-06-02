@@ -76,6 +76,19 @@
 
 ### Fixed
 
+- **REQ-143 — external artifact refs with a hyphenated prefix now resolve
+  (were 404).** Browsing `/artifacts/linc-mesh:A-AVTP-STREAM` in serve returned
+  "Artifact does not exist", and external `prefix:ID` refs with a kebab-case
+  prefix were unresolved in document rendering, even though the artifact
+  existed in the external project. `parse_artifact_ref` required the prefix to
+  be *purely* lowercase ASCII (no hyphens), so a slug like `linc-mesh` fell
+  through to a local lookup — even though externals are *stored* as
+  `<prefix>:<id>` with that same hyphenated prefix, so the parse no longer
+  round-tripped its own output. Now accepts a kebab slug (leading lowercase
+  letter, then lowercase / digits / hyphens). One shared gate, so both the
+  serve detail view and document link resolution are fixed; Kani round-trip
+  proof updated. Regression tests.
+
 - **REQ-142 / #381 — s-expr filter parse error now shows the field-equality
   form.** The filter dialect (shared by `query`, `list --filter`,
   `export --filter`, `modify --where`) puts an operator in head position, but
