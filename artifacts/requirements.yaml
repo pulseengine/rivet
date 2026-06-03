@@ -4607,8 +4607,10 @@ artifacts:
         - `rivet add` with a title similar to an existing same-type artifact
           prints a `note: intent is N% similar to …` to stderr and still
           succeeds; a distinct title prints no note.
-        - `rivet validate` on the rivet repo emits zero `near-duplicate-intent`
-          diagnostics and still PASS.
+        - The rivet repo's 158 `requirement`s produce zero
+          `near-duplicate-intent` diagnostics; across all types the repo
+          surfaces only true-positive pairs (e.g. two `feature`s sharing a
+          title), all INFO, so `rivet validate` still PASS.
         - `cargo test -p rivet-core --lib similarity` and `cargo test -p
           rivet-cli --test cli_commands near_duplicate_intent_validate_and_add`
           pass.
