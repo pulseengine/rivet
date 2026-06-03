@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780498414276,
+  "lastUpdate": 1780500381360,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "02b689372c6fc4743b41f6134889e068458c52e0",
-          "message": "test(serve): give graph_type_filter test a 15s budget to kill the flake (#389) (#390)\n\n`graph_type_filter_renders_when_under_budget` fetched\n`/graph?types=requirement` with the default 5s read timeout. That\nendpoint does a BFS + layout over the dogfood corpus (~742 nodes / 1477\nedges), which on a loaded CI runner can brush past 5s; `fetch_with_timeout`\nparses a timed-out/empty response's status as 0, so the timeout surfaced\nas `status == 0` and failed the `== 200` assertion. Same chronic flake\nthe focus-graph tests already fixed with a 15s budget — this one test\nwas missed. It falsely failed CI on #380, #387, and #388.\n\nSwitch it to `fetch_with_timeout(..., 15s)`, matching the other graph\nendpoints. The test asserts on the response shape (SVG or budget\nmessage), not a hard latency bound, so the wider timeout is safe.\nVerified locally: passes 3/3 runs.\n\nTrace: skip\nCloses: #389\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-06-02T02:30:35-05:00",
-          "tree_id": "5675d70fd1de6fb6f55b9e09895e963300b92aa4",
-          "url": "https://github.com/pulseengine/rivet/commit/02b689372c6fc4743b41f6134889e068458c52e0"
-        },
-        "date": 1780385837847,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 84493,
-            "range": "± 511",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 921216,
-            "range": "± 6056",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 14629996,
-            "range": "± 707108",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1929,
-            "range": "± 162",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 25144,
-            "range": "± 98",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 352207,
-            "range": "± 2546",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 97,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1419041,
-            "range": "± 16461",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 167101,
-            "range": "± 1041",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1923783,
-            "range": "± 15862",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 30436376,
-            "range": "± 2033373",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 123336,
-            "range": "± 2485",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 1168099,
-            "range": "± 10103",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 14125962,
-            "range": "± 607250",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4241,
-            "range": "± 23",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 44805,
-            "range": "± 286",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 770312,
-            "range": "± 3538",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 63932,
-            "range": "± 559",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 717722,
-            "range": "± 5397",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 8330878,
-            "range": "± 365070",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 737,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 6585,
-            "range": "± 18",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 98150,
-            "range": "± 570",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 20966,
-            "range": "± 211",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 145274,
-            "range": "± 570",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1348069,
-            "range": "± 23484",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1462319,
             "range": "± 9241",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7c0563463957e2b9d41275d7059ea1aa6caf8f27",
+          "message": "fix(playwright): bound graph E2E node count so dataset growth doesn't trip render budget (REQ-171) (#435)\n\nSelf-found triaging why Playwright E2E was red across multiple merges (masked:\nit's a non-required check and main runs are concurrency-cancelled, so it never\nreports a conclusive green). Three graph/diagram tests failed reproducibly\n(through CI retry) — root cause is dogfood-dataset growth, not a serve bug:\n\n- graph.spec.ts \"custom polygon shapes\" hit /graph?types=requirement,\n  design-decision&depth=2 with no ?limit=. The dataset grew past the default\n  200-node render budget for that filter, so the view returns the \"above node\n  budget\" placeholder (no SVG) and the polygon count is 0. Add &limit=2000.\n- diagram-viewer.spec.ts graph page used /graph?limit=2000 (full ~871-node\n  graph), now heavy enough that goto+settle exceeded the timeout, failing the\n  .svg-viewer toolbar/fullscreen checks. Point it at a focused subgraph\n  (/graph?focus=REQ-001&depth=1&limit=2000) — same wrapper invariant, fast.\n\nVerified green in a real browser locally: 7/7 in the affected specs (was 3\nfailing). `rivet validate` still PASS.\n\nVerifies: REQ-171\nRefs: FEAT-001\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-06-03T10:16:01-05:00",
+          "tree_id": "019bcebcb7d1f4f0a474353157d19bea1e444db6",
+          "url": "https://github.com/pulseengine/rivet/commit/7c0563463957e2b9d41275d7059ea1aa6caf8f27"
+        },
+        "date": 1780500380603,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 85181,
+            "range": "± 237",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 928157,
+            "range": "± 42892",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 14320272,
+            "range": "± 534834",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1973,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25166,
+            "range": "± 368",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 348365,
+            "range": "± 2718",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1479918,
+            "range": "± 32835",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 166242,
+            "range": "± 771",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1931091,
+            "range": "± 12029",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 27832159,
+            "range": "± 596184",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 445321,
+            "range": "± 1552",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 17972728,
+            "range": "± 378428",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1461989901,
+            "range": "± 18139281",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4266,
+            "range": "± 11",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 43362,
+            "range": "± 208",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 722231,
+            "range": "± 8263",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 59414,
+            "range": "± 98",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 737014,
+            "range": "± 1724",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8062355,
+            "range": "± 190506",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1185,
+            "range": "± 17",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 15267,
+            "range": "± 57",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 251740,
+            "range": "± 4818",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 20905,
+            "range": "± 283",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 143790,
+            "range": "± 1936",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1342509,
+            "range": "± 20887",
             "unit": "ns/iter"
           }
         ]
