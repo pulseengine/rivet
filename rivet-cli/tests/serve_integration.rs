@@ -999,12 +999,10 @@ fn graph_focused_view_renders_svg() {
     let (mut child, port) = start_server();
 
     let start = std::time::Instant::now();
-    let (status, body, _) = fetch_with_timeout(
-        port,
-        "/graph?focus=REQ-001&depth=2",
-        true,
-        std::time::Duration::from_secs(15),
-    );
+    // Use the retry wrapper (15s + one retry on status==0): besides the
+    // latency edge, a transient connection drop after the health probe
+    // surfaces as status=0 and flapped this test red on unrelated PRs.
+    let (status, body, _) = fetch_page_with_retry(port, "/graph?focus=REQ-001&depth=2");
     let elapsed = start.elapsed();
     eprintln!(
         "graph_focused_view_renders_svg: GET /graph?focus=REQ-001&depth=2 -> {} bytes in {elapsed:?}",
@@ -1114,15 +1112,11 @@ fn graph_type_filter_renders_when_under_budget() {
     // The type-filtered graph still does a BFS + layout over the dogfood
     // corpus, which can brush past the default 5s read timeout on a loaded CI
     // runner — the same chronic flake the focus-graph tests hit, where a
-    // timeout surfaces as status=0 and fails the `== 200` assertion. Give it
-    // the same generous budget the other graph endpoints use; this test
-    // asserts on the response, not on a hard latency bound.
-    let (status, body, _) = fetch_with_timeout(
-        port,
-        "/graph?types=requirement",
-        true,
-        Duration::from_secs(15),
-    );
+    // timeout (or a transient connection drop after the health probe) surfaces
+    // as status=0 and fails the `== 200` assertion. Use the retry wrapper
+    // (15s + one retry on status==0); this test asserts on the response, not
+    // on a hard latency bound. (Observed flapping red on artifact-only PRs.)
+    let (status, body, _) = fetch_page_with_retry(port, "/graph?types=requirement");
     let elapsed = start.elapsed();
     let has_svg = body.contains("<svg");
     let has_budget = body.contains("budget");

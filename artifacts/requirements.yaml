@@ -5200,3 +5200,36 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-020
+
+  - id: REQ-175
+    type: requirement
+    title: "serve /graph integration tests retry on status==0 so they don't flap red on unrelated PRs"
+    status: implemented
+    description: |
+      Self-found while triaging a red CI Test job on an artifact/script-only PR
+      (#440). `cargo nextest` exit 100 → the JUnit artifact named
+      `serve_integration::graph_type_filter_renders_when_under_budget`, which
+      asserted `/graph?types=requirement` returns 200 but got status=0 (a
+      transient connection drop after the server's health probe passed — a
+      transport failure, not a content mismatch). It passed locally; my change
+      was shell + YAML only.
+
+      The file already had `fetch_page_with_retry` (15s read timeout + one retry
+      on status==0) created for exactly this flake class, but the two /graph
+      tests (`graph_focused_view_renders_svg`,
+      `graph_type_filter_renders_when_under_budget`) called `fetch_with_timeout`
+      directly, bypassing the retry. Switch both to `fetch_page_with_retry`.
+
+      Acceptance:
+        - `cargo test -p rivet-cli --test serve_integration graph_` passes.
+        - Neither `graph_focused_view_renders_svg` nor
+          `graph_type_filter_renders_when_under_budget` calls
+          `fetch_with_timeout` directly (both use the status==0 retry wrapper).
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [serve, test, ci-stability, flake, dogfooding, self-found]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: FEAT-001
