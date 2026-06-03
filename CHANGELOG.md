@@ -12,13 +12,17 @@
   say the same thing under different ids — so a backlog accreted near-dups.
   A new shared `rivet_core::similarity` signal (Jaccard overlap of significant,
   stopword-stripped title tokens, bounded `[0,1]`, threshold 0.6 — calibrated
-  to **zero** false positives on the rivet repo's own 158 requirements) now
-  backs two surfaces: `rivet validate` emits a non-blocking `near-duplicate-intent`
+  so the rivet repo's own 158 *requirements* produce zero pairs) now backs two
+  surfaces: `rivet validate` emits a non-blocking `near-duplicate-intent`
   **INFO** diagnostic for each same-type pair at/above threshold (on both the
   salsa and `--direct` paths), and `rivet add` prints a non-blocking
-  `note: intent is N% similar to <ID> …` before adding. Per-rule suppression in
-  `rivet.yaml` is a noted follow-up (no diagnostic-suppression config exists
-  yet; INFO keeps it non-disruptive meanwhile).
+  `note: intent is N% similar to <ID> …` before adding. Across *all* types the
+  rivet repo surfaces 10 such pairs — all genuine near-duplicates (e.g. two
+  `feature`s both titled "Property-based tests (proptest)"; two
+  `system-constraint`s stating identical-results-to-full-validation) — INFO, so
+  `validate` still PASSes. Per-rule suppression in `rivet.yaml` is a noted
+  follow-up (no diagnostic-suppression config exists yet; INFO keeps it
+  non-disruptive meanwhile).
 
 ### Fixed
 
