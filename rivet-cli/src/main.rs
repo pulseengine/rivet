@@ -13962,9 +13962,19 @@ fn cmd_add(
                 continue;
             }
             let sim = intent_similarity(title, &other.title);
-            if sim >= NEAR_DUPLICATE_INTENT_THRESHOLD
-                && best.as_ref().is_none_or(|(b, _, _)| sim > *b)
-            {
+            if sim < NEAR_DUPLICATE_INTENT_THRESHOLD {
+                continue;
+            }
+            // Pick the most-similar existing artifact; break ties by lowest id
+            // so the note is DETERMINISTIC. `store.iter()` is HashMap order, so
+            // without an explicit tie-break two equally-similar artifacts (e.g.
+            // titles identical after stopword-stripping) would surface
+            // unpredictably across runs (REQ-158 regression caught in CI).
+            let better = match best {
+                None => true,
+                Some((b_sim, b_id, _)) => sim > b_sim || (sim == b_sim && other.id.as_str() < b_id),
+            };
+            if better {
                 best = Some((sim, other.id.as_str(), other.title.as_str()));
             }
         }
