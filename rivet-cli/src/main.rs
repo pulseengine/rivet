@@ -417,6 +417,16 @@ enum Command {
         format: String,
     },
 
+    /// Trace one artifact: its traceability rules (satisfied/missing, with the
+    /// link type + source types that satisfy each), plus its incoming and
+    /// outgoing links and its own diagnostics. The per-artifact view of the
+    /// trace graph — answers "what connects to/from <ID>, and is it covered?".
+    /// (Same view as `validate --explain <ID>`; REQ-167 / #426.)
+    Trace {
+        /// Artifact ID to trace
+        id: String,
+    },
+
     /// Bundle an artifact and its link-graph closure as a single pasteable document
     Bundle {
         /// Root artifact ID
@@ -2026,6 +2036,10 @@ fn run(cli: Cli) -> Result<bool> {
             *rank_by_backlinks,
         ),
         Command::Get { id, format } => cmd_get(&cli, id, format),
+        // REQ-167 / #426: `trace` is the discoverable namesake verb for the
+        // per-artifact traceability view; it renders the same as
+        // `validate --explain <id>` (which stays as an alias).
+        Command::Trace { id } => cmd_explain(&cli, id),
         Command::Bundle { id, depth, format } => cmd_bundle(&cli, id, *depth, format),
         Command::Stats {
             filter,
@@ -5781,10 +5795,14 @@ fn cmd_explain(cli: &Cli, id: &str) -> Result<bool> {
             println!("  {} -> {}", l.link_type, l.target);
         }
     }
-    let incoming = ctx.graph.backlinks_to(id);
+    let mut incoming = ctx.graph.backlinks_to(id).to_vec();
+    // REQ-167 / #415: backlinks come back in graph (HashMap) order, which
+    // varies per process. Sort by (source, link-type) so `trace` / `explain`
+    // output is reproducible — it's audit evidence, not a scratch dump.
+    incoming.sort_by(|a, b| a.source.cmp(&b.source).then(a.link_type.cmp(&b.link_type)));
     if !incoming.is_empty() {
         println!("\nIncoming links:");
-        for bl in incoming {
+        for bl in &incoming {
             match &bl.inverse_type {
                 Some(inv) => println!("  {} <- {} ({})", inv, bl.source, bl.link_type),
                 None => println!("  {} <- {}", bl.link_type, bl.source),
@@ -5848,7 +5866,11 @@ fn explain_rule(
     } else if let Some(req) = &rule.required_backlink {
         // Backward: some artifact must link IN via `req` (or its inverse, or an
         // alternate backlink) from an allowed from-type.
-        let bls = graph.backlinks_to(id);
+        // REQ-167 / #415: sort backlinks by source so the satisfying
+        // representative ("...from <X>") is deterministic across runs, not
+        // whichever the graph's HashMap happened to yield first.
+        let mut bls = graph.backlinks_to(id).to_vec();
+        bls.sort_by(|a, b| a.source.cmp(&b.source).then(a.link_type.cmp(&b.link_type)));
         let find = |name: &str, froms: &[String]| -> Option<String> {
             bls.iter()
                 .filter(|bl| bl.source.as_str() != id)

@@ -32,6 +32,15 @@
 
 ### Fixed
 
+- **REQ-167 / #426 — `rivet trace <id>`.** Added the discoverable namesake
+  verb for the per-artifact traceability view (rules satisfied/missing, incoming
+  + outgoing links, diagnostics) — previously reachable only via the
+  non-obvious `rivet validate --explain <id>` (which stays as an alias). Also
+  made that view **deterministic**: incoming links and the rule-satisfier
+  representative were HashMap-ordered (varied per run); both now sort by
+  (source, link-type), so `trace`/`--explain` output is reproducible audit
+  evidence (#415).
+
 - **REQ-166 / #402 — `rivet matrix` infers direction + link from the from/to
   pair.** `--direction` is now optional; omit it and the command probes the
   graph for the direction and link type that actually connect `--from` to
