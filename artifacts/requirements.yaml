@@ -4761,7 +4761,7 @@ artifacts:
       the shared `schemas/common.yaml` `status` base-field —
       `[draft, proposed, approved, implemented, verified, released,
       deprecated, rejected]`. Ordering for promotion gates: draft -> proposed -> approved
-      -> implemented -> verified; deprecated/rejected are terminal off-track.
+      -> implemented -> verified -> released; deprecated/rejected terminal.
 
       Migrated the rivet repo's own drift to fit the set (the only 7 artifacts
       off-vocabulary): `accepted`/`active` design-decisions -> `approved`
@@ -4771,7 +4771,7 @@ artifacts:
       fires when a status is present).
 
       Acceptance:
-        - `schemas/common.yaml` `status` base-field declares the 7-value set.
+        - `schemas/common.yaml` `status` base-field declares the 8-value canonical set (incl. `released`).
         - An artifact with a typo'd status (`implmented`) fails `rivet validate`
           with a `status-allowed-values` ERROR + remediation; an artifact with
           no status does not.
