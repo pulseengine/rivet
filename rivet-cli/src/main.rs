@@ -439,6 +439,12 @@ enum Command {
         /// Output format: "yaml" (default) or "jsonl"
         #[arg(long = "as", default_value = "yaml")]
         format: String,
+
+        /// Also follow INCOMING links (backlinks), not just outgoing — so
+        /// bundling a graph sink like a requirement includes the
+        /// design-decisions / features / tests that realize it (REQ-168 / #428).
+        #[arg(long)]
+        incoming: bool,
     },
 
     /// List artifacts, optionally filtered by type
@@ -2040,7 +2046,12 @@ fn run(cli: Cli) -> Result<bool> {
         // per-artifact traceability view; it renders the same as
         // `validate --explain <id>` (which stays as an alias).
         Command::Trace { id } => cmd_explain(&cli, id),
-        Command::Bundle { id, depth, format } => cmd_bundle(&cli, id, *depth, format),
+        Command::Bundle {
+            id,
+            depth,
+            format,
+            incoming,
+        } => cmd_bundle(&cli, id, *depth, format, *incoming),
         Command::Stats {
             filter,
             format,
@@ -6024,8 +6035,8 @@ fn cmd_get(cli: &Cli, id: &str, format: &str) -> Result<bool> {
 }
 
 /// Bundle an artifact + its link-graph closure (issue #206).
-fn cmd_bundle(cli: &Cli, id: &str, depth: usize, format: &str) -> Result<bool> {
-    use rivet_core::bundle::{BundleFormat, bundle, render};
+fn cmd_bundle(cli: &Cli, id: &str, depth: usize, format: &str, incoming: bool) -> Result<bool> {
+    use rivet_core::bundle::{BundleFormat, bundle_with_graph, render};
 
     let Some(fmt) = BundleFormat::parse(format) else {
         eprintln!("error: --as must be one of: yaml, jsonl");
@@ -6033,7 +6044,7 @@ fn cmd_bundle(cli: &Cli, id: &str, depth: usize, format: &str) -> Result<bool> {
     };
 
     let ctx = ProjectContext::load(cli)?;
-    match bundle(&ctx.store, id, depth) {
+    match bundle_with_graph(&ctx.store, &ctx.graph, id, depth, incoming) {
         Ok(entries) => {
             print!("{}", render(&entries, fmt));
             Ok(true)
