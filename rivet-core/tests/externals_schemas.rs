@@ -146,7 +146,7 @@ fn load_all_externals_populates_schema() {
             prefix: "spar".into(),
         },
     );
-    rivet_core::externals::sync_all(&externals, dir.path(), true).unwrap();
+    rivet_core::externals::sync_all(&externals, dir.path(), true, false).unwrap();
 
     let resolved = load_all_externals(&externals, dir.path()).unwrap();
     assert_eq!(resolved.len(), 1);
