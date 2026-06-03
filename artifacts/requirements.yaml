@@ -4625,3 +4625,38 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-004
+
+  - id: REQ-159
+    type: requirement
+    title: "Store::iter() order is nondeterministic — provide a deterministic iter_sorted() and document the footgun"
+    status: implemented
+    description: |
+      Self-found while landing REQ-158 (#415). `Store::iter()` returns
+      `HashMap::values()`, whose order varies per process. Any caller that
+      produces stable output or selects one representative among ties over
+      `store.iter()` is silently nondeterministic — which is exactly how the
+      REQ-158 `rivet add` near-duplicate note picked REQ-1 locally but REQ-2 in
+      CI (same code, different hash seed), making the proptest job flaky on main
+      until #414 added an explicit tie-break.
+
+      Minimal, non-breaking hardening: document on `iter()` that order is
+      unspecified and add `Store::iter_sorted()` (ascending by id) so the
+      deterministic path is the easy one. Migrating existing
+      `store.iter().collect::<Vec>()` output sites and the larger "back the
+      store with an ordered map" option are deferred to #415 (each needs a
+      per-site audit; some already sort downstream).
+
+      Acceptance:
+        - `Store::iter_sorted()` yields artifacts ascending by `id` regardless
+          of insertion order.
+        - `iter()`'s doc-comment states the order is nondeterministic and
+          points at `iter_sorted()`.
+        - `cargo test -p rivet-core --lib iter_sorted_is_deterministic_by_id`
+          passes; `rivet validate` on the rivet repo still PASS.
+    tags: [refactor, determinism, footgun, dogfooding, self-found, issue-415]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-158
