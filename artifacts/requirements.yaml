@@ -4487,3 +4487,44 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-004
+
+  - id: REQ-156
+    type: requirement
+    title: "Single chokepoint for schema-level consistency checks so salsa and --direct cannot diverge"
+    status: implemented
+    description: |
+      Self-found while landing REQ-148 (#410). Adding a schema-level
+      consistency check (one that inspects the schema, not artifacts) required
+      hand-registering the same call in THREE validation entrypoints:
+      `validate::validate_with_externals_and_variant` (direct path) and the two
+      salsa queries in `db.rs` (`evaluate_conditional_rules`,
+      `evaluate_conditional_rules_with_extras`). If a future check is added to
+      only some sites, `rivet validate` (salsa, the default) and
+      `validate --direct` silently disagree — the exact divergence class
+      REQ-146 just fixed for status-gate rules.
+
+      Fix: hoist all schema-level consistency checks behind a single
+      `Schema::consistency_diagnostics()` method (conditional-rule dup/overlap
+      + coverage-rule reachability). All three entrypoints now call exactly
+      that one method, so a new check is a one-line edit there that cannot be
+      partially applied. Pure refactor — diagnostic output is unchanged.
+
+      Acceptance:
+        - All three validation entrypoints call `schema.consistency_diagnostics()`
+          and nothing calls `check_conditional_consistency` /
+          `check_coverage_rule_consistency` directly outside that method and
+          tests.
+        - `rivet validate` and `rivet validate --direct` on the rivet repo
+          produce identical Result lines (PASS, same warning count).
+        - Unit test asserts `consistency_diagnostics()` surfaces BOTH a
+          conditional-rule-consistency and a coverage-rule-consistency
+          diagnostic for a schema that trips each.
+        - `cargo test -p rivet-core` green; `rivet validate` on the rivet repo
+          still PASS.
+    tags: [refactor, validation, salsa-parity, maintainability, dogfooding, self-found, issue-410]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-146
