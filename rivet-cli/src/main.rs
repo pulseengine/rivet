@@ -1240,6 +1240,13 @@ enum SchemaAction {
         #[arg(short, long, default_value = "text")]
         format: String,
     },
+    /// Show where each active schema resolves from: on-disk (pinned) vs
+    /// embedded (compiled into the rivet binary, changes on upgrade) (#431)
+    Sources {
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
     /// List JSON schemas describing `--format json` CLI outputs
     ///
     /// Rivet ships draft-2020-12 JSON Schemas for every `--format json`
@@ -10391,6 +10398,12 @@ fn cmd_schema(cli: &Cli, action: &SchemaAction) -> Result<bool> {
         SchemaAction::GetJson { name, content } => {
             return cmd_schema_get_json(cli, name, *content);
         }
+        // Resolve sources WITHOUT loading the schema graph — the whole point is
+        // to diagnose resolution (incl. missing/embedded schemas), which must
+        // work even when the full load would fail.
+        SchemaAction::Sources { format } => {
+            return cmd_schema_sources(cli, format);
+        }
         SchemaAction::Migrate {
             target,
             apply,
@@ -10513,9 +10526,69 @@ fn cmd_schema(cli: &Cli, action: &SchemaAction) -> Result<bool> {
         }
         SchemaAction::ListJson { .. }
         | SchemaAction::GetJson { .. }
+        | SchemaAction::Sources { .. }
         | SchemaAction::Migrate { .. } => unreachable!(),
     };
     print!("{output}");
+    Ok(true)
+}
+
+/// `rivet schema sources` — report where each active schema resolves from:
+/// an on-disk file (pinned in the project) vs the embedded copy compiled into
+/// the rivet binary (which changes silently on upgrade). Does NOT load the
+/// schema graph, so it works even when a schema is missing (#431 / REQ-177).
+fn cmd_schema_sources(cli: &Cli, format: &str) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
+    use rivet_core::embedded::SchemaSource;
+    let schemas_dir = resolve_schemas_dir(cli);
+    // The project's active schema list drives what we report; fall back to
+    // `common` only when there's no rivet.yaml.
+    let config_path = cli.project.join("rivet.yaml");
+    let names: Vec<String> = if config_path.exists() {
+        rivet_core::load_project_config(&config_path)
+            .with_context(|| format!("loading {}", config_path.display()))?
+            .project
+            .schemas
+    } else {
+        vec!["common".to_string()]
+    };
+    let sources = rivet_core::embedded::schema_sources(&names, &schemas_dir);
+
+    if format == "json" {
+        let arr: Vec<serde_json::Value> = sources
+            .iter()
+            .map(|(name, src)| {
+                serde_json::json!({
+                    "name": name,
+                    "source": src.kind(),
+                    "path": match src {
+                        SchemaSource::OnDisk(p) => Some(p.display().to_string()),
+                        _ => None,
+                    },
+                })
+            })
+            .collect();
+        let out = serde_json::to_string_pretty(&serde_json::json!({
+            "command": "schema-sources",
+            "schemas": arr,
+        }))
+        .unwrap_or_default();
+        println!("{out}");
+    } else {
+        println!("Schema sources ({}):", sources.len());
+        for (name, src) in &sources {
+            let detail = match src {
+                SchemaSource::OnDisk(p) => format!("on-disk   {}", p.display()),
+                SchemaSource::Embedded => "embedded  (compiled into rivet — changes on \
+                     upgrade; vendor under schemas/ to pin)"
+                    .to_string(),
+                SchemaSource::Missing => "MISSING   (no on-disk file and not a known \
+                     embedded schema)"
+                    .to_string(),
+            };
+            println!("  {name:<18} {detail}");
+        }
+    }
     Ok(true)
 }
 

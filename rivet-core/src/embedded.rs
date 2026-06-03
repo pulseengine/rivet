@@ -140,6 +140,58 @@ pub const BRIDGE_SCHEMAS: &[BridgeInfo] = &[
     },
 ];
 
+/// Where a schema named in `rivet.yaml` resolves from.
+///
+/// Mirrors the resolution order of [`load_schemas_with_fallback`]: an on-disk
+/// file under `<schemas_dir>/` wins; otherwise the compiled-in embedded copy is
+/// used. Surfacing this lets callers tell a user when a builtin schema is
+/// *embedded* (version-bound to the rivet binary, so it changes silently on
+/// upgrade) vs *on-disk* (pinned in the project, version-controlled). #431.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SchemaSource {
+    /// Resolved from a project file at this path (pinned in git).
+    OnDisk(std::path::PathBuf),
+    /// Resolved from the copy compiled into the rivet binary.
+    Embedded,
+    /// Neither on-disk nor embedded — an unknown schema name.
+    Missing,
+}
+
+impl SchemaSource {
+    /// A short machine token: `on-disk` / `embedded` / `missing`.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            SchemaSource::OnDisk(_) => "on-disk",
+            SchemaSource::Embedded => "embedded",
+            SchemaSource::Missing => "missing",
+        }
+    }
+}
+
+/// For each requested schema name, report where it resolves from, using the
+/// same precedence as [`load_schemas_with_fallback`] (on-disk file else
+/// embedded copy). Pure: only checks path existence and the embedded registry.
+/// Order follows `names`.
+pub fn schema_sources(
+    names: &[String],
+    schemas_dir: &std::path::Path,
+) -> Vec<(String, SchemaSource)> {
+    names
+        .iter()
+        .map(|name| {
+            let path = schemas_dir.join(format!("{name}.yaml"));
+            let source = if path.exists() {
+                SchemaSource::OnDisk(path)
+            } else if embedded_schema(name).is_some() {
+                SchemaSource::Embedded
+            } else {
+                SchemaSource::Missing
+            };
+            (name.clone(), source)
+        })
+        .collect()
+}
+
 /// Look up embedded schema content by name.
 pub fn embedded_schema(name: &str) -> Option<&'static str> {
     match name {
@@ -298,4 +350,34 @@ pub fn load_schemas_with_fallback(
     }
 
     Ok(crate::schema::Schema::merge(&files))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // rivet: verifies REQ-177
+    #[test]
+    fn schema_sources_classifies_on_disk_embedded_and_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        // An on-disk file shadows the embedded copy.
+        std::fs::write(dir.path().join("common.yaml"), "schema:\n  name: common\n").unwrap();
+
+        let names = vec![
+            "common".to_string(),  // on-disk (file present)
+            "stpa".to_string(),    // embedded (no file, but a known embedded name)
+            "made-up".to_string(), // missing (neither)
+        ];
+        let got = schema_sources(&names, dir.path());
+
+        assert_eq!(got[0].1.kind(), "on-disk");
+        assert!(matches!(&got[0].1, SchemaSource::OnDisk(p) if p.ends_with("common.yaml")));
+        assert_eq!(got[1].1, SchemaSource::Embedded);
+        assert_eq!(got[2].1, SchemaSource::Missing);
+        // Order follows the input names.
+        assert_eq!(
+            got.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(),
+            vec!["common", "stpa", "made-up"]
+        );
+    }
 }
