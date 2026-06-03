@@ -565,9 +565,11 @@ enum Command {
         #[arg(long)]
         link: Option<String>,
 
-        /// Direction: "forward" or "backward"
-        #[arg(long, default_value = "backward")]
-        direction: String,
+        /// Direction: "forward" or "backward". Omit to infer the direction
+        /// (and link type) that actually connects --from to --to (REQ-166 /
+        /// #402) — so `--from design-decision --to requirement` just works.
+        #[arg(long)]
+        direction: Option<String>,
 
         /// Output format: "text" (default) or "json"
         #[arg(short, long, default_value = "text")]
@@ -2071,7 +2073,14 @@ fn run(cli: Cli) -> Result<bool> {
             link,
             direction,
             format,
-        } => cmd_matrix(&cli, from, to, link.as_deref(), direction, format),
+        } => cmd_matrix(
+            &cli,
+            from,
+            to,
+            link.as_deref(),
+            direction.as_deref(),
+            format,
+        ),
         Command::Diff { base, head, format } => {
             cmd_diff(&cli, base.as_deref(), head.as_deref(), format)
         }
@@ -7641,31 +7650,106 @@ fn cmd_coverage_matrix_aggregate(format: &str, paths: &[PathBuf]) -> Result<bool
 }
 
 /// Generate a traceability matrix.
+/// REQ-166 / #402: infer the matrix direction + link type that actually
+/// connect `from` -> `to`, by probing the graph (the declared
+/// `source-types`/`target-types` on a link are usually empty for common links
+/// like `satisfies`, so metadata alone can't decide — the graph can).
+///
+/// Candidate links: the one given via `--link`, else every distinct link type
+/// that appears on a `from`- or `to`-type artifact. For each candidate, both
+/// directions are scored by coverage; the highest-coverage non-empty pair wins
+/// (ties break Forward-first, then link name, for determinism). If nothing
+/// connects, falls back to forward + the given/`traces-to` link so the
+/// all-empty hint below still fires.
+fn infer_matrix_direction(
+    store: &rivet_core::store::Store,
+    graph: &LinkGraph,
+    from: &str,
+    to: &str,
+    link_type: Option<&str>,
+) -> (Direction, String) {
+    let candidates: Vec<String> = match link_type {
+        Some(l) => vec![l.to_string()],
+        None => {
+            let mut set: std::collections::BTreeSet<String> = Default::default();
+            for ty in [from, to] {
+                for id in store.by_type(ty) {
+                    if let Some(a) = store.get(id) {
+                        for l in &a.links {
+                            set.insert(l.link_type.clone());
+                        }
+                    }
+                }
+            }
+            set.into_iter().collect()
+        }
+    };
+
+    let mut best: Option<(usize, Direction, String)> = None;
+    for link in &candidates {
+        for dir in [Direction::Forward, Direction::Backward] {
+            let covered = matrix::compute_matrix(store, graph, from, to, link, dir).covered;
+            if covered == 0 {
+                continue;
+            }
+            let take = match &best {
+                None => true,
+                // Strictly higher coverage wins; equal coverage keeps the
+                // earlier candidate (Forward precedes Backward; links iterate
+                // in sorted order), so the choice is deterministic.
+                Some((bc, _, _)) => covered > *bc,
+            };
+            if take {
+                best = Some((covered, dir, link.clone()));
+            }
+        }
+    }
+
+    match best {
+        Some((_, dir, link)) => (dir, link),
+        None => (
+            Direction::Forward,
+            link_type.unwrap_or("traces-to").to_string(),
+        ),
+    }
+}
+
 fn cmd_matrix(
     cli: &Cli,
     from: &str,
     to: &str,
     link_type: Option<&str>,
-    direction: &str,
+    direction: Option<&str>,
     format: &str,
 ) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
     let ctx = ProjectContext::load(cli)?;
     let (store, graph) = (ctx.store, ctx.graph);
 
-    let dir = match direction {
-        "forward" | "fwd" => Direction::Forward,
-        "backward" | "back" | "bwd" => Direction::Backward,
-        _ => anyhow::bail!("direction must be 'forward' or 'backward'"),
+    // REQ-166 / #402: when `--direction` is given, behave exactly as before
+    // (byte-identical). When omitted, INFER the direction + link type that
+    // actually connect `from` -> `to` in the graph, so `--from X --to Y`
+    // just works instead of silently rendering an all-empty matrix in the
+    // wrong default direction.
+    let (dir, link): (Direction, String) = match direction {
+        Some(d) => {
+            let dir = match d {
+                "forward" | "fwd" => Direction::Forward,
+                "backward" | "back" | "bwd" => Direction::Backward,
+                _ => anyhow::bail!("direction must be 'forward' or 'backward'"),
+            };
+            let link = link_type
+                .unwrap_or(match dir {
+                    Direction::Forward => "traces-to",
+                    Direction::Backward => "verifies",
+                })
+                .to_string();
+            (dir, link)
+        }
+        None => infer_matrix_direction(&store, &graph, from, to, link_type),
     };
 
-    // Auto-detect link type if not specified
-    let link = link_type.unwrap_or(match dir {
-        Direction::Forward => "traces-to",
-        Direction::Backward => "verifies",
-    });
-
-    let result = matrix::compute_matrix(&store, &graph, from, to, link, dir);
+    let result = matrix::compute_matrix(&store, &graph, from, to, &link, dir);
 
     if format == "json" {
         let rows_json: Vec<serde_json::Value> = result
@@ -7719,6 +7803,10 @@ fn cmd_matrix(
     // actionable hint (stderr, so text/JSON stdout stays clean). If flipping
     // the direction would surface links, say so precisely.
     if result.covered == 0 && result.total > 0 {
+        let dir_name = match dir {
+            Direction::Forward => "forward",
+            Direction::Backward => "backward",
+        };
         let opp = match dir {
             Direction::Forward => Direction::Backward,
             Direction::Backward => Direction::Forward,
@@ -7727,10 +7815,10 @@ fn cmd_matrix(
             Direction::Forward => "forward",
             Direction::Backward => "backward",
         };
-        let opp_result = matrix::compute_matrix(&store, &graph, from, to, link, opp);
+        let opp_result = matrix::compute_matrix(&store, &graph, from, to, &link, opp);
         if opp_result.covered > 0 {
             eprintln!(
-                "note: 0 of {} {from} link to any {to} via '{link}' ({direction}), \
+                "note: 0 of {} {from} link to any {to} via '{link}' ({dir_name}), \
                  but {} do with `--direction {opp_name}`. The relationship runs the \
                  other way — re-run with `--direction {opp_name}`.",
                 result.total, opp_result.covered,

@@ -1991,8 +1991,10 @@ fn matrix_empty_emits_direction_hint() {
             .expect("rivet matrix")
     };
 
-    // design-decision --satisfies--> requirement is a FORWARD link; the
-    // default `--direction backward` therefore yields an empty matrix.
+    // design-decision --satisfies--> requirement is a FORWARD link, so the
+    // EXPLICIT `--direction backward` yields an empty matrix and must emit the
+    // hint. (Omitting --direction now infers forward — REQ-166 / #402 — so the
+    // explicit flag is required to exercise the empty-matrix hint path.)
     let empty = run(&[
         "--from",
         "design-decision",
@@ -2000,6 +2002,8 @@ fn matrix_empty_emits_direction_hint() {
         "requirement",
         "--link",
         "satisfies",
+        "--direction",
+        "backward",
     ]);
     assert!(empty.status.success());
     let err = String::from_utf8_lossy(&empty.stderr);
@@ -2024,6 +2028,67 @@ fn matrix_empty_emits_direction_hint() {
     assert!(
         !ok_err.contains("runs the other way"),
         "a matrix with links must not emit the empty-direction hint; stderr: {ok_err}"
+    );
+}
+
+/// REQ-166 / #402: with `--direction` omitted, `rivet matrix` infers the
+/// direction + link type that actually connect from -> to. `design-decision`
+/// satisfies `requirement` (a forward link), so `--from design-decision --to
+/// requirement` (no flag) must produce a NON-empty matrix via `satisfies` —
+/// not the old empty `backward` default. Explicit `--direction` is unchanged.
+#[test]
+fn matrix_infers_direction_when_omitted() {
+    let root = project_root();
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            root.to_str().unwrap(),
+            "matrix",
+            "--from",
+            "design-decision",
+            "--to",
+            "requirement",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("rivet matrix");
+    assert!(out.status.success());
+    let v: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&out.stdout)).expect("matrix JSON");
+    assert_eq!(
+        v["link_type"], "satisfies",
+        "should infer the satisfies link"
+    );
+    assert!(
+        v["covered"].as_u64().unwrap_or(0) > 0,
+        "inferred matrix must be non-empty; got {v}"
+    );
+
+    // Explicit --direction backward stays the old (empty) behavior — proving
+    // inference only changes the omitted path.
+    let backward = Command::new(rivet_bin())
+        .args([
+            "--project",
+            root.to_str().unwrap(),
+            "matrix",
+            "--from",
+            "design-decision",
+            "--to",
+            "requirement",
+            "--direction",
+            "backward",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("rivet matrix");
+    let vb: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&backward.stdout)).expect("matrix JSON");
+    assert_eq!(
+        vb["covered"].as_u64().unwrap_or(99),
+        0,
+        "explicit backward must be unchanged (empty)"
     );
 }
 
