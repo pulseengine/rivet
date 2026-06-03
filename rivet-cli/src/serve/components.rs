@@ -188,6 +188,27 @@ impl ViewParams {
 
 // ── Search input ──────────────────────────────────────────────────────────
 
+/// Build an `hx-include` selector list for a filter control, always appending
+/// the variant selector (`#variant-selector`).
+///
+/// The variant `<select>` lives in the context bar, OUTSIDE the filter form,
+/// so a filter/search/sort request that only includes the form's own fields
+/// drops `variant=` — and because these controls use `hx-push-url`, the pushed
+/// URL loses `?variant=` too, so filtering or reloading silently resets the
+/// variant scope (#430). Including the selector explicitly keeps the active
+/// variant on every request. The server treats an empty `variant=` as unscoped
+/// (`api.rs`), so this is safe when no variant is active, and the selector is
+/// only present in the DOM when a variant model exists (otherwise the extra
+/// CSS selector simply matches nothing).
+fn hx_include_with_variant(include_names: &[&str]) -> String {
+    let mut selectors: Vec<String> = include_names
+        .iter()
+        .map(|n| format!("[name='{n}']"))
+        .collect();
+    selectors.push("#variant-selector".to_string());
+    selectors.join(",")
+}
+
 /// Render a search input with magnifying-glass icon.
 ///
 /// * `placeholder` — placeholder text (e.g. "Search artifacts...").
@@ -200,11 +221,7 @@ pub fn search_input(
     target_url: &str,
     include_names: &[&str],
 ) -> String {
-    let hx_include: String = include_names
-        .iter()
-        .map(|n| format!("[name='{n}']"))
-        .collect::<Vec<_>>()
-        .join(",");
+    let hx_include = hx_include_with_variant(include_names);
     format!(
         "<div style=\"position:relative;flex:1;min-width:200px\">\
          <svg width=\"15\" height=\"15\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" \
@@ -238,11 +255,7 @@ pub fn type_select(
     target_url: &str,
     include_names: &[&str],
 ) -> String {
-    let hx_include: String = include_names
-        .iter()
-        .map(|n| format!("[name='{n}']"))
-        .collect::<Vec<_>>()
-        .join(",");
+    let hx_include = hx_include_with_variant(include_names);
     let mut html = format!(
         "<select name=\"types\" hx-get=\"{url}\" hx-target=\"#content\" hx-push-url=\"true\" \
          hx-include=\"{hx_include}\" \
@@ -279,11 +292,7 @@ pub fn type_select(
 /// * `target_url` — hx-get target.
 /// * `include_names` — other input names to include.
 pub fn per_page_select(current: usize, target_url: &str, include_names: &[&str]) -> String {
-    let hx_include: String = include_names
-        .iter()
-        .map(|n| format!("[name='{n}']"))
-        .collect::<Vec<_>>()
-        .join(",");
+    let hx_include = hx_include_with_variant(include_names);
     format!(
         "<select name=\"per_page\" hx-get=\"{url}\" hx-target=\"#content\" hx-push-url=\"true\" \
          hx-include=\"{hx_include}\" \
@@ -375,7 +384,8 @@ pub fn filter_bar(
 ) -> String {
     let mut html = String::with_capacity(2048);
     html.push_str(&format!(
-        "<div class=\"card\"><form class=\"form-row\" hx-get=\"{url}\" hx-target=\"#content\" hx-push-url=\"true\">",
+        "<div class=\"card\"><form class=\"form-row\" hx-get=\"{url}\" hx-target=\"#content\" \
+         hx-push-url=\"true\" hx-include=\"#variant-selector\">",
         url = html_escape(target_url),
     ));
 
@@ -416,7 +426,7 @@ pub fn filter_bar(
         "<div><label>Search</label><br>\
          <input type=\"text\" name=\"q\" placeholder=\"ID or title...\" value=\"{}\" \
          hx-get=\"{url}\" hx-target=\"#content\" hx-push-url=\"true\" \
-         hx-trigger=\"input changed delay:300ms\" hx-include=\"closest form\">\
+         hx-trigger=\"input changed delay:300ms\" hx-include=\"closest form,#variant-selector\">\
          </div>",
         html_escape(q_val),
         url = html_escape(target_url),
@@ -628,7 +638,7 @@ pub fn validation_filter_bar(
     // Severity filter
     html.push_str(
         "<select name=\"status\" hx-get=\"/validate\" hx-target=\"#content\" hx-push-url=\"true\" \
-         hx-include=\"[name='q']\" \
+         hx-include=\"[name='q'],#variant-selector\" \
          style=\"padding:.4rem .6rem;font-size:.82rem;min-width:140px\">",
     );
     for (val, label, count) in &[

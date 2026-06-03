@@ -5131,3 +5131,39 @@ artifacts:
     links:
       - type: traces-to
         target: FEAT-001
+
+  - id: REQ-172
+    type: requirement
+    title: "serve: filtering/search preserves the active variant scope (don't drop ?variant= on hx-push-url)"
+    status: implemented
+    description: |
+      Maintainer-reported (#430). In the serve dashboard the variant
+      `<select id="variant-selector" name="variant">` lives in the context bar,
+      OUTSIDE the filter form. The filter controls (search box, type filter,
+      per-page, status) issue `hx-get` requests with `hx-include` listing only
+      their own form fields and use `hx-push-url`. So filtering/searching a
+      variant-scoped view sent NO `variant=` and the pushed URL lost `?variant=`
+      — silently resetting the scope, and losing it again on reload.
+
+      Fix: add `#variant-selector` to every filter control's `hx-include`
+      (search_input, type_filter, per_page_select, filter_bar form + its inner
+      search, and the validate status select), via a shared
+      `hx_include_with_variant()` helper. The server already treats an empty
+      `variant=` as unscoped, so this is safe when no variant is active, and the
+      selector is only in the DOM when a variant model exists. The reverse flow
+      (select variant after filtering) was already correct: the change handler
+      rewrites only `variant` on the current URL, preserving other params.
+
+      Acceptance:
+        - `cd tests/playwright && npx playwright test serve-variant.spec.ts
+          --project=chromium` passes, including "filtering a variant-scoped list
+          keeps the variant in the URL (#430)".
+        - `cargo test -p rivet-cli --bins components` passes.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [serve, dashboard, variant, htmx, ux, bugfix, maintainer-reported, issue-430]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-109
