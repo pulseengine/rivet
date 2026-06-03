@@ -5,6 +5,18 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **REQ-157 / #406 — `rivet validate` no longer prints the per-file `skipping
+  <file>` parse-error WARN twice.** It loaded each source once for validation
+  and again for the REQ-075 duplicate-id re-scan, and both loads emitted the
+  per-file WARN. The re-scan now uses a new quiet loader
+  (`load_artifacts_with_report_quiet`), so the WARN fires once while the hard
+  `artifact-parse-error` ERROR diagnostic and `Result: FAIL` are unchanged. The
+  public `load_artifacts` signature is untouched; other commands' per-file WARN
+  is preserved. Regression test
+  `validate_emits_single_skip_warn_for_malformed_source`.
+
 ### Changed
 
 - **REQ-156 / #410 — schema-level consistency checks now route through a single

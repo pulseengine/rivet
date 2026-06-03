@@ -224,6 +224,33 @@ pub fn load_artifacts(
     base_dir: &Path,
     schema: &schema::Schema,
 ) -> Result<Vec<model::Artifact>, Error> {
+    load_artifacts_inner(source, base_dir, schema, true)
+}
+
+/// Like [`load_artifacts`], but suppresses the per-file `skipping <file>`
+/// WARN that a `generic`/`generic-yaml` directory import emits for a
+/// malformed *artifact* file.
+///
+/// Use when re-loading a source that has *already* been loaded (and warned
+/// about) once — notably `rivet validate`'s REQ-075 duplicate-id re-scan,
+/// which runs after `ProjectContext::load` already loaded+warned. Without
+/// this the same `skipping …` line printed twice (REQ-157 / #406). The hard
+/// `artifact-parse-error` ERROR is unaffected — it derives from
+/// [`LoadReport::skipped`], not from this log line.
+pub fn load_artifacts_quiet(
+    source: &model::SourceConfig,
+    base_dir: &Path,
+    schema: &schema::Schema,
+) -> Result<Vec<model::Artifact>, Error> {
+    load_artifacts_inner(source, base_dir, schema, false)
+}
+
+fn load_artifacts_inner(
+    source: &model::SourceConfig,
+    base_dir: &Path,
+    schema: &schema::Schema,
+    warn_skips: bool,
+) -> Result<Vec<model::Artifact>, Error> {
     let path = base_dir.join(&source.path);
 
     let adapter_config = adapter::AdapterConfig {
@@ -242,7 +269,7 @@ pub fn load_artifacts(
             import_with_schema(&source_input, schema)
         }
         "generic" | "generic-yaml" => {
-            let adapter = formats::generic::GenericYamlAdapter::new();
+            let adapter = formats::generic::GenericYamlAdapter::new().with_warn_skips(warn_skips);
             adapter::Adapter::import(&adapter, &source_input, &adapter_config)
         }
         "reqif" => {
@@ -360,6 +387,31 @@ pub fn load_artifacts_with_report(
     schema: &schema::Schema,
 ) -> Result<LoadReport, Error> {
     let artifacts = load_artifacts(source, base_dir, schema)?;
+    let skipped = scan_source_skips(source, base_dir);
+    let duplicates = detect_duplicate_ids(&artifacts);
+    Ok(LoadReport {
+        artifacts,
+        skipped,
+        duplicates,
+    })
+}
+
+/// Like [`load_artifacts_with_report`], but loads via [`load_artifacts_quiet`]
+/// so the per-file `skipping <file>` WARN is not re-emitted.
+///
+/// `rivet validate` calls this for its REQ-075 duplicate-id / REQ-062 skip
+/// re-scan, which runs *after* `ProjectContext::load` already loaded the same
+/// sources (and emitted the WARN once). Using the noisy
+/// [`load_artifacts_with_report`] there printed every malformed-file WARN
+/// twice (REQ-157 / #406). The returned `skipped` / `duplicates` — and thus
+/// the hard `artifact-parse-error` / `duplicate-artifact-id` ERROR
+/// diagnostics — are identical to the noisy variant.
+pub fn load_artifacts_with_report_quiet(
+    source: &model::SourceConfig,
+    base_dir: &Path,
+    schema: &schema::Schema,
+) -> Result<LoadReport, Error> {
+    let artifacts = load_artifacts_quiet(source, base_dir, schema)?;
     let skipped = scan_source_skips(source, base_dir);
     let duplicates = detect_duplicate_ids(&artifacts);
     Ok(LoadReport {

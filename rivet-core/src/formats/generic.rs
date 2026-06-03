@@ -71,13 +71,26 @@ use crate::model::{Artifact, Link, Provenance};
 
 pub struct GenericYamlAdapter {
     supported: Vec<String>,
+    /// Whether a malformed *artifact* file encountered during a directory
+    /// import emits a per-file `skipping <file>` WARN. Default `true`.
+    /// `rivet validate` re-loads each source for the REQ-075 duplicate-id
+    /// pass after `ProjectContext::load` already loaded+warned; that re-load
+    /// uses a quiet adapter so the WARN isn't printed twice (REQ-157 / #406).
+    warn_skips: bool,
 }
 
 impl GenericYamlAdapter {
     pub fn new() -> Self {
         Self {
             supported: vec![], // accepts all types
+            warn_skips: true,
         }
+    }
+
+    /// Builder: set whether per-file skip WARNs are emitted (REQ-157 / #406).
+    pub fn with_warn_skips(mut self, warn_skips: bool) -> Self {
+        self.warn_skips = warn_skips;
+        self
     }
 }
 
@@ -104,7 +117,7 @@ impl Adapter for GenericYamlAdapter {
     ) -> Result<Vec<Artifact>, Error> {
         match source {
             AdapterSource::Path(path) => import_generic_file(path),
-            AdapterSource::Directory(dir) => import_generic_directory(dir),
+            AdapterSource::Directory(dir) => import_generic_directory(dir, self.warn_skips),
             AdapterSource::Bytes(bytes) => {
                 let content = std::str::from_utf8(bytes)
                     .map_err(|e| Error::Adapter(format!("invalid UTF-8: {}", e)))?;
@@ -209,7 +222,7 @@ fn import_generic_file(path: &Path) -> Result<Vec<Artifact>, Error> {
     parse_generic_yaml(&content, Some(path))
 }
 
-fn import_generic_directory(dir: &Path) -> Result<Vec<Artifact>, Error> {
+fn import_generic_directory(dir: &Path, warn_skips: bool) -> Result<Vec<Artifact>, Error> {
     let mut artifacts = Vec::new();
     let entries =
         std::fs::read_dir(dir).map_err(|e| Error::Io(format!("{}: {}", dir.display(), e)))?;
@@ -234,16 +247,20 @@ fn import_generic_directory(dir: &Path) -> Result<Vec<Artifact>, Error> {
                     // signal. `rivet validate` still re-scans and surfaces the
                     // ParseError case as a hard `artifact-parse-error`
                     // diagnostic, so suppressing the noisy case loses nothing.
+                    //
+                    // REQ-157 / #406: `warn_skips` is false when this is the
+                    // validate duplicate-id re-scan (the source was already
+                    // loaded+warned once), so the WARN isn't printed twice.
                     let is_parse_error = std::fs::read_to_string(&path)
                         .map(|c| classify_skip(&c) == SkipKind::ParseError)
                         .unwrap_or(true); // unreadable -> surface it
-                    if is_parse_error {
+                    if warn_skips && is_parse_error {
                         log::warn!("skipping {}: {}", path.display(), e);
                     }
                 }
             }
         } else if path.is_dir() {
-            artifacts.extend(import_generic_directory(&path)?);
+            artifacts.extend(import_generic_directory(&path, warn_skips)?);
         }
     }
 
@@ -550,7 +567,8 @@ Artifacts:
         )
         .unwrap();
 
-        let arts = import_generic_directory(dir.path()).expect("directory import must not error");
+        let arts =
+            import_generic_directory(dir.path(), true).expect("directory import must not error");
         let ids: Vec<&str> = arts.iter().map(|a| a.id.as_str()).collect();
         assert_eq!(
             ids,

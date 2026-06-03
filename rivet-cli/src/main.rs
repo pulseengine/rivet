@@ -4703,7 +4703,12 @@ fn cmd_validate(
     let mut parse_error_skips: Vec<rivet_core::SkippedFile> = Vec::new();
     let mut loaded_for_dup_check: Vec<rivet_core::model::Artifact> = Vec::new();
     for source in &config.sources {
-        match rivet_core::load_artifacts_with_report(source, &cli.project, &schema) {
+        // REQ-157 / #406: use the *quiet* report loader — `ProjectContext::load`
+        // already loaded these sources and emitted any per-file `skipping …`
+        // WARN once; re-emitting it here printed every such line twice. The
+        // skips/duplicates (and the hard ERROR diagnostics derived from them)
+        // are unchanged.
+        match rivet_core::load_artifacts_with_report_quiet(source, &cli.project, &schema) {
             Ok(report) => {
                 for skip in report.skipped {
                     if skip.kind == rivet_core::SkipKind::ParseError {
