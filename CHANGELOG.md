@@ -7,6 +7,15 @@
 
 ### Added
 
+- **REQ-159 / #415 — `Store::iter_sorted()` for deterministic iteration.**
+  `Store::iter()` is `HashMap`-ordered (nondeterministic per process), which is
+  how the REQ-158 `rivet add` note picked a different artifact in CI than
+  locally and made the proptest job flaky. `iter()` now documents that its
+  order is unspecified and points at the new `iter_sorted()` (ascending by id)
+  for callers that produce stable output or select a representative. Migrating
+  existing call sites and an ordered-map backing are tracked as follow-ups on
+  #415.
+
 - **REQ-158 / #397 — near-duplicate-intent detection.** `rivet add` rejects a
   duplicate *id* but nothing flagged a duplicate *intent* — two artifacts that
   say the same thing under different ids — so a backlog accreted near-dups.

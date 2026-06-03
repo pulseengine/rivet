@@ -120,10 +120,28 @@ impl Store {
             .unwrap_or(&[])
     }
 
-    /// Iterate over all artifacts.
+    /// Iterate over all artifacts in **unspecified, nondeterministic order**.
+    ///
+    /// The backing store is a `HashMap`, so iteration order varies between
+    /// processes. Any caller that produces stable output (a printed list, an
+    /// export) or selects a single representative when several tie (e.g.
+    /// "the most-similar artifact") MUST sort or tie-break explicitly —
+    /// otherwise the result is silently nondeterministic and flaky in CI.
+    /// See [`Self::iter_sorted`] for the common "iterate by id" case and
+    /// issue #415 (REQ-159) for the footgun this prevents.
     #[inline]
     pub fn iter(&self) -> impl Iterator<Item = &Artifact> {
         self.artifacts.values()
+    }
+
+    /// Iterate over all artifacts in a **deterministic** order — ascending by
+    /// `id`. Prefer this over [`Self::iter`] whenever the iteration feeds
+    /// user-facing output or a representative-selection, so results are
+    /// reproducible across runs (REQ-159 / #415).
+    pub fn iter_sorted(&self) -> impl Iterator<Item = &Artifact> {
+        let mut artifacts: Vec<&Artifact> = self.artifacts.values().collect();
+        artifacts.sort_by(|a, b| a.id.cmp(&b.id));
+        artifacts.into_iter()
     }
 
     /// Total number of artifacts.
@@ -371,6 +389,24 @@ mod tests {
         assert!(
             !populated.is_empty(),
             "Store with one inserted artifact must report non-empty",
+        );
+    }
+
+    /// REQ-159 / #415: `iter_sorted` yields artifacts ascending by id
+    /// regardless of insertion order, so callers that need deterministic
+    /// output/selection can rely on it (unlike the HashMap-ordered `iter`).
+    #[test]
+    fn iter_sorted_is_deterministic_by_id() {
+        let mut store = Store::new();
+        // Insert out of order.
+        for id in ["REQ-010", "REQ-002", "REQ-100", "REQ-001", "REQ-020"] {
+            store.upsert(minimal_artifact(id, "requirement"));
+        }
+        let ids: Vec<&str> = store.iter_sorted().map(|a| a.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec!["REQ-001", "REQ-002", "REQ-010", "REQ-020", "REQ-100"],
+            "iter_sorted must be ascending by id"
         );
     }
 }
