@@ -5117,6 +5117,7 @@ fn cmd_validate(
     let mut backlinks: Vec<rivet_core::externals::CrossRepoBacklink> = Vec::new();
     let mut circular_deps: Vec<rivet_core::externals::CircularDependency> = Vec::new();
     let mut version_conflicts: Vec<rivet_core::externals::VersionConflict> = Vec::new();
+    let mut unresolved_externals: Vec<String> = Vec::new();
     if !skip_external_validation {
         if let Some(ref externals) = config.externals {
             if !externals.is_empty() {
@@ -5170,6 +5171,12 @@ fn cmd_validate(
                     &config.project.name,
                     &cli.project,
                 );
+
+                // Which externals are missing from the cache? Their absence
+                // makes the cycle/backlink graph incomplete, so a clean result
+                // is not trustworthy until they are synced (REQ-170).
+                unresolved_externals =
+                    rivet_core::externals::unresolved_externals(externals, &cli.project);
             }
         }
     }
@@ -5350,6 +5357,7 @@ fn cmd_validate(
             "backlinks": backlinks.len(),
             "circular_deps": circular_deps.len(),
             "version_conflicts": version_conflicts.len(),
+            "unresolved_externals": unresolved_externals,
             "lifecycle_gaps": lifecycle_gaps.len(),
             "diagnostics": diag_json,
             "broken_cross_refs": cross_json,
@@ -5419,6 +5427,20 @@ fn cmd_validate(
             for bl in &backlinks {
                 println!("  {}:{} -> {}", bl.source_prefix, bl.source_id, bl.target);
             }
+        }
+
+        if !unresolved_externals.is_empty() {
+            println!();
+            println!(
+                "warning: cross-repo cycle/backlink checks are INCOMPLETE — {} external(s) \
+                 not synced: {}",
+                unresolved_externals.len(),
+                unresolved_externals.join(", ")
+            );
+            println!(
+                "  run `rivet sync` first; a cycle or broken reference routed through an \
+                 un-synced repo cannot be detected."
+            );
         }
 
         if !circular_deps.is_empty() {

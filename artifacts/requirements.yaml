@@ -5052,3 +5052,42 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-020
+
+  - id: REQ-170
+    type: requirement
+    title: "validate surfaces un-synced externals so cross-repo cycle/backlink checks aren't silently incomplete"
+    status: implemented
+    description: |
+      Follow-up to the multi-repo co-development design (REQ-169). `rivet
+      validate` runs `detect_circular_deps` to catch A->B->A link cycles across
+      repos, building the graph by reading each external's own `rivet.yaml` from
+      `.rivet/repos/<prefix>`. But that read is `if let Ok(...)`: an external
+      that is not synced (or whose config won't parse) is silently skipped, so a
+      cycle or broken reference routed through it is invisible and validate
+      reports a clean "0 circular deps". The acyclicity guarantee is only as
+      good as graph completeness, and the incompleteness was silent (violates
+      F2: loud-fail over silent-success).
+
+      Add `unresolved_externals(externals, project_dir) -> Vec<String>` (sorted)
+      returning the prefixes whose cached `rivet.yaml` cannot be loaded. `rivet
+      validate` reports them: a WARNING naming the un-synced prefixes and
+      telling the user to run `rivet sync`, plus an `unresolved_externals` array
+      in `--format json`. Externals resolvable via a `path:` (the live tree)
+      are not flagged. Warning only — does not change PASS/FAIL.
+
+      Acceptance:
+        - `rivet validate` on a project with an un-synced `git:` external prints
+          a warning containing "INCOMPLETE" and the prefix; `--format json`
+          includes that prefix in `unresolved_externals` while `circular_deps`
+          is 0.
+        - `cargo test -p rivet-core --lib
+          unresolved_externals_lists_only_unsynced_repos` passes.
+        - `rivet validate` on the rivet repo still PASS (spar resolves via its
+          `path:` fixture, so it is not flagged).
+    tags: [externals, sync, cross-repo, validate, loud-fail, f2, dogfooding, self-found]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-020
