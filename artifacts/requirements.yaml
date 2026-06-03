@@ -4660,3 +4660,38 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-158
+
+  - id: REQ-160
+    type: requirement
+    title: "Make query/export/migrate output deterministic by sorting the Store::iter() consumers"
+    status: implemented
+    description: |
+      Follow-up to REQ-159 (#415): migrate the `store.iter().collect()` sites
+      that produce ordered, user-facing output so they are reproducible across
+      runs (the store is HashMap-ordered).
+
+      Audited every site. Order-irrelevant ones (collected into `HashSet<id>`
+      membership sets) were left as-is; `render/externals.rs` already sorted.
+      The output-producing sites fixed:
+        - `query::execute` now returns results ascending by `id` — this is the
+          shared result set behind `rivet list` (whose default path did NOT
+          sort), the MCP query tool, and `{{query:…}}` embeds, so all of them
+          become deterministic at one chokepoint.
+        - `cmd_export` (ReqIF/etc.) and `cmd_export_zola` sort by id before
+          emitting, so exports are byte-reproducible.
+        - `rivet schema migrate` sorts artifacts before computing the rewrite
+          map so the generated migration is reproducible.
+
+      Acceptance:
+        - `rivet list --format json` produces identical id order across runs.
+        - `cargo test -p rivet-core --lib execute_returns_results_sorted_by_id`
+          passes; export_reqif_roundtrip / export_zola / migrate_integration
+          suites still pass.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [refactor, determinism, reproducibility, issue-415]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-159

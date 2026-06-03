@@ -7786,7 +7786,9 @@ fn cmd_export(
 
     let ctx = ProjectContext::load(cli)?;
     let store = apply_baseline_scope(ctx.store, baseline_name, &ctx.config);
-    let artifacts: Vec<_> = store.iter().cloned().collect();
+    // Sorted by id so the exported artifact (ReqIF/etc.) is byte-reproducible
+    // across runs (REQ-159 / #415; the store is HashMap-ordered).
+    let artifacts: Vec<_> = store.iter_sorted().cloned().collect();
     let config = AdapterConfig::default();
 
     let bytes = match format {
@@ -7845,8 +7847,9 @@ fn cmd_export_zola(
     let doc_store = ctx.doc_store.unwrap_or_default();
     let graph = rivet_core::links::LinkGraph::build(&store, &ctx.schema);
 
-    // Apply s-expression filter if provided.
-    let artifacts: Vec<&rivet_core::model::Artifact> = if let Some(filter_src) = sexpr_filter {
+    // Apply s-expression filter if provided. Sorted by id so the exported
+    // site is reproducible across runs (REQ-159 / #415; store is HashMap-order).
+    let mut artifacts: Vec<&rivet_core::model::Artifact> = if let Some(filter_src) = sexpr_filter {
         let expr = rivet_core::sexpr_eval::parse_filter(filter_src).map_err(|errs| {
             let msgs: Vec<String> = errs.iter().map(|e| e.to_string()).collect();
             anyhow::anyhow!("invalid filter: {}", msgs.join("; "))
@@ -7858,6 +7861,7 @@ fn cmd_export_zola(
     } else {
         store.iter().collect()
     };
+    artifacts.sort_by(|a, b| a.id.cmp(&b.id));
 
     // Slugs of the artifacts that actually get a page in this export. Used to
     // decide whether a cross-link / wiki-link can be emitted as a Zola internal

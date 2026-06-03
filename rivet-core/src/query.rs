@@ -85,8 +85,15 @@ impl Query {
 }
 
 /// Execute a query against the store.
+///
+/// Results are returned in a deterministic order — ascending by `id` — so
+/// `rivet list`, the MCP query tool, and `{{query:…}}` embeds produce stable,
+/// reproducible output across runs (the store itself is HashMap-ordered;
+/// REQ-159 / #415).
 pub fn execute<'a>(store: &'a Store, query: &Query) -> Vec<&'a Artifact> {
-    store.iter().filter(|a| query.matches(a)).collect()
+    let mut results: Vec<&Artifact> = store.iter().filter(|a| query.matches(a)).collect();
+    results.sort_by(|a, b| a.id.cmp(&b.id));
+    results
 }
 
 // ── S-expression query execution ────────────────────────────────────────
@@ -193,6 +200,22 @@ mod tests {
         let schema = Schema::merge(&[]);
         let graph = LinkGraph::build(&store, &schema);
         (store, schema, graph)
+    }
+
+    #[test]
+    fn execute_returns_results_sorted_by_id() {
+        // REQ-159 / #415: deterministic order regardless of insertion order.
+        let (store, _schema, _graph) = build(vec![
+            plain("REQ-030", "requirement", None, &[]),
+            plain("REQ-002", "requirement", None, &[]),
+            plain("REQ-100", "requirement", None, &[]),
+            plain("REQ-001", "requirement", None, &[]),
+        ]);
+        let ids: Vec<&str> = execute(&store, &Query::default())
+            .iter()
+            .map(|a| a.id.as_str())
+            .collect();
+        assert_eq!(ids, vec!["REQ-001", "REQ-002", "REQ-030", "REQ-100"]);
     }
 
     #[test]

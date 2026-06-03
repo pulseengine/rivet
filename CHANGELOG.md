@@ -5,6 +5,16 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **REQ-160 / #415 — deterministic `list` / export / migrate output.**
+  `query::execute` (behind `rivet list`, the MCP query tool, and `{{query:…}}`
+  embeds) now returns results sorted by id — `rivet list`'s default path
+  previously didn't sort, so order was nondeterministic. `rivet export`
+  (ReqIF/Zola) and `rivet schema migrate` likewise sort before emitting, so
+  exports and generated migrations are byte-reproducible across runs. Built on
+  REQ-159's `iter_sorted()`.
+
 ### Added
 
 - **REQ-159 / #415 — `Store::iter_sorted()` for deterministic iteration.**

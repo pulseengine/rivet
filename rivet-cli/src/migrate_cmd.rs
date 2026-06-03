@@ -214,8 +214,10 @@ pub fn cmd_plan(
     let target_schema = rivet_core::load_schemas(&target_schemas, schemas_dir)
         .with_context(|| format!("loading target schemas {target_schemas:?}"))?;
 
-    // 4. Compute the rewrite map.
-    let artifacts: Vec<rivet_core::model::Artifact> = project.store.iter().cloned().collect();
+    // 4. Compute the rewrite map. Sorted by id so the generated migration
+    // (.rivet/migrations/<ts>/) is reproducible across runs (REQ-159 / #415).
+    let artifacts: Vec<rivet_core::model::Artifact> =
+        project.store.iter_sorted().cloned().collect();
     let rewrite = migrate::diff_artifacts(recipe, &artifacts, Some(&target_schema));
 
     // 5. Persist to .rivet/migrations/<ts>/.
