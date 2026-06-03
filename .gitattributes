@@ -4,3 +4,13 @@
 # oracle; without this, the queries fall back to line-range logs which
 # re-include lines across refactors.
 *.rs diff=rust
+
+# REQ-164 / #422: every PR adds a CHANGELOG entry at the top of
+# `[Unreleased]`, so parallel PRs always conflict here. The built-in `union`
+# merge driver keeps BOTH sides' added lines instead of conflicting — safe for
+# an append-only prose log (worst case: an out-of-order entry, trivially
+# fixed). NOT applied to artifacts/*.yaml: union-concatenating conflicting
+# YAML hunks could silently produce malformed/misordered YAML, which is worse
+# than a conflict that forces a human to look — append REQs at EOF / use
+# `rivet add` there instead (#422).
+CHANGELOG.md merge=union
