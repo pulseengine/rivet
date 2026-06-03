@@ -4745,3 +4745,33 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-004
+
+  - id: REQ-164
+    type: requirement
+    title: "Reduce parallel-PR merge conflicts in append-only ledgers (CHANGELOG union driver)"
+    status: implemented
+    description: |
+      Self-found while landing several one-REQ-per-PR changes in one session
+      (#422): every PR conflicts in CHANGELOG.md (entries at the top of
+      `[Unreleased]`) and artifacts/requirements.yaml, forcing a manual
+      rebase+resolve each time.
+
+      Add `.gitattributes` `CHANGELOG.md merge=union` so git's built-in union
+      driver keeps both sides' added lines instead of conflicting — safe for an
+      append-only prose log. Deliberately NOT applied to artifacts/*.yaml:
+      union-concatenating conflicting YAML hunks can silently produce malformed
+      or misordered YAML, which is worse than a conflict that forces review;
+      the guidance there is to append REQs at EOF (as this very artifact does)
+      or use `rivet add`, never insert mid-file.
+
+      Acceptance:
+        - `.gitattributes` declares `CHANGELOG.md merge=union`.
+        - This REQ was appended at end-of-file (not inserted mid-file).
+        - `rivet validate` still PASSES.
+    tags: [chore, dx, git, dogfooding, self-found, issue-422]
+    fields:
+      priority: should
+      category: process
+    links:
+      - type: traces-to
+        target: REQ-007
