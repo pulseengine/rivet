@@ -5299,3 +5299,38 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-010
+
+  - id: REQ-177
+    type: requirement
+    title: "rivet schema sources lists each active schema's resolution (on-disk pinned vs embedded binary-versioned)"
+    status: implemented
+    description: |
+      Completes the #431 surfacing started in REQ-176. `schema info` shows one
+      schema's source, but a user wants the whole active set at a glance to
+      answer "am I on builtin (embedded, changes on upgrade) or vendored
+      (pinned) schemas?". Add `rivet schema sources` (text + `--format json`)
+      listing each name in `rivet.yaml`'s `schemas:` with on-disk (path) /
+      embedded / missing.
+
+      Backed by a reusable `embedded::schema_sources(names, schemas_dir) ->
+      [(name, SchemaSource)]` helper (OnDisk(path) | Embedded | Missing),
+      mirroring load_schemas_with_fallback's precedence. The command resolves
+      sources WITHOUT loading the schema graph, so it still works (and reports
+      `missing`) when a schema can't be loaded — diagnosing that is the point.
+
+      Acceptance:
+        - `rivet schema sources` (this repo, schemas vendored) shows every
+          schema as `on-disk`.
+        - For a project whose schemas aren't vendored, `rivet schema sources
+          --format json` succeeds (exit 0) and reports a builtin name as
+          `embedded` and an unknown name as `missing`.
+        - `cargo test -p rivet-core --lib schema_sources` and `cargo test -p
+          rivet-cli --test cli_commands schema_sources_reports_resolution` pass.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [schema, embedded, cli, dx, cross-version, dogfooding, self-found, issue-431]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-010

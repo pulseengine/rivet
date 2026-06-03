@@ -2353,6 +2353,61 @@ fn schema_info_reports_source() {
     );
 }
 
+/// `rivet schema sources` reports each active schema's resolution (on-disk /
+/// embedded / missing) and — crucially — succeeds even when a schema can't be
+/// loaded, since diagnosing that is the point. #431 / REQ-177.
+// rivet: verifies REQ-177
+#[test]
+fn schema_sources_reports_resolution() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("rivet.yaml"),
+        "project:\n  name: t\n  schemas: [common, made-up]\n",
+    )
+    .unwrap();
+    // An existing-but-empty schemas dir → nothing vendored, so `common` falls
+    // back to embedded and `made-up` is missing.
+    let empty = tempfile::tempdir().unwrap();
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir.path().to_str().unwrap(),
+            "--schemas",
+            empty.path().to_str().unwrap(),
+            "schema",
+            "sources",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run schema sources");
+    assert!(
+        out.status.success(),
+        "schema sources must succeed despite a missing schema. stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let v: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&out.stdout)).expect("valid JSON");
+    assert_eq!(
+        v.get("command").and_then(|c| c.as_str()),
+        Some("schema-sources")
+    );
+    let schemas = v
+        .get("schemas")
+        .and_then(|s| s.as_array())
+        .expect("schemas array");
+    let common = schemas
+        .iter()
+        .find(|s| s["name"] == "common")
+        .expect("common present");
+    assert_eq!(common["source"], "embedded");
+    let made = schemas
+        .iter()
+        .find(|s| s["name"] == "made-up")
+        .expect("made-up present");
+    assert_eq!(made["source"], "missing");
+}
+
 // ── JSON validity sweep ────────────────────────────────────────────────
 
 /// Comprehensive sweep: every command that accepts `--format json` must
