@@ -4746,6 +4746,50 @@ artifacts:
       - type: traces-to
         target: REQ-004
 
+  - id: REQ-162
+    type: requirement
+    title: "Declare the canonical status lifecycle in common.yaml so typo'd statuses fail validation"
+    status: implemented
+    description: |
+      From #352/#355 Finding 1: the `status` base-field had no `allowed-values`,
+      so a typo'd or off-vocabulary status (`implmented`, `acitve`) passed
+      `rivet validate` silently and the valid set wasn't discoverable. The
+      enforcement mechanism (REQ-135 — `status-allowed-values`) shipped but was
+      inert until a set was declared.
+
+      Maintainer decision (this session): declare the canonical lifecycle in
+      the shared `schemas/common.yaml` `status` base-field —
+      `[draft, proposed, approved, implemented, verified, released,
+      deprecated, rejected]`. Ordering for promotion gates: draft -> proposed -> approved
+      -> implemented -> verified -> released; deprecated/rejected terminal.
+
+      Migrated the rivet repo's own drift to fit the set (the only 7 artifacts
+      off-vocabulary): `accepted`/`active` design-decisions -> `approved`
+      (a decision in force); the `active` feature FEAT-066 and `partial`
+      component ARCH-ADAPT-WASM -> `implemented` (both exist in code). `proposed`
+      was already in the set. No-status artifacts are unaffected (the check only
+      fires when a status is present).
+
+      Acceptance:
+        - `schemas/common.yaml` `status` base-field declares the 8-value canonical set (incl. `released`).
+        - An artifact with a typo'd status (`implmented`) fails `rivet validate`
+          with a `status-allowed-values` ERROR + remediation; an artifact with
+          no status does not.
+        - `rivet validate` on the rivet repo PASSes (drift migrated; 0
+          `status-allowed-values` errors).
+
+      Deferred (separate, bigger): #355 Finding 2 — the ASPICE promotion gates
+      hardcode `(= status "approved")` so approved -> implemented mis-fires;
+      fixing it needs a `status-at-least` predicate over the ordering declared
+      here. Tracked on #355.
+    tags: [schema, status-lifecycle, validation, issue-352, issue-355, maintainer-decision]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-135
+
   - id: REQ-163
     type: requirement
     title: "Compliance CI must forward the version switcher + back-link inputs to the report action"

@@ -438,7 +438,7 @@ artifacts:
     description: >
       Loads WASM component adapters at runtime via WIT interface.
       Provides sandboxed execution with fuel metering and memory limits.
-    status: partial
+    status: implemented
     tags: [aadl, architecture, adapter, wasm]
     links:
       - type: allocated-from

@@ -40,6 +40,25 @@ base-fields:
     type: enum
     required: false
     description: Current lifecycle status
+    # REQ-162 / #352, #355: the canonical lifecycle. With these declared,
+    # `rivet validate` rejects typo'd / off-vocabulary statuses (rule
+    # `status-allowed-values`) instead of passing them silently, and
+    # `rivet schema show` can surface the set. Ordering (for promotion gates):
+    # draft -> proposed -> approved -> implemented -> verified -> released;
+    # `deprecated` and `rejected` are terminal off-track states. `released` is
+    # the post-verification shipped state the ASPICE verification gates require
+    # (`schemas/aspice.yaml` uses `(= status "released")`) and the
+    # tool-qualification defect flow gates. Absent status is allowed (the check
+    # only fires when a status is present).
+    allowed-values:
+      - draft
+      - proposed
+      - approved
+      - implemented
+      - verified
+      - released
+      - deprecated
+      - rejected
 
   - name: tags
     type: list<string>

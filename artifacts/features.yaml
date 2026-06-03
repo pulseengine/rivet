@@ -1341,7 +1341,7 @@ artifacts:
   - id: FEAT-066
     type: feature
     title: VS Code LSP-based WebView rendering
-    status: active
+    status: implemented
     description: >
       VS Code extension renders dashboard views via custom LSP requests
       (rivet/render, rivet/treeData, rivet/css) instead of embedding a web

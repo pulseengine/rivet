@@ -7,6 +7,18 @@
 
 ### Added
 
+- **REQ-162 / #352, #355 — canonical status lifecycle is now enforced.** The
+  shared `schemas/common.yaml` `status` base-field declares
+  `[draft, proposed, approved, implemented, verified, released, deprecated, rejected]`,
+  so a typo'd / off-vocabulary status now fails `rivet validate` with a
+  `status-allowed-values` ERROR + remediation instead of passing silently, and
+  the set is discoverable. Absent status is unaffected. The rivet repo's own 7
+  drifting artifacts (`accepted`/`active`/`partial`) were migrated to fit.
+  **Downstream note:** projects sharing `common.yaml` must use a status in this
+  set or extend it. (#355 Finding 2 — the `approved`-hardcoded ASPICE promotion
+  gates — is a separate follow-up needing a `status-at-least` predicate.)
+
+
 - **REQ-161 / #408 — `rivet validate --structural`.** Gates only on
   structural-integrity diagnostics (broken links, duplicate ids, parse errors,
   bad link targets, cardinality, schema-rule inconsistencies), hiding
