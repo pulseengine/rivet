@@ -4789,3 +4789,42 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-135
+
+  - id: REQ-163
+    type: requirement
+    title: "Compliance CI must forward the version switcher + back-link inputs to the report action"
+    status: implemented
+    description: |
+      Maintainer reported (#420) that the published compliance report for
+      0.15.0 lost the version selector and the "back" navigation that 0.1.0
+      has. Root cause traced: `rivet export --format html` still supports
+      `--homepage` (back-link), `--versions` (switcher), and `--version-label`,
+      and the compliance action exposes them as `homepage` / `other-versions` /
+      `report-label`. But the CI never supplied them:
+        - the reusable `compliance.yml` workflow passed `version:` (not an
+          action input — silently ignored; the action's label input is
+          `report-label`) and never exposed `other-versions`, so any caller
+          using it could not produce a switcher;
+        - `release.yml`'s compliance step passed no `homepage`/`report-label`.
+
+      Fix (this repo's part): `compliance.yml` now maps `version ->
+      report-label` and adds an `other-versions` passthrough input; `release.yml`
+      labels the report with the release tag and sets a default `homepage`.
+      The cross-version switcher inherently needs the full published-version
+      list, which only the pulseengine.eu site-publishing pipeline knows — that
+      remains the root-cause fix for the live regression (tracked on #420, plus
+      the expired site TLS cert).
+
+      Acceptance:
+        - `compliance.yml` exposes an `other-versions` input and passes
+          `report-label` + `other-versions` to the action.
+        - `release.yml` passes `report-label` + `homepage` to the compliance
+          action.
+        - Both workflow files parse as valid YAML.
+    tags: [ci, compliance, reporting, dx, issue-420, maintainer-reported]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-090
