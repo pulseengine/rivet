@@ -4814,3 +4814,43 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-007
+
+  - id: REQ-165
+    type: requirement
+    title: "ASPICE verification gates must accept a target that moved forward past approved"
+    status: implemented
+    description: |
+      #355 Finding 2: the three ASPICE verification status-gates
+      (V-sys/sw/unit-verification-needs-approved-*) hardcode
+      `(forall-linked "verifies" (= status "approved"))` in the consequent, so
+      a verifier that is approved/released mis-fires when the requirement or
+      design it verifies has moved FORWARD past approved (implemented /
+      verified / released). The antecedent already recognises
+      `(or approved released)`, but the consequent did not — promoting a
+      verified `sw-detail-design` from approved -> implemented wrongly
+      re-raised "needs an approved design".
+
+      Fix (schema-only): expand each consequent to accept approved-or-beyond —
+      `(or (= status "approved") (= status "implemented")
+           (= status "verified") (= status "released"))` — matching the
+      canonical lifecycle ordering (the status base-field set). A target still BELOW approved
+      (draft / proposed) correctly still fires. No s-expr engine change; a
+      `status-at-least` predicate over the ordering remains a possible future
+      simplification.
+
+      Acceptance:
+        - An approved `sys-verification` that verifies an `implemented`
+          system-req does NOT raise
+          `V-sys-verification-needs-approved-req`; one that verifies a `draft`
+          system-req still does.
+        - `cargo test -p rivet-core --test schema_validation_rules
+          aspice_status_gate_accepts_forward_target_status` passes, and the
+          existing `aspice_status_gate_rules_loaded_and_fire` still passes.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [schema, aspice, status-lifecycle, bug, issue-355, issue-350]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-135
