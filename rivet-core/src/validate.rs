@@ -350,14 +350,11 @@ pub fn validate_with_externals_and_variant(
     let mut diagnostics =
         validate_structural_with_externals_and_variant(store, schema, graph, externals, variant);
 
-    // 0. Check conditional rule consistency (schema-level)
-    diagnostics.extend(crate::schema::check_conditional_consistency(
-        &schema.conditional_rules,
-    ));
-
-    // 0b. Check coverage-rule consistency (REQ-148 / #350): a required-backlink
-    // rule whose from-types include a type that can never form the backlink.
-    diagnostics.extend(schema.check_coverage_rule_consistency());
+    // 0. Schema-level consistency checks (conditional-rule dup/overlap +
+    // coverage-rule reachability). REQ-156 / #410: routed through the single
+    // `consistency_diagnostics()` chokepoint shared with the salsa path so the
+    // two never diverge.
+    diagnostics.extend(schema.consistency_diagnostics());
 
     // 8. Check conditional rules (pre-compile regexes to avoid re-compilation per artifact).
     //

@@ -5,6 +5,18 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **REQ-156 / #410 — schema-level consistency checks now route through a single
+  `Schema::consistency_diagnostics()` chokepoint.** Both the salsa (default
+  `rivet validate`) and `--direct` paths call exactly one method instead of
+  hand-registering each check at three call sites, so a future schema-level
+  check can't land on some surfaces but not others — closing the salsa/direct
+  divergence class REQ-146 just fixed for status-gate rules. Pure refactor:
+  diagnostic output is unchanged (`validate` and `validate --direct` produce
+  identical results on the rivet repo). Unit test asserts the chokepoint
+  surfaces both conditional-rule and coverage-rule consistency diagnostics.
+
 ### Fixed
 
 - **REQ-148 / #350 — new `coverage-rule-consistency` schema check flags a

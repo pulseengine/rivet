@@ -417,13 +417,11 @@ pub fn evaluate_conditional_rules(
 
     let mut diagnostics = Vec::new();
 
-    // Check rule consistency first (duplicate names, overlapping requirements)
-    diagnostics.extend(crate::schema::check_conditional_consistency(
-        &schema.conditional_rules,
-    ));
-    // Coverage-rule consistency (REQ-148 / #350) — kept on the salsa path too
-    // so it never diverges from `validate --direct` (cf. REQ-146).
-    diagnostics.extend(schema.check_coverage_rule_consistency());
+    // Schema-level consistency checks (conditional-rule dup/overlap +
+    // coverage-rule reachability). REQ-156 / #410: the single
+    // `consistency_diagnostics()` chokepoint shared with the direct path so
+    // the salsa and `--direct` surfaces never diverge (cf. REQ-146).
+    diagnostics.extend(schema.consistency_diagnostics());
 
     // Evaluate each conditional rule against each artifact (pre-compile regexes)
     for rule in &schema.conditional_rules {
@@ -460,13 +458,11 @@ pub fn evaluate_conditional_rules_with_extras(
 
     let mut diagnostics = Vec::new();
 
-    // Check rule consistency first (duplicate names, overlapping requirements)
-    diagnostics.extend(crate::schema::check_conditional_consistency(
-        &schema.conditional_rules,
-    ));
-    // Coverage-rule consistency (REQ-148 / #350) — kept on the salsa path too
-    // so it never diverges from `validate --direct` (cf. REQ-146).
-    diagnostics.extend(schema.check_coverage_rule_consistency());
+    // Schema-level consistency checks (conditional-rule dup/overlap +
+    // coverage-rule reachability). REQ-156 / #410: the single
+    // `consistency_diagnostics()` chokepoint shared with the direct path so
+    // the salsa and `--direct` surfaces never diverge (cf. REQ-146).
+    diagnostics.extend(schema.consistency_diagnostics());
 
     // Evaluate each conditional rule against each artifact (pre-compile regexes)
     for rule in &schema.conditional_rules {

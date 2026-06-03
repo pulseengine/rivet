@@ -1198,6 +1198,20 @@ impl Schema {
         issues
     }
 
+    /// REQ-156 / #410: the single source of truth for *schema-level*
+    /// (artifact-independent) consistency diagnostics. Both the salsa
+    /// (`db.rs`) and direct (`validate::validate*`) validation paths MUST call
+    /// exactly this, so a new schema-level check lands on every surface at
+    /// once and can never diverge between `rivet validate` and
+    /// `validate --direct` (the bug class REQ-146 / #355 just fixed for
+    /// status-gate rules). Adding a future check is a one-line edit here that
+    /// cannot be partially applied across call sites.
+    pub fn consistency_diagnostics(&self) -> Vec<crate::validate::Diagnostic> {
+        let mut diagnostics = check_conditional_consistency(&self.conditional_rules);
+        diagnostics.extend(self.check_coverage_rule_consistency());
+        diagnostics
+    }
+
     /// REQ-148 / #350: flag a `required-backlink` coverage rule that
     /// advertises a `from-type` the schema's own link rules can never let
     /// form the backlink — the "advertises an unsatisfiable satisfier" class.
@@ -2192,6 +2206,69 @@ mod tests {
         assert!(
             msg.contains("unit-verification") && !msg.contains("'sw-verification'"),
             "must flag unit-verification (the unreachable one), not sw-verification: {msg}"
+        );
+    }
+
+    #[test]
+    fn consistency_diagnostics_aggregates_conditional_and_coverage_checks() {
+        // REQ-156 / #410: the single chokepoint both validation paths call
+        // must surface BOTH schema-level check families. Build a schema that
+        // trips each: a duplicated conditional rule name (conditional-rule-
+        // consistency) and an unsatisfiable coverage from-type
+        // (coverage-rule-consistency).
+        let mut file = mk_schema_file(
+            "both",
+            vec![
+                mk_type("sw-req", vec![], vec![]),
+                mk_type("sw-detail-design", vec![], vec![]),
+                verifier_type("unit-verification", &["sw-detail-design"]),
+            ],
+        );
+        file.link_types.push(LinkTypeDef {
+            name: "verifies".into(),
+            inverse: None,
+            description: "verifies".into(),
+            source_types: vec![],
+            target_types: vec![],
+        });
+        file.traceability_rules.push(TraceabilityRule {
+            name: "swe1-has-verification".into(),
+            description: "every sw-req is verified".into(),
+            source_type: "sw-req".into(),
+            required_link: None,
+            required_backlink: Some("verifies".into()),
+            target_types: vec![],
+            from_types: vec!["unit-verification".into()],
+            severity: Severity::Warning,
+            alternate_backlinks: vec![],
+        });
+        let dup = ConditionalRule {
+            name: "dup-rule".into(),
+            description: None,
+            condition: None,
+            when: Condition::Equals {
+                field: "status".into(),
+                value: "active".into(),
+            },
+            then: Requirement::RequiredFields {
+                fields: vec!["x".into()],
+            },
+            severity: Severity::Warning,
+        };
+        file.conditional_rules.push(dup.clone());
+        file.conditional_rules.push(dup);
+        let schema = Schema::merge(&[file]);
+
+        let diags = schema.consistency_diagnostics();
+        let rules: std::collections::HashSet<&str> =
+            diags.iter().map(|d| d.rule.as_str()).collect();
+        assert!(
+            rules.contains("conditional-rule-consistency"),
+            "chokepoint must include conditional-rule checks, got {rules:?}"
+        );
+        assert!(
+            rules.contains("coverage-rule-consistency"),
+            "chokepoint must include coverage-rule checks, got {rules:?}"
         );
     }
 
