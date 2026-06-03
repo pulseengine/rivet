@@ -188,12 +188,6 @@ impl ViewParams {
 
 // ── Search input ──────────────────────────────────────────────────────────
 
-/// Render a search input with magnifying-glass icon.
-///
-/// * `placeholder` — placeholder text (e.g. "Search artifacts...").
-/// * `current_query` — current search value.
-/// * `target_url` — hx-get target (e.g. "/artifacts").
-/// * `include_names` — comma-separated list of input names to include via hx-include.
 /// Build an `hx-include` selector list for a filter control, always appending
 /// the variant selector (`#variant-selector`).
 ///
@@ -207,12 +201,20 @@ impl ViewParams {
 /// only present in the DOM when a variant model exists (otherwise the extra
 /// CSS selector simply matches nothing).
 fn hx_include_with_variant(include_names: &[&str]) -> String {
-    let mut selectors: Vec<String> =
-        include_names.iter().map(|n| format!("[name='{n}']")).collect();
+    let mut selectors: Vec<String> = include_names
+        .iter()
+        .map(|n| format!("[name='{n}']"))
+        .collect();
     selectors.push("#variant-selector".to_string());
     selectors.join(",")
 }
 
+/// Render a search input with magnifying-glass icon.
+///
+/// * `placeholder` — placeholder text (e.g. "Search artifacts...").
+/// * `current_query` — current search value.
+/// * `target_url` — hx-get target (e.g. "/artifacts").
+/// * `include_names` — comma-separated list of input names to include via hx-include.
 pub fn search_input(
     placeholder: &str,
     current_query: &str,
