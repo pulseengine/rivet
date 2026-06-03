@@ -12,11 +12,14 @@ import { waitForHtmx } from "./helpers";
  */
 const VIEWER_PAGES = [
   // Top-level link graph — always has toolbar.
-  // ?limit=2000 bypasses the default 200-node budget (added in 2fafe1a)
-  // so the dogfood dataset (~742 artifacts) renders the actual SVG
-  // instead of the "graph above node budget" placeholder. 2000 is
-  // MAX_NODE_BUDGET in render/graph.rs.
-  { name: "graph", url: "/graph?limit=2000" },
+  // Use a *focused* subgraph (REQ-001 + depth-1 neighbours) rather than the
+  // full graph: this test pins the `.svg-viewer` toolbar invariant, not graph
+  // size. The dogfood dataset outgrew the old `?limit=2000` full render — at
+  // ~871 artifacts that page is heavy enough that `goto` + settle exceeded the
+  // timeout, so the toolbar/fullscreen checks failed. A bounded focused graph
+  // renders the same `.svg-viewer` wrapper quickly and deterministically.
+  // (`limit=2000` kept so the focused subgraph is never budget-clipped.)
+  { name: "graph", url: "/graph?focus=REQ-001&depth=1&limit=2000" },
   // Doc linkage view.
   { name: "doc-linkage", url: "/doc-linkage" },
   // /help renders the schema-linkage mermaid diagram (a Schema Linkage

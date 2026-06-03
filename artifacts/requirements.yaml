@@ -5091,3 +5091,43 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-020
+
+  - id: REQ-171
+    type: requirement
+    title: "graph E2E tests must bound node count so dataset growth doesn't trip the render budget"
+    status: implemented
+    description: |
+      Self-found while triaging why Playwright E2E was red. Three graph/diagram
+      tests fail reproducibly (through the CI retry), and have been red across
+      multiple merges — unnoticed because Playwright E2E is a non-required check
+      and main runs are concurrency-cancelled, so it never reports a conclusive
+      green. Root cause is dataset growth, not a serve regression:
+
+      - `graph.spec.ts` "custom polygon shapes" hit `/graph?types=requirement,
+        design-decision&depth=2` with NO `?limit=`. The dogfood dataset grew
+        past the default 200-node render budget for that filter, so the view
+        returns the "above node budget" placeholder (no SVG) and the polygon
+        assertion gets 0. Verified locally: the same URL with `&limit=2000`
+        renders the real graph.
+      - `diagram-viewer.spec.ts` graph page used `/graph?limit=2000` (the FULL
+        ~871-node graph); that page is now heavy enough that `goto`+settle
+        exceeded the timeout, failing the `.svg-viewer` toolbar/fullscreen
+        checks. A bounded focused subgraph renders the same wrapper fast.
+
+      Fix (test-only): add `&limit=2000` to the polygon test, and point the
+      diagram-viewer graph case at a focused subgraph
+      (`/graph?focus=REQ-001&depth=1&limit=2000`). Both verified green in a real
+      browser locally (7/7 in the affected specs).
+
+      Acceptance:
+        - `cd tests/playwright && npx playwright test graph.spec.ts
+          diagram-viewer.spec.ts --project=chromium --grep
+          "polygon|toolbar present|fullscreen toggles"` passes (was 3 failing).
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [serve, dashboard, graph, playwright, e2e, dogfooding, self-found, ci-hygiene]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: FEAT-001
