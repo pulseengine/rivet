@@ -5334,3 +5334,42 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-010
+
+  - id: REQ-178
+    type: requirement
+    title: "coverage-gap diagnostics name the intermediate chain when a required backlink type can't link directly"
+    status: draft
+    description: |
+      From #350 (downstream aspice project). `check_lifecycle_completeness`
+      (rivet-core/src/lifecycle.rs) derives each type's expected backlinks from
+      schema traceability rules: an `sw-req` rule requiring backlinks from
+      `unit-verification` / `sw-integration-verification` yields
+      "missing: unit-verification, sw-integration-verification". But it never
+      cross-checks whether those source types can ACTUALLY form that backlink —
+      in aspice, `unit-verification.verifies` only targets
+      `sw-detail-design` / `sw-arch-component`, never `sw-req`. So the message
+      asks for a link the link schema forbids and points the user at the wrong
+      fix (author a verification linking straight to the req).
+
+      Fix: when emitting a coverage gap (and in `rivet validate --explain`),
+      cross-check each required source type T against the link schema's
+      allowed-targets for this artifact's type. If T cannot link here directly,
+      walk one hop and print the chain ("T verifies <design-type>; add a
+      <design-type> that satisfies this req, verified by T"), turning
+      "missing: unit-verification" into actionable layered guidance.
+
+      Acceptance:
+        - For an aspice `sw-req` fixture marked `implemented` with no chain,
+          `rivet validate --explain <id>` output names the intermediate
+          `sw-detail-design` / `sw-arch-component` step, not just the terminal
+          verification types.
+        - The plain `requirement` case (design-decision/feature can link
+          directly) is unchanged — no spurious indirection note.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [validate, lifecycle, diagnostics, dx, aspice, issue-350]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-004
