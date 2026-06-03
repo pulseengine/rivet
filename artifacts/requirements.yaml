@@ -5233,3 +5233,37 @@ artifacts:
     links:
       - type: traces-to
         target: FEAT-001
+
+  - id: REQ-176
+    type: requirement
+    title: "rivet schema info reports whether a schema is on-disk (pinned) or embedded (binary-versioned)"
+    status: implemented
+    description: |
+      Self-found triaging #431. `load_schemas_with_fallback` resolves each
+      schema as on-disk (`<schemas_dir>/<name>.yaml`) if present, else the
+      compiled-in embedded copy — but never reports which source it used. So a
+      project relying on builtin schemas gets the embedded copy swapped
+      silently when the rivet binary is upgraded, and cross-version diagnostic
+      drift ("issues appearing") looks like it came from nowhere.
+
+      `rivet schema info <name>` already prints the version; add a `Source:`
+      line to its text output naming on-disk (with path) vs embedded (with a
+      hint to vendor under schemas/ to pin). The on-disk-vs-embedded branch is
+      already computed inline in the Info command, so this is a local change —
+      no loader signature change. JSON output is unchanged (keeps its
+      documented shape).
+
+      Acceptance:
+        - `rivet --schemas <dir-with-common.yaml> schema info common` text
+          output contains `Source: on-disk`; with an empty schemas dir it
+          contains `Source: embedded`.
+        - `cargo test -p rivet-cli --test cli_commands schema_info` passes
+          (incl. the unchanged `schema_info_json`).
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [schema, embedded, dx, cross-version, dogfooding, self-found, issue-431]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-010

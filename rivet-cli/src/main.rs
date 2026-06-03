@@ -10482,14 +10482,34 @@ fn cmd_schema(cli: &Cli, action: &SchemaAction) -> Result<bool> {
         SchemaAction::Validate => schema_cmd::cmd_validate(&schema),
         SchemaAction::Info { name, format } => {
             let path = schemas_dir.join(format!("{name}.yaml"));
-            let schema_file = if path.exists() {
-                rivet_core::schema::Schema::load_file(&path)
-                    .with_context(|| format!("loading schema {}", path.display()))?
+            // Track WHERE the schema resolved from: an on-disk file (pinned in
+            // the project, version-controlled) vs the compiled-in embedded copy
+            // (which changes silently when the rivet binary is upgraded). #431:
+            // without this, a user can't tell their builtin schema is
+            // binary-versioned, so cross-version diagnostic drift looks like it
+            // appeared from nowhere.
+            let (schema_file, source) = if path.exists() {
+                (
+                    rivet_core::schema::Schema::load_file(&path)
+                        .with_context(|| format!("loading schema {}", path.display()))?,
+                    format!("on-disk ({})", path.display()),
+                )
             } else {
-                rivet_core::embedded::load_embedded_schema(name)
-                    .map_err(|e| anyhow::anyhow!("{e}"))?
+                (
+                    rivet_core::embedded::load_embedded_schema(name)
+                        .map_err(|e| anyhow::anyhow!("{e}"))?,
+                    "embedded (compiled into the rivet binary — changes when rivet is upgraded; \
+                     vendor it under schemas/ to pin)"
+                        .to_string(),
+                )
             };
-            schema_cmd::cmd_info(&schema_file, format)
+            let mut info = schema_cmd::cmd_info(&schema_file, format);
+            // Append the source on text output only; JSON output keeps its
+            // documented shape (schema-info.schema.json).
+            if format == "text" {
+                info.push_str(&format!("\nSource: {source}\n"));
+            }
+            info
         }
         SchemaAction::ListJson { .. }
         | SchemaAction::GetJson { .. }

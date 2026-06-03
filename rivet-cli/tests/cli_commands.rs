@@ -2294,6 +2294,65 @@ fn schema_info_json() {
     );
 }
 
+/// `rivet schema info <name>` (text) reports whether the schema resolved from
+/// an on-disk file (pinned in the project) or the embedded copy (compiled into
+/// the binary, changes on upgrade). #431 / REQ-176.
+// rivet: verifies REQ-176
+#[test]
+fn schema_info_reports_source() {
+    // Embedded: an empty schemas dir → `common` falls back to the compiled-in
+    // copy, and the source line must say so.
+    let empty = tempfile::tempdir().unwrap();
+    let out = Command::new(rivet_bin())
+        .args([
+            "--schemas",
+            empty.path().to_str().unwrap(),
+            "schema",
+            "info",
+            "common",
+        ])
+        .output()
+        .expect("run schema info (embedded)");
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        text.contains("Source: embedded"),
+        "expected embedded source, got:\n{text}"
+    );
+
+    // On-disk: a schemas dir holding common.yaml → reported as on-disk (pinned).
+    let ondisk = tempfile::tempdir().unwrap();
+    std::fs::copy(
+        project_root().join("schemas").join("common.yaml"),
+        ondisk.path().join("common.yaml"),
+    )
+    .expect("copy common.yaml");
+    let out2 = Command::new(rivet_bin())
+        .args([
+            "--schemas",
+            ondisk.path().to_str().unwrap(),
+            "schema",
+            "info",
+            "common",
+        ])
+        .output()
+        .expect("run schema info (on-disk)");
+    assert!(
+        out2.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out2.stderr)
+    );
+    let text2 = String::from_utf8_lossy(&out2.stdout);
+    assert!(
+        text2.contains("Source: on-disk"),
+        "expected on-disk source, got:\n{text2}"
+    );
+}
+
 // ── JSON validity sweep ────────────────────────────────────────────────
 
 /// Comprehensive sweep: every command that accepts `--format json` must
