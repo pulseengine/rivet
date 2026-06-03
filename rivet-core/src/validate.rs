@@ -1187,6 +1187,61 @@ pub fn validate_structural_with_externals_and_variant(
         }
     }
 
+    // 11. Near-duplicate intent (REQ-158 / #397).
+    //
+    // `rivet add` rejects a duplicate *id* but nothing flags a duplicate
+    // *intent* — two same-type artifacts that say the same thing under
+    // different ids. Over a long-lived backlog these accrete. Flag a pair of
+    // same-type, non-external artifacts whose titles share at least
+    // `NEAR_DUPLICATE_INTENT_THRESHOLD` of their significant tokens. Severity
+    // is INFO — it never blocks `validate`; it's a hygiene nudge. The same
+    // Jaccard signal backs `rivet add`'s "similar to <ID>" note, so the two
+    // surfaces always agree. Comparison is within-type only (an O(n²) pass
+    // over each type bucket; each title tokenized once).
+    {
+        use crate::similarity::{NEAR_DUPLICATE_INTENT_THRESHOLD, intent_tokens, similarity_of};
+        use std::collections::BTreeSet;
+
+        let mut by_type: BTreeMap<&str, Vec<(&str, BTreeSet<String>)>> = BTreeMap::new();
+        for artifact in store.iter() {
+            if is_external_artifact(artifact) {
+                continue;
+            }
+            let tokens = intent_tokens(&artifact.title);
+            if tokens.is_empty() {
+                continue;
+            }
+            by_type
+                .entry(artifact.artifact_type.as_str())
+                .or_default()
+                .push((artifact.id.as_str(), tokens));
+        }
+        for items in by_type.values_mut() {
+            items.sort_by(|a, b| a.0.cmp(b.0));
+            for i in 0..items.len() {
+                for j in (i + 1)..items.len() {
+                    let sim = similarity_of(&items[i].1, &items[j].1);
+                    if sim >= NEAR_DUPLICATE_INTENT_THRESHOLD {
+                        let pct = (sim * 100.0).round() as u32;
+                        diagnostics.push(Diagnostic {
+                            source_file: None,
+                            line: None,
+                            column: None,
+                            severity: Severity::Info,
+                            artifact_id: Some(items[j].0.to_string()),
+                            rule: "near-duplicate-intent".to_string(),
+                            message: format!(
+                                "title intent is {pct}% similar to '{}' — consolidate the two, \
+                                 differentiate the titles, or ignore if genuinely distinct",
+                                items[i].0
+                            ),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
     diagnostics
 }
 

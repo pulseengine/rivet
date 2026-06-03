@@ -80,6 +80,7 @@ pub mod runs;
 pub mod schema;
 pub mod sexpr;
 pub mod sexpr_eval;
+pub mod similarity;
 pub mod snapshot;
 pub mod store;
 pub mod templates;

@@ -5493,3 +5493,101 @@ fn validate_emits_single_skip_warn_for_malformed_source() {
         "validate must FAIL on a malformed artifact source"
     );
 }
+
+/// REQ-158 / #397: `rivet validate` emits a `near-duplicate-intent` INFO for a
+/// pair of same-type artifacts with highly similar titles, and NOT for a
+/// distinct one. `rivet add` emits a non-blocking note for a similar new title.
+#[test]
+fn near_duplicate_intent_validate_and_add() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        "project:\n  name: t\n  version: \"0.1.0\"\n  schemas: [common, dev]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    std::fs::write(
+        dir.join("artifacts").join("r.yaml"),
+        "artifacts:\n  \
+         - id: REQ-1\n    type: requirement\n    title: \"Export must bundle JavaScript for offline viewing\"\n    status: draft\n  \
+         - id: REQ-2\n    type: requirement\n    title: \"Export should bundle the JavaScript for offline viewing\"\n    status: draft\n  \
+         - id: REQ-3\n    type: requirement\n    title: \"Parser builds a lossless concrete syntax tree\"\n    status: draft\n",
+    )
+    .unwrap();
+
+    // validate --format json: exactly one near-duplicate-intent diagnostic,
+    // on REQ-2 (the later of the similar pair), none mentioning REQ-3.
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir.to_str().unwrap(),
+            "validate",
+            "--direct",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("rivet validate");
+    let v: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&out.stdout)).expect("validate JSON");
+    let dups: Vec<&serde_json::Value> = v["diagnostics"]
+        .as_array()
+        .expect("diagnostics array")
+        .iter()
+        .filter(|d| d["rule"] == "near-duplicate-intent")
+        .collect();
+    assert_eq!(
+        dups.len(),
+        1,
+        "exactly one near-duplicate-intent diagnostic expected, got {dups:?}"
+    );
+    assert_eq!(dups[0]["artifact_id"], "REQ-2");
+
+    // rivet add with a similar title -> non-blocking note on stderr, still adds.
+    let add_dup = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir.to_str().unwrap(),
+            "add",
+            "--type",
+            "requirement",
+            "--title",
+            "Export should bundle the javascript for offline viewing",
+            "--status",
+            "draft",
+        ])
+        .output()
+        .expect("rivet add");
+    assert!(
+        add_dup.status.success(),
+        "add must still succeed (advisory)"
+    );
+    let add_err = String::from_utf8_lossy(&add_dup.stderr);
+    assert!(
+        add_err.contains("intent is") && add_err.contains("REQ-1"),
+        "add must emit a near-duplicate note naming REQ-1; stderr: {add_err}"
+    );
+
+    // rivet add with a distinct title -> no note.
+    let add_ok = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir.to_str().unwrap(),
+            "add",
+            "--type",
+            "requirement",
+            "--title",
+            "Salsa incremental recomputation invalidates only changed inputs",
+            "--status",
+            "draft",
+        ])
+        .output()
+        .expect("rivet add");
+    let ok_err = String::from_utf8_lossy(&add_ok.stderr);
+    assert!(
+        !ok_err.contains("intent is"),
+        "a distinct title must not emit a near-duplicate note; stderr: {ok_err}"
+    );
+}

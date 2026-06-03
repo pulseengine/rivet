@@ -13948,6 +13948,37 @@ fn cmd_add(
     // Validate before writing (DD-028)
     mutate::validate_add(&artifact, &store, &schema).context("validation failed")?;
 
+    // REQ-158 / #397: non-blocking near-duplicate-intent note. `rivet add`
+    // already rejects a duplicate *id*; this nudges on a duplicate *intent*
+    // (a same-type artifact with a highly similar title) so a backlog doesn't
+    // accrete near-duplicates — but still adds (it's advisory, not an error).
+    // Uses the same Jaccard signal as the `near-duplicate-intent` validate
+    // diagnostic, so the two surfaces agree.
+    {
+        use rivet_core::similarity::{NEAR_DUPLICATE_INTENT_THRESHOLD, intent_similarity};
+        let mut best: Option<(f64, &str, &str)> = None;
+        for other in store.iter() {
+            if other.artifact_type != artifact_type {
+                continue;
+            }
+            let sim = intent_similarity(title, &other.title);
+            if sim >= NEAR_DUPLICATE_INTENT_THRESHOLD
+                && best.as_ref().is_none_or(|(b, _, _)| sim > *b)
+            {
+                best = Some((sim, other.id.as_str(), other.title.as_str()));
+            }
+        }
+        if let Some((sim, oid, otitle)) = best {
+            eprintln!(
+                "note: intent is {}% similar to existing {} \"{}\" — adding anyway; \
+                 consolidate or differentiate if it's a duplicate",
+                (sim * 100.0).round() as u32,
+                oid,
+                otitle
+            );
+        }
+    }
+
     // Determine target file
     let target_file = if let Some(f) = file {
         cli.project.join(f)
