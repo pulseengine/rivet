@@ -4528,3 +4528,47 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-146
+
+  - id: REQ-157
+    type: requirement
+    title: "rivet validate must emit the per-file parse-error skip WARN once, not twice"
+    status: implemented
+    description: |
+      From GitHub issue #406 (self-found while dogfooding REQ-154). `rivet
+      validate` printed the per-file `skipping <file>: YAML parse error …`
+      WARN twice for a single malformed `generic-yaml` source. Root cause:
+      `cmd_validate` loads the project once via `ProjectContext::load`
+      (load_artifacts -> import_generic_directory -> WARN #1), then re-scans
+      every source with `load_artifacts_with_report` for the REQ-075
+      duplicate-id / REQ-062 skip pass, which calls `load_artifacts` again ->
+      a second `import_generic_directory` -> WARN #2.
+
+      Decision (maintainer, on #406): option A (narrow) — kill the duplicate on
+      the validate path only; leave the per-file WARN intact for other
+      commands (get/trace/matrix/export still rely on it and aren't covered by
+      `warn_parse_error_skips()`).
+
+      Fix: thread a `warn_skips: bool` into `GenericYamlAdapter` /
+      `import_generic_directory`; add `load_artifacts_quiet` +
+      `load_artifacts_with_report_quiet` (the public `load_artifacts` signature
+      is untouched). `cmd_validate`'s re-scan uses the quiet report loader, so
+      the WARN fires once (from the initial load) but the skips/duplicates —
+      and the hard `artifact-parse-error` / `duplicate-artifact-id` ERROR
+      diagnostics derived from them — are unchanged.
+
+      Acceptance:
+        - On a fixture with one malformed `generic-yaml` source,
+          `rivet validate 2>&1 | grep -c "skipping ./…/reqs.yaml"` returns 1
+          (was 2).
+        - The hard `artifact-parse-error` ERROR still fires and `Result: FAIL`.
+        - `list`/`stats` REQ-154 skip-summary unaffected; rivet repo validate
+          still PASS.
+        - `cargo test -p rivet-cli --test cli_commands
+          validate_emits_single_skip_warn_for_malformed_source` passes.
+    tags: [bug, ux, noise, dogfooding, self-found, issue-406]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-062

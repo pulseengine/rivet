@@ -5441,3 +5441,55 @@ fn list_reports_parse_error_skipped_sources() {
         "a clean project must not emit a skip block; stderr: {clean_err}"
     );
 }
+
+/// REQ-157 / #406: `rivet validate` must emit the per-file `skipping <file>`
+/// WARN exactly ONCE for a malformed `generic-yaml` source — it used to print
+/// twice (once from `ProjectContext::load`, once from the duplicate-id
+/// re-scan). The hard `artifact-parse-error` ERROR must still fire (FAIL).
+#[test]
+fn validate_emits_single_skip_warn_for_malformed_source() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        "project:\n  name: t\n  version: \"0.1.0\"\n  schemas: [common, dev]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    // Valid `artifacts:` list plus a stray top-level key -> whole file is a
+    // ParseError skip.
+    std::fs::write(
+        dir.join("artifacts").join("reqs.yaml"),
+        "loss-coverage:\n  - foo\nartifacts:\n  - id: REQ-1\n    type: requirement\n    \
+         title: One\n    status: draft\n",
+    )
+    .unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args(["--project", dir.to_str().unwrap(), "validate"])
+        .output()
+        .expect("rivet validate");
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let skip_warns = combined
+        .lines()
+        .filter(|l| l.contains("skipping") && l.contains("reqs.yaml"))
+        .count();
+    assert_eq!(
+        skip_warns, 1,
+        "the per-file skip WARN must print exactly once (was 2); output:\n{combined}"
+    );
+    assert!(
+        combined.contains("failed to parse"),
+        "the hard artifact-parse-error ERROR must still fire; output:\n{combined}"
+    );
+    assert!(
+        !out.status.success(),
+        "validate must FAIL on a malformed artifact source"
+    );
+}
