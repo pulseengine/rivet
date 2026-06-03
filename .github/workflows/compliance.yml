@@ -11,13 +11,21 @@ on:
   workflow_call:
     inputs:
       version:
-        description: 'Version label for the report'
+        description: 'Version label shown in the report header + version switcher current entry'
         type: string
         default: ''
       homepage:
-        description: 'Homepage URL for navigation back-link'
+        description: 'Homepage URL for the report "back" navigation link'
         type: string
         default: ''
+      other-versions:
+        description: >
+          JSON array of OTHER report versions for the switcher dropdown, each
+          {"label","path"} — e.g. [{"label":"v0.1.0","path":"../v0.1.0/"}].
+          Required for the cross-version selector; the caller must enumerate
+          the published versions (a single run can't know them). REQ-163 / #420.
+        type: string
+        default: '[]'
       theme:
         description: 'Color theme (dark or light)'
         type: string
@@ -51,8 +59,11 @@ jobs:
         id: report
         uses: pulseengine/rivet/.github/actions/compliance@main
         with:
-          version: ${{ inputs.version }}
+          # The action's label input is `report-label`; passing `version`
+          # here was silently ignored (REQ-163 / #420).
+          report-label: ${{ inputs.version }}
           homepage: ${{ inputs.homepage }}
+          other-versions: ${{ inputs.other-versions }}
           theme: ${{ inputs.theme }}
           offline: ${{ inputs.offline }}
 

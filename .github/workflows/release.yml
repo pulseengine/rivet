@@ -169,6 +169,13 @@ jobs:
         uses: ./.github/actions/compliance
         with:
           theme: dark
+          # REQ-163 / #420: label the report with the release tag and give it
+          # a "back" navigation link, so even the GitHub-artifact bundle isn't
+          # nav-less. The cross-version switcher (`other-versions`) still has
+          # to come from the site-publishing pipeline, which is the only layer
+          # that knows the full set of published versions.
+          report-label: ${{ github.ref_name }}
+          homepage: https://pulseengine.eu/projects/
           # REQ-090: ship the full audit-deliverable bundle, not the
           # single-page nav-shell form. Multi-page emission is now
           # ~50 MB total on the rivet corpus (REQ-088's shared-assets

@@ -7,6 +7,17 @@
 
 ### Fixed
 
+- **REQ-163 / #420 — compliance CI now forwards the version-switcher + back-link
+  inputs.** The published report for 0.15.0 lost the version selector and "back"
+  nav that 0.1.0 has. `rivet export` still supports them (`--homepage`,
+  `--versions`, `--version-label`), but the CI didn't pass them: the reusable
+  `compliance.yml` sent `version:` (ignored — the action input is `report-label`)
+  and never exposed `other-versions`, and `release.yml` passed no homepage.
+  `compliance.yml` now maps `version → report-label` + adds an `other-versions`
+  passthrough, and `release.yml` labels with the tag and sets a default homepage.
+  (The cross-version switcher needs the full version list, which only the
+  pulseengine.eu site pipeline knows — root-cause fix tracked on #420.)
+
 - **REQ-160 / #415 — deterministic `list` / export / migrate output.**
   `query::execute` (behind `rivet list`, the MCP query tool, and `{{query:…}}`
   embeds) now returns results sorted by id — `rivet list`'s default path
