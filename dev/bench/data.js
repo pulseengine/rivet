@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780455754263,
+  "lastUpdate": 1780457544926,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "ef5455733c6d421b6fa3cde059bc7ed6a7feb53f",
-          "message": "feat(validate): --explain <ID> — per-artifact traceability explanation (REQ-125) (#372)\n\n* feat(validate): --explain <ID> — per-artifact traceability explanation (REQ-125)\n\nDemanded independently by #349, #350, #358 (\"why is X (un)covered?\", \"rivet why\n<id> <rule>\"). `rivet validate --explain <ID>` shows, for one artifact: which\ntraceability rules target its type and whether each is satisfied — and HOW\n(e.g. \"satisfied by incoming 'satisfies' from FEAT-019\") or what's missing\n(\"needs an incoming 'satisfies' from one of [design-decision, feature]\") —\nplus its outgoing/incoming links and its own diagnostics with remediation.\n\nA focused single-artifact view: dispatch branches to `cmd_explain` before the\nfull validate run (no new param threaded through cmd_validate's 16). Reuses the\nsame forward/backward + inverse-name + alternate-backlink matching the coverage\nengine uses, so it agrees with `rivet coverage`. Verified end-to-end (a\nsatisfied and a missing artifact) + regression test.\n\nREQ-125 (the `coverage --explain <RULE>` surface remains a follow-up).\n\nImplements: REQ-125\nVerifies: REQ-125\nRefs: REQ-004\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* style(test): fix clippy::doc_lazy_continuation on the --explain test doc\n\nA '+'-prefixed continuation line read as a list bullet; reworded. (Only\nsurfaces under clippy --all-targets, which CI runs but a plain -p check skips.)\n\nTrace: skip\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-05-31T13:36:06-05:00",
-          "tree_id": "b5252ac38a978a1cdf94a11ca7668f1d3e4f4f65",
-          "url": "https://github.com/pulseengine/rivet/commit/ef5455733c6d421b6fa3cde059bc7ed6a7feb53f"
-        },
-        "date": 1780252964637,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 85842,
-            "range": "± 890",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 914160,
-            "range": "± 3994",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 14486905,
-            "range": "± 386848",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1940,
-            "range": "± 7",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 23165,
-            "range": "± 853",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 345355,
-            "range": "± 1524",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1459404,
-            "range": "± 73186",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 167166,
-            "range": "± 687",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1907597,
-            "range": "± 40590",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 28400179,
-            "range": "± 1245473",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 122913,
-            "range": "± 921",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 1130972,
-            "range": "± 22671",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 14274377,
-            "range": "± 344600",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4193,
-            "range": "± 7",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 43199,
-            "range": "± 149",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 752036,
-            "range": "± 3745",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 63966,
-            "range": "± 448",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 716742,
-            "range": "± 4414",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 8236493,
-            "range": "± 439666",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 769,
-            "range": "± 6",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 7085,
-            "range": "± 38",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 98076,
-            "range": "± 1205",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 21190,
-            "range": "± 230",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 144711,
-            "range": "± 824",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1345724,
-            "range": "± 18465",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1502000,
             "range": "± 45728",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3a430d6e4c351bd71a7409864ee444dfa570152d",
+          "message": "fix(add): deterministic near-duplicate note + correct REQ-158 self-count (#397) (#414)\n\n* docs(REQ-158): correct the near-duplicate-intent self-count (#397)\n\nSelf-correction. The REQ-158 acceptance + CHANGELOG claimed `rivet\nvalidate` \"emits zero near-duplicate-intent diagnostics\" on the rivet\nrepo. That was a verification error: I grepped the *text* output for the\nrule id `near-duplicate-intent`, which only appears in `--format json` —\nso I saw 0 where there were actually 10.\n\nAuthoritative count (JSON): the rivet repo surfaces 10\nnear-duplicate-intent INFO diagnostics, all genuine same-type duplicates\n(e.g. TEST-006/FEAT-013 both type `feature` titled \"Property-based tests\n(proptest)\"; SC-LSP-008/SC-11 both `system-constraint` stating\nidentical-results-to-full-validation). All INFO, so `validate` still\nPASS. The 158 *requirements* alone do produce zero pairs — that part of\nthe calibration held; the error was generalising it to all types.\n\nThe findings are true positives (the feature working as intended), not\nnoise. Corrects the docs to match reality.\n\nImplements: REQ-158\n\n* fix(add): deterministic near-duplicate tie-break by lowest id (REQ-158, #397)\n\nCI caught a real nondeterminism bug I introduced in #413. The `rivet add`\nnear-duplicate note picked the most-similar existing artifact via a\nstrict `>` over `store.iter()` (HashMap order), so when two artifacts are\nEQUALLY similar (e.g. titles identical after stopword-stripping) it named\nwhichever the hash happened to yield first. The new\n`near_duplicate_intent_validate_and_add` test passed locally (picked\nREQ-1) but failed in the proptest job's run (picked REQ-2) — same code,\ndifferent hash order.\n\nBreak ties by lowest id so the note is reproducible. The `validate`\nnear-duplicate pass already sorts by id and was never affected.\n\nVerified stable across 5 local runs. clippy --all-targets + fmt clean.\n\nFixes: REQ-158",
+          "timestamp": "2026-06-02T22:23:43-05:00",
+          "tree_id": "196f25af54f594d5a38bc103b70d61330cf87e8e",
+          "url": "https://github.com/pulseengine/rivet/commit/3a430d6e4c351bd71a7409864ee444dfa570152d"
+        },
+        "date": 1780457544351,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 84064,
+            "range": "± 252",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 881698,
+            "range": "± 5551",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 12009555,
+            "range": "± 314679",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2138,
+            "range": "± 8",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 26661,
+            "range": "± 74",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 391727,
+            "range": "± 1531",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 98,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 98,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 98,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1460472,
+            "range": "± 20969",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 163541,
+            "range": "± 3205",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1897213,
+            "range": "± 6256",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 24333820,
+            "range": "± 228413",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 447790,
+            "range": "± 2628",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 16064488,
+            "range": "± 112196",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1330665223,
+            "range": "± 14414058",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4407,
+            "range": "± 17",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 59130,
+            "range": "± 256",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 742103,
+            "range": "± 3290",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 60358,
+            "range": "± 576",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 689133,
+            "range": "± 2895",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7446187,
+            "range": "± 85106",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 780,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7381,
+            "range": "± 71",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 116782,
+            "range": "± 653",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 24089,
+            "range": "± 123",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 171325,
+            "range": "± 780",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1609944,
+            "range": "± 21551",
             "unit": "ns/iter"
           }
         ]
