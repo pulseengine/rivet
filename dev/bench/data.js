@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780472587630,
+  "lastUpdate": 1780473826471,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "0f60ad467d3830fe536a593e0f3b62162138a651",
-          "message": "feat(modify): --where <s-expr> for query-driven bulk modify (REQ-141, #353) (#380)\n\nBringing a real project's statuses in line with shipped code (bulk\ndraft->implemented) had no first-class tool — only a shell loop of\nper-ID `rivet modify` calls, which #353 reported silently no-op'ing\nunder redirection (a suspected reload/rewrite race between\nrapid-succession subprocesses).\n\nAdd `rivet modify --where '<s-expr>' --set-*`: select every artifact\nmatching the same s-expression filter `rivet query` uses and apply the\nchange in a SINGLE in-process pass — load once, validate every target up\nfront (all-or-nothing), then write each affected file once. No\nsubprocess re-spawn, so it cannot race the way the shell loop could.\n\n- `--where` is mutually exclusive with a positional <ID> (clap-enforced).\n- `--dry-run` previews the match set, writes nothing.\n- An empty match set is a loud no-op (\"no artifacts match the --where\n  filter\") so an agent never reads silence as success.\n- Reuses the existing `sexpr_eval` engine — no new filter dialect.\n\nVerified end-to-end on a scratch project (dry-run byte-identical, bulk\napply flips only matches, empty-match no-op, ID+--where rejected). New\n`modify_where.rs` integration test (4 cases); clippy --all-targets +\nfmt clean; `rivet validate` PASS.\n\nImplements: REQ-141, REQ-007\nRefs: REQ-141\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-06-01T19:03:59-05:00",
-          "tree_id": "c2d2b8bd6257307da27615f1e0281ef870b5aff0",
-          "url": "https://github.com/pulseengine/rivet/commit/0f60ad467d3830fe536a593e0f3b62162138a651"
-        },
-        "date": 1780359038091,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 84969,
-            "range": "± 385",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 886791,
-            "range": "± 17876",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 12349359,
-            "range": "± 257574",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2185,
-            "range": "± 8",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 27261,
-            "range": "± 262",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 377594,
-            "range": "± 1854",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 94,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1447625,
-            "range": "± 31279",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 164289,
-            "range": "± 377",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1888092,
-            "range": "± 27627",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 27121958,
-            "range": "± 923609",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 132734,
-            "range": "± 8709",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 1159008,
-            "range": "± 22282",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 12908564,
-            "range": "± 699881",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4373,
-            "range": "± 10",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 58157,
-            "range": "± 337",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 756270,
-            "range": "± 6106",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 59127,
-            "range": "± 1523",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 709769,
-            "range": "± 11246",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7732455,
-            "range": "± 323169",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 740,
-            "range": "± 10",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 7452,
-            "range": "± 53",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 127075,
-            "range": "± 942",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 22447,
-            "range": "± 510",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 161444,
-            "range": "± 2492",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1457427,
-            "range": "± 14200",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1337133,
             "range": "± 20991",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f66362b377021ff4e39dd52502637589a5ca94d7",
+          "message": "fix(aspice): verification gates accept forward target status (REQ-165, #355) (#424)\n\n#355 Finding 2: the three ASPICE verification status-gates\n(V-sys/sw/unit-verification-needs-approved-*) hardcode\n`(forall-linked \"verifies\" (= status \"approved\"))` in the consequent, so a\nverifier that is approved/released mis-fires when the requirement/design it\nverifies has moved FORWARD past approved (implemented/verified/released).\nThe antecedent already recognises `(or approved released)`; the consequent\ndid not — promoting a verified sw-detail-design approved -> implemented\nwrongly re-raised \"needs an approved design\".\n\nExpand each consequent to approved-or-beyond:\n`(or (= status \"approved\") (= status \"implemented\")\n     (= status \"verified\") (= status \"released\"))`. A target still BELOW\napproved (draft/proposed) correctly still fires. Schema-only (no s-expr\nengine change; a `status-at-least` predicate is a possible future\nsimplification).\n\nVerified behaviorally (approved verifier -> implemented req: no fire;\n-> draft req: fires) + regression test\n`aspice_status_gate_accepts_forward_target_status`; existing\n`aspice_status_gate_rules_loaded_and_fire` still passes; rivet validate\nPASS, docs check PASS.\n\nFixes: REQ-165\nRefs: REQ-135",
+          "timestamp": "2026-06-03T02:54:50-05:00",
+          "tree_id": "02c3f692cac487b928a739d43f1b07be4868bba5",
+          "url": "https://github.com/pulseengine/rivet/commit/f66362b377021ff4e39dd52502637589a5ca94d7"
+        },
+        "date": 1780473825770,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 84199,
+            "range": "± 278",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 891626,
+            "range": "± 11232",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 13049925,
+            "range": "± 634142",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2156,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 26166,
+            "range": "± 108",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 374014,
+            "range": "± 1139",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 93,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 93,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1466929,
+            "range": "± 26004",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 161096,
+            "range": "± 1307",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1895017,
+            "range": "± 18553",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 27069555,
+            "range": "± 1807075",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 439954,
+            "range": "± 1750",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 16434701,
+            "range": "± 208565",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1399040064,
+            "range": "± 14145270",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4446,
+            "range": "± 10",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 59829,
+            "range": "± 203",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 743800,
+            "range": "± 1957",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 60182,
+            "range": "± 159",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 685010,
+            "range": "± 3849",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7703272,
+            "range": "± 373391",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1278,
+            "range": "± 17",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 16036,
+            "range": "± 202",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 347197,
+            "range": "± 5597",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 22133,
+            "range": "± 64",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 159306,
+            "range": "± 1185",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1453133,
+            "range": "± 19102",
             "unit": "ns/iter"
           }
         ]
